@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario20.b907dbf2432c","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario20","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (me: Person)--(you: Person) RETURN me.age + count(you.age)
+--- expected
+Cannot evaluate expression with type PROPERTY.

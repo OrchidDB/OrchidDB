@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsListOfInts.ce480406498c","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_contains(a.workedHours, 5)
+--- expected
+True
+False
+True
+False
+False
+True
+False
+True

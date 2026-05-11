@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue6.issue3576.cefe049243a9","language":"cypher","ordered":true,"source":"issue/issue6.test","source_case":"issue3576","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:MyNode)-[:MyRel]->(m:MyOtherNode) RETURN n.uid, m.uid
+--- expected
+0|0

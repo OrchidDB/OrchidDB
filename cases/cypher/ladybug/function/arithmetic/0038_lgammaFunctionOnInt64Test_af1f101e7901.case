@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.lgammaFunctionOnInt64Test.af1f101e7901","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"lgammaFunctionOnInt64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN lgamma(a.orgCode)
+--- expected
+1552.770467
+5451.570283
+4706.038471

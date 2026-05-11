@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByArray.182eed0c509b","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a ORDER BY a.grades
+--- expected
+Binder exception: Cannot order by a.grades. Order by INT64[4] is not supported.

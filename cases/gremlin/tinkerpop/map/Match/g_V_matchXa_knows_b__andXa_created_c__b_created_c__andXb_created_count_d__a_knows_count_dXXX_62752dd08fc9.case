@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_knows_b__andXa_created_c__b_created_c__andXb_created_count_d__a_knows_count_dXXX.62752dd08fc9","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_knows_b__andXa_created_c__b_created_c__andXb_created_count_d__a_knows_count_dXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("knows").as("b"),
+__.and(__.as("a").out("created").as("c"),
+__.as("b").out("created").as("c"),
+__.and(__.as("b").out("created").count().as("d"),
+__.as("a").out("knows").count().as("d"))))
+--- expected
+m[{"a":"v[marko]","b":"v[josh]","c":"v[lop]","d":"d[2].l"}]

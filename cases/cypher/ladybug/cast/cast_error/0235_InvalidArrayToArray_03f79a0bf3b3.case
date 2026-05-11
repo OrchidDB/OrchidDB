@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidArrayToArray.03f79a0bf3b3","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidArrayToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast([4, 1], "INT16[2]"), "FLOAT[1]")
+--- expected
+Conversion exception: Unsupported casting function from INT16[2] to FLOAT[1].

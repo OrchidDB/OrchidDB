@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampDaynameFuncTest.98cf59ae0e58","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampDaynameFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN dayname(cast(p.registerTime, "TIMESTAMP_NS")), dayname(cast(p.registerTime, "TIMESTAMP_MS")), dayname(cast(p.registerTime, "TIMESTAMP_SEC")), dayname(cast(p.registerTime, "TIMESTAMP_TZ"))
+--- expected
+Saturday|Saturday|Saturday|Saturday
+Monday|Monday|Monday|Monday
+Sunday|Sunday|Sunday|Sunday
+Sunday|Sunday|Sunday|Sunday
+Thursday|Thursday|Thursday|Thursday
+Monday|Monday|Monday|Monday
+Thursday|Thursday|Thursday|Thursday
+Tuesday|Tuesday|Tuesday|Tuesday

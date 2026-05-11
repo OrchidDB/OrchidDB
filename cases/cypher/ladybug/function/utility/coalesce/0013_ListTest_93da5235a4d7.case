@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.ListTest.93da5235a4d7","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"ListTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, [1, 2, 3], NULL, [4, 5, 6, 7, 8], NULL)
+--- expected
+[1,2,3]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.macro.createPropertyMacro.35b7fd9eb12b","language":"cypher","ordered":true,"source":"transaction/ddl/macro.test","source_case":"createPropertyMacro","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a:person) return prop_macro(a) as age
+--- expected
+0
+10
+2
+3
+5
+7
+8
+9

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindPropertyNotExist3.d7cdb377a10e","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindPropertyNotExist3","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {a: 1} AS s RETURN s.b
+--- expected
+Binder exception: Invalid struct field name: b.

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Product.g_injectXmarkoX_productXV_valuesXnameX_order_foldX_unfold.20903964685a","language":"gremlin","ordered":false,"source":"map/Product.feature","source_case":"g_injectXmarkoX_productXV_valuesXnameX_order_foldX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["marko"]).product(__.V().values("name").order().fold()).unfold()
+--- expected
+l[marko,josh]
+l[marko,lop]
+l[marko,marko]
+l[marko,peter]
+l[marko,ripple]
+l[marko,vadas]

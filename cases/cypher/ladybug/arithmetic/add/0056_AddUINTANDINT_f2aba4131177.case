@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddUINTANDINT.f2aba4131177","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddUINTANDINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(255, "UINT8") + CAST(32767, "INT16")
+--- expected
+Overflow exception: Value 255 + 32767 is not within INT16 range.

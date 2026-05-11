@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.CountSubquery.e26ec6e15fec","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"CountSubquery","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) RETURN a.name, COUNT { MATCH (a)<-[:Follows]-(b:User) } AS num_follower ORDER BY num_follower
+--- expected
+Adam|0
+Karissa|1
+Noura|1
+Zhang|2

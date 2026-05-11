@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.12124409eab2","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 6 RETURN a.age, LIST_TRANSFORM([1,2,3], x->x + a.age)
+--- expected
+20|[21,22,23]
+30|[31,32,33]
+35|[36,37,38]
+45|[46,47,48]

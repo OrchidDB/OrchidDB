@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.concat_ws.ConcatWSTest.be47c341c3f8","language":"cypher","ordered":true,"source":"function/string/concat_ws.test","source_case":"ConcatWSTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN CONCAT_WS(' with used name: ', p.fName, p.usedNames[1])
+--- expected
+Alice with used name: Aida
+Bob with used name: Bobby
+Carol with used name: Carmen
+Dan with used name: Wolfeschlegelstein
+Elizabeth with used name: Ein
+Farooq with used name: Fesdwe
+Greg with used name: Grad
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff with used name: Ad

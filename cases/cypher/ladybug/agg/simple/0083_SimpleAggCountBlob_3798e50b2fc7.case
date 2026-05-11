@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggCountBlob.3798e50b2fc7","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggCountBlob","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN COUNT(m.content)
+--- expected
+3

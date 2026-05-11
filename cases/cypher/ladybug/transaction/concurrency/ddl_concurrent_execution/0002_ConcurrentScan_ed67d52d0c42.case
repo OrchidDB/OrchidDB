@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.ddl_concurrent_execution.ConcurrentScan.ed67d52d0c42","language":"cypher","ordered":true,"source":"transaction/concurrency/ddl_concurrent_execution.test","source_case":"ConcurrentScan","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person) return count(*)
+--- expected
+8

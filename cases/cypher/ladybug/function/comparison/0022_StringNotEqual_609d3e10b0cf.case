@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.StringNotEqual.609d3e10b0cf","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"StringNotEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.fName <> 'Alice' RETURN p.ID
+--- expected
+2
+3
+5
+7
+8
+9
+10

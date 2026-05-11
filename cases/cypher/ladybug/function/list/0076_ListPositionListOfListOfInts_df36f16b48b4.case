@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionListOfListOfInts.df36f16b48b4","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionListOfListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_indexof(a.courseScoresPerTerm, [8])
+--- expected
+0
+0
+0
+0
+3
+1
+0
+0

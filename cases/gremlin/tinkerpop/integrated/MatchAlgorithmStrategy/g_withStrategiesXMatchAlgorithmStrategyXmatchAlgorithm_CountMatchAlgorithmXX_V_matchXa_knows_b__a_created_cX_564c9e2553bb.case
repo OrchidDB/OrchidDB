@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.MatchAlgorithmStrategy.g_withStrategiesXMatchAlgorithmStrategyXmatchAlgorithm_CountMatchAlgorithmXX_V_matchXa_knows_b__a_created_cX.564c9e2553bb","language":"gremlin","ordered":false,"source":"integrated/MatchAlgorithmStrategy.feature","source_case":"g_withStrategiesXMatchAlgorithmStrategyXmatchAlgorithm_CountMatchAlgorithmXX_V_matchXa_knows_b__a_created_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(MatchAlgorithmStrategy(matchAlgorithm: "org.apache.tinkerpop.gremlin.process.traversal.step.map.MatchStep$CountMatchAlgorithm"))
+.V().match(__.as("a").out("knows").as("b"),
+__.as("a").out("created").as("c"))
+--- expected
+m[{"a":"v[marko]","b":"v[vadas]","c":"v[lop]"}]
+m[{"a":"v[marko]","b":"v[josh]","c":"v[lop]"}]

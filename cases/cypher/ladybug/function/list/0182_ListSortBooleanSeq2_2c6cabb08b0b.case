@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortBooleanSeq2.2c6cabb08b0b","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortBooleanSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([true, true, false, NULL], 'DESC')
+--- expected
+[,True,True,False]

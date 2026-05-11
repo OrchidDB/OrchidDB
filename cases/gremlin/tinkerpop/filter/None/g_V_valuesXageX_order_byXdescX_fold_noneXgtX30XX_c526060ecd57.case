@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.None.g_V_valuesXageX_order_byXdescX_fold_noneXgtX30XX.c526060ecd57","language":"gremlin","ordered":false,"source":"filter/None.feature","source_case":"g_V_valuesXageX_order_byXdescX_fold_noneXgtX30XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").order().by(desc).fold().none(P.gt(30))
+--- expected
+

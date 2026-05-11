@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractUINT16.9bd75d06059c","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractUINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(10, "UINT16") - CAST(65530, "UINT16")
+--- expected
+Overflow exception: Value 10 - 65530 is not within UINT16 range.

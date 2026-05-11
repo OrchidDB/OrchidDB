@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Unwind1.3f3e93e2281d","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Unwind1","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ["Amy", "Bob", "Carol"] AS x RETURN 'name' as name, x
+--- expected
+name|Amy
+name|Bob
+name|Carol

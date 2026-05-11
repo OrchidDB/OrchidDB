@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.CreateArrayRecursively.aebb53c87466","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"CreateArrayRecursively","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_VALUE(ARRAY_VALUE(3,2), ARRAY_VALUE(4,7), ARRAY_VALUE(-2,3))
+--- expected
+[[3,2],[4,7],[-2,3]]

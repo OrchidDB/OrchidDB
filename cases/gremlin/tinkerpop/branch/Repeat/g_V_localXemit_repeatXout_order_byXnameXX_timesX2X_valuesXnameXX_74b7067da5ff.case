@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_localXemit_repeatXout_order_byXnameXX_timesX2X_valuesXnameXX.74b7067da5ff","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_localXemit_repeatXout_order_byXnameXX_timesX2X_valuesXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(__.emit().repeat(__.out().order().by("name")).times(2).values("name"))
+--- expected
+marko
+josh
+lop
+ripple
+lop
+vadas
+vadas
+lop
+josh
+lop
+ripple
+ripple
+peter
+lop

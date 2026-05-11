@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Coin.g_withStrategiesXSeedStrategyX_V_order_byXnameX_coinX50X.b55caa26cc55","language":"gremlin","ordered":false,"source":"filter/Coin.feature","source_case":"g_withStrategiesXSeedStrategyX_V_order_byXnameX_coinX50X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SeedStrategy(seed: 999999)).V().order().by("name").coin(0.5)
+--- expected
+v[josh]

@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.agg.hash_ldbc.TestAggregateListsWithNulls.1a276a19a470","language":"cypher","ordered":true,"source":"agg/hash_ldbc.test","source_case":"AggHash","source_log":"TestAggregateListsWithNulls","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Post) OPTIONAL MATCH (c:Comment)-[]->(p:Post) RETURN p.browserUsed, list_sort(COLLECT(DISTINCT c.browserUsed), 'ASC')
+--- expected
+Firefox|[Chrome,Firefox,Internet Explorer,Opera,Safari]
+Internet Explorer|[Chrome,Firefox,Internet Explorer,Opera,Safari]
+Chrome|[Chrome,Firefox,Internet Explorer,Opera,Safari]
+Safari|[Chrome,Firefox,Internet Explorer,Opera,Safari]
+Opera|[Chrome,Firefox,Internet Explorer,Opera,Safari]

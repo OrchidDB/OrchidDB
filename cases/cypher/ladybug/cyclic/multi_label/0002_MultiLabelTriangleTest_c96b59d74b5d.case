@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.multi_label.MultiLabelTriangleTest.c96b59d74b5d","language":"cypher","ordered":true,"source":"cyclic/multi_label.test","source_case":"CyclicMultiLabel","source_log":"MultiLabelTriangleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:studyAt|:meets]->(c:organisation:person), (a)-[:studyAt|:meets]->(c) RETURN COUNT(*)
+--- expected
+4

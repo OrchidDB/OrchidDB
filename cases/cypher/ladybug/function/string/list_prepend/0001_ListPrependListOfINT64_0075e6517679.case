@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_prepend.ListPrependListOfINT64.0075e6517679","language":"cypher","ordered":true,"source":"function/string/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_prepend(a.workedHours, a.age)
+--- expected
+[35,10,5]
+[30,12,8]
+[45,4,5]
+[20,1,9]
+[20,2]
+[25,3,4,5,6,7]
+[40,1]
+[83,10,11,12,3,4,5,6,7]

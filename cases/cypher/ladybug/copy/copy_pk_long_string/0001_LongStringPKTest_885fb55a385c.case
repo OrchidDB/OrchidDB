@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV long-string-pk-tests","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_long_string.LongStringPKTest.885fb55a385c","language":"cypher","ordered":true,"source":"copy/copy_pk_long_string.test","source_case":"CopyLongStringPK","source_log":"LongStringPKTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person)-[e:Knows]->(b:Person) WHERE a.name = "AAAAAAAAAAAAAAAAAAAA" RETURN COUNT(*)
+--- expected
+1

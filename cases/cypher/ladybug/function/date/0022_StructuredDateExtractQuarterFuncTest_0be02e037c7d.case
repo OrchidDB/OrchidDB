@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateExtractQuarterFuncTest.0be02e037c7d","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateExtractQuarterFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("quarTer", p.birthdate)
+--- expected
+1
+1
+2
+3
+4
+4
+4
+4

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Map.g_V_valuesXmapX_isXtypeOfXGType_MAPXX_countXlocalX.1c7b8413237a","language":"gremlin","ordered":false,"source":"data/Map.feature","source_case":"g_V_valuesXmapX_isXtypeOfXGType_MAPXX_countXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("map").is(P.typeOf(GType.MAP)).count(local)
+--- graph_initializer
+g.addV("data").property("map", ["a": 1, "b": 2, "c": 3])
+--- expected
+d[3].l

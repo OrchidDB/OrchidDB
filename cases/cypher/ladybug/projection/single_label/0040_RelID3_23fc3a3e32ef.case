@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.RelID3.23fc3a3e32ef","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"RelID3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:workAt]->(o:organisation) RETURN id(r)
+--- expected
+7:0
+7:1
+7:2

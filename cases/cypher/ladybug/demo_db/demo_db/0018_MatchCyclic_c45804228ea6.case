@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchCyclic.c45804228ea6","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchCyclic","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(b:User)-[:Follows]->(c:User), (a)-[:Follows]->(c) RETURN a.name, b.name, c.name
+--- expected
+Adam|Karissa|Zhang

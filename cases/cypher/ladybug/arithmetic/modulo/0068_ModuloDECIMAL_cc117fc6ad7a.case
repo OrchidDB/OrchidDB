@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloDECIMAL.cc117fc6ad7a","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1] AS A UNWIND [0] AS B RETURN CAST(A, 'DECIMAL') % CAST(B, 'DECIMAL')
+--- expected
+Runtime exception: Modulo by zero.

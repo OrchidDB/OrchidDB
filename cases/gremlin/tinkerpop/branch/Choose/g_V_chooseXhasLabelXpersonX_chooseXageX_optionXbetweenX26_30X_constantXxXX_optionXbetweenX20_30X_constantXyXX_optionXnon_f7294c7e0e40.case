@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXhasLabelXpersonX_chooseXageX_optionXbetweenX26_30X_constantXxXX_optionXbetweenX20_30X_constantXyXX_optionXnon.f7294c7e0e40","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXhasLabelXpersonX_chooseXageX_optionXbetweenX26_30X_constantXxXX_optionXbetweenX20_30X_constantXyXX_optionXnone_constantXzXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+choose(__.values("age")).
+option(P.between(26, 30), __.constant("x")).
+option(P.between(20, 30), __.constant("y")).
+option(Pick.none, __.constant("z"))
+--- expected
+x
+x
+z
+z

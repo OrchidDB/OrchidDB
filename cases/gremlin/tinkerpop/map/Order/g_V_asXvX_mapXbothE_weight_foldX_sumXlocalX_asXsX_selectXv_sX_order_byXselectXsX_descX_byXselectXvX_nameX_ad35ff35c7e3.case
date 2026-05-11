@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_descX_byXselectXvX_nameX.ad35ff35c7e3","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_descX_byXselectXvX_nameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("v").map(__.bothE().values("weight").fold()).sum(Scope.local).as("s").select("v", "s").order().by(__.select("s"), Order.desc).by(__.select("v").values("name"))
+--- expected
+m[{"v":"v[josh]","s":"d[2.4].d"}]
+m[{"v":"v[marko]","s":"d[1.9].d"}]
+m[{"v":"v[lop]","s":"d[1.0].d"}]
+m[{"v":"v[ripple]","s":"d[1.0].d"}]
+m[{"v":"v[vadas]","s":"d[0.5].d"}]
+m[{"v":"v[peter]","s":"d[0.2].d"}]

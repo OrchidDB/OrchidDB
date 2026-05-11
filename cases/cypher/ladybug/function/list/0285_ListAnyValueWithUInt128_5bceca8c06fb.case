@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithUInt128.5bceca8c06fb","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithUInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_any_value([to_uint128(1), to_uint128(1), NULL, to_uint128(3), to_uint128(1), to_uint128(5)])
+--- expected
+1

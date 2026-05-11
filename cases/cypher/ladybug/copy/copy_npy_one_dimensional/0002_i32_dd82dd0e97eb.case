@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"NPY npy-1d","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_one_dimensional.i32.dd82dd0e97eb","language":"cypher","ordered":true,"source":"copy/copy_npy_one_dimensional.test","source_case":"CopyOneDimensionalNpyTest","source_log":"i32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.i32
+--- expected
+1
+2
+3

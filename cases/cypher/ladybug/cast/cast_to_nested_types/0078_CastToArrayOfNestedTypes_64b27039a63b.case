@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.64b27039a63b","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[12, abcd, 1.75]", "UNION(a INT64, b STRING, c FLOAT)[3]")
+--- expected
+[12,abcd,1.75]

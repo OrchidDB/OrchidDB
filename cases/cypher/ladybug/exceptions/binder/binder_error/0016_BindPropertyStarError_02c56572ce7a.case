@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindPropertyStarError.02c56572ce7a","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindPropertyStarError","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {a: 1} AS s RETURN s.* + 1
+--- expected
+Binder exception: Cannot bind s.* as a single property expression.

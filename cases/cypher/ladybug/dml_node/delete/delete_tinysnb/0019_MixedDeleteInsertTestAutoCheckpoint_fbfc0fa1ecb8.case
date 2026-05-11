@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_tinysnb.MixedDeleteInsertTestAutoCheckpoint.fbfc0fa1ecb8","language":"cypher","ordered":true,"source":"dml_node/delete/delete_tinysnb.test","source_case":"MixedDeleteInsertTestAutoCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) WHERE a.ID = 30 RETURN a.orgCode, a.mark
+--- expected
+33|

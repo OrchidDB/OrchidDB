@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffectCap.g_V_groupXaX_byXageX_capXaX.989db8c3d1b7","language":"gremlin","ordered":false,"source":"sideEffect/SideEffectCap.feature","source_case":"g_V_groupXaX_byXageX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group("a").by("age").cap("a")
+--- expected
+m[{"d[35].i":"l[v[peter]]", "d[27].i":"l[v[vadas]]", "d[32].i": "l[v[josh]]", "d[29].i":"l[v[marko]]"}]

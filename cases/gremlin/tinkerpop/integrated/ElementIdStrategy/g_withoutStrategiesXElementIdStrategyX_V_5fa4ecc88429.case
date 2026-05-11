@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.ElementIdStrategy.g_withoutStrategiesXElementIdStrategyX_V.5fa4ecc88429","language":"gremlin","ordered":false,"source":"integrated/ElementIdStrategy.feature","source_case":"g_withoutStrategiesXElementIdStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(ElementIdStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

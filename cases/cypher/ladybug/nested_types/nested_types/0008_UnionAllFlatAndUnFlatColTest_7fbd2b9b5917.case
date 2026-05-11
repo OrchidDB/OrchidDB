@@ -1,0 +1,47 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllFlatAndUnFlatColTest.7fbd2b9b5917","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"Union","source_log":"UnionAllFlatAndUnFlatColTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) RETURN a.age UNION ALL MATCH (a:person)-[e:knows]->(b:person) RETURN a.age UNION ALL MATCH (a:person)-[e:knows]->(b:person) RETURN a.age
+--- expected
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+30
+30
+30
+30
+30
+30
+30
+30
+30
+35
+35
+35
+35
+35
+35
+35
+35
+35
+45
+45
+45
+45
+45
+45
+45
+45
+45

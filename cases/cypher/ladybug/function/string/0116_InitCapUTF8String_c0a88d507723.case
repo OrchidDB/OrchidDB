@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.InitCapUTF8String.c0a88d507723","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"InitCapUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+match (m:movies) return initcap(m.name)
+--- expected
+Sóló cón tu párejâ
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie
+Roma

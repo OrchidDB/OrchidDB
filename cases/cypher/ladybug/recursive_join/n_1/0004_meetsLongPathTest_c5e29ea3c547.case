@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_1.meetsLongPathTest.c5e29ea3c547","language":"cypher","ordered":true,"source":"recursive_join/n_1.test","source_case":"VarLengthExtendN1Tests","source_log":"meetsLongPathTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:meets*8..11]->(b:person) RETURN COUNT(*)
+--- expected
+16

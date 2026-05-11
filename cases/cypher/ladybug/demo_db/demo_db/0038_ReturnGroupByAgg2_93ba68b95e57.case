@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ReturnGroupByAgg2.93ba68b95e57","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"ReturnGroupByAgg2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[:LivesIn]->(c:City) RETURN c.name, COUNT(*)
+--- expected
+Guelph|1
+Kitchener|1
+Waterloo|2

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.MergeDuplicatedKey.47e90f939aab","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"MergeDuplicatedKey","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:user) RETURN a.ID
+--- expected
+0
+1
+2
+3

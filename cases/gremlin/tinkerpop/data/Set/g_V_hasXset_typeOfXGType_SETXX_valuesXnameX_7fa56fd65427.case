@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Set.g_V_hasXset_typeOfXGType_SETXX_valuesXnameX.7fa56fd65427","language":"gremlin","ordered":false,"source":"data/Set.feature","source_case":"g_V_hasXset_typeOfXGType_SETXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("set", P.typeOf(GType.SET)).values("name")
+--- graph_initializer
+g.addV("data").property("name", "test").property("set", {1, 2, 3})
+--- expected
+test

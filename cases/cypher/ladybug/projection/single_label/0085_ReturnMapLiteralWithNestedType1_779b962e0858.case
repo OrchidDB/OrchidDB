@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnMapLiteralWithNestedType1.779b962e0858","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnMapLiteralWithNestedType1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN map([map([p.ID], [p.fName])], [p.age])
+--- expected
+{{0=Alice}=35}
+{{2=Bob}=30}
+{{3=Carol}=45}
+{{5=Dan}=20}
+{{7=Elizabeth}=20}
+{{8=Farooq}=25}
+{{9=Greg}=40}
+{{10=Hubert Blaine Wolfeschlegelsteinhausenbergerdorff}=83}

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfUINT8.53646c7e6aee","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfUINT8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN list_extract([e.ulevel], 1)
+--- expected
+250
+220
+12

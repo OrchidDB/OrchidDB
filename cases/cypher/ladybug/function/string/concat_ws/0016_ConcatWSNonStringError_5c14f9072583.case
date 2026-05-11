@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.concat_ws.ConcatWSNonStringError.5c14f9072583","language":"cypher","ordered":true,"source":"function/string/concat_ws.test","source_case":"ConcatWSNonStringError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CONCAT_WS(5, 'test1', 'test2')
+--- expected
+Binder exception: concat_ws expects all string parameters. Got: INT64.

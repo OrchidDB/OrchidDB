@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.copy.Bwd.8e91ff82a52d","language":"cypher","ordered":true,"source":"dml_rel/copy.test","source_case":"CopyRelSetStorageDirection","source_log":"Bwd","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e]->(b:person) RETURN COUNT(*)
+--- expected
+Binder exception: There are no common storage directions among the rel tables matched by pattern 'e' (some tables have storage direction 'fwd' while others have storage direction 'bwd'). Scanning different tables matching the same pattern in different directions is currently unsupported.

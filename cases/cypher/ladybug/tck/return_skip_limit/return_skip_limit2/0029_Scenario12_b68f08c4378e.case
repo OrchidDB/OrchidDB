@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_skip_limit.return_skip_limit2.Scenario12.b68f08c4378e","language":"cypher","ordered":true,"source":"tck/return_skip_limit/return_skip_limit2.test","source_case":"Scenario12","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN n LIMIT -1
+--- expected
+Runtime exception: The number of rows to skip/limit must be a non-negative integer.

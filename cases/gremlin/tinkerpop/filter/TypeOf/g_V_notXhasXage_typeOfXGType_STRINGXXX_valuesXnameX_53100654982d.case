@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.TypeOf.g_V_notXhasXage_typeOfXGType_STRINGXXX_valuesXnameX.53100654982d","language":"gremlin","ordered":false,"source":"filter/TypeOf.feature","source_case":"g_V_notXhasXage_typeOfXGType_STRINGXXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().not(__.has("age", P.typeOf(GType.STRING))).values("name")
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

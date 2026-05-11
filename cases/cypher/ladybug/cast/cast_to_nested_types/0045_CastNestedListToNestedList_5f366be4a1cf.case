@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedListToNestedList.5f366be4a1cf","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedListToNestedList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast([NULL, [NULL, 13], NULL, [14, 14], NULL], "INT32[][]"), "INT128[][]"), cast([NULL, 1], "INT16[]"), cast("[1, NULL, NULL]", "UINT32[]"), cast("[NULL, 1, NULL]", "UINT64[]")
+--- expected
+[,[,13],,[14,14],]|[,1]|[1,,]|[,1,]

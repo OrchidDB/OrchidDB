@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortTimestampSeq1.f036e5733c26","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortTimestampSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([cast('1992-05-03 11:13:25', "TIMESTAMP_MS"), cast('1993-05-03 11:13:25.43225', "TIMESTAMP_MS"), cast('1994-05-03 11:13:25.43225', "TIMESTAMP_MS"), NULL])
+--- expected
+[,1994-05-03 11:13:25.432,1993-05-03 11:13:25.432,1992-05-03 11:13:25]

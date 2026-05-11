@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleSumTest2.0bd31a078e13","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleSumTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate = date('1980-10-26') RETURN SUM(a.age+10), SUM(a.age*2)
+--- expected
+115|170

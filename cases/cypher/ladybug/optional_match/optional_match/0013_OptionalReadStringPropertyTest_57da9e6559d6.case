@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.OptionalReadStringPropertyTest.57da9e6559d6","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"OptionalReadStringPropertyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName='Elizabeth' OR a.fName='Hubert Blaine Wolfeschlegelsteinhausenbergerdorff' OPTIONAL MATCH (a)-[:knows]->(b:person) RETURN a.fName, b.fName
+--- expected
+Elizabeth|Farooq
+Elizabeth|Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|

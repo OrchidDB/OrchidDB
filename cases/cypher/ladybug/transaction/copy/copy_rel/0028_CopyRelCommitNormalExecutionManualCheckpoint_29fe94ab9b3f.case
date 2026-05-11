@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyRelCommitNormalExecutionManualCheckpoint.29fe94ab9b3f","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyRelCommitNormalExecutionManualCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (:person)-[e:knows]->(:person) return e.date
+--- expected
+1905-12-12
+1905-12-12
+1950-05-14
+1950-05-14
+1950-05-14
+1950-05-14
+2000-01-01
+2000-01-01
+2021-06-30
+2021-06-30
+2021-06-30
+2021-06-30
+2021-06-30
+2021-06-30

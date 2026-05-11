@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnInt32NodeProp.c207d8b81b59","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnInt32NodeProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN m.length
+--- expected
+126
+2544
+298

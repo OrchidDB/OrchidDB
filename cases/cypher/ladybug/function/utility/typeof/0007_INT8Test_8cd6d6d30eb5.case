@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.INT8Test.8cd6d6d30eb5","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"INT8Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(cast(-1, "INT8"))
+--- expected
+INT8

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_E_asString.800158fa75c1","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_E_asString","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E().asString()
+--- expected
+str[e[7][1-knows->2]]
+str[e[8][1-knows->4]]
+str[e[9][1-created->3]]
+str[e[10][4-created->5]]
+str[e[11][4-created->3]]
+str[e[12][6-created->3]]

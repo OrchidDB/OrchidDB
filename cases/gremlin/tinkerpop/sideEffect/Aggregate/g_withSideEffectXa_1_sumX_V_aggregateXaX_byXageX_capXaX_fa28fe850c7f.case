@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withSideEffectXa_1_sumX_V_aggregateXaX_byXageX_capXaX.fa28fe850c7f","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withSideEffectXa_1_sumX_V_aggregateXaX_byXageX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", 1, Operator.sum).V().aggregate("a").by("age").cap("a")
+--- expected
+d[124].i

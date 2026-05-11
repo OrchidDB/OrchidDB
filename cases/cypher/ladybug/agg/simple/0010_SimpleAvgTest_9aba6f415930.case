@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAvgTest.9aba6f415930","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAvgTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN AVG(a.age), AVG(a.eyeSight)
+--- expected
+37.250000|4.862500

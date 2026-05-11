@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.start_end_node.StartNodeTestRecursiveRel.f9e642f59861","language":"cypher","ordered":true,"source":"function/start_end_node.test","source_case":"FunctionStartNode","source_log":"StartNodeTestRecursiveRel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person { fName: "Alice" })-[r:knows *1..2]->(friend:person) RETURN START_NODE(r)
+--- expected
+Binder exception: Function START_NODE did not receive correct arguments:
+Actual:   (RECURSIVE_REL)
+Expected: (REL)

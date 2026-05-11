@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_complex.IC4.6a32981edca2","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_complex.test","source_case":"LDBCInteractiveComplex","source_log":"IC4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person:Person {id: 24189255812446 })-[:knows]-(friend:Person), (friend)<-[:Post_hasCreator]-(post:Post)-[:Post_hasTag]->(tag) WITH DISTINCT tag, post WITH tag, CASE WHEN 20120710024241920 > post.creationDate AND post.creationDate >= 20100710024241920 THEN 1 ELSE 0 END AS valid, CASE WHEN 20100710024241920 > post.creationDate THEN 1 ELSE 0 END AS inValid WITH tag, sum(valid) AS postCount, sum(inValid) AS inValidPostCount WHERE postCount>0 AND inValidPostCount=0 RETURN tag.name AS tagName, postCount ORDER BY postCount DESC, tagName ASC LIMIT 10
+--- expected
+Hans_Christian_Andersen|52
+Ban_Ki-moon|47
+Sammy_Sosa|40
+Adolf_Hitler|32
+Imelda_Marcos|30
+Genghis_Khan|28
+Enrique_Iglesias|27
+Zine_El_Abidine_Ben_Ali|23
+Franz_Kafka|11
+Bobby_Hull|9

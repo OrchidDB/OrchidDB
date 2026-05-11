@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.EdgesNoCycle.bbf64fc79f33","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"EdgesNoCycle","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('edgeMin')
+--- expected
+Catalog exception: nextval: reached minimum value of sequence "edgeMin" -10

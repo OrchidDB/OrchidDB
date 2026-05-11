@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidStructToStruct.ac0d2eb1827d","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidStructToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{a: 12}", "STRUCT(a STRING, b STRUCT(a STRING, b STRING))"), "STRUCT(a INT128, b INT8)")
+--- expected
+Conversion exception: Unsupported casting function from STRUCT(a STRING, b STRING) to INT8.

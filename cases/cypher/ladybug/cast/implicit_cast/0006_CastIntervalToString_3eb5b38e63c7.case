@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.CastIntervalToString.3eb5b38e63c7","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"CastIntervalToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(Interval('31 months 20 days 10 hours 100us'), 50)
+--- expected
+2 years 7 months 20 days 10:00:00.0001

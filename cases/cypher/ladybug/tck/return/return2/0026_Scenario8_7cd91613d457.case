@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario8.7cd91613d457","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN LABEL(n) = 'Foo'
+--- expected
+True
+False

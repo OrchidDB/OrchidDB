@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Format.g_injectX1X_asXageX_V_formatXstrX.2c2633215c24","language":"gremlin","ordered":false,"source":"map/Format.feature","source_case":"g_injectX1X_asXageX_V_formatXstrX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1).as("age").V().format("%{name} is %{age} years old")
+--- expected
+marko is 29 years old
+vadas is 27 years old
+lop is 1 years old
+josh is 32 years old
+ripple is 1 years old
+peter is 35 years old

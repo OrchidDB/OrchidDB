@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_V_asXaX_outEXcreatedX_asXbX_inV_asXcX_inXcreatedX_asXdX_whereXa_ltXbX_orXgtXcXX_andXneqXdXXX_byXageX_byXweightX_byXinX.c858b8772c43","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_V_asXaX_outEXcreatedX_asXbX_inV_asXcX_inXcreatedX_asXdX_whereXa_ltXbX_orXgtXcXX_andXneqXdXXX_byXageX_byXweightX_byXinXcreatedX_valuesXageX_minX_selectXa_c_dX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").outE("created").as("b").inV().as("c").in("created").as("d").where("a", P.lt("b").or(P.gt("c")).and(P.neq("d"))).by("age").by("weight").by(__.in("created").values("age").min()).select("a", "c", "d").by("name")
+--- expected
+m[{"a": "josh", "c": "lop", "d": "marko"}]
+m[{"a": "josh", "c": "lop", "d": "peter"}]
+m[{"a": "peter", "c": "lop", "d": "marko"}]
+m[{"a": "peter", "c": "lop", "d": "josh"}]

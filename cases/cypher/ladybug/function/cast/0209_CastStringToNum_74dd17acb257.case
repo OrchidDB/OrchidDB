@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastStringToNum.74dd17acb257","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastStringToNum","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("3.294", "float")
+--- expected
+3.294000

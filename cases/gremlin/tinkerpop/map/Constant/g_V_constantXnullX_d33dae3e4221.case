@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Constant.g_V_constantXnullX.d33dae3e4221","language":"gremlin","ordered":false,"source":"map/Constant.feature","source_case":"g_V_constantXnullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().constant(null)
+--- expected
+null
+null
+null
+null
+null
+null

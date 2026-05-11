@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.NestedBooleanFunction.f322e74fca3f","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"NestedBooleanFunction","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN NOT NOT TRUE, NOT NOT NOT FALSE
+--- expected
+True|True

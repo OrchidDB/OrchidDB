@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpFullMatchString.c90ae275258c","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpFullMatchString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName =~ 'Ali.*' RETURN a.ID
+--- expected
+0

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.radiansFunctionOnInt64Test.78e6c62350fa","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"radiansFunctionOnInt64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN radians(a.orgCode)
+--- expected
+5.672320
+16.301375
+14.381513

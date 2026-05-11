@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapInt8Key.ab481fd3644b","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapInt8Key","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(3, 'int8'), cast(3, 'int8'), cast(2, 'int8')], [20, 34, 50])
+--- expected
+Runtime exception: Found duplicate key: 3 in map.

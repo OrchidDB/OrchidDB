@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMaxInt128Test.17bdad1ee8b1","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMaxInt128Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN MAX(s.hugedata)
+--- expected
+1844674407370955161811111111

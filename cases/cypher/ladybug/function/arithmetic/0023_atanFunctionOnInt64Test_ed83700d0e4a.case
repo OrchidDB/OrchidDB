@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.atanFunctionOnInt64Test.ed83700d0e4a","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"atanFunctionOnInt64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN atan(a.orgCode % 2 - 1)
+--- expected
+0.000000

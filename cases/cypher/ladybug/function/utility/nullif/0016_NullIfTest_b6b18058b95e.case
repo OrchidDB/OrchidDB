@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.b6b18058b95e","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t3:test3) RETURN NULLIF(CAST(t3.a, "STRING"), '11')
+--- expected
+13
+12

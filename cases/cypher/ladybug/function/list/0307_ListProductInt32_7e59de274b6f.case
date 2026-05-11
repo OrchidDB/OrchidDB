@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductInt32.7e59de274b6f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductInt32","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_int32(-10), to_int32(20), to_int32(-5), NULL])
+--- expected
+1000

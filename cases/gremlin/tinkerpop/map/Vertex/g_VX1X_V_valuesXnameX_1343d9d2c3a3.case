@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_VX1X_V_valuesXnameX.1343d9d2c3a3","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_VX1X_V_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).V().values("name")
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

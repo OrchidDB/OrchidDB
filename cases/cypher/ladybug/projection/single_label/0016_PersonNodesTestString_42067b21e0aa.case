@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.PersonNodesTestString.42067b21e0aa","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"PersonNodesTestString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

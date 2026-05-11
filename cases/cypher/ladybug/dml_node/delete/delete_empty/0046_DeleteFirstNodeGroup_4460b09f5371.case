@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_empty.DeleteFirstNodeGroup.4460b09f5371","language":"cypher","ordered":true,"source":"dml_node/delete/delete_empty.test","source_case":"DeleteFirstNodeGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:Post) with count(*) as remaining optional match (p:Post) where p.ID = 1030792523231 with p.imageFile as imageFile, remaining return remaining = 0 or imageFile = 'photo1030792523231.jpg'
+--- expected
+True

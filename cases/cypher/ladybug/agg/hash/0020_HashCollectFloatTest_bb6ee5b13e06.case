@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectFloatTest.bb6ee5b13e06","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectFloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.height, collect(p.eyeSight)
+--- expected
+1.731000|[5.000000]
+0.990000|[5.100000]
+1.000000|[5.000000]
+1.300000|[4.800000]
+1.463000|[4.700000]
+1.510000|[4.500000]
+1.600000|[4.900000]
+1.323000|[4.900000]

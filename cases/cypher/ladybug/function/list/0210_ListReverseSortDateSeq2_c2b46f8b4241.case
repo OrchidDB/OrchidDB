@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortDateSeq2.c2b46f8b4241","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortDateSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([date('1992-05-03'), date('1993-05-03'), date('1994-05-03'), NULL], 'NULLS LAST')
+--- expected
+[1994-05-03,1993-05-03,1992-05-03,]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit1.Scenario1.ba2ac5ac3620","language":"cypher","ordered":true,"source":"tck/with_skip_limit/with_skip_limit1.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WITH a.name AS property, a.num AS idToUse ORDER BY property SKIP 1 MATCH (b) WHERE b.id = idToUse RETURN DISTINCT b
+--- expected
+{_ID: 0:0, _LABEL: A, name: A, num: 0, id: 0}

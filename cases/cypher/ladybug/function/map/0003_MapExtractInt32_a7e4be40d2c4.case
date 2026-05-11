@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractInt32.a7e4be40d2c4","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractInt32","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_extract(map([[1,3], [2,4]], [to_int32(3), to_int32(5)]), [2,4])
+--- expected
+[5]

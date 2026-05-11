@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.ddl_recover.DDLRecovery.fdeaab741ef8","language":"cypher","ordered":true,"source":"transaction/recovery/ddl_recover.test","source_case":"DDLRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH () RETURN COUNT(*)
+--- expected
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Combine.g_V_valuesXageX_order_byXdescX_fold_combineXV_valuesXageX_order_byXdescX_foldX.01225b56f2fe","language":"gremlin","ordered":false,"source":"map/Combine.feature","source_case":"g_V_valuesXageX_order_byXdescX_fold_combineXV_valuesXageX_order_byXdescX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").order().by(desc).fold().combine(__.V().values("age").order().by(desc).fold())
+--- expected
+l[d[35].i,d[32].i,d[29].i,d[27].i,d[35].i,d[32].i,d[29].i,d[27].i]

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.MatchUndirectedVarLen.d944b1a29b1b","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"MatchUndirectedVarLen","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e*2..2]-(b) WHERE a.name = 'Noura' AND b.name <> 'Noura' RETURN b.name, length(e) AS length
+--- expected
+Adam|2
+Karissa|2
+Kitchener|2

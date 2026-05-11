@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.hash.sha256.SHA256Tests.4e8bc0f76f7c","language":"cypher","ordered":true,"source":"function/hash/sha256.test","source_case":"SHA256Tests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN sha256('hello')
+--- expected
+2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824

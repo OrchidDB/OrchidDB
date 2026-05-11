@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.basic.GDSSemiMask.0486b816e804","language":"cypher","ordered":true,"source":"ldbc/basic.test","source_case":"LDBCBasic","source_log":"GDSSemiMask","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p=(:Post)-[:containerOf]-(:Forum) WITH CAST(struct_extract(rels(p)[1],'_src'), 'STRING') AS s RETURN string_split(s, ':')[1]  LIMIT 10
+--- expected
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_append.ListAppendListOfINT64.70dd1352a76d","language":"cypher","ordered":true,"source":"function/string_function/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_append(a.workedHours, a.age)
+--- expected
+[10,5,35]
+[12,8,30]
+[4,5,45]
+[1,9,20]
+[2,20]
+[3,4,5,6,7,25]
+[1,40]
+[10,11,12,3,4,5,6,7,83]

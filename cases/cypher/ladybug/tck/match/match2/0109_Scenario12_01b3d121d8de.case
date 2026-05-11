@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario12.01b3d121d8de","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario12","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH r = (a)-[p]-(s)-[*1..2]-(b), (s)-[]-(t), (t), (t)-[r*1..2]-(b) RETURN r
+--- expected
+Binder exception: Bind relationship r to relationship with same name is not supported.

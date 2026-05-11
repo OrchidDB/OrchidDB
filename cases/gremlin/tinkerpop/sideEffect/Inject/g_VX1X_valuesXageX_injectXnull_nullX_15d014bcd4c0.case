@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Inject.g_VX1X_valuesXageX_injectXnull_nullX.15d014bcd4c0","language":"gremlin","ordered":false,"source":"sideEffect/Inject.feature","source_case":"g_VX1X_valuesXageX_injectXnull_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(xx1).values("age").inject(null, null)
+--- expected
+d[29].i
+null
+null

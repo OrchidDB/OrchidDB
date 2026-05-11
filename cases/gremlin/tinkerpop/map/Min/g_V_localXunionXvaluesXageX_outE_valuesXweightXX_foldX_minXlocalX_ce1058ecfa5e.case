@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Min.g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_minXlocalX.ce1058ecfa5e","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_minXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(union(values("age"), outE().values("weight")).fold()).min(local)
+--- expected
+d[0.4].d
+d[27].i
+d[0.4].d
+d[0.2].d

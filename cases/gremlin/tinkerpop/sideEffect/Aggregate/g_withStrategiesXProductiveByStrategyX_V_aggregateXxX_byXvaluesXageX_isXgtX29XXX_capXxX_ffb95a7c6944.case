@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withStrategiesXProductiveByStrategyX_V_aggregateXxX_byXvaluesXageX_isXgtX29XXX_capXxX.ffb95a7c6944","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_aggregateXxX_byXvaluesXageX_isXgtX29XXX_capXxX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().aggregate("x").by(__.values("age").is(P.gt(29))).cap("x")
+--- expected
+d[32].i
+d[35].i
+null
+null
+null
+null

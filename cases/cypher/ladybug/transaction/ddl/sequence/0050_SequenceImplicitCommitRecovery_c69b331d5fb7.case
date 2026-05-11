@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.sequence.SequenceImplicitCommitRecovery.c69b331d5fb7","language":"cypher","ordered":true,"source":"transaction/ddl/sequence.test","source_case":"SequenceImplicitCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN currval('id_sequence')
+--- expected
+0

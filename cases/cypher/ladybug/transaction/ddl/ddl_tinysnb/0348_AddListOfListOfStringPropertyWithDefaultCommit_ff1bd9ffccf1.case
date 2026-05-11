@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_tinysnb.AddListOfListOfStringPropertyWithDefaultCommit.ff1bd9ffccf1","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_tinysnb.test","source_case":"AddListOfListOfStringPropertyWithDefaultCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.random LIMIT 1
+--- expected
+[[142,51],[short,long,123],[long long long string,short short short short,short]]

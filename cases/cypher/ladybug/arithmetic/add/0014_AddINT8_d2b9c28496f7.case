@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddINT8.d2b9c28496f7","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-10, "INT8") + CAST(-123, "INT8")
+--- expected
+Overflow exception: Value -10 + -123 is not within INT8 range.

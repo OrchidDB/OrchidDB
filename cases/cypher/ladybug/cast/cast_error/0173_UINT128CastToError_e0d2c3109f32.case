@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.e0d2c3109f32","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[2, 4, 16, 256, 65536, 18446744073709551616, 340282366920938463463374607431768211456]", "UINT128[]")
+--- expected
+Conversion exception: Cast failed. Could not convert "340282366920938463463374607431768211456" to UINT128.

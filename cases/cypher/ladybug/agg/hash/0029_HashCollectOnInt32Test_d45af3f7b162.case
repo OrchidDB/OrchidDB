@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectOnInt32Test.d45af3f7b162","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectOnInt32Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN m.length, collect(m.name)
+--- expected
+126|[Sóló cón tu párejâ]
+2544|[The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie]
+298|[Roma]

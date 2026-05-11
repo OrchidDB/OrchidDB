@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.ZeroHop.8109dde977ee","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"ZeroHop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*0..0]->(b:person) RETURN properties(nodes(p),'fName'), rels(p), a.fName, b.fName, nodes(e), rels(e)
+--- expected
+[Alice]|[]|Alice|Alice|[]|[]
+[Bob]|[]|Bob|Bob|[]|[]
+[Carol]|[]|Carol|Carol|[]|[]
+[Dan]|[]|Dan|Dan|[]|[]
+[Elizabeth]|[]|Elizabeth|Elizabeth|[]|[]
+[Farooq]|[]|Farooq|Farooq|[]|[]
+[Greg]|[]|Greg|Greg|[]|[]
+[Hubert Blaine Wolfeschlegelsteinhausenbergerdorff]|[]|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|[]|[]

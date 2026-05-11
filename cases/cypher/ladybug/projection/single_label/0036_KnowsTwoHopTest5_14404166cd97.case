@@ -1,0 +1,23 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.KnowsTwoHopTest5.14404166cd97","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"KnowsTwoHopTest5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person) WHERE a.age < 31 RETURN a.age + b.age + c.age
+--- expected
+100
+100
+105
+110
+110
+70
+75
+80
+85
+85
+85
+85
+85
+95
+95
+95
+95
+95

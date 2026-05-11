@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_query_part.MultiQueryOneHopKnowsFilteredTest1.2b03cafa2f73","language":"cypher","ordered":true,"source":"filter/multi_query_part.test","source_case":"FilterMultiQuery","source_log":"MultiQueryOneHopKnowsFilteredTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.gender = 1 WITH a AS k MATCH (k)-[e:knows]->(b:person) WHERE b.gender = 2 RETURN COUNT(*)
+--- expected
+6

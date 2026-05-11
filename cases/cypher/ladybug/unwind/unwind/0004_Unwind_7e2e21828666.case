@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.Unwind.7e2e21828666","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND 1 AS a RETURN a
+--- expected
+Binder exception: 1 has data type INT64 but LIST was expected.

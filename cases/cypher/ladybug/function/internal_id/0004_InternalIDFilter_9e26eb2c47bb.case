@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.internal_id.InternalIDFilter.9e26eb2c47bb","language":"cypher","ordered":true,"source":"function/internal_id.test","source_case":"InternalIDCreation","source_log":"InternalIDFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (s) WHERE ID(s) < internal_id(0,4) RETURN label(s)
+--- expected
+person
+person
+person
+person

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Index.g_VX1X_valuesXageX_index_unfold_unfold.ce9c12e70163","language":"gremlin","ordered":false,"source":"map/Index.feature","source_case":"g_VX1X_valuesXageX_index_unfold_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").index().unfold().unfold()
+--- expected
+d[29].i
+d[0].i

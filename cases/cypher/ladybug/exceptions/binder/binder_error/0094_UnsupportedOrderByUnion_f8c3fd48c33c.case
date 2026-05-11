@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByUnion.f8c3fd48c33c","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByUnion","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) RETURN a ORDER BY a.grade
+--- expected
+Binder exception: Cannot order by a.grade. Order by UNION(credit BOOL, grade1 DOUBLE, grade2 INT64) is not supported.

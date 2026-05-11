@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario14.6b75e3ad2e35","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario14","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) MATCH r = (n)-[*]->() WHERE r.name = 'apa' RETURN r
+--- expected
+Binder exception: r has data type RECURSIVE_REL but (NODE,REL,STRUCT,ANY) was expected.

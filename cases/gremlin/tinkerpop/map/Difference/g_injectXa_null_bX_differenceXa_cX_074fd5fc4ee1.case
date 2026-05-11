@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Difference.g_injectXa_null_bX_differenceXa_cX.074fd5fc4ee1","language":"gremlin","ordered":false,"source":"map/Difference.feature","source_case":"g_injectXa_null_bX_differenceXa_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a",null,"b"]).difference(["a","c"])
+--- expected
+s[null,b]

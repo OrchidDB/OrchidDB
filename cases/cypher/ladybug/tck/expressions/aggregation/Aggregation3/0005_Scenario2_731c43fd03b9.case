@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation3.Scenario2.731c43fd03b9","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation3.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND range(1000000, 2000000) AS i WITH i LIMIT 3000 RETURN sum(i)
+--- expected
+3004498500

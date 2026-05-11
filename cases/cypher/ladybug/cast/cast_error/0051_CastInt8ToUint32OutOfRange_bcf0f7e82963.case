@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt8ToUint32OutOfRange.bcf0f7e82963","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt8ToUint32OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return to_uint32(to_int8(-110))
+--- expected
+Overflow exception: Value -110 is not within UINT32 range

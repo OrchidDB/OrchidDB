@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.DistinctRecursiveRel.f025ab9a7d6b","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"DistinctRecursiveRel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person), (a:person)-[t:knows*2..2]->(b:person) RETURN count(*), count(DISTINCT t)
+--- expected
+288|36

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfListOfIntsToListOfLists.2a0bcbbb5fda","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfListOfIntsToListOfLists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE size(p.courseScoresPerTerm) > 2 RETURN cast(p.courseScoresPerTerm, "STRING[]")
+--- expected
+[[7,4],[8,8],[9]]
+[[6],[7],[8]]
+[[7],[10],[6,7]]

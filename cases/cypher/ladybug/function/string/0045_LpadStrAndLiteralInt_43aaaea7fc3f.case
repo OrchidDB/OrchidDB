@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LpadStrAndLiteralInt.43aaaea7fc3f","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LpadStrAndLiteralInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN lpad(p.fName, 5, "<")
+--- expected
+Alice
+<<Bob
+Carol
+<<Dan
+Eliza
+Faroo
+<Greg
+Huber

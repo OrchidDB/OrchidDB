@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_over_large_string.OverLargeStringPK.f79f5a472a11","language":"cypher","ordered":true,"source":"copy/copy_over_large_string.test","source_case":"OverLargeStringPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.id
+--- expected
+<FILE>:over_large_string.csv

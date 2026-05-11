@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullTest.12bae4694936","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"TableTest","source_log":"IfNullTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tbl) RETURN coalesce(t.a, t.c)
+--- expected
+Binder exception: Expression t.c has data type STRING but expected INT32. Implicit cast is not supported.

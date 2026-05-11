@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.count_if.BoolTest.04d71fbd7391","language":"cypher","ordered":true,"source":"function/utility/count_if.test","source_case":"ConstantTests","source_log":"BoolTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count_if(false)
+--- expected
+0

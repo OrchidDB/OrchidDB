@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt8ToString.724d239cbbe9","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastInt8ToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) RETURN string(s.level)
+--- expected
+5
+120
+2

@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RightNegativeIdxStrAndLiteralInt.483b75fe7b68","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RightNegativeIdxStrAndLiteralInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN right(p.fName, -4)
+--- expected
+e
+l
+abeth
+oq
+rt Blaine Wolfeschlegelsteinhausenbergerdorff

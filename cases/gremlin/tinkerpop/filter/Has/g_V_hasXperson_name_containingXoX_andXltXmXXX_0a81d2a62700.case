@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXperson_name_containingXoX_andXltXmXXX.0a81d2a62700","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXperson_name_containingXoX_andXltXmXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person", "name", TextP.containing("o").and(P.lt("m")))
+--- expected
+v[josh]

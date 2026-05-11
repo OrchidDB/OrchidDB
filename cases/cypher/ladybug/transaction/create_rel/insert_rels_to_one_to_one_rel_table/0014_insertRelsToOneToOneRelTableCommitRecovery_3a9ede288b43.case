@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.insert_rels_to_one_to_one_rel_table.insertRelsToOneToOneRelTableCommitRecovery.3a9ede288b43","language":"cypher","ordered":true,"source":"transaction/create_rel/insert_rels_to_one_to_one_rel_table.test","source_case":"insertRelsToOneToOneRelTableCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:animal)-[e:hasOwner]->(:person) WHERE a.ID > 50 RETURN e.length, e.place
+--- expected
+43|
+50|long long string test
+|

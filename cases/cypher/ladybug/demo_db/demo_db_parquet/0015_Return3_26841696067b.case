@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Return3.26841696067b","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Return3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN a.name, a.age, e.since
+--- expected
+Adam|30|2020
+Adam|30|2020
+Karissa|40|2021
+Zhang|50|2022

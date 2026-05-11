@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind1.0e7f93d75d93","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind1","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1, 2, 3, 4] AS x RETURN x
+--- expected
+1
+2
+3
+4

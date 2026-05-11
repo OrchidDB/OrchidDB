@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short.IS3.f443f4a4759f","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short.test","source_case":"LDBCInteractiveShort","source_log":"IS3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person {id: 1129})-[r:knows]-(friend) RETURN friend.id AS personId, friend.firstName AS firstName, friend.lastName AS lastName, r.creationDate AS friendshipCreationDate ORDER BY friendshipCreationDate DESC, personId ASC
+--- expected
+32985348834375|Alfred|Hoffmann|20120803220915016
+30786325578932|Alexander|Hleb|20120529180010845
+28587302323722|Joao|Oliveira|20120415042428397
+26388279067534|Emperor of Brazil|Dom Pedro II|20120119192154433
+19791209301592|Michal|Kaminski|20110917214017976
+10995116278468|Anders|Andersson|20110102223928664
+2199023256437|Rudolf|Engel|20100413164422450

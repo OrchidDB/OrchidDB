@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXk_withinXcXX_valuesXkX.6ab362f0e424","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXk_withinXcXX_valuesXkX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("k", P.within("轉注", "✦", "♠")).values("k")
+--- graph_initializer
+g.addV().property("k", "轉注").addV().property("k", "✦").addV().property("k", "♠").addV().property("k", "A")
+--- expected
+轉注
+✦
+♠

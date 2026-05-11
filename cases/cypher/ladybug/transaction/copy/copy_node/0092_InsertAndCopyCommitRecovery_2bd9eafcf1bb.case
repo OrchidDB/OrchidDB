@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.InsertAndCopyCommitRecovery.2bd9eafcf1bb","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"InsertAndCopyCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN COUNT(*)
+--- expected
+6

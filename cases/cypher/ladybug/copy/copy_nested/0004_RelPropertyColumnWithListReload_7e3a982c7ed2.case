@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_nested.RelPropertyColumnWithListReload.7e3a982c7ed2","language":"cypher","ordered":true,"source":"copy/copy_nested.test","source_case":"RelPropertyColumnWithListReload","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[s:studyAt]-() RETURN s.places
+--- expected
+[anew,jsdnwusklklklwewsd]
+[anew,jsdnwusklklklwewsd]
+[awndsnjwejwen,isuhuwennjnuhuhuwewe]
+[awndsnjwejwen,isuhuwennjnuhuhuwewe]
+[wwAewsdndweusd,wek]
+[wwAewsdndweusd,wek]

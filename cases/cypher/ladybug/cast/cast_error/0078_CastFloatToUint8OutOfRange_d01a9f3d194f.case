@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastFloatToUint8OutOfRange.d01a9f3d194f","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastFloatToUint8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(-728.923, "uint8")
+--- expected
+Overflow exception: Value -728.923000 is not within UINT8 range

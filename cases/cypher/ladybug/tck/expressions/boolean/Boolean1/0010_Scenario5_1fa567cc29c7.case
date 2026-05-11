@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean1.Scenario5.1fa567cc29c7","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [true, false, null] AS a UNWIND [true, false, null] AS b WITH a, b WHERE a IS NULL OR b IS NULL RETURN a, b, (a AND b) IS NULL = (b AND a) IS NULL AS result
+--- expected
+true | null | true
+false | null | true
+null | true | true
+null | false | true
+null | null | true

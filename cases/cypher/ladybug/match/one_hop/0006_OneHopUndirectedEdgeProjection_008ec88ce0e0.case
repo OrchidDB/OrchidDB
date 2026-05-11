@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.one_hop.OneHopUndirectedEdgeProjection.008ec88ce0e0","language":"cypher","ordered":true,"source":"match/one_hop.test","source_case":"MatchOneHop","source_log":"OneHopUndirectedEdgeProjection","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:knows]-(b) WHERE a.ID = 0 AND b.ID = 2 WITH e RETURN e
+--- expected
+(0:0)-{_LABEL: knows, _ID: 3:0, date: 2021-06-30, meetTime: 1986-10-21 21:08:31.521, validInterval: 10 years 5 months 13:00:00.000024, comments: [rnme,m8sihsdnf2990nfiwf], summary: {locations: ['toronto','waterloo'], transfer: {day: 2021-01-02, amount: [100,200]}}, notes: 1, someMap: {a=b}}->(0:1)
+(0:1)-{_LABEL: knows, _ID: 3:3, date: 2021-06-30, meetTime: 1946-08-25 19:07:22, validInterval: 10 years 5 months 13:00:00.000024, comments: [2huh9y89fsfw23,23nsihufhw723], summary: {locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}, notes: 4}->(0:0)

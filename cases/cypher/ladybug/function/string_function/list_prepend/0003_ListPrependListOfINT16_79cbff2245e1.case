@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependListOfINT16.79cbff2245e1","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfINT16","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN list_prepend([s.length], s.length)
+--- expected
+[5,5]
+[55,55]
+[22,22]

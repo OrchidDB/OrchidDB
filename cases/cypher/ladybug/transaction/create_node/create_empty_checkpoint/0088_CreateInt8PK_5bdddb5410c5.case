@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateInt8PK.5bdddb5410c5","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateInt8PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+1
+127

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_V_hasLabelXpersonX_valuesXageX_order_fold_asStringXlocalX.5c21350e0fc6","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_V_hasLabelXpersonX_valuesXageX_order_fold_asStringXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").values("age").order().fold().asString(Scope.local)
+--- expected
+l[27,29,32,35]

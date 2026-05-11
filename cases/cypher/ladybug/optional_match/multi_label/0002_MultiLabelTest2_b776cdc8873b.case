@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.multi_label.MultiLabelTest2.b776cdc8873b","language":"cypher","ordered":true,"source":"optional_match/multi_label.test","source_case":"OptionalMatchMultiLabel","source_log":"MultiLabelTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation:person) OPTIONAL MATCH (a)-[:studyAt|:workAt]->(b:person:organisation) RETURN COUNT(*)
+--- expected
+11

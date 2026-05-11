@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapAllowDuplicateKey.82679c7f67ed","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapAllowDuplicateKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([1,1,2], ['Alice','Bob','Carol'])
+--- expected
+{1=Alice, 1=Bob, 2=Carol}

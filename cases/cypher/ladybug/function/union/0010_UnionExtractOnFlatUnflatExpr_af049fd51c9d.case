@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionExtractOnFlatUnflatExpr.af049fd51c9d","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionExtractOnFlatUnflatExpr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) return union_extract(union_value(age := p.age), 'age') AS a, union_extract(union_value(age := p1.age), 'age') AS b
+--- expected
+35|30
+35|45
+35|20
+30|35
+30|45
+30|20
+45|35
+45|30
+45|20
+20|35
+20|30
+20|45
+20|25
+20|40

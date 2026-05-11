@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapFloatKey.ab3f5a282f18","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapFloatKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(3.67, 'float'), cast(3.67, 'float'), cast(2, 'float')], [20, 34, 50])
+--- expected
+Runtime exception: Found duplicate key: 3.670000 in map.

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_tinysnb_checkpoint.InsertNodeWithBoolIntDoubleTest.9b4a42f063f7","language":"cypher","ordered":true,"source":"transaction/create_node/create_tinysnb_checkpoint.test","source_case":"InsertNodeWithBoolIntDoubleTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID > 8 RETURN a.ID, a.gender,a.isStudent, a.isWorker, a.age, a.eyeSight
+--- expected
+10|2|False|True|83|4.900000
+80|||True|22|1.100000
+9|2|False|False|40|4.900000

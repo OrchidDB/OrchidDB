@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.ScalarCaseExprMacro.2a2526e11410","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"ScalarCaseExprMacro","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return scalarCase(p.age)
+--- expected
+36
+25
+40
+15
+15
+20
+35
+78

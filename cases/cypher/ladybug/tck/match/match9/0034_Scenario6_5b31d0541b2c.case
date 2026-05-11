@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario6.5b31d0541b2c","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[r1]->()-[r2]->(b) WITH [r1, r2] AS rs, a AS first, b AS second LIMIT 1 MATCH (first)-[rs*]->(second) RETURN first, second
+--- expected
+{...}|{...}

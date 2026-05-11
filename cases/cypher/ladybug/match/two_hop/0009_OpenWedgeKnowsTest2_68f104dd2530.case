@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.two_hop.OpenWedgeKnowsTest2.68f104dd2530","language":"cypher","ordered":true,"source":"match/two_hop.test","source_case":"MatchTwoHop","source_log":"OpenWedgeKnowsTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:person)-[e1:knows]->(a:person)<-[e2:knows]-(c:person) RETURN COUNT(*)
+--- expected
+38

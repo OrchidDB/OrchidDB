@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_tinysnb.SETMultiLabelNodePropTest.e44067f03f7e","language":"cypher","ordered":true,"source":"dml_rel/set/set_tinysnb.test","source_case":"SETMultiLabelNodePropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e]->(b) WHERE a.ID = 0 RETURN id(e), e.date, e.year
+--- expected
+3:0|2022-10-10|
+3:1|2022-10-10|
+3:2|2022-10-10|
+5:0||2022
+9:0||
+11:0||
+13:0|2023-01-01|2023

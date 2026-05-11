@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddDECIMAL.5d09f8938fa6","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [500.0] AS A UNWIND [499.9] AS B RETURN CAST(A, 'DECIMAL(4, 1)') + CAST(B, 'DECIMAL(4, 1)')
+--- expected
+999.90

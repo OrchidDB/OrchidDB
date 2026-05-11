@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.DoubleTest.d130e4140d3c","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"DoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(cast(1, "DOUBLE"))
+--- expected
+DOUBLE

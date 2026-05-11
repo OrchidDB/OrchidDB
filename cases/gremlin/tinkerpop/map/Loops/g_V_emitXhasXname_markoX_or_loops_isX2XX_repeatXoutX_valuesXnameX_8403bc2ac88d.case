@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Loops.g_V_emitXhasXname_markoX_or_loops_isX2XX_repeatXoutX_valuesXnameX.8403bc2ac88d","language":"gremlin","ordered":false,"source":"map/Loops.feature","source_case":"g_V_emitXhasXname_markoX_or_loops_isX2XX_repeatXoutX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().emit(__.has("name", "marko").or().loops().is(2)).repeat(__.out()).values("name")
+--- expected
+marko
+ripple
+lop

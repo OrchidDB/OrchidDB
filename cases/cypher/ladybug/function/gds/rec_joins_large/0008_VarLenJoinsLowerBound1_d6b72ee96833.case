@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV gds-rec-joins-large","expected_kind":"rows","id":"cypher.ladybug.function.gds.rec_joins_large.VarLenJoinsLowerBound1.d6b72ee96833","language":"cypher","ordered":true,"source":"function/gds/rec_joins_large.test","source_case":"GDSLarge","source_log":"VarLenJoinsLowerBound1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person1)-[e:knows11 * 2..3]->(b) WHERE a.ID=0 RETURN length(e), count(*)
+--- expected
+2|100
+3|3000

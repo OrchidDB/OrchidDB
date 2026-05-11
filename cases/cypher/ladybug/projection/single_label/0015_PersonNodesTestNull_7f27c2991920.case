@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.PersonNodesTestNull.7f27c2991920","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"PersonNodesTestNull","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.fName STARTS WITH NULL, a.isWorker, a.isWorker AND null
+--- expected
+0||False|False
+10||True|
+2||False|False
+3||True|
+5||True|
+7||True|
+8||False|False
+9||False|False

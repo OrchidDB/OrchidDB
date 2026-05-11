@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.roundFunctionOnInt64Test.35dbef87f935","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"roundFunctionOnInt64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN round(a.orgCode, 2)
+--- expected
+325.000000
+824.000000
+934.000000

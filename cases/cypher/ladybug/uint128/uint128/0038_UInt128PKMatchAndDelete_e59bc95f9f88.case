@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.UInt128PKMatchAndDelete.e59bc95f9f88","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"UInt128PKMatchAndDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) RETURN z.*
+--- expected
+0|0
+11111|1
+22222|2
+15000|9876543210

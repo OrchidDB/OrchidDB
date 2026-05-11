@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffectCap.g_V_groupXaX_by_byXout_label_dedup_foldX_capXaX_selectXvaluesX_unfold_orderXlocalX.281224cef164","language":"gremlin","ordered":false,"source":"sideEffect/SideEffectCap.feature","source_case":"g_V_groupXaX_by_byXout_label_dedup_foldX_capXaX_selectXvaluesX_unfold_orderXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group("a").by().by(__.out().label().dedup().fold()).cap("a").select(Column.values).unfold().order(Scope.local)
+--- expected
+l[person,software]
+l[]
+l[]
+l[software]
+l[]
+l[software]

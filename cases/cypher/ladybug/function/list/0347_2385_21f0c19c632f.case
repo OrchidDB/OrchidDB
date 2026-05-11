@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.2385.21f0c19c632f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"2385","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [[23, 432], [], [NULL]]
+--- expected
+[[23,432],[],[]]

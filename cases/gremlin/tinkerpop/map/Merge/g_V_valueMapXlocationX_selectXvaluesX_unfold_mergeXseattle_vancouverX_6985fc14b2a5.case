@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.map.Merge.g_V_valueMapXlocationX_selectXvaluesX_unfold_mergeXseattle_vancouverX.6985fc14b2a5","language":"gremlin","ordered":false,"source":"map/Merge.feature","source_case":"g_V_valueMapXlocationX_selectXvaluesX_unfold_mergeXseattle_vancouverX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("location").select(values).unfold().merge(["seattle","vancouver"])
+--- expected
+s[san diego,santa cruz,brussels,santa fe,seattle,vancouver]
+s[centreville,dulles,purcellville,seattle,vancouver]
+s[bremen,baltimore,oakland,seattle,vancouver]
+s[spremberg,kaiserslautern,aachen,seattle,vancouver]

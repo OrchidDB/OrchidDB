@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXd_0knows_a__d_hasXname_vadasX__a_knows_b__b_created_cX.59298b33a187","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXd_0knows_a__d_hasXname_vadasX__a_knows_b__b_created_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("d").in("knows").as("a"),
+__.as("d").has("name", "vadas"),
+__.as("a").out("knows").as("b"),
+__.as("b").out("created").as("c"))
+--- expected
+m[{"a":"v[marko]","b":"v[josh]","c":"v[ripple]","d":"v[vadas]"}]
+m[{"a":"v[marko]","b":"v[josh]","c":"v[lop]","d":"v[vadas]"}]

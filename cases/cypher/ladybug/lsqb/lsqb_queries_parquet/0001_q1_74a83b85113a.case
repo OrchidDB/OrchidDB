@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(lsqb-sf01)","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries_parquet.q1.74a83b85113a","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries_parquet.test","source_case":"LSQBTestParquet","source_log":"q1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Country)<-[:City_isPartOf_Country]-(:City)<-[:Person_isLocatedIn_City]-(:Person)<-[:Forum_hasMember_Person]-(:Forum)-[:Forum_containerOf_Post]->(:Post)<-[Comment_replyOf_Post]-(:Comment)-[:Comment_hasTag_Tag]->(:Tag)-[:Tag_hasType_TagClass]->(:TagClass) RETURN count(*) as count
+--- expected
+8773828

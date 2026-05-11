@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Concat.g_injectXnull_aX_concat_Xnull_bX.4b05fa757beb","language":"gremlin","ordered":false,"source":"map/Concat.feature","source_case":"g_injectXnull_aX_concat_Xnull_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(null, "a").concat(null, "b")
+--- expected
+b
+ab

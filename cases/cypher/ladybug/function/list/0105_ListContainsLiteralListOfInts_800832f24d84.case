@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsLiteralListOfInts.800832f24d84","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsLiteralListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN array_has([7,6,1], o.ID)
+--- expected
+True
+False
+True

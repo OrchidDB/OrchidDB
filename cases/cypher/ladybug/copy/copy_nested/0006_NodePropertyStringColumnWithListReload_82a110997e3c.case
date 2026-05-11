@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_nested.NodePropertyStringColumnWithListReload.82a110997e3c","language":"cypher","ordered":true,"source":"copy/copy_nested.test","source_case":"NodePropertyStringColumnWithListReload","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.usedNames
+--- expected
+[Ad,De,Hi,Kye,Orlan]
+[Aida]
+[Bobby]
+[Carmen,Fred]
+[Ein]
+[Fesdwe]
+[Grad]
+[Wolfeschlegelstein,Daniel]

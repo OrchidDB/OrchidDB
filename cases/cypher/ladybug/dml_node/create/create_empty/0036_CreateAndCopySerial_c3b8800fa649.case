@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateAndCopySerial.c3b8800fa649","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateAndCopySerial","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) RETURN COUNT(*)
+--- expected
+151043

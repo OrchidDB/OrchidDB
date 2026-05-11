@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.two_hop.TwoHopKnowsFilteredTest.b545e7a0acb0","language":"cypher","ordered":true,"source":"filter/two_hop.test","source_case":"FilterTwoHop","source_log":"TwoHopKnowsFilteredTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person {age:a.age}) WHERE a.age = c.age RETURN COUNT(*)
+--- expected
+12

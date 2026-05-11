@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXdedup_bothX_timesX2X.3382f5e21c9f","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXdedup_bothX_timesX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.dedup().both()).times(2)
+--- expected
+

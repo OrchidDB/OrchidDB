@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueBoolean.ab3e3bfecdba","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueBoolean","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique([true, true, NULL, false, false])
+--- expected
+2

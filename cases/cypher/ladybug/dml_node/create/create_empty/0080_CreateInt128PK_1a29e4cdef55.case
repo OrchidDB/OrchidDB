@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateInt128PK.1a29e4cdef55","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateInt128PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WHERE t.id = 170141183460469231731687303715884105727 RETURN t.id
+--- expected
+170141183460469231731687303715884105727

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListConcatListOfStrings.29ec4bbfab47","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListConcatListOfStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_concat(a.usedNames, [a.fName])
+--- expected
+[Aida,Alice]
+[Bobby,Bob]
+[Carmen,Fred,Carol]
+[Wolfeschlegelstein,Daniel,Dan]
+[Ein,Elizabeth]
+[Fesdwe,Farooq]
+[Grad,Greg]
+[Ad,De,Hi,Kye,Orlan,Hubert Blaine Wolfeschlegelsteinhausenbergerdorff]

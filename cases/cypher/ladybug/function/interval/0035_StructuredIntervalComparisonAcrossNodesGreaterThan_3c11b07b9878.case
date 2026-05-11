@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalComparisonAcrossNodesGreaterThan.3c11b07b9878","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalComparisonAcrossNodesGreaterThan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE a.lastJobDuration > b.lastJobDuration RETURN COUNT(*)
+--- expected
+6

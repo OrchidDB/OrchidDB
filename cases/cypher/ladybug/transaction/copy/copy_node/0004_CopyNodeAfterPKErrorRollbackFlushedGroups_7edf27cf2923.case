@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyNodeAfterPKErrorRollbackFlushedGroups.7edf27cf2923","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyNodeAfterPKErrorRollbackFlushedGroups","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment) WHERE c.ID = 962073046352 RETURN c.locationIP
+--- expected
+36.95.74.186

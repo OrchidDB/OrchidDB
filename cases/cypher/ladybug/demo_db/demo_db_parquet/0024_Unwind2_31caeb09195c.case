@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Unwind2.31caeb09195c","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Unwind2","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [["Amy"], ["Bob", "Carol"]] AS x RETURN x
+--- expected
+[Amy]
+[Bob,Carol]

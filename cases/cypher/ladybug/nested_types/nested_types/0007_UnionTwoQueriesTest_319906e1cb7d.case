@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionTwoQueriesTest.319906e1cb7d","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"Union","source_log":"UnionTwoQueriesTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age UNION MATCH (p:person) RETURN p.age
+--- expected
+20
+25
+30
+35
+40
+45
+83

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.FractionalCheck.e2fca33d84dc","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"FractionalCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("1.5 millennium")
+--- expected
+1500 years

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.IntervalFunctionEqualityComparison.1a2436fc68ef","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"IntervalFunctionEqualityComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.lastJobDuration = interval('3 years 2 days 13 hours 2 minutes') RETURN COUNT(*)
+--- expected
+2

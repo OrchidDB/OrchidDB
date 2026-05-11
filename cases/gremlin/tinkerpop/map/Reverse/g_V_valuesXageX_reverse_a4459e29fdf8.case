@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Reverse.g_V_valuesXageX_reverse.a4459e29fdf8","language":"gremlin","ordered":false,"source":"map/Reverse.feature","source_case":"g_V_valuesXageX_reverse","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").reverse()
+--- expected
+d[29].i
+d[27].i
+d[32].i
+d[35].i

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampCenturyFuncTest.8401be2774d5","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampCenturyFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN century(p.registerTime)
+--- expected
+21
+21
+20
+21
+20
+20
+20
+21

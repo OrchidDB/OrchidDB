@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation3.Scenario1.752f87689e2b","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation3.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN n.name, sum(n.num)
+--- expected
+a|75

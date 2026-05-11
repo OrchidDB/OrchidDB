@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.INT128CastToError.3c595a0d6fdf","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"INT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_UINT64(TO_INT128(184467440737095516151))
+--- expected
+Overflow exception: Value 184467440737095516151 is not within UINT64 range

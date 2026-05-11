@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFloatToUInt.256642f2596b","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastFloatToUInt","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_uint8(to_float(1)), to_uint16(to_float(2)), to_uint32(to_float(3)), to_uint64(to_float(4)), to_uint128(to_float(5))
+--- expected
+1|2|3|4|5

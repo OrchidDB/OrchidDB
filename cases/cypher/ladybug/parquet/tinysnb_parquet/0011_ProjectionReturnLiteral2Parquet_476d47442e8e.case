@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.ProjectionReturnLiteral2Parquet.476d47442e8e","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"ProjectionReturnLiteral2Parquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN 1 + 1, label(a) LIMIT 2
+--- expected
+2|person
+2|person

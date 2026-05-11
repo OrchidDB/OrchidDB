@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.semantic.SemanticTest.bc8650c02cac","language":"cypher","ordered":true,"source":"recursive_join/semantic.test","source_case":"SemanticTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*2..2]->(b:person) WHERE a.ID = 0 WITH p AS newP RETURN COUNT(*)
+--- expected
+9

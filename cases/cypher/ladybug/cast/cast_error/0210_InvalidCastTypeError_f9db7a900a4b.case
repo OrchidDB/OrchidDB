@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidCastTypeError.f9db7a900a4b","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidCastTypeError","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt*1..3]->(:organisation) return cast(e, "INT64")
+--- expected
+Conversion exception: Unsupported casting function from RECURSIVE_REL to INT64.

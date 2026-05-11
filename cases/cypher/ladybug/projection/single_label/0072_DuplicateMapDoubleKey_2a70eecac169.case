@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapDoubleKey.2a70eecac169","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapDoubleKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(2.75, 'double'), cast(3.2, 'double'), cast(3.2, 'double')], [20, 34, 50])
+--- expected
+Runtime exception: Found duplicate key: 3.200000 in map.

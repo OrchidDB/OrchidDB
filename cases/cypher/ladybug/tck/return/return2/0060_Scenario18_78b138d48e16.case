@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario18.78b138d48e16","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario18","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN foo(a)
+--- expected
+Catalog exception: function FOO does not exist.

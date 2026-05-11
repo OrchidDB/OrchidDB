@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseIntTest.c0f656bbaa41","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseIntTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 6 RETURN CASE a.age WHEN 35 THEN a.age + 1 ELSE 0 END
+--- expected
+36
+0
+0
+0

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.PersonNodesTestNestedList.780fedcf6955","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"PersonNodesTestNestedList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.courseScoresPerTerm
+--- expected
+[[10,8],[6,7,8]]
+[[8,9],[9,10]]
+[[8,10]]
+[[7,4],[8,8],[9]]
+[[6],[7],[8]]
+[[8]]
+[[10]]
+[[7],[10],[6,7]]

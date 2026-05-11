@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_ldbc_sf01.DeleteLikeComment1.71db06ef53f4","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_ldbc_sf01.test","source_case":"DeleteLikeComment1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person)-[e:likes_Comment]->(m:Comment) WHERE n.id=6597069767457 RETURN COUNT(*)
+--- expected
+66

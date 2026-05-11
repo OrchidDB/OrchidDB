@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertMixedRelTest.8eb5c92d2cac","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertMixedRelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:studyAt]->(c:organisation) RETURN COUNT(*)
+--- expected
+9

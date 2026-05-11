@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.PageRank.g_V_pageRank_order_byXpageRank_descX_name_limitX2X.efc6abfbc6d7","language":"gremlin","ordered":true,"source":"map/PageRank.feature","source_case":"g_V_pageRank_order_byXpageRank_descX_name_limitX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().pageRank().order().by("gremlin.pageRankVertexProgram.pageRank", Order.desc).values("name").limit(2)
+--- expected
+lop
+ripple

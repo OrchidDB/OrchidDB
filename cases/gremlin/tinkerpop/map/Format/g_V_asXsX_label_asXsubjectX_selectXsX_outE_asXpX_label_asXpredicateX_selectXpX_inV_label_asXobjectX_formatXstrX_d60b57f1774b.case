@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Format.g_V_asXsX_label_asXsubjectX_selectXsX_outE_asXpX_label_asXpredicateX_selectXpX_inV_label_asXobjectX_formatXstrX.d60b57f1774b","language":"gremlin","ordered":false,"source":"map/Format.feature","source_case":"g_V_asXsX_label_asXsubjectX_selectXsX_outE_asXpX_label_asXpredicateX_selectXpX_inV_label_asXobjectX_formatXstrX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("s").label().as("subject").
+select("s").outE().as("p").label().as("predicate").
+select("p").inV().label().as("object").format("%{subject} %{predicate} %{object}")
+--- expected
+person created software
+person knows person
+person knows person
+person created software
+person created software
+person created software

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyDECIMAL.24338095bcc2","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [500.1] AS A UNWIND [2.0] AS B RETURN CAST(CAST(A, 'DECIMAL(4, 1)') * CAST(B, 'DECIMAL(4, 1)'), 'DECIMAL(4, 1)')
+--- expected
+Overflow exception: Decimal Cast Failed: input 1000.20 is not in range of DECIMAL(4, 1)

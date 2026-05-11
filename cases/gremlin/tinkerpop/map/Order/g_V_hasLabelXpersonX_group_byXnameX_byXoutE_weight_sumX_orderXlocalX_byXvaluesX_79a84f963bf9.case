@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_hasLabelXpersonX_group_byXnameX_byXoutE_weight_sumX_orderXlocalX_byXvaluesX.79a84f963bf9","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_hasLabelXpersonX_group_byXnameX_byXoutE_weight_sumX_orderXlocalX_byXvaluesX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").group().by("name").by(__.outE().values("weight").sum()).order(Scope.local).by(Column.values)
+--- expected
+m[{"peter":"d[0.2].d","josh":"d[1.4].d","marko":"d[1.9].d"}]

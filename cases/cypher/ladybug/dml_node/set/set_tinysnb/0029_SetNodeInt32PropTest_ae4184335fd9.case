@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetNodeInt32PropTest.ae4184335fd9","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetNodeInt32PropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) WHERE a.name='Roma' RETURN a.length
+--- expected
+3

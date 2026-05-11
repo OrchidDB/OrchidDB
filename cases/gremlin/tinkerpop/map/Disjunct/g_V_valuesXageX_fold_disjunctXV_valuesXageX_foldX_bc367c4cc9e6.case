@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Disjunct.g_V_valuesXageX_fold_disjunctXV_valuesXageX_foldX.bc367c4cc9e6","language":"gremlin","ordered":false,"source":"map/Disjunct.feature","source_case":"g_V_valuesXageX_fold_disjunctXV_valuesXageX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").fold().disjunct(__.V().values("age").fold())
+--- expected
+s[]

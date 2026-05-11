@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromDOUBLE.bb3e8362208c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromDOUBLE","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID=0 RETURN cast(p.eyeSight, "uint8"), cast(p.eyeSight, "uint16"), cast(p.eyeSight, "uint32"), cast(p.eyeSight, "int32"), cast(p.eyeSight, "int64"), cast(p.eyeSight, "int128"), cast(p.eyeSight, "float"), cast(p.eyeSight, "double")
+--- expected
+5|5|5|5|5|5|5.000000|5.000000

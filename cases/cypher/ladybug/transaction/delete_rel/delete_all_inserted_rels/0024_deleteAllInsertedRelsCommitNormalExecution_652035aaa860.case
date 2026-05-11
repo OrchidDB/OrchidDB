@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_all_inserted_rels.deleteAllInsertedRelsCommitNormalExecution.652035aaa860","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_all_inserted_rels.test","source_case":"deleteAllInsertedRelsCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows]->(p1:person) WHERE p1.ID >= 40 AND p.ID = 1 RETURN e.length
+--- expected
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50

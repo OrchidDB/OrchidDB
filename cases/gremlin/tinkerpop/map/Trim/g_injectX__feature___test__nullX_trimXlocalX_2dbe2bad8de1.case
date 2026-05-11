@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Trim.g_injectX__feature___test__nullX_trimXlocalX.2dbe2bad8de1","language":"gremlin","ordered":false,"source":"map/Trim.feature","source_case":"g_injectX__feature___test__nullX_trimXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["  feature  ", " one test ", null, "", " ", "　abc", "abc　", "　abc　", "　　"]).trim(Scope.local)
+--- expected
+l[str[feature],str[one test],null,str[],str[],str[abc],str[abc],str[abc],str[]]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT128.32880499a160","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-170141183460469231731687303715884105727, "INT128") * CAST(-41183460469231731687303715884105727, "INT128")
+--- expected
+Overflow exception: INT128 is out of range: cannot multiply.

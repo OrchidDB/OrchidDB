@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.blob.ReturnDecodeUTF8String.60834dbdadd4","language":"cypher","ordered":true,"source":"function/blob.test","source_case":"FunctionBlob","source_log":"ReturnDecodeUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN decode(BLOB('decode this utf-8 char: \\xC3\\xBC'))
+--- expected
+decode this utf-8 char: ü

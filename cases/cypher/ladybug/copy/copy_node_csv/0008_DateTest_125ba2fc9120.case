@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.DateTest.125ba2fc9120","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"DateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.id = 25531 RETURN row.*
+--- expected
+25531|77|28.417543|False|1895-03-13|1895-03-13 04:31:22|XB|[9,66,0,15]

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXout_repeatXout_order_byXname_descXX_timesX1XX_timesX1X_limitX1X_path_byXnameX.4824c01bac82","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXout_repeatXout_order_byXname_descXX_timesX1XX_timesX1X_limitX1X_path_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.out().repeat(__.out().order().by("name",desc)).times(1)).times(1).limit(1).path().by("name")
+--- expected
+marko
+josh
+ripple

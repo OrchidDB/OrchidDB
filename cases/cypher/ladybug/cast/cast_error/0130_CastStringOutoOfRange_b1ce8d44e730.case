@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.b1ce8d44e730","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("fal", "boolean")
+--- expected
+Conversion exception: Value fal is not a valid boolean

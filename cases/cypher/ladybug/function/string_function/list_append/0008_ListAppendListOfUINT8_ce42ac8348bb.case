@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_append.ListAppendListOfUINT8.ce42ac8348bb","language":"cypher","ordered":true,"source":"function/string_function/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfUINT8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN list_append([s.ulevel], s.ulevel)
+--- expected
+[250,250]
+[220,220]
+[12,12]

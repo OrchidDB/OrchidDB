@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_VX1X_asXaX_outXknowsX_asXbX_selectXa_bX_byXnameX.de93420f7480","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_VX1X_asXaX_outXknowsX_asXbX_selectXa_bX_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).as("a").out("knows").as("b").
+select("a", "b").by("name")
+--- expected
+m[{"a": "marko", "b": "vadas"}]
+m[{"a": "marko", "b": "josh"}]

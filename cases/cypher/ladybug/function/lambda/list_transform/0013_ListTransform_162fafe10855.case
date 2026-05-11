@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.162fafe10855","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TRANSFORM(['LBUG', 'DUCKDB', 'NEO4J'], x-> concat(x, 'test'))
+--- expected
+[LBUGtest,DUCKDBtest,NEO4Jtest]

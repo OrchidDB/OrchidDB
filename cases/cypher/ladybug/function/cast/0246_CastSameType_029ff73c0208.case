@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastSameType.029ff73c0208","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastSameType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(false, "BOOL") as bar
+--- expected
+False

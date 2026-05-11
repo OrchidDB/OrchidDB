@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpSplitToArrayLongString.26cce6f0b2be","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpSplitToArrayLongString","status":"imported","suite":"ladybug","version":1}
+--- query
+Return regexp_split_to_array('hello world, this is a very long string, I want to split it based on commas and space', ',? ')
+--- expected
+[hello,world,this,is,a,very,long,string,I,want,to,split,it,based,on,commas,and,space]

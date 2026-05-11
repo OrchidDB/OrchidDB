@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsSelect.3171fc9a5350","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsSelect","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE list_contains(a.courseScoresPerTerm, [8]) RETURN a.ID
+--- expected
+7
+8

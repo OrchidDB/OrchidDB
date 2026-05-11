@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastDateToString.ab1abe6a55bf","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastDateToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.birthdate, "string")
+--- expected
+1900-01-01
+1900-01-01
+1940-06-22
+1950-07-23
+1980-10-26
+1980-10-26
+1980-10-26
+1990-11-27

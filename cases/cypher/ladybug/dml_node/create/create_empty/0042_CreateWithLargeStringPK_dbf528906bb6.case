@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateWithLargeStringPK.dbf528906bb6","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateWithLargeStringPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+fe38f9dc-f761-4184-8b8b
+foobar-ewe-j323-8nd*-ewew

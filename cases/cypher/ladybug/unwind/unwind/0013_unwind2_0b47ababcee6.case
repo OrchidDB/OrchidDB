@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind2.0b47ababcee6","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind2","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [[1, 2, 3], [2, 3, 4], [3, 4, 1], [4, 1, 2]] AS x RETURN x
+--- expected
+[1,2,3]
+[2,3,4]
+[3,4,1]
+[4,1,2]

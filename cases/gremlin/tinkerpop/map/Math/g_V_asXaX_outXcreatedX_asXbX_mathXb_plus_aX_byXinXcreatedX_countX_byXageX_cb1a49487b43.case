@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Math.g_V_asXaX_outXcreatedX_asXbX_mathXb_plus_aX_byXinXcreatedX_countX_byXageX.cb1a49487b43","language":"gremlin","ordered":false,"source":"map/Math.feature","source_case":"g_V_asXaX_outXcreatedX_asXbX_mathXb_plus_aX_byXinXcreatedX_countX_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out("created").as("b").math("b + a").by(__.in("created").count()).by("age")
+--- expected
+d[32.0].d
+d[33.0].d
+d[35.0].d
+d[38.0].d

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.BasicUsageCheck.5b829634cada","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"BasicUsageCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("100000000000000000days")
+--- expected
+Overflow exception: Value 100000000000000000 is not within INT32 range

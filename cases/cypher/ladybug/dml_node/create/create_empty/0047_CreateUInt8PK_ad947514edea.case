@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateUInt8PK.ad947514edea","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateUInt8PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WHERE t.id = 255 RETURN COUNT(*)
+--- expected
+1

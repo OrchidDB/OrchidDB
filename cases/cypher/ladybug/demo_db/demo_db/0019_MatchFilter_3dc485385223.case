@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchFilter.3dc485385223","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows {since: 2020}]->(b:User {name: "Zhang"}) RETURN a, e.since, b.name
+--- expected
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|2020|Zhang

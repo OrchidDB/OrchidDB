@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_withStrategiesXProductiveByStrategyX_V_groupCount_byXageX.e85a96e95ef4","language":"gremlin","ordered":false,"source":"sideEffect/GroupCount.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_groupCount_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().groupCount().by("age")
+--- expected
+m[{"null":"d[2].l", "d[27].i":"d[1].l", "d[29].i":"d[1].l", "d[32].i":"d[1].l", "d[35].i":"d[1].l"}]

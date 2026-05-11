@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_empty.SetRelStringColumnHighDuplication.39f015e1440e","language":"cypher","ordered":true,"source":"dml_rel/set/set_empty.test","source_case":"SetRelStringColumnHighDuplication","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (:nodes)-[r:rels]->(p:nodes) where p.id = 150000 or p.id = 150001 return p.id, r.str
+--- expected
+150000|someotherstr
+150001|a somewhat long string1500

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_both_hasLabelXpersonX_order_byXage_descX_name.fc9e308f6613","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_both_hasLabelXpersonX_order_byXage_descX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().both().hasLabel("person").order().by("age", Order.desc).values("name")
+--- expected
+peter
+josh
+josh
+josh
+marko
+marko
+marko
+vadas

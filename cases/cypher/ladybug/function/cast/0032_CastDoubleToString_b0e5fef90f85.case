@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastDoubleToString.b0e5fef90f85","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastDoubleToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.eyeSight, "string")
+--- expected
+5.000000
+5.100000
+5.000000
+4.800000
+4.700000
+4.500000
+4.900000
+4.900000

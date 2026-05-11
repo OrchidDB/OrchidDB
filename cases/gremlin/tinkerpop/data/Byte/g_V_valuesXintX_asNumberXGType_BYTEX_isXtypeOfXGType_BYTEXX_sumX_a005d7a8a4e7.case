@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Byte.g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_sumX.a005d7a8a4e7","language":"gremlin","ordered":false,"source":"data/Byte.feature","source_case":"g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_sumX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BYTE).is(P.typeOf(GType.BYTE)).sum()
+--- graph_initializer
+g.addV("data").property("int", 1).
+  addV("data").property("int", 2).
+  addV("data").property("int", 3)
+--- expected
+d[6].b

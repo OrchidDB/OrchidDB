@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_random_int.seed_seed.2e43fd7bfd28","language":"cypher","ordered":true,"source":"dml_node/create/create_random_int.test","source_case":"FixedSeedRandomIntInsertions","source_log":"seed: ${seed}","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN sum(t.prop)
+--- expected
+502790265

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.BasicSkipLimitTest.0ca0d86810fd","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"BasicSkipLimitTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName SKIP 1 LIMIT 2
+--- expected
+Bob
+Carol

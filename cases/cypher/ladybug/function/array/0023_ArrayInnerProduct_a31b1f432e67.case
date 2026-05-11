@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayInnerProduct.a31b1f432e67","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayInnerProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:meets]->(p1:person) return round(ARRAY_INNER_PRODUCT(e.location, array_value(to_float(3.4), to_float(2.7))),2)
+--- expected
+14.870000
+15.540000
+21.180000
+24.240000
+31.780000
+35.200000
+36.150000

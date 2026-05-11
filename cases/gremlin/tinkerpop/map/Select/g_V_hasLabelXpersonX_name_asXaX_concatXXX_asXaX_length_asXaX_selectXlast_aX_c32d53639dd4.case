@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_hasLabelXpersonX_name_asXaX_concatXXX_asXaX_length_asXaX_selectXlast_aX.c32d53639dd4","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_hasLabelXpersonX_name_asXaX_concatXXX_asXaX_length_asXaX_selectXlast_aX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").values("name").as("a").concat("X").as("a").length().as("a").
+select(Pop.last, "a")
+--- expected
+d[6].i
+d[6].i
+d[5].i
+d[6].i

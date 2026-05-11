@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.IntervalTest.3ceeeed755d2","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"IntervalTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE 0 <= row.doubleColumn AND row.doubleColumn <= 10 AND 0 <= row.int64Column AND row.int64Column <= 10 RETURN count(*)
+--- expected
+546

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.83987e716b93","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnion","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Person) RETURN CAST(p.id AS UNION(a FLOAT, b STRING))
+--- expected
+5.000000
+7.000000

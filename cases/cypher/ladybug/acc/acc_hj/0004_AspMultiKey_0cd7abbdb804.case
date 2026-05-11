@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.acc.acc_hj.AspMultiKey.0cd7abbdb804","language":"cypher","ordered":true,"source":"acc/acc_hj.test","source_case":"Acc","source_log":"AspMultiKey","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person), (a)-[e3:knows]->(c) WHERE a.fName='Alice' RETURN b.fName, c.fName
+--- expected
+Bob|Carol
+Bob|Dan
+Carol|Bob
+Carol|Dan
+Dan|Bob
+Dan|Carol

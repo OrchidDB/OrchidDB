@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario3.e42a3768ee13","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:`Single`) OPTIONAL MATCH (n)-[r]-(m) WHERE m.num = 42 RETURN m
+--- expected
+{_ID: 1:0, _LABEL: A, ID: 0, num: 42}

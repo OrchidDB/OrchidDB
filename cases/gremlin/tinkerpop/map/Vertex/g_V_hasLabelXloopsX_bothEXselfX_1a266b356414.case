@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"sink","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_V_hasLabelXloopsX_bothEXselfX.1a266b356414","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_V_hasLabelXloopsX_bothEXselfX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("loops").bothE("self")
+--- expected
+e[loop-self->loop]
+e[loop-self->loop]

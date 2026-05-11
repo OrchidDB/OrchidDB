@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Map.g_V_valuesXmapX_isXtypeOfXGType_MAPXX_foldX.09bc7745d2c2","language":"gremlin","ordered":false,"source":"data/Map.feature","source_case":"g_V_valuesXmapX_isXtypeOfXGType_MAPXX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("map").is(P.typeOf(GType.MAP)).fold()
+--- graph_initializer
+g.addV("data").property("map", ["a": 1]).
+  addV("data").property("map", ["b": 2, "c": 3])
+--- expected
+m[{"a":"d[1].i"}]
+m[{"b":"d[2].i","c":"d[3].i"}]

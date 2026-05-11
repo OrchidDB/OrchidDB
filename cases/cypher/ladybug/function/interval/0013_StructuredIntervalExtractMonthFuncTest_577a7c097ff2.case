@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalExtractMonthFuncTest.577a7c097ff2","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalExtractMonthFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("month", p.lastJobDuration)
+--- expected
+0
+5
+0
+5
+0
+0
+5
+0

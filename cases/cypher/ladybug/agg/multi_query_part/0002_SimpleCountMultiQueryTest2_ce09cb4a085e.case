@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.SimpleCountMultiQueryTest2.ce09cb4a085e","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"SimpleCountMultiQueryTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WITH p AS f RETURN COUNT(f)
+--- expected
+8

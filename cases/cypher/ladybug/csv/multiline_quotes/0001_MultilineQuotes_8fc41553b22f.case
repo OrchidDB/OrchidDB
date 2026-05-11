@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV csv-multiline-quote-tests","expected_kind":"rows","id":"cypher.ladybug.csv.multiline_quotes.MultilineQuotes.8fc41553b22f","language":"cypher","ordered":true,"source":"csv/multiline_quotes.test","source_case":"MultilineQuotes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:basic) RETURN COUNT(*)
+--- expected
+1

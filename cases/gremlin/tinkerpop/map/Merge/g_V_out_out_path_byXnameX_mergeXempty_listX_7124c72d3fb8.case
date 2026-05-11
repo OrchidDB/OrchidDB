@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Merge.g_V_out_out_path_byXnameX_mergeXempty_listX.7124c72d3fb8","language":"gremlin","ordered":false,"source":"map/Merge.feature","source_case":"g_V_out_out_path_byXnameX_mergeXempty_listX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().out().path().by("name").merge([])
+--- expected
+s[marko,josh,ripple]
+s[marko,josh,lop]

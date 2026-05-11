@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.With2.38edd01456c8","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"With2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WITH a ORDER BY a.age DESC LIMIT 1 MATCH (a)-[:Follows]->(b:User) RETURN *
+--- expected
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}|{_ID: 0:3, _LABEL: User, name: Noura, age: 25}

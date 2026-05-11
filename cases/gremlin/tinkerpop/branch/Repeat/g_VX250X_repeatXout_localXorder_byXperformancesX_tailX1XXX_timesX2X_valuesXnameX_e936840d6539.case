@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX250X_repeatXout_localXorder_byXperformancesX_tailX1XXX_timesX2X_valuesXnameX.e936840d6539","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX250X_repeatXout_localXorder_byXperformancesX_tailX1XXX_timesX2X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid250).repeat(__.out().local(__.order().by("performances").tail(1))).times(2).values("name")
+--- expected
+STUCK INSIDE OF MOBILE
+STUCK INSIDE OF MOBILE
+WICKED MESSENGER
+TANGLED UP IN BLUE
+SHELTER FROM THE STORM
+RAINY DAY WOMAN
+CUMBERLAND BLUES
+WHEN PUSH COMES TO SHOVE
+JOHN BROWN
+SIMPLE TWIST OF FATE
+BABY BLUE

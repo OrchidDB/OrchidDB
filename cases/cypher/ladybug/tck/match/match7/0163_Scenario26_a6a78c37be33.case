@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario26.a6a78c37be33","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario26","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A), (b:B) OPTIONAL MATCH (a)-->(x) OPTIONAL MATCH (x)-[r]->(b) RETURN x, r
+--- expected
+{_ID: 3:0, _LABEL: C, ID: 0}|

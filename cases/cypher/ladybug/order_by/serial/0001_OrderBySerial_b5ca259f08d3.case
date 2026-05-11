@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.order_by.serial.OrderBySerial.b5ca259f08d3","language":"cypher","ordered":true,"source":"order_by/serial.test","source_case":"OrderBySerial","source_log":"OrderBySerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.ID ORDER BY p.ID DESC
+--- expected
+7
+6
+5
+4
+3
+2
+1
+0

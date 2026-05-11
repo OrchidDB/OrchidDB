@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectINT32Test.e758d0f00ac7","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectINT32Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN collect(m.length)
+--- expected
+[126,2544,298]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_tinysnb.AddListOfStructPropertyWithDefaultCommitRecovery.20283470221e","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_tinysnb.test","source_case":"AddListOfStructPropertyWithDefaultCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.random limit 1
+--- expected
+[{revenue: 144, ages: [3.200000,7.200000]}]

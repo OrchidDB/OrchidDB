@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.multi_query_part.CrossProductTest.2ee2a3ac52fd","language":"cypher","ordered":true,"source":"projection/multi_query_part.test","source_case":"ProjectionMultiQuery","source_log":"CrossProductTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH a.age AS s, a.fName as n MATCH (b:person) WHERE s=b.age RETURN n,b.fName,s
+--- expected
+Alice|Alice|35
+Bob|Bob|30
+Carol|Carol|45
+Dan|Dan|20
+Dan|Elizabeth|20
+Elizabeth|Dan|20
+Elizabeth|Elizabeth|20
+Farooq|Farooq|25
+Greg|Greg|40
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|83

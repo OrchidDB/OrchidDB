@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.37a367dfc9dd","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT32("2147483648")
+--- expected
+Conversion exception: Cast failed. Could not convert "2147483648" to INT32.

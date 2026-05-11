@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.ddl.alter_rel_group.AlterRelGroup.0d08275a7260","language":"cypher","ordered":true,"source":"ddl/alter_rel_group.test","source_case":"AlterRelGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o1:organisation)-[e:knows]->(o2:organisation) RETURN o1.ID, o2.ID
+--- expected
+6|4

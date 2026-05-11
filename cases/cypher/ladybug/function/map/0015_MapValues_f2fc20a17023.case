@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapValues.f2fc20a17023","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapValues","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_values(map([23, 57, 1444], [{a: 5, c: [3, 4, 13]}, {a: 7, c: [1, 2, 3]}, {a: 9, c: [1, 2, 3, 4]}]))
+--- expected
+[{a: 5, c: [3,4,13]},{a: 7, c: [1,2,3]},{a: 9, c: [1,2,3,4]}]

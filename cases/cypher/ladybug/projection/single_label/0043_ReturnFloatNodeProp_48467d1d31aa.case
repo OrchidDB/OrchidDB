@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnFloatNodeProp.48467d1d31aa","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnFloatNodeProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.height
+--- expected
+1.731000
+0.990000
+1.000000
+1.300000
+1.463000
+1.510000
+1.600000
+1.323000

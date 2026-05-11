@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_unionXVXv1X_VX4XX_name.62d56c0b230a","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_unionXVXv1X_VX4XX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.union(__.V(vid1), __.V(vid4)).values("name")
+--- expected
+vadas
+josh

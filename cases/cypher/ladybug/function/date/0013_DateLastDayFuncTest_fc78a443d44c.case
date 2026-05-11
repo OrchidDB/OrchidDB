@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.DateLastDayFuncTest.fc78a443d44c","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"DateLastDayFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN last_day(p.birthdate)
+--- expected
+1900-01-31
+1900-01-31
+1940-06-30
+1950-07-31
+1980-10-31
+1980-10-31
+1980-10-31
+1990-11-30

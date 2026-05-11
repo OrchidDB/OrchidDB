@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.copy.copy_large_list.SingletonNodeBackwardCheck.ff7185c8c7af","language":"cypher","ordered":true,"source":"copy/copy_large_list.test","source_case":"AddPropertyWithLargeListTest","source_log":"SingletonNodeBackwardCheck","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person)-[e:knows]->(:person) return SUM(e.length)
+--- expected
+370037

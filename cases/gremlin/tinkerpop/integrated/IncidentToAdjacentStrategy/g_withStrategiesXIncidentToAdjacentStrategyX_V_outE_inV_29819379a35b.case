@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.IncidentToAdjacentStrategy.g_withStrategiesXIncidentToAdjacentStrategyX_V_outE_inV.29819379a35b","language":"gremlin","ordered":false,"source":"integrated/IncidentToAdjacentStrategy.feature","source_case":"g_withStrategiesXIncidentToAdjacentStrategyX_V_outE_inV","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(IncidentToAdjacentStrategy).V().outE().inV()
+--- expected
+v[lop]
+v[lop]
+v[lop]
+v[vadas]
+v[josh]
+v[ripple]

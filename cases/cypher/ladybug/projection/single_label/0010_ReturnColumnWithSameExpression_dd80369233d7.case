@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnColumnWithSameExpression.dd80369233d7","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnColumnWithSameExpression","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName='Alice' RETURN a.age, a.age AS k
+--- expected
+35|35

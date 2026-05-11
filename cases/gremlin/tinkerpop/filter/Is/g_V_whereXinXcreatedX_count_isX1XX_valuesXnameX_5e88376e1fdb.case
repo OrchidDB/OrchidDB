@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Is.g_V_whereXinXcreatedX_count_isX1XX_valuesXnameX.5e88376e1fdb","language":"gremlin","ordered":false,"source":"filter/Is.feature","source_case":"g_V_whereXinXcreatedX_count_isX1XX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.in("created").count().is(1)).values("name")
+--- expected
+ripple

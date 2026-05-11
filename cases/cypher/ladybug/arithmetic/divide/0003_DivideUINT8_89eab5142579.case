@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideUINT8.89eab5142579","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideUINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(255, "UINT8") / CAST(0, "UINT8")
+--- expected
+Runtime exception: Divide by zero.

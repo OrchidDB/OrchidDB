@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.MultiLabelTest3.230b088b84dc","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"MultiLabelTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e*2..2]->(b:organisation) WHERE a.fName = 'Alice' RETURN COUNT(*)
+--- expected
+5

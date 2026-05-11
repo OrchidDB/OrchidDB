@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFloatToUInt.3e423bbd5b05","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastFloatToUInt","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast(1, "float"), "uint8"), cast(cast(2, "float"), "uint16"), cast(cast(3, "float"), "uint32"), cast(cast(4, "float"), "uint64"), cast(cast(5, "float"), "uint128")
+--- expected
+1|2|3|4|5

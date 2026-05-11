@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.AggregateFunctions.2ee41f8d2da5","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"AggregateFunctions","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value % CAST(2 AS UINT128) = 1 AND z.value < 1000 RETURN z.value
+--- expected
+5

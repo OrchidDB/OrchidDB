@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt128ToOtherTypes.b07b0b548df1","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt128ToOtherTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(170141183460469231731687303715884105727, "float"), cast(-4324324, "int64")
+--- expected
+170141183460469231731687303715884105728.000000|-4324324

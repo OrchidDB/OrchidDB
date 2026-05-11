@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Concat.g_hasLabelXpersonX_valuesXnameX_asXaX_constantXMrX_concatXselectXaX.3e1de53b8892","language":"gremlin","ordered":false,"source":"map/Concat.feature","source_case":"g_hasLabelXpersonX_valuesXnameX_asXaX_constantXMrX_concatXselectXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").values("name").as("a").constant("Mr.").concat(__.select("a"))
+--- expected
+Mr.marko
+Mr.vadas
+Mr.josh
+Mr.peter

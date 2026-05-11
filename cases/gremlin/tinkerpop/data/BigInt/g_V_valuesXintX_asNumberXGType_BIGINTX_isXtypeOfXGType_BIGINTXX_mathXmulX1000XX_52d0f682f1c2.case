@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.BigInt.g_V_valuesXintX_asNumberXGType_BIGINTX_isXtypeOfXGType_BIGINTXX_mathXmulX1000XX.52d0f682f1c2","language":"gremlin","ordered":false,"source":"data/BigInt.feature","source_case":"g_V_valuesXintX_asNumberXGType_BIGINTX_isXtypeOfXGType_BIGINTXX_mathXmulX1000XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BIGINT).is(P.typeOf(GType.BIGINT)).math("_ * 1000")
+--- graph_initializer
+g.addV("data").property("int", 100)
+--- expected
+d[100000].d

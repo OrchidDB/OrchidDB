@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.Castuint64ToString.a535581dca2a","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"Castuint64ToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(to_uint64(134), 3)
+--- expected
+134

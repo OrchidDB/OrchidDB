@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalDivideInt.73d809497b1d","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalDivideInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.lastJobDuration / 3
+--- expected
+00:06:00.008
+1 year 20:20:40
+1 year 20:20:40
+16:08:03.666666
+16:08:03.666666
+3 years 5 months 20 days 04:20:00.000008
+3 years 5 months 20 days 04:20:00.000008
+3 years 5 months 20 days 04:20:00.000008

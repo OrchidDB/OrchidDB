@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_withStrategiesXProductiveByStrategyX_VX1X_out_path_byXageX.d638782a01ea","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_withStrategiesXProductiveByStrategyX_VX1X_out_path_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V(vid1).out().path().by("age")
+--- expected
+p[d[29].i,null]
+p[d[29].i,d[27].i]
+p[d[29].i,d[32].i]

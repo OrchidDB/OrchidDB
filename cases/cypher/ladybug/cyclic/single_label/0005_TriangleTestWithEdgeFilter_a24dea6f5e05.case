@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TriangleTestWithEdgeFilter.a24dea6f5e05","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TriangleTestWithEdgeFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person), (a)-[e3:knows]->(c) WHERE e1.date=DATE('1950-05-14') RETURN a.fName, e1.date, b.fName, e2.date, c.fName, e3.date
+--- expected
+Bob|1950-05-14|Carol|2021-06-30|Alice|2021-06-30
+Bob|1950-05-14|Carol|2000-01-01|Dan|1950-05-14
+Bob|1950-05-14|Dan|2021-06-30|Alice|2021-06-30
+Bob|1950-05-14|Dan|2000-01-01|Carol|1950-05-14
+Carol|1950-05-14|Bob|2021-06-30|Alice|2021-06-30
+Carol|1950-05-14|Bob|1950-05-14|Dan|2000-01-01
+Dan|1950-05-14|Bob|2021-06-30|Alice|2021-06-30
+Dan|1950-05-14|Bob|1950-05-14|Carol|2000-01-01

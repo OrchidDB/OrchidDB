@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAvgFloatTest.3d1a4e8be4e8","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAvgFloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN AVG(a.height) + 5
+--- expected
+6.364625

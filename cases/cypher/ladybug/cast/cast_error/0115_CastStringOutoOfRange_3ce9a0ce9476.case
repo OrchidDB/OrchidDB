@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.3ce9a0ce9476","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("-1", "uint8")
+--- expected
+Conversion exception: Cast failed. Could not convert "-1" to UINT8.

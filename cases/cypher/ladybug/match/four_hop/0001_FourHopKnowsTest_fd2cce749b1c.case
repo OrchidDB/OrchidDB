@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.four_hop.FourHopKnowsTest.fd2cce749b1c","language":"cypher","ordered":true,"source":"match/four_hop.test","source_case":"MatchFourHop","source_log":"FourHopKnowsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person)-[e3:knows]->(d:person)-[e4:knows]->(e:person) RETURN COUNT(*)
+--- expected
+324

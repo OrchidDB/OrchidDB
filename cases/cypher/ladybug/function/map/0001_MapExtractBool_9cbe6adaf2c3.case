@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractBool.9cbe6adaf2c3","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractBool","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_extract(map([4,5,7], [true, false, true]), 5)
+--- expected
+[False]

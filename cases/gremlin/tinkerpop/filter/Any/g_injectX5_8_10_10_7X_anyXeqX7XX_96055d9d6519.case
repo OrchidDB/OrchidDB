@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Any.g_injectX5_8_10_10_7X_anyXeqX7XX.96055d9d6519","language":"gremlin","ordered":false,"source":"filter/Any.feature","source_case":"g_injectX5_8_10_10_7X_anyXeqX7XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([5,8,10],[10,7]).any(P.eq(7))
+--- expected
+l[d[10].i,d[7].i]

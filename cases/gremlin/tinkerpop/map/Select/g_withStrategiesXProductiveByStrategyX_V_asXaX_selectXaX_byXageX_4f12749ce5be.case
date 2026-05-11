@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_withStrategiesXProductiveByStrategyX_V_asXaX_selectXaX_byXageX.4f12749ce5be","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_asXaX_selectXaX_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().as("a").select("a").by("age")
+--- expected
+d[29].i
+d[27].i
+null
+d[32].i
+null
+d[35].i

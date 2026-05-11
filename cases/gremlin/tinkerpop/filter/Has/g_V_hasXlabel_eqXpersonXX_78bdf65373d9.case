@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXlabel_eqXpersonXX.78bdf65373d9","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXlabel_eqXpersonXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has(T.label, eq("person"))
+--- expected
+v[marko]
+v[vadas]
+v[josh]
+v[peter]

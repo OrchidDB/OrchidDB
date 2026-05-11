@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithArray.31239d2de0e4","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_distinct([p.grades, p.grades, cast([80,78,34,83], "int64[4]")])
+--- expected
+[[43,83,67,43],[80,78,34,83]]
+[[76,88,99,89],[80,78,34,83]]
+[[77,64,100,54],[80,78,34,83]]
+[[80,78,34,83]]
+[[91,75,21,95],[80,78,34,83]]
+[[96,54,86,92],[80,78,34,83]]
+[[96,59,65,88],[80,78,34,83]]
+[[98,42,93,88],[80,78,34,83]]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Overflow.c8f9eb8ebbe8","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Overflow","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value = 0 RETURN z.value - CAST(1 AS UINT128)
+--- expected
+Overflow exception: UINT128 is out of range: cannot subtract.

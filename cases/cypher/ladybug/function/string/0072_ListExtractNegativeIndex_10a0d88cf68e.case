@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ListExtractNegativeIndex.10a0d88cf68e","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ListExtractNegativeIndex","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN o.name[-2]
+--- expected
+n
+r
+r

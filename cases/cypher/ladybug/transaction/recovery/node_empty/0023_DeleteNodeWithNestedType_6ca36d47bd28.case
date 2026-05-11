@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.node_empty.DeleteNodeWithNestedType.6ca36d47bd28","language":"cypher","ordered":true,"source":"transaction/recovery/node_empty.test","source_case":"DeleteNodeWithNestedType","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN o.*
+--- expected
+1|{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}|3.120000
+4|{revenue: 152, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}}|abcd
+6|{revenue: 558, location: ['very long city name','new york'], stock: {price: [22], volume: 99}}|2023-12-15

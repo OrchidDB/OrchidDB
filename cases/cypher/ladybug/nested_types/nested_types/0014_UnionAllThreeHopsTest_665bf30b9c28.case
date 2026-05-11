@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllThreeHopsTest.665bf30b9c28","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"RelStruct","source_log":"UnionAllThreeHopsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:knows]->(b:person) RETURN r.summary
+--- expected
+{locations: , transfer: }
+{locations: ['london','toronto'], transfer: {day: 2012-11-21, amount: [223,5230]}}
+{locations: ['toronto','waterloo'], transfer: {day: 2021-01-02, amount: [100,200]}}
+{locations: ['shanghai'], transfer: {day: 1990-09-10, amount: [10]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['paris'], transfer: {day: 2011-05-01, amount: [2000,5340]}}
+{locations: ['vancouver'], transfer: {day: 2020-01-01, amount: [120,50]}}
+{locations: ['paris','beijing'], transfer: {day: 2011-03-11, amount: [2323,50]}}
+{locations: [], transfer: {day: 1980-11-21, amount: [20,5]}}
+{locations: ['shanghai','nanjing'], transfer: {day: 1998-11-12, amount: [22,53240]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['toronto','thisisalongcityname'], transfer: {day: 1930-11-22, amount: [18,323]}}
+{locations: ['waterloo'], transfer: {day: 2000-01-01, amount: [1000,5000]}}

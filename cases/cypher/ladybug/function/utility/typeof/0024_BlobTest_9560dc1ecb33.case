@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.BlobTest.9560dc1ecb33","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"BlobTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(BLOB('\\xBC\\xBD\\xBA\\xAA'))
+--- expected
+BLOB

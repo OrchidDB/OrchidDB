@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithTimestamp.7c84b4783275","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithTimestamp","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_distinct([cast('1993-05-03 11:13:25.012343', "TIMESTAMP_NS"), cast('1993-05-03 11:13:25.000343', "TIMESTAMP_NS"), cast('1994-05-03 11:13:25', "TIMESTAMP_NS"), cast('1993-05-03 11:13:25', "TIMESTAMP_NS"), cast('1994-05-03 11:13:25', "TIMESTAMP_NS"), NULL])
+--- expected
+[1993-05-03 11:13:25.012343,1993-05-03 11:13:25.000343,1994-05-03 11:13:25,1993-05-03 11:13:25]

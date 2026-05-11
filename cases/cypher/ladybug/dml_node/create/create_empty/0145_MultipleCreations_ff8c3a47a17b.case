@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.MultipleCreations.ff8c3a47a17b","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"MultipleCreations","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.id
+--- expected
+1
+2
+3
+4

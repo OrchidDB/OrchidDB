@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnIntRelProp.e3b9ab082356","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnIntRelProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:meets]->(b:person) RETURN e.times
+--- expected
+5
+2
+3
+7
+9
+11
+13

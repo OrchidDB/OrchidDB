@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.rowid.RelRowIDTest1.785603cf8b1b","language":"cypher","ordered":true,"source":"function/rowid.test","source_case":"FunctionRowID","source_log":"RelRowIDTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN id(e), rowid(e)
+--- expected
+5:0|0
+5:1|1
+5:2|2

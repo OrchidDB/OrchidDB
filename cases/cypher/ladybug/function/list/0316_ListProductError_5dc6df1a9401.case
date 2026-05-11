@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductError.5dc6df1a9401","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductError","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product(["ok"])
+--- expected
+Binder exception: Unsupported inner data type for LIST_PRODUCT: STRING

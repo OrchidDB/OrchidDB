@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectINT8Test.85f343ece13e","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectINT8Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN collect(e.level)
+--- expected
+[5,120,2]

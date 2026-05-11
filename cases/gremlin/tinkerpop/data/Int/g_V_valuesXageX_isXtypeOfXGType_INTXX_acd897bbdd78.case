@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Int.g_V_valuesXageX_isXtypeOfXGType_INTXX.acd897bbdd78","language":"gremlin","ordered":false,"source":"data/Int.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_INTXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.typeOf(GType.INT))
+--- expected
+d[29].i
+d[27].i
+d[32].i
+d[35].i

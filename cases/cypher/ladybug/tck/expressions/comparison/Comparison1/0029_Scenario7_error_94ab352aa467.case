@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison1.Scenario7_error.94ab352aa467","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison1.test","source_case":"Scenario7_error","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {} = {} AS result
+--- expected
+True

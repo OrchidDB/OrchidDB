@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison1.Scenario1.dd35ac34cba5","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison1.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH collect([0, 0.0]) AS numbers UNWIND numbers AS arr WITH arr[0] AS expected MATCH (n) WHERE toInteger(n.id) = expected RETURN n
+--- expected
+{id: 0}

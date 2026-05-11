@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_rels_two_hop.DeleteRelsTwoHopRollbackNormalExecution.f96a838d950c","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_rels_two_hop.test","source_case":"DeleteRelsTwoHopRollbackNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(p:person) WHERE a.ID = 1 AND p.ID < 10 RETURN e.length
+--- expected
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyUINT128.f6dca5af4af2","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyUINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(1180591620717411303424, "UINT128") * CAST(1180591620717411303424, "UINT128")
+--- expected
+Overflow exception: UINT128 is out of range: cannot multiply.

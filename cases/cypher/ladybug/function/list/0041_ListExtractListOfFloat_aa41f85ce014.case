@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfFloat.aa41f85ce014","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_extract([p.height], 1)
+--- expected
+1.731000
+0.990000
+1.000000
+1.300000
+1.463000
+1.510000
+1.600000
+1.323000

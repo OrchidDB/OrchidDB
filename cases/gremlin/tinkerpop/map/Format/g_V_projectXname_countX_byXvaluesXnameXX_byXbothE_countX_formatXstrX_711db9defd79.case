@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Format.g_V_projectXname_countX_byXvaluesXnameXX_byXbothE_countX_formatXstrX.711db9defd79","language":"gremlin","ordered":false,"source":"map/Format.feature","source_case":"g_V_projectXname_countX_byXvaluesXnameXX_byXbothE_countX_formatXstrX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().project("name","count").by(values("name")).by(bothE().count()).format("%{name} has %{count} connections")
+--- expected
+marko has 3 connections
+vadas has 1 connections
+lop has 3 connections
+josh has 3 connections
+ripple has 1 connections
+peter has 1 connections

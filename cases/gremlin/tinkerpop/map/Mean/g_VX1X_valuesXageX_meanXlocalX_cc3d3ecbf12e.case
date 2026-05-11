@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_VX1X_valuesXageX_meanXlocalX.cc3d3ecbf12e","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_VX1X_valuesXageX_meanXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").mean(Scope.local)
+--- expected
+d[29.0].d

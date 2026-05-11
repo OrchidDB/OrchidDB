@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.ListTest.cf4a86bb67be","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"ListTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof([cast(65536 as uint128), 170141183460469231731687303715884105728])
+--- expected
+UINT128[]

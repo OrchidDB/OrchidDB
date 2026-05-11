@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.acc.acc_hj.AspMultiMaskToOneScan.aff7f112ccf7","language":"cypher","ordered":true,"source":"acc/acc_hj.test","source_case":"Acc","source_log":"AspMultiMaskToOneScan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:knows]-(b:person)-[e2:knows]->(c:person) WHERE a.fName='Alice' AND c.fName='Bob' RETURN b.fName
+--- expected
+Carol
+Dan

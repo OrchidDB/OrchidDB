@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.Miscellaneous.g_V_coworker_with_midV.d7cb7c9e42f7","language":"gremlin","ordered":false,"source":"integrated/Miscellaneous.feature","source_case":"g_V_coworker_with_midV","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+filter(__.outE("created")).as("p1").
+V().hasLabel("person").
+where(P.neq("p1")).
+filter(__.outE("created")).as("p2").
+map(__.out("created").where(__.in("created").as("p1")).values("name").fold()).
+group().
+by(__.select("p1").by("name")).
+by(__.group().by(select("p2").by("name")).
+by(__.project("numCoCreated", "coCreated").
+by(__.count(local)).by())).
+unfold()
+--- expected
+m[{"peter": {"josh": {"numCoCreated":"d[1].l", "coCreated":["lop"]}, "marko": {"numCoCreated":"d[1].l", "coCreated":["lop"]}}}]
+m[{"josh": {"peter": {"numCoCreated":"d[1].l", "coCreated":["lop"]}, "marko": {"numCoCreated":"d[1].l", "coCreated":["lop"]}}}]
+m[{"marko": {"peter": {"numCoCreated":"d[1].l", "coCreated":["lop"]}, "josh": {"numCoCreated":"d[1].l", "coCreated":["lop"]}}}]

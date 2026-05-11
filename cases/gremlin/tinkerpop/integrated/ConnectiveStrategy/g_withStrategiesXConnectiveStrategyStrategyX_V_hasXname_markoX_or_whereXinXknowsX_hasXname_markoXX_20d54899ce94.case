@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.ConnectiveStrategy.g_withStrategiesXConnectiveStrategyStrategyX_V_hasXname_markoX_or_whereXinXknowsX_hasXname_markoXX.20d54899ce94","language":"gremlin","ordered":false,"source":"integrated/ConnectiveStrategy.feature","source_case":"g_withStrategiesXConnectiveStrategyStrategyX_V_hasXname_markoX_or_whereXinXknowsX_hasXname_markoXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ConnectiveStrategy).V().has("name","marko").or().where(in("knows").has("name","marko"))
+--- expected
+v[marko]
+v[vadas]
+v[josh]

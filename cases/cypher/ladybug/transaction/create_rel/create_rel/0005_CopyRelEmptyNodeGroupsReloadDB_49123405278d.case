@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.create_rel.CopyRelEmptyNodeGroupsReloadDB.49123405278d","language":"cypher","ordered":true,"source":"transaction/create_rel/create_rel.test","source_case":"CopyRelEmptyNodeGroupsReloadDB","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Comment)-[:replyOf_Comment]->(b:Comment) RETURN a.id, b.id
+--- expected
+1030792523059|962073046352

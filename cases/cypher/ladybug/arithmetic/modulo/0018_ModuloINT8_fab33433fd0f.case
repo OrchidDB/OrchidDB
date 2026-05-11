@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloINT8.fab33433fd0f","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-128, "INT8") % CAST(-1, "INT8")
+--- expected
+Overflow exception: Value -128 % -1 is not within INT8 range.

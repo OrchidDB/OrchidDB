@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.CreateOneToOneRel2.7b7f70243d1e","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRel2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:N1)-[r:Rel1]->(:N2) RETURN COUNT(*)
+--- expected
+0

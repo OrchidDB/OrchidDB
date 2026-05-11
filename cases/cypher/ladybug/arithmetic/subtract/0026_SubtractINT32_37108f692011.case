@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractINT32.37108f692011","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractINT32","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(2147483547, "INT32") - CAST(-20050, "INT32")
+--- expected
+Overflow exception: Value 2147483547 - -20050 is not within INT32 range.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_ldbc_sf01.SetLikeComment.a12e80ae772d","language":"cypher","ordered":true,"source":"dml_rel/set/set_ldbc_sf01.test","source_case":"SetLikeComment","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person)-[r:likes_Comment]->(m:Comment) WHERE n.id=32985348834107 AND m.id=343597407147 RETURN r.creationDate
+--- expected
+202311180116

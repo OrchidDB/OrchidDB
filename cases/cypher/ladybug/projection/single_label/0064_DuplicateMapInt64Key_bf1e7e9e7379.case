@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapInt64Key.bf1e7e9e7379","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapInt64Key","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(5, 'int64'), cast(32, 'int64'), cast(8, 'int64'), cast(32, 'int64')], [20, 34, 50, 70])
+--- expected
+Runtime exception: Found duplicate key: 32 in map.

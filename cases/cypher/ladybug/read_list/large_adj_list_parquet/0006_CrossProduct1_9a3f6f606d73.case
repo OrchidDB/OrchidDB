@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(read-list-tests/large-list)","expected_kind":"rows","id":"cypher.ladybug.read_list.large_adj_list_parquet.CrossProduct1.9a3f6f606d73","language":"cypher","ordered":true,"source":"read_list/large_adj_list_parquet.test","source_case":"LargeAdjListTestParquet","source_log":"CrossProduct1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) RETURN COUNT(*)
+--- expected
+36000000

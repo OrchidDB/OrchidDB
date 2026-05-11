@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.6113bf6c17de","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"AddListOfListOfStringPropertyToStudyAtTableWithDefaultValueNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) return e.random
+--- expected
+[[hello,good,long long string test],[6],[very very long string]]
+[[hello,good,long long string test],[6],[very very long string]]
+[[hello,good,long long string test],[6],[very very long string]]

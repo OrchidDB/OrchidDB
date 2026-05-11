@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.ExceptionReadVarlengthRelPropertyTest2Parquet.38ecdaf0e9d7","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"ExceptionReadVarlengthRelPropertyTest2Parquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows*1..3]->(b:person) WHERE ID(e) = 0 RETURN COUNT(*)
+--- expected
+Binder exception: e has data type RECURSIVE_REL but (NODE,REL) was expected.

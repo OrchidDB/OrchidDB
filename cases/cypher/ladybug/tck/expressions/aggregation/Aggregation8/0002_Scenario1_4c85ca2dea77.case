@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation8.Scenario1.4c85ca2dea77","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation8.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (a) RETURN count(DISTINCT a)
+--- expected
+0

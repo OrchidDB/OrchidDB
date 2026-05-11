@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.SimpleScalarMacroWithDefaultVal1.6fe463cfa4f6","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"SimpleScalarMacroWithDefaultVal1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return AddDefault1(p.age, 3)
+--- expected
+45
+40
+55
+30
+30
+35
+50
+93

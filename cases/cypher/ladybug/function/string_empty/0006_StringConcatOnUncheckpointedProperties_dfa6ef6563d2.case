@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.string_empty.StringConcatOnUncheckpointedProperties.dfa6ef6563d2","language":"cypher","ordered":true,"source":"function/string_empty.test","source_case":"StringConcatOnUncheckpointedProperties","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[m:marries]->(b) return concat("note:'", m.note, "'")
+--- expected
+note:''
+note:'some note'

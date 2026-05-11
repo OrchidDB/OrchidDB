@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_random_int.seed_seed.d01209193066","language":"cypher","ordered":true,"source":"dml_node/create/create_random_int.test","source_case":"TSSeedRandomIntInsertions","source_log":"seed: ${seed}","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN COUNT(*)
+--- expected
+1000

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion2.Scenario6.8bf7fb328a71","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_Int64(1 - $param) AS result
+--- expected
+0

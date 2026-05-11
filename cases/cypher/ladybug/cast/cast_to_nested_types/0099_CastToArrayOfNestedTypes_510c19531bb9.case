@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.510c19531bb9","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnion","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH CAST(126 AS UNION(a INT128, b STRING)) AS q RETURN q, union_tag(q)
+--- expected
+126|a

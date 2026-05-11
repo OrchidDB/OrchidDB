@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.SelfLoop.6e9fa3a5c87c","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"SelfLoop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*2..2 (r, n | WHERE n.fName = 'Alice')]->(b:person) RETURN properties(nodes(p), 'fName')
+--- expected
+[Bob,Alice,Bob]
+[Bob,Alice,Carol]
+[Bob,Alice,Dan]
+[Carol,Alice,Bob]
+[Carol,Alice,Carol]
+[Carol,Alice,Dan]
+[Dan,Alice,Bob]
+[Dan,Alice,Carol]
+[Dan,Alice,Dan]

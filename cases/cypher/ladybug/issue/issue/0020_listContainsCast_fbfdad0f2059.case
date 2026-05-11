@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.listContainsCast.fbfdad0f2059","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"listContainsCast","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) WHERE a.id IN [0] RETURN a.id
+--- expected
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"count","id":"gremlin.tinkerpop.filter.Range.g_V_hasXnameXHEY_BO_DIDDLEYXX_repeatXunionXoutXfollowedByX_order_byXnameX_limitX2X_outXsungByX_order_byXnameX_limitX1XXX.2577f46e7ba9","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_V_hasXnameXHEY_BO_DIDDLEYXX_repeatXunionXoutXfollowedByX_order_byXnameX_limitX2X_outXsungByX_order_byXnameX_limitX1XXX_timesX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has('name','HEY BO DIDDLEY').repeat(union(out('followedBy').order().by('name').limit(2),out('sungBy').order().by('name').limit(1))).times(2)
+--- expected
+3

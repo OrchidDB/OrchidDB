@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(ldbc-sf01)","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short_parquet.IS7.5004fc4c497c","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short_parquet.test","source_case":"LDBCInteractiveShortParquet","source_log":"IS7","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:Post:Comment {id: 962072971887})<-[:replyOf_Comment|:replyOf_Post]-(c:Comment)-[:Comment_hasCreator]->(p:Person) OPTIONAL MATCH (m)-[:Comment_hasCreator|:Post_hasCreator]->(a:Person)-[r:knows]-(p) RETURN c.id AS commentId, c.content AS commentContent, c.creationDate AS commentCreationDate, p.id AS replyAuthorId, p.firstName AS replyAuthorFirstName, p.lastName AS replyAuthorLastName, CASE WHEN ID(r) IS NULL THEN False ELSE True END AS replyAuthorKnowsOriginalMessageAuthor
+--- expected
+962072971888|right|20120530134931973|4398046511734|Camila|Alves|True
+962072971889|LOL|20120530114547280|24189255811663|Chris|Hall|True
+962072971890|LOL|20120530144942604|1274|Roberto|Fernandez|True
+962072971891|no way!|20120530061910889|24189255811663|Chris|Hall|True
+962072971892|About Che Guevara, ide literacAbout Charles Gounod, 7 June 1818About Nikolaus Pevsner|20120530135318875|4398046511734|Camila|Alves|True
+962072971893|yes|20120530062212524|15393162788906|Ali|Achiou|True
+962072971896|roflol|20120530065348878|24189255811663|Chris|Hall|True
+962072971898|About D. H. Lawrence, d his moral serAbout George Washington, States from |20120530061825353|1274|Roberto|Fernandez|True
+962072971901|good|20120531013527759|1274|Roberto|Fernandez|True

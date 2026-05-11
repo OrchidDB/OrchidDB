@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashInterval.b96f58f2f5eb","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashInterval","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash(interval("1 years 2 months 3 hours"))
+--- expected
+13396667719587599538

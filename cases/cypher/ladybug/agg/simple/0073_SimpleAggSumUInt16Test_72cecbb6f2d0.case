@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggSumUInt16Test.72cecbb6f2d0","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggSumUInt16Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN SUM(s.ulength)
+--- expected
+34038

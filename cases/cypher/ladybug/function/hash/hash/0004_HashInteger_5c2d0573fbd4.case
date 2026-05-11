@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashInteger.5c2d0573fbd4","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashInteger","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash(-182812789912)
+--- expected
+6017956686658665710

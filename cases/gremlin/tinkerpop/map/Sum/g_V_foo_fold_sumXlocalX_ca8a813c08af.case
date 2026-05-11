@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Sum.g_V_foo_fold_sumXlocalX.ca8a813c08af","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_V_foo_fold_sumXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("foo").fold().sum(Scope.local)
+--- expected
+

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.ListImplicitCast.a65611ea03e1","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"ListImplicitCast","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:T0) RETURN a.a, a.b, a.c, a.d
+--- expected
+0|[1,2]|[1.000000,2.000000]|[3,5]

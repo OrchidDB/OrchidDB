@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_V_asXaX_out_asXbX_whereXandXasXaX_outXknowsX_asXbX__orXasXbX_outXcreatedX_hasXname_rippleX__asXbX_inXknowsX_count_isXn.cdcb21b737fc","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_V_asXaX_out_asXbX_whereXandXasXaX_outXknowsX_asXbX__orXasXbX_outXcreatedX_hasXname_rippleX__asXbX_inXknowsX_count_isXnotXeqX0XXXXX_selectXa_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out().as("b").where(__.and(__.as("a").out("knows").as("b"), __.or(__.as("b").out("created").has("name", "ripple"), __.as("b").in("knows").count().is(P.not(P.eq(0)))))).select("a", "b")
+--- expected
+m[{"a": "v[marko]", "b": "v[vadas]"}]
+m[{"a": "v[marko]", "b": "v[josh]"}]

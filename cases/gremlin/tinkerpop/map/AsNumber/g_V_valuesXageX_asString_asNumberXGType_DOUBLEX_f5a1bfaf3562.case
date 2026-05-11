@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_V_valuesXageX_asString_asNumberXGType_DOUBLEX.f5a1bfaf3562","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_V_valuesXageX_asString_asNumberXGType_DOUBLEX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").asString().asNumber(GType.DOUBLE)
+--- expected
+d[29.0].d
+d[27.0].d
+d[32.0].d
+d[35.0].d

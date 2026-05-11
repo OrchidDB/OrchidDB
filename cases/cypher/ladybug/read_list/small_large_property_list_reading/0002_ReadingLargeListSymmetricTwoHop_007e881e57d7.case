@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.small_large_property_list_reading.ReadingLargeListSymmetricTwoHop.007e881e57d7","language":"cypher","ordered":true,"source":"read_list/small_large_property_list_reading.test","source_case":"PropLists4BytesPerEdgeTest","source_log":"ReadingLargeListSymmetricTwoHop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:person)<-[e1:knows]-(a:person)-[e2:knows]->(c:person) WHERE a.ID = 0 AND e1.int64Prop = e2.int64Prop  RETURN COUNT(*)
+--- expected
+4995

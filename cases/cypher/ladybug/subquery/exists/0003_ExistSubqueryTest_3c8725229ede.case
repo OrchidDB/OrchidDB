@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.exists.ExistSubqueryTest.3c8725229ede","language":"cypher","ordered":true,"source":"subquery/exists.test","source_case":"ExistsSubquery","source_log":"ExistSubqueryTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE EXISTS { MATCH (a)-[:knows]->(b:person) } RETURN COUNT(*)
+--- expected
+5

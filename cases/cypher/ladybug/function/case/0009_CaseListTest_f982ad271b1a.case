@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseListTest.f982ad271b1a","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseListTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID > 6 RETURN CASE WHEN size(a.workedHours) = 1 THEN a.courseScoresPerTerm END
+--- expected
+[[10]]
+[[6],[7],[8]]

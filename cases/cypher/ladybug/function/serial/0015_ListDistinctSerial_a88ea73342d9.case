@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListDistinctSerial.a88ea73342d9","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListDistinctSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_distinct([a.ID, a.ID])
+--- expected
+[0]
+[1]
+[2]
+[3]
+[4]
+[5]
+[6]
+[7]

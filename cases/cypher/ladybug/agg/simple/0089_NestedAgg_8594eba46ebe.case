@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.NestedAgg.8594eba46ebe","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"NestedAgg","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH SUM(1) AS x WITH SUM(x) AS y RETURN SUM(y)
+--- expected
+1

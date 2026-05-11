@@ -1,0 +1,41 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.KnowsTwoHopTest4.5fa61d7ed607","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"KnowsTwoHopTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person) RETURN a.fName, b.fName
+--- expected
+Alice|Bob
+Alice|Bob
+Alice|Bob
+Alice|Carol
+Alice|Carol
+Alice|Carol
+Alice|Dan
+Alice|Dan
+Alice|Dan
+Bob|Alice
+Bob|Alice
+Bob|Alice
+Bob|Carol
+Bob|Carol
+Bob|Carol
+Bob|Dan
+Bob|Dan
+Bob|Dan
+Carol|Alice
+Carol|Alice
+Carol|Alice
+Carol|Bob
+Carol|Bob
+Carol|Bob
+Carol|Dan
+Carol|Dan
+Carol|Dan
+Dan|Alice
+Dan|Alice
+Dan|Alice
+Dan|Bob
+Dan|Bob
+Dan|Bob
+Dan|Carol
+Dan|Carol
+Dan|Carol

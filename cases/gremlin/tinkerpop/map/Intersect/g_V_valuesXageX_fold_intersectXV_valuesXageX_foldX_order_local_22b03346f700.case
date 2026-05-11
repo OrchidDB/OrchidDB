@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Intersect.g_V_valuesXageX_fold_intersectXV_valuesXageX_foldX_order_local.22b03346f700","language":"gremlin","ordered":false,"source":"map/Intersect.feature","source_case":"g_V_valuesXageX_fold_intersectXV_valuesXageX_foldX_order_local","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").fold().intersect(__.V().values("age").fold()).order(Scope.local)
+--- expected
+l[d[27].i,d[29].i,d[32].i,d[35].i]

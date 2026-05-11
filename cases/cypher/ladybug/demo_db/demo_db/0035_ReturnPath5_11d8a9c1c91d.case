@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ReturnPath5.11d8a9c1c91d","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"ReturnPath5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:User)-[:Follows*1..2]->(:User) WHERE a.name = 'Adam' RETURN properties(nodes(p), 'name'), properties(rels(p), 'since')
+--- expected
+[Adam,Karissa,Zhang]|[2020,2021]
+[Adam,Karissa]|[2020]
+[Adam,Zhang,Noura]|[2020,2022]
+[Adam,Zhang]|[2020]

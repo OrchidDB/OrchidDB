@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.BooleanTest.747e5a2037b5","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"BooleanTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, false, true)
+--- expected
+False

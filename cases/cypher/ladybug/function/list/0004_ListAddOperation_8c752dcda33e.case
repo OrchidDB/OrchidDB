@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAddOperation.8c752dcda33e","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAddOperation","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) RETURN p.courseScoresPerTerm + p1.courseScoresPerTerm
+--- expected
+[[10,8],[6,7,8],[7,4],[8,8],[9]]
+[[10,8],[6,7,8],[8,10]]
+[[10,8],[6,7,8],[8,9],[9,10]]
+[[6],[7],[8],[10]]
+[[6],[7],[8],[8]]
+[[7,4],[8,8],[9],[10,8],[6,7,8]]
+[[7,4],[8,8],[9],[8,10]]
+[[7,4],[8,8],[9],[8,9],[9,10]]
+[[8,10],[10,8],[6,7,8]]
+[[8,10],[7,4],[8,8],[9]]
+[[8,10],[8,9],[9,10]]
+[[8,9],[9,10],[10,8],[6,7,8]]
+[[8,9],[9,10],[7,4],[8,8],[9]]
+[[8,9],[9,10],[8,10]]

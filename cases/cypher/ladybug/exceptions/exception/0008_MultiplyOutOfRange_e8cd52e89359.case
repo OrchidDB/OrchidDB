@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.MultiplyOutOfRange.e8cd52e89359","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"MultiplyOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(-2, "INT8") * cast(65, "INT8")
+--- expected
+Overflow exception: Value -2 * 65 is not within INT8 range.

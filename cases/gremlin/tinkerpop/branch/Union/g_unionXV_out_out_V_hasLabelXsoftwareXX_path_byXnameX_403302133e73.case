@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_unionXV_out_out_V_hasLabelXsoftwareXX_path_byXnameX.403302133e73","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_unionXV_out_out_V_hasLabelXsoftwareXX_path_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.union(__.V().out().out(), __.V().hasLabel("software")).path().by("name")
+--- expected
+p[marko,josh,ripple]
+p[marko,josh,lop]
+p[lop]
+p[ripple]

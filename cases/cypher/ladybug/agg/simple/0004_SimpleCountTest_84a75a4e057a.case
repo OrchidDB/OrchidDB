@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCountTest.84a75a4e057a","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCountTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN COUNT(a.age) + 1
+--- expected
+9

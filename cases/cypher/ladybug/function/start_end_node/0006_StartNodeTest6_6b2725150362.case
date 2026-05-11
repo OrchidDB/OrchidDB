@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.start_end_node.StartNodeTest6.6b2725150362","language":"cypher","ordered":true,"source":"function/start_end_node.test","source_case":"FunctionStartNode","source_log":"StartNodeTest6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[e:workAt]->() RETURN ID(e), START_NODE(e).fName
+--- expected
+7:0|Carol
+7:1|Dan
+7:2|Elizabeth

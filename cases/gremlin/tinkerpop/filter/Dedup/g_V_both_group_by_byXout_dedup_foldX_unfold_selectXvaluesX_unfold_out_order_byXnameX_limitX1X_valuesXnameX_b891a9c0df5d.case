@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_both_group_by_byXout_dedup_foldX_unfold_selectXvaluesX_unfold_out_order_byXnameX_limitX1X_valuesXnameX.b891a9c0df5d","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_both_group_by_byXout_dedup_foldX_unfold_selectXvaluesX_unfold_out_order_byXnameX_limitX1X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().both().
+group().by().by(__.out().dedup().fold()).
+unfold().
+select(Column.values).
+unfold().
+out().order().by("name").limit(1).values("name")
+--- expected
+lop

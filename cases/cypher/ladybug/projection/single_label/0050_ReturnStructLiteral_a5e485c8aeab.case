@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnStructLiteral.a5e485c8aeab","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnStructLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {weight: 1.8, age: 42, name: "Mark", grades: [1,2,3]}
+--- expected
+{weight: 1.800000, age: 42, name: Mark, grades: [1,2,3]}

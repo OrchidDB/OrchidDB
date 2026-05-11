@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpReplaceInvalidOptionType.f5a551e63e1d","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpReplaceInvalidOptionType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) Return REGEXP_REPLACE('this is a team', 'is', '*??', 5)
+--- expected
+Binder exception: 5 has data type INT64 but STRING was expected.

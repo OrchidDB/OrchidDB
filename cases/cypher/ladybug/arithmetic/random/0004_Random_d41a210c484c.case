@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.arithmetic.random.Random.d41a210c484c","language":"cypher","ordered":true,"source":"arithmetic/random.test","source_case":"Random","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN RANDOM()
+--- expected
+0.650728

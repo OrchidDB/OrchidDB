@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.Comparison.db4f8c485685","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"ZoneMapUpdateThenQueryWithoutCheckpoint","source_log":"Comparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.age > 85 RETURN a.ID, a.age
+--- expected
+0|90

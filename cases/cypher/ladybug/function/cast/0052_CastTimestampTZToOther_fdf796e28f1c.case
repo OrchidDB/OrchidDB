@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastTimestampTZToOther.fdf796e28f1c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastTimestampTZToOther","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(cast(p.registerTime, "TIMESTAMP_TZ"), "TIMESTAMP"), cast(cast(p.registerTime, "TIMESTAMP_TZ"), "TIMESTAMP_NS"), cast(cast(p.registerTime, "TIMESTAMP_TZ"), "TIMESTAMP_MS"), cast(cast(p.registerTime, "TIMESTAMP_TZ"), "TIMESTAMP_S"), cast(cast(p.registerTime, "TIMESTAMP_TZ"), "TIMESTAMP_TZ")
+--- expected
+2011-08-20 11:25:30|2011-08-20 11:25:30|2011-08-20 11:25:30|2011-08-20 11:25:30|2011-08-20 11:25:30+00
+2008-11-03 15:25:30.000526|2008-11-03 15:25:30.000526|2008-11-03 15:25:30|2008-11-03 15:25:30|2008-11-03 15:25:30.000526+00
+1911-08-20 02:32:21|1911-08-20 02:32:21|1911-08-20 02:32:21|1911-08-20 02:32:21|1911-08-20 02:32:21+00
+2031-11-30 12:25:30|2031-11-30 12:25:30|2031-11-30 12:25:30|2031-11-30 12:25:30|2031-11-30 12:25:30+00
+1976-12-23 11:21:42|1976-12-23 11:21:42|1976-12-23 11:21:42|1976-12-23 11:21:42|1976-12-23 11:21:42+00
+1972-07-31 13:22:30.678559|1972-07-31 13:22:30.678559|1972-07-31 13:22:30.678|1972-07-31 13:22:30|1972-07-31 13:22:30.678559+00
+1976-12-23 04:41:42|1976-12-23 04:41:42|1976-12-23 04:41:42|1976-12-23 04:41:42|1976-12-23 04:41:42+00
+2023-02-21 13:25:30|2023-02-21 13:25:30|2023-02-21 13:25:30|2023-02-21 13:25:30|2023-02-21 13:25:30+00
+||||

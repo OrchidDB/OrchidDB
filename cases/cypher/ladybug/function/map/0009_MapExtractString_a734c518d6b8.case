@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractString.a734c518d6b8","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN element_at(map([a.age], [a.fName]), 20)
+--- expected
+[]
+[]
+[]
+[Dan]
+[Elizabeth]
+[]
+[]
+[]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.path.PathFun2.6262775d20f8","language":"cypher","ordered":true,"source":"function/path.test","source_case":"FunctionPath","source_log":"PathFun2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*2..2]->(b:person) WHERE is_acyclic(p) RETURN COUNT(*)
+--- expected
+24

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence1.Scenario10.4f32ba563c65","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence1.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN True OR False IS NULL AS a, True OR (False IS NULL) AS b, (True OR False) IS NULL AS c
+--- expected
+True|True|False

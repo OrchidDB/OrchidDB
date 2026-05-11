@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidCastTypeError.66b267f4f086","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidCastTypeError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("dfsa", "INTERNAL_ID")
+--- expected
+Conversion exception: Unsupported casting function from STRING to INTERNAL_ID.

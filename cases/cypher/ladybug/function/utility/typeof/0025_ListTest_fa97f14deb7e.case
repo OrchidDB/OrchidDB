@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.ListTest.fa97f14deb7e","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"ListTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof([[1, 2, 3], [4, 5]])
+--- expected
+INT64[][]

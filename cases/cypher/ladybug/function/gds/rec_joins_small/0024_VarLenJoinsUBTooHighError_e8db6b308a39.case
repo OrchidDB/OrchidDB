@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV gds-rec-joins-small","expected_kind":"rows","id":"cypher.ladybug.function.gds.rec_joins_small.VarLenJoinsUBTooHighError.e8db6b308a39","language":"cypher","ordered":true,"source":"function/gds/rec_joins_small.test","source_case":"GDSSmall","source_log":"VarLenJoinsUBTooHighError","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person1)-[e:knows11 * 1..10000]->(b:person1) RETURN *
+--- expected
+Binder exception: Upper bound of rel e exceeds maximum: 30.

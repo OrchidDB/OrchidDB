@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampDateGreaterThan.d7edd406cbab","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampDateGreaterThan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE cast(a.registerTime, "TIMESTAMP_TZ") > date('1972-07-31') RETURN COUNT(*)
+--- expected
+7

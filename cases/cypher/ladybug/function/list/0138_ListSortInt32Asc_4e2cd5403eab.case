@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortInt32Asc.4e2cd5403eab","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortInt32Asc","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([to_int32(2), to_int32(3), to_int32(1), NULL, NULL])
+--- expected
+[,,1,2,3]

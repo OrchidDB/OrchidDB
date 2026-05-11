@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"NPY npy-3d","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_three_dimensional.i64.5a448d72ee91","language":"cypher","ordered":true,"source":"copy/copy_npy_three_dimensional.test","source_case":"CopyThreeDimensionalNpyTest","source_log":"i64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.i64
+--- expected
+[1,2,3,4,5,6,7,8,9,10,11,12]
+[13,14,15,16,17,18,19,20,21,22,23,24]

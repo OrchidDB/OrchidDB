@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.node.node1.1b1cdb5b4d53","language":"cypher","ordered":true,"source":"match/node.test","source_case":"MatchNode","source_log":"node1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person /* returns all person */) RETURN COUNT(*)
+--- expected
+8

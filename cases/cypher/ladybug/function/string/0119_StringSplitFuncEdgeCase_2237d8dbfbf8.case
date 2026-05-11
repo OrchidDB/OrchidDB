@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StringSplitFuncEdgeCase.2237d8dbfbf8","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StringSplitFuncEdgeCase","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person) return string_to_array(p.fName, '')
+--- expected
+[A,l,i,c,e]
+[B,o,b]
+[C,a,r,o,l]
+[D,a,n]
+[E,l,i,z,a,b,e,t,h]
+[F,a,r,o,o,q]
+[G,r,e,g]
+[H,u,b,e,r,t, ,B,l,a,i,n,e, ,W,o,l,f,e,s,c,h,l,e,g,e,l,s,t,e,i,n,h,a,u,s,e,n,b,e,r,g,e,r,d,o,r,f,f]

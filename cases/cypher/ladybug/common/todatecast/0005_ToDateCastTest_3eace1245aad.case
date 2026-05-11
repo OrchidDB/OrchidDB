@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.todatecast.ToDateCastTest.3eace1245aad","language":"cypher","ordered":true,"source":"common/todatecast.test","source_case":"ToDateCastTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(CAST('2024-04-05 01:25:30', 'TIMESTAMP_SEC'), 'date')
+--- expected
+2024-04-05

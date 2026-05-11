@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Int.g_V_whereXvaluesXageX_isXtypeOfXGType_INTXXX_valuesXnameX.fda2abcb0acb","language":"gremlin","ordered":false,"source":"data/Int.feature","source_case":"g_V_whereXvaluesXageX_isXtypeOfXGType_INTXXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.values("age").is(P.typeOf(GType.INT))).values("name")
+--- expected
+marko
+vadas
+josh
+peter

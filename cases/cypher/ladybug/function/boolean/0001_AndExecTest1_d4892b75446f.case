@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.AndExecTest1.d4892b75446f","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"AndExecTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.isStudent AND a.isWorker ORDER BY a.ID
+--- expected
+0|False
+10|False
+2|False
+3|False
+5|False
+7|False
+8|False
+9|False

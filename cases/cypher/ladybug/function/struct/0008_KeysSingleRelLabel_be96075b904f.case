@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.KeysSingleRelLabel.be96075b904f","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"KeysSingleRelLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows]->(:person) RETURN keys(e)
+--- expected
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]
+[date,meetTime,validInterval,comments,summary,notes,someMap]

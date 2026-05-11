@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return5.Scenario3.13818da874db","language":"cypher","ordered":true,"source":"tck/return/return5.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN count(DISTINCT {name: [[n.list, n.list], [n.list, n.list]]}) AS count
+--- expected
+1

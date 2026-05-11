@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.cast_bounds.i128_ui128.8b9aa1bf6a19","language":"cypher","ordered":true,"source":"cast/cast_bounds.test","source_case":"i128 / ui128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(170141183460469231731687303715884105728 AS INT128)
+--- expected
+Overflow exception: Value 170141183460469231731687303715884105728 is not within INT128 range.

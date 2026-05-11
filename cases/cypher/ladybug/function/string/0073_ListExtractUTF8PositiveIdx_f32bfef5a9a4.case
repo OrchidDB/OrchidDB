@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ListExtractUTF8PositiveIdx.f32bfef5a9a4","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ListExtractUTF8PositiveIdx","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN m.name[2]
+--- expected
+ó
+h
+o

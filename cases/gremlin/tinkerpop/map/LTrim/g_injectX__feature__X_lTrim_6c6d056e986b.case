@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.LTrim.g_injectX__feature__X_lTrim.6c6d056e986b","language":"gremlin","ordered":false,"source":"map/LTrim.feature","source_case":"g_injectX__feature__X_lTrim","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("  feature  ").lTrim()
+--- expected
+str[feature  ]

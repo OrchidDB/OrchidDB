@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithInt128.5592424c99d4","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique([to_int128(1), to_int128(1), NULL, to_int128(3), to_int128(1), to_int128(5)])
+--- expected
+3

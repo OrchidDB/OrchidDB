@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateExtractMillenniumFuncTest.7c5468f0b4c3","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateExtractMillenniumFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("millenniuM", p.birthdate)
+--- expected
+2
+2
+2
+2
+2
+2
+2
+2

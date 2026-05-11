@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT8.f53bfe471d2b","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(127, "INT8") * CAST(5, "INT8")
+--- expected
+Overflow exception: Value 127 * 5 is not within INT8 range.

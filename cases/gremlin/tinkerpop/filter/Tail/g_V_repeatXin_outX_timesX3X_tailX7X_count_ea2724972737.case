@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_V_repeatXin_outX_timesX3X_tailX7X_count.ea2724972737","language":"gremlin","ordered":false,"source":"filter/Tail.feature","source_case":"g_V_repeatXin_outX_timesX3X_tailX7X_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.in().out()).times(3).tail(7).count()
+--- expected
+d[7].l

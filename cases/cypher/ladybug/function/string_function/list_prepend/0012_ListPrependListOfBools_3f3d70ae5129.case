@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependListOfBools.3f3d70ae5129","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfBools","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_prepend([a.isStudent, a.isWorker], a.isStudent)
+--- expected
+[True,True,False]
+[True,True,False]
+[False,False,True]
+[False,False,True]
+[False,False,True]
+[True,True,False]
+[False,False,False]
+[False,False,True]

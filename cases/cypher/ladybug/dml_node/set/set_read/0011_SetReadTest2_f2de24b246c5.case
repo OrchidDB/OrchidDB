@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_read.SetReadTest2.f2de24b246c5","language":"cypher","ordered":true,"source":"dml_node/set/set_read.test","source_case":"SetReadTest2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation:play) RETURN a.ID, a.name
+--- expected
+0|X
+1|X
+4|X
+6|X

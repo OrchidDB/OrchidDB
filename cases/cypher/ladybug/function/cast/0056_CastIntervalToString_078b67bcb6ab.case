@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastIntervalToString.078b67bcb6ab","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastIntervalToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN string(p.lastJobDuration)
+--- expected
+3 years 2 days 13:02:00
+10 years 5 months 13:00:00.000024
+48:24:11
+10 years 5 months 13:00:00.000024
+48:24:11
+00:18:00.024
+10 years 5 months 13:00:00.000024
+3 years 2 days 13:02:00

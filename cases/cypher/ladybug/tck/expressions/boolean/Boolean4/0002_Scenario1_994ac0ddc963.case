@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean4.Scenario1.994ac0ddc963","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean4.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN NOT true AS nt, NOT false AS nf, NOT null AS nn
+--- expected
+False|True|

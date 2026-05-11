@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnArrayFloatRelProp.8f5daa7f92d6","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnArrayFloatRelProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:meets]->(b:person) RETURN e.location
+--- expected
+[7.820000,3.540000]
+[2.870000,4.230000]
+[3.650000,8.440000]
+[2.110000,3.100000]
+[2.200000,9.000000]
+[3.000000,5.200000]
+[3.500000,1.100000]

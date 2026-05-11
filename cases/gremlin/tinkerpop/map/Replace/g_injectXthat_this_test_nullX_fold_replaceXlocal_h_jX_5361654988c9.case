@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Replace.g_injectXthat_this_test_nullX_fold_replaceXlocal_h_jX.5361654988c9","language":"gremlin","ordered":false,"source":"map/Replace.feature","source_case":"g_injectXthat_this_test_nullX_fold_replaceXlocal_h_jX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("that", "this", "test", null).fold().replace(Scope.local, "h", "j")
+--- expected
+l[tjat,tjis,test,null]

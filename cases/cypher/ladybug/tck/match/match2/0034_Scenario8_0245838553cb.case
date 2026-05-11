@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario8.0245838553cb","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[r:FOO $param]->() RETURN r
+--- expected
+Parser exception: Invalid input <MATCH ()-[r:FOO $>: expected rule oC_SingleQuery (line: 1, offset: 16)
+"MATCH ()-[r:FOO $param]->() RETURN r;"
+^

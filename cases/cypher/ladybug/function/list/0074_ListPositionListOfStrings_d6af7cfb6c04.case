@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionListOfStrings.d6af7cfb6c04","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionListOfStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_position(a.usedNames, "Grad")
+--- expected
+0
+0
+0
+0
+0
+0
+1
+0

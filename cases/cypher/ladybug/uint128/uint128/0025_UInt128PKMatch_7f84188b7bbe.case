@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.UInt128PKMatch.7f84188b7bbe","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"UInt128PKMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.uint128key > 10000 AND z.uint128key < 20000 RETURN z.*
+--- expected
+11111|1
+15000|3

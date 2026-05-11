@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.MixedMatchTest2.021b29b21253","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"MixedMatchTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:knows]->(b:person) MATCH (b)-[:studyAt]->(c:organisation) RETURN COUNT(*)
+--- expected
+7

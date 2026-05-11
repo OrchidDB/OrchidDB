@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_set_copy.ReturnNullAge.d61ca358ec54","language":"cypher","ordered":true,"source":"binary_demo/demo_db_set_copy.test","source_case":"SetMultipleLabelNodeTest","source_log":"ReturnNullAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(u:City) RETURN u.name, u.population
+--- expected
+Waterloo|0
+Kitchener|0
+Guelph|0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.call.storage_info.CallStorageInfo.d617bd35b2a0","language":"cypher","ordered":true,"source":"function/call/storage_info.test","source_case":"CallStorageInfo","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN COUNT(p)
+--- expected
+8

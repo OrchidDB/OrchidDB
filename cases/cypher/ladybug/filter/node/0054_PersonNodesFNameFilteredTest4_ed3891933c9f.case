@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.PersonNodesFNameFilteredTest4.ed3891933c9f","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"PersonNodesFNameFilteredTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName >= 'Eliz' RETURN COUNT(*)
+--- expected
+4

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.LimitArrayNodeProp.bf6d1fdc6ff1","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"LimitArrayNodeProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.grades LIMIT 3
+--- expected
+[96,54,86,92]
+[98,42,93,88]
+[91,75,21,95]

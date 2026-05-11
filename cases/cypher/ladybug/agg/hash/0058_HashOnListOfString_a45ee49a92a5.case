@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashOnListOfString.a45ee49a92a5","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"ListHashTest","source_log":"HashOnListOfString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.usedNames, count(*)
+--- expected
+[Aida]|1
+[Bobby]|1
+[Carmen,Fred]|1
+[Wolfeschlegelstein,Daniel]|1
+[Ein]|2
+[Fesdwe]|1
+[Grad]|1
+[Ad,De,Hi,Kye,Orlan]|1
+[Alice]|1
+[Carmen]|1

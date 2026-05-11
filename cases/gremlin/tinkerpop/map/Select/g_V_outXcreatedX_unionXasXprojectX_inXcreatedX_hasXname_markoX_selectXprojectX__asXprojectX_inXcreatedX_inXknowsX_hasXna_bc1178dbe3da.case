@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_outXcreatedX_unionXasXprojectX_inXcreatedX_hasXname_markoX_selectXprojectX__asXprojectX_inXcreatedX_inXknowsX_hasXna.bc1178dbe3da","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_outXcreatedX_unionXasXprojectX_inXcreatedX_hasXname_markoX_selectXprojectX__asXprojectX_inXcreatedX_inXknowsX_hasXname_markoX_selectXprojectXX_groupCount_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("created").
+union(__.as("project").in("created").has("name", "marko").select("project"),
+__.as("project").in("created").in("knows").has("name", "marko").select("project")).
+groupCount().
+by("name")
+--- expected
+m[{"ripple":"d[1].l", "lop":"d[6].l"}]

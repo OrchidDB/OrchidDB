@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_empty.DeleteAllTuples.983055f1f8b2","language":"cypher","ordered":true,"source":"dml_node/delete/delete_empty.test","source_case":"DeleteAllTuples","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match(p:Post) where p.id = 1030792523146 return p.imageFile
+--- expected
+photo1030792523146.jpg

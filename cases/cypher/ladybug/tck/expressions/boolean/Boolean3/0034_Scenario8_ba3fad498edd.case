@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean3.Scenario8.ba3fad498edd","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean3.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [true] XOR [true]
+--- expected
+Binder exception: Expression LIST_CREATION(True) has data type BOOL[] but expected BOOL. Implicit cast is not supported.

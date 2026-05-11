@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.timestamp.MissingDay.76670d9e17df","language":"cypher","ordered":true,"source":"exceptions/types/timestamp.test","source_case":"CastStrToTimestampError","source_log":"MissingDay","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return cast("2112-08 08:21:23.005612", "TIMESTAMP_MS")
+--- expected
+Conversion exception: Error occurred during parsing TIMESTAMP_MS. Given: "2112-08 08:21:23.005612". Expected format: (YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]])

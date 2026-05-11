@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXsubgraphAXX_VX4X_in.c08019043226","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXsubgraphAXX_VX4X_in","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertices: __.has("name", P.within("josh", "lop", "ripple")))).V(vid4).in()
+--- expected
+

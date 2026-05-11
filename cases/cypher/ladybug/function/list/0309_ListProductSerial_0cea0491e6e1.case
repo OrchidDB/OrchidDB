@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductSerial.0cea0491e6e1","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_serial(1), to_serial(2)])
+--- expected
+2

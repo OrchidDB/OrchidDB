@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithStringSeq2.92cd3f969b2d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithStringSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_distinct([NULL, a.usedNames[1], a.usedNames[1], NULL])
+--- expected
+[Ad]
+[Aida]
+[Bobby]
+[Carmen]
+[Ein]
+[Fesdwe]
+[Grad]
+[Wolfeschlegelstein]

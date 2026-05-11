@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.FloatTest.6ce99307de46","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"FloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(cast(1, "FLOAT"))
+--- expected
+FLOAT

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withSideEffectXa_876960_divX_V_localXaggregateX_aX_byXageXX_capXaX.040ad41f02e4","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withSideEffectXa_876960_divX_V_localXaggregateX_aX_byXageXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", 876960, Operator.div).V().local(aggregate("a").by("age")).cap("a")
+--- expected
+d[1].i

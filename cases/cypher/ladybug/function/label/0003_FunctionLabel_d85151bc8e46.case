@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.label.FunctionLabel.d85151bc8e46","language":"cypher","ordered":true,"source":"function/label.test","source_case":"FunctionLabel","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e]->(b) RETURN DISTINCT label(e)
+--- expected
+knows
+marries
+meets
+studyAt
+workAt

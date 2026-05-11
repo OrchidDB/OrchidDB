@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalExtractMillenniumFuncTest.f46e24c3563e","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalExtractMillenniumFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("MILLENNIUM", p.lastJobDuration)
+--- expected
+0
+0
+0
+0
+0
+0
+0
+0

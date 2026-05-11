@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.COPYWithFROMTO.098c170ff64c","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"COPYWithFROMTO","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:personA)-[e:test]->(b:personB) WHERE a.ID = 0 RETURN label(e), label(b), b.*
+--- expected
+test|personB|2|Bob
+test|personB|3|Carol
+test|personB|5|Dan

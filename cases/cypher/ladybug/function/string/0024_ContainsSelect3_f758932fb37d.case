@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsSelect3.f758932fb37d","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsSelect3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName <> "Alice" and a.fName CONTAINS a.fName RETURN count(*)
+--- expected
+7

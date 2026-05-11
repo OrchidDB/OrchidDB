@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.UDT.345181c3037d","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDT","source_log":"UDT","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.*
+--- expected
+12|{age: 1, name: Dan}
+5|{age: 5, name: Alice}
+8|{age: 3, name: Bob}

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt32ToInt8OutOfRange.b9f66f5e9d0a","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt32ToInt8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(cast(1000, "int32"), "int8")
+--- expected
+Overflow exception: Value 1000 is not within INT8 range

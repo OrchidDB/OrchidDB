@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.StudyAtINT128Test.186b6a60739e","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"StudyAtINT128Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:studyAt]->(b:organisation) RETURN e.hugedata
+--- expected
+1844674407370955161811111111

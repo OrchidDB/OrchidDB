@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.ListOfInt64Less.0e0820d71c42","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"ListOfInt64Less","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.workedHours < [3,4,5] RETURN p.fName
+--- expected
+Dan
+Elizabeth
+Greg

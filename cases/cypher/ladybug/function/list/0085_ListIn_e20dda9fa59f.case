@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListIn.e20dda9fa59f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListIn","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1 IN [2,3,4], 2.0 IN [2,3,4], 3 IN [0,0,3]
+--- expected
+False|True|True

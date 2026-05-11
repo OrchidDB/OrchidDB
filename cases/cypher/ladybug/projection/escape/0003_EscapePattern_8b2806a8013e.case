@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.EscapePattern.8b2806a8013e","language":"cypher","ordered":true,"source":"projection/escape.test","source_case":"EscapePattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN "this is a quote char: \"."
+--- expected
+this is a quote char: ".

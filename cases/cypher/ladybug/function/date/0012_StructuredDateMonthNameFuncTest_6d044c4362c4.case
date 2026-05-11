@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateMonthNameFuncTest.6d044c4362c4","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateMonthNameFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN monthname(p.birthdate)
+--- expected
+January
+January
+June
+July
+October
+October
+October
+November

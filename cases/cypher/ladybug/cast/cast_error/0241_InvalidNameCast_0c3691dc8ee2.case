@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidNameCast.0c3691dc8ee2","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidNameCast","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("nop", "STRUCT(a=fds)")
+--- expected
+Catalog exception: A=FDS is neither an internal type nor a user defined type.

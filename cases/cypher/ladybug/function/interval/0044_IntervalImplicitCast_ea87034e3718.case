@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.IntervalImplicitCast.ea87034e3718","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"IntervalImplicitCast","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) RETURN a.intv
+--- expected
+1 year 2 days

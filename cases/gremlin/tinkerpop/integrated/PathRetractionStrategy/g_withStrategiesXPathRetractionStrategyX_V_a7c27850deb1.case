@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.PathRetractionStrategy.g_withStrategiesXPathRetractionStrategyX_V.a7c27850deb1","language":"gremlin","ordered":false,"source":"integrated/PathRetractionStrategy.feature","source_case":"g_withStrategiesXPathRetractionStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(PathRetractionStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

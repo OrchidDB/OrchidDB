@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCrossProductDOUBLE.9276405295d6","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCrossProductDOUBLE","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN round(ARRAY_CROSS_PRODUCT(ARRAY_VALUE(TO_DOUBLE(12.62), TO_DOUBLE(7.54), TO_DOUBLE(6.13)), ARRAY_VALUE(TO_DOUBLE(3.23), TO_DOUBLE(4.56), TO_DOUBLE(5.34)))[1],2)
+--- expected
+12.310000

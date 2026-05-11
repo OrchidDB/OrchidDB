@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"count","id":"gremlin.tinkerpop.filter.Range.g_V_hasXnameXDRUMSXX_inXfollowedByX_order_byXnameX_rangeX1_4X_inXfollowedByX_order_byXnameX_rangeX1_4X.dce6ab22e90a","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_V_hasXnameXDRUMSXX_inXfollowedByX_order_byXnameX_rangeX1_4X_inXfollowedByX_order_byXnameX_rangeX1_4X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has('name','DRUMS').in('followedBy').order().by('name').range(1,4).in('followedBy').order().by('name').range(1,4)
+--- expected
+3

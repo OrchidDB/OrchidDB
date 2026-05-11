@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withSideEffectXa_1_2_3_assignX_V_order_byXageX_localXaggregateX_aX_byXageXX_capXaX.ac054d7e4ea4","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withSideEffectXa_1_2_3_assignX_V_order_byXageX_localXaggregateX_aX_byXageXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", [1i,2i,3i], Operator.assign).V().order().by("age").local(aggregate("a").by("age")).cap("a")
+--- expected
+d[35].i

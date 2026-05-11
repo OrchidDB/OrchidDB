@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnionAllUnmatchedDataTypesOfExpressions.cc7356ff1976","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnionAllUnmatchedDataTypesOfExpressions","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.fName UNION ALL MATCH (p1:person) RETURN p1.age
+--- expected
+Binder exception: p1.age has data type INT64 but STRING was expected.

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_hasXname_joshX_localXaggregateXaXX_outE_hasXweight_ltX1_0XX_inV_localXaggregateXaXX_outE_inV_localXaggregateXaXX_cap.c783610212c9","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_hasXname_joshX_localXaggregateXaXX_outE_hasXweight_ltX1_0XX_inV_localXaggregateXaXX_outE_inV_localXaggregateXaXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "josh").local(aggregate("a")).outE().has("weight", P.lt(1.0)).inV().local(aggregate("a")).outE().inV().local(aggregate("a")).cap("a")
+--- expected
+v[josh]
+v[lop]

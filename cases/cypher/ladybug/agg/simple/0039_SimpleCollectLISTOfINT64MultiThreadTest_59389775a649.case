@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectLISTOfINT64MultiThreadTest.59389775a649","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectLISTOfINT64MultiThreadTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN collect(p.workedHours)
+--- expected
+[[10,5],[12,8],[4,5],[1,9],[2],[3,4,5,6,7],[1],[10,11,12,3,4,5,6,7]]

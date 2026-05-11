@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideINT128.ea6f0303d968","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-160141183460469231731687303715884100, "INT128") / CAST(-1100, "INT128")
+--- expected
+145582894054972028846988457923531

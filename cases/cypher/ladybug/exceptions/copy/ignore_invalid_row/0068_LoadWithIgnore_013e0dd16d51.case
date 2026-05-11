@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.013e0dd16d51","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"ParallelCopyFromMultipleLargeFilesSkipInvalid","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (s:someTable) RETURN COUNT(*)
+--- expected
+151043

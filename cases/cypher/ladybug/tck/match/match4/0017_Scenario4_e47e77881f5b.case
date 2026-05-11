@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario4.e47e77881f5b","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n {var: 'start'})-[:T*]->(m {var: 'end'}) RETURN m
+--- expected
+Binder exception: Expression start has data type STRING but expected INT64. Implicit cast is not supported.

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.list.ListFunctionException.ebe88a50fde3","language":"cypher","ordered":true,"source":"exceptions/types/list.test","source_case":"ListFunctionException","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_concat(a.workedHours, a.age)
+--- expected
+Binder exception: Function ARRAY_CONCAT did not receive correct arguments:
+Actual:   (INT64[],INT64)
+Expected: (LIST,LIST) -> LIST

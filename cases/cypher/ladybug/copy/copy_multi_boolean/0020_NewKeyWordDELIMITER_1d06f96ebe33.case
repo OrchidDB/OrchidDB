@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_multi_boolean.NewKeyWordDELIMITER.1d06f96ebe33","language":"cypher","ordered":true,"source":"copy/copy_multi_boolean.test","source_case":"NewKeyWordDELIMITER","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person8) RETURN a.*
+--- expected
+0|Alice|1
+2|Bob|2
+3|Carol|1
+5|Dan|2
+7|Elizabeth|1

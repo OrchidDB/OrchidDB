@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.SimpleScalarMacroWithNoParameter.a06eef54590f","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"SimpleScalarMacroWithNoParameter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return returnConstant()
+--- expected
+5
+5
+5
+5
+5
+5
+5
+5

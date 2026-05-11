@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.3248.d811b68805ba","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"3248","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Item) RETURN a.item, a.price, array_cosine_similarity([6.0, 25.0], a.vector) AS sim ORDER BY sim DESC
+--- expected
+apple|2.000000|0.916383
+banana|1.000000|0.999864

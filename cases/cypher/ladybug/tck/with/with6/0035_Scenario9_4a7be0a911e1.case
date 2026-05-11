@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario9.4a7be0a911e1","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (me: Person)--(you: Person) WITH me.age + you.age AS grp, me.age + you.age + count(*) AS agg RETURN *
+--- expected
+AmbiguousAggregationExpression

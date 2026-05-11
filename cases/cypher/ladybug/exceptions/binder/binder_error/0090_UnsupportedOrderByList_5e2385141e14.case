@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByList.5e2385141e14","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a ORDER BY a.workedHours
+--- expected
+Binder exception: Cannot order by a.workedHours. Order by INT64[] is not supported.

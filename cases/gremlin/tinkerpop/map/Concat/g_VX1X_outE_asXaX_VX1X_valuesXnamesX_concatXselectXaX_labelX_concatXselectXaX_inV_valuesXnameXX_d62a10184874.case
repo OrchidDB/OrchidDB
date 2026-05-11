@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Concat.g_VX1X_outE_asXaX_VX1X_valuesXnamesX_concatXselectXaX_labelX_concatXselectXaX_inV_valuesXnameXX.d62a10184874","language":"gremlin","ordered":false,"source":"map/Concat.feature","source_case":"g_VX1X_outE_asXaX_VX1X_valuesXnamesX_concatXselectXaX_labelX_concatXselectXaX_inV_valuesXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).outE().as("a").V(vid1).values("name").concat(select("a").label()).concat(select("a").inV().values("name"))
+--- expected
+markocreatedlop
+markoknowsvadas
+markoknowsjosh

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Substring.g_V_hasLabelXsoftwareX_valueXnameX_order_fold_substringXlocal_1_4X.a3aa2cf023d5","language":"gremlin","ordered":false,"source":"map/Substring.feature","source_case":"g_V_hasLabelXsoftwareX_valueXnameX_order_fold_substringXlocal_1_4X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").values("name").order().fold().substring(Scope.local, 1, 4)
+--- expected
+l[op,ipp]

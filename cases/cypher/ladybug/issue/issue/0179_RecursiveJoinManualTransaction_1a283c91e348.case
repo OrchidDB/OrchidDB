@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.RecursiveJoinManualTransaction.1a283c91e348","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"RecursiveJoinManualTransaction","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p=(v:V)-[:R*]->(:V) RETURN properties(nodes(p), 'id')
+--- expected
+[1,2,3]
+[1,2]
+[2,3]

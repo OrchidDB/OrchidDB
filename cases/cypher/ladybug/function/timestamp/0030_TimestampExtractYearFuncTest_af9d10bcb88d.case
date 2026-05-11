@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampExtractYearFuncTest.af9d10bcb88d","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampExtractYearFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("yeAr", p.registerTime)
+--- expected
+2011
+2008
+1911
+2031
+1976
+1972
+1976
+2023

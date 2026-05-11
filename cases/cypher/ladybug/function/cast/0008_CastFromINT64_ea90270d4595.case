@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromINT64.ea90270d4595","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID=0 RETURN cast(p.gender, "int8"), cast(p.gender, "int16"), cast(p.gender, "int32"), cast(p.gender, "int64"), cast(p.gender, "int128"), cast(p.gender, "float"), cast(p.gender, "double")
+--- expected
+1|1|1|1|1|1.000000|1.000000

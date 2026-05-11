@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.DateTest.3316bc85e1bd","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"DateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(date('2022-06-06'))
+--- expected
+DATE

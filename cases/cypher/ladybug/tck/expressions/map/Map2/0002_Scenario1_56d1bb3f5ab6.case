@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map2.Scenario1.56d1bb3f5ab6","language":"cypher","ordered":true,"source":"tck/expressions/map/Map2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH $expr AS expr, $idx AS idx RETURN expr[idx] AS value
+--- expected
+Apa

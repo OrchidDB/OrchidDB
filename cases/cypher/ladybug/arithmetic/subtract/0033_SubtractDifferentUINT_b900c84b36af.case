@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractDifferentUINT.b900c84b36af","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractDifferentUINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(300, "UINT16") - CAST(12, "UINT8")
+--- expected
+288

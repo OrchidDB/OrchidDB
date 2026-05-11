@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_basic.CopyFloatPK.6c431af9ce8d","language":"cypher","ordered":true,"source":"copy/copy_pk_basic.test","source_case":"CopyFloatPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:follows]->(o:org) return p.fName, o.ID
+--- expected
+Foo|10020.000000
+Bar|10020.000000

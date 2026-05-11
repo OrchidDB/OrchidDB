@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpMatchesSeq1.668d848a33e4","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpMatchesSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return REGEXP_MATCHES('anabanana', '(an)*')
+--- expected
+True

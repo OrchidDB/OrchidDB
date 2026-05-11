@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithStringSeq1.e98a35478bd0","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithStringSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique(['this is long string', 'this is long string', NULL, 'bbb', 'ccc', 'aaa'])
+--- expected
+4

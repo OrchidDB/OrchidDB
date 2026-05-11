@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyAndDeleteCommitRecovery.f0e901894891","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyAndDeleteCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.ID
+--- expected
+0
+3
+5
+7

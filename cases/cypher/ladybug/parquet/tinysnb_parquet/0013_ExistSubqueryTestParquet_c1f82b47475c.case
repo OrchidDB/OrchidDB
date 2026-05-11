@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.ExistSubqueryTestParquet.c1f82b47475c","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"ExistSubqueryTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE EXISTS { MATCH (a)-[:knows]->(b:person) } RETURN COUNT(*)
+--- expected
+5

@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_0sungBy_b__a_0writtenBy_c__b_writtenBy_d__c_sungBy_d__d_hasXname_GarciaXX.b231bed1b995","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_0sungBy_b__a_0writtenBy_c__b_writtenBy_d__c_sungBy_d__d_hasXname_GarciaXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").in("sungBy").as("b"),
+__.as("a").in("writtenBy").as("c"),
+__.as("b").out("writtenBy").as("d"),
+__.as("c").out("sungBy").as("d"),
+__.as("d").has("name", "Garcia"))
+--- expected
+m[{"a":"v[Garcia]","b":"v[CREAM PUFF WAR]","c":"v[CREAM PUFF WAR]","d":"v[Garcia]"}]
+m[{"a":"v[Garcia]","b":"v[CREAM PUFF WAR]","c":"v[CRYPTICAL ENVELOPMENT]","d":"v[Garcia]"}]
+m[{"a":"v[Garcia]","b":"v[CRYPTICAL ENVELOPMENT]","c":"v[CREAM PUFF WAR]","d":"v[Garcia]"}]
+m[{"a":"v[Garcia]","b":"v[CRYPTICAL ENVELOPMENT]","c":"v[CRYPTICAL ENVELOPMENT]","d":"v[Garcia]"}]
+m[{"a":"v[Grateful_Dead]","b":"v[CANT COME DOWN]","c":"v[DOWN SO LONG]","d":"v[Garcia]"}]
+m[{"a":"v[Grateful_Dead]","b":"v[THE ONLY TIME IS NOW]","c":"v[DOWN SO LONG]","d":"v[Garcia]"}]

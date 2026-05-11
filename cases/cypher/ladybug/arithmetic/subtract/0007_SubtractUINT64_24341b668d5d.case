@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractUINT64.24341b668d5d","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractUINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(202474672468, "UINT64") - CAST(102474672468, "UINT64")
+--- expected
+100000000000

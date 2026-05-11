@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffectCap.g_V_chooseXlabel_person__age_groupCountXaX__name_groupCountXbXX_capXa_bX_unfold.385a77c14410","language":"gremlin","ordered":false,"source":"sideEffect/SideEffectCap.feature","source_case":"g_V_chooseXlabel_person__age_groupCountXaX__name_groupCountXbXX_capXa_bX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(has(T.label, "person"),values("age").groupCount("a"), values("name").groupCount("b")).cap("a", "b").unfold()
+--- expected
+m[{"a":"m[{\\"d[32].i\\":\\"d[1].l\\",\\"d[35].i\\":\\"d[1].l\\",\\"d[27].i\\":\\"d[1].l\\",\\"d[29].i\\":\\"d[1].l\\"}]"}]
+m[{"b":"m[{\\"ripple\\":\\"d[1].l\\",\\"lop\\":\\"d[1].l\\"}]"}]

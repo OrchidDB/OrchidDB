@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.set_node.set_tinysnb.NullTest.8ff7b1418bf5","language":"cypher","ordered":true,"source":"transaction/set_node/set_tinysnb.test","source_case":"NullTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID=0 RETURN a.age
+--- expected
+35

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.CountFalseTest.cb352ddd83d1","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"CountFalseTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.booleanColumn = False RETURN count(*)
+--- expected
+25002

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.AggregateFunctions.a33d3fa04ba2","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"AggregateFunctions","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) RETURN collect(z.value)
+--- expected
+[5,190,170141183460469231731687303715884105727]

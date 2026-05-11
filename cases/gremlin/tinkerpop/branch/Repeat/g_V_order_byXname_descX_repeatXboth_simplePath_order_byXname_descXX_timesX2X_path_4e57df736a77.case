@@ -1,0 +1,23 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_order_byXname_descX_repeatXboth_simplePath_order_byXname_descXX_timesX2X_path.4e57df736a77","language":"gremlin","ordered":true,"source":"branch/Repeat.feature","source_case":"g_V_order_byXname_descX_repeatXboth_simplePath_order_byXname_descXX_timesX2X_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().order().by("name", Order.desc).repeat(__.both().simplePath().order().by("name", Order.desc)).times(2).path()
+--- expected
+p[v[lop],v[marko],v[vadas]]
+p[v[josh],v[marko],v[vadas]]
+p[v[marko],v[josh],v[ripple]]
+p[v[lop],v[josh],v[ripple]]
+p[v[marko],v[lop],v[peter]]
+p[v[josh],v[lop],v[peter]]
+p[v[peter],v[lop],v[marko]]
+p[v[josh],v[lop],v[marko]]
+p[v[ripple],v[josh],v[marko]]
+p[v[lop],v[josh],v[marko]]
+p[v[vadas],v[marko],v[lop]]
+p[v[josh],v[marko],v[lop]]
+p[v[ripple],v[josh],v[lop]]
+p[v[marko],v[josh],v[lop]]
+p[v[vadas],v[marko],v[josh]]
+p[v[lop],v[marko],v[josh]]
+p[v[peter],v[lop],v[josh]]
+p[v[marko],v[lop],v[josh]]

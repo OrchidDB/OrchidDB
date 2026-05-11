@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Inject.g_injectX1_3X_injectX100_300X.ee1403a6bb54","language":"gremlin","ordered":false,"source":"sideEffect/Inject.feature","source_case":"g_injectX1_3X_injectX100_300X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1, 3).inject(100, 300)
+--- expected
+d[100].i
+d[300].i
+d[1].i
+d[3].i

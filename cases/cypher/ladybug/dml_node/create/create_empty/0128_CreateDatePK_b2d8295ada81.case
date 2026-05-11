@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateDatePK.b2d8295ada81","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateDatePK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+2024-01-26
+2024-01-24

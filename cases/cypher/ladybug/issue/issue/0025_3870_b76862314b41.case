@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.3870.b76862314b41","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"3870","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (ba:V)-[:after*0..]->(bb:V) return ba.id
+--- expected
+0
+1

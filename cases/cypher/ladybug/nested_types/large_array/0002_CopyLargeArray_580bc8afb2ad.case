@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET large-array","expected_kind":"rows","id":"cypher.ladybug.nested_types.large_array.CopyLargeArray.580bc8afb2ad","language":"cypher","ordered":true,"source":"nested_types/large_array.test","source_case":"CopyLargeArray","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:person) RETURN COUNT(*), SUM(list_sum(u.embedding))
+--- expected
+9381|783313.291344

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionValueOnLiteral.bdef37fc5662","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionValueOnLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN union_value(age := 36)
+--- expected
+36

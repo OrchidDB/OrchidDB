@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateDayNameFuncTest.42c4d1570395","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateDayNameFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN dayname(p.birthdate)
+--- expected
+Monday
+Monday
+Saturday
+Sunday
+Sunday
+Sunday
+Sunday
+Tuesday

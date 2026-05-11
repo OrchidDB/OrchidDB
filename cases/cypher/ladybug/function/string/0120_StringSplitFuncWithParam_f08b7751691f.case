@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StringSplitFuncWithParam.f08b7751691f","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StringSplitFuncWithParam","status":"imported","suite":"ladybug","version":1}
+--- query
+match (o:organisation) return string_to_array(o.name, o.name[2])
+--- expected
+[A,FsUni]
+[C,Work]
+[D,sWork]

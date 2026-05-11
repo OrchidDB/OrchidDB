@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidMapToMap.3bf48d88f838","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidMapToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{-1=3}", "MAP(INT64, INT64)"), "MAP(UINT8, UINT8)")
+--- expected
+Overflow exception: Value -1 is not within UINT8 range

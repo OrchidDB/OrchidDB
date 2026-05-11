@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateExtractMicroSecondsFuncTest.eafda4881d0d","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateExtractMicroSecondsFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("microseconds", p.birthdate)
+--- expected
+0
+0
+0
+0
+0
+0
+0
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.BasicUsageCheck.30107613b56e","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"BasicUsageCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("05:12:34.567890")
+--- expected
+05:12:34.56789

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.count_if.UINT64Test.ca16ecd02886","language":"cypher","ordered":true,"source":"function/utility/count_if.test","source_case":"ConstantTests","source_log":"UINT64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count_if(cast(1, "UINT64"))
+--- expected
+1

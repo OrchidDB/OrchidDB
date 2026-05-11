@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.8a84bf9bb5db","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation), (o1:organisation) WHERE o.state = o1.state RETURN o.name
+--- expected
+ABFsUni
+CsWork
+DEsWork

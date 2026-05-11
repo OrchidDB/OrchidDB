@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.SimpleCountMultiQueryTest3.3747ce9194a8","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"SimpleCountMultiQueryTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH COUNT(*) AS s MATCH (c:person) WHERE c.ID > s RETURN c.ID
+--- expected
+10
+9

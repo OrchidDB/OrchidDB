@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_label.MultiLabelAggTest2.d662d8c83d36","language":"cypher","ordered":true,"source":"agg/multi_label.test","source_case":"AggMultiLabel","source_log":"MultiLabelAggTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:marries|studyAt]->(b:person) RETURN NULL, COUNT(*)
+--- expected
+|3

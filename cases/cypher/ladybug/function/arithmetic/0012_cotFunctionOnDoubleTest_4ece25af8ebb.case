@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.cotFunctionOnDoubleTest.4ece25af8ebb","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"cotFunctionOnDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN cot(a.mark)
+--- expected
+1.600684
+0.702481
+0.702481

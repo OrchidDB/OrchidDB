@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Sum.g_injectX1b_2b_3bX_sum.78fdad973fd6","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_injectX1b_2b_3bX_sum","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1b,2b,3b).sum()
+--- expected
+d[6].b

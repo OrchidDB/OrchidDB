@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.MultiplyTest.035215be1df4","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"MultiplyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(4294967295, "UINT64") * cast(4294967295, "UINT64")
+--- expected
+18446744065119617025

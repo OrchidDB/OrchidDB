@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.0a590ba09170","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"CreateRelTableAs","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person2)-[k:Knows2]->(b:Person2) RETURN a.fname, b.fname
+--- expected
+Alice|Dan
+Alice|Carol
+Alice|Bob
+Bob|Dan
+Bob|Carol
+Bob|Alice

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.NodeUndirectedTest2Parquet.6f20807a3e15","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"NodeUndirectedTest2Parquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:knows|:studyAt|:workAt*1..2]-(b) WHERE a.ID=7 RETURN e, label(b)
+--- expected
+[0:4,3:12,0:5,3:12,0:4]|person
+[0:4,3:12,0:5,4:2,1:0]|organisation
+[0:4,3:12,0:5]|person
+[0:4,3:13,0:6,3:13,0:4]|person
+[0:4,3:13,0:6]|person
+[0:4,5:2,1:2,5:1,0:3]|person
+[0:4,5:2,1:2,5:2,0:4]|person
+[0:4,5:2,1:2]|organisation

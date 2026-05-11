@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyUINT128.3972f17284f4","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyUINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(170141183460469231731687303715884105727, "UINT128") * CAST(2, "UINT128")
+--- expected
+340282366920938463463374607431768211454

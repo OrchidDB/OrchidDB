@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Where2.e17b336fd5f7","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Where2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.age IS NOT NULL AND starts_with(a.name, "Kar") RETURN *
+--- expected
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}

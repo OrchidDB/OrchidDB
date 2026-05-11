@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolExecTest3.758b8536e444","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolExecTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE b.fName <> 'Elizabeth' RETURN a.isStudent and b.isWorker
+--- expected
+False
+True
+True
+False
+True
+True
+False
+False
+False
+False
+False
+False
+False
+False

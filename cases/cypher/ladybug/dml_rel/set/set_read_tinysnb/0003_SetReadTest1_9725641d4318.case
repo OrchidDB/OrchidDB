@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_read_tinysnb.SetReadTest1.9725641d4318","language":"cypher","ordered":true,"source":"dml_rel/set/set_read_tinysnb.test","source_case":"SetReadTest1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID=0 AND b.ID=5 RETURN e.date
+--- expected
+2023-01-01

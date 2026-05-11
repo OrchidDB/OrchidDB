@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapStructKey.1eb6b56fd111","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapStructKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([{a: 5, b: 3}, {a: 5, b: 4}, {a: 5, b: 3}], [20, 34, 24])
+--- expected
+Runtime exception: Found duplicate key: {a: 5, b: 3} in map.

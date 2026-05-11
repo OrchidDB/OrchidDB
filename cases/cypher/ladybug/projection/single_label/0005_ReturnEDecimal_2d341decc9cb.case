@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnEDecimal.2d341decc9cb","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnEDecimal","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -9.13e-02 + 1
+--- expected
+0.908700

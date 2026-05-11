@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidStructToStruct.ddc73b7536d7","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidStructToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{a: 12, b: 0}", "STRUCT(a STRING, b STRING)"), "MAP(STRING, STRING)")
+--- expected
+Conversion exception: Unsupported casting function from STRUCT to MAP.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContains.cdc1437ab7e6","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContains","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {a:1} IN [2,3]
+--- expected
+Binder exception: Cannot compare INT64 and STRUCT(a INT64) in list_contains function.

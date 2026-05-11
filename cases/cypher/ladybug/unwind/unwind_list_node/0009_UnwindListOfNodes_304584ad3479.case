@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind_list_node.UnwindListOfNodes.304584ad3479","language":"cypher","ordered":true,"source":"unwind/unwind_list_node.test","source_case":"UnwindListOfNodes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:PPT) RETURN a.type
+--- expected
+p_install

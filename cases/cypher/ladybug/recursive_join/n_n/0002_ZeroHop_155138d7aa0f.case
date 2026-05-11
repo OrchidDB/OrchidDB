@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.ZeroHop.155138d7aa0f","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"ZeroHop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*0..1]->(b:person) WHERE a.ID = 7 RETURN properties(nodes(p),'fName'), properties(rels(p), 'meetTime'), a.fName, b.fName, properties(nodes(e),'ID'), properties(rels(e), 'meetTime')
+--- expected
+[Elizabeth,Farooq]|[2025-01-01 11:22:33.52]|Elizabeth|Farooq|[]|[2025-01-01 11:22:33.52]
+[Elizabeth,Greg]|[2020-03-01 12:11:41.6552]|Elizabeth|Greg|[]|[2020-03-01 12:11:41.6552]
+[Elizabeth]|[]|Elizabeth|Elizabeth|[]|[]

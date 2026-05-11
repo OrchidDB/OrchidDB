@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampArithmeticAddInterval2.9ff3abbac969","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampArithmeticAddInterval2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN cast(a.registerTime, "TIMESTAMP_MS") + interval('2 years 3 days 34 h 28 minutes 300 milliseconds 20 us')
+--- expected
+1913-08-24 13:00:21.30002
+1974-08-04 23:50:30.97802
+1978-12-27 15:09:42.30002
+1978-12-27 21:49:42.30002
+2010-11-08 01:53:30.30002
+2013-08-24 21:53:30.30002
+2025-02-25 23:53:30.30002
+2033-12-04 22:53:30.30002

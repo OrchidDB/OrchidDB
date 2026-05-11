@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.GroupByMultiQueryTest4.70891d880cc9","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"GroupByMultiQueryTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:knows]->(b:person) WHERE a.ID = 0 WITH a, r, COUNT(*) AS s MATCH (a)-[:knows]->(c:person) WHERE c.ID = s + 1 RETURN r.date, c.ID, s
+--- expected
+2021-06-30|2|1
+2021-06-30|2|1
+2021-06-30|2|1

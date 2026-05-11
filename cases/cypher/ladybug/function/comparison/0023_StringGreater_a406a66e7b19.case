@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.StringGreater.a406a66e7b19","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"StringGreater","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.fName > 'Dan' RETURN p.fName
+--- expected
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

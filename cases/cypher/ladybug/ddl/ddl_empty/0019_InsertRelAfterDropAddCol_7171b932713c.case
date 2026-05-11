@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.InsertRelAfterDropAddCol.7171b932713c","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"InsertRelAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) RETURN e.since, b.id
+--- expected
+1900|20
+2000|30

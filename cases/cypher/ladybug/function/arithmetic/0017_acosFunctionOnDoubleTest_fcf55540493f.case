@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.acosFunctionOnDoubleTest.fcf55540493f","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"acosFunctionOnDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN acos(a.rating)
+--- expected
+0.000000
+0.676131
+1.023945

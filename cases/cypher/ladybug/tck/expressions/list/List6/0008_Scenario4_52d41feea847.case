@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List6.Scenario4.52d41feea847","language":"cypher","ordered":true,"source":"tck/expressions/list/List6.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH null AS l RETURN size(l), size(null)
+--- expected
+|

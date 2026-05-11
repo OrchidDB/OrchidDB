@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_injectX1_2_3_4_0x5X_asNumber_sum_asNumberXGType_BYTEX.4b8e0847ffaf","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_injectX1_2_3_4_0x5X_asNumber_sum_asNumberXGType_BYTEX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1.0, 2, 3, "4", "0x5").asNumber().sum().asNumber(GType.BYTE)
+--- expected
+d[15].b

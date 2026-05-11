@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXname_not_containingXarkXX.d2a1fa4448d6","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXname_not_containingXarkXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", TextP.notContaining("ark"))
+--- expected
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

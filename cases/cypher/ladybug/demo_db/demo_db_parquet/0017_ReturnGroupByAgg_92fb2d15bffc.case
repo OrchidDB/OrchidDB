@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.ReturnGroupByAgg.92fb2d15bffc","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"ReturnGroupByAgg","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN a, avg(b.age) as avgFriendAge
+--- expected
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|45.000000
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}|50.000000
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}|25.000000

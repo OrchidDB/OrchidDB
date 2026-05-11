@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario23.5496cc89df70","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario23","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[]->(p), p = ()-[]-() RETURN p
+--- expected
+SyntaxError: VariableAlreadyBound

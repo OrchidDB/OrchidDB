@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_followedBy_count_isXgtX10XX_b__a_0followedBy_count_isXgtX10XX_bX_count.99d71fd88a15","language":"gremlin","ordered":true,"source":"map/Match.feature","source_case":"g_V_matchXa_followedBy_count_isXgtX10XX_b__a_0followedBy_count_isXgtX10XX_bX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("followedBy").count().is(P.gt(10)).as("b"),
+__.as("a").in("followedBy").count().is(P.gt(10)).as("b")).count()
+--- expected
+d[6].l

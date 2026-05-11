@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation6.Scenario1.b1fd1f252a98","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation6.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN percentileDisc(n.price, $percentile) AS p
+--- expected
+10.0

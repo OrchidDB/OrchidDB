@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnMapLiteralWithNestedType.99d2b77ca76c","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnMapLiteralWithNestedType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) RETURN map([p.workedHours, p1.workedHours], [p.courseScoresPerTerm, p1.courseScoresPerTerm])
+--- expected
+{[10,5]=[[10,8],[6,7,8]], [12,8]=[[8,9],[9,10]]}
+{[10,5]=[[10,8],[6,7,8]], [4,5]=[[8,10]]}
+{[10,5]=[[10,8],[6,7,8]], [1,9]=[[7,4],[8,8],[9]]}
+{[12,8]=[[8,9],[9,10]], [10,5]=[[10,8],[6,7,8]]}
+{[12,8]=[[8,9],[9,10]], [4,5]=[[8,10]]}
+{[12,8]=[[8,9],[9,10]], [1,9]=[[7,4],[8,8],[9]]}
+{[4,5]=[[8,10]], [10,5]=[[10,8],[6,7,8]]}
+{[4,5]=[[8,10]], [12,8]=[[8,9],[9,10]]}
+{[4,5]=[[8,10]], [1,9]=[[7,4],[8,8],[9]]}
+{[1,9]=[[7,4],[8,8],[9]], [10,5]=[[10,8],[6,7,8]]}
+{[1,9]=[[7,4],[8,8],[9]], [12,8]=[[8,9],[9,10]]}
+{[1,9]=[[7,4],[8,8],[9]], [4,5]=[[8,10]]}
+{[2]=[[6],[7],[8]], [3,4,5,6,7]=[[8]]}
+{[2]=[[6],[7],[8]], [1]=[[10]]}

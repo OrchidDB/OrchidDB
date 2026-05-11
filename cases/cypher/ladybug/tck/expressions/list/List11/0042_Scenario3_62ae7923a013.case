@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List11.Scenario3.62ae7923a013","language":"cypher","ordered":true,"source":"tck/expressions/list/List11.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH 0 AS start, [1, 2, 500, 1000, 1500] AS stopList, [-1000, -3, -2, -1, 1, 2, 3, 1000] AS stepList UNWIND stopList AS stop UNWIND stepList AS step WITH start, stop, step, range(start, stop, step) AS list WITH start, stop, step, list, sign(stop-start) <> sign(step) AS empty
+--- expected
+TRUE

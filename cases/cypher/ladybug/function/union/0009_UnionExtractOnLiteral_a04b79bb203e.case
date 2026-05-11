@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionExtractOnLiteral.a04b79bb203e","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionExtractOnLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN union_extract(union_value(numTuples := 100), 'numTuples')
+--- expected
+100

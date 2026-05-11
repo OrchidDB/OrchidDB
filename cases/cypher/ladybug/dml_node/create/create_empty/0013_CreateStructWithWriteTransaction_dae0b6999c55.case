@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateStructWithWriteTransaction.dae0b6999c55","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateStructWithWriteTransaction","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:test) RETURN a.prop
+--- expected
+{age: 10, name: A}

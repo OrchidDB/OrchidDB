@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.CreateDrop.ef4983547225","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"CreateDrop","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('test')
+--- expected
+1

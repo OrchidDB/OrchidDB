@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnStructLiteralWithUnflatFlatChildren.c4e108c1f89c","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnStructLiteralWithUnflatFlatChildren","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows]->(p1:person) return {name: p.fName, id: p1.ID, date: e.date}
+--- expected
+{name: Alice, id: 2, date: 2021-06-30}
+{name: Alice, id: 3, date: 2021-06-30}
+{name: Alice, id: 5, date: 2021-06-30}
+{name: Bob, id: 0, date: 2021-06-30}
+{name: Bob, id: 3, date: 1950-05-14}
+{name: Bob, id: 5, date: 1950-05-14}
+{name: Carol, id: 0, date: 2021-06-30}
+{name: Carol, id: 2, date: 1950-05-14}
+{name: Carol, id: 5, date: 2000-01-01}
+{name: Dan, id: 0, date: 2021-06-30}
+{name: Dan, id: 2, date: 1950-05-14}
+{name: Dan, id: 3, date: 2000-01-01}
+{name: Elizabeth, id: 8, date: 1905-12-12}
+{name: Elizabeth, id: 9, date: 1905-12-12}

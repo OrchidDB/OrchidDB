@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_empty.DeleteSecondNodeGroup.d2ac2b1181b7","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_empty.test","source_case":"DeleteSecondNodeGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[k:knows]->(b) where a.ID = 933 return k.creationDate
+--- expected
+20100422123057947
+20101115072349104
+20111215023443085

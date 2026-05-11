@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_append.ListAppendListOfINT32.b88a797090fc","language":"cypher","ordered":true,"source":"function/string/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN list_append([m.length], m.length)
+--- expected
+[126,126]
+[2544,2544]
+[298,298]

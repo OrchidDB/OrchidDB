@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.path.PathFun5.b2e5c995fd9b","language":"cypher","ordered":true,"source":"function/path.test","source_case":"FunctionPath","source_log":"PathFun5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a)-[e:knows*1..2]-(b) WHERE a.ID=7 RETURN properties(rels(p), '_id'), is_trail(p)
+--- expected
+[3:12,3:12]|False
+[3:12]|True
+[3:13,3:13]|False
+[3:13]|True

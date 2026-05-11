@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.sequence.SequenceReadTrxError.a01e78bf3474","language":"cypher","ordered":true,"source":"transaction/ddl/sequence.test","source_case":"SequenceReadTrxError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN currval('before')
+--- expected
+Catalog exception: currval: sequence "before" is not yet defined. To define the sequence, call nextval first.

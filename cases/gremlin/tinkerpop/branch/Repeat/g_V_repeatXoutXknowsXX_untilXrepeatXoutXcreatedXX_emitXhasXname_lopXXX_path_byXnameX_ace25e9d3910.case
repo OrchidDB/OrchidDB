@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXoutXknowsXX_untilXrepeatXoutXcreatedXX_emitXhasXname_lopXXX_path_byXnameX.ace25e9d3910","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXoutXknowsXX_untilXrepeatXoutXcreatedXX_emitXhasXname_lopXXX_path_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.out("knows")).until(__.repeat(__.out("created")).emit(__.has("name", "lop"))).path().by("name")
+--- expected
+marko
+josh

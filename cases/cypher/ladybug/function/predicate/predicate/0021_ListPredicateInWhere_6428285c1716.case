@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.ListPredicateInWhere.6428285c1716","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"ListPredicateInWhere","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE single(usedName in a.usedNames WHERE usedName in ['Daniel', 'Bobby']) RETURN a.fName
+--- expected
+Bob
+Dan

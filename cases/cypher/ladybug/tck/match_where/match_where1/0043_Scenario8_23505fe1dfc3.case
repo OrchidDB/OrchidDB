@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario8.23505fe1dfc3","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (node)-[r:KNOWS]->(a) WHERE r.name = 'monkey' RETURN a
+--- expected
+{_ID: 0:0, _LABEL: A, ID: 0}

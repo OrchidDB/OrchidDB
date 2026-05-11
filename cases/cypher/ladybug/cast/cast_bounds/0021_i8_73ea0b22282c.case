@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.cast_bounds.i8.73ea0b22282c","language":"cypher","ordered":true,"source":"cast/cast_bounds.test","source_case":"i8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(128 AS INT8)
+--- expected
+Overflow exception: Value 128 is not within INT8 range

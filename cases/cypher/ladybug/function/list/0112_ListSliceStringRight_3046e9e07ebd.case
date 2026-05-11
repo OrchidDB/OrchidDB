@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceStringRight.3046e9e07ebd","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceStringRight","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName[4:]
+--- expected
+ce
+ol
+zabeth
+ooq
+g
+ert Blaine Wolfeschlegelsteinhausenbergerdorff

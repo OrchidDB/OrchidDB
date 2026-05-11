@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.filter.Range.g_V_chooseXvaluesXageX_isXlteX30XX_localXout_order_byXnameX_limitX1XX_localXout_order_byXnameX_limitX2XXX.b764d4b1a2c0","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_V_chooseXvaluesXageX_isXlteX30XX_localXout_order_byXnameX_limitX1XX_localXout_order_byXnameX_limitX2XXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(values('age').is(lte(30)),local(out().order().by('name').limit(1)),local(out().order().by('name').limit(2)))
+--- expected
+4

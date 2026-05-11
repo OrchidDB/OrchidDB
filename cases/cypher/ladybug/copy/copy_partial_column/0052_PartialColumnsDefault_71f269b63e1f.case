@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialColumnsDefault.71f269b63e1f","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialColumnsDefault","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes14) WHERE row.id >= 20 AND row.id <= 24 RETURN row.*
+--- expected
+2022-06-06|False|AjbxHQThEtDDlOjbzMjCQSXlvGQEjcFLykESrnFHwPKX|7|True|default|1307-01-26 03:31:08|1.000000|10|1307-01-26|[1,2,3]|64.630960|[]|21|1970-01-01 10:00:00.004666
+2022-06-06|False|ISImRVpUjynGMFRQyYmeIUVjM|58|True|default|1181-10-16 18:19:43|1.000000|10|1181-10-16|[1,2,3]|42.774957||23|1970-01-01 10:00:00.004666
+2022-06-06|False|naDlQ|75|True|default|1942-10-24 09:30:16|1.000000|10|1942-10-24|[1,2,3]|53.813224|[97,91,28,26,]|24|1970-01-01 10:00:00.004666
+2022-06-06|True|OdM|0|True|default|1731-09-26 03:30:08|1.000000|10|1731-09-26|[1,2,3]|57.579280|[93,,86,37]|20|1970-01-01 10:00:00.004666
+2022-06-06|True|dRvHHdyNXYfSUcicaxBoQEKQUfgex|71|True|default|1455-07-26 03:07:03|1.000000|10|1455-07-26|[1,2,3]|37.963386|[72,,45,,81]|22|1970-01-01 10:00:00.004666

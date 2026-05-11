@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Merge.g_injectXa_null_bX_mergeXa_cX.b6bd06a0fa2d","language":"gremlin","ordered":false,"source":"map/Merge.feature","source_case":"g_injectXa_null_bX_mergeXa_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a",null,"b"]).merge(["a","c"])
+--- expected
+s[null,a,c,b]

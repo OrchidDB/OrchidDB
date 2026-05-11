@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.listfunc.fb500e7b91f7","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"listfunc","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_extract("成績評価の甘い授業が高く評価", 4)
+--- expected
+価

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(lsqb-sf01)","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries_parquet.q2.2c8546832db5","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries_parquet.test","source_case":"LSQBTestParquet","source_log":"q2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person1:Person)-[:Person_knows_Person]-(person2:Person), (person1)<-[:Comment_hasCreator_Person]-(comment:Comment)-[:Comment_replyOf_Post]->(Post:Post)-[:Post_hasCreator_Person]->(person2) RETURN count(*) AS count
+--- expected
+82990

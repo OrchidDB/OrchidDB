@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TriangleTest6.0aa91757d018","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TriangleTest6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person), (a)-[e3:knows]->(c) WHERE a.fName='Alice' AND e1.meetTime=timestamp('1986-10-21 21:08:31.521') RETURN b.fName, c.fName
+--- expected
+Bob|Carol
+Bob|Dan

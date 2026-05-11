@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.None.g_injectXbcd_bcdX_noneXeqXabcXX.d7a139e1251a","language":"gremlin","ordered":false,"source":"filter/None.feature","source_case":"g_injectXbcd_bcdX_noneXeqXabcXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["bcd","bcd"]).none(P.eq("abc"))
+--- expected
+l[bcd,bcd]

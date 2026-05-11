@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateBatch.18ffd6ca8952","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateBatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WHERE t.age IS NOT NULL RETURN COUNT(*)
+--- expected
+0

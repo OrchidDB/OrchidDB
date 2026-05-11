@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind11.180981d6b889","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind11","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) UNWIND a.workedHours as x WITH x AS hour WHERE hour < 0 RETURN COUNT(*)
+--- expected
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithFloat.7c6a537b91e3","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([to_float(1.1), to_float(1.1), NULL, to_float(3.4), to_float(1.2), to_float(5.1)])
+--- expected
+[,5.100000,3.400000,1.200000,1.100000,1.100000]

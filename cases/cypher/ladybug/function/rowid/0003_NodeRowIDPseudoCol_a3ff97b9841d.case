@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.rowid.NodeRowIDPseudoCol.a3ff97b9841d","language":"cypher","ordered":true,"source":"function/rowid.test","source_case":"FunctionRowID","source_log":"NodeRowIDPseudoCol","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN id(a), a.rowid
+--- expected
+0:0|0
+0:1|1
+0:2|2
+0:3|3
+0:4|4
+0:5|5
+0:6|6
+0:7|7

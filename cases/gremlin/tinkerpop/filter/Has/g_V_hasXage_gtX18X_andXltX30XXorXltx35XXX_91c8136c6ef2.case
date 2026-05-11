@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXage_gtX18X_andXltX30XXorXltx35XXX.91c8136c6ef2","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXage_gtX18X_andXltX30XXorXltx35XXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("age", P.gt(18).and(P.lt(30)).and(P.lt(35)))
+--- expected
+v[marko]
+v[vadas]

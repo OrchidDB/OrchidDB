@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsFunction.c6a7f374b1fa","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsFunction","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN contains(a.fName, "a")
+--- expected
+False
+False
+True
+True
+True
+True
+False
+True

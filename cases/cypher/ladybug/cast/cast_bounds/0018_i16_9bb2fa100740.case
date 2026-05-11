@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.cast_bounds.i16.9bb2fa100740","language":"cypher","ordered":true,"source":"cast/cast_bounds.test","source_case":"i16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-32769 AS INT16)
+--- expected
+Overflow exception: Value -32769 is not within INT16 range

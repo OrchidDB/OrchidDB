@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidStructToStruct.404e653bf034","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidStructToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{a: 12, b: 0}", "STRUCT(a STRING, b STRING)"), "STRUCT(a INT128, b STRUCT(a STRING, b STRING))")
+--- expected
+Conversion exception: Cast failed. 0 is not in STRUCT(a STRING, b STRING) range.

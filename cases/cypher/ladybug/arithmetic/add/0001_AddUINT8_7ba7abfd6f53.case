@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddUINT8.7ba7abfd6f53","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddUINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(12, "UINT8") + CAST(24, "UINT8")
+--- expected
+36

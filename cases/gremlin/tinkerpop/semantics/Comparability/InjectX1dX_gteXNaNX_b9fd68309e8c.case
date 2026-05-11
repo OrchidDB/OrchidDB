@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.semantics.Comparability.InjectX1dX_gteXNaNX.b9fd68309e8c","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectX1dX_gteXNaNX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1.0d).is(P.gte(NaN))
+--- expected
+

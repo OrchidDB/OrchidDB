@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.MergeNodeWithOnMatch.8233d595c21e","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"MergeNodeWithOnMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person1) RETURN p.id
+--- expected
+31
+40
+52
+41

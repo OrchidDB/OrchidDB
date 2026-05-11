@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Min.g_V_foo_min.e91b8ceffbd1","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_V_foo_min","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("foo").min()
+--- expected
+

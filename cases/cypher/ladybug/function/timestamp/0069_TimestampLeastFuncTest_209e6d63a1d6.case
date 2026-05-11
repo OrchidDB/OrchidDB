@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLeastFuncTest.209e6d63a1d6","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLeastFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN least(cast("2008-11-03 15:25:30.000493", "TIMESTAMP_NS"), cast("2008-11-03 15:25:30.0005", "TIMESTAMP_SEC")), least(cast("2008-11-03 15:25:30.000493", "TIMESTAMP_NS"), cast("2008-11-03 15:25:30.0005", "TIMESTAMP")), least(cast("2008-11-03 15:25:30.000493", "TIMESTAMP_SEC"), cast("2008-11-03 15:25:30.0005", "TIMESTAMP_NS")), least(cast("2008-11-03 15:25:30.000493", "TIMESTAMP_TZ"), cast("2008-11-03 15:25:30.0005", "TIMESTAMP_MS"))
+--- expected
+2008-11-03 15:25:30|2008-11-03 15:25:30.000493|2008-11-03 15:25:30|2008-11-03 15:25:30

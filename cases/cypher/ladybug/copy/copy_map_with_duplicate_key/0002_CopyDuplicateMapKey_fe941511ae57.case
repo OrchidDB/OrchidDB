@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV copy-test/map-copy-error","expected_kind":"rows","id":"cypher.ladybug.copy.copy_map_with_duplicate_key.CopyDuplicateMapKey.fe941511ae57","language":"cypher","ordered":true,"source":"copy/copy_map_with_duplicate_key.test","source_case":"CopyDuplicateMapKey","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:person) RETURN m.*
+--- expected
+1|{alice=52, bob=42}
+3|{dan=52, carol=42, dan=53}

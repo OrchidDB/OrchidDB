@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.copy.Bwd.3d3b004079eb","language":"cypher","ordered":true,"source":"dml_rel/copy.test","source_case":"CopyRelSetStorageDirection","source_log":"Bwd","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[m:marries]->(b:person) RETURN COUNT(*)
+--- expected
+Binder exception: Querying table matched in rel pattern 'm' with bwd-only storage direction isn't supported.

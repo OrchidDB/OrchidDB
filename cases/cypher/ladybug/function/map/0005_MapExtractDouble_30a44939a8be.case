@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractDouble.30a44939a8be","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_extract(map([{a: 3, b: [1, 2, 5]}, {a: 6, b: [1,3]}], [4.3, 5.2]), {a: 3, b: [1,2,5]})
+--- expected
+[4.300000]

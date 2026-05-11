@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Map.g_V_hasLabelXpersonX_valueMap_isXtypeOfXGType_MAPXX_count.f0c9408d676e","language":"gremlin","ordered":false,"source":"data/Map.feature","source_case":"g_V_hasLabelXpersonX_valueMap_isXtypeOfXGType_MAPXX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").valueMap().is(P.typeOf(GType.MAP)).count()
+--- expected
+d[4].l

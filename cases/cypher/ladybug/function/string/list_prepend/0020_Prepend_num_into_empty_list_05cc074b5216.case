@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_prepend.Prepend_num_into_empty_list.05cc074b5216","language":"cypher","ordered":true,"source":"function/string/list_prepend.test","source_case":"ListPrependNullAndEmptyChecks","source_log":"Prepend num into empty list","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_PREPEND([], 7)
+--- expected
+[7]

@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.agg.hash_ldbc.TestAggregateListsWithNulls.867ced365bf1","language":"cypher","ordered":true,"source":"agg/hash_ldbc.test","source_case":"AggHash","source_log":"TestAggregateListsWithNulls","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Post) RETURN [p.language], [p.language, p.content], COUNT(p) as n ORDER BY n DESC LIMIT 5
+--- expected
+[]|[,]|120256
+[tk]|[tk,Rudyard Kipling's WorksRudyard Kipling's WorksRudyard Kipling's WorksRudyard Kipling's WorksRudyar]|2
+[tk]|[tk,Rudyard Kipling's WorksRudyard Kipling's WorksRudyard Kipling's WorksRudyard Kipling's WorksRudyard Kipling's WorksRudy]|2
+[uz]|[uz,About Humayun, is half-brother Kamran Mirza, who was to become a rather bitter rival, obtained the sovere]|2
+[uz]|[uz,Cliff Richards (born 1964, Belo Horizonte, Brazil) is a comic book artist.About Cliff Richar]|2

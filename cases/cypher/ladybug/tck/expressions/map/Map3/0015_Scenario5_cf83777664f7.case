@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map3.Scenario5.cf83777664f7","language":"cypher","ordered":true,"source":"tck/expressions/map/Map3.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {exists: 42, notMissing: null} AS map RETURN 'exists' IN keys(map) AS a, 'notMissing' IN keys(map) AS b, 'missing' IN keys(map) AS c
+--- expected
+True|True|False

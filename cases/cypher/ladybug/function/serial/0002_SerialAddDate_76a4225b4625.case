@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.SerialAddDate.76a4225b4625","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"SerialAddDate","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID + a.birthdate
+--- expected
+1900-01-01
+1900-01-02
+1940-06-24
+1950-07-26
+1980-10-30
+1980-10-31
+1980-11-01
+1990-12-04

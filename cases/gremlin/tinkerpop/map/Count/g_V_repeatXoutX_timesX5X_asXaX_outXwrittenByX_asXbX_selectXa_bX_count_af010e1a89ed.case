@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Count.g_V_repeatXoutX_timesX5X_asXaX_outXwrittenByX_asXbX_selectXa_bX_count.af010e1a89ed","language":"gremlin","ordered":true,"source":"map/Count.feature","source_case":"g_V_repeatXoutX_timesX5X_asXaX_outXwrittenByX_asXbX_selectXa_bX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().
+repeat(__.out()).
+times(5).as("a").
+out("writtenBy").as("b").
+select("a", "b").
+count()
+--- expected
+d[24309134024].l

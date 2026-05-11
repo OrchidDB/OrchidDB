@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison2.Scenario3.9d98f079a5bc","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison2.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (n)-[r]->() WITH [n, r, p, '', 1, 3.14, True, null, [], {}] AS types UNWIND range(0, size(types) - 1) AS i UNWIND range(0, size(types) - 1) AS j WITH types[i] AS lhs, types[j] AS rhs WHERE i <> j WITH lhs, rhs, lhs < rhs AS result WHERE result RETURN lhs, rhs
+--- expected
+1|3.14

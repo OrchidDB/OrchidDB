@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.SimpleDistinctCollectINT64Test.fd8266a0eabe","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"SimpleDistinctCollectINT64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_sort(collect(distinct p.age), 'ASC')
+--- expected
+[20,25,30,35,40,45,83]

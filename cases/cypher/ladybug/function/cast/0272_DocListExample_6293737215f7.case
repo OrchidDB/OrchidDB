@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.6293737215f7","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND CAST([[1,2,3],[3],[4,5]], 'INT64[][3]') AS x UNWIND x AS y RETURN y
+--- expected
+1
+2
+3
+3
+4
+5

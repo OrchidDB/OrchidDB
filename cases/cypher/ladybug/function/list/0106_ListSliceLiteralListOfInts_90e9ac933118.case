@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceLiteralListOfInts.90e9ac933118","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceLiteralListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN array_slice([1,4,7,9,10,20,15,192,-5,21,3], 3, o.ID + 3)
+--- expected
+[7,9]
+[7,9,10,20,15]
+[7,9,10,20,15,192,-5]

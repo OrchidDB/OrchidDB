@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsBool.g_V_sackXassignX_byX_hasLabelXpersonX_count_asBoolX_sackXandX_byX_outE_count_asBoolX_sack_path.e619ef6597b5","language":"gremlin","ordered":false,"source":"map/AsBool.feature","source_case":"g_V_sackXassignX_byX_hasLabelXpersonX_count_asBoolX_sackXandX_byX_outE_count_asBoolX_sack_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().sack(assign).by(__.hasLabel('person').count().asBool()).sack(and).by(__.outE().count().asBool()).sack().path()
+--- expected
+p[v[marko],true]
+p[v[vadas],false]
+p[v[lop],false]
+p[v[josh],true]
+p[v[ripple],false]
+p[v[peter],true]

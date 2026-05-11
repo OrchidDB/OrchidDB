@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUnionToString.5a21cf529415","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastUnionToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN string(o.info)
+--- expected
+3.120000
+abcd
+2023-12-15

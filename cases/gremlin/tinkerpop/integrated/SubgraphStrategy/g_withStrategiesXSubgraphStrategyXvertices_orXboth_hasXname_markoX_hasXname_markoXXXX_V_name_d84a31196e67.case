@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXvertices_orXboth_hasXname_markoX_hasXname_markoXXXX_V_name.d84a31196e67","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXvertices_orXboth_hasXname_markoX_hasXname_markoXXXX_V_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertices: __.or(__.both().has("name", "marko"), __.has("name", "marko")))).V().where(__.bothE().count().is(P.neq(0))).values("name")
+--- expected
+marko
+vadas
+josh
+lop

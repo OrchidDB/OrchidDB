@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.DropRelTableCommitNormalExecution.785c70733204","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"DropRelTableCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[k:knows]->() RETURN count(*)
+--- expected
+Binder exception: Table knows does not exist.

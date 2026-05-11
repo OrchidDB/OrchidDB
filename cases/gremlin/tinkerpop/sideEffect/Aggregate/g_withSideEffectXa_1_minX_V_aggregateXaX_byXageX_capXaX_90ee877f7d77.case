@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withSideEffectXa_1_minX_V_aggregateXaX_byXageX_capXaX.90ee877f7d77","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withSideEffectXa_1_minX_V_aggregateXaX_byXageX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", 1, Operator.min).V().aggregate("a").by("age").cap("a")
+--- expected
+d[1].i

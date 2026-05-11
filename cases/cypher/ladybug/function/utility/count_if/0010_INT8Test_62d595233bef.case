@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.count_if.INT8Test.62d595233bef","language":"cypher","ordered":true,"source":"function/utility/count_if.test","source_case":"ConstantTests","source_log":"INT8Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count_if(cast(0, "INT8"))
+--- expected
+0

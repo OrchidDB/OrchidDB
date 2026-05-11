@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.AddPropertySequence.ad101a98f0bf","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"AddPropertySequence","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment) RETURN SUM(c.propx)
+--- expected
+23217646816

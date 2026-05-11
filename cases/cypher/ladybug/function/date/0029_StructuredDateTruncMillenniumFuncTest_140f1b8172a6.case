@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateTruncMillenniumFuncTest.140f1b8172a6","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateTruncMillenniumFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_trunc("millenniuM", p.birthdate)
+--- expected
+1000-01-01
+1000-01-01
+1000-01-01
+1000-01-01
+1000-01-01
+1000-01-01
+1000-01-01
+1000-01-01

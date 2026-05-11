@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.null.NullTest.93b2912deaf2","language":"cypher","ordered":true,"source":"function/null.test","source_case":"NullTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[:knows]->(b:person) WHERE a.ID = 2 RETURN a.ID, a.name, a.name IS NULL
+--- expected
+2||True
+2||True
+2||True

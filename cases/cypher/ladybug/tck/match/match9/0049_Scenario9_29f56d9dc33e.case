@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario9.29f56d9dc33e","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a {name: 'A'}), (x) WHERE list_contains(['B', 'C'], x.name) OPTIONAL MATCH p = (a)-[r*]->(x) RETURN r, x, p
+--- expected
+{_NODES: [], _RELS: [(0:0)-{_LABEL: X, _ID: 1:0}->(0:1)]}|{_ID: 0:1, _LABEL: A, ID: 1, name: B}|{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 0:1, _LABEL: A, ID: 1, name: B}], _RELS: [(0:0)-{_LABEL: X, _ID: 1:0}->(0:1)]}
+|{_ID: 0:2, _LABEL: A, ID: 2, name: C}|{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A}], _RELS: []}

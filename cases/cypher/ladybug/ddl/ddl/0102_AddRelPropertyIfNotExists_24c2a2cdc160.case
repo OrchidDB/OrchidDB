@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.24c2a2cdc160","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"AddListOfStringPropertyToPersonTableWithDefaultValueNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.random
+--- expected
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]
+[142,short,long long long string]

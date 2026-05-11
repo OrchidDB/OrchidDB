@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLiteralEqualityComparison.a8e046fea4d1","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLiteralEqualityComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast('1972-07-31 13:22:30.678559', "TIMESTAMP_MS") = cast('1972-07-31 13:22:30.678559123', "TIMESTAMP_S")
+--- expected
+False

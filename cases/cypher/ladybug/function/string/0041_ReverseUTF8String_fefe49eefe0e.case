@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ReverseUTF8String.fefe49eefe0e","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ReverseUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN reverse(m.name)
+--- expected
+âjeráp ut nóc ólóS
+eivom 🚗🍞🌦️🌍🧘🏻‍♂️😃😂 ehT
+amoR

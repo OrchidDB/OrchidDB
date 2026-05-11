@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_V_valuesXbirthdayX_asNumber_asDate_asNumber.cb063497d9b4","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_V_valuesXbirthdayX_asNumber_asDate_asNumber","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("birthday").asNumber().asDate().asNumber()
+--- graph_initializer
+g.addV("person").property("name", "alice").property("birthday", 1596326400000).
+  addV("person").property("name", "john").property("birthday", 597715200000).
+  addV("person").property("name","charlie").property("birthday", 1012521600000).
+  addV("person").property("name", "suzy").property("birthday", -131587200000)
+--- expected
+d[597715200000].l
+d[1596326400000].l
+d[1012521600000].l
+d[-131587200000].l

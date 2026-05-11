@@ -1,0 +1,25 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_complex.IC8.cb7a36eddf28","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_complex.test","source_case":"LDBCInteractiveComplex","source_log":"IC8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (start:Person {id: 15393162789560})<-[:Post_hasCreator|:Comment_hasCreator]-(:Post:Comment)<-[:replyOf_Comment|:replyOf_Post]-(comment:Comment)-[:Comment_hasCreator]->(person:Person) RETURN person.id AS personId, person.firstName AS personFirstName, person.lastName AS personLastName, comment.creationDate AS commentCreationDate, comment.id AS commentId, comment.content AS commentContent ORDER BY commentCreationDate DESC, commentId ASC LIMIT 20
+--- expected
+30786325579399|Huynh Quang|Ho|20120830061452780|1030792193898|good
+26388279068034|Karthik|Khan|20120830060928195|1030792193894|good
+4398046511185|Adrian|Bravo|20120818211455193|1030792412047|About Adolf Hitler, nths of WorldAbout Camille Saint-Saëns, riccioso, andAbout Salvador Da
+296|Zaenal|Gallagher|20120808095336584|1030792324832|About Bruce Willis, ghters before their divorce in 2000, following thirteen years of marriage.About Republic of New Granada,  of today's Ecuador, a
+10995116278292|Paul|Becker|20120808083152497|1030792324834|right
+4398046511667|John|Chopra|20120804165327746|1030792170063|About Scotland, ngland to create the unitedAbout George III of the United Kingd
+26388279067551|Anand|Rao|20120804084238969|1030792170068|About Hamid Karzai, y prominent Afghan poliAbout Cossack Hetmanate, y representation from
+15393162790406|A.|Sharma|20120804011747504|1030792170073|yes
+6597069767242|Salim Ahmed|Binalshibh|20120803234001218|1030792170061|LOL
+19791209300004|John|Reddy|20120803225216374|1030792170071|About Hamid Karzai, fter the removal of the TaliAbout Hohenzollern-Sigmaringen, io
+17592186045739|Shweta|Singh|20120803214122248|1030792170064|About Hamid Karzai, 2th and current President About Trần Dynasty, ive years o
+19791209300004|John|Reddy|20120803204723977|1030792170062|maybe
+10995116278234|Arjun|Anand|20120803202820075|1030792170067|LOL
+19791209301519|Abhishek|Kumar|20120711124701377|1030792236927|About Interpol, t variable. It is often required to interpolAbout Finland, parate conf
+28587302323283|John|Sharma|20120710192848880|1030792236925|cool
+28587302322974|Zhang|Li|20120710171912519|1030792236926|no
+19791209301519|Abhishek|Kumar|20120710140748506|1030792236922|no way!
+941|Aryo|Tobing|20120623014144864|962072693417|About Bobby Hull, o ever play the About Kid A, er Thom Yorke haAbout Tubula
+13194139533535|Shweta|Singh|20120623001733081|962072693421|thx
+26388279067551|Anand|Rao|20120622142721062|962072693418|thanks

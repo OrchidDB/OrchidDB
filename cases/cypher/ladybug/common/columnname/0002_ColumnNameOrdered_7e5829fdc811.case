@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.common.columnname.ColumnNameOrdered.7e5829fdc811","language":"cypher","ordered":true,"source":"common/columnname.test","source_case":"ColumnNameOrdered","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name, u.age ORDER BY u.age
+--- expected
+u.name|u.age
+Noura|25
+Adam|30
+Karissa|40
+Zhang|50

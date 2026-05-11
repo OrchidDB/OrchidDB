@@ -1,0 +1,18 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirMultiLabel3.eb830d43b23a","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirMultiLabel3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:meets|:marries|:knows]-(b:person)-[:knows|:meets]-(c:person) WHERE c.fName = "Farooq" AND a.fName <> "Farooq" RETURN a.fName, b.fName
+--- expected
+Carol|Elizabeth
+Alice|Carol
+Bob|Carol
+Dan|Carol
+Elizabeth|Carol
+Greg|Carol
+Greg|Elizabeth
+Carol|Elizabeth
+Alice|Carol
+Bob|Carol
+Dan|Carol
+Elizabeth|Carol
+Dan|Carol

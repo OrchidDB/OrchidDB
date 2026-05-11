@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasKey.g_E_properties_hasKeyXnull_weightX_value.8aed80b28420","language":"gremlin","ordered":false,"source":"filter/HasKey.feature","source_case":"g_E_properties_hasKeyXnull_weightX_value","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E().properties().hasKey(null, "weight").value()
+--- expected
+d[0.5].d
+d[1.0].d
+d[1.0].d
+d[0.4].d
+d[0.4].d
+d[0.2].d

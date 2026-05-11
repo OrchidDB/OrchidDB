@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.update_str_prop.UpdateStrPropCommitRecovery.61fa6f3c2818","language":"cypher","ordered":true,"source":"transaction/set_rel/update_str_prop.test","source_case":"UpdateStrPropCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[e:knows]->(p1:person) where p1.ID >= 10 and p1.ID <= 20 and p0.ID = 0 return e.place
+--- expected
+2990
+2989
+2988
+2987
+2986
+waterloo
+kitchener
+2983
+2982
+2980

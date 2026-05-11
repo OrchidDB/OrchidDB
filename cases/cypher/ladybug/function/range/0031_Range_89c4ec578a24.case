@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.function.range.Range.89c4ec578a24","language":"cypher","ordered":true,"source":"function/range.test","source_case":"Range","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(TO_INT32(5), TO_INT32(26), TO_INT32(10))
+--- expected
+[5,15,25]

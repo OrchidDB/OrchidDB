@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.f3be68882d27","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.courseScoresPerTerm = b.courseScoresPerTerm AND a.ID = b.ID RETURN SUM(a.ID)
+--- expected
+44

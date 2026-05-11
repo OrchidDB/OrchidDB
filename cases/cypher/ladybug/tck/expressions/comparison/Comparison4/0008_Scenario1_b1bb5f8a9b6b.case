@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison4.Scenario1.b1bb5f8a9b6b","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison4.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n)-[]->(m) WHERE n.prop1 < m.prop1 AND n.prop2 = m.prop1 AND n.prop2 <> m.prop2 RETURN LABEL(m)
+--- expected
+B

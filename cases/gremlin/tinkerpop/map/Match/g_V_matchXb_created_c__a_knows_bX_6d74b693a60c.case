@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXb_created_c__a_knows_bX.6d74b693a60c","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXb_created_c__a_knows_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("b").out("created").as("c"),
+__.as("a").out("knows").as("b"))
+--- expected
+m[{"a":"v[marko]","b":"v[josh]", "c":"v[ripple]"}]
+m[{"a":"v[marko]","b":"v[josh]", "c":"v[lop]"}]

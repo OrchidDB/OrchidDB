@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsUnmatchType.c9c9f1be5263","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsUnmatchType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_contains(cast([23, 29] as int128[]), to_uint128(29))
+--- expected
+True

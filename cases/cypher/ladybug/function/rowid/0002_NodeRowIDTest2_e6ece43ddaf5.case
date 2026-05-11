@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.rowid.NodeRowIDTest2.e6ece43ddaf5","language":"cypher","ordered":true,"source":"function/rowid.test","source_case":"FunctionRowID","source_log":"NodeRowIDTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE rowid(a)=0 RETURN a.fName
+--- expected
+Alice

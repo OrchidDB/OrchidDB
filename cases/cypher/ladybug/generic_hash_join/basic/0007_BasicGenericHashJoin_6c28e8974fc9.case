@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.6c28e8974fc9","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) , (c:person)-[e2:knows]->(d:person) WHERE a.ID = 0 AND c.ID = 2 AND e1.date = e2.date RETURN id(e1), e1.date, id(e2), e2.date
+--- expected
+3:0|2021-06-30|3:3|2021-06-30
+3:1|2021-06-30|3:3|2021-06-30
+3:2|2021-06-30|3:3|2021-06-30

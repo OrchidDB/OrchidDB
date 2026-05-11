@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectOneHopTest.ffbfd70add86","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectOneHopTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN a.fName, collect(b.age)
+--- expected
+Alice|[30,45,20]
+Bob|[35,45,20]
+Carol|[35,30,20]
+Dan|[35,30,45]
+Elizabeth|[25,40]

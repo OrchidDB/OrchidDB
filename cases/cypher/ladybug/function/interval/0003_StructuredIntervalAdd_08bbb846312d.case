@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalAdd.08bbb846312d","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalAdd","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.lastJobDuration + interval('47 hours 30 minutes 30 seconds')
+--- expected
+10 years 5 months 60:30:30.000024
+10 years 5 months 60:30:30.000024
+10 years 5 months 60:30:30.000024
+3 years 2 days 60:32:30
+3 years 2 days 60:32:30
+47:48:30.024
+95:54:41
+95:54:41

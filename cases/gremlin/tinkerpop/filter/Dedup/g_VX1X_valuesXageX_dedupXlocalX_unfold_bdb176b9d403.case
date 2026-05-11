@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_VX1X_valuesXageX_dedupXlocalX_unfold.bdb176b9d403","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_VX1X_valuesXageX_dedupXlocalX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").dedup(Scope.local).unfold()
+--- expected
+d[29].i

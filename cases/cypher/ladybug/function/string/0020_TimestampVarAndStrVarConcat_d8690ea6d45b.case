@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.TimestampVarAndStrVarConcat.d8690ea6d45b","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"TimestampVarAndStrVarConcat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE '2011-08-20 11:25:30Alice' = concat(string(a.registerTime), a.fName) RETURN COUNT(*)
+--- expected
+1

@@ -1,0 +1,21 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.Recommendation.g_V_classic_recommendation_ranked.7e55dc19a77b","language":"gremlin","ordered":false,"source":"integrated/Recommendation.feature","source_case":"g_V_classic_recommendation_ranked","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "DARK STAR").as("a").out("followedBy").aggregate("stash").
+in("followedBy").where(P.neq("a").and(P.not(P.within("stash")))).
+groupCount().
+unfold().
+project("x", "y", "z").
+by(__.select(Column.keys).values("name")).
+by(__.select(Column.keys).values("performances")).
+by(__.select(Column.values)).
+order().
+by(__.select("z"), Order.desc).
+by(__.select("y"), Order.asc).
+limit(5).local(aggregate("m"))
+--- expected
+m[{"x":"LET IT GROW","y":"d[276].i","z":"d[21].l"}]
+m[{"x":"UNCLE JOHNS BAND","y":"d[332].i","z":"d[20].l"}]
+m[{"x":"I KNOW YOU RIDER","y":"d[550].i","z":"d[20].l"}]
+m[{"x":"SHIP OF FOOLS","y":"d[225].i","z":"d[18].l"}]
+m[{"x":"GOOD LOVING","y":"d[428].i","z":"d[18].l"}]

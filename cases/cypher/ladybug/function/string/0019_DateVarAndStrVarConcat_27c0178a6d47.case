@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.DateVarAndStrVarConcat.27c0178a6d47","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"DateVarAndStrVarConcat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE '1900-01-01Alice' = concat(string(a.birthdate), a.fName) RETURN COUNT(*)
+--- expected
+1

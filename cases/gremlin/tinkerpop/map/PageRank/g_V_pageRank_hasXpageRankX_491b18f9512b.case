@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.PageRank.g_V_pageRank_hasXpageRankX.491b18f9512b","language":"gremlin","ordered":false,"source":"map/PageRank.feature","source_case":"g_V_pageRank_hasXpageRankX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().pageRank().has("gremlin.pageRankVertexProgram.pageRank")
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

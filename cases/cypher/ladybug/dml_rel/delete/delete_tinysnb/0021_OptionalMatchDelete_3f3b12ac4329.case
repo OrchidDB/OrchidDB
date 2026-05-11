@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_tinysnb.OptionalMatchDelete.3f3b12ac4329","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_tinysnb.test","source_case":"OptionalMatchDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)<-[e]-(b) WHERE a.ID=1 RETURN COUNT(*)
+--- expected
+0

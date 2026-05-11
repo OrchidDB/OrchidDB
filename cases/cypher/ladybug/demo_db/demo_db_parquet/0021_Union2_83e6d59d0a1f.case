@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Union2.83e6d59d0a1f","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Union2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u1:User)-[:Follows]->(u2:User) WHERE u2.name = 'Zhang' RETURN u1.age UNION ALL MATCH (u3:User)-[:Follows]->(u4:User) WHERE u4.name = 'Karissa' RETURN u3.age
+--- expected
+30
+40
+30

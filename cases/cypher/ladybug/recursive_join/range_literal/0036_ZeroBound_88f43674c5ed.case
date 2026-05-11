@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.range_literal.ZeroBound.88f43674c5ed","language":"cypher","ordered":true,"source":"recursive_join/range_literal.test","source_case":"ZeroBound","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(a:person {fName: "Alice"})<-[e:meets*0..0]-(b:person) RETURN e, b.fName
+--- expected
+{_NODES: [], _RELS: []}|Alice

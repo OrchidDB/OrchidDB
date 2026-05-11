@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectOnNodeTest.89e15fd30957","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectOnNodeTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID = 3 or p.ID = 5 RETURN p.gender, collect(p)
+--- expected
+1|[{_ID: 0:2, _LABEL: person, ID: 3, fName: Carol, gender: 1, isStudent: False, isWorker: True, age: 45, eyeSight: 5.000000, birthdate: 1940-06-22, registerTime: 1911-08-20 02:32:21, lastJobDuration: 48:24:11, workedHours: [4,5], usedNames: [Carmen,Fred], courseScoresPerTerm: [[8,10]], grades: [91,75,21,95], height: 1.000000, u: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13}]
+2|[{_ID: 0:3, _LABEL: person, ID: 5, fName: Dan, gender: 2, isStudent: False, isWorker: True, age: 20, eyeSight: 4.800000, birthdate: 1950-07-23, registerTime: 2031-11-30 12:25:30, lastJobDuration: 10 years 5 months 13:00:00.000024, workedHours: [1,9], usedNames: [Wolfeschlegelstein,Daniel], courseScoresPerTerm: [[7,4],[8,8],[9]], grades: [76,88,99,89], height: 1.300000, u: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14}]

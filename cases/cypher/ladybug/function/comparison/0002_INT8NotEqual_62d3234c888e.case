@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.INT8NotEqual.62d3234c888e","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"INT8NotEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.level <> 5 RETURN s.length
+--- expected
+55
+22

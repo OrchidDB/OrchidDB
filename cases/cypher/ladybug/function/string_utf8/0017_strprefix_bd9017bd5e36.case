@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strprefix.bd9017bd5e36","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strprefix","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN prefix('😃🧘🏻‍♂️🌍🌦️🍞🚗','😃🧘🏻‍')
+--- expected
+True

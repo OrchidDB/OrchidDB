@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario1.5df9f5bef5a5","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n1)-[r:KNOWS]->(n2) RETURN n1, n2
+--- expected
+{_ID: 0:0, _LABEL: A, num: 1}|{_ID: 1:0, _LABEL: B, num: 2}

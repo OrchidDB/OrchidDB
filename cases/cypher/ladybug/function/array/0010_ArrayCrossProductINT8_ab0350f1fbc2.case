@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCrossProductINT8.ab0350f1fbc2","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCrossProductINT8","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_CROSS_PRODUCT(ARRAY_VALUE(to_int8(12), to_int8(7), to_int8(6)), ARRAY_VALUE(to_int8(3), to_int8(4), to_int8(5)))
+--- expected
+[11,-42,27]

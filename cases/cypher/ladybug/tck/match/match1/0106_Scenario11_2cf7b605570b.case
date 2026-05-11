@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match1.Scenario11.2cf7b605570b","language":"cypher","ordered":true,"source":"tck/match/match1.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {x: [1]} AS n MATCH (n) RETURN n
+--- expected
+Binder exception: Cannot bind n as node pattern.

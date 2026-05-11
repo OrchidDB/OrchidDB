@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Project.g_V_outXcreatedX_projectXa_bX_byXnameX_byXinXcreatedX_countX_order_byXselectXbX__descX_selectXaX.09c7a5fe6214","language":"gremlin","ordered":false,"source":"map/Project.feature","source_case":"g_V_outXcreatedX_projectXa_bX_byXnameX_byXinXcreatedX_countX_order_byXselectXbX__descX_selectXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("created").
+project("a", "b").
+by("name").
+by(__.in("created").count()).
+order().
+by(__.select("b"), Order.desc).
+select("a")
+--- expected
+lop
+lop
+lop
+ripple

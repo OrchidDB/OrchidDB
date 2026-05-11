@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison3.Scenario8.4b54ccd7c714","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison3.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) WHERE 'a' <= n.name AND n.name <= 'c' RETURN n.name
+--- expected
+a
+b
+c

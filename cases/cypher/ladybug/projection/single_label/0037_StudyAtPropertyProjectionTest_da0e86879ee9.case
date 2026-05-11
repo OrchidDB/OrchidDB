@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.StudyAtPropertyProjectionTest.da0e86879ee9","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"StudyAtPropertyProjectionTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:studyAt]->(b:organisation) RETURN e.year, e.level, e.code, e.temperature, e.ulength
+--- expected
+2020|120|6689|1|90
+2020|2|23|20|180
+2021|5|9223372036854775808|32800|33768

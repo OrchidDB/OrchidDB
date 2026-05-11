@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario12.58f875dc3815","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario12","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:`Single`) OPTIONAL MATCH (a)-[*]->(b) RETURN b
+--- expected
+{_ID: 1:0, _LABEL: A, ID: 0, num: 42}
+{_ID: 2:0, _LABEL: B, ID: 0, num: 46}
+{_ID: 2:0, _LABEL: B, ID: 0, num: 46}
+{_ID: 3:0, _LABEL: C, ID: 0}

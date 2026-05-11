@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario3.7700d7c5cae5","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[r1]->(b:X) WITH a, r1 AS r2, b, count(*) AS c MATCH (a)-[r2]->(b) RETURN r2 AS rel
+--- expected
+...
+...

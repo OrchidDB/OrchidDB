@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strrepeat.ca7e7a0b987c","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strrepeat","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN repeat('😃🧘🏻‍♂️🌍🌦️🍞🚗',3)
+--- expected
+😃🧘🏻‍♂️🌍🌦️🍞🚗😃🧘🏻‍♂️🌍🌦️🍞🚗😃🧘🏻‍♂️🌍🌦️🍞🚗

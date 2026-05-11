@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.exists.ExistSubqueryReturnTest.3052b47e79f6","language":"cypher","ordered":true,"source":"subquery/exists.test","source_case":"ExistsSubquery","source_log":"ExistSubqueryReturnTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE EXISTS { MATCH (a)-[:knows]->(b:person) } RETURN a.fName
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth

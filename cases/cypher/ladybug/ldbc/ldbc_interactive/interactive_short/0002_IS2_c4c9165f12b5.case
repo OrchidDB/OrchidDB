@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short.IS2.c4c9165f12b5","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short.test","source_case":"LDBCInteractiveShort","source_log":"IS2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Person {id: 21990232555803})<-[:Post_hasCreator|:Comment_hasCreator]-(message) WITH message,message.id AS messageId, message.creationDate AS messageCreationDate ORDER BY messageCreationDate DESC, messageId ASC LIMIT 10 MATCH (message)-[:replyOf_Post|:replyOf_Comment*1..2]->(post:Post), (post)-[:Post_hasCreator]->(person) RETURN messageId, CASE WHEN message.imageFile is NULL THEN message.content ELSE message.imageFile END AS messageContent, messageCreationDate, post.id AS postId, person.id AS personId, person.firstName AS personFirstName, person.lastName AS personLastName ORDER BY messageCreationDate DESC, messageId ASC
+--- expected
+1030792343617|About H•A•M, d Kanye West, released as the first single from their collaborati|20120823142307823|1030792343610|21990232556463|Victor|Antonescu
+1030792343876|thx|20120818110412997|1030792343869|21990232555803|Carlos|Lopez
+1030792343986|fine|20120810030544084|1030792343978|21990232556837|Bing|Li

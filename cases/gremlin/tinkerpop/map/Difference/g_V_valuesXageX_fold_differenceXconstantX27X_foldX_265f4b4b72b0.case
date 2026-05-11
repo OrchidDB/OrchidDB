@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Difference.g_V_valuesXageX_fold_differenceXconstantX27X_foldX.265f4b4b72b0","language":"gremlin","ordered":false,"source":"map/Difference.feature","source_case":"g_V_valuesXageX_fold_differenceXconstantX27X_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").fold().difference(__.constant(27).fold())
+--- expected
+s[d[29].i,d[32].i,d[35].i]

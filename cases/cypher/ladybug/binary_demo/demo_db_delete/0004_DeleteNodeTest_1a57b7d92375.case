@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_delete.DeleteNodeTest.1a57b7d92375","language":"cypher","ordered":true,"source":"binary_demo/demo_db_delete.test","source_case":"DeleteNodeTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN COUNT(*)
+--- expected
+4

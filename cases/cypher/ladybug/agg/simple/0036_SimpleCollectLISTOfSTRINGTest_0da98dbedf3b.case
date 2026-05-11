@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectLISTOfSTRINGTest.0da98dbedf3b","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectLISTOfSTRINGTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN collect(p.usedNames)
+--- expected
+[[Aida],[Bobby],[Carmen,Fred],[Wolfeschlegelstein,Daniel],[Ein],[Fesdwe],[Grad],[Ad,De,Hi,Kye,Orlan]]

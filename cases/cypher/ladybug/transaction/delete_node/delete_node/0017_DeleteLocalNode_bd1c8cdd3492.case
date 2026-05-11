@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_node.delete_node.DeleteLocalNode.bd1c8cdd3492","language":"cypher","ordered":true,"source":"transaction/delete_node/delete_node.test","source_case":"DeleteLocalNode","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person)-[r:knows]->(p2:person) RETURN ID(p1), p1.fName, ID(p2), p2.fName
+--- expected
+0:0|Alice|0:2|Charlie
+0:0|Alice|0:3|Dave

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.InvalidUserDefinedTypeErr.253f6bf67abd","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDTPrimitiveType","source_log":"InvalidUserDefinedTypeErr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:PERSON) return p.*
+--- expected
+30|40|False
+5|20|False
+8|100|False

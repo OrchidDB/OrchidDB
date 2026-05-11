@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArraySize.ad5cea22dadc","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArraySize","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN SIZE(CAST([3,5,6] AS INT64[3]))
+--- expected
+3

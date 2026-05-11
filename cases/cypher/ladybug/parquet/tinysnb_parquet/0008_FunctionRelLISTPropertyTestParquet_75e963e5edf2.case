@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.FunctionRelLISTPropertyTestParquet.75e963e5edf2","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"FunctionRelLISTPropertyTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) RETURN e.comments
+--- expected
+[rnme,m8sihsdnf2990nfiwf]
+[njnojppo9u0jkmf,fjiojioh9h9h89hph]
+[ioji232,jifhe8w99u43434]
+[2huh9y89fsfw23,23nsihufhw723]
+[fwehu9h9832wewew,23u9h989sdfsss]
+[fwh9y81232uisuiehuf,ewnuihxy8dyf232]
+[fnioh8323aeweae34d,osd89e2ejshuih12]
+[fwh983-sdjisdfji,ioh89y32r2huir]
+[psh989823oaaioe,nuiuah1nosndfisf]
+[fwewe]
+[fewh9182912e3,h9y8y89soidfsf,nuhudf78w78efw,hioshe0f9023sdsd]
+[23h9sdslnfowhu2932,shuhf98922323sf]
+[ahu2333333333333,12weeeeeeeeeeeeeeeeee]
+[peweeeeeeeeeeeeeeeee,kowje9w0eweeeeeeeee]

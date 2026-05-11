@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsListOfStrings.419ca27878aa","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsListOfStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_has(a.usedNames, "Grad")
+--- expected
+False
+False
+False
+False
+False
+False
+True
+False

@@ -1,0 +1,18 @@
+[package]
+name = "new-graph"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[dependencies]
+antlr4rust = "0.5.2"
+arrow = "58.2.0"
+bigdecimal = "0.4"
+datafusion = "53.1.0"
+datafusion-sql = "53.1.0"
+num-bigint = "0.4"
+num-traits = "0.2"
+thiserror = "2"
+
+[dev-dependencies]
+duckdb = { version = "1.10502.0", features = ["bundled"] }

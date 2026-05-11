@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SumInt8Overflow.6aef5865c31b","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SumInt8Overflow","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[s:studyAt]->(o:organisation) RETURN SUM(10 * s.level)
+--- expected
+1270

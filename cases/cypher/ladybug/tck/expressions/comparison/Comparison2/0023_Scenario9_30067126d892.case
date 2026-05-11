@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison2.Scenario9.30067126d892","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison2.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1.0 < 1.0 AS result
+--- expected
+False

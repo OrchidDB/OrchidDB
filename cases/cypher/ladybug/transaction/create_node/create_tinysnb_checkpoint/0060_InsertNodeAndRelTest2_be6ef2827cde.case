@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_tinysnb_checkpoint.InsertNodeAndRelTest2.be6ef2827cde","language":"cypher","ordered":true,"source":"transaction/create_node/create_tinysnb_checkpoint.test","source_case":"InsertNodeAndRelTest2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:studyAt]->(b:organisation), (a)-[e2:workAt]->(b) RETURN a.ID, b.ID, ID(e1), ID(e2)
+--- expected
+100|50|5:3|7:3

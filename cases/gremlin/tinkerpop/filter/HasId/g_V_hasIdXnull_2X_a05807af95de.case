@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasId.g_V_hasIdXnull_2X.a05807af95de","language":"gremlin","ordered":false,"source":"filter/HasId.feature","source_case":"g_V_hasIdXnull_2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasId(null, vid2)
+--- expected
+v[vadas]

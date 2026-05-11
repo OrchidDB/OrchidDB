@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.interval.NumbersAndSpecifierStringAreNotSeparatedBySpaces.511ebe9d3c78","language":"cypher","ordered":true,"source":"exceptions/types/interval.test","source_case":"CastStrToIntervalError","source_log":"NumbersAndSpecifierStringAreNotSeparatedBySpaces","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return interval("2 years 30 minutes20 seconds")
+--- expected
+Conversion exception: Unrecognized interval specifier string: minutes20.

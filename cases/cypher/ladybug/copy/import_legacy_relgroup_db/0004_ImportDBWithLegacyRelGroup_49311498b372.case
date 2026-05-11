@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.import_legacy_relgroup_db.ImportDBWithLegacyRelGroup.49311498b372","language":"cypher","ordered":true,"source":"copy/import_legacy_relgroup_db.test","source_case":"ImportDBWithLegacyRelGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a:person)-[:knows]->(b:organisation) return a.id,b.id
+--- expected
+2|2

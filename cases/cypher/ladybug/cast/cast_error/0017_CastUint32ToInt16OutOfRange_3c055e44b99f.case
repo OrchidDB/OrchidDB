@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastUint32ToInt16OutOfRange.3c055e44b99f","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastUint32ToInt16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) return cast(e.temperature, "int16")
+--- expected
+Overflow exception: Value 32800 is not within INT16 range

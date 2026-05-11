@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.lnFunctionOnInt64Test.e922aff7f703","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"lnFunctionOnInt64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN ln(a.orgCode)
+--- expected
+5.783825
+6.839476
+6.714171

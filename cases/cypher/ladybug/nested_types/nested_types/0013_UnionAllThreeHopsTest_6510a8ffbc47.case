@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllThreeHopsTest.6510a8ffbc47","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"RelStruct","source_log":"UnionAllThreeHopsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:marries]->(b:person) RETURN r.note
+--- expected
+long long long string
+short str

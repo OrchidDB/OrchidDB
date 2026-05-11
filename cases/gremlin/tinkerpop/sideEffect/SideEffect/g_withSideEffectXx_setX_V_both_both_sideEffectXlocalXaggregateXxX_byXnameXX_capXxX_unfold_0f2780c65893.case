@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffect.g_withSideEffectXx_setX_V_both_both_sideEffectXlocalXaggregateXxX_byXnameXX_capXxX_unfold.0f2780c65893","language":"gremlin","ordered":false,"source":"sideEffect/SideEffect.feature","source_case":"g_withSideEffectXx_setX_V_both_both_sideEffectXlocalXaggregateXxX_byXnameXX_capXxX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("x",{}).V().both().both().sideEffect(__.local(aggregate("x").by("name"))).cap("x").unfold()
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

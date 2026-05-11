@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_hasXname_GarciaX__a_0writtenBy_b__a_0sungBy_bX.fec2b5623a86","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_hasXname_GarciaX__a_0writtenBy_b__a_0sungBy_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").has("name", "Garcia"),
+__.as("a").in("writtenBy").as("b"),
+__.as("a").in("sungBy").as("b"))
+--- expected
+m[{"a":"v[Garcia]","b":"v[CREAM PUFF WAR]"}]
+m[{"a":"v[Garcia]","b":"v[CRYPTICAL ENVELOPMENT]"}]

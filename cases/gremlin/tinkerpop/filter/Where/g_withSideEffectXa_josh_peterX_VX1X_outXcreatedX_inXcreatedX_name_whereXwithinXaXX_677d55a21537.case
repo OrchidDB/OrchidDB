@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_withSideEffectXa_josh_peterX_VX1X_outXcreatedX_inXcreatedX_name_whereXwithinXaXX.677d55a21537","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_withSideEffectXa_josh_peterX_VX1X_outXcreatedX_inXcreatedX_name_whereXwithinXaXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", ["josh","peter"]).V(vid1).out("created").in("created").values("name").where(P.within("a"))
+--- expected
+josh
+peter

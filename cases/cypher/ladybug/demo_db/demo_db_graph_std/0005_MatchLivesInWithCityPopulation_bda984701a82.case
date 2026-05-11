@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"GRAPH-STD demo-db/icebug-disk","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_graph_std.MatchLivesInWithCityPopulation.bda984701a82","language":"cypher","ordered":true,"source":"demo_db/demo_db_graph_std.test","source_case":"DemoDBGraphStdTest","source_log":"MatchLivesInWithCityPopulation","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:user)-[l:livesin]->(c:city) RETURN u.name, c.name, c.population ORDER BY c.population DESC
+--- expected
+Zhang|Kitchener|200000
+Adam|Waterloo|150000
+Karissa|Waterloo|150000
+Noura|Guelph|75000

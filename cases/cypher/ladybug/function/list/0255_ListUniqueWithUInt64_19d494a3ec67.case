@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithUInt64.19d494a3ec67","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithUInt64","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique([to_uint64(1), to_uint64(1), NULL, to_uint64(3), to_uint64(1), to_uint64(5)])
+--- expected
+3

@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_V_chooseXlabel_is_person__unionX__out_lang__out_nameX__in_labelX.72d6b4f51895","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_V_chooseXlabel_is_person__unionX__out_lang__out_nameX__in_labelX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.label().is("person"), __.union(__.out().values("lang"), __.out().values("name")), __.in().label())
+--- expected
+java
+lop
+vadas
+josh
+person
+person
+person
+java
+java
+ripple
+lop
+person
+java
+lop

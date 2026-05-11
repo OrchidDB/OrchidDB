@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_unionXrepeatXoutX_timesX2X_groupCountXmX_byXlangXX__repeatXinX_timesX2X_groupCountXmX_byXnameXX_capXmX.40598078361a","language":"gremlin","ordered":true,"source":"sideEffect/GroupCount.feature","source_case":"g_V_unionXrepeatXoutX_timesX2X_groupCountXmX_byXlangXX__repeatXinX_timesX2X_groupCountXmX_byXnameXX_capXmX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().union(__.repeat(__.out()).times(2).groupCount("m").by("lang"),
+__.repeat(__.in()).times(2).groupCount("m").by("name")).cap("m")
+--- expected
+m[{"marko":"d[2].l", "java":"d[2].l"}]

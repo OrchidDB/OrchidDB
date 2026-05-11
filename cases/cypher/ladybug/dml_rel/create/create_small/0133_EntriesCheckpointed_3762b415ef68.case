@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.3762b415ef68","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"issue3906","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n0)<-[r4]-(n1)-[r5]-(n2), (n3 :L3)-[r6]->(n4)-[r7]-(n5) RETURN DISTINCT r7.k80 > n0.id
+--- expected
+True

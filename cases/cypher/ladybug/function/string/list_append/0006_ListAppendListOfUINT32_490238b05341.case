@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_append.ListAppendListOfUINT32.490238b05341","language":"cypher","ordered":true,"source":"function/string/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfUINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN list_append([s.temperature], s.temperature)
+--- expected
+[32800,32800]
+[1,1]
+[20,20]

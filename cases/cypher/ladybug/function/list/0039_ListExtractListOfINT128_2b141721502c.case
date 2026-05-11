@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfINT128.2b141721502c","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfINT128","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN list_extract([e.hugedata], 1)
+--- expected
+1844674407370955161811111111

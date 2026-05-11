@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StartsWithAlias.e694c5ba166f","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StartsWithAlias","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN prefix(o.name, "ABF")
+--- expected
+True
+False
+False

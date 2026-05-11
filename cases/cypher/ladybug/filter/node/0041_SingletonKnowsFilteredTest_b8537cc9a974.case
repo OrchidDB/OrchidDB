@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.SingletonKnowsFilteredTest.b8537cc9a974","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"SingletonKnowsFilteredTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.gender * 2.1 = 2.1 * a.gender RETURN COUNT(*)
+--- expected
+8

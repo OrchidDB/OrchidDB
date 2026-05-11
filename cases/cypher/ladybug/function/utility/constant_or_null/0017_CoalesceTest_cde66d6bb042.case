@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.constant_or_null.CoalesceTest.cde66d6bb042","language":"cypher","ordered":true,"source":"function/utility/constant_or_null.test","source_case":"PredicateTests","source_log":"CoalesceTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tbl) WHERE constant_or_null(t.bool, t.bool) RETURN t.id
+--- expected
+1
+4

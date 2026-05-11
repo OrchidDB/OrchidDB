@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.node.node2.0cdc38be3c5a","language":"cypher","ordered":true,"source":"match/node.test","source_case":"MatchNode","source_log":"node2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN COUNT(*) /*Returns the total number of nodes in organisation*/
+--- expected
+3

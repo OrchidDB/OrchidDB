@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_asXaX_name_order_asXbX_selectXa_bX_byXnameX_by_XitX.2898c99d763a","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_asXaX_name_order_asXbX_selectXa_bX_byXnameX_by_XitX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").
+values("name").
+order().as("b").
+select("a", "b").
+by("name").by()
+--- expected
+m[{"a": "marko", "b": "marko"}]
+m[{"a": "vadas", "b": "vadas"}]
+m[{"a": "josh", "b": "josh"}]
+m[{"a": "ripple", "b": "ripple"}]
+m[{"a": "lop", "b": "lop"}]
+m[{"a": "peter", "b": "peter"}]

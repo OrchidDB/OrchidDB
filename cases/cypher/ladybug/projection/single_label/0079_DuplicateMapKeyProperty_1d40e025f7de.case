@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapKeyProperty.1d40e025f7de","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapKeyProperty","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN map([p.ID, p.ID], [p.age, p.age])
+--- expected
+Runtime exception: Found duplicate key: 0 in map.

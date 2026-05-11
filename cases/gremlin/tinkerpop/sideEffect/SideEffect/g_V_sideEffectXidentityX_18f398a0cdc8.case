@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffect.g_V_sideEffectXidentityX.18f398a0cdc8","language":"gremlin","ordered":false,"source":"sideEffect/SideEffect.feature","source_case":"g_V_sideEffectXidentityX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().sideEffect(__.identity())
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

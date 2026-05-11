@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampDateNotEqual.f3f5b6d3bdfe","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampDateNotEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE date_trunc("daY", a.registerTime) <> date('1976-12-23') RETURN COUNT(*)
+--- expected
+6

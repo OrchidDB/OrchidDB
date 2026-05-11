@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario14.e3f618fe1d9a","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario14","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count(count(*))
+--- expected
+Binder exception: Expression COUNT(COUNT_STAR()) contains nested aggregation.

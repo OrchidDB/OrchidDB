@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.MapTest.bf0293ef0035","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"MapTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, map([1, 2], ['a', 'b']), NULL, map([1, 2, 3], ['a', 'b', 'c']))
+--- expected
+{1=a, 2=b}

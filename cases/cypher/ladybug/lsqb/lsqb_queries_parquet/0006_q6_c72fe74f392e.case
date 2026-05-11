@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(lsqb-sf01)","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries_parquet.q6.c72fe74f392e","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries_parquet.test","source_case":"LSQBTestParquet","source_log":"q6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person1:Person)-[:Person_knows_Person]-(person2:Person)-[:Person_knows_Person]-(person3:Person)-[:Person_hasInterest_Tag]->(tag:Tag) WHERE id(person1) <> id(person3) RETURN count(*) AS count
+--- expected
+55607896

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.uuid.UUIDOrderByTest.08dfa58e02cd","language":"cypher","ordered":true,"source":"function/uuid.test","source_case":"UUIDfunctions","source_log":"UUIDOrderByTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person) RETURN list_sort(collect(a.u))
+--- expected
+[00000000-0000-0000-0000-000000000000,00000000-0000-0000-0000-000000000000,00000000-0000-0000-0000-000000000000,00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000001,10203040-5060-7080-0102-030405060708,10203040-5060-7080-0102-030405060708,47183823-2574-4bfd-b411-99ed177d3e43,47183823-2574-4bfd-b411-99ed177d3e43,80000000-0000-0000-8fff-ffffffffffff,80000000-0000-0000-ffff-ffffffffffff,8fffffff-ffff-ffff-0000-000000000000,8fffffff-ffff-ffff-8000-000000000000,8fffffff-ffff-ffff-8fff-ffffffffffff,8fffffff-ffff-ffff-ffff-ffffffffffff,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12,ffffffff-ffff-ffff-ffff-ffffffffffff]

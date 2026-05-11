@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario13.5f990aae43b2","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario13","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH [10] AS r MATCH ()-[r]-() RETURN r
+--- expected
+Binder exception: r has data type INT64[] but REL was expected.

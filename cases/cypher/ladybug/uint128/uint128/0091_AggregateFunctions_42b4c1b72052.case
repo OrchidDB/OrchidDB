@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.AggregateFunctions.42b4c1b72052","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"AggregateFunctions","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) RETURN z.value % CAST(2 AS UINT128)
+--- expected
+1
+0
+1

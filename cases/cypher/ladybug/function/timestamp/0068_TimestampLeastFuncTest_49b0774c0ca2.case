@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLeastFuncTest.49b0774c0ca2","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLeastFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN least(p.registerTime, timestamp("2006-02-12 11:25:33"))
+--- expected
+2006-02-12 11:25:33
+2006-02-12 11:25:33
+1911-08-20 02:32:21
+2006-02-12 11:25:33
+1976-12-23 11:21:42
+1972-07-31 13:22:30.678559
+1976-12-23 04:41:42
+2006-02-12 11:25:33

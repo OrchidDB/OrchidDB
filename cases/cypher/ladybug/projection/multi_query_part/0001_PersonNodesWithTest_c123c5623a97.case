@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.multi_query_part.PersonNodesWithTest.c123c5623a97","language":"cypher","ordered":true,"source":"projection/multi_query_part.test","source_case":"ProjectionMultiQuery","source_log":"PersonNodesWithTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH a RETURN a.age
+--- expected
+35
+30
+45
+20
+20
+25
+40
+83

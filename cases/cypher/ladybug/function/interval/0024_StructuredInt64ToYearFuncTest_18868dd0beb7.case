@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredInt64ToYearFuncTest.18868dd0beb7","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredInt64ToYearFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_years(p.age)
+--- expected
+35 years
+30 years
+45 years
+20 years
+20 years
+25 years
+40 years
+83 years

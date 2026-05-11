@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortDoubleAscWithNullsLast.1e2febc621ac","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortDoubleAscWithNullsLast","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([1.1, 2.3, 4.5, NULL], 'ASC', 'NULLS LAST')
+--- expected
+[1.100000,2.300000,4.500000,]

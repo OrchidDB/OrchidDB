@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductUnsigned.2362faf612cf","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductUnsigned","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_uint8(1), to_uint8(10), to_uint8(3)])
+--- expected
+30

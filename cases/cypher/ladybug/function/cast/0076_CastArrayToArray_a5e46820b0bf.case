@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastArrayToArray.a5e46820b0bf","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastArrayToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(p:person) where p.ID > 8 RETURN cast(p.grades, "UINT64[]"), cast(p.grades, "UINT32[]"), cast(p.grades, "UINT16[]"), cast(p.grades, "UINT8[]"), cast(p.grades, "INT8[]"), cast(p.grades, "INT16[]"), cast(p.grades, "INT32[]"), cast(p.grades, "INT64[]"), cast(p.grades, "INT128[]"), cast(p.grades, "STRING[]"), cast(p.grades, "DOUBLE[]"), cast(p.grades, "FLOAT[]")
+--- expected
+[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43,83,67,43]|[43.000000,83.000000,67.000000,43.000000]|[43.000000,83.000000,67.000000,43.000000]
+[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77,64,100,54]|[77.000000,64.000000,100.000000,54.000000]|[77.000000,64.000000,100.000000,54.000000]
+|||||||||||

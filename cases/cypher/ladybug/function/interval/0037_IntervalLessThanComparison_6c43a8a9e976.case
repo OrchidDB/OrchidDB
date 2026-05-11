@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.IntervalLessThanComparison.6c43a8a9e976","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"IntervalLessThanComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE e1.validInterval < interval('3 years 5 months') RETURN COUNT(*)
+--- expected
+10

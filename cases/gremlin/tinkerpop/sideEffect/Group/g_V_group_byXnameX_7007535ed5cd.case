@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_group_byXnameX.7007535ed5cd","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_group_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by("name")
+--- expected
+m[{"ripple":"l[v[ripple]]", "peter":"l[v[peter]]", "vadas":"l[v[vadas]]", "josh": "l[v[josh]]", "lop":"l[v[lop]]", "marko":"l[v[marko]]"}]

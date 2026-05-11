@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.GroupByMultiQueryTest.7cc0f38d8d50","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"GroupByMultiQueryTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WITH a.gender AS k, SUM(b.age) AS s MATCH (d:person)-[:workAt]->(c:organisation) WHERE c.orgCode > s RETURN d.ID, c.orgCode, s
+--- expected
+3|934|210
+3|934|245
+5|824|210
+5|824|245
+7|824|210
+7|824|245

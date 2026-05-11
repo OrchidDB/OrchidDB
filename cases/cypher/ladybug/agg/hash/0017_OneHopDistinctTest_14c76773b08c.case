@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.OneHopDistinctTest.14c76773b08c","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"OneHopDistinctTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN DISTINCT a.gender, b.isStudent
+--- expected
+1|False
+1|True
+2|False
+2|True

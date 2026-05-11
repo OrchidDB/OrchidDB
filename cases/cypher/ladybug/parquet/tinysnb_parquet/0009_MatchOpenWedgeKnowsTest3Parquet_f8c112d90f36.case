@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.MatchOpenWedgeKnowsTest3Parquet.f8c112d90f36","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"MatchOpenWedgeKnowsTest3Parquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:person)<-[e1:knows]-(a:person)-[e2:knows]->(c:person),(a)-[e3:knows]->(d:person) RETURN COUNT(*)
+--- expected
+116

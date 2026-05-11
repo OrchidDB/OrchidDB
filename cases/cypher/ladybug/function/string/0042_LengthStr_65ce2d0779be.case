@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LengthStr.65ce2d0779be","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LengthStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN size(o.name)
+--- expected
+7
+6
+7

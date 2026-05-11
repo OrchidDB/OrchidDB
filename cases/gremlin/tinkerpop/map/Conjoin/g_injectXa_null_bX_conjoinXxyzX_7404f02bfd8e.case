@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Conjoin.g_injectXa_null_bX_conjoinXxyzX.7404f02bfd8e","language":"gremlin","ordered":false,"source":"map/Conjoin.feature","source_case":"g_injectXa_null_bX_conjoinXxyzX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a",null,"b"]).conjoin("xyz")
+--- expected
+str[axyzb]

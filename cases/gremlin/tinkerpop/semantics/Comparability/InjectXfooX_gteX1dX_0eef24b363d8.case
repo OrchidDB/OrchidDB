@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.semantics.Comparability.InjectXfooX_gteX1dX.0eef24b363d8","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectXfooX_gteX1dX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("foo").is(P.gte(1.0d))
+--- expected
+

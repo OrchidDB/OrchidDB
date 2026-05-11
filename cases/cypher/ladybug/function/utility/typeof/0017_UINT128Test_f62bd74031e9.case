@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.UINT128Test.f62bd74031e9","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"UINT128Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(340282366920938463463374607431768211455)
+--- expected
+UINT128

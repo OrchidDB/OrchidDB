@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Byte.g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_chooseXisXeqX12XX_constantXtwelveX_constantXotherXX.f309ad07ac35","language":"gremlin","ordered":false,"source":"data/Byte.feature","source_case":"g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_chooseXisXeqX12XX_constantXtwelveX_constantXotherXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BYTE).is(P.typeOf(GType.BYTE)).choose(__.is(P.eq(12)), constant("twelve"), constant("other"))
+--- graph_initializer
+g.addV("data").property("int", 12)
+--- expected
+twelve

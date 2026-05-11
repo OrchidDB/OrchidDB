@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Int.g_V_valuesXageX_isXtypeOfXGType_INTXX_mathXincX.d80160848b3e","language":"gremlin","ordered":false,"source":"data/Int.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_INTXX_mathXincX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name", "age").is(P.typeOf(GType.INT)).math("_ + 1")
+--- expected
+d[30].d
+d[28].d
+d[33].d
+d[36].d

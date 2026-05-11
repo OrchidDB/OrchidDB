@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.SquareFilterTest2.262b2ed9d615","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"SquareFilterTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[:knows]-(b:person)-[:knows]->(c:person)-[:studyAt]->(d:organisation), (a)-[:studyAt]->(d) WHERE b.fName='Elizabeth' RETURN COUNT(*)
+--- expected
+1

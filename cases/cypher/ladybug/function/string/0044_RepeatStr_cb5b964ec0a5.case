@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RepeatStr.cb5b964ec0a5","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RepeatStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN repeat(o.name, o.ID)
+--- expected
+ABFsUni
+CsWorkCsWorkCsWorkCsWork
+DEsWorkDEsWorkDEsWorkDEsWorkDEsWorkDEsWork

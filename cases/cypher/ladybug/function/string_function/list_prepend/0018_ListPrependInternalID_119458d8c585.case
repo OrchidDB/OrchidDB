@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependInternalID.119458d8c585","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependInternalID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_prepend([id(a)], id(a))
+--- expected
+[0:0,0:0]
+[0:1,0:1]
+[0:2,0:2]
+[0:3,0:3]
+[0:4,0:4]
+[0:5,0:5]
+[0:6,0:6]
+[0:7,0:7]

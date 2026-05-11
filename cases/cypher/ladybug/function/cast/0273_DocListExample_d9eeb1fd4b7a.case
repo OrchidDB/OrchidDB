@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.d9eeb1fd4b7a","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST([3,4,12,11] as INT64[4])
+--- expected
+[3,4,12,11]

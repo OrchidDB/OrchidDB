@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_nested.NodeStruct.014632eba88e","language":"cypher","ordered":true,"source":"copy/copy_nested.test","source_case":"NodeStruct","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN o.state
+--- expected
+{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}
+{revenue: 152, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}}
+{revenue: 558, location: ['very long city name','new york'], stock: {price: [22], volume: 99}}

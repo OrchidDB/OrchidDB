@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertSingleNToNRelTest.86bfed931b7f","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertSingleNToNRelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID > 8 RETURN a.ID, b.ID, e, ID(e)
+--- expected
+9|10|(0:6)-{_LABEL: knows, _ID: 3:14, date: 1997-03-22, meetTime: 1976-12-23 11:21:42, validInterval: 2 years, comments: [A,k]}->(0:7)|3:14

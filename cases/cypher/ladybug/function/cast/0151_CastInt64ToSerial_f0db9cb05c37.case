@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt64ToSerial.f0db9cb05c37","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt64ToSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.gender, "Serial")
+--- expected
+1
+2
+1
+2
+1
+2
+2
+2

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.ExpectedFunctionError.9ddab14ea00b","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"ExpectedFunctionError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN currval('err')
+--- expected
+Catalog exception: currval: sequence "err" is not yet defined. To define the sequence, call nextval first.

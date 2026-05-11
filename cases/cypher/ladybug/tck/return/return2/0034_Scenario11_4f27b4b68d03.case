@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario11.4f27b4b68d03","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:TheLabel) RETURN p.id
+--- expected
+4611686018427387905

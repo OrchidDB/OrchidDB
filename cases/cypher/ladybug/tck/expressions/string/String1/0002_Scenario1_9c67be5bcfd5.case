@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.string.String1.Scenario1.9c67be5bcfd5","language":"cypher","ordered":true,"source":"tck/expressions/string/String1.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN substring('0123456789', 2, 10) AS s
+--- expected
+123456789

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2303.7d3b03625910","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2303","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:T {id:"t4"})-[e*]->(b:T {id:"t7"}) RETURN COUNT(*)
+--- expected
+1

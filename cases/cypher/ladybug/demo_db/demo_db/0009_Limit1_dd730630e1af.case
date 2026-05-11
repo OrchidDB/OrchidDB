@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Limit1.dd730630e1af","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Limit1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name ORDER BY u.age DESC LIMIT 3
+--- expected
+Zhang
+Karissa
+Adam

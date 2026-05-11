@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return5.Scenario2.2afa4a86894b","language":"cypher","ordered":true,"source":"tck/return/return5.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN DISTINCT n.name
+--- expected
+Florescu

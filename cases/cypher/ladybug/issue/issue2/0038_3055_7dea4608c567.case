@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue2.3055.7dea4608c567","language":"cypher","ordered":true,"source":"issue/issue2.test","source_case":"3055","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH  (f) - [r:etable] -> (t) WHERE  t.id = 'ewm8ewnn@l23:' and r.eprop3 = 'qqewj932-ew2b-5f88-nfew' RETURN COUNT(*)
+--- expected
+1

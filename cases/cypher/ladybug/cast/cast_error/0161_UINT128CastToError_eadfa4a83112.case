@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.eadfa4a83112","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT128(TO_UINT128(170141183460469231731687303715884105728))
+--- expected
+Overflow exception: Value 170141183460469231731687303715884105728 is not within INT128 range.

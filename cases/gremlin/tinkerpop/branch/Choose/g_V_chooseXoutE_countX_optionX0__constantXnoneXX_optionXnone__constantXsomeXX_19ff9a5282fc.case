@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXoutE_countX_optionX0__constantXnoneXX_optionXnone__constantXsomeXX.19ff9a5282fc","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXoutE_countX_optionX0__constantXnoneXX_optionXnone__constantXsomeXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.outE().count()).
+option(xx0, __.constant("none")).
+option(Pick.none, __.constant("some"))
+--- expected
+some
+none
+some
+some
+none
+none

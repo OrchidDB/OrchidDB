@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_empty.DropRelTableRollbackRecovery.1592636ab4e4","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_empty.test","source_case":"DropRelTableRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[s:studyAt]->(b) return a.id, b.id
+--- expected
+Binder exception: Table studyAt does not exist.

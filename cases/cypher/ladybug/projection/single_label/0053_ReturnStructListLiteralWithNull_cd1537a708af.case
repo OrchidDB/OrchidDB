@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnStructListLiteralWithNull.cd1537a708af","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnStructListLiteralWithNull","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {info: {name: "smith", gender: null, hobby: [null, "footBall"]}, height: 1.8, age: null}
+--- expected
+{info: {name: smith, gender: , hobby: [,footBall]}, height: 1.800000, age: }

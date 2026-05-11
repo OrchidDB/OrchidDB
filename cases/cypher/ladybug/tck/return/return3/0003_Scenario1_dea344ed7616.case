@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return3.Scenario1.dea344ed7616","language":"cypher","ordered":true,"source":"tck/return/return3.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a.id IS NOT NULL AS a, a IS NOT NULL AS b
+--- expected
+False|True

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasLabel.g_V_hasLabelXperson_software_blahX.7477f9e4446b","language":"gremlin","ordered":false,"source":"filter/HasLabel.feature","source_case":"g_V_hasLabelXperson_software_blahX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person","software", "blah")
+--- expected
+v[marko]
+v[vadas]
+v[josh]
+v[peter]
+v[lop]
+v[ripple]

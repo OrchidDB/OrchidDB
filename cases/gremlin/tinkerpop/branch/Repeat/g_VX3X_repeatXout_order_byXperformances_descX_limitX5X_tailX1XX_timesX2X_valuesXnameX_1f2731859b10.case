@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX3X_repeatXout_order_byXperformances_descX_limitX5X_tailX1XX_timesX2X_valuesXnameX.1f2731859b10","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX3X_repeatXout_order_byXperformances_descX_limitX5X_tailX1XX_timesX2X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid3).repeat(__.out().order().by("performances", Order.desc).limit(5).tail(1)).times(2).values("name")
+--- expected
+CHINA CAT SUNFLOWER

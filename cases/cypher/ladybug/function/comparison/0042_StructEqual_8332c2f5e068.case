@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.StructEqual.8332c2f5e068","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"StructEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) WHERE m.description = {rating: 7.0, stars: to_int8(10), views: 982, release: timestamp('2018-11-13 13:33:11'), release_ns: cast("2018-11-13 13:33:11.1234567", "TIMESTAMP_NS"), release_ms: cast("2018-11-13 13:33:11.1234567", "TIMESTAMP_MS"), release_sec: cast("2018-11-13 13:33:11.1234567", "TIMESTAMP_SEC"), release_tz: cast("2018-11-13 13:33:11.1234567", "TIMESTAMP_TZ"), film: date('2014-09-12'), u8: to_uint8(12), u16: to_uint16(120), u32: to_uint32(55), u64: to_uint64(1), hugedata: to_int128(-1844674407370955161511)} RETURN m.name
+--- expected
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie

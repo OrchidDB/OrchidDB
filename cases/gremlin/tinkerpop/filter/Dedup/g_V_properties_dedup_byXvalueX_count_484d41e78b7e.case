@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_properties_dedup_byXvalueX_count.484d41e78b7e","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_properties_dedup_byXvalueX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().properties("name").dedup().by(value).count()
+--- graph_initializer
+g.addV('person').property('name','josh').
+  addV('person').property('name','josh').
+  addV('person').property('name','josh')
+--- expected
+d[1].l

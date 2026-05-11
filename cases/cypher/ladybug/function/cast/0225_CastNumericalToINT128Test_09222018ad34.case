@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastNumericalToINT128Test.09222018ad34","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastNumericalToINT128Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int8(to_int128(1)), to_int16(to_int128(2)), to_int32(to_int128(3)), to_int64(to_int128(4)), to_uint8(to_int128(5)), to_uint16(to_int128(6)), to_uint32(to_int128(7)), to_uint64(to_int128(8)), to_uint128(to_int128(9))
+--- expected
+1|2|3|4|5|6|7|8|9

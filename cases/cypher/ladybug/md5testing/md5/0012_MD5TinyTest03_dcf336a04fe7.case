@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.md5testing.md5.MD5TinyTest03.dcf336a04fe7","language":"cypher","ordered":false,"source":"md5testing/md5.test","source_case":"MD5TinyTest03","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Person)-[]->(r:Repository) RETURN p.NAME, r.NAME
+--- expected
+1 tuples hashed to 460ab403a6a4746e3a10027f032956ed

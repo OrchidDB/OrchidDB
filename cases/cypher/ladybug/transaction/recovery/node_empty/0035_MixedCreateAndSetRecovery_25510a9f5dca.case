@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.node_empty.MixedCreateAndSetRecovery.25510a9f5dca","language":"cypher","ordered":true,"source":"transaction/recovery/node_empty.test","source_case":"MixedCreateAndSetRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.id % 2 = 0 AND p.prop>=1000000 RETURN COUNT(*)
+--- expected
+100000

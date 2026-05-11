@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_out_group_byXlabelX_selectXpersonX_unfold_outXcreatedX_name_limitX2X.d330059be893","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_out_group_byXlabelX_selectXpersonX_unfold_outXcreatedX_name_limitX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().group().by(T.label).select("person").unfold().out("created").values("name").limit(2)
+--- expected
+ripple
+lop

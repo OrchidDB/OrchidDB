@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.negate.NegateINT64.9001a12c2515","language":"cypher","ordered":true,"source":"arithmetic/negate.test","source_case":"NegateINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -CAST(-9223372036854775808, "INT64")
+--- expected
+Overflow exception: Value -9223372036854775808 cannot be negated within INT64 range.

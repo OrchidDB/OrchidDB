@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapBoolKey.d9bd845d09aa","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapBoolKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([true, false, true], [20, 34, 50])
+--- expected
+Runtime exception: Found duplicate key: True in map.

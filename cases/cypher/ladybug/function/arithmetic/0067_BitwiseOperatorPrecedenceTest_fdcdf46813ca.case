@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.BitwiseOperatorPrecedenceTest.fdcdf46813ca","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"BitwiseOperatorPrecedenceTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN o.orgCode >> 2 | o.score & 2 << 1
+--- expected
+85
+237
+206

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.List.g_V_valuesXlistX_isXtypeOfXGType_LISTXX_project_byXidentityX_byXcountXlocalX.d8d67af42d6f","language":"gremlin","ordered":false,"source":"data/List.feature","source_case":"g_V_valuesXlistX_isXtypeOfXGType_LISTXX_project_byXidentityX_byXcountXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("list").is(P.typeOf(GType.LIST)).project("original", "size").by(identity()).by(count(local))
+--- graph_initializer
+g.addV("data").property("list", ["apple", "banana"])
+--- expected
+m[{"original":"l[apple,banana]","size":"d[2].l"}]

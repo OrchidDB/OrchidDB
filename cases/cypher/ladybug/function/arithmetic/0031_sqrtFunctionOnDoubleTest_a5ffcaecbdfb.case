@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.sqrtFunctionOnDoubleTest.a5ffcaecbdfb","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"sqrtFunctionOnDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN sqrt(a.mark)
+--- expected
+1.923538
+2.024846
+2.024846

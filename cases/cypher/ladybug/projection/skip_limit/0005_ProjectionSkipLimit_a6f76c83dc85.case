@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.ProjectionSkipLimit.a6f76c83dc85","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,2] AS x MATCH (a:person) RETURN DISTINCT a.fName ORDER BY a.fName LIMIT 1
+--- expected
+Alice

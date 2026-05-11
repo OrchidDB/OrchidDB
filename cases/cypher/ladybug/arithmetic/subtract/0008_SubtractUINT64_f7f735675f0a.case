@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractUINT64.f7f735675f0a","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractUINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(7000000000000000000, "UINT64") - CAST(17446744073709551615, "UINT64")
+--- expected
+Overflow exception: Value 7000000000000000000 - 17446744073709551615 is not within UINT64 range.

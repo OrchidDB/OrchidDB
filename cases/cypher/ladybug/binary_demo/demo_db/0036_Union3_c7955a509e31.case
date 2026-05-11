@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Union3.c7955a509e31","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Union3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u1:User)-[:Follows]->(u2:User) WHERE u2.name = 'Zhang' RETURN u1.age UNION MATCH (u3:User)-[:Follows]->(u4:User) WHERE u4.name = 'Karissa' RETURN u3.age
+--- expected
+30
+40

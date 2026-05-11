@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"NPY npy-1d","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_one_dimensional.f32.6d01eb371fda","language":"cypher","ordered":true,"source":"copy/copy_npy_one_dimensional.test","source_case":"CopyOneDimensionalNpyTest","source_log":"f32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.f32
+--- expected
+1.000000
+2.000000
+3.000000

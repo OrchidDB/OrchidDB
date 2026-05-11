@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.SimpleMatch.6b86a2a0f7c5","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"SimpleMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:likes]-(b) WHERE a.ID = 0 RETURN COUNT(*)
+--- expected
+12

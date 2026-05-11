@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindEmptyStar.40a384da0239","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindEmptyStar","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN *
+--- expected
+Binder exception: RETURN or WITH * is not allowed when there are no variables in scope.

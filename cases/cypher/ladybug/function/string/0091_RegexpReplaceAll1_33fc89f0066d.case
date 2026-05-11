@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpReplaceAll1.33fc89f0066d","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpReplaceAll1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return REGEXP_REPLACE('hello', '[lo]', '-', 'g')
+--- expected
+he---

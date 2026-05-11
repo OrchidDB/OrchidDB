@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.ImportRELGROUPfromOldVersion.053ff251fdfa","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"ImportRELGROUPfromOldVersion","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:personA)-[e:likes_import]->(b:personB) WHERE a.ID = 0 RETURN label(e), label(b), b.*
+--- expected
+likes_import|personB|2|Bob
+likes_import|personB|3|Carol
+likes_import|personB|5|Dan

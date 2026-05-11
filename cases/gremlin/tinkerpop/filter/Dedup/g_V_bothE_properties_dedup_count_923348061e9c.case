@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_bothE_properties_dedup_count.923348061e9c","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_bothE_properties_dedup_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().bothE().properties().dedup().count()
+--- expected
+d[4].l

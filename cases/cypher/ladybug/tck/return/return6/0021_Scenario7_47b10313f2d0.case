@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario7.47b10313f2d0","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) RETURN n.num, count(*)
+--- expected
+42|1
+33|2

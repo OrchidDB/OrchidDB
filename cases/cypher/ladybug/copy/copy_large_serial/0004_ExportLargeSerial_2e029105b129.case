@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV large-serial","expected_kind":"rows","id":"cypher.ladybug.copy.copy_large_serial.ExportLargeSerial.2e029105b129","language":"cypher","ordered":true,"source":"copy/copy_large_serial.test","source_case":"ExportLargeSerial","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (s:serialtable) RETURN max(s.ID), max(s.ID2)
+--- expected
+199999|199999

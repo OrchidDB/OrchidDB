@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.NestedAgg.8fee4c78685d","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"NestedAgg","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH COUNT(*) AS x RETURN SUM(x)
+--- expected
+8

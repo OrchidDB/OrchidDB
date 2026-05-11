@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_set_copy.CheckRelSince.12307297ecfb","language":"cypher","ordered":true,"source":"demo_db/demo_db_set_copy.test","source_case":"SetMultipleLabelRelTest","source_log":"CheckRelSince","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u0)-[f:Follows]->() WHERE u0.name='Adam' RETURN f.since
+--- expected
+1999
+1999

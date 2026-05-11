@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpSplitToArrayEscapedCharacters.26aea319190e","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpSplitToArrayEscapedCharacters","status":"imported","suite":"ladybug","version":1}
+--- query
+Return regexp_split_to_array("hello? world? 42?", "\\?")
+--- expected
+[hello, world, 42]

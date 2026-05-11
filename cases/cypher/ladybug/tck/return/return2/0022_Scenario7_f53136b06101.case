@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario7.f53136b06101","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN list_concat(a.list2, a.list1) AS foo
+--- expected
+[4,5,1,2,3]

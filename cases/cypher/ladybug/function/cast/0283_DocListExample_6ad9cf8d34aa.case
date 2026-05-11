@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.6ad9cf8d34aa","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [30, 31, 32, 33, 34, -100000.9123] AS A RETURN CAST(A, 'DECIMAL') > 32.01
+--- expected
+False
+False
+False
+True
+True
+False

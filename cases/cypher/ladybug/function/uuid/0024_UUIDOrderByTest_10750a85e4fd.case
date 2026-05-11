@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.uuid.UUIDOrderByTest.10750a85e4fd","language":"cypher","ordered":true,"source":"function/uuid.test","source_case":"UUIDfunctions","source_log":"UUIDOrderByTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person) RETURN MIN(a.u)
+--- expected
+00000000-0000-0000-0000-000000000000

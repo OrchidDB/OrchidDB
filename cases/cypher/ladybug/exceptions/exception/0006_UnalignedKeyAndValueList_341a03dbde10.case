@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.UnalignedKeyAndValueList.341a03dbde10","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"UnalignedKeyAndValueList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN MAP([4],[3,2])
+--- expected
+Runtime exception: Unaligned key list and value list.

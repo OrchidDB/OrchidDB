@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.CyclicPath.g_VX1X_both_both_cyclicPath_byXageX.296dc15dcb42","language":"gremlin","ordered":false,"source":"filter/CyclicPath.feature","source_case":"g_VX1X_both_both_cyclicPath_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).both().both().cyclicPath().by('age')
+--- expected
+v[marko]
+v[marko]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleMinTest.d883da5c08fb","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleMinTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN MIN(m.note)
+--- expected
+the movie is very very good

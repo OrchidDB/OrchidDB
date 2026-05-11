@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnNestedListOfStructLiteral.fbac13c73f03","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnNestedListOfStructLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return [{description: {propA: p.gender, propB: [p.age, 10]}, name: p.fName}, {description: {propA: p.ID, propB: [p.gender, 20]}, name: p.fName}]
+--- expected
+[{description: {propA: 1, propB: [35,10]}, name: Alice},{description: {propA: 0, propB: [1,20]}, name: Alice}]
+[{description: {propA: 2, propB: [30,10]}, name: Bob},{description: {propA: 2, propB: [2,20]}, name: Bob}]
+[{description: {propA: 1, propB: [45,10]}, name: Carol},{description: {propA: 3, propB: [1,20]}, name: Carol}]
+[{description: {propA: 2, propB: [20,10]}, name: Dan},{description: {propA: 5, propB: [2,20]}, name: Dan}]
+[{description: {propA: 1, propB: [20,10]}, name: Elizabeth},{description: {propA: 7, propB: [1,20]}, name: Elizabeth}]
+[{description: {propA: 2, propB: [25,10]}, name: Farooq},{description: {propA: 8, propB: [2,20]}, name: Farooq}]
+[{description: {propA: 2, propB: [40,10]}, name: Greg},{description: {propA: 9, propB: [2,20]}, name: Greg}]
+[{description: {propA: 2, propB: [83,10]}, name: Hubert Blaine Wolfeschlegelsteinhausenbergerdorff},{description: {propA: 10, propB: [2,20]}, name: Hubert Blaine Wolfeschlegelsteinhausenbergerdorff}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario6.1f2137b08a69","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a.num + 1 AS foo
+--- expected
+2

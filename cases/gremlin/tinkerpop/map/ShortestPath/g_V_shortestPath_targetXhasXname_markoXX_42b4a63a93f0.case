@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ShortestPath.g_V_shortestPath_targetXhasXname_markoXX.42b4a63a93f0","language":"gremlin","ordered":false,"source":"map/ShortestPath.feature","source_case":"g_V_shortestPath_targetXhasXname_markoXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().shortestPath().with("~tinkerpop.shortestPath.target", __.has("name","marko"))
+--- expected
+p[v[josh],v[marko]]
+p[v[lop],v[marko]]
+p[v[marko]]
+p[v[peter],v[lop],v[marko]]
+p[v[ripple],v[josh],v[marko]]
+p[v[vadas],v[marko]]

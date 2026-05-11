@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetRelInt16PropTest.21e92d14b6c1","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetRelInt16PropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:studyAt]->(b:organisation) RETURN e.length
+--- expected
+22
+55
+98

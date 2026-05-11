@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match8.Scenario1.a2ad14085862","language":"cypher","ordered":true,"source":"tck/match/match8.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WITH a MATCH (b) RETURN a, b
+--- expected
+{_ID: 0:0, _LABEL: A, ID: 0}|{_ID: 0:0, _LABEL: A, ID: 0}
+{_ID: 0:0, _LABEL: A, ID: 0}|{_ID: 1:0, _LABEL: B, ID: 0}
+{_ID: 1:0, _LABEL: B, ID: 0}|{_ID: 0:0, _LABEL: A, ID: 0}
+{_ID: 1:0, _LABEL: B, ID: 0}|{_ID: 1:0, _LABEL: B, ID: 0}

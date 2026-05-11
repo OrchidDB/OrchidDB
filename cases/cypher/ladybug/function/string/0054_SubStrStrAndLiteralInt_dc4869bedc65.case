@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.SubStrStrAndLiteralInt.dc4869bedc65","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"SubStrStrAndLiteralInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN substr(p.fName, 2, 12)
+--- expected
+lice
+ob
+arol
+an
+lizabeth
+arooq
+reg
+ubert Blaine

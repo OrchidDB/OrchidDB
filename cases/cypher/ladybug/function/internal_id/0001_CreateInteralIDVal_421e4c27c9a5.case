@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.internal_id.CreateInteralIDVal.421e4c27c9a5","language":"cypher","ordered":true,"source":"function/internal_id.test","source_case":"InternalIDCreation","source_log":"CreateInteralIDVal","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN internal_id(2,3)
+--- expected
+2:3

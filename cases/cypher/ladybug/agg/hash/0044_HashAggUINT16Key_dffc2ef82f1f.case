@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashAggUINT16Key.dffc2ef82f1f","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashAggUINT16Key","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN s.ulength, COUNT(s.year)
+--- expected
+33768|1
+90|1
+180|1

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_VX1X_valuesXageX_orderXlocalX.bd541c8e6cb9","language":"gremlin","ordered":false,"source":"map/Order.feature","source_case":"g_VX1X_valuesXageX_orderXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").order(Scope.local)
+--- expected
+d[29].i

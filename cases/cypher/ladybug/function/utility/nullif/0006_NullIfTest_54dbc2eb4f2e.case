@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.54dbc2eb4f2e","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t1:test) RETURN NULLIF(t1.a, 'hello')
+--- expected
+world
+test

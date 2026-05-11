@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_localXaggregateXaX_byXoutEXcreatedX_countXX_out_out_localXaggregateXaX_byXinEXcreatedX_weight_sumXX_capXaX.7962e30176a9","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_localXaggregateXaX_byXoutEXcreatedX_countXX_out_out_localXaggregateXaX_byXinEXcreatedX_weight_sumXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(aggregate("a").by(__.outE("created").count())).
+out().out().
+local(aggregate("a").by(__.inE("created").values("weight").sum())).
+cap("a")
+--- expected
+d[1].l
+d[1].l
+d[0].l
+d[0].l
+d[0].l
+d[2].l
+d[1.0].d
+d[1.0].d

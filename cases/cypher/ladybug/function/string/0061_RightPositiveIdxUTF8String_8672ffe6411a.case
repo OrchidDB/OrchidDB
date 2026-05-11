@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RightPositiveIdxUTF8String.8672ffe6411a","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RightPositiveIdxUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN right(m.name, 5)
+--- expected
+árejâ
+movie
+Roma

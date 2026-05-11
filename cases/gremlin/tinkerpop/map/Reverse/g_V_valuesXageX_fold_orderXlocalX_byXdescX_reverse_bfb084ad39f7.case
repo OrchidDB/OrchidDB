@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Reverse.g_V_valuesXageX_fold_orderXlocalX_byXdescX_reverse.bfb084ad39f7","language":"gremlin","ordered":false,"source":"map/Reverse.feature","source_case":"g_V_valuesXageX_fold_orderXlocalX_byXdescX_reverse","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").fold().order(local).by(desc).reverse()
+--- expected
+l[d[27].i,d[29].i,d[32].i,d[35].i]

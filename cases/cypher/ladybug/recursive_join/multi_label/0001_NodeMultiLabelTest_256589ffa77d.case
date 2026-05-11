@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.NodeMultiLabelTest.256589ffa77d","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"NodeMultiLabelTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:knows*1..2]->(b) RETURN COUNT(*)
+--- expected
+50

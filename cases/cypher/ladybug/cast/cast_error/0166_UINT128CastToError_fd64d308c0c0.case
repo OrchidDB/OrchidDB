@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.fd64d308c0c0","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("{a: 432412343242343241432432444444444444443244}", "STRUCT(a UINT128)")
+--- expected
+Conversion exception: Cast failed. Could not convert "432412343242343241432432444444444444443244" to UINT128.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrSize.5bd506fae287","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrSize","status":"imported","suite":"ladybug","version":1}
+--- query
+return size('成績評価の甘い授業が高く評価')
+--- expected
+14

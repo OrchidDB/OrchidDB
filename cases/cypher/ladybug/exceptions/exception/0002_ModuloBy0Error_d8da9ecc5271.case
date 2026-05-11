@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.ModuloBy0Error.d8da9ecc5271","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"ModuloBy0Error","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1 % 0
+--- expected
+Runtime exception: Modulo by zero.

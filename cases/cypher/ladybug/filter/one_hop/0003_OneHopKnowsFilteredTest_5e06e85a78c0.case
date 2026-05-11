@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.one_hop.OneHopKnowsFilteredTest.5e06e85a78c0","language":"cypher","ordered":true,"source":"filter/one_hop.test","source_case":"FilterOneHop","source_log":"OneHopKnowsFilteredTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person {gender:1})-[e:knows]->(b:person{gender:2}) RETURN COUNT(*)
+--- expected
+6

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Call.g_callXlist_mapX.c18b88622677","language":"gremlin","ordered":false,"source":"map/Call.feature","source_case":"g_callXlist_mapX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.call("--list", xx1)
+--- expected
+tinker.search

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidArrayToList.c2d24b54c179","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidArrayToList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("[[1, 2], [3, 4]]", "INT64[2][]"), "INT8[]")
+--- expected
+Conversion exception: Unsupported casting function from INT64[2] to INT8.

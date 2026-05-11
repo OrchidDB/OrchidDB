@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXwhereXandXa_created_b__b_0created_count_isXeqX3XXXX__a_both_b__whereXb_inXX.ad35ad3ff15f","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXwhereXandXa_created_b__b_0created_count_isXeqX3XXXX__a_both_b__whereXb_inXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.where(__.and(__.as("a").out("created").as("b"),
+__.as("b").in("created").count().is(P.eq(3)))),
+__.as("a").both().as("b"),
+__.where(__.as("b").in()))
+--- expected
+m[{"a":"v[marko]","b":"v[lop]"}]
+m[{"a":"v[josh]","b":"v[lop]"}]
+m[{"a":"v[peter]","b":"v[lop]"}]

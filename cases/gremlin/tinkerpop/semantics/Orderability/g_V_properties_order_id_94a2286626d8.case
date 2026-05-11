@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Orderability.g_V_properties_order_id.94a2286626d8","language":"gremlin","ordered":true,"source":"semantics/Orderability.feature","source_case":"g_V_properties_order_id","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().properties().order().id()
+--- expected
+d[0].l
+d[1].l
+d[2].l
+d[3].l
+d[4].l
+d[5].l
+d[6].l
+d[7].l
+d[8].l
+d[9].l
+d[10].l
+d[11].l

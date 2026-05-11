@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_tinysnb_checkpoint.InsertNodeWithUUIDTest.f8fa3a328db5","language":"cypher","ordered":true,"source":"transaction/create_node/create_tinysnb_checkpoint.test","source_case":"InsertNodeWithUUIDTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) where a.fName='Emma' return a.u
+--- expected
+a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a20

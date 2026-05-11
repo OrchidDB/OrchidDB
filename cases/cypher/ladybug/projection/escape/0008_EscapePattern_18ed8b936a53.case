@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.EscapePattern.18ed8b936a53","language":"cypher","ordered":true,"source":"projection/escape.test","source_case":"EscapePattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN '\u0048\u0065\u006C\u006C\u006F'
+--- expected
+Hello

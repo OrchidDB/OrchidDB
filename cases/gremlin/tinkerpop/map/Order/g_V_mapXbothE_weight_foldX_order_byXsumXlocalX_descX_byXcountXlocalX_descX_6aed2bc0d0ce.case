@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_mapXbothE_weight_foldX_order_byXsumXlocalX_descX_byXcountXlocalX_descX.6aed2bc0d0ce","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_mapXbothE_weight_foldX_order_byXsumXlocalX_descX_byXcountXlocalX_descX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().map(__.bothE().values("weight").order().by(Order.asc).fold()).order().by(__.sum(Scope.local), Order.desc).by(__.count(Scope.local), Order.desc)
+--- expected
+l[d[0.4].d,d[1.0].d,d[1.0].d]
+l[d[0.4].d,d[0.5].d,d[1.0].d]
+l[d[0.2].d,d[0.4].d,d[0.4].d]
+l[d[1.0].d]
+l[d[0.5].d]
+l[d[0.2].d]

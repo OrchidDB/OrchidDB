@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Filter.g_VX1X_out_filterXhasXage_gtX30XXX.8e76efe41793","language":"gremlin","ordered":false,"source":"filter/Filter.feature","source_case":"g_VX1X_out_filterXhasXage_gtX30XXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out().filter(__.has("age",P.gt(30)))
+--- expected
+v[josh]

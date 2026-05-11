@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXout_countX_optionX2L_nameX_optionX3L_ageX_optionXnone_discardX.ec128d88adf9","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXout_countX_optionX2L_nameX_optionX3L_ageX_optionXnone_discardX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.out().count()).
+option(xx1, __.values("name")).
+option(xx2, __.values("age")).
+option(Pick.none, __.discard())
+--- expected
+d[29].i
+josh

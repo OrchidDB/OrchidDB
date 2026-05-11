@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Any.g_injectXnull_abcX_anyXTextP_startingWithXaXX.ec1e6025f3e7","language":"gremlin","ordered":false,"source":"filter/Any.feature","source_case":"g_injectXnull_abcX_anyXTextP_startingWithXaXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([null,"abc"]).any(TextP.startingWith("a"))
+--- expected
+l[null,abc]

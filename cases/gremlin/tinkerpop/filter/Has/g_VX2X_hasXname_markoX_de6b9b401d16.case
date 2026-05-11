@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Has.g_VX2X_hasXname_markoX.de6b9b401d16","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_VX2X_hasXname_markoX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).has("name", "marko")
+--- expected
+

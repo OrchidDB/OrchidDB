@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_label.MultiLabelOneHopTest1.46efd4386648","language":"cypher","ordered":true,"source":"filter/multi_label.test","source_case":"FilterMultiLabel","source_log":"MultiLabelOneHopTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows|:marries]->(b:person) WHERE e.date=date('2021-06-30') RETURN COUNT(*)
+--- expected
+6

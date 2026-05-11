@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.MultiLabelSelfLoopTest.45f8057bf00e","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"MultiLabelSelfLoopTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:studyAt|:knows*2..3]-(a) WHERE a.ID = 1 RETURN COUNT(*)
+--- expected
+7

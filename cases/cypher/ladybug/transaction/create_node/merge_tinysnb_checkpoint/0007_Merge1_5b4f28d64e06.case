@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.Merge1.5b4f28d64e06","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"Merge1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 3 RETURN a.ID, a.fName, a.age
+--- expected
+0|a|1
+2|Bob|30

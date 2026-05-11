@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ShortestPath.g_V_hasXname_markoX_shortestPath_targetXhasLabelXsoftwareXX.f80a7d8a2391","language":"gremlin","ordered":false,"source":"map/ShortestPath.feature","source_case":"g_V_hasXname_markoX_shortestPath_targetXhasLabelXsoftwareXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name","marko").shortestPath().with("~tinkerpop.shortestPath.target", __.hasLabel("software"))
+--- expected
+p[v[marko],v[josh],v[ripple]]
+p[v[marko],v[lop]]

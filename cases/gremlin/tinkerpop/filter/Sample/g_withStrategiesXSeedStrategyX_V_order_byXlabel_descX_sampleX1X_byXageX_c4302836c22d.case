@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.filter.Sample.g_withStrategiesXSeedStrategyX_V_order_byXlabel_descX_sampleX1X_byXageX.c4302836c22d","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_withStrategiesXSeedStrategyX_V_order_byXlabel_descX_sampleX1X_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SeedStrategy(seed: 999999)).V().order().by(T.label, Order.desc).sample(1).by("age")
+--- expected
+1

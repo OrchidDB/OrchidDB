@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StringSplitFunc.e100b03ce356","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StringSplitFunc","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person) return str_split(p.fName, 'li')
+--- expected
+[A,ce]
+[Bob]
+[Carol]
+[Dan]
+[E,zabeth]
+[Farooq]
+[Greg]
+[Hubert Blaine Wolfeschlegelsteinhausenbergerdorff]

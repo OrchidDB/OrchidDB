@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.case_insensitive.CaseInsentivePropertyUpdate.4791be4cdf27","language":"cypher","ordered":true,"source":"dml_node/case_insensitive.test","source_case":"CaseInsentivePropertyUpdate","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:TEST) RETURN a.*
+--- expected
+1|D
+2|C

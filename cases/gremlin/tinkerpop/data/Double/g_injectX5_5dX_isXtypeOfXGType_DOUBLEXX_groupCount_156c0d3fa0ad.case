@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Double.g_injectX5_5dX_isXtypeOfXGType_DOUBLEXX_groupCount.156c0d3fa0ad","language":"gremlin","ordered":false,"source":"data/Double.feature","source_case":"g_injectX5_5dX_isXtypeOfXGType_DOUBLEXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(5.5d).is(P.typeOf(GType.DOUBLE)).groupCount()
+--- expected
+m[{"d[5.5].d":"d[1].l"}]

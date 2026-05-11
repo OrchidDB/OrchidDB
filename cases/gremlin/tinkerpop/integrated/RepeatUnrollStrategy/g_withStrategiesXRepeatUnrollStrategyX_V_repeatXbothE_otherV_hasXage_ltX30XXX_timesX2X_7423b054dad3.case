@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.RepeatUnrollStrategy.g_withStrategiesXRepeatUnrollStrategyX_V_repeatXbothE_otherV_hasXage_ltX30XXX_timesX2X.7423b054dad3","language":"gremlin","ordered":false,"source":"integrated/RepeatUnrollStrategy.feature","source_case":"g_withStrategiesXRepeatUnrollStrategyX_V_repeatXbothE_otherV_hasXage_ltX30XXX_timesX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(RepeatUnrollStrategy).V().repeat(bothE().otherV().has("age", lt(30))).times(2)
+--- expected
+v[marko]
+v[vadas]
+v[vadas]
+v[vadas]

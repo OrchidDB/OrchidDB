@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddDECIMAL.2876a1877e4c","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [0.6, 1.2, -100.0] as A UNWIND [-0.2, 1.2, 100.5] AS B RETURN CAST(CAST(A, 'DECIMAL') + CAST(B, 'DECIMAL'), 'DECIMAL(18, 3)')
+--- expected
+0.400
+1.800
+101.100
+1.000
+2.400
+101.700

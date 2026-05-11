@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Byte.g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_project_byXidentityX_byXmathXmulX2XXX.02deafae8bfd","language":"gremlin","ordered":false,"source":"data/Byte.feature","source_case":"g_V_valuesXintX_asNumberXGType_BYTEX_isXtypeOfXGType_BYTEXX_project_byXidentityX_byXmathXmulX2XXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BYTE).is(P.typeOf(GType.BYTE)).project("original", "doubled").by(identity()).by(math("_ * 2"))
+--- graph_initializer
+g.addV("data").property("int", 8)
+--- expected
+m[{"original":"d[8].b","doubled":"d[16].d"}]

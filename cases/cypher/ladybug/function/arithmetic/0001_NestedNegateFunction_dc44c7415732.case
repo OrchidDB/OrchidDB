@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.NestedNegateFunction.dc44c7415732","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"NestedNegateFunction","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN - - 1, ---2.3, --5!
+--- expected
+1|-2.300000|120

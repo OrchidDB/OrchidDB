@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.arithmetic.random.Random.3eb278d50440","language":"cypher","ordered":true,"source":"arithmetic/random.test","source_case":"Random","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.id, random() limit 2
+--- expected
+0|0.528393
+2|0.708328

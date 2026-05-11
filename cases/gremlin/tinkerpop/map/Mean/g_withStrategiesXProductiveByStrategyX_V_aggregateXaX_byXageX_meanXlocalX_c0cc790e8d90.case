@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXageX_meanXlocalX.c0cc790e8d90","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXageX_meanXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().aggregate("a").by("age").cap("a").mean(Scope.local)
+--- expected
+d[30.75].d

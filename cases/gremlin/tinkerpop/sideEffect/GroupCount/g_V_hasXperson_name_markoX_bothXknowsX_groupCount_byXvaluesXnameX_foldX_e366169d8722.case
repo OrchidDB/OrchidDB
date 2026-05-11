@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_hasXperson_name_markoX_bothXknowsX_groupCount_byXvaluesXnameX_foldX.e366169d8722","language":"gremlin","ordered":false,"source":"sideEffect/GroupCount.feature","source_case":"g_V_hasXperson_name_markoX_bothXknowsX_groupCount_byXvaluesXnameX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person", "name", "marko").both("knows").groupCount().by(__.values("name").fold())
+--- expected
+m[{"l[josh]":"d[1].l","l[vadas]":"d[1].l"}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayDistance.d587b05425c4","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayDistance","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_DISTANCE([-1, -2, -3.0], [2, -6.0, -3])
+--- expected
+5.000000

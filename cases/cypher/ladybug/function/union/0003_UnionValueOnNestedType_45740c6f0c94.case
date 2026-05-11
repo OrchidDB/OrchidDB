@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionValueOnNestedType.45740c6f0c94","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionValueOnNestedType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN union_value(a := [12, 34])
+--- expected
+[12,34]

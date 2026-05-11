@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.one_hop.OneHopOrgCodeFilter.e5bda0d6a5c1","language":"cypher","ordered":true,"source":"filter/one_hop.test","source_case":"FilterOneHop","source_log":"OneHopOrgCodeFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:studyAt]->(b:organisation) WHERE b.orgCode > 100 RETURN COUNT(*)
+--- expected
+3

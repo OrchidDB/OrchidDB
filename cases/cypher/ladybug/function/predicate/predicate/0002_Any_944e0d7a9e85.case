@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.Any.944e0d7a9e85","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"Any","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ANY(length in [1,2,3] where any (height in [3,5,6] where height = 5))
+--- expected
+True

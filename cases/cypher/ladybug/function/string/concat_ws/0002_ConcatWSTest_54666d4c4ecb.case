@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.concat_ws.ConcatWSTest.54666d4c4ecb","language":"cypher","ordered":true,"source":"function/string/concat_ws.test","source_case":"ConcatWSTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CONCAT_WS('--', 'alice', 'bob', 'carol', 'dan')
+--- expected
+alice--bob--carol--dan

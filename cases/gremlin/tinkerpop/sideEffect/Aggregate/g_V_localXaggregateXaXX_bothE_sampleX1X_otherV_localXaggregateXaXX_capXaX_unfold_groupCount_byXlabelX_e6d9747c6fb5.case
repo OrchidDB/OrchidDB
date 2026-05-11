@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_localXaggregateXaXX_bothE_sampleX1X_otherV_localXaggregateXaXX_capXaX_unfold_groupCount_byXlabelX.e6d9747c6fb5","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_localXaggregateXaXX_bothE_sampleX1X_otherV_localXaggregateXaXX_capXaX_unfold_groupCount_byXlabelX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(aggregate("a")).bothE().sample(1).otherV().local(aggregate("a")).cap("a").unfold().groupCount().by(T.label)
+--- expected
+1

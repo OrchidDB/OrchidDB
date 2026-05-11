@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ValueMap.g_V_valueMapXtrueX.2b3b1bc08022","language":"gremlin","ordered":false,"source":"map/ValueMap.feature","source_case":"g_V_valueMapXtrueX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap(true)
+--- expected
+m[{"t[id]": "v[marko].id", "t[label]": "person", "name": ["marko"], "age": [29]}]
+m[{"t[id]": "v[josh].id", "t[label]": "person", "name": ["josh"], "age": [32]}]
+m[{"t[id]": "v[peter].id", "t[label]": "person", "name": ["peter"], "age": [35]}]
+m[{"t[id]": "v[vadas].id", "t[label]": "person", "name": ["vadas"], "age": [27]}]
+m[{"t[id]": "v[lop].id", "t[label]": "software", "name": ["lop"], "lang": ["java"]}]
+m[{"t[id]": "v[ripple].id", "t[label]": "software", "name": ["ripple"], "lang": ["java"]}]

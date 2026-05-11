@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.Case2HopTest.934266d47a8b","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"Case2HopTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN CASE a.age WHEN 35 THEN b.fName ELSE "abcdefghijklmnopq" END
+--- expected
+Bob
+Carol
+Dan
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq
+abcdefghijklmnopq

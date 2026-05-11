@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Disjunct.g_injectXa_null_bX_disjunctXa_cX.3b30e4e20e55","language":"gremlin","ordered":false,"source":"map/Disjunct.feature","source_case":"g_injectXa_null_bX_disjunctXa_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a",null,"b"]).disjunct(["a","c"])
+--- expected
+s[null,b,c]

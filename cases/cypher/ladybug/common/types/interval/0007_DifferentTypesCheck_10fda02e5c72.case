@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.DifferentTypesCheck.10fda02e5c72","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"DifferentTypesCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("3 millennium")
+--- expected
+3000 years

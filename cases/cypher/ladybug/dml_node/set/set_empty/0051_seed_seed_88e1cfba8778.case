@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.seed_seed.88e1cfba8778","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"RandUpdateInt","source_log":"seed: ${seed}","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WHERE t.prop<200000 RETURN COUNT(*)
+--- expected
+199003

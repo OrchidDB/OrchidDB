@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"GRAPH-STD demo-db/icebug-disk","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_graph_std.MatchSingleNodeLabel.dd9237e4413d","language":"cypher","ordered":true,"source":"demo_db/demo_db_graph_std.test","source_case":"DemoDBGraphStdTest","source_log":"MatchSingleNodeLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:user) RETURN a.name, a.age
+--- expected
+Adam|30
+Karissa|40
+Zhang|50
+Noura|25

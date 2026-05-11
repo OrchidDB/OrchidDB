@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List5.Scenario9.d8da249467c6","language":"cypher","ordered":true,"source":"tck/expressions/list/List5.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [1] IN [1,2,[1]] AS res
+--- expected
+True

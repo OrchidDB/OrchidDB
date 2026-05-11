@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Call.g_callXsearchX_withXstring_traversalX.b22e2d2a30c4","language":"gremlin","ordered":false,"source":"map/Call.feature","source_case":"g_callXsearchX_withXstring_traversalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.call("tinker.search").with("search", __.constant("vada")).element()
+--- expected
+v[vadas]

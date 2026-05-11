@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionLiteralListOfInts.e660a17e7138","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionLiteralListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN list_indexof([7, 4, 100, 6, 1, 10], o.ID)
+--- expected
+5
+2
+4

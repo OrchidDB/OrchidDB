@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.macro_transaction.MacroFuncTestRollbackRecovery.a70df2d5b3c2","language":"cypher","ordered":true,"source":"function/macro_transaction.test","source_case":"MacroFuncTestRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+return addWithDefault(4,7)
+--- expected
+Catalog exception: function ADDWITHDEFAULT does not exist.

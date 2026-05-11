@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.catalog.catalog.InvalidFunctionCall.927921a762e4","language":"cypher","ordered":true,"source":"exceptions/catalog/catalog.test","source_case":"CatalogExeception","source_log":"InvalidFunctionCall","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN db_version()
+--- expected
+Binder exception: DB_VERSION is a TABLE_FUNCTION_ENTRY. Scalar function, aggregate function or macro was expected.

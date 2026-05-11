@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT16.b2a377ae845d","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(400, "INT16") * CAST(26, "INT16")
+--- expected
+10400

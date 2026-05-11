@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with7.Scenario2.86080bf51677","language":"cypher","ordered":true,"source":"tck/with/with7.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (david {name: 'David'})--(otherPerson)-->() WITH otherPerson, count(*) AS foaf WHERE foaf > 1 WITH otherPerson WHERE otherPerson.name <> 'NotOther' RETURN count(*)
+--- expected
+1

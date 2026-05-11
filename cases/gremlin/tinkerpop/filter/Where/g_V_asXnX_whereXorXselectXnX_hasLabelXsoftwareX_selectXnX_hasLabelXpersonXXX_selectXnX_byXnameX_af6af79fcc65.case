@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_V_asXnX_whereXorXselectXnX_hasLabelXsoftwareX_selectXnX_hasLabelXpersonXXX_selectXnX_byXnameX.af6af79fcc65","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_V_asXnX_whereXorXselectXnX_hasLabelXsoftwareX_selectXnX_hasLabelXpersonXXX_selectXnX_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("n").
+where(__.or(__.select("n").hasLabel("software"), __.select("n").hasLabel("person"))).
+select("n").by("name")
+--- expected
+marko
+vadas
+josh
+peter
+lop
+ripple

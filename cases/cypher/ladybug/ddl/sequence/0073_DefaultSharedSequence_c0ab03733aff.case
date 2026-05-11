@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.DefaultSharedSequence.c0ab03733aff","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"DefaultSharedSequence","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tba) RETURN t.*
+--- expected
+0|1

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.correlated.CorrelatedSubqueryTest3.c54590010806","language":"cypher","ordered":true,"source":"subquery/correlated.test","source_case":"CorrelatedSubquery","source_log":"CorrelatedSubqueryTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE EXISTS { MATCH (a)-[:knows]->(c:person) WHERE b.ID = c.ID + 2 } RETURN a.ID, b.ID
+--- expected
+0|5
+2|5
+3|2
+5|2

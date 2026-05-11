@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddINT64.905409de956f","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(202474672468, "INT64") + CAST(102474672468, "INT64")
+--- expected
+304949344936

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_empty.DeleteALPException.714bde6c0888","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_empty.test","source_case":"DeleteALPException","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) RETURN a.ID, b.ID, e.val
+--- expected
+77|88|5.100000
+77|55|1.200000

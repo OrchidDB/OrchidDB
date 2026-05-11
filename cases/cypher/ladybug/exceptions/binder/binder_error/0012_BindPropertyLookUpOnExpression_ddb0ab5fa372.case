@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindPropertyLookUpOnExpression.ddb0ab5fa372","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindPropertyLookUpOnExpression","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) RETURN (a.age + 2).age
+--- expected
+Binder exception: +(a.age,2) has data type INT64 but (NODE,REL,STRUCT,ANY) was expected.

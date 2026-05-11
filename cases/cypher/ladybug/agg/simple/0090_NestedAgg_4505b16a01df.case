@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.NestedAgg.4505b16a01df","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"NestedAgg","status":"imported","suite":"ladybug","version":1}
+--- query
+with count(5) as x return count({y: x})
+--- expected
+1

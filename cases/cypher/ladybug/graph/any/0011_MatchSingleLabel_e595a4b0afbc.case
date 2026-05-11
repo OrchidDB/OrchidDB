@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.graph.any.MatchSingleLabel.e595a4b0afbc","language":"cypher","ordered":true,"source":"graph/any.test","source_case":"AnyGraphMultiNodeLabels","source_log":"MatchSingleLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person) RETURN COUNT(*)
+--- expected
+2

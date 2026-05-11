@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Reverse.g_V_valuesXnameX_fold_orderXlocalX_by_reverse.eaab750df47f","language":"gremlin","ordered":false,"source":"map/Reverse.feature","source_case":"g_V_valuesXnameX_fold_orderXlocalX_by_reverse","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").fold().order(local).by().reverse()
+--- expected
+l[vadas,ripple,peter,marko,lop,josh]

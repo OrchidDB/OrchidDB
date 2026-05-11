@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Comparability.InjectX1dX_isXtrue_or_errorX.7a6daead88dd","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectX1dX_isXtrue_or_errorX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1d).is(P.eq(1).or(P.lt(NaN)))
+--- expected
+d[1].d

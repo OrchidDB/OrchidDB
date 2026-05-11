@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListExtractSerial.93fe2a62e368","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListExtractSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([a.ID], 1)
+--- expected
+0
+1
+2
+3
+4
+5
+6
+7

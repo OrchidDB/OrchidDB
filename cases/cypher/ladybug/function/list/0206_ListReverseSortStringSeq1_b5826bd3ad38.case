@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortStringSeq1.b5826bd3ad38","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortStringSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort(['this is a long string', 'this is yet another long string', 'abs', NULL])
+--- expected
+[,this is yet another long string,this is a long string,abs]

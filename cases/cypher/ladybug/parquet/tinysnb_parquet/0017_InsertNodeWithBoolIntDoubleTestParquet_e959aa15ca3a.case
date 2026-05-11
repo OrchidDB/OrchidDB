@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.InsertNodeWithBoolIntDoubleTestParquet.e959aa15ca3a","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"InsertNodeWithBoolIntDoubleTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID > 8 RETURN a.ID, a.gender,a.isStudent, a.isWorker, a.age, a.eyeSight
+--- expected
+10|2|False|True|83|4.900000
+80|||True|22|1.100000
+9|2|False|False|40|4.900000

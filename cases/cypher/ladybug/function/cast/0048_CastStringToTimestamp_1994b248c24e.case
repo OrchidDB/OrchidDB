@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastStringToTimestamp.1994b248c24e","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastStringToTimestamp","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("1970-01-01 00:00:00.004666-10", "TIMESTAMP_SEC")
+--- expected
+1970-01-01 10:00:00

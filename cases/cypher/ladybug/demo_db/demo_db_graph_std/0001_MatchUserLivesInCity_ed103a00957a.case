@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"GRAPH-STD demo-db/icebug-disk","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_graph_std.MatchUserLivesInCity.ed103a00957a","language":"cypher","ordered":true,"source":"demo_db/demo_db_graph_std.test","source_case":"DemoDBGraphStdTest","source_log":"MatchUserLivesInCity","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:user)-[l:livesin]->(c:city) RETURN u.name, u.age, c.name
+--- expected
+Adam|30|Waterloo
+Karissa|40|Waterloo
+Zhang|50|Kitchener
+Noura|25|Guelph

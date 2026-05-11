@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.EdgeLabelVerificationStrategy.g_withoutStrategiesXEdgeLabelVerificationStrategyX_V.0ff0212fa769","language":"gremlin","ordered":false,"source":"integrated/EdgeLabelVerificationStrategy.feature","source_case":"g_withoutStrategiesXEdgeLabelVerificationStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(EdgeLabelVerificationStrategy).V().out()
+--- expected
+v[lop]
+v[lop]
+v[lop]
+v[vadas]
+v[josh]
+v[ripple]

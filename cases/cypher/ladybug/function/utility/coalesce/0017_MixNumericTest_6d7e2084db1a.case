@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.MixNumericTest.6d7e2084db1a","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"MixNumericTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(1, NULL, 1.5)
+--- expected
+1.000000

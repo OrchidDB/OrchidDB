@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Call.g_V_callXdcX_withXdirection_OUTX.acdaf35547e9","language":"gremlin","ordered":false,"source":"map/Call.feature","source_case":"g_V_callXdcX_withXdirection_OUTX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("v").call("tinker.degree.centrality").with("direction", OUT).project("vertex", "degree").by(select("v")).by()
+--- expected
+m[{"vertex": "v[marko]",  "degree": "d[3].l"}]
+m[{"vertex": "v[vadas]",  "degree": "d[0].l"}]
+m[{"vertex": "v[lop]",    "degree": "d[0].l"}]
+m[{"vertex": "v[josh]",   "degree": "d[2].l"}]
+m[{"vertex": "v[ripple]", "degree": "d[0].l"}]
+m[{"vertex": "v[peter]",  "degree": "d[1].l"}]

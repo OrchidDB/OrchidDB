@@ -1,0 +1,21 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertNodeAfterMatchListTest.f955cbae55fe","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertNodeAfterMatchListTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.fName,a.age
+--- expected
+0|Alice|35
+10|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|83
+11||70
+13||60
+14||90
+16||40
+18||40
+19||50
+20||80
+21||166
+2|Bob|30
+3|Carol|45
+5|Dan|20
+7|Elizabeth|20
+8|Farooq|25
+9|Greg|40

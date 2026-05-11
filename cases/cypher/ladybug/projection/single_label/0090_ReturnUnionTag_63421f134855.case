@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnUnionTag.63421f134855","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"NestedPropertyManyToManyRel","source_log":"ReturnUnionTag","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:knows]->(:person) RETURN e.summary
+--- expected
+{locations: ['london','toronto'], transfer: {day: 2012-11-21, amount: [223,5230]}}
+{locations: ['paris','beijing'], transfer: {day: 2011-03-11, amount: [2323,50]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}
+{locations: ['paris'], transfer: {day: 2011-05-01, amount: [2000,5340]}}
+{locations: ['shanghai','nanjing'], transfer: {day: 1998-11-12, amount: [22,53240]}}
+{locations: ['shanghai'], transfer: {day: 1990-09-10, amount: [10]}}
+{locations: ['toronto','thisisalongcityname'], transfer: {day: 1930-11-22, amount: [18,323]}}
+{locations: ['toronto','waterloo'], transfer: {day: 2021-01-02, amount: [100,200]}}
+{locations: ['vancouver'], transfer: {day: 2020-01-01, amount: [120,50]}}
+{locations: ['waterloo'], transfer: {day: 2000-01-01, amount: [1000,5000]}}
+{locations: , transfer: }
+{locations: [], transfer: {day: 1980-11-21, amount: [20,5]}}

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.Unwind2Parquet.c59ca52547d3","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"Unwind2Parquet","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [[1, 2, 3], [2, 3, 4], [3, 4, 1], [4, 1, 2]] AS x RETURN x
+--- expected
+[1,2,3]
+[2,3,4]
+[3,4,1]
+[4,1,2]

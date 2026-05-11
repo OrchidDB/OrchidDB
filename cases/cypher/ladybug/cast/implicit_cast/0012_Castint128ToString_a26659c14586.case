@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.Castint128ToString.a26659c14586","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"Castint128ToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(to_int128(134), 3)
+--- expected
+134

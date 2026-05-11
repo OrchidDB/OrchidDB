@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.uuid.UUIDOrderByTest.a2bbbefac899","language":"cypher","ordered":true,"source":"function/uuid.test","source_case":"UUIDfunctions","source_log":"UUIDOrderByTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person) RETURN MAX(a.u)
+--- expected
+ffffffff-ffff-ffff-ffff-ffffffffffff

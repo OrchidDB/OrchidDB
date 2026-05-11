@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirPattern.bdaa13666cb8","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirPattern","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:workAt]-(b:organisation) RETURN a.ID, b.ID
+--- expected
+3|4
+5|6
+7|6

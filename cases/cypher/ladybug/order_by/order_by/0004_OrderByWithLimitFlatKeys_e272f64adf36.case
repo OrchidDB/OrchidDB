@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV order-by-tests","expected_kind":"rows","id":"cypher.ladybug.order_by.order_by.OrderByWithLimitFlatKeys.e272f64adf36","language":"cypher","ordered":true,"source":"order_by/order_by.test","source_case":"OrderByWithLimitFlatKeys","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p) RETURN p.id ORDER BY p.id DESC, p.balance ASC LIMIT 10
+--- expected
+1000
+999
+998
+997
+996
+995
+994
+993
+992
+991

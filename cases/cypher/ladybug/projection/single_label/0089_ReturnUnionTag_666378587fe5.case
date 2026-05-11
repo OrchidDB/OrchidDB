@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnUnionTag.666378587fe5","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"LargeListOfStruct","source_log":"ReturnUnionTag","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_append([${STRUCT_VAL}{a: 99}], {a: 200})
+--- expected
+<FILE>:large_list_of_struct_answer.txt

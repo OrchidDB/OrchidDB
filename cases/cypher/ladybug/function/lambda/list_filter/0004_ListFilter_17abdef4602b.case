@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_filter.ListFilter.17abdef4602b","language":"cypher","ordered":true,"source":"function/lambda/list_filter.test","source_case":"ListFilter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_FILTER([5,28,92], x-> x + 4 >= 24)
+--- expected
+[28,92]

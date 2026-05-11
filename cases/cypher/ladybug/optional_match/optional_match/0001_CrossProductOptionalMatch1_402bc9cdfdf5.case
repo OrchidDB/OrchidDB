@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.CrossProductOptionalMatch1.402bc9cdfdf5","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"CrossProductOptionalMatch1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName = 'Alice' OPTIONAL MATCH (b:person) WHERE b.fName = 'A' RETURN a.ID, b.ID
+--- expected
+0|

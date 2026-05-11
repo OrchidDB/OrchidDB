@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.uuid.UUIDOrderByTest.00bdffcfc1d1","language":"cypher","ordered":true,"source":"function/uuid.test","source_case":"LargeRandomUUID","source_log":"UUIDOrderByTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WITH DISTINCT gen_random_uuid() as u RETURN count(*)
+--- expected
+200000

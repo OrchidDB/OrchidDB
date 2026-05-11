@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Count.g_V_group_byXlabelX_count.fd0887e454b0","language":"gremlin","ordered":true,"source":"map/Count.feature","source_case":"g_V_group_byXlabelX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by(label).count()
+--- expected
+d[1].l

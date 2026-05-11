@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalExtractMicrosecondFuncTest.8fd2f36cc5bf","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalExtractMicrosecondFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("MICROSECOND", p.lastJobDuration)
+--- expected
+0
+24
+11000000
+24
+11000000
+24000
+24
+0

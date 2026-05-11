@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_from_table_func.CopyFromTableFunc.f214e82012b1","language":"cypher","ordered":true,"source":"copy/copy_from_table_func.test","source_case":"CopyFromTableFunc","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:db_info) RETURN p.*
+--- expected
+|2|

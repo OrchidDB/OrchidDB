@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Properties.g_V_valuesXname_age_nullX.8d6f22687501","language":"gremlin","ordered":false,"source":"map/Properties.feature","source_case":"g_V_valuesXname_age_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name", "age", null)
+--- expected
+marko
+d[29].i
+vadas
+d[27].i
+josh
+d[32].i
+peter
+d[35].i
+lop
+ripple

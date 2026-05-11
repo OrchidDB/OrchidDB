@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_from_tinysnb.CopyFromSubquery.ba4cc27acd25","language":"cypher","ordered":true,"source":"copy/copy_from_tinysnb.test","source_case":"CopyFromSubquery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) RETURN a.*
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.ListAny.fea18804054e","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"ListAny","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [], [[]], [{'b': NULL}]
+--- expected
+[]|[[]]|[{b: }]

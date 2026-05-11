@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RtrimStr.f06b05e328ea","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RtrimStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN rtrim(o.name)
+--- expected
+ABFsUni
+CsWork
+DEsWork

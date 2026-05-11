@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strstartwith.53e63f85abeb","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strstartwith","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN starts_with('成績評価の甘い授業が高く評価', '成績')
+--- expected
+True

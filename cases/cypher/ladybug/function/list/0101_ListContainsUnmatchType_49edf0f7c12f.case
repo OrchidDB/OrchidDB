@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsUnmatchType.49edf0f7c12f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsUnmatchType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) where list_contains(cast(['A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11', 'a0eebc99-9c0b4ef8-bb6d6bb9-bd380a15'] as uuid[]), a.u) return a.ID
+--- expected
+0
+7

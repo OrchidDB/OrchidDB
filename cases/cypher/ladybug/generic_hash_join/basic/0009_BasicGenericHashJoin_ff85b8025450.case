@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.ff85b8025450","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.workedHours = b.workedHours RETURN a.ID, b.ID
+--- expected
+0|0
+10|10
+2|2
+3|3
+5|5
+7|7
+8|8
+9|9

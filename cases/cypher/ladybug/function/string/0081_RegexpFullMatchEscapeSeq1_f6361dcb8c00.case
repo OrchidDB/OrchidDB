@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpFullMatchEscapeSeq1.f6361dcb8c00","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpFullMatchEscapeSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return REGEXP_FULL_MATCH("peter_n@example.com", ".*\\.com")
+--- expected
+True

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.StructExtractOnUserDefinedType.88bb8d78b29d","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDT","source_log":"StructExtractOnUserDefinedType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN struct_extract(p.description, 'age')
+--- expected
+1
+3
+5

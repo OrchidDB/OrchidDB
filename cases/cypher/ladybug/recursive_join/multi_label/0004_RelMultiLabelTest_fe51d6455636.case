@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.RelMultiLabelTest.fe51d6455636","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"RelMultiLabelTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e*1..2]->(b:organisation) WHERE a.fName = 'Alice' RETURN b.ID, properties(rels(e), '_id'), properties(rels(e), 'year')
+--- expected
+1|[3:0,5:1]|[,2020]
+1|[5:0]|[2021]
+1|[11:0,5:1]|[,2020]
+1|[9:0,5:1]|[,2020]
+4|[3:1,7:0]|[,2015]
+6|[3:2,7:1]|[,2010]

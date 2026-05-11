@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Local.g_withSackX0LX_V_in_barrier_localXsackXsumX_byXageXX_sack.952a6c5ba556","language":"gremlin","ordered":false,"source":"branch/Local.feature","source_case":"g_withSackX0LX_V_in_barrier_localXsackXsumX_byXageXX_sack","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSack(0L).V().in().barrier().local(__.sack(sum).by("age")).sack()
+--- expected
+d[29].l
+d[29].l
+d[29].l
+d[32].l
+d[32].l
+d[35].l

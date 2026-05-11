@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Min.g_V_age_min.7c8049bcae1c","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_V_age_min","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").min()
+--- expected
+d[27].i

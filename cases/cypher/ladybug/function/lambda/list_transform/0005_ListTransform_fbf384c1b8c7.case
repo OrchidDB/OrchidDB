@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.fbf384c1b8c7","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 6 RETURN a.ID, a.workedHours, LIST_TRANSFORM(a.workedHours, x->x + a.ID)
+--- expected
+0|[10,5]|[10,5]
+2|[12,8]|[14,10]
+3|[4,5]|[7,8]
+5|[1,9]|[6,14]

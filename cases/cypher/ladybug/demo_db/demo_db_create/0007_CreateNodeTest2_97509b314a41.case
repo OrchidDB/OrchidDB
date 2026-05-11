@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_create.CreateNodeTest2.97509b314a41","language":"cypher","ordered":true,"source":"demo_db/demo_db_create.test","source_case":"CreateNodeTest2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.name = 'Dimitri' RETURN a.name, a.age
+--- expected
+Dimitri|

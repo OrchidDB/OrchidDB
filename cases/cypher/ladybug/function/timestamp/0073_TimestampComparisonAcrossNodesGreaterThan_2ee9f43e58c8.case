@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampComparisonAcrossNodesGreaterThan.2ee9f43e58c8","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampComparisonAcrossNodesGreaterThan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE a.registerTime > b.registerTime RETURN COUNT(*)
+--- expected
+8

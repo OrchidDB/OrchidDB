@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind3.f82efb1669fb","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind3","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ["adhjsdhhhhhhhhhhhhsjsjjdhsjdhdjshdjdadhjsdhhqwrtetrehhhhsjsjjdhsjdhdjshdjd", "basdfghjkjkjhkjhkjhkj", "c", "d"] AS x RETURN x
+--- expected
+adhjsdhhhhhhhhhhhhsjsjjdhsjdhdjshdjdadhjsdhhqwrtetrehhhhsjsjjdhsjdhdjshdjd
+basdfghjkjkjhkjhkjhkj
+c
+d

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXname_startingWithXmarXX.f34e7c297cce","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXname_startingWithXmarXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", TextP.startingWith("mar"))
+--- expected
+v[marko]

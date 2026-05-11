@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_from_tinysnb.CopyFromSubquery.6ce3001f6a94","language":"cypher","ordered":true,"source":"copy/copy_from_tinysnb.test","source_case":"CopyFromSubquery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:X) RETURN a.name + 'h'
+--- expected
+0h
+2h
+3h
+5h
+7h
+8h
+9h
+10h

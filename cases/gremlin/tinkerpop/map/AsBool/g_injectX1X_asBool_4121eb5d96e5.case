@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsBool.g_injectX1X_asBool.4121eb5d96e5","language":"gremlin","ordered":false,"source":"map/AsBool.feature","source_case":"g_injectX1X_asBool","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1).asBool()
+--- expected
+true

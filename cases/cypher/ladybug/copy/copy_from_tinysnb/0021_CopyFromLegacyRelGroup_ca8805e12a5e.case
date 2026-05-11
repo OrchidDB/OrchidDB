@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_from_tinysnb.CopyFromLegacyRelGroup.ca8805e12a5e","language":"cypher","ordered":true,"source":"copy/copy_from_tinysnb.test","source_case":"CopyFromLegacyRelGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:A]->(b:person) RETURN a.ID,b.ID
+--- expected
+0|2
+0|3
+0|5
+2|0
+2|3
+2|5

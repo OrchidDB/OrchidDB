@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_out_in_valuesXnameX_fold_dedupXlocalX.abdeb3c29887","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_out_in_valuesXnameX_fold_dedupXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().map(__.in().values("name").fold().dedup(Scope.local))
+--- expected
+s[peter,marko,josh]
+s[marko,peter,josh]
+s[josh,marko,peter]
+s[marko]
+s[josh]
+s[marko]

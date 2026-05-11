@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloUINT64.6473c4dfdded","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloUINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(102474672468, "UINT64") % CAST(1246, "UINT64")
+--- expected
+378

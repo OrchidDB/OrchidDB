@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.ByModulatorOptimizationStrategy.g_withStrategiesXByModulatorOptimizationStrategyX_V_order_byXvaluesXnameXX.e9e00d7ebb5b","language":"gremlin","ordered":true,"source":"integrated/ByModulatorOptimizationStrategy.feature","source_case":"g_withStrategiesXByModulatorOptimizationStrategyX_V_order_byXvaluesXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ByModulatorOptimizationStrategy).V().order().by(values("name"))
+--- expected
+v[josh]
+v[lop]
+v[marko]
+v[peter]
+v[ripple]
+v[vadas]

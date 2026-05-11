@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductInt16.54b38143b6d6","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductInt16","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_int16(1), to_int16(2), to_int16(3), NULL])
+--- expected
+6

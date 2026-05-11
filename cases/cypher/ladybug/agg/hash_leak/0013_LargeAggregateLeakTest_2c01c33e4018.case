@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.agg.hash_leak.LargeAggregateLeakTest.2c01c33e4018","language":"cypher","ordered":true,"source":"agg/hash_leak.test","source_case":"LargeAggregateLeakTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:vertex) RETURN MIN(a.ID)
+--- expected
+1

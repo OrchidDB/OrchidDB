@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strltrim.969199255ba1","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strltrim","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ltrim('    😃🧘🏻‍♂️🌍🌦️🍞🚗')
+--- expected
+😃🧘🏻‍♂️🌍🌦️🍞🚗

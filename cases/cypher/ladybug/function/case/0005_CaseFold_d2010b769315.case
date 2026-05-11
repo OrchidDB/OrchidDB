@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseFold.d2010b769315","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseFold","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CASE WHEN 4 % 2 = 0 THEN 100 ELSE 50 END
+--- expected
+100

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Map.g_withPath_V_asXaX_out_out_asXbX_mapXselectXaX_valuesXnameX_concatXselectXbX_valuesXnameXXX.2b4359f2dcb3","language":"gremlin","ordered":false,"source":"map/Map.feature","source_case":"g_withPath_V_asXaX_out_out_asXbX_mapXselectXaX_valuesXnameX_concatXselectXbX_valuesXnameXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withPath().V().as("a").out().out().as("b").map(__.select("a").values("name").concat(__.select("b").values("name")))
+--- expected
+markoripple
+markolop

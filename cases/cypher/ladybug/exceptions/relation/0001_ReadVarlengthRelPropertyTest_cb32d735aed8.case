@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.relation.ReadVarlengthRelPropertyTest.cb32d735aed8","language":"cypher","ordered":true,"source":"exceptions/relation.test","source_case":"ReadVarlengthRelPropertyTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows*1..3]->(b:person) RETURN e.age
+--- expected
+Binder exception: e has data type RECURSIVE_REL but (NODE,REL,STRUCT,ANY) was expected.

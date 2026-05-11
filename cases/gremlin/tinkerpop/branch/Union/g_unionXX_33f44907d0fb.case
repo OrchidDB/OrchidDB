@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.branch.Union.g_unionXX.33f44907d0fb","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_unionXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.union()
+--- expected
+

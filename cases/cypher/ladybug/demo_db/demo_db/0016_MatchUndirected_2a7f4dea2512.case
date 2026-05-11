@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchUndirected.2a7f4dea2512","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchUndirected","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]-(b:User) WHERE a.name = 'Karissa' RETURN b.name
+--- expected
+Adam
+Zhang

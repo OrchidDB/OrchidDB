@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_hasLabelXpersonX_chooseXoutXcreatedX_count_isXeqX0XX__constantXdidnt_createX__constantXcreatedXX.b989e9613d76","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_hasLabelXpersonX_chooseXoutXcreatedX_count_isXeqX0XX__constantXdidnt_createX__constantXcreatedXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+choose(__.out("created").count().is(P.eq(0)),
+__.constant("didnt_create"),
+__.constant("created"))
+--- expected
+didnt_create
+created
+created
+created

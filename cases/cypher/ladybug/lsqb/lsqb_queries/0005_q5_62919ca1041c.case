@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV lsqb-sf01","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries.q5.62919ca1041c","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries.test","source_case":"LSQBTest","source_log":"q5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (tag1:Tag)<-[:Post_hasTag_Tag|:Comment_hasTag_Tag]-(message:Comment:Post)<-[:Comment_replyOf_Post|:Comment_replyOf_Comment]-(comment:Comment)-[:Comment_hasTag_Tag]->(tag2:Tag) WHERE id(tag1) <> id(tag2) RETURN count(*) AS count
+--- expected
+1079722

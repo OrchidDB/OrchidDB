@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortFloatAsc.e9abbc357b1a","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortFloatAsc","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([to_float(1.1), to_float(2.3), to_float(4.5), NULL])
+--- expected
+[,1.100000,2.300000,4.500000]

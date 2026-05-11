@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.NullCheckBool.31acf613d63e","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"ZoneMapUpdateThenQueryWithoutCheckpoint","source_log":"NullCheckBool","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.isStudent IS NULL RETURN a.ID, a.fName, a.gender, a.isWorker, a.age
+--- expected
+0|Alice|1|False|90

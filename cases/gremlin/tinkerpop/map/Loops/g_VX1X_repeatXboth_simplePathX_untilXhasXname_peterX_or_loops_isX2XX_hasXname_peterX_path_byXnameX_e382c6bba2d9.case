@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Loops.g_VX1X_repeatXboth_simplePathX_untilXhasXname_peterX_or_loops_isX2XX_hasXname_peterX_path_byXnameX.e382c6bba2d9","language":"gremlin","ordered":false,"source":"map/Loops.feature","source_case":"g_VX1X_repeatXboth_simplePathX_untilXhasXname_peterX_or_loops_isX2XX_hasXname_peterX_path_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).repeat(__.both().simplePath()).until(__.has("name", "peter").or().loops().is(2)).has("name", "peter").path().by("name")
+--- expected
+p[marko,lop,peter]

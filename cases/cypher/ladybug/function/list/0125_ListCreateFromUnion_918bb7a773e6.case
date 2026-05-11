@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListCreateFromUnion.918bb7a773e6","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListCreateFromUnion","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [UNION_VALUE(a := 3), UNION_VALUE(b := 7), UNION_VALUE(a := 11)]
+--- expected
+[3,7,11]

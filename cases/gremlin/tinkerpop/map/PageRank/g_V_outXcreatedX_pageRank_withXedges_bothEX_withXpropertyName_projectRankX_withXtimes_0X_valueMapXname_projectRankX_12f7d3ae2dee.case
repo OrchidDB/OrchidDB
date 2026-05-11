@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.PageRank.g_V_outXcreatedX_pageRank_withXedges_bothEX_withXpropertyName_projectRankX_withXtimes_0X_valueMapXname_projectRankX.12f7d3ae2dee","language":"gremlin","ordered":false,"source":"map/PageRank.feature","source_case":"g_V_outXcreatedX_pageRank_withXedges_bothEX_withXpropertyName_projectRankX_withXtimes_0X_valueMapXname_projectRankX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("created").pageRank().with("~tinkerpop.pageRank.edges",__.bothE()).with("~tinkerpop.pageRank.propertyName","projectRank").with("~tinkerpop.pageRank.times",0).valueMap("name", "projectRank")
+--- expected
+m[{"name": ["lop"], "projectRank": [3.0]}]
+m[{"name": ["lop"], "projectRank": [3.0]}]
+m[{"name": ["lop"], "projectRank": [3.0]}]
+m[{"name": ["ripple"], "projectRank": [1.0]}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.var_length_large_adj_list_extend.KnowsVeryLargeAdjListTest.b1c546c2f89f","language":"cypher","ordered":true,"source":"read_list/var_length_large_adj_list_extend.test","source_case":"LargeListTest","source_log":"KnowsVeryLargeAdjListTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows*2..4]->(b:person) RETURN COUNT(*)
+--- expected
+60003

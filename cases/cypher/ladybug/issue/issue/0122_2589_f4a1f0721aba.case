@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2589.f4a1f0721aba","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2589","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH "node_after" as selected MATCH (t1:T{id: "t1"})-[:E]->(t2:T{id: "t2"}) WITH CASE WHEN selected = "node_after" THEN t2 ELSE t1 END as ret RETURN ret
+--- expected
+{_ID: 0:1, _LABEL: T, id: t2}

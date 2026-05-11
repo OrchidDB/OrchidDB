@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.List.g_injectXlistX_isXtypeOfXGType_LISTXX_groupCount.a50e8c87100e","language":"gremlin","ordered":false,"source":"data/List.feature","source_case":"g_injectXlistX_isXtypeOfXGType_LISTXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["test"]).is(P.typeOf(GType.LIST)).groupCount()
+--- expected
+m[{"l[test]":"d[1].l"}]

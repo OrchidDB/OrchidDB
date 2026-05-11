@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.CyclicMultiLabelCyclicTestParquet.2596bf4bdd72","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"CyclicMultiLabelCyclicTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:workAt|:knows|:studyAt]->(b:organisation), (a)-[:workAt]->(b) RETURN COUNT(*)
+--- expected
+3

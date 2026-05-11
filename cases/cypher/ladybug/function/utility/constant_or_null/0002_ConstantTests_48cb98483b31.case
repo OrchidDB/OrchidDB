@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.constant_or_null.ConstantTests.48cb98483b31","language":"cypher","ordered":true,"source":"function/utility/constant_or_null.test","source_case":"ConstantTests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN constant_or_null(1, 10)
+--- expected
+1

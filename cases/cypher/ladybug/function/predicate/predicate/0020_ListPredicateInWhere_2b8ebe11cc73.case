@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.ListPredicateInWhere.2b8ebe11cc73","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"ListPredicateInWhere","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE all(workedHours in a.workedHours WHERE workedHours >= 5) RETURN a.fName
+--- expected
+Alice
+Bob

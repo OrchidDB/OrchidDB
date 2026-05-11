@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.EscapePattern.f81a10dafa49","language":"cypher","ordered":true,"source":"projection/escape.test","source_case":"EscapePattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 'this is an escape char: \\.'
+--- expected
+this is an escape char: \.

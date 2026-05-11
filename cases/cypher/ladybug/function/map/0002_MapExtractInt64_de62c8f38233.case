@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractInt64.de62c8f38233","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractInt64","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_extract(map(['a', 'c', 'e'], [4, 3, 1]), 'c')
+--- expected
+[3]

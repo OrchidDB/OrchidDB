@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.merge.merge_tinysnb.MergeNodeWithOnMatchAndOnCreate.20305b717de6","language":"cypher","ordered":true,"source":"dml_node/merge/merge_tinysnb.test","source_case":"MergeNodeWithOnMatchAndOnCreate","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:school) return p.id
+--- expected
+21
+25
+13

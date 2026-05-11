@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLastDayFuncTest.eae94aecaa99","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLastDayFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN last_day(p.registerTime)
+--- expected
+2011-08-31
+2008-11-30
+1911-08-31
+2031-11-30
+1976-12-31
+1972-07-31
+1976-12-31
+2023-02-28

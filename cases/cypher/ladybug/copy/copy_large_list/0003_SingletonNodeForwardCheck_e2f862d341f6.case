@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.copy.copy_large_list.SingletonNodeForwardCheck.e2f862d341f6","language":"cypher","ordered":true,"source":"copy/copy_large_list.test","source_case":"CopyLargeList","source_log":"SingletonNodeForwardCheck","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[r:knows]->(p1:person) WHERE p0.ID > 5000 and p0.ID < 6000 RETURN COUNT(*)
+--- expected
+0

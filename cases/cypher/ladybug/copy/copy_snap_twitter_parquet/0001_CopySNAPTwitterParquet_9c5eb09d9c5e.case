@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV snap/twitter/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_snap_twitter_parquet.CopySNAPTwitterParquet.9c5eb09d9c5e","language":"cypher","ordered":true,"source":"copy/copy_snap_twitter_parquet.test","source_case":"CopySNAPTwitterParquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:account) RETURN COUNT(*)
+--- expected
+81306

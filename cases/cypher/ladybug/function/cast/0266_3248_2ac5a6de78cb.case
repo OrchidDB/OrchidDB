@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.3248.2ac5a6de78cb","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"3248","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_cosine_similarity([1.0, 2.0], [3.0, 4.0])
+--- expected
+0.983870

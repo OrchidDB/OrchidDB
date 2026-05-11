@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.StructTest.b7868b0c7a87","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"StructTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, {name: 'Alice', age: 20}, NULL, NULL, {name: 'Bob', age: 25})
+--- expected
+{name: Alice, age: 20}

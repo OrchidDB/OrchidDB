@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionLiteralListOfListOfDates.242ccef9be73","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionLiteralListOfListOfDates","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_indexof([[date('1900-01-01')], [date('1900-01-01'), date('1900-05-01')], [date('1980-10-26')]], [a.birthdate])
+--- expected
+1
+1
+0
+0
+3
+3
+3
+0

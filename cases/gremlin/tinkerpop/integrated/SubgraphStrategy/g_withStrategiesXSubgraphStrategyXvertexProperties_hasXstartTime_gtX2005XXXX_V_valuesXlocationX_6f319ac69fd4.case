@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXvertexProperties_hasXstartTime_gtX2005XXXX_V_valuesXlocationX.6f319ac69fd4","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXvertexProperties_hasXstartTime_gtX2005XXXX_V_valuesXlocationX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertexProperties: __.has("startTime", P.gt(2005)))).V().values("location")
+--- expected
+purcellville
+baltimore
+oakland
+seattle
+aachen

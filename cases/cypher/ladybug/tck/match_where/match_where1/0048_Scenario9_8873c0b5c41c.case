@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario9.8873c0b5c41c","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[r]->(b) WHERE r.name = $param RETURN b
+--- expected
+{_ID: 1:0, _LABEL: B, ID: 0, name: me}

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirPattern.a8ad355a254d","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirPattern","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[:studyAt]-(a)-[:meets]-()-[:workAt]-() RETURN a.fName
+--- expected
+Farooq
+Bob

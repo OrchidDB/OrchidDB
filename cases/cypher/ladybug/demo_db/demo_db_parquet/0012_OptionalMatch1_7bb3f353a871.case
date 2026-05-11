@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.OptionalMatch1.7bb3f353a871","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"OptionalMatch1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) OPTIONAL MATCH (u)-[:Follows]->(u1:User) RETURN u.name, u1.name
+--- expected
+Adam|Karissa
+Adam|Zhang
+Karissa|Zhang
+Zhang|Noura
+Noura|

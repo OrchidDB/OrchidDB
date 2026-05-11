@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_V_asXaX_hasXname_markoX_asXbX_hasXage_29X_asXcX_path.ff637208023f","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_V_asXaX_hasXname_markoX_asXbX_hasXage_29X_asXcX_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").has("name", "marko").as("b").has("age", 29).as("c").path()
+--- expected
+p[v[marko]]

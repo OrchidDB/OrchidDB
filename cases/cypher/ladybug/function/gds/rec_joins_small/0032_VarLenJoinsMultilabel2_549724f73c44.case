@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV gds-rec-joins-small","expected_kind":"rows","id":"cypher.ladybug.function.gds.rec_joins_small.VarLenJoinsMultilabel2.549724f73c44","language":"cypher","ordered":true,"source":"function/gds/rec_joins_small.test","source_case":"GDSSmall","source_log":"VarLenJoinsMultilabel2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person1)-[e * 1..30]->(b:person2:person1) WHERE a.ID=0 RETURN length(e), COUNT(*)
+--- expected
+1|2
+2|4
+3|24
+4|16

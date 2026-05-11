@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.agg.serial_hash.SimpleAggSerial.d0bc915f065e","language":"cypher","ordered":true,"source":"agg/serial_hash.test","source_case":"AggSerial","source_log":"SimpleAggSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN SUM(a.ID), AVG(a.age)
+--- expected
+28|37.250000

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractList.df15146424de","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN element_at(map([1, 88], [[4,5], [2,3,1]]), 1)
+--- expected
+[[4,5]]

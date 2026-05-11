@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_injectXlistXnull_10_20_nullXX_meanXlocalX.291c7900a387","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_injectXlistXnull_10_20_nullXX_meanXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([null,10,20,null]).mean(local)
+--- expected
+d[15].d

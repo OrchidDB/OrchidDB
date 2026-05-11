@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Short.g_injectX42X_asNumberXGType_SHORTX_isXtypeOfXGType_SHORTXX_storeXaX_capXaX.547690b9d4a2","language":"gremlin","ordered":false,"source":"data/Short.feature","source_case":"g_injectX42X_asNumberXGType_SHORTX_isXtypeOfXGType_SHORTXX_storeXaX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(42).asNumber(GType.SHORT).is(P.typeOf(GType.SHORT))
+--- expected
+d[42].s

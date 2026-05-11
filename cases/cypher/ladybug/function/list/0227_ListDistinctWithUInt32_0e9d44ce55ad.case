@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithUInt32.0e9d44ce55ad","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithUInt32","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_distinct([to_uint32(1), to_uint32(1), NULL, to_uint32(3), to_uint32(1), to_uint32(5)])
+--- expected
+[1,3,5]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.IntegerVarAndStrVarConcat.1f36e798f579","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"IntegerVarAndStrVarConcat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE concat(string(a.age), a.fName) = '25Farooq' RETURN COUNT(*)
+--- expected
+1

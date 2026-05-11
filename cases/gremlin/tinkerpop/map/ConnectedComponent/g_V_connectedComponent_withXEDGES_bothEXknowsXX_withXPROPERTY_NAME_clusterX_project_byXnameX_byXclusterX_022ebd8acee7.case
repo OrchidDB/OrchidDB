@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ConnectedComponent.g_V_connectedComponent_withXEDGES_bothEXknowsXX_withXPROPERTY_NAME_clusterX_project_byXnameX_byXclusterX.022ebd8acee7","language":"gremlin","ordered":false,"source":"map/ConnectedComponent.feature","source_case":"g_V_connectedComponent_withXEDGES_bothEXknowsXX_withXPROPERTY_NAME_clusterX_project_byXnameX_byXclusterX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").connectedComponent().with("~tinkerpop.connectedComponent.edges", __.bothE("knows")).with("~tinkerpop.connectedComponent.propertyName", "cluster").project("name","cluster").by("name").by("cluster")
+--- expected
+m[{"name": "marko", "cluster": "1"}]
+m[{"name": "vadas", "cluster": "1"}]
+m[{"name": "josh", "cluster": "1"}]
+m[{"name": "peter", "cluster": "6"}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_group_byXlabelX_byXlabel_countX.e488a873b1c9","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_group_byXlabelX_byXlabel_countX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by(__.label()).by(__.label().count())
+--- expected
+m[{"software":"d[2].l", "person":"d[4].l"}]

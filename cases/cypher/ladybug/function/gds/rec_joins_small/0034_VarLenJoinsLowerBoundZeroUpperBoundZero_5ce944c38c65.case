@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV gds-rec-joins-small","expected_kind":"rows","id":"cypher.ladybug.function.gds.rec_joins_small.VarLenJoinsLowerBoundZeroUpperBoundZero.5ce944c38c65","language":"cypher","ordered":true,"source":"function/gds/rec_joins_small.test","source_case":"GDSSmall","source_log":"VarLenJoinsLowerBoundZeroUpperBoundZero","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person1)-[e:knows11 * 0..0]->(b:person1) WHERE a.ID=0 RETURN a.ID, b.ID, length(e), properties(nodes(e), 'id'), properties(rels(e), 'score')
+--- expected
+0|0|0|[]|[]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToStruct.874daf0a986f","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("{ a : { b : {c:[ 3432423 ,-43423 ,31231 ,NULL ]}  } } ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))"), cast("{ a : { b : {c:[]}  } } ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))"), cast("{ a : { b : {c:}  } } ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))"), cast("{ a : { b : {}  } } ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))"), cast("{ a : {} } ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))"), cast("{} ", "STRUCT(a STRUCT(b STRUCT(c INT64[])))")
+--- expected
+{a: {b: {c: [3432423,-43423,31231,]}}}|{a: {b: {c: []}}}|{a: {b: {c: }}}|{a: {b: {c: }}}|{a: {b: }}|{a: }

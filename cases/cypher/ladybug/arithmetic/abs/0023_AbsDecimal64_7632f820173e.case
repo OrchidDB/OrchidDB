@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.abs.AbsDecimal64.7632f820173e","language":"cypher","ordered":true,"source":"arithmetic/abs.test","source_case":"AbsDecimal64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ['-999999999999.999999', '2398290843.000001', '-0.0000004'] AS vals RETURN Abs(CAST(vals, 'DECIMAL(18, 6)'))
+--- expected
+999999999999.999999
+2398290843.000001
+0.000000

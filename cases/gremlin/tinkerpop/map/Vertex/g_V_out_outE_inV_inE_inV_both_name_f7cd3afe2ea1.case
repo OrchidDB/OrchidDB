@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_V_out_outE_inV_inE_inV_both_name.f7cd3afe2ea1","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_V_out_outE_inV_inE_inV_both_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().outE().inV().inE().inV().both().values("name")
+--- expected
+marko
+marko
+marko
+josh
+josh
+josh
+josh
+peter
+peter
+peter

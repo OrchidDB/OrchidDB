@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario1.4c13c5371a48","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[r*0..1]-() RETURN last(r) AS l
+--- expected
+(...)-[...]->(...)
+(...)-[...]->(...)

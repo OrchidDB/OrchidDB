@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.graph.any.MatchConjunctiveLabelsReturnNodeStar.c29c13c8111a","language":"cypher","ordered":true,"source":"graph/any.test","source_case":"AnyGraphMultiNodeLabels","source_log":"MatchConjunctiveLabelsReturnNodeStar","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person:Employee) RETURN n.*
+--- expected
+0|[Person,Employee]|{"name":"Alice"}

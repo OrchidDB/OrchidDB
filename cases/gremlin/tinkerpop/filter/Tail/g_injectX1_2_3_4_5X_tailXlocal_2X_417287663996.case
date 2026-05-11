@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_injectX1_2_3_4_5X_tailXlocal_2X.417287663996","language":"gremlin","ordered":false,"source":"filter/Tail.feature","source_case":"g_injectX1_2_3_4_5X_tailXlocal_2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([1, 2, 3, 4, 5]).tail(Scope.local, 2)
+--- expected
+l[d[4].i,d[5].i]

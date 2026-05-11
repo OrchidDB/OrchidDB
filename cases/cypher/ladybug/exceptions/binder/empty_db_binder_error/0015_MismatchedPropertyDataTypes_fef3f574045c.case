@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.empty_db_binder_error.MismatchedPropertyDataTypes.fef3f574045c","language":"cypher","ordered":true,"source":"exceptions/binder/empty_db_binder_error.test","source_case":"MismatchedPropertyDataTypes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[r]->(f:Fruit) RETURN COUNT(*)
+--- expected
+0

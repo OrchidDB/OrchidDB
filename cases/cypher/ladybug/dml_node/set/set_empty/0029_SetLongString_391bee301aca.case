@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.SetLongString.391bee301aca","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"SetLongString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person0) return p.ID
+--- expected
+Foo

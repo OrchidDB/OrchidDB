@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.hash.sha256.SHA256Tests.f73a74d52877","language":"cypher","ordered":true,"source":"function/hash/sha256.test","source_case":"SHA256Tests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person) optional match (p1:person {fName: sha256(p.fName)}) RETURN p.fName, p1.ID
+--- expected
+Alice|12
+Bob|
+Carol|
+Dan|
+Elizabeth|
+Farooq|
+Greg|
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|
+3bc51062973c458d5a6f2d8d64a023246354ad7e064b1e4e009ec8a0699a3043|

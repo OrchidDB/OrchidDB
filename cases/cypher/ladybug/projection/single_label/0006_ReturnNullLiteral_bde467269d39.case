@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnNullLiteral.bde467269d39","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnNullLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN (NULL = NULL) IS NOT NULL, NULL, NULL = NULL
+--- expected
+False||

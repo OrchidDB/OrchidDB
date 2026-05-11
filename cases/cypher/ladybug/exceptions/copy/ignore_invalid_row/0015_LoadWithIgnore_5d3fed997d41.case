@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.5d3fed997d41","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"ParallelSkipInvalidNodeTableRowsMixed","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movie) return m.*
+--- expected
+1|312|movieB
+3|102|movieD
+5|93|movieE
+7|1|a
+9|98|vb12

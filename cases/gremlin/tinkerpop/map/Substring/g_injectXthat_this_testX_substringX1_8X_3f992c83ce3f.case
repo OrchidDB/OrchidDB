@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Substring.g_injectXthat_this_testX_substringX1_8X.3f992c83ce3f","language":"gremlin","ordered":false,"source":"map/Substring.feature","source_case":"g_injectXthat_this_testX_substringX1_8X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("test", "hello world", null).substring(1, 8)
+--- expected
+est
+ello wo
+null

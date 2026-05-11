@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.4918.27ee0cc746ae","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"4918","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[:E * (r,n | WHERE label(n) = "X")]->(b) RETURN *
+--- expected
+{_ID: 0:0, _LABEL: V, id: 1}|{_ID: 0:1, _LABEL: V, id: 2}

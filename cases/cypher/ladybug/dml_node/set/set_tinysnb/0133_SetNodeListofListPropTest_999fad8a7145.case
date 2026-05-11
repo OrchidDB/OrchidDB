@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetNodeListofListPropTest.999fad8a7145","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetNodeListofListPropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID=8 RETURN a.courseScoresPerTerm
+--- expected
+[[11,21],[1,1,1]]

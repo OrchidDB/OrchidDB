@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.splitStrPart.7be643bf4e47","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"splitStrPart","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person) return split_part(p.fName, '', 5)
+--- expected
+e
+l
+a
+o
+r

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.4899bab73de1","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_extract([5,28,92], x->x+ 10)
+--- expected
+Binder exception: LIST_EXTRACT does not support lambda input.

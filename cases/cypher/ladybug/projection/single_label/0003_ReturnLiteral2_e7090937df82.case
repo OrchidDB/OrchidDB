@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnLiteral2.e7090937df82","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnLiteral2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN 1 + 1, label(a) LIMIT 2
+--- expected
+2|person
+2|person

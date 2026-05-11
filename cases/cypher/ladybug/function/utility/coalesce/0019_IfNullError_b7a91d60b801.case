@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullError.b7a91d60b801","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"IfNullError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ifnull(NULL, 1, 2)
+--- expected
+Binder exception: Function IFNULL did not receive correct arguments:
+Actual:   (ANY,INT64,INT64)
+Expected: (ANY,ANY) -> ANY

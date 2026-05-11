@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.nested_types.InsertStructCommitRecovery.aad18eedff47","language":"cypher","ordered":true,"source":"transaction/create_node/nested_types.test","source_case":"InsertStructCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) return t.random
+--- expected
+{price: [5,3,2], volume: 24}
+{price: [5,3,2], volume: 24}
+{price: [5,3,2], volume: 24}

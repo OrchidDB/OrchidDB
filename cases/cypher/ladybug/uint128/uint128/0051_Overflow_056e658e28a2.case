@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Overflow.056e658e28a2","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Overflow","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value = 340282366920938463463374607431768211455 RETURN z.value - CAST(1 as uint128)
+--- expected
+340282366920938463463374607431768211454
+340282366920938463463374607431768211454

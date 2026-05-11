@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.StructCreationWithSerial.7b88da62648b","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"StructCreationWithSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN {ID1: a.ID, ID2: id(a)}
+--- expected
+{ID1: 0, ID2: 0:0}
+{ID1: 1, ID2: 0:1}
+{ID1: 2, ID2: 0:2}
+{ID1: 3, ID2: 0:3}
+{ID1: 4, ID2: 0:4}
+{ID1: 5, ID2: 0:5}
+{ID1: 6, ID2: 0:6}
+{ID1: 7, ID2: 0:7}

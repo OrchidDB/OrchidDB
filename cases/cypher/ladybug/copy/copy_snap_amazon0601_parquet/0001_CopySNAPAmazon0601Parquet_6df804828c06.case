@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV snap/amazon0601/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_snap_amazon0601_parquet.CopySNAPAmazon0601Parquet.6df804828c06","language":"cypher","ordered":true,"source":"copy/copy_snap_amazon0601_parquet.test","source_case":"CopySNAPAmazon0601Parquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:account) RETURN COUNT(*)
+--- expected
+403394

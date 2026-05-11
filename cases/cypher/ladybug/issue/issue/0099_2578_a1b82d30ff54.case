@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2578.a1b82d30ff54","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2578","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH NULL as parentid MATCH p = (t1:T)<-[e:CHILD_OF*0..1]-(t0:T) WHERE CASE WHEN parentid IS NULL THEN NOT EXISTS {MATCH (t1)-[:CHILD_OF]->(:T)} ELSE EXISTS {MATCH (t1)-[:CHILD_OF]->(:T {id: parentid})} END AND (NOT EXISTS {MATCH (:T)-[:CHILD_OF]->(t0)} OR length(e) = 1) RETURN properties(nodes(p),'id')
+--- expected
+[t1,t11]
+[t1,t12]
+[t1,t13]
+[t2,t21]
+[t2,t22]
+[t3]

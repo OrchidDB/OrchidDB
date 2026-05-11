@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario8.3b704816e1fc","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (x:X) OPTIONAL MATCH (x)-[:E1]->(y:Y) OPTIONAL MATCH (y)-[:E2]->(z:Z) WHERE x.val < z.val RETURN x, y, z
+--- expected
+{_ID: 0:0, _LABEL: X, ID: 0, val: 1}|{_ID: 1:0, _LABEL: Y, ID: 0, val: 2}|{_ID: 2:0, _LABEL: Z, ID: 0, val: 3}
+{_ID: 0:1, _LABEL: X, ID: 1, val: 4}|{_ID: 1:1, _LABEL: Y, ID: 1, val: 5}|
+{_ID: 0:2, _LABEL: X, ID: 2, val: 6}||

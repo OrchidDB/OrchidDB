@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.abs.AbsUINT16.c06697467749","language":"cypher","ordered":true,"source":"arithmetic/abs.test","source_case":"AbsUINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN Abs(CAST(256 as UINT16))
+--- expected
+256

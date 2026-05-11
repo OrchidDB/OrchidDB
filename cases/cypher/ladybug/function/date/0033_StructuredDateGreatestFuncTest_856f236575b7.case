@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateGreatestFuncTest.856f236575b7","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateGreatestFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN greatest(p.birthdate, date("1980-10-02"))
+--- expected
+1980-10-02
+1980-10-02
+1980-10-02
+1980-10-02
+1980-10-26
+1980-10-26
+1980-10-26
+1990-11-27

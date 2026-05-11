@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.nested_types.InsertListOfListOfStringCommitRecovery.d3b2697dbfeb","language":"cypher","ordered":true,"source":"transaction/create_node/nested_types.test","source_case":"InsertListOfListOfStringCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) return t.random
+--- expected
+[[142,51],[short,long,123],[long long long string,short short short short,short]]
+[[142,51],[short,long,123],[long long long string,short short short short,short]]
+[[142,51],[short,long,123],[long long long string,short short short short,short]]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.OrderByWithoutSkipLimitInWithClause.7813c882bf31","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"OrderByWithoutSkipLimitInWithClause","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH a.age AS k ORDER BY k RETURN k
+--- expected
+Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT.

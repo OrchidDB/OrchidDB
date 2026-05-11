@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StartsWithSelect.407164857ff6","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StartsWithSelect","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName STARTS WITH "C" RETURN a.fName
+--- expected
+Carol

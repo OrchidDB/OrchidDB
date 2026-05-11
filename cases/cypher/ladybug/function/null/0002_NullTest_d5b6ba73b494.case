@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.null.NullTest.d5b6ba73b494","language":"cypher","ordered":true,"source":"function/null.test","source_case":"NullTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN NULL IS NULL
+--- expected
+True

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.PageRank.g_V_pageRank_withXpropertyName_pageRankX_asXaX_outXknowsX_pageRank_asXbX_selectXa_bX_by_byXmathX.38bf3082637a","language":"gremlin","ordered":false,"source":"map/PageRank.feature","source_case":"g_V_pageRank_withXpropertyName_pageRankX_asXaX_outXknowsX_pageRank_asXbX_selectXa_bX_by_byXmathX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().pageRank().with("~tinkerpop.pageRank.propertyName","pageRank").as("a").out("knows").values("pageRank").as("b").select("a", "b").by().by(__.math("ceil(_ * 100)"))
+--- expected
+m[{"a": "v[marko]", "b": 15.0}]
+m[{"a": "v[marko]", "b": 15.0}]

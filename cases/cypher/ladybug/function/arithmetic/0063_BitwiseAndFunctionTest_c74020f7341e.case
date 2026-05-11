@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.BitwiseAndFunctionTest.c74020f7341e","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"BitwiseAndFunctionTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.age & 21
+--- expected
+1
+20
+5
+20
+20
+17
+0
+17

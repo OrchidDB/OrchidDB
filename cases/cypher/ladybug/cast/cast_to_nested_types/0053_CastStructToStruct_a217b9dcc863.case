@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastStructToStruct.a217b9dcc863","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastStructToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast(cast("{a: 12, b: 0}", "STRUCT(a STRING, b STRING, c STRING)"), "STRUCT(a INT128, b INT128, c INT128)"), "STRUCT(a INT64, b INT64, c INT64)"), cast(cast(cast("{a: 15}", "STRUCT(a STRING, b STRING)"), "STRUCT(a INT32, b INT32)"), "STRUCT(a INT16, b INT16)"), cast(cast(cast("{b: 15}", "STRUCT(a STRING, b STRING)"), "STRUCT(a INT8, b INT8)"), "STRUCT(a UINT16, b UINT16)"), cast(cast(cast("{}", "STRUCT(a STRING, b STRING)"), "STRUCT(a UINT32, b UINT32)"), "STRUCT(a UINT64, b UINT64)"), cast(cast("{a: 12, b: 0}", "STRUCT(a STRING, b STRING)"), "STRUCT(a DOUBLE, b DOUBLE)"), cast(cast("{a: 12, b: 0}", "STRUCT(a STRING, b STRING)"), "STRUCT(a FLOAT, b FLOAT)")
+--- expected
+{a: 12, b: 0, c: }|{a: 15, b: }|{a: , b: 15}|{a: , b: }|{a: 12.000000, b: 0.000000}|{a: 12.000000, b: 0.000000}

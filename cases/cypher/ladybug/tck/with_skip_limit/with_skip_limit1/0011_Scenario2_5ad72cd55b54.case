@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit1.Scenario2.5ad72cd55b54","language":"cypher","ordered":true,"source":"tck/with_skip_limit/with_skip_limit1.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[r1]->(x) WITH x, sum(r1.num) AS c ORDER BY c SKIP 1 RETURN x, c
+--- expected
+{_ID: 1:0, _LABEL: X, ID: 0}|5

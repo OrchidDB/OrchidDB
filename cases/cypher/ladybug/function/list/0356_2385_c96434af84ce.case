@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.2385.c96434af84ce","language":"cypher","ordered":true,"source":"function/list.test","source_case":"ListHasAllTest","source_log":"2385","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_has_all([{a: 5, b:3}, {c: 2, d: 4}], [{c:2, e:4}])
+--- expected
+False

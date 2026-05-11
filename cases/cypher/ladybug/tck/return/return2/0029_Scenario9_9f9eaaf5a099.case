@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario9.9f9eaaf5a099","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {a: 1, b: 'foo'}
+--- expected
+{a: 1, b: foo}

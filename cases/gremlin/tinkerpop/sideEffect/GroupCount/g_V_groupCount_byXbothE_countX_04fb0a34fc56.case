@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_groupCount_byXbothE_countX.04fb0a34fc56","language":"gremlin","ordered":true,"source":"sideEffect/GroupCount.feature","source_case":"g_V_groupCount_byXbothE_countX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().groupCount().by(__.bothE().count())
+--- expected
+m[{"d[1].l":"d[3].l","d[3].l":"d[3].l"}]

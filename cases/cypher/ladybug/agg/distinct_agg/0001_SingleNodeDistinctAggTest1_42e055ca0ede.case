@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.SingleNodeDistinctAggTest1.42e055ca0ede","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"SingleNodeDistinctAggTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN COUNT(DISTINCT a.gender), COUNT(DISTINCT a.age)
+--- expected
+2|7

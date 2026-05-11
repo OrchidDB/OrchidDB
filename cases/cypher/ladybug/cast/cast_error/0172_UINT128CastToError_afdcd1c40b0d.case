@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.afdcd1c40b0d","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[[231|4324]", "INT64[][]")
+--- expected
+Conversion exception: Cast failed. [[231|4324] is not in INT64[][] range.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.one_hop.OneHopCrossProduct.45e55ef1c90e","language":"cypher","ordered":true,"source":"filter/one_hop.test","source_case":"FilterOneHop","source_log":"OneHopCrossProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person {age:30}), (c:person)-[:knows]->(d:person{fName:'Greg'}) RETURN a.ID, c.ID
+--- expected
+2|7

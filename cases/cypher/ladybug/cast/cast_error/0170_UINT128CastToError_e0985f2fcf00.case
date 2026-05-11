@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.e0985f2fcf00","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[[432343243243254534554654654654234,2,3]]", "INT64[][]")
+--- expected
+Conversion exception: Cast failed. Could not convert "432343243243254534554654654654234" to INT64.

@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXhasLabelXpersonX_localXchooseXageX_optionXbetweenX26_30X_name_foldX_optionXnone_name_foldXX.62487764976c","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXhasLabelXpersonX_localXchooseXageX_optionXbetweenX26_30X_name_foldX_optionXnone_name_foldXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+local(__.choose(__.values("age")).
+option(P.between(26, 30), __.values("name").fold()).
+option(Pick.none, __.values("name").fold()))
+--- expected
+l[marko]
+l[vadas]
+l[josh]
+l[peter]

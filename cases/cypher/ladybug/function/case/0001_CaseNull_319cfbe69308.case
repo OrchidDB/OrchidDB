@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseNull.319cfbe69308","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseNull","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CASE NULL  WHEN NULL THEN "Null value" ELSE "Not null value" END
+--- expected
+Null value

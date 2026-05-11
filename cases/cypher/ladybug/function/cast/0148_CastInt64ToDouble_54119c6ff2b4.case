@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt64ToDouble.54119c6ff2b4","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt64ToDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.age, "double")
+--- expected
+35.000000
+30.000000
+45.000000
+20.000000
+20.000000
+25.000000
+40.000000
+83.000000

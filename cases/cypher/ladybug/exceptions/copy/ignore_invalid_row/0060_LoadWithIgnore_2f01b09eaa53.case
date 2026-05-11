@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.2f01b09eaa53","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"ParallelSkipInvalidNodeTableRowsMultipleFiles","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movie) return COUNT(*)
+--- expected
+20

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.2a9e6a08f3b9","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT128(170141183460469231731687303715884105727) * TO_INT128(10)
+--- expected
+Overflow exception: INT128 is out of range: cannot multiply.

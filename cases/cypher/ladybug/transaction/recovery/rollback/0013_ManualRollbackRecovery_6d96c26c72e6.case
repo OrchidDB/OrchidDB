@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.rollback.ManualRollbackRecovery.6d96c26c72e6","language":"cypher","ordered":true,"source":"transaction/recovery/rollback.test","source_case":"ManualRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN COUNT(*)
+--- expected
+0

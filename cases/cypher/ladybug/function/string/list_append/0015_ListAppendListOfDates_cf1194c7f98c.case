@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_append.ListAppendListOfDates.cf1194c7f98c","language":"cypher","ordered":true,"source":"function/string/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfDates","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_append([a.birthdate], a.birthdate)
+--- expected
+[1900-01-01,1900-01-01]
+[1900-01-01,1900-01-01]
+[1940-06-22,1940-06-22]
+[1950-07-23,1950-07-23]
+[1980-10-26,1980-10-26]
+[1980-10-26,1980-10-26]
+[1980-10-26,1980-10-26]
+[1990-11-27,1990-11-27]

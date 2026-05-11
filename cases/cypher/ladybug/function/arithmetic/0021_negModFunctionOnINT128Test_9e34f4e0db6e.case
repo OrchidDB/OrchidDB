@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.negModFunctionOnINT128Test.9e34f4e0db6e","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"negModFunctionOnINT128Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int128(100) % to_int128(-3)
+--- expected
+1

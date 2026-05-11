@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.insert_rels_to_small_list.insertRelsToSmallListCommitRecovery.d13fbde4d606","language":"cypher","ordered":true,"source":"transaction/create_rel/insert_rels_to_small_list.test","source_case":"insertRelsToSmallListCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) where b.ID > 200 AND a.ID = 1 RETURN e.length, e.place, e.tag
+--- expected
+300|this is a long str|[123,good]
+34|short|
+45||[123,good]
+||

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLiteralEqualityComparison.06d75ab3dcff","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLiteralEqualityComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.registerTime = timestamp('1976-12-23 11:21:42') RETURN COUNT(*)
+--- expected
+1

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.48bfb7b64f6d","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[42, 42] fdaf", "INT64[2]")
+--- expected
+Conversion exception: Cast failed. [42, 42] fdaf is not in INT64[2] range.

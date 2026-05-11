@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV copy-special-char-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_special_char.RandomString.3699cdf916df","language":"cypher","ordered":true,"source":"copy/copy_special_char.test","source_case":"CopySpecialChars","source_log":"RandomString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.randomString
+--- expected
+NA
+only one # should be recognized
+the " should be ignored
+the - should be escaped
+this -is #a mixed test
+this is a #plain# string
+this is another #plain# string with \
+this is |the first line

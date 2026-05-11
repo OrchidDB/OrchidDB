@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithDouble.775ccea57c71","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique([1.1, 1.1, NULL, -3.4, 1.2, 5.1])
+--- expected
+4

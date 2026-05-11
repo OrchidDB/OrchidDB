@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ToUpper.g_V_valuesXnameX_toUpper.531868646046","language":"gremlin","ordered":false,"source":"map/ToUpper.feature","source_case":"g_V_valuesXnameX_toUpper","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").toUpper()
+--- expected
+MARKO
+VADAS
+LOP
+JOSH
+RIPPLE
+PETER

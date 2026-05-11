@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.GraphFilterStrategy.g_withStrategiesXGraphFilterStrategyX_V.d102b75c8ee5","language":"gremlin","ordered":false,"source":"integrated/GraphFilterStrategy.feature","source_case":"g_withStrategiesXGraphFilterStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(GraphFilterStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

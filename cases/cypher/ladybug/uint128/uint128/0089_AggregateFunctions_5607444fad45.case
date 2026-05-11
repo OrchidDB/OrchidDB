@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.AggregateFunctions.5607444fad45","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"AggregateFunctions","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value < 200 RETURN count(z.value)
+--- expected
+2

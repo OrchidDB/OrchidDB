@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_both_both_name_dedup.1784d1b449f6","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_both_both_name_dedup","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().both().both().values("name").dedup()
+--- expected
+josh
+lop
+marko
+peter
+ripple
+vadas

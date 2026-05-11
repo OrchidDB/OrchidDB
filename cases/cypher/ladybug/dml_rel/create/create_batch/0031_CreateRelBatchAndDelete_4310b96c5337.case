@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_batch.CreateRelBatchAndDelete.4310b96c5337","language":"cypher","ordered":true,"source":"dml_rel/create/create_batch.test","source_case":"CreateRelBatchAndDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:Person)-[r:knows]->(p2:Person) RETURN COUNT(*)
+--- expected
+6003

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.PersonNodesEyeSightFilteredTest1WithALPExceptions.aedcf5c6f80e","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"PersonNodesEyeSightFilteredTest1WithALPExceptions","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.eyeSight >= 6 RETURN a.ID, a.eyeSight
+--- expected
+77|123456789.123000

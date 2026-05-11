@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_append.ListAppendInternalID.b9b0ae1f342e","language":"cypher","ordered":true,"source":"function/string_function/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendInternalID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_append([id(a)], id(a))
+--- expected
+[0:0,0:0]
+[0:1,0:1]
+[0:2,0:2]
+[0:3,0:3]
+[0:4,0:4]
+[0:5,0:5]
+[0:6,0:6]
+[0:7,0:7]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindVariableNotInScope3.40563eda580d","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindVariableNotInScope3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN b
+--- expected
+Binder exception: Variable b is not in scope.

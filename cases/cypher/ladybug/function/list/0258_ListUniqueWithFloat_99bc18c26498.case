@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithFloat.99bc18c26498","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID=0 RETURN list_unique([NULL, to_float(p.gender), to_float(p.gender), to_float(4.5)])
+--- expected
+2

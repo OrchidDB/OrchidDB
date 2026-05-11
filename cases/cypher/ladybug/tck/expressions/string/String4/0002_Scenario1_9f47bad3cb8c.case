@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.string.String4.Scenario1.9f47bad3cb8c","language":"cypher","ordered":true,"source":"tck/expressions/string/String4.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND split('one1two', '1') AS item RETURN count(item) AS item
+--- expected
+2

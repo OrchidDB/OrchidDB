@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetStructValueToNullAlwaysCheckpoint.52ed2db4a86a","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetStructValueToNullAlwaysCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.prop
+--- expected
+{age: 30, name: Delta}

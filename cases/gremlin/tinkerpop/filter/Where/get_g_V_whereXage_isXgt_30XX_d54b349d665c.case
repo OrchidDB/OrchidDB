@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.get_g_V_whereXage_isXgt_30XX.d54b349d665c","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"get_g_V_whereXage_isXgt_30XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(values("age").is(P.gt(30)))
+--- expected
+v[josh]
+v[peter]

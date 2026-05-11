@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.function.range.Range.9902490d2970","language":"cypher","ordered":true,"source":"function/range.test","source_case":"Range","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(4, 3)
+--- expected
+[]

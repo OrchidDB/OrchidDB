@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXoutXknowsX_count_isXgtX0XX__outXknowsXX_name.33eed08cef50","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXoutXknowsX_count_isXgtX0XX__outXknowsXX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.out("knows").count().is(P.gt(0)),
+__.out("knows")).
+values("name")
+--- expected
+vadas
+josh
+vadas
+josh
+peter
+lop
+ripple

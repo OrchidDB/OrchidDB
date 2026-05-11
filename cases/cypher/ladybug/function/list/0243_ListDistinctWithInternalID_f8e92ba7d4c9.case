@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithInternalID.f8e92ba7d4c9","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithInternalID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_distinct([id(p), id(p), id(p)])
+--- expected
+[0:0]
+[0:1]
+[0:2]
+[0:3]
+[0:4]
+[0:5]
+[0:6]
+[0:7]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TriangleFilterWithProjectionTest2.d0466cb4fd5d","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TriangleFilterWithProjectionTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:studyAt]->(c:organisation), (a)-[e3:studyAt]->(c) WHERE a.fName='Bob' RETURN a.fName, e1.date, b.fName, e2.year, c.name, e3.year
+--- expected
+Bob|2021-06-30|Alice|2021|ABFsUni|2020

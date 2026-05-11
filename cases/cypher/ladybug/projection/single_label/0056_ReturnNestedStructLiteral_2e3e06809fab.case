@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnNestedStructLiteral.2e3e06809fab","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnNestedStructLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return {description: {gender: p.gender, age: p.age}, name: p.fName}
+--- expected
+{description: {gender: 1, age: 20}, name: Elizabeth}
+{description: {gender: 1, age: 35}, name: Alice}
+{description: {gender: 1, age: 45}, name: Carol}
+{description: {gender: 2, age: 20}, name: Dan}
+{description: {gender: 2, age: 25}, name: Farooq}
+{description: {gender: 2, age: 30}, name: Bob}
+{description: {gender: 2, age: 40}, name: Greg}
+{description: {gender: 2, age: 83}, name: Hubert Blaine Wolfeschlegelsteinhausenbergerdorff}

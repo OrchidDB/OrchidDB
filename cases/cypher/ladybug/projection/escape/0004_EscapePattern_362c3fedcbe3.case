@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.EscapePattern.362c3fedcbe3","language":"cypher","ordered":false,"source":"projection/escape.test","source_case":"EscapePattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN "this is a list of control characters: \b\B\f\F\n\N\r\R\t\T."
+--- expected
+1 e1c8c76c0284e75039c2287f4908ca1c

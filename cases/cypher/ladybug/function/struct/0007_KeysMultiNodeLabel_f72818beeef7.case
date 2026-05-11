@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.KeysMultiNodeLabel.f72818beeef7","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"KeysMultiNodeLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person:organisation) RETURN keys(p)
+--- expected
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]
+[ID,fName,gender,isStudent,isWorker,age,eyeSight,birthdate,registerTime,lastJobDuration,workedHours,usedNames,courseScoresPerTerm,grades,height,u,name,orgCode,mark,score,history,licenseValidInterval,rating,state,info]

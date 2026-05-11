@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario1.fab64db7426e","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-->(b) WHERE LABEL(b) = 'B' OPTIONAL MATCH (a)-->(c) WHERE LABEL(c) = 'C' RETURN a.name
+--- expected
+A

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_order.OrderBy1.f15da5b1edc1","language":"cypher","ordered":true,"source":"binary_demo/demo_db_order.test","source_case":"DemoDBOrderedTest","source_log":"OrderBy1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name, u.age ORDER BY u.age
+--- expected
+Noura|25
+Adam|30
+Karissa|40
+Zhang|50

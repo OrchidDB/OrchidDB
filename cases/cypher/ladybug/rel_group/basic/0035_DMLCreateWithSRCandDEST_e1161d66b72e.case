@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.DMLCreateWithSRCandDEST.e1161d66b72e","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"DMLCreateWithSRCandDEST","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:likes]-(b) WHERE b.ID = 1919 RETURN a.ID,b.ID,label(a),label(b),label(e)
+--- expected
+1145|1919|personA|personB|likes

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Sample.g_VX1X_valuesXageX_sampleXlocal_5X.bc21e5e8f34b","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_VX1X_valuesXageX_sampleXlocal_5X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").sample(Scope.local, 5)
+--- expected
+d[29].i

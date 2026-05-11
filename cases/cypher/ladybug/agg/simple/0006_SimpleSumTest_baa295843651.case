@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleSumTest.baa295843651","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleSumTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN SUM(a.age), SUM(a.eyeSight)
+--- expected
+298|38.900000

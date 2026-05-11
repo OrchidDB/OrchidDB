@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSumInt8.c2bb234b4427","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSumInt8","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sum([to_int8(-1), to_int8(2), NULL, to_int8(3)])
+--- expected
+4

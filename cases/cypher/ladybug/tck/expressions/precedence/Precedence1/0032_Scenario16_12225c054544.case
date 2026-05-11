@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence1.Scenario16.12225c054544","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence1.test","source_case":"Scenario16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [True, False, null] AS a UNWIND [True, False, null] AS b UNWIND [True, False, null] AS c WITH collect((a OR b AND c) = (a OR (b AND c))) AS eq, collect((a OR b AND c) <> ((a OR b) AND c)) AS neq RETURN all(x IN eq WHERE x) AND any(x IN neq WHERE x) AS result
+--- expected
+True

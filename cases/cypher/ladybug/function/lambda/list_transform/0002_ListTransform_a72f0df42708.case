@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.a72f0df42708","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_transform(list_transform([1,3,2], x->x+5), y->y+3)
+--- expected
+[9,11,10]

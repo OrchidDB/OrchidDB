@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_group_byXlabelX_byXbothE_weight_dedup_foldX.f261ed9afef8","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_group_byXlabelX_byXbothE_weight_dedup_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by(T.label).by(__.bothE().values("weight").dedup().order().by(Order.asc).fold())
+--- expected
+m[{"software":[0.2,0.4,1.0],"person":[0.2,0.4,0.5,1.0]}]

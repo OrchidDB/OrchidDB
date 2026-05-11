@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithInternalID.e2481125975d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithInternalID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_unique([id(p), id(p), id(p)])
+--- expected
+1
+1
+1
+1
+1
+1
+1
+1

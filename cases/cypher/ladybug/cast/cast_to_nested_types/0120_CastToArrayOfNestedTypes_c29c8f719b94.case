@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.c29c8f719b94","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnionAllTypes","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(CAST('1972-07-31 13:22:30.678559', "TIMESTAMP_NS") AS UNION(a TIMESTAMP_NS))
+--- expected
+1972-07-31 13:22:30.678559

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.evenFunctionOnFloatTest.933c2cda5acc","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"evenFunctionOnFloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN even(a.height)
+--- expected
+2.000000
+2.000000
+2.000000
+2.000000
+2.000000
+2.000000
+2.000000
+2.000000

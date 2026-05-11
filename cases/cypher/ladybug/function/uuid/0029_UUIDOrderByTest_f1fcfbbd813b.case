@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.uuid.UUIDOrderByTest.f1fcfbbd813b","language":"cypher","ordered":true,"source":"function/uuid.test","source_case":"UUIDfunctions","source_log":"UUIDOrderByTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN UUID("0")
+--- expected
+Conversion exception: Invalid UUID: 0

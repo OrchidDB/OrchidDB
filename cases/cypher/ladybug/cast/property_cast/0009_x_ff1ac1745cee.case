@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.property_cast.x.ff1ac1745cee","language":"cypher","ordered":true,"source":"cast/property_cast.test","source_case":"x","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a.ID, a.p
+--- expected
+0|0
+0|2025-01-01
+0|a
+a|1.200000
+a|[1,2,3]

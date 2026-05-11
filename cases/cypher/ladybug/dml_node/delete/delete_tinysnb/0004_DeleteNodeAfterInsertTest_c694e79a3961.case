@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_tinysnb.DeleteNodeAfterInsertTest.c694e79a3961","language":"cypher","ordered":true,"source":"dml_node/delete/delete_tinysnb.test","source_case":"DeleteNodeAfterInsertTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID = 101 RETURN a.ID, a.fName, a.age
+--- expected
+101||

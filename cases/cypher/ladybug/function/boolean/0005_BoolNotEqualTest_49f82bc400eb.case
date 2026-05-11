@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolNotEqualTest.49f82bc400eb","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolNotEqualTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.isStudent <> a.isWorker RETURN count(a.fName)
+--- expected
+7

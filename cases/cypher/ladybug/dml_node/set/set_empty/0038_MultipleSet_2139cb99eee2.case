@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.MultipleSet.2139cb99eee2","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"MultipleSet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.name
+--- expected
+Alice
+Bob
+Charlie

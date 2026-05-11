@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXvertices_hasXname_neqXstephenXX_vertexProperties_hasXstartTime_gtX2005XXXX_V_propertie.5a1fdcef73e0","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXvertices_hasXname_neqXstephenXX_vertexProperties_hasXstartTime_gtX2005XXXX_V_propertiesXlocationX_value","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertexProperties: __.has("startTime", P.gt(2005)),
+vertices: __.has("name", P.neq("stephen")))).V().properties("location").value()
+--- expected
+baltimore
+oakland
+seattle
+aachen

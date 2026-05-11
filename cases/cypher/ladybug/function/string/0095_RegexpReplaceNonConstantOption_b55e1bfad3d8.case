@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpReplaceNonConstantOption.b55e1bfad3d8","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpReplaceNonConstantOption","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) Return REGEXP_REPLACE('this is a team', 'is', '*??', 'l')
+--- expected
+Binder exception: regex_replace can only support global replace option: g.

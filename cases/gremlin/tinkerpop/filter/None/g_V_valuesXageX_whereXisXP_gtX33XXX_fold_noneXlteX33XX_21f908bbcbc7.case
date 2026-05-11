@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.None.g_V_valuesXageX_whereXisXP_gtX33XXX_fold_noneXlteX33XX.21f908bbcbc7","language":"gremlin","ordered":false,"source":"filter/None.feature","source_case":"g_V_valuesXageX_whereXisXP_gtX33XXX_fold_noneXlteX33XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").where(__.is(P.gt(33))).fold().none(P.lte(33))
+--- expected
+l[d[35].i]

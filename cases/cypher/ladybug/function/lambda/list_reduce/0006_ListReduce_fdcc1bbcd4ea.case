@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_reduce.ListReduce.fdcc1bbcd4ea","language":"cypher","ordered":true,"source":"function/lambda/list_reduce.test","source_case":"ListReduce","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN LIST_REDUCE(a.workedHours, (x, y) -> x - y)
+--- expected
+5
+4

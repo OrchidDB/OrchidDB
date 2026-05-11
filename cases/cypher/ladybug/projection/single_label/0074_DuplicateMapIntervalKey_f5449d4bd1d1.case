@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapIntervalKey.f5449d4bd1d1","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapIntervalKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast('2 hours 5 minutes', 'interval'), cast('3 hours 20 hours', 'interval'), cast('3 hours 20 hours', 'interval')], [20, 34, 23])
+--- expected
+Runtime exception: Found duplicate key: 23:00:00 in map.

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ConstantLambda.e44f9836b077","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTestListLambda","source_log":"ConstantLambda","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n: User) WHERE size(list_filter(['12name'], x->x STARTS WITH '12')) > 0 RETURN n.*
+--- expected
+Adam|30
+Karissa|40
+Noura|25
+Zhang|50

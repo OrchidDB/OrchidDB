@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_hasXperson_name_withinXvadas_peterXX_group_by_byXout_foldX.98c9eda45ee0","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_hasXperson_name_withinXvadas_peterXX_group_by_byXout_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person","name",P.within("vadas","peter")).group().by().by(__.out().fold())
+--- expected
+m[{"v[vadas]":"l[]", "v[peter]":"l[v[lop]]"}]

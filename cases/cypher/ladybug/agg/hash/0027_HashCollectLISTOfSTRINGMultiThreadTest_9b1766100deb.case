@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectLISTOfSTRINGMultiThreadTest.9b1766100deb","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectLISTOfSTRINGMultiThreadTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.isStudent, collect(p.usedNames)
+--- expected
+True|[[Aida],[Bobby],[Fesdwe]]
+False|[[Carmen,Fred],[Wolfeschlegelstein,Daniel],[Ein],[Grad],[Ad,De,Hi,Kye,Orlan]]

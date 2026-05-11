@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_asXaX_hasXname_markoX_asXbX_asXcX_selectXa_b_cX_by_byXnameX_byXageX.7ad49c7f2cd4","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_asXaX_hasXname_markoX_asXbX_asXcX_selectXa_b_cX_by_byXnameX_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").has("name", "marko").as("b").as("c").select("a", "b", "c").by().by("name").by("age")
+--- expected
+m[{"a":"v[marko]","b":"marko","c":"d[29].i"}]

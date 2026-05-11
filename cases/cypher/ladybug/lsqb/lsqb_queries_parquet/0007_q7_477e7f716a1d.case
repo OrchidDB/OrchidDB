@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(lsqb-sf01)","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries_parquet.q7.477e7f716a1d","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries_parquet.test","source_case":"LSQBTestParquet","source_log":"q7","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Tag)<-[:Post_hasTag_Tag|:Comment_hasTag_Tag]-(message:Post:Comment)-[:Post_hasCreator_Person|:Comment_hasCreator_Person]->(creator:Person) OPTIONAL MATCH (message)<-[:Person_likes_Comment|:Person_likes_Post]-(liker:Person) OPTIONAL MATCH (message)<-[:Comment_replyOf_Comment|:Comment_replyOf_Post]-(comment:Comment) RETURN count(*) AS count
+--- expected
+1628132

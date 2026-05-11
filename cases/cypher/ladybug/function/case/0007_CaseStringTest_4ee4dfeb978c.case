@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseStringTest.4ee4dfeb978c","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseStringTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID > 6 RETURN CASE WHEN true THEN a.fName ELSE 'a' END
+--- expected
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

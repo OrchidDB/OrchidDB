@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Has.g_V_hasXnull_testnullkeyX.a5f23e26ccef","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXnull_testnullkeyX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has(null, "test-null-key")
+--- expected
+

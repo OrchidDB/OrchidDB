@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.property_cast.x.92a353b51e36","language":"cypher","ordered":true,"source":"cast/property_cast.test","source_case":"x","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:N1:N4) RETURN a.p
+--- expected
+0.000000
+1.200000

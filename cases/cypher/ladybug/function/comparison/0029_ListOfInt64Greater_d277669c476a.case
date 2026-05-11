@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.ListOfInt64Greater.d277669c476a","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"ListOfInt64Greater","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.workedHours > [2] RETURN p.fName
+--- expected
+Alice
+Bob
+Carol
+Farooq
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

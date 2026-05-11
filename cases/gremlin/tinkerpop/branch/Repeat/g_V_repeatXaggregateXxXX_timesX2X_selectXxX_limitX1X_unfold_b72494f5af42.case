@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXaggregateXxXX_timesX2X_selectXxX_limitX1X_unfold.b72494f5af42","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXaggregateXxXX_timesX2X_selectXxX_limitX1X_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.aggregate("x")).times(2).select("x").limit(1).unfold()
+--- expected
+v[marko]
+v[marko]
+v[josh]
+v[josh]
+v[peter]
+v[peter]
+v[ripple]
+v[ripple]
+v[lop]
+v[lop]
+v[vadas]
+v[vadas]

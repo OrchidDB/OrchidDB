@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_hasLabelXpersonX_aggregateXxX_byXageX_capXxX_asXyX_selectXyX.b42505f72106","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_hasLabelXpersonX_aggregateXxX_byXageX_capXxX_asXyX_selectXyX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").aggregate("x").by("age").cap("x").as("y").select("y")
+--- expected
+d[29].i
+d[27].i
+d[32].i
+d[35].i

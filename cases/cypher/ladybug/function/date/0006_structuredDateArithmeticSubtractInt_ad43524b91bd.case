@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.structuredDateArithmeticSubtractInt.ad43524b91bd","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"structuredDateArithmeticSubtractInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate <> date('1900-01-01') RETURN a.birthdate - 25
+--- expected
+1940-05-28
+1950-06-28
+1980-10-01
+1980-10-01
+1980-10-01
+1990-11-02

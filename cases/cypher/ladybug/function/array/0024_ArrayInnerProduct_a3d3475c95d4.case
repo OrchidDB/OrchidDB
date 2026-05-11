@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayInnerProduct.a3d3475c95d4","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayInnerProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_INNER_PRODUCT([0, 1, 2.3], [5.12, 7.2, 8.8])
+--- expected
+27.440000

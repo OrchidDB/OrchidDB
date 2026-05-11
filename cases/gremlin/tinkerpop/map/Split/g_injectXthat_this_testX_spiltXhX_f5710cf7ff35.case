@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Split.g_injectXthat_this_testX_spiltXhX.f5710cf7ff35","language":"gremlin","ordered":false,"source":"map/Split.feature","source_case":"g_injectXthat_this_testX_spiltXhX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("that", "this", "test", null).split("h")
+--- expected
+l[t,at]
+l[t,is]
+l[test]
+null

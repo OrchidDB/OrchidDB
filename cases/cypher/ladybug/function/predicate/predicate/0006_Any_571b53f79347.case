@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.Any.571b53f79347","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"Any","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName, any(length in [3,2,5] where length=3)
+--- expected
+Alice|True
+Bob|True
+Carol|True
+Dan|True
+Elizabeth|True
+Farooq|True
+Greg|True
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|True

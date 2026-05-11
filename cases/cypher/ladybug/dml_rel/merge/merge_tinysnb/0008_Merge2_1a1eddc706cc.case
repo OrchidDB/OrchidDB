@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.merge.merge_tinysnb.Merge2.1a1eddc706cc","language":"cypher","ordered":true,"source":"dml_rel/merge/merge_tinysnb.test","source_case":"Merge2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.ID = 0 AND b.ID = 7 MATCH (a)-[r:knows]->(b) RETURN id(r), r.date, a.age
+--- expected
+3:14|2011-12-12|0

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Project.g_V_valueMap_projectXxX_byXselectXnameXX.e87b72684f43","language":"gremlin","ordered":false,"source":"map/Project.feature","source_case":"g_V_valueMap_projectXxX_byXselectXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap().project("x").by(__.select("name"))
+--- expected
+m[{"x":["marko"]}]
+m[{"x":["josh"]}]
+m[{"x":["vadas"]}]
+m[{"x":["peter"]}]
+m[{"x":["lop"]}]
+m[{"x":["ripple"]}]

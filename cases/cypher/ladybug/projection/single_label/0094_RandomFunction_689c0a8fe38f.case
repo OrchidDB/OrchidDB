@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.RandomFunction.689c0a8fe38f","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"NestedPropertyManyToManyRel","source_log":"RandomFunction","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p1:person)-[:knows]->(p2:person) with DISTINCT gen_random_uuid() AS x RETURN COUNT(*)
+--- expected
+14

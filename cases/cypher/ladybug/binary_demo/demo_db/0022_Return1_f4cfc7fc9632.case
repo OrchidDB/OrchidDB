@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Return1.f4cfc7fc9632","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Return1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN a, e
+--- expected
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|(0:0)-{_LABEL: Follows, _ID: 2:0, since: 2020}->(0:1)
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|(0:0)-{_LABEL: Follows, _ID: 2:1, since: 2020}->(0:2)
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}|(0:1)-{_LABEL: Follows, _ID: 2:2, since: 2021}->(0:2)
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}|(0:2)-{_LABEL: Follows, _ID: 2:3, since: 2022}->(0:3)

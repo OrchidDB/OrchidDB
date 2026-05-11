@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Unfold.g_V_valueMap_unfold_mapXselectXkeysXX.01609cb2e14a","language":"gremlin","ordered":false,"source":"map/Unfold.feature","source_case":"g_V_valueMap_unfold_mapXselectXkeysXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap().unfold().map(__.select(keys))
+--- expected
+name
+age
+name
+age
+name
+lang
+lang
+name
+age
+name
+name
+age

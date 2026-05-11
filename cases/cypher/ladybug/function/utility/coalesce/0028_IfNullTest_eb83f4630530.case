@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullTest.eb83f4630530","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"TableTest","source_log":"IfNullTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tbl) RETURN coalesce(t.b, t.a)
+--- expected
+111
+22
+444

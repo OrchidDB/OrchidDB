@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.cosFunctionOnInt32Test.aa9e34ce6c04","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"cosFunctionOnInt32Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN cos(m.length)
+--- expected
+0.943984
+0.771215

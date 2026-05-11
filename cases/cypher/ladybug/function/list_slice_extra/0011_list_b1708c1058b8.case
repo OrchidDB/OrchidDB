@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.list_slice_extra.list.b1708c1058b8","language":"cypher","ordered":true,"source":"function/list_slice_extra.test","source_case":"list","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_slice(['a', 'b', 'c', 'd'], -8, 0)
+--- expected
+[]

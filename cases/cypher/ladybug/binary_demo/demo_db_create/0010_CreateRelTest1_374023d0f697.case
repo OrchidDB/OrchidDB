@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_create.CreateRelTest1.374023d0f697","language":"cypher","ordered":true,"source":"binary_demo/demo_db_create.test","source_case":"CreateRelTest1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(b:User) WHERE a.name = 'Adam' RETURN b.name ORDER BY b.name
+--- expected
+Alice
+Karissa
+Zhang

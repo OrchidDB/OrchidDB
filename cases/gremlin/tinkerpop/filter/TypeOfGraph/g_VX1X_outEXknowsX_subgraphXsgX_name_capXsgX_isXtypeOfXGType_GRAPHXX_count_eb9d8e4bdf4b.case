@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.TypeOfGraph.g_VX1X_outEXknowsX_subgraphXsgX_name_capXsgX_isXtypeOfXGType_GRAPHXX_count.eb9d8e4bdf4b","language":"gremlin","ordered":false,"source":"filter/TypeOfGraph.feature","source_case":"g_VX1X_outEXknowsX_subgraphXsgX_name_capXsgX_isXtypeOfXGType_GRAPHXX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().outE("knows").subgraph("sg").cap("sg").is(P.typeOf(GType.GRAPH)).count()
+--- expected
+d[1].l

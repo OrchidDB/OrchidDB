@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.0e58d428d553","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"RenameTableNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (s:student) return s.age order by s.age
+--- expected
+20
+20
+25
+30
+35
+40
+45
+83

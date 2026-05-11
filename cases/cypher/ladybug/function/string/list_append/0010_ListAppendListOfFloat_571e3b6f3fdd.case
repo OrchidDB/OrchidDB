@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_append.ListAppendListOfFloat.571e3b6f3fdd","language":"cypher","ordered":true,"source":"function/string/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_append([p.height], p.height)
+--- expected
+[1.731000,1.731000]
+[0.990000,0.990000]
+[1.000000,1.000000]
+[1.300000,1.300000]
+[1.463000,1.463000]
+[1.510000,1.510000]
+[1.600000,1.600000]
+[1.323000,1.323000]

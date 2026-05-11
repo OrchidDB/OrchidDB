@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyUINT8.bfde9a0372f1","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyUINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(12, "UINT8") * CAST(20, "UINT8")
+--- expected
+240

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCrossProductInCorrectSize.ee2427b2f7bd","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCrossProductInCorrectSize","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_CROSS_PRODUCT(ARRAY_VALUE(32, 54, 77), ARRAY_VALUE(31, 24))
+--- expected
+Binder exception: ARRAY_CROSS_PRODUCT requires both arrays to have the same element type and size of 3

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Edge.g_VX1X_outEXknowsX_bothV.26bf7261b92d","language":"gremlin","ordered":false,"source":"map/Edge.feature","source_case":"g_VX1X_outEXknowsX_bothV","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).outE("knows").bothV()
+--- expected
+v[marko]
+v[marko]
+v[josh]
+v[vadas]

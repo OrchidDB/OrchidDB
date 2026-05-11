@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_V_asXaX_outXknowsX_asXbX_mathXa_plus_bX_byXageX_asNumberXGType_INTX.27aeb464e58b","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_V_asXaX_outXknowsX_asXbX_mathXa_plus_bX_byXageX_asNumberXGType_INTX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out("knows").as("b").math("a + b").by("age").asNumber(GType.INT)
+--- expected
+d[56].i
+d[61].i

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractUINT8.b3411a709a3f","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractUINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(12, "UINT8") - CAST(24, "UINT8")
+--- expected
+Overflow exception: Value 12 - 24 is not within UINT8 range.

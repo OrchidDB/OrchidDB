@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectBLOBTest.9eea6a0cc5af","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectBLOBTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN collect(m.content)
+--- expected
+[\xAA\xABinteresting\x0B,\xAB\xCD,pure ascii characters]

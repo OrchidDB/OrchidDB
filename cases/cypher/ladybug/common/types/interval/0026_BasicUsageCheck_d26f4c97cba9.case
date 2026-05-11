@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.BasicUsageCheck.d26f4c97cba9","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"BasicUsageCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("")
+--- expected
+Conversion exception: Error occurred during parsing interval. Given empty string.

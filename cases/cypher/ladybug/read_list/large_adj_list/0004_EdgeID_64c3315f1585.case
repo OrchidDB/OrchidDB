@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.large_adj_list.EdgeID.64c3315f1585","language":"cypher","ordered":true,"source":"read_list/large_adj_list.test","source_case":"LargeAdjListTest","source_log":"EdgeID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:knows]->(b:person) WHERE a.ID = 0 AND b.ID=4999 RETURN r.int64Prop
+--- expected
+4999

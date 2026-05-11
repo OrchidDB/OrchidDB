@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_VX1X_elementMap_orderXlocalX_byXkeys_ascXunfold.82cdbf409eb8","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_VX1X_elementMap_orderXlocalX_byXkeys_ascXunfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).elementMap().order(Scope.local).by(Column.keys, Order.asc).unfold()
+--- expected
+m[{"age":29}]
+m[{"t[id]":"v[marko].id"}]
+m[{"t[label]":"person"}]
+m[{"name":"marko"}]

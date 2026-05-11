@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCosineSimilarity.3c013d20a49e","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCosineSimilarity","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:meets]->(p1:person) return round(ARRAY_COSINE_SIMILARITY(e.location, array_value(to_float(3.4), to_float(2.7))),2)
+--- expected
+0.790000
+0.880000
+0.930000
+0.930000
+0.950000
+0.950000
+0.970000

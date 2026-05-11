@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFloatDoubleToUInt128.855fe176c3fa","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastFloatDoubleToUInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_uint128(255211775190703847597530955573826158592.0), cast(255211775190703847597530955573826158592.0, "uint128")
+--- expected
+255211775190703847597530955573826158592|255211775190703847597530955573826158592

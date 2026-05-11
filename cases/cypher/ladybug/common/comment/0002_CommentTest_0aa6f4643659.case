@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.common.comment.CommentTest.0aa6f4643659","language":"cypher","ordered":true,"source":"common/comment.test","source_case":"CommentTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1 // This is a comment
+--- expected
+1

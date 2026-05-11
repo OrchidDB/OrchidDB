@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Float.g_V_valuesXfloatX_isXtypeOfXGType_FLOATXX_isXeqX1_5XX.f90a08615b52","language":"gremlin","ordered":false,"source":"data/Float.feature","source_case":"g_V_valuesXfloatX_isXtypeOfXGType_FLOATXX_isXeqX1_5XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("float").asNumber(GType.FLOAT).is(P.typeOf(GType.FLOAT)).is(P.eq(1.5))
+--- graph_initializer
+g.addV("data").property("float", 1.5)
+--- expected
+d[1.5].f

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.macro.createLiteralMacro.fb81b2901e38","language":"cypher","ordered":true,"source":"transaction/ddl/macro.test","source_case":"createLiteralMacro","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+return str_literal(),int_literal(),floating_literal(),interval_literal(),list_literal()
+--- expected
+result|6|5.600000|00:20:00|[1,3,2]

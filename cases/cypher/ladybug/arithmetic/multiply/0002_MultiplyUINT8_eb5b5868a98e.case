@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyUINT8.eb5b5868a98e","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyUINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(255, "UINT8") * CAST(5, "UINT8")
+--- expected
+Overflow exception: Value 255 * 5 is not within UINT8 range.

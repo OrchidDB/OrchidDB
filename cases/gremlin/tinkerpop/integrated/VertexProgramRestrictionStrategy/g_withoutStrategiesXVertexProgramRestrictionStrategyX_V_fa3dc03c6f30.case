@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.VertexProgramRestrictionStrategy.g_withoutStrategiesXVertexProgramRestrictionStrategyX_V.fa3dc03c6f30","language":"gremlin","ordered":false,"source":"integrated/VertexProgramRestrictionStrategy.feature","source_case":"g_withoutStrategiesXVertexProgramRestrictionStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(VertexProgramRestrictionStrategy).withStrategies(VertexProgramStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

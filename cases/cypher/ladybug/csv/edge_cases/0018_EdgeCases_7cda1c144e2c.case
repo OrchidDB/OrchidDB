@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.csv.edge_cases.EdgeCases.7cda1c144e2c","language":"cypher","ordered":true,"source":"csv/edge_cases.test","source_case":"EdgeCases","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:`tab-as-delim`) RETURN t.*
+--- expected
+abc|def
+ghi|jkl

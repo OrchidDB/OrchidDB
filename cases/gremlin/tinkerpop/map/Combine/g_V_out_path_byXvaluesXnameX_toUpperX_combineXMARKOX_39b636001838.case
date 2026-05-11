@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Combine.g_V_out_path_byXvaluesXnameX_toUpperX_combineXMARKOX.39b636001838","language":"gremlin","ordered":false,"source":"map/Combine.feature","source_case":"g_V_out_path_byXvaluesXnameX_toUpperX_combineXMARKOX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().path().by(values("name").toUpper()).combine(["MARKO"])
+--- expected
+l[MARKO,LOP,MARKO]
+l[MARKO,VADAS,MARKO]
+l[MARKO,JOSH,MARKO]
+l[JOSH,RIPPLE,MARKO]
+l[JOSH,LOP,MARKO]
+l[PETER,LOP,MARKO]

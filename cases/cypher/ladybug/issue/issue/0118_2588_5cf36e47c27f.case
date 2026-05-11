@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2588.5cf36e47c27f","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2588","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:T) WITH t OPTIONAL MATCH (t2:T) WHERE NULL RETURN t.*
+--- expected
+t1
+t2

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_append.ListAppendListOfIntervals.8c7cd2460589","language":"cypher","ordered":true,"source":"function/string_function/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfIntervals","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_append([a.lastJobDuration], a.lastJobDuration)
+--- expected
+[3 years 2 days 13:02:00,3 years 2 days 13:02:00]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[48:24:11,48:24:11]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[48:24:11,48:24:11]
+[00:18:00.024,00:18:00.024]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[3 years 2 days 13:02:00,3 years 2 days 13:02:00]

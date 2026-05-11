@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetMultiLabelNodePropTest.979afcdd991f","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetMultiLabelNodePropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation:play) WHERE a.ID < 2 RETURN a.ID, a.name
+--- expected
+0|0
+1|10

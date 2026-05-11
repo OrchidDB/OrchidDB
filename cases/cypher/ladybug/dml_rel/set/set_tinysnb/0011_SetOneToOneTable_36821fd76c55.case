@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_tinysnb.SetOneToOneTable.36821fd76c55","language":"cypher","ordered":true,"source":"dml_rel/set/set_tinysnb.test","source_case":"SetOneToOneTable","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person {ID: 0})-[e:marries]->(b:person) WHERE b.ID = 2 RETURN e.note
+--- expected
+nothing

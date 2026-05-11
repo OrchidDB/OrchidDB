@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_prepend.ListPrependListOfINT32.49f0ecd5ffb9","language":"cypher","ordered":true,"source":"function/string/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN list_prepend([m.length], m.length)
+--- expected
+[126,126]
+[2544,2544]
+[298,298]

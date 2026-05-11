@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.timestamp.MissingSecond.f700479f5436","language":"cypher","ordered":true,"source":"exceptions/types/timestamp.test","source_case":"CastStrToTimestampError","source_log":"MissingSecond","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return timestamp("2112-08-04 08:23.005612")
+--- expected
+Conversion exception: Error occurred during parsing TIMESTAMP. Given: "2112-08-04 08:23.005612". Expected format: (YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]])

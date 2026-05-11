@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideDECIMAL.c066eab615ef","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1] AS A UNWIND [0] AS B RETURN CAST(A, 'DECIMAL') / CAST(B, 'DECIMAL')
+--- expected
+Runtime exception: Divide by zero.

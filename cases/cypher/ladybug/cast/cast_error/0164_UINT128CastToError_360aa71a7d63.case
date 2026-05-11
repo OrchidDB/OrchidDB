@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.360aa71a7d63","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("fd", "UNION(uint64, int128, uint128, BOOLEAN)")
+--- expected
+Conversion exception: Could not convert to union type UNION(uint64 UINT64, int128 INT128, uint128 UINT128, BOOLEAN BOOL): fd.

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListIn.9ca0eedf99f1","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListIn","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID + 1, a.workedHours, (a.ID + 1) IN a.workedHours
+--- expected
+10|[1]|False
+11|[10,11,12,3,4,5,6,7]|True
+1|[10,5]|False
+3|[12,8]|False
+4|[4,5]|True
+6|[1,9]|False
+8|[2]|False
+9|[3,4,5,6,7]|False

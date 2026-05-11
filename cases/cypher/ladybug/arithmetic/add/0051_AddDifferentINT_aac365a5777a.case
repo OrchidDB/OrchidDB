@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddDifferentINT.aac365a5777a","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddDifferentINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-24, "INT8") + CAST(400, "INT16")
+--- expected
+376

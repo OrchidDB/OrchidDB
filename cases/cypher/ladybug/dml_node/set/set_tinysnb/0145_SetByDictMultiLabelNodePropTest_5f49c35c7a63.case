@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetByDictMultiLabelNodePropTest.5f49c35c7a63","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetByDictMultiLabelNodePropTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation:play) RETURN a.ID, a.name
+--- expected
+0|AA
+1|ABFsUni
+4|CsWork
+6|DEsWork

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependListOfIntervals.b09d9a0b0b7c","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfIntervals","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_prepend([a.lastJobDuration], a.lastJobDuration)
+--- expected
+[3 years 2 days 13:02:00,3 years 2 days 13:02:00]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[48:24:11,48:24:11]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[48:24:11,48:24:11]
+[00:18:00.024,00:18:00.024]
+[10 years 5 months 13:00:00.000024,10 years 5 months 13:00:00.000024]
+[3 years 2 days 13:02:00,3 years 2 days 13:02:00]

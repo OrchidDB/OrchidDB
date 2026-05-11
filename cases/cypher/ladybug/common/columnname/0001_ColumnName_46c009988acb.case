@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.common.columnname.ColumnName.46c009988acb","language":"cypher","ordered":true,"source":"common/columnname.test","source_case":"ColumnName","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) RETURN a.name, COUNT { MATCH (a)<-[:Follows]-(b:User) } AS num_follower ORDER BY num_follower
+--- expected
+a.name|num_follower
+Adam|0
+Karissa|1
+Noura|1
+Zhang|2

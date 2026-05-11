@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.11a4af48ec6b","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnionError","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST("abc" AS UNION(a BOOL, b INT64, c DOUBLE))
+--- expected
+Conversion exception: Could not convert to union type UNION(a BOOL, b INT64, c DOUBLE): abc.

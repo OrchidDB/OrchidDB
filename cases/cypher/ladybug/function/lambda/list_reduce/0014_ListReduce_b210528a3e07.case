@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_reduce.ListReduce.b210528a3e07","language":"cypher","ordered":true,"source":"function/lambda/list_reduce.test","source_case":"ListReduce","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+unwind range(1, 5000) as t with collect(t) as lst return list_reduce(lst, (x, y) -> y+x+y)
+--- expected
+25004999

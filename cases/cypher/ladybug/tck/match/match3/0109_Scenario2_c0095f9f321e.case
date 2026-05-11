@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.c0095f9f321e","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario29","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[r]->()-[r]->(a) RETURN r
+--- expected
+Binder exception: Bind relationship r to relationship with same name is not supported.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductWithUInt128.4a86c46396dc","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductWithUInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_uint128(5), to_uint128(21267647932558653966460912964485513216), to_uint128(3), NULL])
+--- expected
+319014718988379809496913694467282698240

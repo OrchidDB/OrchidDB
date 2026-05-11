@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_1.KnowsWithOptionalMatch.271fefa382fb","language":"cypher","ordered":true,"source":"recursive_join/n_1.test","source_case":"VarLengthExtendN1Tests","source_log":"KnowsWithOptionalMatch","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:meets*3..4]->(b:person) RETURN COUNT(*)
+--- expected
+12

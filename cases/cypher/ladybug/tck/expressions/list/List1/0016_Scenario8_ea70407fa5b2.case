@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List1.Scenario8.ea70407fa5b2","language":"cypher","ordered":true,"source":"tck/expressions/list/List1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH [1, 2, 3, 4, 5] AS list, [1] AS idx RETURN list[idx]
+--- expected
+Binder exception: Function LIST_EXTRACT did not receive correct arguments:
+Actual:   (INT64[],INT64[])
+Expected: (LIST,INT64) -> ANY
+(STRING,INT64) -> STRING
+(ARRAY,INT64) -> ANY

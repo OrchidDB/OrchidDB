@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.blob.ReturnBlobHexOnly.c2250345b09c","language":"cypher","ordered":true,"source":"function/blob.test","source_case":"FunctionBlob","source_log":"ReturnBlobHexOnly","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN BLOB('\\xAA\\xBB\\xCD\\x1A')
+--- expected
+\xAA\xBB\xCD\x1A

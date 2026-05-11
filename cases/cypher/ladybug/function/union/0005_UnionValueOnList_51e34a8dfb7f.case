@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionValueOnList.51e34a8dfb7f","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionValueOnList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN union_value(workedHours := p.workedHours)
+--- expected
+[10,5]
+[12,8]
+[4,5]
+[1,9]
+[2]
+[3,4,5,6,7]
+[1]
+[10,11,12,3,4,5,6,7]

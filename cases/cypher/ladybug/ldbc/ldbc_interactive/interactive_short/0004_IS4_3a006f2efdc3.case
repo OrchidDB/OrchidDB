@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short.IS4.3a006f2efdc3","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short.test","source_case":"LDBCInteractiveShort","source_log":"IS4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:Post:Comment {id: 481036337190}) RETURN m.creationDate as messageCreationDate, CASE WHEN m.content is NULL THEN m.imageFile ELSE m.content END AS messageContent
+--- expected
+20110407210642051|photo481036337190.jpg

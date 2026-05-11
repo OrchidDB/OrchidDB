@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Inject.g_injectX10_20_null_20_10_10X_groupCountXxX_dedup_asXyX_projectXa_bX_by_byXselectXxX_selectXselectXyXXX.b78ab8a6eb55","language":"gremlin","ordered":false,"source":"sideEffect/Inject.feature","source_case":"g_injectX10_20_null_20_10_10X_groupCountXxX_dedup_asXyX_projectXa_bX_by_byXselectXxX_selectXselectXyXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(10,20,null,20,10,10).groupCount("x").dedup().as("y").project("a","b").by().by(__.select("x").select(__.select("y")))
+--- expected
+m[{"a":"d[10].i", "b":"d[3].l"}]
+m[{"a":"d[20].i", "b":"d[2].l"}]
+m[{"a":null, "b":"d[1].l"}]

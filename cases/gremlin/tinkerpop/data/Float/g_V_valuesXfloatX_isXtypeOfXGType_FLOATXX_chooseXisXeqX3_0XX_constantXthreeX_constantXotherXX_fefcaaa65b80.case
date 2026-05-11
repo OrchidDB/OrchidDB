@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Float.g_V_valuesXfloatX_isXtypeOfXGType_FLOATXX_chooseXisXeqX3_0XX_constantXthreeX_constantXotherXX.fefcaaa65b80","language":"gremlin","ordered":false,"source":"data/Float.feature","source_case":"g_V_valuesXfloatX_isXtypeOfXGType_FLOATXX_chooseXisXeqX3_0XX_constantXthreeX_constantXotherXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("float").asNumber(GType.FLOAT).is(P.typeOf(GType.FLOAT)).choose(__.is(P.eq(3.0)), constant("three"), constant("other"))
+--- graph_initializer
+g.addV("data").property("float", 3.0)
+--- expected
+three

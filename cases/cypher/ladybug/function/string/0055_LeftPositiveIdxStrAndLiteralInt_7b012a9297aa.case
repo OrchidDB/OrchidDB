@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LeftPositiveIdxStrAndLiteralInt.7b012a9297aa","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LeftPositiveIdxStrAndLiteralInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN left(p.fName, 11)
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blai

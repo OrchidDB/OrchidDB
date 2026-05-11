@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_label.MultiLabelCrossProductTest.8948c8b6a0c9","language":"cypher","ordered":true,"source":"match/multi_label.test","source_case":"MatchMultiLabel","source_log":"MultiLabelCrossProductTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person), (c:person:movies) RETURN COUNT(*)
+--- expected
+704

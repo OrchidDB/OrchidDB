@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.MatchUndirected.2951cd4438f1","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"MatchUndirected","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]-(b:User) WHERE a.name = 'Karissa' RETURN b.name
+--- expected
+Adam
+Zhang

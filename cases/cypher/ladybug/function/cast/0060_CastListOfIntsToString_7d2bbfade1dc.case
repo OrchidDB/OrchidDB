@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfIntsToString.7d2bbfade1dc","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfIntsToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN string(p.workedHours)
+--- expected
+[10,5]
+[12,8]
+[4,5]
+[1,9]
+[2]
+[3,4,5,6,7]
+[1]
+[10,11,12,3,4,5,6,7]

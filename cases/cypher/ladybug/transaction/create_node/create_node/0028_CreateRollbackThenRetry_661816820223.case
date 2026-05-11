@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_node.CreateRollbackThenRetry.661816820223","language":"cypher","ordered":true,"source":"transaction/create_node/create_node.test","source_case":"CreateRollbackThenRetry","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:test) RETURN a.id, a.name, a.isTrue, a.birthday
+--- expected
+0|A|True|2019-01-01

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"NPY npy-2d","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_two_dimensional.f64.fb9f66f107fa","language":"cypher","ordered":true,"source":"copy/copy_npy_two_dimensional.test","source_case":"CopyTwoDimensionalNpyTest","source_log":"f64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.f64
+--- expected
+[1.000000,2.000000,3.000000]
+[4.000000,5.000000,6.000000]
+[7.000000,8.000000,9.000000]

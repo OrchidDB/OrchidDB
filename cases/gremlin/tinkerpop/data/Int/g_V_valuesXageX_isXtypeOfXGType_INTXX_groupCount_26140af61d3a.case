@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Int.g_V_valuesXageX_isXtypeOfXGType_INTXX_groupCount.26140af61d3a","language":"gremlin","ordered":false,"source":"data/Int.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_INTXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.typeOf(GType.INT)).groupCount()
+--- expected
+m[{"d[29].i":"d[1].l","d[27].i":"d[1].l","d[32].i":"d[1].l","d[35].i":"d[1].l"}]

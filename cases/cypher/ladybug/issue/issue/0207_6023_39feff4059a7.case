@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.6023.39feff4059a7","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"6023","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (t:TestNode) where t.id = 'test_0_0_0' return t.grids
+--- expected
+[]

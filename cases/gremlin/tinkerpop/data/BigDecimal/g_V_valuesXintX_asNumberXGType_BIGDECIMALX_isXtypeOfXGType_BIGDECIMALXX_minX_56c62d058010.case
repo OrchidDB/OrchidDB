@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.BigDecimal.g_V_valuesXintX_asNumberXGType_BIGDECIMALX_isXtypeOfXGType_BIGDECIMALXX_minX.56c62d058010","language":"gremlin","ordered":false,"source":"data/BigDecimal.feature","source_case":"g_V_valuesXintX_asNumberXGType_BIGDECIMALX_isXtypeOfXGType_BIGDECIMALXX_minX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BIGDECIMAL).is(P.typeOf(GType.BIGDECIMAL)).min()
+--- graph_initializer
+g.addV("data").property("int", 1).
+  addV("data").property("int", 5).
+  addV("data").property("int", 10)
+--- expected
+d[1].m

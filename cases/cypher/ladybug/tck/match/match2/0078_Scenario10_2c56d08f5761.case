@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario10.2c56d08f5761","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[*1..30]->(), r = ()<-[]-() MATCH ()-[r]-() RETURN r
+--- expected
+Binder exception: r has data type RECURSIVE_REL but REL was expected.

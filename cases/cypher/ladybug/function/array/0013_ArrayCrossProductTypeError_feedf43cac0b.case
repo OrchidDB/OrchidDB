@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCrossProductTypeError.feedf43cac0b","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCrossProductTypeError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_CROSS_PRODUCT(ARRAY_VALUE('test','test1'), ARRAY_VALUE('test2', 'test3'))
+--- expected
+Binder exception: ARRAY_CROSS_PRODUCT can only be applied on array of floating points or signed integers

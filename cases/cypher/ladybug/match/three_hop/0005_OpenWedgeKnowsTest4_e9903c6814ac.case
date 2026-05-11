@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.three_hop.OpenWedgeKnowsTest4.e9903c6814ac","language":"cypher","ordered":true,"source":"match/three_hop.test","source_case":"MatchThreeHop","source_log":"OpenWedgeKnowsTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:person)-[e1:knows]->(a:person)<-[e2:knows]-(c:person),(a)<-[e3:knows]-(d:person) RETURN COUNT(*)
+--- expected
+110

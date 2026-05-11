@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Conjoin.g_V_out_path_byXvaluesXnameX_toUpperX_conjoinXMARKOX.d991d18e868c","language":"gremlin","ordered":false,"source":"map/Conjoin.feature","source_case":"g_V_out_path_byXvaluesXnameX_toUpperX_conjoinXMARKOX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().path().by(values("name").toUpper()).conjoin("MARKO")
+--- expected
+MARKOMARKOLOP
+MARKOMARKOVADAS
+MARKOMARKOJOSH
+JOSHMARKORIPPLE
+JOSHMARKOLOP
+PETERMARKOLOP

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX2X_repeatXout_localXorder_byXperformancesX_tailX1XXX_timesX1X_valuesXnameX.b0ddeee94e5c","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX2X_repeatXout_localXorder_byXperformancesX_tailX1XXX_timesX1X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid2).repeat(__.out().local(__.order().by("performances").tail(1))).times(1).values("name")
+--- expected
+JAM
+JACK STRAW

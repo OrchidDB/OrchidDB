@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsSelect.77c494b260df","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsSelect","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName = 'Bob' and a.fName CONTAINS "B" RETURN a.fName
+--- expected
+Bob

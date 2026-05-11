@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_create.MergeComplexPattern.bb95a9b5c807","language":"cypher","ordered":true,"source":"demo_db/demo_db_create.test","source_case":"MergeComplexPattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(b:User)-[:LivesIn]->(c:City) RETURN a.name, b.name, c.name
+--- expected
+Adam|Karissa|Waterloo
+Adam|Zhang|Kitchener
+A|B|Toronto
+Karissa|Zhang|Kitchener
+Zhang|Noura|Guelph

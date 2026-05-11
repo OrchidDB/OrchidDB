@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Map.g_V_valuesXmapX_isXtypeOfXGType_MAPXX.02c266d33af5","language":"gremlin","ordered":false,"source":"data/Map.feature","source_case":"g_V_valuesXmapX_isXtypeOfXGType_MAPXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("map").is(P.typeOf(GType.MAP))
+--- graph_initializer
+g.addV("data").property("map", ["key1": "1", "key2": "2"])
+--- expected
+m[{"key1":"1","key2":"2"}]

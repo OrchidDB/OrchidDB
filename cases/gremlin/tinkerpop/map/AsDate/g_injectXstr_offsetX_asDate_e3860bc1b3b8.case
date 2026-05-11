@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsDate.g_injectXstr_offsetX_asDate.e3860bc1b3b8","language":"gremlin","ordered":false,"source":"map/AsDate.feature","source_case":"g_injectXstr_offsetX_asDate","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("2023-08-02T00:00:00-07:00").asDate()
+--- expected
+dt[2023-08-02T00:00:00-07:00]

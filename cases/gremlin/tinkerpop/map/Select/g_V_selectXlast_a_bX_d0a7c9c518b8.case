@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Select.g_V_selectXlast_a_bX.d0a7c9c518b8","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_selectXlast_a_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().select(Pop.last, "a","b")
+--- expected
+

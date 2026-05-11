@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrEndsWith.b4570dc0b082","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrEndsWith","status":"imported","suite":"ladybug","version":1}
+--- query
+return ends_with(string("The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movies"),string("成績評価の甘い授業が高く評価"))
+--- expected
+False

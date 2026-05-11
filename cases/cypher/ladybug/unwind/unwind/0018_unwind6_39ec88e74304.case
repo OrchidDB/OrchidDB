@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind6.39ec88e74304","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind6","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ${UNWIND_LIST} AS x RETURN DISTINCT x ORDER BY x LIMIT 1
+--- expected
+1

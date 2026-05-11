@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddINT128.acd7acbb4178","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(170141183460469231731687303715884105727, "INT128") + CAST(1183460469231731687303715884105727, "INT128")
+--- expected
+Overflow exception: INT128 is out of range: cannot add.

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.UINT64NotEqual.f7de64e0329a","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"UINT64NotEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.code <> 6689 RETURN s.level
+--- expected
+5
+2

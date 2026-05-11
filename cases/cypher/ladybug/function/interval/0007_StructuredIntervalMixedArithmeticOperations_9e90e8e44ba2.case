@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalMixedArithmeticOperations.9e90e8e44ba2","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalMixedArithmeticOperations","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.lastJobDuration + interval('2 hours 48 minutes 1000 seconds') - interval('188 days 48 hours') + interval('5 years 100 microseconds')
+--- expected
+15 years 5 months -188 days -31:55:19.999876
+15 years 5 months -188 days -31:55:19.999876
+15 years 5 months -188 days -31:55:19.999876
+5 years -188 days -44:37:19.9759
+5 years -188 days 03:28:51.0001
+5 years -188 days 03:28:51.0001
+8 years -186 days -31:53:19.9999
+8 years -186 days -31:53:19.9999

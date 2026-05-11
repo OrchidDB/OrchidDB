@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_order_byXoutE_count_descX_byXnameX.6656929633a1","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_order_byXoutE_count_descX_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().order().by(__.outE().count(), Order.desc).by("name")
+--- expected
+v[marko]
+v[josh]
+v[peter]
+v[lop]
+v[ripple]
+v[vadas]

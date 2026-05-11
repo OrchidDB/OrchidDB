@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.negate.NegateINT32.00fa292f2d1d","language":"cypher","ordered":true,"source":"arithmetic/negate.test","source_case":"NegateINT32","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -CAST(-88888, "INT32")
+--- expected
+88888

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.splitPartWithParam.98632a0608b3","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"splitPartWithParam","status":"imported","suite":"ladybug","version":1}
+--- query
+match (o:organisation) return split_part(o.name, o.name[3], 1)
+--- expected
+AB
+Cs
+DE

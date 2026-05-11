@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion2.Scenario8.6e878b602f60","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion2.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (n)-[r:T]->() RETURN [x IN [1, []] | toInteger(x) ] AS list
+--- expected
+123

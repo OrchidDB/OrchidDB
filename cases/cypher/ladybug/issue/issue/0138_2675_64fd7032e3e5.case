@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2675.64fd7032e3e5","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2675","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:V3)-[:MYREL]->(b:V2) RETURN a.*, b.*
+--- expected
+v3|v2

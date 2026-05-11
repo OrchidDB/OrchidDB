@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionLiteralListOfListOfBools.158918330971","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionLiteralListOfListOfBools","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_indexof([[true, false], [false, true], [false, false]], [a.isStudent, a.isWorker])
+--- expected
+1
+1
+2
+2
+2
+1
+3
+2

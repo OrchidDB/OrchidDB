@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.UnwindMerge.556d37236e2f","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"UnwindMerge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:N) RETURN a.id
+--- expected
+1

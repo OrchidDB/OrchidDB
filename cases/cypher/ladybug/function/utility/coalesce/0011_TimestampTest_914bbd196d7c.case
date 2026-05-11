@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.TimestampTest.914bbd196d7c","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"TimestampTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, timestamp("1970-01-01 00:00:00.004666-10"))
+--- expected
+1970-01-01 10:00:00.004666

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.piFunctionAddStrIntTest.db688b2f9fb6","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"piFunctionAddStrIntTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN a.orgCode + pi()
+--- expected
+328.141593
+937.141593
+827.141593

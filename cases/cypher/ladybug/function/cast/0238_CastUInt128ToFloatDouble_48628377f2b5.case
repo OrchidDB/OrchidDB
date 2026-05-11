@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUInt128ToFloatDouble.48628377f2b5","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastUInt128ToFloatDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_float(340282366900938463463300000000000000000), cast(340282366900938463463300000000000000000, "float")
+--- expected
+inf|inf

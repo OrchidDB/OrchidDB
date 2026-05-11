@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractLiteralListOfTimestamp.6d4919c151ca","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractLiteralListOfTimestamp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([timestamp('1992-05-03 11:13:25'), a.registerTime], a.gender)
+--- expected
+1992-05-03 11:13:25
+2008-11-03 15:25:30.000526
+1992-05-03 11:13:25
+2031-11-30 12:25:30
+1992-05-03 11:13:25
+1972-07-31 13:22:30.678559
+1976-12-23 04:41:42
+2023-02-21 13:25:30

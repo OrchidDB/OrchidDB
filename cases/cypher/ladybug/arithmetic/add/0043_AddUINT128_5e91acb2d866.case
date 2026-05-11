@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddUINT128.5e91acb2d866","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddUINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 170141183460469231731687303715884105728 + CAST(42535295865117307932921825928971026432, "UINT128")
+--- expected
+212676479325586539664609129644855132160

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.filter.Sample.g_V_localXoutE_sampleX1X_byXweightXX.96fef56609e1","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_V_localXoutE_sampleX1X_byXweightXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(__.outE().sample(1).by("weight"))
+--- expected
+3

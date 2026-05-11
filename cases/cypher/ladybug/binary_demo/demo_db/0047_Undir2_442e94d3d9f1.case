@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Undir2.442e94d3d9f1","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Undir2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:LivesIn]-(c:City) RETURN a.name, c.name
+--- expected
+Adam|Waterloo
+Karissa|Waterloo
+Zhang|Kitchener
+Noura|Guelph

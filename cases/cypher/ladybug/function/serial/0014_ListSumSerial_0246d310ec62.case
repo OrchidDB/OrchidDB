@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListSumSerial.0246d310ec62","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListSumSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN list_sum([b.ID, a.ID])
+--- expected
+1
+1
+2
+2
+3
+3
+3
+3
+4
+4
+5
+5
+9
+10

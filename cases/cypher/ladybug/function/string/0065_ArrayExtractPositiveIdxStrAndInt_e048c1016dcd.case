@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ArrayExtractPositiveIdxStrAndInt.e048c1016dcd","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ArrayExtractPositiveIdxStrAndInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN array_extract(o.name, o.ID + 2)
+--- expected
+F
+k
+k

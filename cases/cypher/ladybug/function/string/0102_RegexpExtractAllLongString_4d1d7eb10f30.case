@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpExtractAllLongString.4d1d7eb10f30","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpExtractAllLongString","status":"imported","suite":"ladybug","version":1}
+--- query
+Return regexp_extract_all('hellolongstringtest_worldlongstringtest', '([a-z ]+)_?', 1)
+--- expected
+[hellolongstringtest,worldlongstringtest]

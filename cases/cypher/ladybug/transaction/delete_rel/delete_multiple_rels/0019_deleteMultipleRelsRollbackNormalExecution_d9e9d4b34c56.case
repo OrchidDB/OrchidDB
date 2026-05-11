@@ -1,0 +1,56 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_multiple_rels.deleteMultipleRelsRollbackNormalExecution.d9e9d4b34c56","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_multiple_rels.test","source_case":"deleteMultipleRelsRollbackNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(p:person) WHERE a.ID = 1 RETURN e.length
+--- expected
+0
+1
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+2
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+3
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+4
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+5
+50
+6
+7
+8
+9

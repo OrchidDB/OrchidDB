@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnFloatRelProp.9b5f5cbe7c05","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnFloatRelProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:workAt]->(o:organisation) RETURN e.rating
+--- expected
+8.200000
+7.600000
+9.200000

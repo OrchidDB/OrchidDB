@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.DateTime.g_V_valuesXdatetimeX_isXtypeOfXGType_DATETIMEXX_chooseXisXeqXdatetimeX2023_08_08XXXX_constantXmatchX_constantXnoMatchXX.d65d73520c52","language":"gremlin","ordered":false,"source":"data/DateTime.feature","source_case":"g_V_valuesXdatetimeX_isXtypeOfXGType_DATETIMEXX_chooseXisXeqXdatetimeX2023_08_08XXXX_constantXmatchX_constantXnoMatchXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("datetime").is(P.typeOf(GType.DATETIME)).choose(__.is(P.eq(datetime("2023-08-08T00:00:00Z"))), constant("match"), constant("noMatch"))
+--- graph_initializer
+g.addV("event").property("datetime", datetime("2023-08-08T00:00:00Z"))
+--- expected
+match

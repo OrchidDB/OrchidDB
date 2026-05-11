@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.UpperUTF8String.3da7bb1c2cf9","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"UpperUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN upper(m.name)
+--- expected
+SÓLÓ CÓN TU PÁREJÂ
+THE 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 MOVIE
+ROMA

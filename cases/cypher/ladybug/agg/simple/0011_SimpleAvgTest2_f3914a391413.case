@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAvgTest2.f3914a391413","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAvgTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate = date('1980-10-26') RETURN AVG(a.age), AVG(a.eyeSight)
+--- expected
+28.333333|4.700000

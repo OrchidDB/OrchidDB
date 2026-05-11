@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"NPY npy-3d","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_three_dimensional.ID.9ca0da253677","language":"cypher","ordered":true,"source":"copy/copy_npy_three_dimensional.test","source_case":"CopyThreeDimensionalNpyTest","source_log":"ID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.id
+--- expected
+1
+2

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_withSideEffectXk_nullX_injectXxX_selectXkX.4ce6df373fce","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_withSideEffectXk_nullX_injectXxX_selectXkX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("k",null).inject("x").select("k")
+--- expected
+null

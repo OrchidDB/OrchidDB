@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.UUIDTest.13f9551b27d4","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"UUIDTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(gen_random_uuid())
+--- expected
+UUID

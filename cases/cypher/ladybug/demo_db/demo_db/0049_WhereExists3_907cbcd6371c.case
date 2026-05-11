@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.WhereExists3.907cbcd6371c","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"WhereExists3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.age < 100 AND EXISTS { MATCH (a)-[:Follows*3..3]->(b:User) WHERE EXISTS {MATCH (b)<-[:Follows]-(c:User)} } RETURN a.name, a.age
+--- expected
+Adam|30

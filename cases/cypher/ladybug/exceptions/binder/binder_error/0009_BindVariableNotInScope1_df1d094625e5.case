@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindVariableNotInScope1.df1d094625e5","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindVariableNotInScope1","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH a MATCH (a:person)-[e1:knows]->(b:person) RETURN *
+--- expected
+Binder exception: Variable a is not in scope.

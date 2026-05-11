@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.function.range.Range.def0769d395a","language":"cypher","ordered":true,"source":"function/range.test","source_case":"Range","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN range(-4, a.AGE, a.NUMBER)
+--- expected
+[-4,-3,-2,-1,0,1]
+[-4,-2,0,2]
+[-4,-1]

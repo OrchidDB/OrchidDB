@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFloatToDouble.5505839ce662","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastFloatToDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_double(p.height)
+--- expected
+1.731000
+0.990000
+1.000000
+1.300000
+1.463000
+1.510000
+1.600000
+1.323000

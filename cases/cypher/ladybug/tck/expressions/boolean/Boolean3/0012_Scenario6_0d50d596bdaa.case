@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean3.Scenario6.0d50d596bdaa","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean3.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [true, false] AS a UNWIND [true, false] AS b UNWIND [true, false] AS c RETURN a, b, c, (a XOR (b XOR c)) = ((a XOR b) XOR c) AS result
+--- expected
+True|True|True|True
+True|True|False|True
+True|False|True|True
+True|False|False|True
+False|True|True|True
+False|True|False|True
+False|False|True|True
+False|False|False|True

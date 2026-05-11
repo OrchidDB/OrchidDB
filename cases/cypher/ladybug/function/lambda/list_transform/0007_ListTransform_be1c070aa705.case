@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.be1c070aa705","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TRANSFORM([5,28,92], x->(CASE WHEN x < 10 THEN 0 ELSE 1 END))
+--- expected
+[0,1,1]

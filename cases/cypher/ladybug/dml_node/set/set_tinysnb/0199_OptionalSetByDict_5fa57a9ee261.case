@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.OptionalSetByDict.5fa57a9ee261","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"OptionalSetByDict","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)  WHERE a.ID < 3 RETURN a.name, a.fName
+--- expected
+ABFsUni|
+|Alice
+|Bob

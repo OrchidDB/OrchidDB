@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.RecursiveSubqueryPredicate.12f2f2f04106","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"RecursiveSubqueryPredicate","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User {name: "Adam"})-[e:Follows* (r, n | WHERE EXISTS {MATCH (n)-[:LivesIn]->(:City {name: "Waterloo"})})]->(b:User) RETURN properties(nodes(e), 'name'), b.name
+--- expected
+[Karissa]|Zhang
+[]|Karissa
+[]|Zhang

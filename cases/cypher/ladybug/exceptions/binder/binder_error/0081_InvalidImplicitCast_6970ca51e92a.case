@@ -1,0 +1,29 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.InvalidImplicitCast.6970ca51e92a","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"InvalidImplicitCast","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN timestamp("2019-11-21") + "ok"
+--- expected
+Binder exception: Cannot match a built-in function for given function +(TIMESTAMP,STRING). Supported inputs are
+(INT128,INT128) -> INT128
+(INT64,INT64) -> INT64
+(INT32,INT32) -> INT32
+(INT16,INT16) -> INT16
+(INT8,INT8) -> INT8
+(SERIAL,SERIAL) -> SERIAL
+(UINT128,UINT128) -> UINT128
+(UINT64,UINT64) -> UINT64
+(UINT32,UINT32) -> UINT32
+(UINT16,UINT16) -> UINT16
+(UINT8,UINT8) -> UINT8
+(DOUBLE,DOUBLE) -> DOUBLE
+(FLOAT,FLOAT) -> FLOAT
+(DECIMAL,DECIMAL) -> DECIMAL
+(LIST,LIST) -> LIST
+(STRING,STRING) -> STRING
+(INTERVAL,INTERVAL) -> INTERVAL
+(DATE,INT64) -> DATE
+(INT64,DATE) -> DATE
+(DATE,INTERVAL) -> DATE
+(INTERVAL,DATE) -> DATE
+(TIMESTAMP,INTERVAL) -> TIMESTAMP
+(INTERVAL,TIMESTAMP) -> TIMESTAMP

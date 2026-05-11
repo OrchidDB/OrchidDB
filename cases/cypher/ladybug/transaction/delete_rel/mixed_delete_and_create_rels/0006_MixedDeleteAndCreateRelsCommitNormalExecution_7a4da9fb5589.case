@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.mixed_delete_and_create_rels.MixedDeleteAndCreateRelsCommitNormalExecution.7a4da9fb5589","language":"cypher","ordered":true,"source":"transaction/delete_rel/mixed_delete_and_create_rels.test","source_case":"MixedDeleteAndCreateRelsCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[e:knows]->(p1:person) where p0.ID = 0 AND p1.ID <= 10 return e.length
+--- expected
+1
+2
+3
+4
+5
+6
+7
+9
+10

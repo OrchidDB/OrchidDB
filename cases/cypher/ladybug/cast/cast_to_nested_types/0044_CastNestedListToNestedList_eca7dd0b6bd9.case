@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedListToNestedList.eca7dd0b6bd9","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedListToNestedList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([NULL, NULL, NULL], "INT8[][][]") AS a, cast([NULL], "STRING[]") AS b, cast([], "UINT8[]")
+--- expected
+[,,]|[]|[]

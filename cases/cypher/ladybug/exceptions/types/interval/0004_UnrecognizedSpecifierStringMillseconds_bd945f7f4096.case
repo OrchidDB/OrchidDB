@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.interval.UnrecognizedSpecifierStringMillseconds.bd945f7f4096","language":"cypher","ordered":true,"source":"exceptions/types/interval.test","source_case":"CastStrToIntervalError","source_log":"UnrecognizedSpecifierStringMillseconds","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return interval("10 years 2 days 48 hours 28 seconds 12 millseconds")
+--- expected
+Conversion exception: Unrecognized interval specifier string: millseconds.

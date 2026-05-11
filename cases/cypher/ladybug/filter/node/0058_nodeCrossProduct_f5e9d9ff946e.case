@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.nodeCrossProduct.f5e9d9ff946e","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"nodeCrossProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person {ID:a.ID}) WHERE a.ID < 4 RETURN COUNT(*)
+--- expected
+3

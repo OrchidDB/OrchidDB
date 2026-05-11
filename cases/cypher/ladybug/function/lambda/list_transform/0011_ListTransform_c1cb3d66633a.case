@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.c1cb3d66633a","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN LIST_TRANSFORM(a.workedHours, x->x+ 2)
+--- expected
+[12,7]
+[14,10]
+[6,7]
+[3,11]
+[4]
+[5,6,7,8,9]
+[3]
+[12,13,14,5,6,7,8,9]

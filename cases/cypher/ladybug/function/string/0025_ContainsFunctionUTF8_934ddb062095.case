@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsFunctionUTF8.934ddb062095","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsFunctionUTF8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) RETURN contains(a.name, "😂😃")
+--- expected
+False
+True
+False

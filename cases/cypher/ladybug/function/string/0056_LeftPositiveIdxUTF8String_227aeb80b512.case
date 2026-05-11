@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LeftPositiveIdxUTF8String.227aeb80b512","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LeftPositiveIdxUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN left(m.name, 6)
+--- expected
+Sóló c
+The 😂😃
+Roma

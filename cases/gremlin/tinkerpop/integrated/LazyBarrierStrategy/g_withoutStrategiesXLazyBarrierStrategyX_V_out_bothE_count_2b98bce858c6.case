@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.LazyBarrierStrategy.g_withoutStrategiesXLazyBarrierStrategyX_V_out_bothE_count.2b98bce858c6","language":"gremlin","ordered":false,"source":"integrated/LazyBarrierStrategy.feature","source_case":"g_withoutStrategiesXLazyBarrierStrategyX_V_out_bothE_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(LazyBarrierStrategy).V().out().bothE().count()
+--- expected
+d[14].l

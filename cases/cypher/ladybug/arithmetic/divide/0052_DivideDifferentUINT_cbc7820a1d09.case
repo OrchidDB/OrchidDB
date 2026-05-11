@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideDifferentUINT.cbc7820a1d09","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideDifferentUINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(12, "UINT8") / CAST(5, "UINT16")
+--- expected
+2

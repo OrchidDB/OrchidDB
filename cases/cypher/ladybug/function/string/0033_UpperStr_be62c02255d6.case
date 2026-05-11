@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.UpperStr.be62c02255d6","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"UpperStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN upper(o.name)
+--- expected
+ABFSUNI
+CSWORK
+DESWORK

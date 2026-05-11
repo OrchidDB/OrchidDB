@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.small_large_property_list_reading.ReadingLargeListOneHop.acfca154e62e","language":"cypher","ordered":true,"source":"read_list/small_large_property_list_reading.test","source_case":"PropLists4BytesPerEdgeTest","source_log":"ReadingLargeListOneHop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE a.ID = 0 AND e1.int64Prop < 4  RETURN e1.int64Prop
+--- expected
+1
+2
+3

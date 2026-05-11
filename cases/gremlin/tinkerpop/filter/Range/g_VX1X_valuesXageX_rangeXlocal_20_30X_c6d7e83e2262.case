@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Range.g_VX1X_valuesXageX_rangeXlocal_20_30X.c6d7e83e2262","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_VX1X_valuesXageX_rangeXlocal_20_30X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").range(Scope.local, 20, 30)
+--- expected
+d[29].i

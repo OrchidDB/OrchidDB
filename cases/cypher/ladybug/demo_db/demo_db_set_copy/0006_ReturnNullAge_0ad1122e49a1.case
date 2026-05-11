@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_set_copy.ReturnNullAge.0ad1122e49a1","language":"cypher","ordered":true,"source":"demo_db/demo_db_set_copy.test","source_case":"SetMultipleLabelNodeTest","source_log":"ReturnNullAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(u:City) RETURN u.name, u.population
+--- expected
+Waterloo|0
+Kitchener|0
+Guelph|0

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind_list_node.UnwindListOfNodes.5b84040e170e","language":"cypher","ordered":true,"source":"unwind/unwind_list_node.test","source_case":"UnwindListOfNodes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:PPPI]->(t:PPI)<-[:OPPI]-(b:organisation) RETURN a.fName, b.name
+--- expected
+Alice|ABFsUni
+Bob|ABFsUni

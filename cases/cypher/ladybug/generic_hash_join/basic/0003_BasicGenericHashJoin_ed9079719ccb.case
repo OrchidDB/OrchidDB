@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.ed9079719ccb","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.isWorker = b.isStudent AND a.ID = 0 RETURN b.fName
+--- expected
+Carol
+Dan
+Elizabeth
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

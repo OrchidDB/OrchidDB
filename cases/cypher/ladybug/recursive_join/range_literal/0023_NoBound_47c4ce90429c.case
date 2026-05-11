@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.range_literal.NoBound.47c4ce90429c","language":"cypher","ordered":true,"source":"recursive_join/range_literal.test","source_case":"NoBound","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(a:person {fName: "Bob"})<-[e:meets*..]-(b:person) RETURN b.fName
+--- expected
+Alice
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

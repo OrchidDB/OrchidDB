@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnStructLiteral2.f02bfb352a51","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnStructLiteral2","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {a: '1', b: 2, c: [4,5,6]} AS st RETURN st.a, st.b * 5, (st.c)[1:2]
+--- expected
+1|10|[4,5]

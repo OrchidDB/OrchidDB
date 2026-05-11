@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.set_node.set_empty.DoubleColumnInsertionsAndUpdatesLarge.94e58a7316c9","language":"cypher","ordered":true,"source":"transaction/set_node/set_empty.test","source_case":"DoubleColumnInsertionsAndUpdatesLarge","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:test) WHERE a.value <> 0 AND a.value <> 1010101010.1 RETURN a.id, a.value
+--- expected
+0|1010101010.300000
+1341|1010101010.200000

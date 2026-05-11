@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_complex.IC11.4f8bd60e77c6","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_complex.test","source_case":"LDBCInteractiveComplex","source_log":"IC11","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person:Person {id: 13194139534668 })-[:knows*1..2]-(friend:Person) WHERE NOT person.id=friend.id WITH DISTINCT friend MATCH (friend)-[workAt:workAt]->(company:Organisation {label: "Company"})-[:Organisation_isLocatedIn]->(:Place {name: "Hungary", label: "Country" }) WHERE workAt.workFrom < 2011 RETURN friend.id AS personId, friend.firstName AS personFirstName, friend.lastName AS personLastName, company.name AS organizationName, workAt.workFrom AS organizationWorkFromYear ORDER BY organizationWorkFromYear ASC, personId ASC, organizationName DESC LIMIT 10
+--- expected
+26388279068069|Sandor|Kovacs|ABC_Air_Hungary|2000
+30786325579035|George|Kovacs|CityLine_Hungary|2000
+30786325579035|George|Kovacs|Budapest_Aircraft_Service|2000
+26388279068069|Sandor|Kovacs|CityLine_Hungary|2001
+26388279068069|Sandor|Kovacs|Budapest_Aircraft_Service|2001
+28587302322372|Zsolt|Kiss|Budapest_Aircraft_Service|2002
+28587302322372|Zsolt|Kiss|Travel_Service_(Hungary)|2003
+28587302322372|Zsolt|Kiss|Malév_Hungarian_Airlines|2003
+2199023256689|Ferenc|Kovacs|CityLine_Hungary|2006
+28587302323430|János|Mészáros|Malév_Hungarian_Airlines|2008

@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.EdgeIntervalDivideInt.a71801ad648c","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"EdgeIntervalDivideInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) RETURN e1.validInterval / 5
+--- expected
+00:00:00.000096
+00:00:00.06
+00:04:36
+00:04:36
+00:05:36.006
+00:09:35.6
+00:09:35.6
+09:36:00.0104
+2 days
+2 years 1 month 02:36:00.000004
+2 years 1 month 02:36:00.000004
+4 years 6 days 09:36:00
+4 years 6 days 09:36:00
+8 days 06:00:00

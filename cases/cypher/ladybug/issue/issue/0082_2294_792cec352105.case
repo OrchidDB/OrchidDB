@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2294.792cec352105","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2294","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (a)-[b:KNOWS]->(c) return a,b,c
+--- expected
+||

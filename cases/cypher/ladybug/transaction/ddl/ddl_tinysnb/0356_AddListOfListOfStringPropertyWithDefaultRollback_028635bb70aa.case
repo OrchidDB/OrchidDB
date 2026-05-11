@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_tinysnb.AddListOfListOfStringPropertyWithDefaultRollback.028635bb70aa","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_tinysnb.test","source_case":"AddListOfListOfStringPropertyWithDefaultRollback","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.random LIMIT 1
+--- expected
+Binder exception: Cannot find property random for p.

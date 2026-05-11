@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCosineSimilarityWrongType.953a0c5e0b19","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCosineSimilarityWrongType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return ARRAY_COSINE_SIMILARITY(p.grades, p.grades)
+--- expected
+Binder exception: ARRAY_COSINE_SIMILARITY requires argument type to be FLOAT[] or DOUBLE[].

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.StructGreaterEqual.d230e1168528","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"StructGreaterEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) WHERE m.description >= {rating: 5.3, stars: to_int8(2), views: 152, release: timestamp('2011-08-20 11:25:30'), release_ns: cast("2011-08-20 11:25:30.1234567", "TIMESTAMP_NS"), release_ms: cast("2011-08-20 11:25:30.1234567", "TIMESTAMP_MS"), release_sec: cast("2011-08-20 11:25:30.1234567", "TIMESTAMP_SEC"), release_tz: cast("2011-08-20 11:25:30.1234567", "TIMESTAMP_TZ"), film: date('2012-05-11'), u8: to_uint8(220), u16: to_uint16(20), u32: to_uint32(1), u64: to_uint64(180), hugedata: to_int128(1844674407370955161811111111)} RETURN m.name
+--- expected
+Sóló cón tu párejâ
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie
+Roma

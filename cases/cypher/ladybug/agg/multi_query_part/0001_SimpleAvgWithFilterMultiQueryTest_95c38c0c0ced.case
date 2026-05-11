@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.SimpleAvgWithFilterMultiQueryTest.95c38c0c0ced","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"SimpleAvgWithFilterMultiQueryTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate = date('1980-10-26') WITH AVG(a.age) AS avgAge, AVG(a.eyeSight) AS avgEyeSight RETURN avgAge > avgEyeSight
+--- expected
+True

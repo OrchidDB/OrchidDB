@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List2.Scenario14.74c176f2918d","language":"cypher","ordered":true,"source":"tck/expressions/list/List2.test","source_case":"Scenario14","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH [1, 2, 3] AS list RETURN list[$from..$to] AS r
+--- expected
+[2, 3]

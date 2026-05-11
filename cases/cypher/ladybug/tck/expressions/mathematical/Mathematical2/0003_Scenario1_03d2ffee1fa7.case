@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.mathematical.Mathematical2.Scenario1.03d2ffee1fa7","language":"cypher","ordered":true,"source":"tck/expressions/mathematical/Mathematical2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WHERE a.name = 1337 RETURN a.version + 5
+--- expected
+104

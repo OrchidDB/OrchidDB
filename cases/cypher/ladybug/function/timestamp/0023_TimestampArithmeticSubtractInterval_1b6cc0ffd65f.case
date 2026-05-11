@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampArithmeticSubtractInterval.1b6cc0ffd65f","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampArithmeticSubtractInterval","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.registerTime - interval('12 years 7 months 10 days 20 h 30 m 100 us')
+--- expected
+1899-01-09 06:02:20.9999
+1959-12-20 16:52:30.678459
+1964-05-12 08:11:41.9999
+1964-05-12 14:51:41.9999
+1996-03-23 18:55:30.000426
+1999-01-09 14:55:29.9999
+2010-07-10 16:55:29.9999
+2019-04-19 15:55:29.9999

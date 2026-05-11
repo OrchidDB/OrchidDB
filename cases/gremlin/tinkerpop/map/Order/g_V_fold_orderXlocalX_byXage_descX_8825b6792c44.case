@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_fold_orderXlocalX_byXage_descX.8825b6792c44","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_fold_orderXlocalX_byXage_descX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().fold().order(local).by("age", desc)
+--- expected
+v[peter]
+v[josh]
+v[marko]
+v[vadas]

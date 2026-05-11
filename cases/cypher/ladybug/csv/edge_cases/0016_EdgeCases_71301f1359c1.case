@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.csv.edge_cases.EdgeCases.71301f1359c1","language":"cypher","ordered":true,"source":"csv/edge_cases.test","source_case":"EdgeCases","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:`mixed-newlines`) RETURN m.*
+--- expected
+abc
+def
+ghi

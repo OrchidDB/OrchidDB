@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short.TestLargeFTableEntry.ac88a9cd04ad","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short.test","source_case":"LDBCInteractiveShort","source_log":"TestLargeFTableEntry","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1
+--- expected
+1

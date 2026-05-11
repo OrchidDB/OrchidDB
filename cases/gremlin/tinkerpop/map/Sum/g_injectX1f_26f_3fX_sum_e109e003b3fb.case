@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Sum.g_injectX1f_26f_3fX_sum.e109e003b3fb","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_injectX1f_26f_3fX_sum","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1f,2f,3f).sum()
+--- expected
+d[6].f

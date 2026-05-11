@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce_tinysnb.DifferentStateTest.199d449dccb9","language":"cypher","ordered":true,"source":"function/utility/coalesce_tinysnb.test","source_case":"TinySnbTests","source_log":"DifferentStateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE coalesce(NULL, b.isStudent) MATCH (b)-[s:studyAt]->(c:organisation) RETURN b.fName, c.name
+--- expected
+Alice|ABFsUni
+Alice|ABFsUni
+Alice|ABFsUni
+Bob|ABFsUni
+Bob|ABFsUni
+Bob|ABFsUni
+Farooq|ABFsUni

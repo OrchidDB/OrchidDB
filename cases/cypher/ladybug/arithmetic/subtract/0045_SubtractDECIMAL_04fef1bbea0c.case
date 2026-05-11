@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractDECIMAL.04fef1bbea0c","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [0.6, 1.2, -100.0] as A UNWIND [-0.2, 1.2, 100.5] AS B RETURN CAST(A, 'DECIMAL(18, 1)') - CAST(B, 'DECIMAL(5, 2)')
+--- expected
+0.800

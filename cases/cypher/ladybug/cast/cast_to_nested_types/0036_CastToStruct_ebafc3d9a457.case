@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToStruct.ebafc3d9a457","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("{a: 340282366920938463463374607431768211455}", "STRUCT(a UINT128)")
+--- expected
+{a: 340282366920938463463374607431768211455}

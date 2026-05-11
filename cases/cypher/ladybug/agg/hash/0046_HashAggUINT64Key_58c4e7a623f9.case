@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashAggUINT64Key.58c4e7a623f9","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashAggUINT64Key","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN s.code, COUNT(s.year)
+--- expected
+23|1
+9223372036854775808|1
+6689|1

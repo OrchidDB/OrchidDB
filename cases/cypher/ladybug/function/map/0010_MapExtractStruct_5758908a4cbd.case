@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractStruct.5758908a4cbd","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_extract(map([{a: 5, b: {length: 30, age: 20, size: [20, 10]}}, {a: 7, b: {length: 22, age: 145, size: [20,15, 10]}}], [30 ,50]), {a: 7, b: {length: 22, age: 145, size: [20,15, 10]}})
+--- expected
+[50]

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Local.g_V_in_barrier_localXcountX.22bce75862d2","language":"gremlin","ordered":false,"source":"branch/Local.feature","source_case":"g_V_in_barrier_localXcountX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().in().barrier().local(__.count())
+--- expected
+d[1].l
+d[1].l
+d[1].l
+d[1].l
+d[1].l
+d[1].l

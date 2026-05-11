@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.rowid.SingleStatementUnionForExport.4acf32930fbd","language":"cypher","ordered":true,"source":"function/rowid.test","source_case":"FunctionRowID","source_log":"SingleStatementUnionForExport","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) WHERE rowid(n)=0 RETURN 'node', count(*) UNION ALL MATCH ()-[r]->() WHERE rowid(r)=0 RETURN 'rel', count(*)
+--- expected
+node|3
+rel|5

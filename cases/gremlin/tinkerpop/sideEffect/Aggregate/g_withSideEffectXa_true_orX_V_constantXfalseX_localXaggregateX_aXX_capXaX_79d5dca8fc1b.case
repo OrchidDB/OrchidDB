@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_withSideEffectXa_true_orX_V_constantXfalseX_localXaggregateX_aXX_capXaX.79d5dca8fc1b","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_withSideEffectXa_true_orX_V_constantXfalseX_localXaggregateX_aXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSideEffect("a", true, Operator.or).V().constant(false).local(aggregate("a")).cap("a")
+--- expected
+true

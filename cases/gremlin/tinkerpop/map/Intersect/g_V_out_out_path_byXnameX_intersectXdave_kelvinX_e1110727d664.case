@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Intersect.g_V_out_out_path_byXnameX_intersectXdave_kelvinX.e1110727d664","language":"gremlin","ordered":false,"source":"map/Intersect.feature","source_case":"g_V_out_out_path_byXnameX_intersectXdave_kelvinX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().out().path().by("name").intersect(["dave","kelvin"])
+--- expected
+s[]
+s[]

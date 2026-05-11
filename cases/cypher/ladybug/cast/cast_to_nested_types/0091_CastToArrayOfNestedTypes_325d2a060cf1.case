@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.325d2a060cf1","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnion","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Person) RETURN p.*
+--- expected
+5|6
+7|Alice

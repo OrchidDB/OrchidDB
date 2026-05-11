@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.EmptyMapKeys.cab554b57aec","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"EmptyMapKeys","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_keys(map([], []))
+--- expected
+[]

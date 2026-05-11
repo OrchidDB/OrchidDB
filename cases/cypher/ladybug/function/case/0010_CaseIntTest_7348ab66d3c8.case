@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseIntTest.7348ab66d3c8","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseIntTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE CASE a.fName WHEN 'Bob' THEN a.isStudent WHEN 'Carol' THEN NOT a.isStudent END RETURN a.fName
+--- expected
+Bob
+Carol

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.list_slice_extra.string.bcf3dcf9e573","language":"cypher","ordered":true,"source":"function/list_slice_extra.test","source_case":"string","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_slice("abcd", -5, 2)
+--- expected
+ab

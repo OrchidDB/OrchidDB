@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.NodeComparison.b0a1d47c8eb4","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"CopyTO","source_log":"NodeComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person)-[:Knows]->(b:Person) RETURN a.name, b.name
+--- expected
+Adam|Karissa
+Adam|Zhang
+Karissa|Zhang
+Zhang|Noura

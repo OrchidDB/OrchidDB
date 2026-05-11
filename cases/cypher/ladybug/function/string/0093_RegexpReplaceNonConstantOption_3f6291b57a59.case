@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpReplaceNonConstantOption.3f6291b57a59","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpReplaceNonConstantOption","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) Return REGEXP_REPLACE('this is a team', 'is', '*??', p.fName)
+--- expected
+Binder exception: p.fName has type PROPERTY but LITERAL was expected.

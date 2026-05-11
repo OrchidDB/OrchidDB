@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.rel_group.edge_cases.AlterRelGroupChildTable.39dc8a143283","language":"cypher","ordered":true,"source":"rel_group/edge_cases.test","source_case":"AlterRelGroupChildTable","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[]->(b) RETURN a.id, b.id
+--- expected
+0|0

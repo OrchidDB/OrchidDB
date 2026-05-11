@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateList.70bc56bfa4fe","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateList","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:test) RETURN a.prop
+--- expected
+[A,B,C,This is a long string for test]

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_prepend.ListPrependListOfUINT32.96e469eb09b7","language":"cypher","ordered":true,"source":"function/string/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfUINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN list_prepend([s.temperature], s.temperature)
+--- expected
+[32800,32800]
+[1,1]
+[20,20]

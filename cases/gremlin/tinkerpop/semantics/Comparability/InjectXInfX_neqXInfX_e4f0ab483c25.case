@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.semantics.Comparability.InjectXInfX_neqXInfX.e4f0ab483c25","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectXInfX_neqXInfX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(Infinity).is(P.neq(+Infinity))
+--- expected
+

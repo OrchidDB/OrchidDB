@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.StructPack2.b4747b08a0de","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"StructPack2","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {"foo": "bar"}
+--- expected
+{foo: bar}

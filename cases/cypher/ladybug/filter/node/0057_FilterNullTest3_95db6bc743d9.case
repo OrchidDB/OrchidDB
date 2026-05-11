@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.FilterNullTest3.95db6bc743d9","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"FilterNullTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.isStudent OR null RETURN COUNT(*)
+--- expected
+3

@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.SelfLoop.f62d39dbe093","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"SelfLoop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows*1..2 (r, n | WHERE r.date > date("1999-01-01") | {}, {n.fName})]->(b:person) WHERE a.ID = 5 RETURN e
+--- expected
+{_NODES: [], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:11}->(0:2)]}
+{_NODES: [], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:9}->(0:0)]}
+{_NODES: [{_ID: 0:0, _LABEL: person, fName: Alice}], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:9}->(0:0),(0:0)-{_LABEL: knows, _ID: 3:0}->(0:1)]}
+{_NODES: [{_ID: 0:0, _LABEL: person, fName: Alice}], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:9}->(0:0),(0:0)-{_LABEL: knows, _ID: 3:1}->(0:2)]}
+{_NODES: [{_ID: 0:0, _LABEL: person, fName: Alice}], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:9}->(0:0),(0:0)-{_LABEL: knows, _ID: 3:2}->(0:3)]}
+{_NODES: [{_ID: 0:2, _LABEL: person, fName: Carol}], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:11}->(0:2),(0:2)-{_LABEL: knows, _ID: 3:6}->(0:0)]}
+{_NODES: [{_ID: 0:2, _LABEL: person, fName: Carol}], _RELS: [(0:3)-{_LABEL: knows, _ID: 3:11}->(0:2),(0:2)-{_LABEL: knows, _ID: 3:8}->(0:3)]}

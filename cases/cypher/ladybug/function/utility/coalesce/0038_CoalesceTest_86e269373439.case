@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.CoalesceTest.86e269373439","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"PredicateTest","source_log":"CoalesceTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tbl) WHERE coalesce(NULL, t.bool, NULL) RETURN t.id
+--- expected
+1
+4

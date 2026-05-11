@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionTagOnLongString.e17399a2a64c","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionTagOnLongString","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN union_tag(union_value(longStringField := "This is a long string"))
+--- expected
+longStringField

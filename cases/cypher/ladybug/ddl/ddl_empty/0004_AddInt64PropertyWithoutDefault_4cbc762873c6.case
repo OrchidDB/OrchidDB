@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.AddInt64PropertyWithoutDefault.4cbc762873c6","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"AddInt64PropertyWithoutDefault","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment) return Count(c.random)
+--- expected
+0

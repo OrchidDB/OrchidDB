@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ReverseStr.777eb882feff","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ReverseStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN reverse(o.name)
+--- expected
+inUsFBA
+kroWsC
+kroWsED

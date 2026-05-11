@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.968568888f4c","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("1000000000000000000000000000000000000000", "uint128")
+--- expected
+Conversion exception: Cast failed. Could not convert "1000000000000000000000000000000000000000" to UINT128.

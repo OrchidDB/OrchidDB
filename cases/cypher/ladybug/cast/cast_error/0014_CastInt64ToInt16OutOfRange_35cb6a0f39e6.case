@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt64ToInt16OutOfRange.35cb6a0f39e6","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt64ToInt16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int16("32768")
+--- expected
+Conversion exception: Cast failed. Could not convert "32768" to INT16.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_group_byXlabelX_byXname_order_byXdescX_foldX.affc888ef148","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_group_byXlabelX_byXname_order_byXdescX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by(T.label).by(__.values("name").order().by(Order.desc).fold())
+--- expected
+m[{"software":"l[ripple,lop]","person":"l[vadas,peter,marko,josh]"}]

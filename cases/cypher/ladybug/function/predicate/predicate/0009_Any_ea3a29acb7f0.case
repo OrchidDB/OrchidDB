@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.Any.ea3a29acb7f0","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"Any","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName, none(name in a.workedHours WHERE name % 5 = 0)
+--- expected
+Alice|False
+Bob|True
+Carol|False
+Dan|True
+Elizabeth|True
+Farooq|False
+Greg|True
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|False

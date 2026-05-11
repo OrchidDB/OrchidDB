@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Sack.g_withBulkXfalseX_withSackX1_sumX_V_out_barrier_sack.1c84fcb5d182","language":"gremlin","ordered":false,"source":"sideEffect/Sack.feature","source_case":"g_withBulkXfalseX_withSackX1_sumX_V_out_barrier_sack","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withBulk(false).withSack(1, Operator.sum).V().out().barrier().sack()
+--- expected
+d[3].i
+d[1].i
+d[1].i
+d[1].i

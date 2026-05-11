@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.6dfbce6242e3","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRelTableAfterCreateNodes","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[e:N1_HAS_N2]->() RETURN e
+--- expected
+(0:0)-{_LABEL: N1_HAS_N2, _ID: 2:0}->(1:0)
+(0:1)-{_LABEL: N1_HAS_N2, _ID: 2:1}->(1:1)

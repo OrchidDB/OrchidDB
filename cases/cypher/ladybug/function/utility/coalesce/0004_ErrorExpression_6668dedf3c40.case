@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.ErrorExpression.6668dedf3c40","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"ErrorExpression","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(NULL, cast("hello", "INT64"))
+--- expected
+Conversion exception: Cast failed. Could not convert "hello" to INT64.

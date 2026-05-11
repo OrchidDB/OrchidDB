@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.478efa960e06","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[:knows*1..2]->(b) WHERE a.ID = 0 AND b.ID=2 RETURN LIST_TRANSFORM(rels(p), x->label(x)), LIST_TRANSFORM(nodes(p), x->label(x))
+--- expected
+[knows,knows]|[person,person,person]
+[knows,knows]|[person,person,person]
+[knows]|[person,person]

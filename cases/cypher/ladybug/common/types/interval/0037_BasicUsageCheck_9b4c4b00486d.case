@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.BasicUsageCheck.9b4c4b00486d","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"BasicUsageCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("12 13")
+--- expected
+Conversion exception: Unrecognized interval specifier string: 13.

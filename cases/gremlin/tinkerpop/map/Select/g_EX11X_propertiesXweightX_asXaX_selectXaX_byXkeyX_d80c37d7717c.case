@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_EX11X_propertiesXweightX_asXaX_selectXaX_byXkeyX.d80c37d7717c","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_EX11X_propertiesXweightX_asXaX_selectXaX_byXkeyX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E(eid11).properties("weight").as("a").select("a").by(T.key)
+--- expected
+weight

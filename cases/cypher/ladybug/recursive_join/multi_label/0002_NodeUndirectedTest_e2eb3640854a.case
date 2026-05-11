@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.NodeUndirectedTest.e2eb3640854a","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"NodeUndirectedTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:knows*1..2]-(b) WHERE a.fName = 'Alice' AND b.fName = 'Bob' RETURN COUNT(*)
+--- expected
+10

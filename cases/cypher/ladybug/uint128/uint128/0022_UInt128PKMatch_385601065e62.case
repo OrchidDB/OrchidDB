@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.UInt128PKMatch.385601065e62","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"UInt128PKMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab {uint128key: 11111}) RETURN z.*
+--- expected
+11111|1

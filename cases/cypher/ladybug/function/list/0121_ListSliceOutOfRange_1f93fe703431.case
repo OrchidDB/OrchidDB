@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceOutOfRange.1f93fe703431","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.usedNames[:-2]
+--- expected
+[]
+[]
+[Carmen]
+[Wolfeschlegelstein]
+[]
+[]
+[]
+[Ad,De,Hi,Kye]

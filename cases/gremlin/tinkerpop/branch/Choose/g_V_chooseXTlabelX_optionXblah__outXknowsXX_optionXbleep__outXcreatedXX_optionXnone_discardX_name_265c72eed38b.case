@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXTlabelX_optionXblah__outXknowsXX_optionXbleep__outXcreatedXX_optionXnone_discardX_name.265c72eed38b","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXTlabelX_optionXblah__outXknowsXX_optionXbleep__outXcreatedXX_optionXnone_discardX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(T.label).
+option("blah", __.out("knows")).
+option("bleep", __.out("created")).
+option(Pick.none, __.discard()).
+values("name")
+--- expected
+

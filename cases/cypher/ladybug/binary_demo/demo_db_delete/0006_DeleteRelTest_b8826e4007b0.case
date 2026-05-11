@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_delete.DeleteRelTest.b8826e4007b0","language":"cypher","ordered":true,"source":"binary_demo/demo_db_delete.test","source_case":"DeleteRelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[f:Follows]->(u1:User) WHERE u.name='Adam' RETURN u1.name
+--- expected
+Zhang

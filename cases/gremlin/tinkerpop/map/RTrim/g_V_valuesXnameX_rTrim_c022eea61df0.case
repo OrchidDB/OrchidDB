@@ -1,0 +1,24 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.RTrim.g_V_valuesXnameX_rTrim.c022eea61df0","language":"gremlin","ordered":false,"source":"map/RTrim.feature","source_case":"g_V_valuesXnameX_rTrim","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").rTrim()
+--- graph_initializer
+g.addV("person").property("name", " marko ").property("age", 29).as("marko").
+  addV("person").property("name", "  vadas  ").property("age", 27).as("vadas").
+  addV("software").property("name", "  lop").property("lang", "java").as("lop").
+  addV("person").property("name","josh  ").property("age", 32).as("josh").
+  addV("software").property("name", "   ripple   ").property("lang", "java").as("ripple").
+  addV("person").property("name", "peter").property("age", 35).as('peter').
+  addE("knows").from("marko").to("vadas").property("weight", 0.5d).
+  addE("knows").from("marko").to("josh").property("weight", 1.0d).
+  addE("created").from("marko").to("lop").property("weight", 0.4d).
+  addE("created").from("josh").to("ripple").property("weight", 1.0d).
+  addE("created").from("josh").to("lop").property("weight", 0.4d).
+  addE("created").from("peter").to("lop").property("weight", 0.2d)
+--- expected
+str[ marko]
+str[  vadas]
+str[  lop]
+str[josh]
+str[   ripple]
+str[peter]

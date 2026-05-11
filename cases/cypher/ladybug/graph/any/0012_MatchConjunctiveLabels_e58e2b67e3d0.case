@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.graph.any.MatchConjunctiveLabels.e58e2b67e3d0","language":"cypher","ordered":true,"source":"graph/any.test","source_case":"AnyGraphMultiNodeLabels","source_log":"MatchConjunctiveLabels","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person:Employee) RETURN COUNT(*)
+--- expected
+1

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastStructToStruct.0fd4ff41630b","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastStructToStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) where o.ID < 6 RETURN cast(cast(o.state, "STRUCT(revenue DOUBLE, location STRING, stock STRUCT(price INT128[], volume UINT64))"), "STRUCT(revenue DOUBLE, location STRING, stock STRING)"), cast(o.state, "STRUCT(revenue FLOAT, location STRING, stock STRUCT(price DOUBLE[], volume UINT32))")
+--- expected
+{revenue: 138.000000, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}|{revenue: 138.000000, location: ['toronto','montr,eal'], stock: {price: [96.000000,56.000000], volume: 1000}}
+{revenue: 152.000000, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}}|{revenue: 152.000000, location: ["vanco,uver north area"], stock: {price: [15.000000,78.000000,671.000000], volume: 432}}

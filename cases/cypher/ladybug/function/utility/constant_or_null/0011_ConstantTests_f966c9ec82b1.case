@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.constant_or_null.ConstantTests.f966c9ec82b1","language":"cypher","ordered":true,"source":"function/utility/constant_or_null.test","source_case":"ConstantTests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN constant_or_null()
+--- expected
+Binder exception: Function CONSTANT_OR_NULL did not receive correct arguments:
+Actual:   ()
+Expected: (ANY,ANY) -> ANY

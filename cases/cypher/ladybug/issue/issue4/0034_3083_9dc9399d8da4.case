@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue4.3083.9dc9399d8da4","language":"cypher","ordered":true,"source":"issue/issue4.test","source_case":"3083","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:test) WHERE n.prop4 = "efwb2143d10ccfw" RETURN n.prop1
+--- expected
+[eee,wefwhiihifwe23343,dmkwlenfwef232323]

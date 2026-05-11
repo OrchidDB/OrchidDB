@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.SerialAddINT64.f009819d4a80","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"SerialAddINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID + a.age
+--- expected
+35
+31
+47
+23
+24
+30
+46
+90

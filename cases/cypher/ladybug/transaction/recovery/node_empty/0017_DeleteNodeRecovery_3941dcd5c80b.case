@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.node_empty.DeleteNodeRecovery.3941dcd5c80b","language":"cypher","ordered":true,"source":"transaction/recovery/node_empty.test","source_case":"DeleteNodeRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:test) RETURN a.id, a.isTrue, a.birthday
+--- expected
+0|True|2019-01-01

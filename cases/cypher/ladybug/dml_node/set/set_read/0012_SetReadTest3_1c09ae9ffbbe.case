@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_read.SetReadTest3.1c09ae9ffbbe","language":"cypher","ordered":true,"source":"dml_node/set/set_read.test","source_case":"SetReadTest3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID=5 RETURN a.fName, b.fName, e.date
+--- expected
+Dan|Alice|2021-06-30
+Dan|Bob|1950-05-14
+Dan|Carol|2000-01-01

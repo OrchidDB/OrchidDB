@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_empty.RelDeleteCheckpoint.c437432270e6","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_empty.test","source_case":"RelDeleteCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:knows]->(:person) RETURN COUNT(e)
+--- expected
+0

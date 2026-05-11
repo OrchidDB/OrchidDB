@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInternalIDToString.b9ce93133b80","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastInternalIDToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(id(p), "string")
+--- expected
+0:0
+0:1
+0:2
+0:3
+0:4
+0:5
+0:6
+0:7
+0:8

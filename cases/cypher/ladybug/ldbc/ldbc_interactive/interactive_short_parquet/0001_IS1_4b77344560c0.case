@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(ldbc-sf01)","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short_parquet.IS1.4b77344560c0","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short_parquet.test","source_case":"LDBCInteractiveShortParquet","source_log":"IS1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:Person {id: 933})-[:Person_isLocatedIn]->(p:Place) WHERE p.label = "City" RETURN n.firstName AS firstName, n.lastName AS lastName, n.birthday AS birthday, n.locationIP AS locationIP, n.browserUsed AS browserUsed, p.id AS cityId, n.gender AS gender, n.creationDate AS creationDate
+--- expected
+Mahinda|Perera|19891203|119.235.7.103|Firefox|1353|male|20100214153210447

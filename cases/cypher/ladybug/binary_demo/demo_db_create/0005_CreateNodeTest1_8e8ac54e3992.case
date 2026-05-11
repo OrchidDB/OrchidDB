@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_create.CreateNodeTest1.8e8ac54e3992","language":"cypher","ordered":true,"source":"binary_demo/demo_db_create.test","source_case":"CreateNodeTest1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.name = 'Alice' RETURN a.name, a.age
+--- expected
+Alice|35

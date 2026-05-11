@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.NullCheckBool.be6dc8e7465b","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"ZoneMapUpdateThenQueryWithoutCheckpoint","source_log":"NullCheckBool","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.isStudent IS NOT NULL RETURN COUNT(*)
+--- expected
+8

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_label.MultiLabelOneHopTest1.1f8fafbf573e","language":"cypher","ordered":true,"source":"match/multi_label.test","source_case":"MatchMultiLabel","source_log":"MultiLabelOneHopTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows|:marries]->(b:person) RETURN COUNT(*)
+--- expected
+17

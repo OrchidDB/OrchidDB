@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Map.g_withPath_V_asXaX_out_mapXselectXaX_valuesXnameXX.8a0c989d33cf","language":"gremlin","ordered":false,"source":"map/Map.feature","source_case":"g_withPath_V_asXaX_out_mapXselectXaX_valuesXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withPath().V().as("a").out().map(__.select("a").values("name"))
+--- expected
+marko
+marko
+marko
+josh
+josh
+peter

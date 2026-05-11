@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.filter.Sample.g_E_sampleX2X_byXweightX.7cac5f43507e","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_E_sampleX2X_byXweightX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E().sample(2).by("weight")
+--- expected
+2

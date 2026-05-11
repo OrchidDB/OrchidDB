@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV gds-weighted-shortest-path","expected_kind":"rows","id":"cypher.ladybug.function.gds.weighted_shortest.WSP-D38.fc9590b500fd","language":"cypher","ordered":true,"source":"function/gds/weighted_shortest.test","source_case":"NegativeWeight","source_log":"WSP-D38","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p=(a)-[e*]->(b) RETURN cost(e)
+--- expected
+Binder exception: Cost function is not defined for e

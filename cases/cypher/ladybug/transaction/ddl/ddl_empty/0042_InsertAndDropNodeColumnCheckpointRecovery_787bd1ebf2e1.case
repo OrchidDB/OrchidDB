@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_empty.InsertAndDropNodeColumnCheckpointRecovery.787bd1ebf2e1","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_empty.test","source_case":"InsertAndDropNodeColumnCheckpointRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:test) RETURN n.*
+--- expected
+0|20|1
+1|21|2
+2|22|3
+3|23|4
+4|24|5

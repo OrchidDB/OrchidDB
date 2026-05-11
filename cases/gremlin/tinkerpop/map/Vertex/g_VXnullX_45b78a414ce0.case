@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Vertex.g_VXnullX.45b78a414ce0","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_VXnullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(null)
+--- expected
+

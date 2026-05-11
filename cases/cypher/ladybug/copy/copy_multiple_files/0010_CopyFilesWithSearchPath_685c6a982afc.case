@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV copy-multiple-files-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_multiple_files.CopyFilesWithSearchPath.685c6a982afc","language":"cypher","ordered":true,"source":"copy/copy_multiple_files.test","source_case":"CopyFilesWithSearchPath","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.ID
+--- expected
+402
+403
+409
+509
+561
+582

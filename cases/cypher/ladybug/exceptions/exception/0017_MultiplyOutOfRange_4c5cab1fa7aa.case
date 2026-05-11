@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.MultiplyOutOfRange.4c5cab1fa7aa","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"MultiplyOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(1000000, "UINT32") * cast(1000000, "UINT32")
+--- expected
+Overflow exception: Value 1000000 * 1000000 is not within UINT32 range.

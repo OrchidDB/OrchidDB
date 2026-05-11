@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import_db.ReturnAge.b9e1a847b428","language":"cypher","ordered":true,"source":"copy/export_import_db.test","source_case":"ExportDBWithSpecialPropertyName","source_log":"ReturnAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:`N Table`)-[e:`R Table`]->(b:`N Table`) RETURN a.*, e.*, b.*
+--- expected
+0|A|Edge|1|B

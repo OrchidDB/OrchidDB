@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.function.range.Range.b963f7b1d4df","language":"cypher","ordered":true,"source":"function/range.test","source_case":"Range","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(CAST(3, 'uint8'), CAST(50, 'uint8'), CAST(5, 'uint8'))
+--- expected
+[3,8,13,18,23,28,33,38,43,48]

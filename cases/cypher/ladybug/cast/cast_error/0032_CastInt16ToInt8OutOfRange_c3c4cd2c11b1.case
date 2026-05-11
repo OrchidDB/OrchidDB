@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt16ToInt8OutOfRange.c3c4cd2c11b1","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt16ToInt8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return to_int8(to_int16(520))
+--- expected
+Overflow exception: Value 520 is not within INT8 range

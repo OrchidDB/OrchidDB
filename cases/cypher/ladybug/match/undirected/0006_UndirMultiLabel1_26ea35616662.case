@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirMultiLabel1.26ea35616662","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirMultiLabel1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person:organisation)-[:meets|:marries|:workAt]-(b:person:organisation) RETURN COUNT(*)
+--- expected
+26

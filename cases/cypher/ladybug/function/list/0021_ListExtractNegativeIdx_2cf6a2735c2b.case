@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractNegativeIdx.2cf6a2735c2b","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractNegativeIdx","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_extract([5,2,8], -1)
+--- expected
+8

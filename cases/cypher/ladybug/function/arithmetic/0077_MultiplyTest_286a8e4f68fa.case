@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.MultiplyTest.286a8e4f68fa","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"MultiplyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[a:studyAt]->(:organisation) WHERE a.ulength > 3 RETURN a.ulength, a.ulevel, cast(a.ulength, "INT64") * cast(a.ulevel, "INT64")
+--- expected
+180|12|2160
+33768|250|8442000
+90|220|19800

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.Int128OperatorTest.2a05006081ac","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"Int128OperatorTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN e.hugedata + 1 - to_int128(3) * to_int128(2) - to_int128(9) / to_int128(3)
+--- expected
+1844674407370955161811111103

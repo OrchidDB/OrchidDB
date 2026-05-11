@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_asXaX_out_asXbX_matchXa_out_count_c__orXa_knows_b__b_in_count_c__and__c_isXgtX2XXXX.7f21869a9c53","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_asXaX_out_asXbX_matchXa_out_count_c__orXa_knows_b__b_in_count_c__and__c_isXgtX2XXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out().as("b").match(__.as("a").out().count().as("c"),
+__.or(__.as("a").out("knows").as("b"),__.as("b").in().count().as("c").and().as("c").is(P.gt(2))))
+--- expected
+m[{"a":"v[marko]","b":"v[lop]","c":"d[3].l"}]
+m[{"a":"v[marko]","b":"v[vadas]","c":"d[3].l"}]
+m[{"a":"v[marko]","b":"v[josh]","c":"d[3].l"}]

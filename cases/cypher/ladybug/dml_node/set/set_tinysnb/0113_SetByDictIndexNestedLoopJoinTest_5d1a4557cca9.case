@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetByDictIndexNestedLoopJoinTest.5d1a4557cca9","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetByDictIndexNestedLoopJoinTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.age
+--- expected
+0|1
+10|2
+2|2
+3|1
+5|2
+7|1
+8|2
+9|2

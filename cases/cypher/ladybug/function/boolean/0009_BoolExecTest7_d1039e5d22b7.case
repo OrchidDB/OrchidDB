@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolExecTest7.d1039e5d22b7","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolExecTest7","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE a.isWorker and (a.fName='Elizabeth' OR b.fName='Elizabeth') RETURN a.fName
+--- expected
+Elizabeth
+Elizabeth

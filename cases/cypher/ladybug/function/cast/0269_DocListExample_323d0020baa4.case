@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.323d0020baa4","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ["Alice", 1] AS l
+--- expected
+Binder exception: Expression Alice has data type STRING but expected INT64. Implicit cast is not supported.

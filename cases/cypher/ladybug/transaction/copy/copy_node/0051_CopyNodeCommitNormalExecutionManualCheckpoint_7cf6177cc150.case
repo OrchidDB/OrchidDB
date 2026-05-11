@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyNodeCommitNormalExecutionManualCheckpoint.7cf6177cc150","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyNodeCommitNormalExecutionManualCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.age
+--- expected
+20
+20
+45
+30
+35

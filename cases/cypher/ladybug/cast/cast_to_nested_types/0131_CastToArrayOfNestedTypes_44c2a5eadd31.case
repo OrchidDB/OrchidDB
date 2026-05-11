@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.44c2a5eadd31","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastBetweenUnion","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(union_value(v := true) AS UNION(v STRING, b BOOL, t INT32))
+--- expected
+True

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.AdjacentToIncidentStrategy.g_withoutStrategiesXAdjacentToIncidentStrategyX_V.9a78837141a7","language":"gremlin","ordered":false,"source":"integrated/AdjacentToIncidentStrategy.feature","source_case":"g_withoutStrategiesXAdjacentToIncidentStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(AdjacentToIncidentStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

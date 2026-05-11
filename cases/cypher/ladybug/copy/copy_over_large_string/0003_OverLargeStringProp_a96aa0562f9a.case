@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_over_large_string.OverLargeStringProp.a96aa0562f9a","language":"cypher","ordered":true,"source":"copy/copy_over_large_string.test","source_case":"OverLargeStringProp","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN SIZE(p.prop)
+--- expected
+271653
+345005
+387503
+393858
+404368
+426712
+497845
+505914
+510770
+521435

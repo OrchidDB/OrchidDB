@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.TypeOf.g_V_whereXvaluesXnameX_isXtypeOfXGType_STRINGXXX_valuesXnameX.dfc488fa5080","language":"gremlin","ordered":false,"source":"filter/TypeOf.feature","source_case":"g_V_whereXvaluesXnameX_isXtypeOfXGType_STRINGXXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.values("name").is(P.typeOf(GType.STRING))).values("name")
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

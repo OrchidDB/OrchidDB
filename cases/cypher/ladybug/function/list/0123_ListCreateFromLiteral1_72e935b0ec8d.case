@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListCreateFromLiteral1.72e935b0ec8d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListCreateFromLiteral1","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [[100,200],[200,300],[300,400]]
+--- expected
+[[100,200],[200,300],[300,400]]

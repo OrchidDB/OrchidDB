@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.create_tinysnb.Fwd.d23a1e387f67","language":"cypher","ordered":true,"source":"transaction/create_rel/create_tinysnb.test","source_case":"ViolateRelMultiplicityConstraintInTransaction","source_log":"Fwd","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[m:marries]->(b:person) RETURN a.ID, b.ID
+--- expected
+0|2
+3|5
+7|8

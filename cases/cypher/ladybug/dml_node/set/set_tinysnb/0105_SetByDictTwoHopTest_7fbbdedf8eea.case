@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetByDictTwoHopTest.7fbbdedf8eea","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetByDictTwoHopTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 6 RETURN a.ID, a.age
+--- expected
+0|35
+2|30
+3|30
+5|30

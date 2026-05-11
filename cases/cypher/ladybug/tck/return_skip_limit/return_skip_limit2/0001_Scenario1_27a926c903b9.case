@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_skip_limit.return_skip_limit2.Scenario1.27a926c903b9","language":"cypher","ordered":true,"source":"tck/return_skip_limit/return_skip_limit2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1, 1, 1, 1, 1] AS i RETURN i LIMIT 2
+--- expected
+1
+1

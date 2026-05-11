@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListLiteral.b02dea01d266","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [[1], , ['a']]
+--- expected
+Binder exception: Expression LIST_CREATION(a) has data type STRING[] but expected INT64[]. Implicit cast is not supported.

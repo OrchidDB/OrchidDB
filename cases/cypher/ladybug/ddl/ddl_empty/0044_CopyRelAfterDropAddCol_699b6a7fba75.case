@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyRelAfterDropAddCol.699b6a7fba75","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyRelAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN a.name, e.since, b.name
+--- expected
+Adam|2020|Karissa
+Adam|2020|Zhang
+Karissa|2021|Zhang
+Zhang|2022|Noura
+Zhang||Adam

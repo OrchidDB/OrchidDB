@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXfooX_capXaX_unfold_mean.a10bba4383c2","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXfooX_capXaX_unfold_mean","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().aggregate("a").by("foo").cap("a").unfold().mean()
+--- expected
+null

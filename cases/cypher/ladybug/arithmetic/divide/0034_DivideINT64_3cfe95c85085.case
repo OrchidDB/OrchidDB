@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideINT64.3cfe95c85085","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(202474672000 , "INT64") / CAST(500, "INT64")
+--- expected
+404949344

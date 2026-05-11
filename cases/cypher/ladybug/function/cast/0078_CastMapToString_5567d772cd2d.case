@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastMapToString.5567d772cd2d","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastMapToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN cast(m.audience, "string")
+--- expected
+{audience1=33}
+{audience1=52, audience53=42}
+{}

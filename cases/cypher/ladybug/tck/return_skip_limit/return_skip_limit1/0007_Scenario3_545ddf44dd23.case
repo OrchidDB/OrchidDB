@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_skip_limit.return_skip_limit1.Scenario3.545ddf44dd23","language":"cypher","ordered":true,"source":"tck/return_skip_limit/return_skip_limit1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) WITH n SKIP to_int64(rand()*9) WITH count(*) AS count RETURN count > 0 AS nonEmpty
+--- expected
+True

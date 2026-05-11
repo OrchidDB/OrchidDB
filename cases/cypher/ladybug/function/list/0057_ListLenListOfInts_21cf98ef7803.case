@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListLenListOfInts.21cf98ef7803","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListLenListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN size(a.workedHours)
+--- expected
+2
+2
+2
+2
+1
+5
+1
+8

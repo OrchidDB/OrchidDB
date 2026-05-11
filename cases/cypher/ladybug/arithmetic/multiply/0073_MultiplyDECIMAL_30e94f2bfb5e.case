@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyDECIMAL.30e94f2bfb5e","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [-5.0, -1.0, 0.0, 1.0, 5.0] AS B UNWIND [-12.234, 0, 12.234] AS A RETURN CAST(A, 'DECIMAL(18, 3)') * B
+--- expected
+61.170000
+12.234000

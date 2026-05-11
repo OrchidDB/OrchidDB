@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_outXknowsX_name_bX_identity.11f49ad1a634","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_outXknowsX_name_bX_identity","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("knows").values("name").as("b")).identity()
+--- expected
+m[{"a":"v[marko]","b":"vadas"}]
+m[{"a":"v[marko]","b":"josh"}]

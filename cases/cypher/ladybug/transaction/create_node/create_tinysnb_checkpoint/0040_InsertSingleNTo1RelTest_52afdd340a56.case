@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_tinysnb_checkpoint.InsertSingleNTo1RelTest.52afdd340a56","language":"cypher","ordered":true,"source":"transaction/create_node/create_tinysnb_checkpoint.test","source_case":"InsertSingleNTo1RelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:studyAt]->(b:organisation) WHERE a.ID > 5 RETURN a.ID, b.orgCode, e, ID(e)
+--- expected
+8|325|(0:5)-{_LABEL: studyAt, _ID: 5:2, year: 2020, places: [awndsnjwejwen,isuhuwennjnuhuhuwewe], length: 22, level: 2, code: 23, temperature: 20, ulength: 180, ulevel: 12, hugedata: -15}->(1:0)|5:2
+9|934|(0:6)-{_LABEL: studyAt, _ID: 5:3, year: 2022}->(1:1)|5:3

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_delete.DetachDelete.8113d8f9bdb7","language":"cypher","ordered":true,"source":"demo_db/demo_db_delete.test","source_case":"DetachDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[]->() RETURN COUNT(*)
+--- expected
+8

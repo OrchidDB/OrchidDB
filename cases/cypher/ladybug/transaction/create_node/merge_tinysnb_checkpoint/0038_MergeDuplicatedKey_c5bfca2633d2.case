@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.MergeDuplicatedKey.c5bfca2633d2","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"MergeDuplicatedKey","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows2]->(b:person) RETURN COUNT(*)
+--- expected
+3

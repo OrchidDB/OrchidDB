@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.NestedScalarString.97dd3069dd75","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"NestedScalarString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return AppendElement(p.usedNames, p.fName, STRING(p.ID))
+--- expected
+[Aida,Alice,0]
+[Bobby,Bob,2]
+[Carmen,Fred,Carol,3]
+[Wolfeschlegelstein,Daniel,Dan,5]
+[Ein,Elizabeth,7]
+[Fesdwe,Farooq,8]
+[Grad,Greg,9]
+[Ad,De,Hi,Kye,Orlan,Hubert Blaine Wolfeschlegelsteinhausenbergerdorff,10]

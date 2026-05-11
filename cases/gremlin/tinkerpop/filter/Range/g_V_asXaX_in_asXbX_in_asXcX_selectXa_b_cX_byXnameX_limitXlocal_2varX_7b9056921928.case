@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Range.g_V_asXaX_in_asXbX_in_asXcX_selectXa_b_cX_byXnameX_limitXlocal_2varX.7b9056921928","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_V_asXaX_in_asXbX_in_asXcX_selectXa_b_cX_byXnameX_limitXlocal_2varX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").in().as("b").in().as("c").select("a","b","c").by("name").limit(Scope.local, xx1)
+--- expected
+m[{"a":"lop","b":"josh"}]
+m[{"a":"ripple","b":"josh"}]

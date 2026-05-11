@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.update_int_prop.UpdateIntPropCommitNormalExecution.f58f665d1bf3","language":"cypher","ordered":true,"source":"transaction/set_rel/update_int_prop.test","source_case":"UpdateIntPropCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[e:knows]->(p1:person) WHERE p1.ID >= 20 AND p1.ID <= 30 AND p0.ID = 0 return e.length
+--- expected
+21
+22
+23
+24
+210
+26
+27
+28
+29
+300

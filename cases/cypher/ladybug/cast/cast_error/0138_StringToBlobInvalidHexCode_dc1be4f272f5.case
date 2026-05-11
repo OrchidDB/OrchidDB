@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.StringToBlobInvalidHexCode.dc1be4f272f5","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"StringToBlobInvalidHexCode","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast('\\xgg', "blob")
+--- expected
+Conversion exception: Invalid hex escape code encountered in string -> blob conversion: \xgg

@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionTagOnExpr.1b2e78f31d96","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionTagOnExpr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) return union_tag(union_value(age := p.age)), union_tag(union_value(PERSON_id := p1.ID))
+--- expected
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id
+age|PERSON_id

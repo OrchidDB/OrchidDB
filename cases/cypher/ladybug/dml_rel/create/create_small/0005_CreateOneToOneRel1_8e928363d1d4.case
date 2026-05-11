@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.CreateOneToOneRel1.8e928363d1d4","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRel1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:N1) RETURN n.ID
+--- expected
+10
+1

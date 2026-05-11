@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Min.g_VX1X_valuesXageX_minXlocalX.ca38a4324831","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_VX1X_valuesXageX_minXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").min(Scope.local)
+--- expected
+d[29].i

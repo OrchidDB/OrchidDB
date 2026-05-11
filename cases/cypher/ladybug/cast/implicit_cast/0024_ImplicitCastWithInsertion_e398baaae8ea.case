@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.ImplicitCastWithInsertion.e398baaae8ea","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"ImplicitCastWithInsertion","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (e:embeddings) RETURN count(e)
+--- expected
+1000

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.HaltedTraverserStrategy.g_withoutStrategiesXHaltedTraverserStrategyX_V.2a99a3044c96","language":"gremlin","ordered":false,"source":"integrated/HaltedTraverserStrategy.feature","source_case":"g_withoutStrategiesXHaltedTraverserStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(HaltedTraverserStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

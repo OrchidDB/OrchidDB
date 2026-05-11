@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.set.set_read_tinysnb.OptionalSetReadTest.6259ce0a5fc5","language":"cypher","ordered":true,"source":"dml_rel/set/set_read_tinysnb.test","source_case":"OptionalSetReadTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (a)-[e]->(b) WHERE b.ID = 1 RETURN e.length
+--- expected
+5
+55
+22

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.BasicLimitTest2.3e17c3485f3b","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"BasicLimitTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName LIMIT 10
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

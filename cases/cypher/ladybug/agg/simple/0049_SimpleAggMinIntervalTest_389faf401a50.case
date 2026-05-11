@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMinIntervalTest.389faf401a50","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMinIntervalTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN MIN(a.lastJobDuration)
+--- expected
+00:18:00.024

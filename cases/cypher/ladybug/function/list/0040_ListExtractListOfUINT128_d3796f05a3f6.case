@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfUINT128.d3796f05a3f6","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfUINT128","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_extract(cast([1, 6, 9, 174208870315, 2], "uint128[]"), 4)
+--- expected
+174208870315

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.UUIDKeyTest2.9688c924d3b0","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"UUIDKeyTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE p.u = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" RETURN p.ID, o.ID
+--- expected
+0|1

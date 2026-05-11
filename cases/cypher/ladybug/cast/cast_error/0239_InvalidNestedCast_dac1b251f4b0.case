@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidNestedCast.dac1b251f4b0","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidNestedCast","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{a: {b: {c: [[1, 3, 4]], d: {18=[3, 2]}}}, e: [1, 9, 3]}", "STRUCT(a STRUCT(b STRUCT(c INT64[3][], d MAP(INT32,INT32[]))), e FLOAT[3])"), "STRUCT(a STRUCT(b STRUCT(c INT64[3][], d MAP(INT32,INT32[5]))), e INT32[3])")
+--- expected
+Conversion exception: Unsupported casting LIST with incorrect list entry to ARRAY. Expected: 5, Actual: 2.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.3653.6690b223e666","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"3653","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (v1:V)-[e:E]->(v2:V) WHERE e.p in ["foo","bar"] RETURN e.p
+--- expected
+foo

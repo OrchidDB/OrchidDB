@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.csv.edge_cases.EscapedQuoteInList.fd1296a98742","language":"cypher","ordered":true,"source":"csv/edge_cases.test","source_case":"EscapedQuoteInList","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+return cast("[ab\"cd]" as string[])
+--- expected
+[ab"cd]

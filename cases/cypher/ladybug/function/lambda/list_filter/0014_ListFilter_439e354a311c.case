@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_filter.ListFilter.439e354a311c","language":"cypher","ordered":true,"source":"function/lambda/list_filter.test","source_case":"ListFilter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_filter(p.usedNames, x->true)
+--- expected
+[Ad,De,Hi,Kye,Orlan]
+[Aida]
+[Bobby]
+[Carmen,Fred]
+[Ein]
+[Fesdwe]
+[Grad]
+[Wolfeschlegelstein,Daniel]

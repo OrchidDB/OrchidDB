@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependListOfStrings.ac2b0c8145a0","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_prepend(a.usedNames, a.fName)
+--- expected
+[Alice,Aida]
+[Bob,Bobby]
+[Carol,Carmen,Fred]
+[Dan,Wolfeschlegelstein,Daniel]
+[Elizabeth,Ein]
+[Farooq,Fesdwe]
+[Greg,Grad]
+[Hubert Blaine Wolfeschlegelsteinhausenbergerdorff,Ad,De,Hi,Kye,Orlan]

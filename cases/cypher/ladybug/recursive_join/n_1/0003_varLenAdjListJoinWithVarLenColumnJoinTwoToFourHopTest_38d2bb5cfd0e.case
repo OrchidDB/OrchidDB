@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_1.varLenAdjListJoinWithVarLenColumnJoinTwoToFourHopTest.38d2bb5cfd0e","language":"cypher","ordered":true,"source":"recursive_join/n_1.test","source_case":"VarLengthExtendN1Tests","source_log":"varLenAdjListJoinWithVarLenColumnJoinTwoToFourHopTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:meets*2..3]->(c:person) RETURN COUNT(*)
+--- expected
+13

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ConcatMultipleStrings.1b46636421c5","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ConcatMultipleStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person) return concat("name: ", p.fName, ' ,age: ', "5")
+--- expected
+name: Alice ,age: 5
+name: Bob ,age: 5
+name: Carol ,age: 5
+name: Dan ,age: 5
+name: Elizabeth ,age: 5
+name: Farooq ,age: 5
+name: Greg ,age: 5
+name: Hubert Blaine Wolfeschlegelsteinhausenbergerdorff ,age: 5

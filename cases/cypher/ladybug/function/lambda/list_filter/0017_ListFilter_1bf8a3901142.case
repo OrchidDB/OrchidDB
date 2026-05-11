@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_filter.ListFilter.1bf8a3901142","language":"cypher","ordered":true,"source":"function/lambda/list_filter.test","source_case":"ListFilter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH CASE WHEN a.age <= 30 THEN a.workedHours ELSE null END as workedHours RETURN LIST_FILTER(workedHours, x->x < 9)
+--- expected
+[8]
+[1]
+[2]
+[3,4,5,6,7]

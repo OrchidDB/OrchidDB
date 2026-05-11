@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.SuffixStr.800fce8576a5","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"SuffixStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN suffix(o.name, "Work")
+--- expected
+False
+True
+True

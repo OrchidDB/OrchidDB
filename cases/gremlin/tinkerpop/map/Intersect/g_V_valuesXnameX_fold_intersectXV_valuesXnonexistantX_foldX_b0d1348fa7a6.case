@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Intersect.g_V_valuesXnameX_fold_intersectXV_valuesXnonexistantX_foldX.b0d1348fa7a6","language":"gremlin","ordered":false,"source":"map/Intersect.feature","source_case":"g_V_valuesXnameX_fold_intersectXV_valuesXnonexistantX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").fold().intersect(__.V().values("nonexistant").fold())
+--- expected
+s[]

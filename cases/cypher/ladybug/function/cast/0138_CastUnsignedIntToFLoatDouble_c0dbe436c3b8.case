@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUnsignedIntToFLoatDouble.c0dbe436c3b8","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastUnsignedIntToFLoatDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+Return to_float(to_uint64(1)), to_double(to_uint64(2)), to_float(to_uint32(3)), to_double(to_uint32(4)), to_float(to_uint16(5)), to_double(to_uint16(6)), to_float(to_uint8(7)), to_double(to_uint8(8)), to_float(to_uint128(9)), to_double(to_uint128(10))
+--- expected
+1.000000|2.000000|3.000000|4.000000|5.000000|6.000000|7.000000|8.000000|9.000000|10.000000

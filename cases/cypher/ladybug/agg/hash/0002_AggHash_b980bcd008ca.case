@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.AggHash.b980bcd008ca","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:knows]->(b:person) WITH a.fName AS n, COLLECT(b) AS b_list RETURN n, size(b_list)
+--- expected
+Alice|3
+Bob|3
+Carol|3
+Dan|3
+Elizabeth|2
+Farooq|
+Greg|
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|

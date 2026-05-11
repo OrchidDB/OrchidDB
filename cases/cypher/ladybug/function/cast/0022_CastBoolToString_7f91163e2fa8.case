@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastBoolToString.7f91163e2fa8","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastBoolToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.isStudent, "string")
+--- expected
+True
+True
+False
+False
+False
+True
+False
+False

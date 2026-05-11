@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.DurationAlias.e87453b2f735","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"DurationAlias","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN DURATION('3 HOURS 22 MINUTES 66 seconds')
+--- expected
+03:23:06

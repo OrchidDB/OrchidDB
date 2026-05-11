@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_query_part.OpenWedgeKnowsTest3.5bf3184fa018","language":"cypher","ordered":true,"source":"match/multi_query_part.test","source_case":"MatchMultiQuery","source_log":"OpenWedgeKnowsTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:person)<-[e1:knows]-(a:person) WITH a AS k MATCH (k)-[e2:knows]->(c:person),(k)-[e3:knows]->(d:person) RETURN COUNT(*)
+--- expected
+116

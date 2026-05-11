@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListToStringUInt128.84b688b09b23","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListToStringUInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TO_STRING('--', [CAST(5, 'UINT128'), CAST(7, 'UINT128'), CAST(10, 'UINT128')])
+--- expected
+5--7--10

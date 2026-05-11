@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidMapToMap.027a2f97c9f7","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidMapToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{2147483648=170141183460469231731687303715884105728}", "MAP(INT128, UINT128)"), "MAP(INT128, INT128)")
+--- expected
+Overflow exception: Value 170141183460469231731687303715884105728 is not within INT128 range.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strstartwith.7e3fefe41909","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strstartwith","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN starts_with('😃🧘🏻‍♂️🌍🌦️🍞🚗', '😃🧘🏻‍')
+--- expected
+True

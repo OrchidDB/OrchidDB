@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.graph.any.QueryDynamicProperties.34a457e99670","language":"cypher","ordered":true,"source":"graph/any.test","source_case":"CreateAnyGraphAndQuery","source_log":"QueryDynamicProperties","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[:LivesIn]->(c:City) RETURN u.name, c.name
+--- expected
+"Alice"|"New York"

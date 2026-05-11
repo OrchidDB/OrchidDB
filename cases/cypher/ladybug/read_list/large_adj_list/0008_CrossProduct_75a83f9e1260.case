@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.large_adj_list.CrossProduct.75a83f9e1260","language":"cypher","ordered":true,"source":"read_list/large_adj_list.test","source_case":"LargeAdjListTest","source_log":"CrossProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH AVG(a.ID) AS s MATCH (b:person) WHERE s > b.ID RETURN COUNT(*)
+--- expected
+3000

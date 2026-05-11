@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison3.Scenario2.e61aaa8c2348","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison3.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) WHERE 1 < n.num AND n.num <= 3 RETURN n.num
+--- expected
+2
+3

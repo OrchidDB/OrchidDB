@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.copy.copy_large_list.ForwardCheck.44e051ee45b3","language":"cypher","ordered":true,"source":"copy/copy_large_list.test","source_case":"CopyLargeList","source_log":"ForwardCheck","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p0:person)<-[r:knows]-(p1:person) WHERE p0.ID = 0 RETURN p0.ID, p1.ID
+--- expected
+0|0

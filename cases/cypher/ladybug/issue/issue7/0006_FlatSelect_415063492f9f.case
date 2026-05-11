@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue7.FlatSelect.415063492f9f","language":"cypher","ordered":true,"source":"issue/issue7.test","source_case":"FlatSelect","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person) WITH COUNT { MATCH (p1)<-[:friend]-(p2:person) } as indegree, p1 as p1 WHERE p1.id IN ["cf5083c1-730c-4dad-be97-18f65d657420", "7f72f9fb-a757-405b-98ca-da077d01beba"] RETURN p1.id as id, p1.name as name, indegree
+--- expected
+cf5083c1-730c-4dad-be97-18f65d657420|Alice|0
+7f72f9fb-a757-405b-98ca-da077d01beba|bob|1

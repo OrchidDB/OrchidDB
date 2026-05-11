@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.FloatTest.4728d7fdcea0","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"FloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.doubleColumn = 68.73718401556897 RETURN row.dateColumn
+--- expected
+2055-08-09

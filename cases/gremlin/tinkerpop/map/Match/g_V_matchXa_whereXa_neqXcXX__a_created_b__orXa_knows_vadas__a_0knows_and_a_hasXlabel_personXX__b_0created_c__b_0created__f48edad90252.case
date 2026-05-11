@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_whereXa_neqXcXX__a_created_b__orXa_knows_vadas__a_0knows_and_a_hasXlabel_personXX__b_0created_c__b_0created_.f48edad90252","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_whereXa_neqXcXX__a_created_b__orXa_knows_vadas__a_0knows_and_a_hasXlabel_personXX__b_0created_c__b_0created_count_isXgtX1XXX_selectXa_b_cX_byXidX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.where("a", P.neq("c")),
+__.as("a").out("created").as("b"),
+__.or(__.as("a").out("knows").has("name", "vadas"),
+__.as("a").in("knows").and().as("a").has(T.label, "person")),
+__.as("b").in("created").as("c"),
+__.as("b").in("created").count().is(P.gt(1))).select("a", "b", "c").by(T.id)
+--- expected
+m[{"a":"v[marko].id","b":"v[lop].id","c":"v[josh].id"}]
+m[{"a":"v[marko].id","b":"v[lop].id","c":"v[peter].id"}]
+m[{"a":"v[josh].id","b":"v[lop].id","c":"v[marko].id"}]
+m[{"a":"v[josh].id","b":"v[lop].id","c":"v[peter].id"}]

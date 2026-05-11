@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideUINTANDINT.5868895dbb1b","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideUINTANDINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(300, "INT16") / CAST(6, "UINT8")
+--- expected
+50

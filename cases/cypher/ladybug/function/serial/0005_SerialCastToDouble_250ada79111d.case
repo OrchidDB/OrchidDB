@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.SerialCastToDouble.250ada79111d","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"SerialCastToDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN to_double(a.ID)
+--- expected
+0.000000
+1.000000
+2.000000
+3.000000
+4.000000
+5.000000
+6.000000
+7.000000

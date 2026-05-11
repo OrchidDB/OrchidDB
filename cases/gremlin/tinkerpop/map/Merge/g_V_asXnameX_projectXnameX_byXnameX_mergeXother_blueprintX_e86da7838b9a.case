@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Merge.g_V_asXnameX_projectXnameX_byXnameX_mergeXother_blueprintX.e86da7838b9a","language":"gremlin","ordered":false,"source":"map/Merge.feature","source_case":"g_V_asXnameX_projectXnameX_byXnameX_mergeXother_blueprintX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("name").project("name").by("name").merge(["other":"blueprint"])
+--- expected
+m[{"name":"marko", "other":"blueprint"}]
+m[{"name":"lop", "other":"blueprint"}]
+m[{"name":"vadas", "other":"blueprint"}]
+m[{"name":"josh", "other":"blueprint"}]
+m[{"name":"peter", "other":"blueprint"}]
+m[{"name":"ripple", "other":"blueprint"}]

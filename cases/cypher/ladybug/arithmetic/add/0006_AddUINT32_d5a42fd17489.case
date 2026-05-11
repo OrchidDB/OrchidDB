@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddUINT32.d5a42fd17489","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddUINT32","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(4294967100, "UINT32") + CAST(20000, "UINT32")
+--- expected
+Overflow exception: Value 4294967100 + 20000 is not within UINT32 range.

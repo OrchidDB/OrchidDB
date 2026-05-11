@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.large_adj_list.CrossProduct1.002be01ef7ec","language":"cypher","ordered":true,"source":"read_list/large_adj_list.test","source_case":"LargeAdjListTest","source_log":"CrossProduct1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) RETURN COUNT(*)
+--- expected
+36000000

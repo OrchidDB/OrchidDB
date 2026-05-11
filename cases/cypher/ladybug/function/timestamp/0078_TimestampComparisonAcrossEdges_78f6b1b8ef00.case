@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampComparisonAcrossEdges.78f6b1b8ef00","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampComparisonAcrossEdges","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:knows]-(b:person)-[e2:knows]->(c:person) WHERE e1.meetTime = e2.meetTime AND id(a) <> id(c) RETURN COUNT(*)
+--- expected
+2

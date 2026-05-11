@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToList.42583fc65411","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("      [   [   1   ,3,    423   ,   124,43242     ]  ,   [   432    ]]", "INT64[][]")
+--- expected
+[[1,3,423,124,43242],[432]]

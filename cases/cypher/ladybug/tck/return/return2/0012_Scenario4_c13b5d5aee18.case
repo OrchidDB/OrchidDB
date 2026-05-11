@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return2.Scenario4.c13b5d5aee18","language":"cypher","ordered":true,"source":"tck/return/return2.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[r]->() RETURN r.num
+--- expected
+1

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind_list_node.UnwindListOfNodes.1039d163578c","language":"cypher","ordered":true,"source":"unwind/unwind_list_node.test","source_case":"UnwindListOfNodes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:PPT)-[:PPHT]->(t:PPI) RETURN a.type, t.di, t.name
+--- expected
+p_install|ABFsUni|Alice

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Sum.g_injectXnull_10_5_nullX_sum.b03f8a409f62","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_injectXnull_10_5_nullX_sum","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(null, 10, 5, null).sum()
+--- expected
+d[15].i

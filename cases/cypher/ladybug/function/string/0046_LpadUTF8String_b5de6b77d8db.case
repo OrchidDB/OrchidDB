@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LpadUTF8String.b5de6b77d8db","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LpadUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN lpad(m.name, 25, "âó")
+--- expected
+âóâóâóâSóló cón tu párejâ
+âóâThe 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie
+âóâóâóâóâóâóâóâóâóâóâRoma

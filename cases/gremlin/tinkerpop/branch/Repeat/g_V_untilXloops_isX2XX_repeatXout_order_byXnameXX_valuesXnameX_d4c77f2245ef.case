@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_untilXloops_isX2XX_repeatXout_order_byXnameXX_valuesXnameX.d4c77f2245ef","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_untilXloops_isX2XX_repeatXout_order_byXnameXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().until(__.loops().is(2)).repeat(__.out().order().by("name")).values("name")
+--- expected
+lop
+ripple

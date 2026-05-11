@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.relation.ReadVarlengthRelPropertyTest.892fbc15ef05","language":"cypher","ordered":true,"source":"exceptions/relation.test","source_case":"ReadVarlengthRelPropertyTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE e._id > 1 RETURN COUNT(*)
+--- expected
+Binder exception: _id is reserved for system usage. External access is not allowed.

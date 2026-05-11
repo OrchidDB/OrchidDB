@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListConcatListOfInts.172d658504cd","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListConcatListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_concat(a.workedHours, [a.age, a.gender])
+--- expected
+[10,5,35,1]
+[12,8,30,2]
+[4,5,45,1]
+[1,9,20,2]
+[2,20,1]
+[3,4,5,6,7,25,2]
+[1,40,2]
+[10,11,12,3,4,5,6,7,83,2]

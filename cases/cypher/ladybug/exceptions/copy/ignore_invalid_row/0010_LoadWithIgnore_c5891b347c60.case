@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.c5891b347c60","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"ParallelSkipInvalidNodeTableRowsCastingError","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.ID, p.gender
+--- expected
+0|4
+3|5
+4|1
+6|8
+7|1

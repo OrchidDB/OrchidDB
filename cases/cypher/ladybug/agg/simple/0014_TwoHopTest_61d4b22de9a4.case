@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.TwoHopTest.61d4b22de9a4","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"TwoHopTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN SUM(b.age), MIN(b.ID), AVG(b.eyeSight)
+--- expected
+455|0|4.935714

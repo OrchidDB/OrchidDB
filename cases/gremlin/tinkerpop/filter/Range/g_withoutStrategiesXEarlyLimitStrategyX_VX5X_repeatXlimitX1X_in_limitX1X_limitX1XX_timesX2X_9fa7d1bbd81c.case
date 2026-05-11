@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Range.g_withoutStrategiesXEarlyLimitStrategyX_VX5X_repeatXlimitX1X_in_limitX1X_limitX1XX_timesX2X.9fa7d1bbd81c","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_withoutStrategiesXEarlyLimitStrategyX_VX5X_repeatXlimitX1X_in_limitX1X_limitX1XX_timesX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(EarlyLimitStrategy).V(vid5).repeat(limit(1).in().limit(1).limit(1)).times(2)
+--- expected
+v[marko]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractList.0990da650cda","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.usedNames[1]
+--- expected
+Aida
+Bobby
+Carmen
+Wolfeschlegelstein
+Ein
+Fesdwe
+Grad
+Ad

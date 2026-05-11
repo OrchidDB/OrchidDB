@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.SelfLoop.4b621e49e2e6","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"SelfLoop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*2..2 (r, n | WHERE n.fName = 'Alice')]->(b:person) WITH b.fName AS x LIMIT 1 RETURN COUNT(*)
+--- expected
+1

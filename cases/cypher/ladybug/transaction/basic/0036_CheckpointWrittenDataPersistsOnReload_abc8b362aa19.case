@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.basic.CheckpointWrittenDataPersistsOnReload.abc8b362aa19","language":"cypher","ordered":true,"source":"transaction/basic.test","source_case":"CheckpointWrittenDataPersistsOnReload","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:ct_nodes) WHERE n.id = 2 RETURN n.val
+--- expected
+b

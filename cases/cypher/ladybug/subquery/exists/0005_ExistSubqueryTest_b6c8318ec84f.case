@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.exists.ExistSubqueryTest.b6c8318ec84f","language":"cypher","ordered":true,"source":"subquery/exists.test","source_case":"ExistsSubquery","source_log":"ExistSubqueryTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 3 RETURN EXISTS { MATCH (b)-[:knows]->(c) }
+--- expected
+True
+True

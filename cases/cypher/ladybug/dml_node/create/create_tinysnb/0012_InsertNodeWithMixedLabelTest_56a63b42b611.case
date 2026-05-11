@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertNodeWithMixedLabelTest.56a63b42b611","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertNodeWithMixedLabelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN a.ID, a.orgCode
+--- expected
+1|325
+33|144
+4|934
+6|824

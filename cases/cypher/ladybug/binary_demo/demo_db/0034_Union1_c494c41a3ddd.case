@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Union1.c494c41a3ddd","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Union1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u1:User)-[:LivesIn]->(c1:City) WHERE c1.name = "Waterloo" RETURN u1.name UNION ALL MATCH (u2:User)-[:LivesIn]->(c2:City) WHERE c2.name = "Kitchener" RETURN u2.name
+--- expected
+Karissa
+Adam
+Zhang

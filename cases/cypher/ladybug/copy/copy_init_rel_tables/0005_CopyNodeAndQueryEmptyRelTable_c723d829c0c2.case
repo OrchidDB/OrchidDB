@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_init_rel_tables.CopyNodeAndQueryEmptyRelTable.c723d829c0c2","language":"cypher","ordered":true,"source":"copy/copy_init_rel_tables.test","source_case":"CopyNodeAndQueryEmptyRelTable","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[:knows]->(:person) return count(*)
+--- expected
+0

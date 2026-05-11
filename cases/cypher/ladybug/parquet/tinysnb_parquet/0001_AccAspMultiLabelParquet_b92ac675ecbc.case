@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.AccAspMultiLabelParquet.b92ac675ecbc","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"AccAspMultiLabelParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows|:studyAt|:workAt]->(b:person:organisation) WHERE a.age > 35 RETURN b.fName, b.name
+--- expected
+Alice|
+Bob|
+Dan|
+|CsWork

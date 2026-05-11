@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Combine.g_injectXa_null_bX_combineXa_cX.e076e4ab3b50","language":"gremlin","ordered":false,"source":"map/Combine.feature","source_case":"g_injectXa_null_bX_combineXa_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a",null,"b"]).combine(["a","c"])
+--- expected
+l[a,null,b,a,c]

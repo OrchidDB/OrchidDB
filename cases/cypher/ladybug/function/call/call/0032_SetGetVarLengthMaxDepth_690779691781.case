@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.call.call.SetGetVarLengthMaxDepth.690779691781","language":"cypher","ordered":true,"source":"function/call/call.test","source_case":"CallSetGetConfig","source_log":"SetGetVarLengthMaxDepth","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows*1..28]->(b:person) RETURN COUNT(*)
+--- expected
+Binder exception: Upper bound of rel  exceeds maximum: 10.

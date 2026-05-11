@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List11.Scenario2.2bfb3a7fca5d","language":"cypher","ordered":true,"source":"tck/expressions/list/List11.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(-10, 10, 3) AS list
+--- expected
+[-10,-7,-4,-1,2,5,8]

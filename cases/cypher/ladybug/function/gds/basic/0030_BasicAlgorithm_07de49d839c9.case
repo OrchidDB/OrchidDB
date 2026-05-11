@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.gds.basic.BasicAlgorithm.07de49d839c9","language":"cypher","ordered":true,"source":"function/gds/basic.test","source_case":"BasicAlgorithm","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows* 3..3]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+--- expected
+27

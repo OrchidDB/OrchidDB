@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_label.MultiLabelTwoHopTest2.72c081f372de","language":"cypher","ordered":true,"source":"filter/multi_label.test","source_case":"FilterMultiLabel","source_log":"MultiLabelTwoHopTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:knows|:meets]-(b:person)-[e2:knows|:meets]->(c:person) WHERE b.ID = 0 AND ID(e1)<>ID(e2) RETURN COUNT(*)
+--- expected
+12

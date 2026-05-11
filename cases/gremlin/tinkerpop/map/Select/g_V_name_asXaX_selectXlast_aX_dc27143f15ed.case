@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_name_asXaX_selectXlast_aX.dc27143f15ed","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_name_asXaX_selectXlast_aX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").as("a").select(Pop.last, "a")
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

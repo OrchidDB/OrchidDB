@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.dupe_return.ReturnDupeColumnNames.ea3f6047b86d","language":"cypher","ordered":true,"source":"projection/dupe_return.test","source_case":"ReturnDupeColumnNames","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a.num, a.num
+--- expected
+1|1

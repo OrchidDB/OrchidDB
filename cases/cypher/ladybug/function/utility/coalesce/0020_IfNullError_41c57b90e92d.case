@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullError.41c57b90e92d","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"IfNullError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ifNULL
+--- expected
+Binder exception: Variable ifNULL is not in scope.

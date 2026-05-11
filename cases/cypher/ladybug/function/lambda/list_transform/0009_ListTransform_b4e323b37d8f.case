@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.b4e323b37d8f","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TRANSFORM([5,28,92], 1)
+--- expected
+Binder exception: The second argument of LIST_TRANSFORM should be a lambda expression but got LITERAL.

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_group_by_byXout_label_tailX10X_foldX_selectXvaluesX_unfold_orderXlocalX.7c7511628e54","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_group_by_byXout_label_tailX10X_foldX_selectXvaluesX_unfold_orderXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by().by(__.out().label().tail(10).fold()).select(Column.values).unfold().order(Scope.local)
+--- expected
+l[person,person,software]
+l[]
+l[]
+l[software,software]
+l[]
+l[software]

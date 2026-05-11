@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Unwind2.3019495bf583","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Unwind2","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [["Amy"], ["Bob", "Carol"]] AS x RETURN x
+--- expected
+[Amy]
+[Bob,Carol]

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind12.2363f747ee9d","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind12","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,2,3,4] as val WITH val ORDER BY val SKIP 2 RETURN val
+--- expected
+3
+4

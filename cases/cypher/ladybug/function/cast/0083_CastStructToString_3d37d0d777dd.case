@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastStructToString.3d37d0d777dd","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastStructToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN cast(o.state, "string")
+--- expected
+{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}
+{revenue: 152, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}}
+{revenue: 558, location: ['very long city name','new york'], stock: {price: [22], volume: 99}}

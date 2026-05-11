@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(long-string-pk-tests)","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_long_string_parquet.LongStringPKTestParquet.670e0bd1d560","language":"cypher","ordered":true,"source":"copy/copy_pk_long_string_parquet.test","source_case":"CopyPLongStringPKParquet","source_log":"LongStringPKTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person)-[e:Knows]->(b:Person) WHERE a.name = "AAAAAAAAAAAAAAAAAAAA" RETURN COUNT(*)
+--- expected
+1

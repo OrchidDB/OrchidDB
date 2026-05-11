@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_V_unionXconstantX1X_constantX2X_constantX3XX.67371f3074b3","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_V_unionXconstantX1X_constantX2X_constantX3XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid2).union(constant(1i), constant(2i), constant(3i))
+--- expected
+d[1].i
+d[2].i
+d[3].i

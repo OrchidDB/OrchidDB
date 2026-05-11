@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_1.meetsOneToTwoHopWithFilterTest.0a2e141c33c9","language":"cypher","ordered":true,"source":"recursive_join/n_1.test","source_case":"VarLengthExtendN1Tests","source_log":"meetsOneToTwoHopWithFilterTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:meets*1..2 (r, n | {r.location, r.times}, {n.fName})]->(b:person) WHERE a.ID = 3 RETURN properties(nodes(p), "ID"), properties(nodes(p), "fName"), rels(p)
+--- expected
+[3,,3]|[Carol,Elizabeth,Carol]|[(0:2)-{_LABEL: meets, _ID: 9:2, location: [3.650000,8.440000], times: 3}->(0:4),(0:4)-{_LABEL: meets, _ID: 9:3, location: [2.110000,3.100000], times: 7}->(0:2)]
+[3,7]|[Carol,Elizabeth]|[(0:2)-{_LABEL: meets, _ID: 9:2, location: [3.650000,8.440000], times: 3}->(0:4)]

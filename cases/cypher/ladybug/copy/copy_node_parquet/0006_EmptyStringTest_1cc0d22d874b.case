@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.EmptyStringTest.1cc0d22d874b","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"EmptyStringTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.id = 49992 RETURN row.*
+--- expected
+49992|50|31.582059|False|2056-05-02||[62,24,94]|[LpQO8OT3x45a]|[[268,281,166],[144,16,126,208,298],[22,287]]|{ID: 936, name: sGPSafxMAhKiP}

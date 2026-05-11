@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashAggUINT32Key.be1dc79f925e","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashAggUINT32Key","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN s.temperature, COUNT(s.year)
+--- expected
+32800|1
+1|1
+20|1

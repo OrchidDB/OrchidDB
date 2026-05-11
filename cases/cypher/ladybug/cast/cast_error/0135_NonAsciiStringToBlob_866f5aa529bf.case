@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.NonAsciiStringToBlob.866f5aa529bf","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"NonAsciiStringToBlob","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN BLOB('😀')
+--- expected
+Conversion exception: Invalid byte encountered in STRING -> BLOB conversion. All non-ascii characters must be escaped with hex codes (e.g. \xAA)

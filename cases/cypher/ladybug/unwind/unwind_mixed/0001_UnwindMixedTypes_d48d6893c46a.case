@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind_mixed.UnwindMixedTypes.d48d6893c46a","language":"cypher","ordered":true,"source":"unwind/unwind_mixed.test","source_case":"UnwindMixedTypes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1, 'hello', true, 3.14, null] AS x RETURN x
+--- expected
+1
+hello
+True
+3.140000

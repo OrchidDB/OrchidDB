@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_V_chooseXlabel_is_person__unionX__out_lang__out_nameX__in_labelX_groupCount.8246dacb74dc","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_V_chooseXlabel_is_person__unionX__out_lang__out_nameX__in_labelX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.label().is("person"), __.union(__.out().values("lang"), __.out().values("name")), __.in().label()).groupCount()
+--- expected
+m[{"java":"d[4].l","ripple":"d[1].l","person":"d[4].l","vadas":"d[1].l","josh":"d[1].l","lop":"d[3].l"}]

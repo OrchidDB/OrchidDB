@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion2.Scenario5.cc3c98e3deb0","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion2.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH ['2', '2.9', 'foo'] AS numbers RETURN [n IN numbers | toInteger(n)] AS int_numbers
+--- expected
+[2, 2, null]

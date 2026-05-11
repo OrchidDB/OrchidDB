@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.XorExecTest1.940ee2242df2","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"XorExecTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.isStudent XOR a.isWorker ORDER BY a.ID
+--- expected
+0|True
+10|True
+2|True
+3|True
+5|True
+7|True
+8|True
+9|False

@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllThreeHopsTest.7f3c4024926c","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"RelUnion","source_log":"UnionAllThreeHopsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r:knows]->(b:person) RETURN r.notes
+--- expected
+1
+1
+10
+10
+15
+2
+2020-10-10
+4
+4
+8
+nice weather
+cool stuff found
+matthew perry
+happy new year

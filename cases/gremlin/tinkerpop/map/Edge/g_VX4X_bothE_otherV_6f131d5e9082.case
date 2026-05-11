@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Edge.g_VX4X_bothE_otherV.6f131d5e9082","language":"gremlin","ordered":false,"source":"map/Edge.feature","source_case":"g_VX4X_bothE_otherV","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid4).bothE().otherV()
+--- expected
+v[marko]
+v[ripple]
+v[lop]

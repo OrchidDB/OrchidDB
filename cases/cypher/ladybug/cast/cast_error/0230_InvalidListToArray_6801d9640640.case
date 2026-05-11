@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidListToArray.6801d9640640","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([[1000000000000000000]], "INT64[1]")
+--- expected
+Conversion exception: Unsupported casting function from INT64[] to INT64.

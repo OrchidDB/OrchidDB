@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractLiteralListOfBools.09f0eccb3dea","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractLiteralListOfBools","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([true, false, true, false], a.gender)
+--- expected
+True
+False
+True
+False
+True
+False
+False
+False

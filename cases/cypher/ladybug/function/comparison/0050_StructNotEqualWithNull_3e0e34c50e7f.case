@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.StructNotEqualWithNull.3e0e34c50e7f","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"StructNotEqualWithNull","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {a: 2, b: null} <> {a: 2, b: null}
+--- expected
+False

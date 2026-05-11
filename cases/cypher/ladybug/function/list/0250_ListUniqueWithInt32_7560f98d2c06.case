@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithInt32.7560f98d2c06","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithInt32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) WHERE m.name='Roma' RETURN list_unique([NULL, to_int32(m.length), to_int32(m.length), to_int32(3)])
+--- expected
+2

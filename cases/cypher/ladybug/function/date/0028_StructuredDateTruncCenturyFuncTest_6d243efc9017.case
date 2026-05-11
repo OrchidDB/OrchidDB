@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateTruncCenturyFuncTest.6d243efc9017","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateTruncCenturyFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_trunc("cenTury", p.birthdate)
+--- expected
+1900-01-01
+1900-01-01
+1900-01-01
+1900-01-01
+1900-01-01
+1900-01-01
+1900-01-01
+1900-01-01

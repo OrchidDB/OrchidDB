@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match1.Scenario7.838d58c67246","language":"cypher","ordered":true,"source":"tck/match/match1.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[r]->() MATCH (r) RETURN r
+--- expected
+Binder exception: Cannot bind r as node pattern.

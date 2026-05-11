@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_VX4X_both.24a8fb0c7f6f","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_VX4X_both","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid4).both()
+--- expected
+v[marko]
+v[lop]
+v[ripple]

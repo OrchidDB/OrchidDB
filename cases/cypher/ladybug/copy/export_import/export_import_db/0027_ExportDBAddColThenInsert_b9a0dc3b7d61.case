@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import.export_import_db.ExportDBAddColThenInsert.b9a0dc3b7d61","language":"cypher","ordered":true,"source":"copy/export_import/export_import_db.test","source_case":"ExportDBAddColThenInsert","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.id, t.name, t.tag ORDER BY t.id
+--- expected
+1|Original|none
+2|New|custom

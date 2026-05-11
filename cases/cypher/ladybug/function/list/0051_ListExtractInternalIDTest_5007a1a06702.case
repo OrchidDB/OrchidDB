@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractInternalIDTest.5007a1a06702","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractInternalIDTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([id(a)], 1)
+--- expected
+0:0
+0:1
+0:2
+0:3
+0:4
+0:5
+0:6
+0:7

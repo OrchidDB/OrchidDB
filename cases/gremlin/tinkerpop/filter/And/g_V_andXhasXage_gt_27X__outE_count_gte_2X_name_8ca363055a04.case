@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.And.g_V_andXhasXage_gt_27X__outE_count_gte_2X_name.8ca363055a04","language":"gremlin","ordered":false,"source":"filter/And.feature","source_case":"g_V_andXhasXage_gt_27X__outE_count_gte_2X_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().and(__.has("age", P.gt(27)), __.outE().count().is(P.gte(2))).values("name")
+--- expected
+marko
+josh

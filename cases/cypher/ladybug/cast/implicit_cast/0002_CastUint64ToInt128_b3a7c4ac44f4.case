@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.CastUint64ToInt128.b3a7c4ac44f4","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"CastUint64ToInt128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int128(to_uint64(12))
+--- expected
+12

@@ -1,0 +1,25 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Orderability.g_inject_order_byXdescX.89e6fa88ccc3","language":"gremlin","ordered":true,"source":"semantics/Orderability.feature","source_case":"g_inject_order_byXdescX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("zzz","foo",UUID("6100808b-62f9-42b7-957e-ed66c30f40d1"),["a","b","c","d"],1,datetime("2023-08-01T00:00:00Z"),["a","b","c"],[a:"a",b:"b"],null,2.0d,datetime("2023-01-01T00:00:00Z"),{"x","y","z"},[a:"a",b:false,c:"c"],"bar",UUID("5100808b-62f9-42b7-957e-ed66c30f40d1"),true,false,Infinity,NaN,-Infinity).order().by(desc)
+--- expected
+m[{"a":"a", "b":"b"}]
+m[{"a":"a", "b":false, "c":"c"}]
+l[a,b,c,d]
+l[a,b,c]
+s[x,y,z]
+uuid[6100808b-62f9-42b7-957e-ed66c30f40d1]
+uuid[5100808b-62f9-42b7-957e-ed66c30f40d1]
+zzz
+foo
+bar
+dt[2023-08-01T00:00:00Z]
+dt[2023-01-01T00:00:00Z]
+d[NaN]
+d[Infinity]
+d[2.0].d
+d[1].i
+d[-Infinity]
+true
+false
+null

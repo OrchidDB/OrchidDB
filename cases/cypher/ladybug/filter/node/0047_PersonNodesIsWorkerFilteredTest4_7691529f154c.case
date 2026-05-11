@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.PersonNodesIsWorkerFilteredTest4.7691529f154c","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"PersonNodesIsWorkerFilteredTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE NOT a.isWorker RETURN COUNT(*)
+--- expected
+4

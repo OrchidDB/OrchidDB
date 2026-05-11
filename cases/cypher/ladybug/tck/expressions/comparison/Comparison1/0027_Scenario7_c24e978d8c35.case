@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison1.Scenario7.c24e978d8c35","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison1.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {k: 1, l: null} = {k: null, l: 1} AS result
+--- expected
+False

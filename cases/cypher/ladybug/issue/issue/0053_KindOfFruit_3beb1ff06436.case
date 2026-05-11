@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.KindOfFruit.3beb1ff06436","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"KindOfFruit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t1:T)-[:KIND_OF*]->(t2:T), (t1)-[:LIKES]->(f1:Fruit), (t2)-[:LIKES]->(f2:Fruit) WHERE f1.name = "Apple" and f2.name = "Banana" OR f1.name = "Banana" and f2.name = "Apple" return t1.name as t
+--- expected
+T1

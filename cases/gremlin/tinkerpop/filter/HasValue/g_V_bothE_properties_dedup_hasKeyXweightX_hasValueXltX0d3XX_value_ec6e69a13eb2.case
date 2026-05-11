@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasValue.g_V_bothE_properties_dedup_hasKeyXweightX_hasValueXltX0d3XX_value.ec6e69a13eb2","language":"gremlin","ordered":false,"source":"filter/HasValue.feature","source_case":"g_V_bothE_properties_dedup_hasKeyXweightX_hasValueXltX0d3XX_value","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().bothE().properties().dedup().hasKey("weight").hasValue(P.lt(0.3)).value()
+--- expected
+d[0.2].d

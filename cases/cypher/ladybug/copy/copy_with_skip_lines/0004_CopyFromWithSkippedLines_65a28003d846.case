@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_with_skip_lines.CopyFromWithSkippedLines.65a28003d846","language":"cypher","ordered":true,"source":"copy/copy_with_skip_lines.test","source_case":"CopyFromWithSkippedLines","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.*
+--- expected
+5|Dan|2|False|True|20|4.800000|1950-07-23|2031-11-30 12:25:30|10 years 5 months 13:00:00.000024|[1,9]|[Wolfeschlegelstein,Daniel]|[[7,4],[8,8],[9]]|[76,88,99,89]|1.300000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14
+7|Elizabeth|1|False|True|20|4.700000|1980-10-26|1976-12-23 11:21:42|48:24:11|[2]|[Ein]|[[6],[7],[8]]|[96,59,65,88]|1.463000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15

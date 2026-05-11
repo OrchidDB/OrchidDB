@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.filter.serial.SerialEqualTo.a51a54ad46b4","language":"cypher","ordered":true,"source":"filter/serial.test","source_case":"SerialComparison","source_log":"SerialEqualTo","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID = 4 RETURN a
+--- expected
+{_ID: 0:4, _LABEL: person, ID: 4, fName: Elizabeth, gender: 1, isStudent: False, isWorker: True, age: 20, eyeSight: 4.700000, birthdate: 1980-10-26, registerTime: 1976-12-23 11:21:42, lastJobDuration: 48:24:11, workedHours: [2], usedNames: [Ein], courseScoresPerTerm: [[6],[7],[8]], grades: [96,59,65,88], height: 1.463000}

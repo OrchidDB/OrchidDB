@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV snap/twitter/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_snap_twitter_csv.CopySNAPTwitterCSV.75b09262035c","language":"cypher","ordered":true,"source":"copy/copy_snap_twitter_csv.test","source_case":"CopySNAPTwitterCSV","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:account) RETURN COUNT(*)
+--- expected
+81306

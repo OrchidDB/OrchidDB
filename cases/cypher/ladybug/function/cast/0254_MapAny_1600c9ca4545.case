@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.MapAny.1600c9ca4545","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"NestTypeImplicitCast","source_log":"MapAny","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([NULL, NULL], [1, 2])
+--- expected
+Runtime exception: Null value key is not allowed in map.

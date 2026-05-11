@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_hasXnoX_groupCount.044400bcc721","language":"gremlin","ordered":true,"source":"sideEffect/GroupCount.feature","source_case":"g_V_hasXnoX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("no").groupCount()
+--- expected
+m[{}]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.Int64ToTimestampFuncTest.234657806dee","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"Int64ToTimestampFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_timestamp(p.age)
+--- expected
+1970-01-01 00:00:35
+1970-01-01 00:00:30
+1970-01-01 00:00:45
+1970-01-01 00:00:20
+1970-01-01 00:00:20
+1970-01-01 00:00:25
+1970-01-01 00:00:40
+1970-01-01 00:01:23

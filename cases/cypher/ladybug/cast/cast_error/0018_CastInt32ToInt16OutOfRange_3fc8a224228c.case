@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt32ToInt16OutOfRange.3fc8a224228c","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt32ToInt16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int16(to_int32("-32770"))
+--- expected
+Overflow exception: Value -32770 is not within INT16 range

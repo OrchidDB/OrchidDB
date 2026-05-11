@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Call.g_callXsearch_mapX_withXstring_VertexX.aab4c4729b67","language":"gremlin","ordered":false,"source":"map/Call.feature","source_case":"g_callXsearch_mapX_withXstring_VertexX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.call("tinker.search", xx1).with("type", "Vertex").element()
+--- expected
+v[marko]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_filter.ListFilter.f0b9098b9e9c","language":"cypher","ordered":true,"source":"function/lambda/list_filter.test","source_case":"ListFilter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_FILTER([null, 5, 7, 3, null, 10], x->x>=5)
+--- expected
+[5,7,10]

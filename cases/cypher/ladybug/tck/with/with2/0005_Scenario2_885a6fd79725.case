@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with2.Scenario2.885a6fd79725","language":"cypher","ordered":true,"source":"tck/with/with2.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {name: {name2: 'baz'}} AS nestedMap RETURN nestedMap.name.name2
+--- expected
+baz

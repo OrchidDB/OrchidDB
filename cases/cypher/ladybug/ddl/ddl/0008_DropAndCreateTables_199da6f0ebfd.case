@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.DropAndCreateTables.199da6f0ebfd","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"DropAndCreateTables","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:movies) RETURN count(*)
+--- expected
+Binder exception: Table movies does not exist.

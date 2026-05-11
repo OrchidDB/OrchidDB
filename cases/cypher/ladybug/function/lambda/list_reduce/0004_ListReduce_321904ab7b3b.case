@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_reduce.ListReduce.321904ab7b3b","language":"cypher","ordered":true,"source":"function/lambda/list_reduce.test","source_case":"ListReduce","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_REDUCE([5,28,92], (x, y) -> x + y)
+--- expected
+125

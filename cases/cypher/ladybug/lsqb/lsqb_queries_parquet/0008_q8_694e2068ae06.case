@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(lsqb-sf01)","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries_parquet.q8.694e2068ae06","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries_parquet.test","source_case":"LSQBTestParquet","source_log":"q8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (tag1:Tag)<-[:Post_hasTag_Tag|:Comment_hasTag_Tag]-(message:Post:Comment)<-[:Comment_replyOf_Post|:Comment_replyOf_Comment]-(comment:Comment)-[:Comment_hasTag_Tag]->(tag2:Tag) WHERE NOT EXISTS {MATCH (comment)-[:Comment_hasTag_Tag]->(tag1)} AND id(tag1) <> id(tag2) RETURN count(*) AS count
+--- expected
+537142

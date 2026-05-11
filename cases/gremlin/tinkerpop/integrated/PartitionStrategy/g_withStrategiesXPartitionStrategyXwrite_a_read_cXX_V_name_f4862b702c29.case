@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"empty","expected_kind":"count","id":"gremlin.tinkerpop.integrated.PartitionStrategy.g_withStrategiesXPartitionStrategyXwrite_a_read_cXX_V_name.f4862b702c29","language":"gremlin","ordered":false,"source":"integrated/PartitionStrategy.feature","source_case":"g_withStrategiesXPartitionStrategyXwrite_a_read_cXX_V_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new PartitionStrategy(partitionKey: "_partition", writePartition: "a", readPartitions: ["c"])).V().values("name")
+--- graph_initializer
+g.addV("person").property("_partition","a").property("name","alice").
+  addV("person").property("_partition","b").property("name","bob")
+--- expected
+0

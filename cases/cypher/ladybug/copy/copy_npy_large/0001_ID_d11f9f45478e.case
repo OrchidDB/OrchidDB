@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"NPY npy-20k","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_large.ID.d11f9f45478e","language":"cypher","ordered":true,"source":"copy/copy_npy_large.test","source_case":"CopyLargeNpyTest","source_log":"ID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.id
+--- expected
+<FILE>:copy_npy_large_id_answer.txt

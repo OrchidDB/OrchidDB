@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck-likes","expected_kind":"rows","id":"cypher.ladybug.tck.match.match5.Scenario20.775b589e1ef8","language":"cypher","ordered":true,"source":"tck/match/match5.test","source_case":"Scenario1_24","source_log":"Scenario20","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) MATCH (a)-[:LIKES]->()-[:LIKES*0]->(c) RETURN c.name
+--- expected
+n00
+n01

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Count.g_V_whereXinXkknowsX_outXcreatedX_count_is_0XX_name.e9dcbe7c6762","language":"gremlin","ordered":false,"source":"map/Count.feature","source_case":"g_V_whereXinXkknowsX_outXcreatedX_count_is_0XX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.in("knows").out("created").count().is(0)).values("name")
+--- expected
+marko
+lop
+ripple
+peter

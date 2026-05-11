@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2942.f92bfbc5dd49","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2942","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (v:V)-[e:childof*]->(v1:V {id: "v1"}) OPTIONAL MATCH (r)-[:relatedto]->(v) RETURN r.id, v.id
+--- expected
+r12|v12
+|v11
+|v111

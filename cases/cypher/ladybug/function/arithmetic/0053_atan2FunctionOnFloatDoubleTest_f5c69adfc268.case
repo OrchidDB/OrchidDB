@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.atan2FunctionOnFloatDoubleTest.f5c69adfc268","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"atan2FunctionOnFloatDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN atan2(a.height, a.eyeSight)
+--- expected
+0.191733
+0.197396
+0.263712
+0.264488
+0.301770
+0.315616
+0.323749
+0.333286

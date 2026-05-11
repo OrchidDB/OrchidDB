@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_rels_from_many_to_one_table.deleteRelsFromManyToOneTableRollbackRecovery.7c967c6600d2","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_rels_from_many_to_one_table.test","source_case":"deleteRelsFromManyToOneTableRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[t:teaches]->(:person) return t.length
+--- expected
+11
+21
+22
+31
+32
+33

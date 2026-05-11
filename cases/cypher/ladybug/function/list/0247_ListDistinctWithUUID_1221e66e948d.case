@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithUUID.1221e66e948d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithUUID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_distinct([p.u, p.u, cast('a0ee-bc99-9c0b-4ef8-bb6d-6bb9-bd38-0a14', "uuid")])
+--- expected
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]
+[a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18,a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14]

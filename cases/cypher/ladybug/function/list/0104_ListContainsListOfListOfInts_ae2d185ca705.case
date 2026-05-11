@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsListOfListOfInts.ae2d185ca705","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsListOfListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_contains(a.courseScoresPerTerm, [8])
+--- expected
+False
+False
+False
+False
+True
+True
+False
+False

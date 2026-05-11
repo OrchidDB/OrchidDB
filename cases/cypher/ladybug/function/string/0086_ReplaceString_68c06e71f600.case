@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ReplaceString.68c06e71f600","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ReplaceString","status":"imported","suite":"ladybug","version":1}
+--- query
+Return replace('hello world', 'world', 'ladybug')
+--- expected
+hello ladybug

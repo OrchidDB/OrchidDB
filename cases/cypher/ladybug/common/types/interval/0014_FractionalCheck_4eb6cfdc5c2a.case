@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.FractionalCheck.4eb6cfdc5c2a","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"FractionalCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("1.5 week")
+--- expected
+10 days 12:00:00

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt64ToUint64OutOfRange.9d5d54cb3c9b","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt64ToUint64OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(-500, "uint64")
+--- expected
+Overflow exception: Value -500 is not within UINT64 range

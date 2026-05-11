@@ -1,0 +1,23 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllThreeHopsTest.20b3a837b3c6","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"Union","source_log":"UnionAllThreeHopsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person)-[e3:knows]->(d:person) RETURN a.fName order by d.age desc, c.age asc, b.age asc, a.age desc limit 10 UNION ALL MATCH (p:person) RETURN p.fName
+--- expected
+Alice
+Alice
+Alice
+Bob
+Bob
+Bob
+Carol
+Carol
+Carol
+Carol
+Dan
+Dan
+Dan
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

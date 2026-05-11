@@ -1,0 +1,129 @@
+# new-graph
+
+`new-graph` is a prototype graph query planning crate. It adds graph-language
+frontends and graph-aware planning on top of a relational optimizer stack, with
+the long-term goal of lowering graph operations into SQL islands that can run on
+ordinary SQL engines.
+
+The project is currently implemented in Rust. It contains parsers, ASTs,
+semantic lowering, a Graph IR, planner facades, a small interpreter, and adapter
+code that represents Graph IR operators as relational extension nodes. The
+design target is Calcite-style planning: keep graph semantics explicit while
+allowing relational optimization and SQL island generation where graph operators
+can be safely expressed as SQL.
+
+## What This Project Does
+
+`new-graph` is exploring this pipeline:
+
+```text
+Cypher / Gremlin frontend
+  -> parser and language AST
+  -> semantic lowering
+  -> Graph IR logical plan
+  -> graph rewrites and relational optimizer integration
+  -> SQL islands
+  -> SQL engine execution
+```
+
+The main idea is that graph languages should not be translated directly into one
+large SQL string. Instead, the planner preserves graph operations such as node
+scans, edge scans, expands, path semantics, traverser semantics, filters,
+projects, aggregation, optional matches, repeats, and apply-style subqueries in
+a graph-specific IR. Later passes can then decide which regions are relational
+enough to lower into SQL islands and which regions need graph-native execution.
+
+## Current Status
+
+Implemented pieces include:
+
+- Cypher and Gremlin language modules with AST, parser, semantic, and planner
+  code.
+- Committed ANTLR-generated parser bindings for Cypher and Gremlin, so normal
+  Rust builds do not require Java or ANTLR generation.
+- A shared Graph IR under `src/ir` with graph operators, expressions, catalog
+  types, execution policy, and plan formatting.
+- Public planner facades under `src/planner` for lowering Cypher and Gremlin
+  planner-input ASTs into Graph IR.
+- A Graph IR interpreter backed by Apache Arrow data structures for local test
+  execution.
+- A DataFusion logical-plan adapter under `src/ir/df.rs`, used to model how
+  graph operators can participate in relational optimizer rewrites.
+- Transform rules under `src/transform` for graph plan normalization.
+- Case runners and integration tests for Gremlin/TinkerPop and Cypher/Ladybug
+  corpora.
+
+Some pieces are intentionally still in progress. In particular, full SQL-island
+lowering and full language coverage are active development areas.
+
+## Build
+
+Install a recent Rust toolchain with edition 2024 support, then build the crate:
+
+```bash
+cargo build
+```
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+Run narrower test targets while iterating:
+
+```bash
+cargo test --test planner_integration
+cargo test --test hep_optimization
+cargo test --test gremlin_planner
+```
+
+The repository commits generated parser modules under `src/grammar/generated`,
+so a normal build should only need Cargo and the Rust toolchain.
+
+## Repository Layout
+
+```text
+src/
+  grammar/      Committed ANTLR parser bindings.
+  syntax/       Parser entry points and syntax errors.
+  language/     Cypher and Gremlin AST, parser, semantics, and planner modules.
+  ir/           Graph IR nodes, expressions, catalog, policies, interpreter,
+                bridge lowering, and relational adapter.
+  planner/      Public CypherPlanner and GremlinPlanner facades.
+  transform/    Graph IR rewrite pipeline and rules.
+
+docs/           Graph IR design examples and planning notes.
+tests/          Integration tests and corpus case runners.
+cases/          Imported Cypher and Gremlin test cases.
+languages/      Source grammars and language reference material.
+specs/          Specification PDFs and research references.
+```
+
+## Design Notes
+
+The Graph IR is meant to be the contract between language frontends and later
+optimization/lowering stages. It tracks language-specific semantics that are
+easy to lose in direct SQL translation, including result shape, multiplicity,
+missing-property behavior, path mode, match mode, and traverser behavior.
+
+The SQL-island direction is to identify subplans that can be represented as
+relational SQL, lower those subplans, and leave graph-specific operators intact
+where SQL would be incorrect or too awkward. This is the layer that is expected
+to integrate with Calcite-style planner rules as the project matures.
+
+For examples of the intended logical operators and semantic policy model, see
+`docs/graph_ir_language_examples_v0_2_draft.md`.
+
+## License
+
+`new-graph` is licensed by Daniel Henneberger under a custom GPL-3.0-only license.
+See `LICENSE.md` for the full terms.
+
+License fees are based on organization size:
+
+| Organization size | License fee |
+| --- | ---: |
+| 0-5 people | $100 |
+| 5-50 people | $10,000 |
+| More than 50 people | Requires a separate contract. Contact Daniel Henneberger. |

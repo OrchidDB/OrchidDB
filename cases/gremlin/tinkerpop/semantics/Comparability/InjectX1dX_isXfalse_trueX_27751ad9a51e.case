@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.semantics.Comparability.InjectX1dX_isXfalse_trueX.27751ad9a51e","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectX1dX_isXfalse_trueX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1d).is(P.neq(1).and(P.gt(0)))
+--- expected
+

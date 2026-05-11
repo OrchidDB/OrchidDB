@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.PersonNodesTestInt.9c476dc3a44e","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"PersonNodesTestInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age
+--- expected
+35
+30
+45
+20
+20
+25
+40
+83

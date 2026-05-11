@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.EdgesCycle.c38ec0e05dc1","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"EdgesCycle","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('overflowMax')
+--- expected
+9223372036854775807

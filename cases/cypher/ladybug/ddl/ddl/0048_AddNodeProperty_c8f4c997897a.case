@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddNodeProperty.c8f4c997897a","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"AddNodeProperty","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment) RETURN DISTINCT c.propi
+--- expected
+5.400000

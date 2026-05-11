@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractZeroIdx.aef6f654e809","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractZeroIdx","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN list_extract([5,2,8], 0)
+--- expected
+Runtime exception: List extract takes 1-based position.

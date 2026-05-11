@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayDotProduct.49fb9bb2e4e0","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayDotProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:meets]->(p1:person) return round(ARRAY_DOT_PRODUCT(e.location, array_value(to_float(5.6), to_float(2.1))),2)
+--- expected
+18.330000
+21.910000
+24.950000
+27.720000
+31.220000
+38.160000
+51.230000

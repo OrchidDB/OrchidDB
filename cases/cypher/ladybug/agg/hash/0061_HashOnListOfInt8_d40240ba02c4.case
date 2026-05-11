@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashOnListOfInt8.d40240ba02c4","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"ListHashTest","source_log":"HashOnListOfInt8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN CAST(p.workedHours, "INT8[]"), count(*)
+--- expected
+[10,5]|2
+[12,8]|1
+[4,5]|1
+[1,9]|1
+[2]|1
+[3,4,5,6,7]|1
+[1]|2
+[10,11,12,3,4,5,6,7]|1
+[1,2,3]|1

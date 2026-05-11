@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractUINT32.823155dbcf11","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractUINT32","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(20000, "UINT32") - CAST(4294967100, "UINT32")
+--- expected
+Overflow exception: Value 20000 - 4294967100 is not within UINT32 range.

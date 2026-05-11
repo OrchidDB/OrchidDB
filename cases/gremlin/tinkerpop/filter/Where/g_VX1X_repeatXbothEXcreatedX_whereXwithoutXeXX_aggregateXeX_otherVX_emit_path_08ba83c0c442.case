@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_VX1X_repeatXbothEXcreatedX_whereXwithoutXeXX_aggregateXeX_otherVX_emit_path.08ba83c0c442","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_VX1X_repeatXbothEXcreatedX_whereXwithoutXeXX_aggregateXeX_otherVX_emit_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).repeat(__.bothE("created").where(P.without("e")).aggregate("e").otherV()).emit().path()
+--- expected
+p[v[marko],e[marko-created->lop],v[lop]]
+p[v[marko],e[marko-created->lop],v[lop],e[josh-created->lop],v[josh]]
+p[v[marko],e[marko-created->lop],v[lop],e[peter-created->lop],v[peter]]
+p[v[marko],e[marko-created->lop],v[lop],e[josh-created->lop],v[josh],e[josh-created->ripple],v[ripple]]

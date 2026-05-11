@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.NestedScalarMacro.67532acf01a5","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"NestedScalarMacro","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return multiply(ADD10(p.age), p.ID)
+--- expected
+0
+160
+495
+750
+1470
+2240
+4050
+9300

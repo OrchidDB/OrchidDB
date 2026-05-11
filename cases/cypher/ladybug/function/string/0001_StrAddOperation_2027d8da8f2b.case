@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StrAddOperation.2027d8da8f2b","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StrAddOperation","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName + "suffix"
+--- expected
+Alicesuffix
+Bobsuffix
+Carolsuffix
+Dansuffix
+Elizabethsuffix
+Farooqsuffix
+Gregsuffix
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorffsuffix

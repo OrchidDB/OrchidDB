@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.EscapePattern.31d76aec2ddf","language":"cypher","ordered":false,"source":"projection/escape.test","source_case":"EscapePattern","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN "this is a list of hex characters: \xAB\xBD"
+--- expected
+1 e99be5de879947ea53b97fd007c8c925

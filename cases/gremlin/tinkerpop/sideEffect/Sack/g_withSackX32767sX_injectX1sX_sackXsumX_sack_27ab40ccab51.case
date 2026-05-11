@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Sack.g_withSackX32767sX_injectX1sX_sackXsumX_sack.27ab40ccab51","language":"gremlin","ordered":false,"source":"sideEffect/Sack.feature","source_case":"g_withSackX32767sX_injectX1sX_sackXsumX_sack","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSack(32767s).inject(1s).sack(sum).sack()
+--- expected
+d[32768].i

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasKey.g_V_properties_hasKeyXnull_ageX_value.62260628edc3","language":"gremlin","ordered":false,"source":"filter/HasKey.feature","source_case":"g_V_properties_hasKeyXnull_ageX_value","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().properties().hasKey(null, "age").value()
+--- expected
+d[29].i
+d[27].i
+d[32].i
+d[35].i

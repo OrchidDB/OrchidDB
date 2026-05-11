@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.Any.5afc45b801e3","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"Any","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.workedHours, any(length in a.workedHours where a.ID - 5 = length)
+--- expected
+0|[10,5]|False
+2|[12,8]|False
+3|[4,5]|False
+5|[1,9]|False
+7|[2]|True
+8|[3,4,5,6,7]|True
+9|[1]|False
+10|[10,11,12,3,4,5,6,7]|True

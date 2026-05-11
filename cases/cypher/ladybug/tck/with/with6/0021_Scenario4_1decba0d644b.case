@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario4.1decba0d644b","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = ()-[*]->() WITH count(*) AS count, p AS p RETURN nodes(p) AS nodes
+--- expected
+[...]
+[...]

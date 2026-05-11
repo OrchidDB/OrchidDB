@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.mathematical.Mathematical13.Scenario1.c7b5987d821b","language":"cypher","ordered":true,"source":"tck/expressions/mathematical/Mathematical13.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN sqrt(12.96)
+--- expected
+3.600000

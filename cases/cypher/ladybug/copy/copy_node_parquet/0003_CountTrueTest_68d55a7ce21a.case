@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.CountTrueTest.68d55a7ce21a","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"CountTrueTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.booleanColumn = True RETURN count(*)
+--- expected
+24997

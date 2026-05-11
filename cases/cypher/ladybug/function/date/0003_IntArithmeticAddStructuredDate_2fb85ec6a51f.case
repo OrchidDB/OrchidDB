@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.IntArithmeticAddStructuredDate.2fb85ec6a51f","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"IntArithmeticAddStructuredDate","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN 32 + a.birthdate
+--- expected
+1900-02-02
+1900-02-02
+1940-07-24
+1950-08-24
+1980-11-27
+1980-11-27
+1980-11-27
+1990-12-29

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionLiteralListOfListOfStrings.9537a8be7347","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionLiteralListOfListOfStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_indexof([['Aida'], ['Wolfeschlegelstein', 'Daniel'], ['Grad']], a.usedNames)
+--- expected
+1
+0
+0
+2
+0
+0
+3
+0

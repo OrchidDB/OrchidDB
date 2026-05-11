@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnMapLiteral.a81745274e94","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnMapLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map(['Alice', 'Bob', 'Carol', 'Dan'], [20, 34, 50, 22])
+--- expected
+{Alice=20, Bob=34, Carol=50, Dan=22}

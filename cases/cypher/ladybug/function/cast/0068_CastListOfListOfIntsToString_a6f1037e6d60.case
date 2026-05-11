@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfListOfIntsToString.a6f1037e6d60","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfListOfIntsToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE 5 < p.ID and p.ID < 10 RETURN cast(p.courseScoresPerTerm, "INT16[1][]")
+--- expected
+[[10]]
+[[6],[7],[8]]
+[[8]]

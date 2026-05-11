@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.SimplePath.g_VX1X_outXcreatedX_inXcreatedX_simplePath.a1aceeea2743","language":"gremlin","ordered":false,"source":"filter/SimplePath.feature","source_case":"g_VX1X_outXcreatedX_inXcreatedX_simplePath","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out("created").in("created").simplePath()
+--- expected
+v[josh]
+v[peter]

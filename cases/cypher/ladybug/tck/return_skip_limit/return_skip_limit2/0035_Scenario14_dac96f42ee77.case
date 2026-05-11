@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_skip_limit.return_skip_limit2.Scenario14.dac96f42ee77","language":"cypher","ordered":true,"source":"tck/return_skip_limit/return_skip_limit2.test","source_case":"Scenario14","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Person) RETURN p.name AS name LIMIT $_limit
+--- expected
+Runtime exception: The number of rows to skip/limit must be a non-negative integer.

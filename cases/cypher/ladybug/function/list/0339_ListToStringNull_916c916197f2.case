@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListToStringNull.916c916197f2","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListToStringNull","status":"imported","suite":"ladybug","version":1}
+--- query
+return list_to_string('-', [1])
+--- expected
+1

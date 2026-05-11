@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.77de1e7e95f3","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario20","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a {name: 'A'}), (b {name: 'B'}), (c {name: 'C'}) MATCH (a)-->(x), (b)-->(x), (c)-->(x) RETURN x.name
+--- expected
+x1
+x2

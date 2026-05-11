@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchVarLen.faafed31e9c0","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchVarLen","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows*1..2]->(b:User) WHERE a.name = 'Adam' RETURN b.name, length(e) AS length
+--- expected
+Karissa|1
+Zhang|2
+Zhang|1
+Noura|2

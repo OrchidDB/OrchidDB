@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByNode.cb003a870f15","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByNode","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a ORDER BY a
+--- expected
+Binder exception: Cannot order by a. Order by NODE is not supported.

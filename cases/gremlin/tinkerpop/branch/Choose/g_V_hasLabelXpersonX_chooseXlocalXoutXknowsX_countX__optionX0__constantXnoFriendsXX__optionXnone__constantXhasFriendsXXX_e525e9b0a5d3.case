@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_hasLabelXpersonX_chooseXlocalXoutXknowsX_countX__optionX0__constantXnoFriendsXX__optionXnone__constantXhasFriendsXXX.e525e9b0a5d3","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_hasLabelXpersonX_chooseXlocalXoutXknowsX_countX__optionX0__constantXnoFriendsXX__optionXnone__constantXhasFriendsXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+choose(__.local(__.out("knows").count())).
+option(xx0, __.constant("noFriends")).
+option(Pick.none, __.constant("hasFriends"))
+--- expected
+hasFriends
+noFriends
+noFriends
+noFriends

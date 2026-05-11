@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.filter.serial.SerialWithFilter.b43aa95d67d0","language":"cypher","ordered":true,"source":"filter/serial.test","source_case":"SerialComparison","source_log":"SerialWithFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person {ID:1}) RETURN a
+--- expected
+{_ID: 0:1, _LABEL: person, ID: 1, fName: Bob, gender: 2, isStudent: True, isWorker: False, age: 30, eyeSight: 5.100000, birthdate: 1900-01-01, registerTime: 2008-11-03 15:25:30.000526, lastJobDuration: 10 years 5 months 13:00:00.000024, workedHours: [12,8], usedNames: [Bobby], courseScoresPerTerm: [[8,9],[9,10]], grades: [98,42,93,88], height: 0.990000}

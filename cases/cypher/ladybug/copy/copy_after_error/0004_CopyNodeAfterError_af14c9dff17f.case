@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_after_error.CopyNodeAfterError.af14c9dff17f","language":"cypher","ordered":true,"source":"copy/copy_after_error.test","source_case":"CopyNodeAfterError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment) WHERE c.ID = 1786706395169 RETURN c.locationIP
+--- expected
+92.39.58.88

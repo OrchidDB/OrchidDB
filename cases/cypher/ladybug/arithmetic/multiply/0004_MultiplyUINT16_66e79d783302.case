@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyUINT16.66e79d783302","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyUINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(65530, "UINT16") * CAST(10, "UINT16")
+--- expected
+Overflow exception: Value 65530 * 10 is not within UINT16 range.

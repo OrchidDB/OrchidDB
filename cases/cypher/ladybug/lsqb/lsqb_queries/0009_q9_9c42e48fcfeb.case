@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV lsqb-sf01","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries.q9.9c42e48fcfeb","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries.test","source_case":"LSQBTest","source_log":"q9","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person1:Person)-[:Person_knows_Person]-(person2:Person)-[:Person_knows_Person]-(person3:Person)-[:Person_hasInterest_Tag]->(tag:Tag) WHERE NOT EXISTS {MATCH (person1)-[:Person_knows_Person]-(person3)} AND id(person1) <> id(person3) RETURN count(*) AS count
+--- expected
+51009398

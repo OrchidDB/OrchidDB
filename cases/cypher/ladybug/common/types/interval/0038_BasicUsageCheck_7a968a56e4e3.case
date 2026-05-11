@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.BasicUsageCheck.7a968a56e4e3","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"BasicUsageCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("2147483647 months 1 months")
+--- expected
+Overflow exception: Interval value is out of range

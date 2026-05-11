@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.sequence.SequenceCallRollbackRecovery.acf45d2b52b1","language":"cypher","ordered":true,"source":"transaction/ddl/sequence.test","source_case":"SequenceCallRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('before')
+--- expected
+1

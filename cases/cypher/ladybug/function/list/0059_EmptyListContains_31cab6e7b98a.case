@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.EmptyListContains.31cab6e7b98a","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"EmptyListContains","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 'a' IN []
+--- expected
+False

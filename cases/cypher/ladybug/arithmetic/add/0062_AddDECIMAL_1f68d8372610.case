@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddDECIMAL.1f68d8372610","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddDECIMAL","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ['10.0000000000000000000000000000000000000'] AS A UNWIND ['0.0000000000000000000000000000000000000'] AS B RETURN CAST(A, 'DECIMAL(38, 37)') + CAST(B, 'DECIMAL(38, 37)')
+--- expected
+Conversion exception: Cast failed. 10.0000000000000000000000000000000000000 is not in DECIMAL(38, 37) range.

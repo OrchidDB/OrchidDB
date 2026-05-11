@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RpadStrAndInt.5ada7ea30c98","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RpadStrAndInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN rpad(p.fName, p.ID, "<")
+--- expected
+Bo
+Car
+Dan<<
+Elizabe
+Farooq<<
+Greg<<<<<
+Hubert Bla

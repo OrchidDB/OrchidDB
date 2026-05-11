@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListConcatNullAndINT64.f573bc6ddb77","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListConcatNullAndINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_CONCAT([cast(NULL, "int64")], [NULL, 1, 3])
+--- expected
+[,,1,3]

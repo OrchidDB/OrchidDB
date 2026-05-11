@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_order_parquet.OrderBy3.ccc45339fb26","language":"cypher","ordered":true,"source":"demo_db/demo_db_order_parquet.test","source_case":"DemoDBOrderedTestFromParquet","source_log":"OrderBy3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(b:User) RETURN b.age, a.name ORDER BY b.age DESC, a.name DESC
+--- expected
+50|Karissa
+50|Adam
+40|Adam
+25|Zhang

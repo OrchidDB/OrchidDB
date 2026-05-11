@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import_db.ReturnAge.9dc1c7d55b71","language":"cypher","ordered":true,"source":"copy/export_import_db.test","source_case":"ExportImportDatabaseDefault","source_log":"ReturnAge","status":"imported","suite":"ladybug","version":1}
+--- query
+return addWithDefault(2)
+--- expected
+5

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.TwoHopAggTest.ab12950da078","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"TwoHopAggTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person) RETURN a.gender, COUNT(*), COUNT(DISTINCT b.age)
+--- expected
+1|18|4
+2|18|4

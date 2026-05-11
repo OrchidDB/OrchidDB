@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFloatDoubleToInt8.69ba3c6b0246","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastFloatDoubleToInt8","status":"imported","suite":"ladybug","version":1}
+--- query
+Return to_int8(1.1), to_int8(to_float(3.2))
+--- expected
+1|3

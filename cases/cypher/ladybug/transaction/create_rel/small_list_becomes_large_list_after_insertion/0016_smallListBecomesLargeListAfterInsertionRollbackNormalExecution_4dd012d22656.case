@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.small_list_becomes_large_list_after_insertion.smallListBecomesLargeListAfterInsertionRollbackNormalExecution.4dd012d22656","language":"cypher","ordered":true,"source":"transaction/create_rel/small_list_becomes_large_list_after_insertion.test","source_case":"smallListBecomesLargeListAfterInsertionRollbackNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID = 1 RETURN e.length, e.place, e.tag
+--- expected
+<FILE>:small_list_becomes_large_list_after_insertion_rollback.txt

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfIntsToArray.f38ba6c39d0c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfIntsToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(p:person) WHERE size(p.workedHours) = 8 RETURN cast(cast(cast(p.workedHours, "INT64[8]"), "INT64[]"), "DOUBLE[8]")
+--- expected
+[10.000000,11.000000,12.000000,3.000000,4.000000,5.000000,6.000000,7.000000]

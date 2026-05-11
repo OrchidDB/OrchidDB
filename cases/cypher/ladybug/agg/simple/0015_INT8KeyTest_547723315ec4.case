@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.INT8KeyTest.547723315ec4","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"INT8KeyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.level = 5 RETURN p.ID, o.ID
+--- expected
+0|1

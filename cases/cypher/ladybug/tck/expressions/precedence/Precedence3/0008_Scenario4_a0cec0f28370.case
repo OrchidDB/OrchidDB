@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence3.Scenario4.a0cec0f28370","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence3.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [1]+2 IN [3]+4 AS a, ([1]+2) IN ([3]+4) AS b, [1]+(2 IN [3])+4 AS c
+--- expected
+False|False|[1, False, 4]

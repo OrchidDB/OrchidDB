@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX3X_repeatXoutE_order_byXweight_descX_limitX2X_inVX_timesX2X_valuesXnameX.0f456e10dca7","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX3X_repeatXoutE_order_byXweight_descX_limitX2X_inVX_timesX2X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid3).repeat(__.outE().order().by("weight", Order.desc).limit(2).inV()).times(2).values("name")
+--- expected
+SUGAR MAGNOLIA
+AROUND AND AROUND

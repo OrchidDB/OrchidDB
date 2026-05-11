@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchUndirectedVarLen.cfa17de266c2","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchUndirectedVarLen","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e*2..2]-(b) WHERE a.name = 'Noura' AND b.name <> 'Noura' RETURN b.name, length(e) AS length
+--- expected
+Adam|2
+Karissa|2
+Kitchener|2

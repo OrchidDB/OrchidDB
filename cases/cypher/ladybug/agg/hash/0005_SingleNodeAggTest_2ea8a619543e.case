@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.SingleNodeAggTest.2ea8a619543e","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"SingleNodeAggTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age, MIN(a.ID), AVG(a.eyeSight), COUNT(*)
+--- expected
+20|5|4.750000|2
+25|8|4.500000|1
+30|2|5.100000|1
+35|0|5.000000|1
+40|9|4.900000|1
+45|3|5.000000|1
+83|10|4.900000|1

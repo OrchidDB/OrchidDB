@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleSumTest4.7316d8d41410","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleSumTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN sum(a.height) + 2.2
+--- expected
+13.117000

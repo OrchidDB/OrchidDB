@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Undir3.975e02f35b7b","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Undir3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[]-() RETURN COUNT(*)
+--- expected
+16

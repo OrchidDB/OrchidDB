@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromINT16.811f492268da","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromINT16","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:studyAt]->(o:organisation) WHERE p.ID=0 RETURN to_int8(e.length), to_int32(e.length), to_int64(e.length), to_int128(e.length), to_uint128(e.length), to_float(e.length), to_double(e.length)
+--- expected
+5|5|5|5|5|5.000000|5.000000

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.md5.MD5Tests.5f5c8bd35ab7","language":"cypher","ordered":true,"source":"function/hash/md5.test","source_case":"MD5Tests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN md5(123)
+--- expected
+202cb962ac59075b964b07152d234b70

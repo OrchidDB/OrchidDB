@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_outXcreatedX_groupCountXxX_capXxX.4a1fa6f34451","language":"gremlin","ordered":true,"source":"sideEffect/GroupCount.feature","source_case":"g_V_outXcreatedX_groupCountXxX_capXxX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("created").groupCount("x").cap("x")
+--- expected
+m[{"v[ripple]":"d[1].l","v[lop]":"d[3].l"}]

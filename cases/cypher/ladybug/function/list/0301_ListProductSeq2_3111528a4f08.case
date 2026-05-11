@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductSeq2.3111528a4f08","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([1.111111111111, 2.2, 3.3, NULL])
+--- expected
+8.066667

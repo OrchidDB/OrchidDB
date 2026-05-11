@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.NodeComparison.b2b0ff8107a2","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"NodeComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u)--(v:User) WHERE v.name='Adam' AND u<>v RETURN COUNT(*)
+--- expected
+3

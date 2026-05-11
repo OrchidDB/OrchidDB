@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.MapWithNullKey.3331840d884b","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"MapWithNullKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(5, 'int128'), NULL, cast(5, 'int128')], [20, 34, 50])
+--- expected
+Runtime exception: Null value key is not allowed in map.

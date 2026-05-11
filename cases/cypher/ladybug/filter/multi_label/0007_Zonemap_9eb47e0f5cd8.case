@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_label.Zonemap.9eb47e0f5cd8","language":"cypher","ordered":true,"source":"filter/multi_label.test","source_case":"ZonemapWithUpdates","source_log":"Zonemap","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows|:meets]->(b:person) WHERE e.meetTime > timestamp('2025-01-01 11:22:33.53') RETURN a.ID, b.ID
+--- expected
+7|8

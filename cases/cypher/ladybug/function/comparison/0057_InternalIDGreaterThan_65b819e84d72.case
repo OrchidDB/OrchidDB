@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.InternalIDGreaterThan.65b819e84d72","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"InternalIDGreaterThan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.fName = "Alice" AND b.fName = "Alice" RETURN ID(a) > ID(b)
+--- expected
+False

@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.CyclicPath.g_injectX0X_V_both_coalesceXhasXname_markoX_both_constantX0XX_cyclicPath_path.223ee7e48521","language":"gremlin","ordered":false,"source":"filter/CyclicPath.feature","source_case":"g_injectX0X_V_both_coalesceXhasXname_markoX_both_constantX0XX_cyclicPath_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(0).V().both().coalesce(has('name','marko').both(),constant(0)).cyclicPath().path()
+--- expected
+p[d[0].i,v[marko],v[lop],d[0].i]
+p[d[0].i,v[marko],v[vadas],d[0].i]
+p[d[0].i,v[marko],v[josh],d[0].i]
+p[d[0].i,v[vadas],v[marko],v[vadas]]
+p[d[0].i,v[lop],v[marko],v[lop]]
+p[d[0].i,v[lop],v[josh],d[0].i]
+p[d[0].i,v[lop],v[peter],d[0].i]
+p[d[0].i,v[josh],v[ripple],d[0].i]
+p[d[0].i,v[josh],v[lop],d[0].i]
+p[d[0].i,v[josh],v[marko],v[josh]]
+p[d[0].i,v[ripple],v[josh],d[0].i]
+p[d[0].i,v[peter],v[lop],d[0].i]

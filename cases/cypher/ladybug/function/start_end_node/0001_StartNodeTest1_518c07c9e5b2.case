@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.start_end_node.StartNodeTest1.518c07c9e5b2","language":"cypher","ordered":true,"source":"function/start_end_node.test","source_case":"FunctionStartNode","source_log":"StartNodeTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) RETURN id(e), START_NODE(e)
+--- expected
+5:0|{_ID: 0:0, _LABEL: person, ID: 0, fName: Alice, gender: 1, isStudent: True, isWorker: False, age: 35, eyeSight: 5.000000, birthdate: 1900-01-01, registerTime: 2011-08-20 11:25:30, lastJobDuration: 3 years 2 days 13:02:00, workedHours: [10,5], usedNames: [Aida], courseScoresPerTerm: [[10,8],[6,7,8]], grades: [96,54,86,92], height: 1.731000, u: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11}
+5:1|{_ID: 0:1, _LABEL: person, ID: 2, fName: Bob, gender: 2, isStudent: True, isWorker: False, age: 30, eyeSight: 5.100000, birthdate: 1900-01-01, registerTime: 2008-11-03 15:25:30.000526, lastJobDuration: 10 years 5 months 13:00:00.000024, workedHours: [12,8], usedNames: [Bobby], courseScoresPerTerm: [[8,9],[9,10]], grades: [98,42,93,88], height: 0.990000, u: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12}
+5:2|{_ID: 0:5, _LABEL: person, ID: 8, fName: Farooq, gender: 2, isStudent: True, isWorker: False, age: 25, eyeSight: 4.500000, birthdate: 1980-10-26, registerTime: 1972-07-31 13:22:30.678559, lastJobDuration: 00:18:00.024, workedHours: [3,4,5,6,7], usedNames: [Fesdwe], courseScoresPerTerm: [[8]], grades: [80,78,34,83], height: 1.510000, u: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16}

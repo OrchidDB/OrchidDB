@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match1.Scenario8.cb8886441777","language":"cypher","ordered":true,"source":"tck/match/match1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (x), r = (a)-[q]-(b), (s)-[p]-(t)-[]-(b) MATCH (r) RETURN r
+--- expected
+Binder exception: Cannot bind r as node pattern.

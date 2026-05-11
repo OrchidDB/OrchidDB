@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ListExtractOutOfRange.0b505d2b1572","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ListExtractOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName[8]
+--- expected
+t
+B

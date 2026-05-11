@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.NestedEmptyList.982bc4ed407f","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"NestedEmptyList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [[],[]]
+--- expected
+[[],[]]

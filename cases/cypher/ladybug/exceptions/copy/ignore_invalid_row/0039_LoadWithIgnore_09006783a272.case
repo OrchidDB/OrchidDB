@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.09006783a272","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"CopyRelNoIgnoreErrorsAfterCopyNodeFromSubquery","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+match (a:tab)-[:edge]->(b:tab) return a.id, b.id
+--- expected
+2|0
+6|0
+7|0

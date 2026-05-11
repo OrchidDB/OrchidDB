@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Reverse.g_injectXnullX_reverse.58be32d3ef0a","language":"gremlin","ordered":false,"source":"map/Reverse.feature","source_case":"g_injectXnullX_reverse","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(null).reverse()
+--- expected
+null

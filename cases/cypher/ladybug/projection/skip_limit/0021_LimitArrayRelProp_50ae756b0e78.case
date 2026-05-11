@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.LimitArrayRelProp.50ae756b0e78","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"LimitArrayRelProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:workAt]->(o:organisation) RETURN e.grading LIMIT 2
+--- expected
+[2.100000,4.400000]
+[3.800000,2.500000]

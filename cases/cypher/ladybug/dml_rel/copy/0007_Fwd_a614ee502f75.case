@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.copy.Fwd.a614ee502f75","language":"cypher","ordered":true,"source":"dml_rel/copy.test","source_case":"CopyRelSetStorageDirection","source_log":"Fwd","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[k:knows]-(b:person) RETURN COUNT(*)
+--- expected
+Binder exception: Undirected rel pattern 'k' has at least one matched rel table with storage type 'fwd' or 'bwd'. Undirected rel patterns are only supported if every matched rel table has storage type 'both'.

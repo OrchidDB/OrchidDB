@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Sum.g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_sumXlocalX.b7252dc5fa01","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_sumXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(union(values("age"), outE().values("weight")).fold()).sum(local)
+--- expected
+d[30.9].d
+d[27].i
+d[33.4].d
+d[35.2].d

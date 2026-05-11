@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison2.Scenario2.9e162adb5194","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison2.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Root)-->(i:Child) WHERE i.var IS NULL OR i.var > 'x' RETURN i.var
+--- expected
+xx

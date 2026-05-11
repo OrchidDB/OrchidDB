@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX1X_repeatXgroupCountXmX_byXloopsX_outX_timesX3X_capXmX.29777e2ba3c3","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX1X_repeatXgroupCountXmX_byXloopsX_outX_timesX3X_capXmX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).repeat(__.groupCount("m").by(__.loops()).out()).times(3).cap("m")
+--- expected
+m[{"d[0].i":"d[1].l","d[1].i":"d[3].l","d[2].i":"d[2].l"}]

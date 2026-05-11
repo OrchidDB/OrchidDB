@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithArray.6b044c145757","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_unique([p.grades, p.grades, cast([96,59,65,88], "int64[4]")]), p.ID
+--- expected
+2|0
+2|2
+2|3
+2|5
+1|7
+2|8
+2|9
+2|10

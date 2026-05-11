@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.UUID.g_V_valuesXuuidX_isXtypeOfXGType_UUIDXX_chooseXisXeqXuuidXX_constantXmatchX_constantXnoMatchXX.a1be363f5d1d","language":"gremlin","ordered":false,"source":"data/UUID.feature","source_case":"g_V_valuesXuuidX_isXtypeOfXGType_UUIDXX_chooseXisXeqXuuidXX_constantXmatchX_constantXnoMatchXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("uuid").is(P.typeOf(GType.UUID)).choose(__.is(P.eq(UUID("f47af10b-58cc-4372-a567-0f02b2f3d479"))), constant("match"), constant("noMatch"))
+--- graph_initializer
+g.addV("data").property("uuid", UUID("f47af10b-58cc-4372-a567-0f02b2f3d479"))
+--- expected
+match

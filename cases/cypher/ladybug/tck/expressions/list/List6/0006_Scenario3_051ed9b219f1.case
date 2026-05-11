@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List6.Scenario3.051ed9b219f1","language":"cypher","ordered":true,"source":"tck/expressions/list/List6.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN size([[], []] + [[]]) AS l
+--- expected
+3

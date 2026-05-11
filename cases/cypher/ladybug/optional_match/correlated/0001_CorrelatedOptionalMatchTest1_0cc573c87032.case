@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.correlated.CorrelatedOptionalMatchTest1.0cc573c87032","language":"cypher","ordered":true,"source":"optional_match/correlated.test","source_case":"CorrelatedOptionalMatch","source_log":"CorrelatedOptionalMatchTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:knows]->(b:person) WHERE b.age > a.age RETURN COUNT(*)
+--- expected
+12

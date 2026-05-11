@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapStringKey.eab23784cc18","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapStringKey","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map(['lbug', 'lbuginc', 'lbugcorp', 'lbug'], [20, 34, 50, 32])
+--- expected
+Runtime exception: Found duplicate key: lbug in map.

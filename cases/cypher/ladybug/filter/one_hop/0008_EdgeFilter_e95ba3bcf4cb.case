@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.one_hop.EdgeFilter.e95ba3bcf4cb","language":"cypher","ordered":true,"source":"filter/one_hop.test","source_case":"FilterOneHop","source_log":"EdgeFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows {date:date('1905-12-12')}]->(b:person) RETURN a.ID, b.ID
+--- expected
+7|8
+7|9

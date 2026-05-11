@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListLiteral.fd08b9cc728c","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [null, 3.0, 3]
+--- expected
+[,3.000000,3.000000]

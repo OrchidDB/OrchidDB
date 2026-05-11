@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_query_part.MultiQueryTwoHopKnowsFilteredTest1.6574f83ed9d1","language":"cypher","ordered":true,"source":"filter/multi_query_part.test","source_case":"FilterMultiQuery","source_log":"MultiQueryTwoHopKnowsFilteredTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WITH a, b WHERE b.age=35 MATCH (b)-[e2:knows]->(c:person {age:a.age}) RETURN COUNT(*)
+--- expected
+3

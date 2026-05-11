@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_created_lop_b__b_0created_29_cX_whereXc_repeatXoutX_timesX2XX_selectXa_b_cX.be8f29b92c14","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_created_lop_b__b_0created_29_cX_whereXc_repeatXoutX_timesX2XX_selectXa_b_cX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("created").has("name", "lop").as("b"),
+__.as("b").in("created").has("age", 29).as("c")).where(__.as("c").repeat(__.out()).times(2)).select("a", "b", "c")
+--- expected
+m[{"a":"v[marko]","b":"v[lop]","c":"v[marko]"}]
+m[{"a":"v[josh]","b":"v[lop]","c":"v[marko]"}]
+m[{"a":"v[peter]","b":"v[lop]","c":"v[marko]"}]

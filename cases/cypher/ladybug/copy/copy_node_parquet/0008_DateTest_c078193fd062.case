@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.DateTest.c078193fd062","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"DateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.id = 25531 RETURN row.*
+--- expected
+25531|77|28.417543|False|2040-07-09|XB|[0,28,9]|[tr8logjRgC]|[[101,261,4],[181,238,280]]|{ID: 817, name: GEryCr3Y68PJwpt}

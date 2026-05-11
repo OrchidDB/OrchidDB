@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.splitEmptyStr.0713cfdf2e1a","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"splitEmptyStr","status":"imported","suite":"ladybug","version":1}
+--- query
+return size(str_split('', ','))
+--- expected
+1

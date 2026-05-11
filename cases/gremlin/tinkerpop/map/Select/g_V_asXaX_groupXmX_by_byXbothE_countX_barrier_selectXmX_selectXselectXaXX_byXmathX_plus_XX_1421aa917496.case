@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_asXaX_groupXmX_by_byXbothE_countX_barrier_selectXmX_selectXselectXaXX_byXmathX_plus_XX.1421aa917496","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_asXaX_groupXmX_by_byXbothE_countX_barrier_selectXmX_selectXselectXaXX_byXmathX_plus_XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").group("m").by().by(__.bothE().count()).barrier().select("m").select(__.select("a")).by(__.math("_+_"))
+--- expected
+d[6].d
+d[2].d
+d[6].d
+d[6].d
+d[2].d
+d[2].d

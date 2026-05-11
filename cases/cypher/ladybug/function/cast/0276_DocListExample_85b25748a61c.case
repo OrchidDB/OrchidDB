@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.85b25748a61c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [CAST(127, 'INT8')] AS A RETURN CAST(A, 'DECIMAL(3, 0)')
+--- expected
+127

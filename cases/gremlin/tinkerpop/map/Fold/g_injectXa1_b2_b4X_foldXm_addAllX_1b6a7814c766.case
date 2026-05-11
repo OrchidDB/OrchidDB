@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Fold.g_injectXa1_b2_b4X_foldXm_addAllX.1b6a7814c766","language":"gremlin","ordered":false,"source":"map/Fold.feature","source_case":"g_injectXa1_b2_b4X_foldXm_addAllX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["a":1], ["b":2], ["b":4]).fold([:], Operator.addAll)
+--- expected
+m[{"a":"d[1].i", "b":"d[4].i"}]

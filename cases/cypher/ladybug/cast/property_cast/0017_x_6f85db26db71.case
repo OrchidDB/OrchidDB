@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.property_cast.x.6f85db26db71","language":"cypher","ordered":true,"source":"cast/property_cast.test","source_case":"x","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:N1)-[e:R1|:R4]->(b:N1) RETURN e.p
+--- expected
+1.000000
+3.140000

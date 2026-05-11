@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation8.Scenario4.bc5a44c2b103","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation8.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [null, 1, null] AS x RETURN collect(DISTINCT x) AS c
+--- expected
+[1]

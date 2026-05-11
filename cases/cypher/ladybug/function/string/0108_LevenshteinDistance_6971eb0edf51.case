@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LevenshteinDistance.6971eb0edf51","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LevenshteinDistance","status":"imported","suite":"ladybug","version":1}
+--- query
+return levenshtein('kitten', 'sitting')
+--- expected
+3

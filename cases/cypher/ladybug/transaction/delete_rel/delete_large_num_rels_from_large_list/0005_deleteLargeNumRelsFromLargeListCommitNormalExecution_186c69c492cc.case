@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_large_num_rels_from_large_list.deleteLargeNumRelsFromLargeListCommitNormalExecution.186c69c492cc","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_large_num_rels_from_large_list.test","source_case":"deleteLargeNumRelsFromLargeListCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person)-[e:knows]->(p2:person) WHERE p1.ID = 0 return e.length
+--- expected
+1
+2
+3
+4
+5
+6
+7
+8
+9

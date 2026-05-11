@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario3.351448333aef","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a {name: 'A'})-[:CONTAIN*0..1]->(b)-[:FRIEND*0..1]->(c) RETURN a, b, c
+--- expected
+{_ID: 0:0, _LABEL: A, ID: 0, name: A}|{_ID: 0:0, _LABEL: A, ID: 0, name: A}|{_ID: 0:0, _LABEL: A, ID: 0, name: A}
+{_ID: 0:0, _LABEL: A, ID: 0, name: A}|{_ID: 0:1, _LABEL: A, ID: 1, name: B}|{_ID: 0:1, _LABEL: A, ID: 1, name: B}
+{_ID: 0:0, _LABEL: A, ID: 0, name: A}|{_ID: 0:1, _LABEL: A, ID: 1, name: B}|{_ID: 0:2, _LABEL: A, ID: 2, name: C}

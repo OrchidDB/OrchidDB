@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.And.g_V_asXaX_outXknowsX_and_outXcreatedX_inXcreatedX_asXaX_name.6c983a59db36","language":"gremlin","ordered":false,"source":"filter/And.feature","source_case":"g_V_asXaX_outXknowsX_and_outXcreatedX_inXcreatedX_asXaX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out("knows").and().out("created").in("created").as("a").values("name")
+--- expected
+v[marko]

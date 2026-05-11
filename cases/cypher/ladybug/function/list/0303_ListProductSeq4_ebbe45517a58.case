@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductSeq4.ebbe45517a58","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductSeq4","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([0, NULL, NULL, NULL])
+--- expected
+0

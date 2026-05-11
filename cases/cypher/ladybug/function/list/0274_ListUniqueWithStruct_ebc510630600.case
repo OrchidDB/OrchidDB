@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithStruct.ebc510630600","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN list_unique([o.state, o.state, {revenue: cast(558, "int16"), location: ["'very long city name'", "'new york'"], stock: {price: [22], volume: 99}}]), o.ID
+--- expected
+2|1
+2|4
+1|6

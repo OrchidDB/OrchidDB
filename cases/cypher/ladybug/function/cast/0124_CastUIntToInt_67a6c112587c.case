@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUIntToInt.67a6c112587c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastUIntToInt","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT32(TO_UINT32("43242"))
+--- expected
+43242

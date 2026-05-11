@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.copy.mismatch_from_to.MismatchFromToType.6505aa8e3fd3","language":"cypher","ordered":true,"source":"copy/mismatch_from_to.test","source_case":"MismatchFromToType","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:N2)-[:R2]->(b:N2) RETURN a.id, b.id
+--- expected
+Guelph|75000
+Kitchener|200000
+Waterloo|150000

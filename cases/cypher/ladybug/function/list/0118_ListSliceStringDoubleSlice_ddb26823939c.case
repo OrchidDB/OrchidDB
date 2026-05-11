@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceStringDoubleSlice.ddb26823939c","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceStringDoubleSlice","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName[3:][2:4]
+--- expected
+ce
+ol
+zab
+ooq
+g
+ert

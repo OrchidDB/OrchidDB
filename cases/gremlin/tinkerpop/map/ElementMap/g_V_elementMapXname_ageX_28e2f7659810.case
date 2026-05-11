@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ElementMap.g_V_elementMapXname_ageX.28e2f7659810","language":"gremlin","ordered":false,"source":"map/ElementMap.feature","source_case":"g_V_elementMapXname_ageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().elementMap("name", "age")
+--- expected
+m[{"t[id]": "v[marko].id", "t[label]": "person", "name": "marko", "age": 29}]
+m[{"t[id]": "v[josh].id", "t[label]": "person", "name": "josh", "age": 32}]
+m[{"t[id]": "v[peter].id", "t[label]": "person", "name": "peter", "age": 35}]
+m[{"t[id]": "v[vadas].id", "t[label]": "person", "name": "vadas", "age": 27}]
+m[{"t[id]": "v[lop].id", "t[label]": "software", "name": "lop"}]
+m[{"t[id]": "v[ripple].id", "t[label]": "software", "name": "ripple"}]

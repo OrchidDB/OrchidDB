@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_tinysnb.AddArrayPropertyWithoutDefaultCommit.876f4e1f2e32","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_tinysnb.test","source_case":"AddArrayPropertyWithoutDefaultCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return Count(p.random)
+--- expected
+0

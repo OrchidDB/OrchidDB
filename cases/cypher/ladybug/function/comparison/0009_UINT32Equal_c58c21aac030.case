@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.UINT32Equal.c58c21aac030","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"UINT32Equal","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.temperature = 32800 RETURN s.level
+--- expected
+5

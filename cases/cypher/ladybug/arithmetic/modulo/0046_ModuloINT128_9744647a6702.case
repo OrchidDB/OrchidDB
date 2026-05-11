@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloINT128.9744647a6702","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-12409141183460731687303715884105727, "INT128") % CAST(0, "INT128")
+--- expected
+Runtime exception: Modulo by zero.

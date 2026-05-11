@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.MixedCreateAndSet.f47de2c4db0a","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"MixedCreateAndSet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.id % 2 = 0 AND p.prop>=1000000 RETURN COUNT(*)
+--- expected
+100000

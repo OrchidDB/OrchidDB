@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidListToArray.c2a001a6c283","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([1000000000000000000], "INT16[1]")
+--- expected
+Overflow exception: Value 1000000000000000000 is not within INT16 range

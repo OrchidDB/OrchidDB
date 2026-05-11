@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectSTRINGTest.ed30461f6e82","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectSTRINGTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.age, collect(p.fName)
+--- expected
+35|[Alice]
+30|[Bob]
+45|[Carol]
+20|[Dan,Elizabeth]
+25|[Farooq]
+40|[Greg]
+83|[Hubert Blaine Wolfeschlegelsteinhausenbergerdorff]

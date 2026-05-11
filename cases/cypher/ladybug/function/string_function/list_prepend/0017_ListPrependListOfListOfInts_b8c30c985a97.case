@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_prepend.ListPrependListOfListOfInts.b8c30c985a97","language":"cypher","ordered":true,"source":"function/string_function/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_push_front(a.courseScoresPerTerm, [a.age, a.age])
+--- expected
+[[35,35],[10,8],[6,7,8]]
+[[30,30],[8,9],[9,10]]
+[[45,45],[8,10]]
+[[20,20],[7,4],[8,8],[9]]
+[[20,20],[6],[7],[8]]
+[[25,25],[8]]
+[[40,40],[10]]
+[[83,83],[7],[10],[6,7]]

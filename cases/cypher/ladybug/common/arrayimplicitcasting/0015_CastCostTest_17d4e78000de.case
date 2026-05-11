@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.arrayimplicitcasting.CastCostTest.17d4e78000de","language":"cypher","ordered":true,"source":"common/arrayimplicitcasting.test","source_case":"CastCostTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Item) RETURN a.item, a.price, array_cosine_similarity(a.vector, [6.0, 25.0]) AS sim ORDER BY sim DESC
+--- expected
+['banana',1.0,0.9998642653091405]
+['apple',2.0,0.9163829638139936]

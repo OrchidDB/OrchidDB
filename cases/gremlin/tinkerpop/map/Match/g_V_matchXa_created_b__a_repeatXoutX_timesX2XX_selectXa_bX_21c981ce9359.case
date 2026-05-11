@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_created_b__a_repeatXoutX_timesX2XX_selectXa_bX.21c981ce9359","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_created_b__a_repeatXoutX_timesX2XX_selectXa_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("created").as("b"),
+__.as("a").repeat(__.out()).times(2).as("b")).select("a", "b")
+--- expected
+m[{"a":"v[marko]","b":"v[lop]"}]

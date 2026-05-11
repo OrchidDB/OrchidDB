@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.AbsFunctionStrInt.19322607fdcc","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"AbsFunctionStrInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN abs(a.score)
+--- expected
+100
+2
+7

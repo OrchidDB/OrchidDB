@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSumSeq2.3e96336fb1da","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSumSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sum([1.1, 2.2, 3.3, NULL])
+--- expected
+6.600000

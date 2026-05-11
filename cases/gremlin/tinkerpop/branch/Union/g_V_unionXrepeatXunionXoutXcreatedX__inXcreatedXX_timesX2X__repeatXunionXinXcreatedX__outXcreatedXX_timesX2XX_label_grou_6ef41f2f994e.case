@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_V_unionXrepeatXunionXoutXcreatedX__inXcreatedXX_timesX2X__repeatXunionXinXcreatedX__outXcreatedXX_timesX2XX_label_grou.6ef41f2f994e","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_V_unionXrepeatXunionXoutXcreatedX__inXcreatedXX_timesX2X__repeatXunionXinXcreatedX__outXcreatedXX_timesX2XX_label_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().union(__.repeat(__.union(
+__.out("created"),
+__.in("created"))).times(2),
+__.repeat(__.union(
+__.in("created"),
+__.out("created"))).times(2)).label().groupCount()
+--- expected
+m[{"software":"d[12].l","person":"d[20].l"}]

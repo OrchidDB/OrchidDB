@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_V_valuesXnameX_order_tailX7X.706acfae812d","language":"gremlin","ordered":true,"source":"filter/Tail.feature","source_case":"g_V_valuesXnameX_order_tailX7X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").order().tail(7)
+--- expected
+josh
+lop
+marko
+peter
+ripple
+vadas

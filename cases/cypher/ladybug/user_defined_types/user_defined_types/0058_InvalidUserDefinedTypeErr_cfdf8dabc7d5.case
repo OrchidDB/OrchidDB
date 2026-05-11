@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.InvalidUserDefinedTypeErr.cfdf8dabc7d5","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDTCastTest","source_log":"InvalidUserDefinedTypeErr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.info as person_info)
+--- expected
+{age: 21, name: Bob}
+{age: 32, name: Carol}
+{age: 5, name: alice}

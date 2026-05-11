@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.macro.createCaseMacroWithoutElse.2632d38aed39","language":"cypher","ordered":true,"source":"transaction/ddl/macro.test","source_case":"createCaseMacroWithoutElse","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a:person) return case_macro(a.age) as age
+--- expected
+36

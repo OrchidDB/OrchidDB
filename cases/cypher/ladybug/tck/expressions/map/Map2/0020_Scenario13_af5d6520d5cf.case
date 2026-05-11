@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map2.Scenario13.af5d6520d5cf","language":"cypher","ordered":true,"source":"tck/expressions/map/Map2.test","source_case":"Scenario13","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH $expr AS expr, $idx AS idx RETURN expr[idx]
+--- expected
+TypeError: Map element access by non-string

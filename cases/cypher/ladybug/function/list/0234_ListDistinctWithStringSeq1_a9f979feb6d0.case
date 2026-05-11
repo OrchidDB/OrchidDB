@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithStringSeq1.a9f979feb6d0","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithStringSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_distinct(['this is a long string', 'this is a long string', NULL, 'bbb', 'ccc', 'ccc'])
+--- expected
+[this is a long string,bbb,ccc]

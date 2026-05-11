@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list","expected_kind":"rows","id":"cypher.ladybug.read_list.large_adj_list.NodeP0.d2561d3e04e0","language":"cypher","ordered":true,"source":"read_list/large_adj_list.test","source_case":"LargeAdjListTest","source_log":"NodeP0","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+--- expected
+5001

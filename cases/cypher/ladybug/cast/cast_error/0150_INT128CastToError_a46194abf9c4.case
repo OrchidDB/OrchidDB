@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.INT128CastToError.a46194abf9c4","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"INT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_UINT128(TO_INT128(-2147483648))
+--- expected
+Overflow exception: Cannot cast negative INT128 value -2147483648 to UINT128

@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_V_properties.8d148df612a6","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_V_properties","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().properties().asString()
+--- expected
+str[vp[name->marko]]
+str[vp[age->29]]
+str[vp[name->vadas]]
+str[vp[age->27]]
+str[vp[name->lop]]
+str[vp[lang->java]]
+str[vp[name->josh]]
+str[vp[age->32]]
+str[vp[name->ripple]]
+str[vp[lang->java]]
+str[vp[name->peter]]
+str[vp[age->35]]

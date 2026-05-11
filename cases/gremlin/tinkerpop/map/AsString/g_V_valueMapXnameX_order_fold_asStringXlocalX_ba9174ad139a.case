@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_V_valueMapXnameX_order_fold_asStringXlocalX.ba9174ad139a","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_V_valueMapXnameX_order_fold_asStringXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("name").order().fold().asString(Scope.local)
+--- expected
+l[{name=[josh]},{name=[lop]},{name=[marko]},{name=[peter]},{name=[ripple]},{name=[vadas]}]

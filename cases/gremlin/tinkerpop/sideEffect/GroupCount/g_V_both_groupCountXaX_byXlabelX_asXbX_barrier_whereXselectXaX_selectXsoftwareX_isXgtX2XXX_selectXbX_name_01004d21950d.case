@@ -1,0 +1,24 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_both_groupCountXaX_byXlabelX_asXbX_barrier_whereXselectXaX_selectXsoftwareX_isXgtX2XXX_selectXbX_name.01004d21950d","language":"gremlin","ordered":false,"source":"sideEffect/GroupCount.feature","source_case":"g_V_both_groupCountXaX_byXlabelX_asXbX_barrier_whereXselectXaX_selectXsoftwareX_isXgtX2XXX_selectXbX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().both().
+groupCount("a").
+by(T.label).as("b").
+barrier().
+where(__.select("a").
+select("software").
+is(P.gt(2))).
+select("b").values("name")
+--- expected
+lop
+lop
+lop
+peter
+marko
+marko
+marko
+ripple
+vadas
+josh
+josh
+josh

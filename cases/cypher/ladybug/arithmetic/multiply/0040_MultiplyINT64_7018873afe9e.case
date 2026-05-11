@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT64.7018873afe9e","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-9223372036854775807, "INT64") * CAST(6000000000000000000, "INT64")
+--- expected
+Overflow exception: Value -9223372036854775807 * 6000000000000000000 is not within INT64 range.

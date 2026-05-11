@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.correlated.CorrelatedOptionalMatchTest5.a691d6a5f68d","language":"cypher","ordered":true,"source":"optional_match/correlated.test","source_case":"CorrelatedOptionalMatch","source_log":"CorrelatedOptionalMatchTest5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 6 OPTIONAL MATCH (b:person) WHERE b.ID = a.ID + 2 OPTIONAL MATCH (c:person) WHERE c.ID = b.ID + a.ID RETURN a.ID, b.ID, c.ID
+--- expected
+0|2|2
+2||
+3|5|8
+5|7|

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Product.g_injectX3_threeX_productXfive_three_7X_unfold.a211f9ee6f2c","language":"gremlin","ordered":false,"source":"map/Product.feature","source_case":"g_injectX3_threeX_productXfive_three_7X_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([3i,"three"]).product(["five","three",7i]).unfold()
+--- expected
+l[d[3].i,five]
+l[d[3].i,three]
+l[d[3].i,d[7].i]
+l[three,five]
+l[three,three]
+l[three,d[7].i]

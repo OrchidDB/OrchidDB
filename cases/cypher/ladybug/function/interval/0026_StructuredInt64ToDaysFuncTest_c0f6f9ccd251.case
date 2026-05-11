@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredInt64ToDaysFuncTest.c0f6f9ccd251","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredInt64ToDaysFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_days(p.age)
+--- expected
+35 days
+30 days
+45 days
+20 days
+20 days
+25 days
+40 days
+83 days

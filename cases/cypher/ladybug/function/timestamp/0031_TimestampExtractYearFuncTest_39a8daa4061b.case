@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampExtractYearFuncTest.39a8daa4061b","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampExtractYearFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("yeAr", cast(p.registerTime, "TIMESTAMP_NS")), date_part("yeAr", cast(p.registerTime, "TIMESTAMP_MS")), date_part("yeAr", cast(p.registerTime, "TIMESTAMP_SEC")), date_part("yeAr", cast(p.registerTime, "TIMESTAMP_TZ"))
+--- expected
+2011|2011|2011|2011
+2008|2008|2008|2008
+1911|1911|1911|1911
+2031|2031|2031|2031
+1976|1976|1976|1976
+1972|1972|1972|1972
+1976|1976|1976|1976
+2023|2023|2023|2023

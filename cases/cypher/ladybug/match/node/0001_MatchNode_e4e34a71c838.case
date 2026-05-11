@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.node.MatchNode.e4e34a71c838","language":"cypher","ordered":true,"source":"match/node.test","source_case":"MatchNode","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WITH COUNT(a) AS b RETURN b AS c
+--- expected
+14

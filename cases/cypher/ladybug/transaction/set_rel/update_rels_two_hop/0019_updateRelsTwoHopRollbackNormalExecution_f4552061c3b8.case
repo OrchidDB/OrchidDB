@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.update_rels_two_hop.updateRelsTwoHopRollbackNormalExecution.f4552061c3b8","language":"cypher","ordered":true,"source":"transaction/set_rel/update_rels_two_hop.test","source_case":"updateRelsTwoHopRollbackNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[e1:knows]->(p1:person)-[e2:knows]->(p2:person) WHERE p0.ID = 1 AND p2.ID = 1145 RETURN e1.length, e2.length
+--- expected
+0|1145

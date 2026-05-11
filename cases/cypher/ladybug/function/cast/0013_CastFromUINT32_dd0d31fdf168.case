@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromUINT32.dd0d31fdf168","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromUINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:studyAt]->(o:organisation) WHERE p.ID=2 RETURN to_int8(e.temperature), to_int16(e.temperature), to_int32(e.temperature), to_int128(e.temperature), to_float(e.temperature), to_double(e.temperature)
+--- expected
+1|1|1|1|1.000000|1.000000

@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.concat_ws.ConcatWSNullTest.7189d0f45b78","language":"cypher","ordered":true,"source":"function/string/concat_ws.test","source_case":"ConcatWSNullTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN CONCAT_WS(' with fname: ', cast(p.ID as string), p.fName)
+--- expected
+0 with fname: Alice
+2 with fname: Bob
+3 with fname: Carol
+5 with fname: Dan
+7 with fname: Elizabeth
+8 with fname: Farooq
+9 with fname: Greg
+10 with fname: Hubert Blaine Wolfeschlegelsteinhausenbergerdorff
+12
+14 with fname: cooper

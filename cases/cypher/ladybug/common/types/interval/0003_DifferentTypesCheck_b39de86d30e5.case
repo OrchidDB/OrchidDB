@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.types.interval.DifferentTypesCheck.b39de86d30e5","language":"cypher","ordered":true,"source":"common/types/interval.test","source_case":"DifferentTypesCheck","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN INTERVAL("3 week")
+--- expected
+21 days

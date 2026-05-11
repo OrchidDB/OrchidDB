@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.parser.syntax_error.ReturnNotAtEnd.318b1bd35023","language":"cypher","ordered":true,"source":"exceptions/parser/syntax_error.test","source_case":"ReturnNotAtEnd","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN a MATCH (a) RETURN a
+--- expected
+Parser exception: RETURN can only be used at the end of the query (line: 1, offset: 0)
+"RETURN a MATCH (a) RETURN a;"
+^^^^^^

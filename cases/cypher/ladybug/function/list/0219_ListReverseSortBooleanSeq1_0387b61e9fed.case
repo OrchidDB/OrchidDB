@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortBooleanSeq1.0387b61e9fed","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortBooleanSeq1","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([true, true, false, NULL])
+--- expected
+[,True,True,False]

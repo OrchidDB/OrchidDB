@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfINT64.4568f519e9fe","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfINT64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract(a.workedHours, -1)
+--- expected
+5
+8
+5
+9
+2
+7
+1
+7

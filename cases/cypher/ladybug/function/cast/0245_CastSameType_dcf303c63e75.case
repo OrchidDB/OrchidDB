@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastSameType.dcf303c63e75","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastSameType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(340282366920938463463374607431768211455, "uint128")
+--- expected
+340282366920938463463374607431768211455

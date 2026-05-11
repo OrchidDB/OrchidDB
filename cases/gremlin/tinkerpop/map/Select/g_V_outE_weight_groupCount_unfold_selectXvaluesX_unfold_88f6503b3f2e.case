@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_outE_weight_groupCount_unfold_selectXvaluesX_unfold.88f6503b3f2e","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_outE_weight_groupCount_unfold_selectXvaluesX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().outE().values("weight").groupCount().unfold().select(Column.values).unfold()
+--- expected
+d[1].l
+d[2].l
+d[2].l
+d[1].l

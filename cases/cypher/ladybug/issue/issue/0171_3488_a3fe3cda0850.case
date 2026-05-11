@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.3488.a3fe3cda0850","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"3488","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:label1)-[r:rel2]->() WHERE n.id = 0 RETURN r
+--- expected
+Binder exception: Table rel2 does not exist.

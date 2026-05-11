@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Comparisons.320db314aae5","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Comparisons","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value > 0 RETURN z.value
+--- expected
+42
+170141183460469231731687303715884105727
+190079603397242969825244409620089274368
+340282366920938463463374607431768211455

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.data.Int.g_V_valuesXageX_isXtypeOfXGType_INTXX_maxX.cc0a0b85aa4d","language":"gremlin","ordered":false,"source":"data/Int.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_INTXX_maxX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.typeOf(GType.INT)).max()
+--- expected
+d[35].i

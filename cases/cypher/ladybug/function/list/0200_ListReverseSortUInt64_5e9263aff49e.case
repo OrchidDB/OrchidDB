@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortUInt64.5e9263aff49e","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortUInt64","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([to_uint64(2), NULL, to_uint64(3), to_uint64(1), to_uint64(5)])
+--- expected
+[,5,3,2,1]

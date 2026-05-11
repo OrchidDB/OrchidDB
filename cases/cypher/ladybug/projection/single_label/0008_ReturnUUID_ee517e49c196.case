@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnUUID.ee517e49c196","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnUUID","status":"imported","suite":"ladybug","version":1}
+--- query
+Return TO_UUID('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A12')
+--- expected
+a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12

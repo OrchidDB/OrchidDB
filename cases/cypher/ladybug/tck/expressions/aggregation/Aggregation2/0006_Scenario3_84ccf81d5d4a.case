@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation2.Scenario3.84ccf81d5d4a","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation2.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1.0,2.0,0.5,null] AS x RETURN max(x)
+--- expected
+2.000000

@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_V_outXknowsX_V_name.43fca6cd1414","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_V_outXknowsX_V_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("knows").V().values("name")
+--- expected
+marko
+marko
+vadas
+vadas
+lop
+lop
+josh
+josh
+ripple
+ripple
+peter
+peter

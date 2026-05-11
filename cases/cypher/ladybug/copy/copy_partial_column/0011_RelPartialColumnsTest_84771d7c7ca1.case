@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.RelPartialColumnsTest.84771d7c7ca1","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"RelPartialColumnsTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows2]->(:person) WHERE p.ID = 2 RETURN e.*
+--- expected
+4|1946-08-25 19:07:22||2021-06-30|10 years 5 months 13:00:00.000024|[2huh9y89fsfw23,23nsihufhw723]|{locations: ['paris'], transfer: {day: 2000-01-01, amount: [20,5000]}}|
+cool stuff found|1946-08-25 19:07:22||1950-05-14|00:23:00|[fwehu9h9832wewew,23u9h989sdfsss]|{locations: ['paris'], transfer: {day: 2011-05-01, amount: [2000,5340]}}|
+matthew perry|2012-12-11 20:07:22||1950-05-14|20 years 30 days 48:00:00|[fwh9y81232uisuiehuf,ewnuihxy8dyf232]|{locations: ['vancouver'], transfer: {day: 2020-01-01, amount: [120,50]}}|

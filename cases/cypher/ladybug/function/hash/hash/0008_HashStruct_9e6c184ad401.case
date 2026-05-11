@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashStruct.9e6c184ad401","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash({name: 'Bob', age: 25})
+--- expected
+9821934272475076111

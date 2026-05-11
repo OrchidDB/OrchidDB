@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedListToNestedList.83edfe33b198","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedListToNestedList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(["[123, 3234]", "[124, 3241]", NULL, "[0, -4324234]"], "INT64[2][]"), cast(cast(["[123, 3234]", "[124, 3241]", NULL, "[0, -4324234]"], "DOUBLE[2][]"), "STRING[]")
+--- expected
+[[123,3234],[124,3241],,[0,-4324234]]|[[123.000000,3234.000000],[124.000000,3241.000000],,[0.000000,-4324234.000000]]

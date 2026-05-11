@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalComparisonAcrossEdges.52ffef21d688","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalComparisonAcrossEdges","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:knows]-(b:person)-[e2:knows]->(c:person) WHERE e1.validInterval = e2.validInterval AND id(a) <> id(c) RETURN COUNT(*)
+--- expected
+2

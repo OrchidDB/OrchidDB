@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_serial.CopyZeroColumnsSerial.fc2cb8e11e09","language":"cypher","ordered":true,"source":"copy/copy_pk_serial.test","source_case":"CopyZeroColumnsSerial","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) return sum(t.id)
+--- expected
+431985

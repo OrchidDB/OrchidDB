@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.MergeRelWithOnMatch.bcd3609532a2","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"MergeRelWithOnMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:likes]->(p1:person) RETURN p.ID, p1.ID,e.id
+--- expected
+0|3|200
+0|3|18
+0|3|27
+0|3|39
+0|3|41

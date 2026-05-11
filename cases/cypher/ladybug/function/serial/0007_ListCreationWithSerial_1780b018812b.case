@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListCreationWithSerial.1780b018812b","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListCreationWithSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_creation(a.ID, a.ID)
+--- expected
+[0,0]
+[1,1]
+[2,2]
+[3,3]
+[4,4]
+[5,5]
+[6,6]
+[7,7]

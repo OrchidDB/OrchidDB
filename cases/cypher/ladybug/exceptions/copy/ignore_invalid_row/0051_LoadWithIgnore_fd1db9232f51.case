@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.fd1db9232f51","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"ParallelSkipInvalidRelMissingPK","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[l:watch]->(b:movie) return a.ID, b.ID
+--- expected
+0|0
+2|0

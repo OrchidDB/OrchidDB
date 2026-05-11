@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.wsp_demo.DemoDBWSP.8fa52bd9d2c3","language":"cypher","ordered":true,"source":"demo_db/wsp_demo.test","source_case":"DemoDBWSP","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN a.name, e.*, b.name
+--- expected
+Adam|2020|20.000000|Zhang
+Adam|2020|5.000000|Karissa
+Karissa|2021|6.000000|Zhang
+Zhang|2022|22.000000|Noura

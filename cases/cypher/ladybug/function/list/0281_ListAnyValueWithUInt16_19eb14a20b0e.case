@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithUInt16.19eb14a20b0e","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithUInt16","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_any_value([NULL, to_uint16(1), to_uint16(1), NULL, to_uint16(3), to_uint16(1), to_uint16(5)])
+--- expected
+1

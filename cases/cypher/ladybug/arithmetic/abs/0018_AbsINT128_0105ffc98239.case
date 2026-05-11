@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.abs.AbsINT128.0105ffc98239","language":"cypher","ordered":true,"source":"arithmetic/abs.test","source_case":"AbsINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN Abs(CAST(-7000000000000000000000000000000000000, "INT128"))
+--- expected
+7000000000000000000000000000000000000

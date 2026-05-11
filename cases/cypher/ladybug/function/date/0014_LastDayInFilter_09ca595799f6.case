@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.LastDayInFilter.09ca595799f6","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"LastDayInFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE last_day(p.birthdate) > date('1940-06-30') RETURN p.birthdate
+--- expected
+1950-07-23
+1980-10-26
+1980-10-26
+1980-10-26
+1990-11-27

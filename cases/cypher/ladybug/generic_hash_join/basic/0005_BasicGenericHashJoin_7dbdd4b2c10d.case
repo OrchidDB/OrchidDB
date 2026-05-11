@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.generic_hash_join.basic.BasicGenericHashJoin.7dbdd4b2c10d","language":"cypher","ordered":true,"source":"generic_hash_join/basic.test","source_case":"BasicGenericHashJoin","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person), (b:person) WHERE a.age = b.age AND a.eyeSight = b.eyeSight AND a.lastJobDuration = b.lastJobDuration AND a.ID > 7 RETURN a.fName, b.fName
+--- expected
+Farooq|Farooq
+Greg|Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

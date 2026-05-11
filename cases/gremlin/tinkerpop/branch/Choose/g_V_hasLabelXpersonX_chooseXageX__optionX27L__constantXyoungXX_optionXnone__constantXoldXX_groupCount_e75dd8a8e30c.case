@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_hasLabelXpersonX_chooseXageX__optionX27L__constantXyoungXX_optionXnone__constantXoldXX_groupCount.e75dd8a8e30c","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_hasLabelXpersonX_chooseXageX__optionX27L__constantXyoungXX_optionXnone__constantXoldXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").choose(__.values("age")).
+option(xx1, __.constant("young")).
+option(Pick.none, __.constant("old")).
+groupCount()
+--- expected
+m[{"young":"d[1].l", "old":"d[3].l"}]

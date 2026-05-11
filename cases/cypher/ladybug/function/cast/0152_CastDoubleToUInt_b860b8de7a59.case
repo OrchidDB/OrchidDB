@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastDoubleToUInt.b860b8de7a59","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastDoubleToUInt","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_uint8(to_double(1)), to_uint16(to_double(2)), to_uint32(to_double(3)), to_uint64(to_double(4)), to_uint128(to_double(5))
+--- expected
+1|2|3|4|5

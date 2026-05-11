@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.list_of_string_utf8.ListOfStringFunctionUTF8.7915f4b82953","language":"cypher","ordered":true,"source":"function/list_of_string_utf8.test","source_case":"ListOfStringFunctionUTF8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_position(["成績評価","の甘","業が", "这是中文"], "这是中文")
+--- expected
+4

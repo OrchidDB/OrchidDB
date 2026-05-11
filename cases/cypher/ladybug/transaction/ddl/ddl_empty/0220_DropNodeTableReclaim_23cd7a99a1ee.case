@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_empty.DropNodeTableReclaim.23cd7a99a1ee","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_empty.test","source_case":"DropNodeTableReclaim","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (m:movies) return m.name, m.length
+--- expected
+Sóló cón tu párejâ|126
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie|2544
+Roma|298

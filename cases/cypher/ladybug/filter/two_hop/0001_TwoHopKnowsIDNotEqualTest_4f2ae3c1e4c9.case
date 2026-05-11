@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.two_hop.TwoHopKnowsIDNotEqualTest.4f2ae3c1e4c9","language":"cypher","ordered":true,"source":"filter/two_hop.test","source_case":"FilterTwoHop","source_log":"TwoHopKnowsIDNotEqualTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person) WHERE id(a) <> id(c) RETURN COUNT(*)
+--- expected
+24

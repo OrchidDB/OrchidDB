@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.MultiKeyOptionalMatchTest1.758d10a67bdf","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"MultiKeyOptionalMatchTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE a.ID=0 OPTIONAL MATCH (a)-[:knows]->(c:person), (b)-[:knows]->(c) RETURN COUNT(*)
+--- expected
+6

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractListOfINT32.df33116507ce","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractListOfINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN list_extract([m.length], 1)
+--- expected
+126
+2544
+298

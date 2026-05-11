@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpReplaceAll2.8d3c58354ab5","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpReplaceAll2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return REGEXP_REPLACE('this is a team', 'is', '*??', 'g')
+--- expected
+th*?? *?? a team

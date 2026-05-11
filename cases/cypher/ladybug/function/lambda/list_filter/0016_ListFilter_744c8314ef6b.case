@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_filter.ListFilter.744c8314ef6b","language":"cypher","ordered":true,"source":"function/lambda/list_filter.test","source_case":"ListFilter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN LIST_FILTER(a.workedHours, x->x > 5 and x<=10)
+--- expected
+[10]
+[8]
+[]
+[9]
+[]
+[6,7]
+[]
+[10,6,7]

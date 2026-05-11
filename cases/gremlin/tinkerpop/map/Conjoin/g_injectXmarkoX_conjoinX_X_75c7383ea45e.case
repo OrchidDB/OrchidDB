@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Conjoin.g_injectXmarkoX_conjoinX_X.75c7383ea45e","language":"gremlin","ordered":false,"source":"map/Conjoin.feature","source_case":"g_injectXmarkoX_conjoinX_X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["marko"]).conjoin("-")
+--- expected
+marko

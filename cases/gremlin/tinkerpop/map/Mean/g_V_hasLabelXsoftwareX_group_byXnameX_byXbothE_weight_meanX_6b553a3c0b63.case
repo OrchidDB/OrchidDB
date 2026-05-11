@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX.6b553a3c0b63","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").group().by("name").by(__.bothE().values("weight").mean())
+--- expected
+m[{"ripple":"d[1.0].d","lop":"d[0.3333333333333333].d"}]

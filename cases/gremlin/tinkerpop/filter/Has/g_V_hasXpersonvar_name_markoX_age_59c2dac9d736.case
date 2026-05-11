@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXpersonvar_name_markoX_age.59c2dac9d736","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXpersonvar_name_markoX_age","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has(xx1, "name", "marko").values("age")
+--- expected
+d[29].i

@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashOnListOfStruct.52f927a902fe","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"StructHashTest","source_log":"HashOnListOfStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN [o.state], count(*)
+--- expected
+[{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}]|2
+[{revenue: 152, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}}]|1
+[{revenue: 55, location: ['toronto'], stock: {price: [22,33], volume: 28}}]|1
+[{revenue: 558, location: ['very long city name','new york'], stock: {price: [22], volume: 99}}]|2
+[]|1

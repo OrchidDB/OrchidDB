@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractLiteralListOfInterval.0138640d4823","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractLiteralListOfInterval","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([interval('2 hours 3 days 20 minutes'), a.lastJobDuration], a.gender)
+--- expected
+3 days 02:20:00
+10 years 5 months 13:00:00.000024
+3 days 02:20:00
+10 years 5 months 13:00:00.000024
+3 days 02:20:00
+00:18:00.024
+10 years 5 months 13:00:00.000024
+3 years 2 days 13:02:00

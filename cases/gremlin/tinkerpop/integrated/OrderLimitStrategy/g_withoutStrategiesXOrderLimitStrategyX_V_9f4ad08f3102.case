@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.OrderLimitStrategy.g_withoutStrategiesXOrderLimitStrategyX_V.9f4ad08f3102","language":"gremlin","ordered":false,"source":"integrated/OrderLimitStrategy.feature","source_case":"g_withoutStrategiesXOrderLimitStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(OrderLimitStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

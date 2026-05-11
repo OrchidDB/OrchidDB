@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrAddOperation.e900a0965798","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrAddOperation","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) RETURN a.name + "suffix"
+--- expected
+Sóló cón tu párejâsuffix
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 moviesuffix
+Romasuffix

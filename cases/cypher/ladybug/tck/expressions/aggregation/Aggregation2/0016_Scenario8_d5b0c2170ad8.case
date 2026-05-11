@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation2.Scenario8.d5b0c2170ad8","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation2.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ['a','b','B',null,'abc','abc1'] AS i RETURN min(i)
+--- expected
+B

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_reduce.ListReduce.4fd095cce824","language":"cypher","ordered":true,"source":"function/lambda/list_reduce.test","source_case":"ListReduce","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b) WHERE a.ID = 0 RETURN a.ID, b.ID, LIST_REDUCE([1,2,3], (x, y) -> x + y + a.ID + b.ID)
+--- expected
+0|2|10
+0|3|12
+0|5|16

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.UINT16Test.80bbbc3f6f0c","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"UINT16Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(cast(1, "UINT16"))
+--- expected
+UINT16

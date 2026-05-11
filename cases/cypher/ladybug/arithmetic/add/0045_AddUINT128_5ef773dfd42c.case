@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddUINT128.5ef773dfd42c","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddUINT128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(340282366920938463463374607431768211455, "UINT128") + CAST(1, "UINT128")
+--- expected
+Overflow exception: UINT128 is out of range: cannot add.

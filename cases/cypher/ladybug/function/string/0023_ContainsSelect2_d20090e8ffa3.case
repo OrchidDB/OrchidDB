@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsSelect2.d20090e8ffa3","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsSelect2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE NOT a.fName CONTAINS b.fName RETURN COUNT(*)
+--- expected
+14

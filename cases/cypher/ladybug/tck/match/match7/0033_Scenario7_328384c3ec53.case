@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario7.328384c3ec53","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a {name: 'A'}) OPTIONAL MATCH (a)-[:KNOWS]->()-[:KNOWS]->(foo) RETURN foo
+--- expected
+{_ID: 0:2, _LABEL: A, ID: 2, name: C}

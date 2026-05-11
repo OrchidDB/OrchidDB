@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithList.f2a2b62be80a","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_distinct([p.usedNames, p.usedNames, ['Carmen','Fred']])
+--- expected
+[[Ad,De,Hi,Kye,Orlan],[Carmen,Fred]]
+[[Aida],[Carmen,Fred]]
+[[Bobby],[Carmen,Fred]]
+[[Carmen,Fred]]
+[[Ein],[Carmen,Fred]]
+[[Fesdwe],[Carmen,Fred]]
+[[Grad],[Carmen,Fred]]
+[[Wolfeschlegelstein,Daniel],[Carmen,Fred]]

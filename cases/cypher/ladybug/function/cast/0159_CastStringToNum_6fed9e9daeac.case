@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastStringToNum.6fed9e9daeac","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastStringToNum","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT64("9223372036854775807")
+--- expected
+9223372036854775807

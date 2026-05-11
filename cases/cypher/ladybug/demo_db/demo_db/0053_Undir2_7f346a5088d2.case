@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Undir2.7f346a5088d2","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Undir2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:LivesIn]-(c:City) RETURN a.name, c.name
+--- expected
+Adam|Waterloo
+Karissa|Waterloo
+Zhang|Kitchener
+Noura|Guelph

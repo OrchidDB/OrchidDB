@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_empty.DeleteAllRels.4272b9929a8c","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_empty.test","source_case":"DeleteAllRels","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[k:knows]->(b) return count(*)
+--- expected
+14073

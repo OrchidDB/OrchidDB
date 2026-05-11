@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV lsqb-sf01","expected_kind":"rows","id":"cypher.ladybug.lsqb.lsqb_queries.q6.baf3af3e3900","language":"cypher","ordered":true,"source":"lsqb/lsqb_queries.test","source_case":"LSQBTest","source_log":"q6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (person1:Person)-[:Person_knows_Person]-(person2:Person)-[:Person_knows_Person]-(person3:Person)-[:Person_hasInterest_Tag]->(tag:Tag) WHERE id(person1) <> id(person3) RETURN count(*) AS count
+--- expected
+55607896

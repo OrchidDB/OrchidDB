@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidCastTypeError.3328f98a385a","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidCastTypeError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(432, "INTERNAL_ID")
+--- expected
+Conversion exception: Unsupported casting function from INT64 to INTERNAL_ID.

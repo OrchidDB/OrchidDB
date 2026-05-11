@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_dates.NodePropertyColumnWithDate.0d7cbf1f5957","language":"cypher","ordered":true,"source":"copy/copy_dates.test","source_case":"NodePropertyColumnWithDate","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.birthdate
+--- expected
+1900-01-01
+1900-01-01
+1940-06-22
+1950-07-23
+1980-10-26
+1980-10-26
+1980-10-26
+1990-11-27

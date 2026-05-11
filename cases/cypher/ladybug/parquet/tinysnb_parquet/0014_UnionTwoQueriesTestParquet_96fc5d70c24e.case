@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.UnionTwoQueriesTestParquet.96fc5d70c24e","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"UnionTwoQueriesTestParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age UNION MATCH (p:person) RETURN p.age
+--- expected
+20
+25
+30
+35
+40
+45
+83

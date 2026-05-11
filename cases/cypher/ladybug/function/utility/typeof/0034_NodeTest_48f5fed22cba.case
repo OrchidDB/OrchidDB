@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.NodeTest.48f5fed22cba","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"NodeTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN typeof(p) LIMIT 1
+--- expected
+NODE

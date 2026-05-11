@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Has.g_V_hasXname_blahX.db01b3df1d19","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXname_blahX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "blah")
+--- expected
+

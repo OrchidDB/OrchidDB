@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectLISTOfLISTOfINT64Test.e6bdc1ad1d06","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectLISTOfLISTOfINT64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN collect(p.courseScoresPerTerm)
+--- expected
+[[[10,8],[6,7,8]],[[8,9],[9,10]],[[8,10]],[[7,4],[8,8],[9]],[[6],[7],[8]],[[8]],[[10]],[[7],[10],[6,7]]]

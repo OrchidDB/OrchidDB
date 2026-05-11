@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Where1.bcb350a147eb","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Where1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.age > 45 OR starts_with(a.name, "Kar") RETURN *
+--- expected
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}

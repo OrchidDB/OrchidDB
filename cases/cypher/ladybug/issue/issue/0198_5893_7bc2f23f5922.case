@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.5893.7bc2f23f5922","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"5893","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a_account:Account {service: 'A'}) match (b_account:Account {service: 'B'}) where a_account.name = b_account.name return a_account.name
+--- expected
+alice

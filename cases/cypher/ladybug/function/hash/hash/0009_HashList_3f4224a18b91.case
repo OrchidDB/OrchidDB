@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashList.3f4224a18b91","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash(list_creation(1,2,3,4,5,56,2))
+--- expected
+16087297841925419968

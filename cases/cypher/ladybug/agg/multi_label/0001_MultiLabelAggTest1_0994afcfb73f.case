@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_label.MultiLabelAggTest1.0994afcfb73f","language":"cypher","ordered":true,"source":"agg/multi_label.test","source_case":"AggMultiLabel","source_log":"MultiLabelAggTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:marries|studyAt]-(b:person)-[e2:knows]->(c:person) WHERE b.ID = 7 RETURN ID(e1), COUNT(*), MIN(e2.date)
+--- expected
+11:2|2|1905-12-12

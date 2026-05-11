@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.f4352510d7d2","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"RenamePropertyNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.id
+--- expected
+Binder exception: Cannot find property id for p.

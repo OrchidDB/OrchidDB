@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario21.40bb2883b4ca","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario21","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (a:NotThere) OPTIONAL MATCH (b:NotThere) WITH a, b OPTIONAL MATCH (b)-[r:NOR_THIS]->(a) RETURN a, b, r
+--- expected
+||

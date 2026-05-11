@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Range.g_injectX1_2_3_4_5_6X_rangeXlocal_1_2X.2a3c8ac7e2d7","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_injectX1_2_3_4_5_6X_rangeXlocal_1_2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([1, 2, 3], [4, 5, 6]).range(Scope.local, 1, 2)
+--- expected
+l[d[2].i]
+l[d[5].i]

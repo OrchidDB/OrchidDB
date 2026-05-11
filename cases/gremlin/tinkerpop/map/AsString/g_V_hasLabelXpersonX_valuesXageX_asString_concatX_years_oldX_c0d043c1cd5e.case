@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_V_hasLabelXpersonX_valuesXageX_asString_concatX_years_oldX.c0d043c1cd5e","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_V_hasLabelXpersonX_valuesXageX_asString_concatX_years_oldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").values("age").asString().concat(" years old")
+--- expected
+29 years old
+27 years old
+32 years old
+35 years old

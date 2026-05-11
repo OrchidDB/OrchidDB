@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_valueMap_matchXa_selectXnameX_bX.854446a070cc","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_valueMap_matchXa_selectXnameX_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap().match(__.as("a").select("name").as("b"))
+--- expected
+m[{"a":{"name":["marko"],"age":[29]},"b":["marko"]}]
+m[{"a":{"name":["vadas"],"age":[27]},"b":["vadas"]}]
+m[{"a":{"name":["lop"],"lang":["java"]},"b":["lop"]}]
+m[{"a":{"name":["josh"],"age":[32]},"b":["josh"]}]
+m[{"a":{"name":["ripple"],"lang":["java"]},"b":["ripple"]}]
+m[{"a":{"name":["peter"],"age":[35]},"b":["peter"]}]

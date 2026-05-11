@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.PatternToString.2a52a674141d","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"PatternToString","status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH p = (a:person)-[e:knows]->(:person) WHERE a.ID = -1 RETURN cast(rels(p), "string")
+--- expected
+[]

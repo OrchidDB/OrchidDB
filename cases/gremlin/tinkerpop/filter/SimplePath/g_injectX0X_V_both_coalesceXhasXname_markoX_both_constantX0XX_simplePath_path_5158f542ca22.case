@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.SimplePath.g_injectX0X_V_both_coalesceXhasXname_markoX_both_constantX0XX_simplePath_path.5158f542ca22","language":"gremlin","ordered":false,"source":"filter/SimplePath.feature","source_case":"g_injectX0X_V_both_coalesceXhasXname_markoX_both_constantX0XX_simplePath_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(0).V().both().coalesce(has('name','marko').both(),constant(0)).simplePath().path()
+--- expected
+p[d[0].i,v[vadas],v[marko],v[lop]]
+p[d[0].i,v[vadas],v[marko],v[josh]]
+p[d[0].i,v[lop],v[marko],v[vadas]]
+p[d[0].i,v[lop],v[marko],v[josh]]
+p[d[0].i,v[josh],v[marko],v[lop]]
+p[d[0].i,v[josh],v[marko],v[vadas]]

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.IntervalFunctionOnCol.663032d50f64","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"IntervalFunctionOnCol","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN interval(o.history) + interval('31 months 20 days 10 hours 100us')
+--- expected
+13 years 20 days 23:00:00.000124
+4 years 7 months 20 days 14:34:00.000122
+4 years 7 months 24 days 20:00:00.0001

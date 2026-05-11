@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.And.g_V_asXaX_andXselectXaX_selectXaXX.ed9fd528b028","language":"gremlin","ordered":false,"source":"filter/And.feature","source_case":"g_V_asXaX_andXselectXaX_selectXaXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").and(__.select("a"), __.select("a"))
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

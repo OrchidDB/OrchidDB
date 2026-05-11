@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.count.CountSubqueryTest1.8e1115256edb","language":"cypher","ordered":true,"source":"subquery/count.test","source_case":"CountSubquery","source_log":"CountSubqueryTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName, COUNT { MATCH (a)-[:knows]->(b:person) }
+--- expected
+Alice|3
+Bob|3
+Carol|3
+Dan|3
+Elizabeth|2
+Farooq|0
+Greg|0
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|0

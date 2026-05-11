@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.hash.sha256.SHA256Tests.e2c19f73d739","language":"cypher","ordered":true,"source":"function/hash/sha256.test","source_case":"SHA256Tests","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN sha256()
+--- expected
+Binder exception: Function SHA256 did not receive correct arguments:
+Actual:   ()
+Expected: (STRING) -> STRING

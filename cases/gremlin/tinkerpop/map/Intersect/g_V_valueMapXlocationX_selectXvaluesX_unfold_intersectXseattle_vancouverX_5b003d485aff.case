@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.map.Intersect.g_V_valueMapXlocationX_selectXvaluesX_unfold_intersectXseattle_vancouverX.5b003d485aff","language":"gremlin","ordered":false,"source":"map/Intersect.feature","source_case":"g_V_valueMapXlocationX_selectXvaluesX_unfold_intersectXseattle_vancouverX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("location").select(values).unfold().intersect(["seattle","vancouver"])
+--- expected
+s[]
+s[]
+s[seattle]
+s[]

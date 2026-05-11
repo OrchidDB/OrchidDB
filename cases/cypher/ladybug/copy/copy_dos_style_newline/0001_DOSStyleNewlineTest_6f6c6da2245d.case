@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV copy-dos-style-newline","expected_kind":"rows","id":"cypher.ladybug.copy.copy_dos_style_newline.DOSStyleNewlineTest.6f6c6da2245d","language":"cypher","ordered":true,"source":"copy/copy_dos_style_newline.test","source_case":"DOSStyleNewlineTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.ID
+--- expected
+0
+1
+2
+3
+4

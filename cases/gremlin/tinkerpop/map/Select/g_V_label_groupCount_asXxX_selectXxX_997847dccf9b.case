@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_label_groupCount_asXxX_selectXxX.997847dccf9b","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_label_groupCount_asXxX_selectXxX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().label().groupCount().as("x").select("x")
+--- expected
+m[{"software":"d[2].l", "person":"d[4].l"}]

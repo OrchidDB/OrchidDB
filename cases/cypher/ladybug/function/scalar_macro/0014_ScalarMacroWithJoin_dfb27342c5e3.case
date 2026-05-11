@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.ScalarMacroWithJoin.dfb27342c5e3","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"ScalarMacroWithJoin","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) RETURN add7(p.age), add8(p1.age)
+--- expected
+27|33
+27|38
+27|43
+27|48
+27|53
+37|28
+37|43
+37|53
+42|28
+42|38
+42|53
+52|28
+52|38
+52|43

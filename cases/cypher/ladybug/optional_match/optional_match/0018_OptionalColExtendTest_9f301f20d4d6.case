@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.OptionalColExtendTest.9f301f20d4d6","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"OptionalColExtendTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:workAt]->(b:organisation) RETURN COUNT(*)
+--- expected
+8

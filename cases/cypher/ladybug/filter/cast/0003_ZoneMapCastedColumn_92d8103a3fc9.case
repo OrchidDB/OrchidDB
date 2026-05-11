@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.filter.cast.ZoneMapCastedColumn.92d8103a3fc9","language":"cypher","ordered":true,"source":"filter/cast.test","source_case":"ZoneMapCastedColumn","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (c:Comment) where c.id = 687194777181 return c.browserUsed, c.content
+--- expected
+Chrome|right

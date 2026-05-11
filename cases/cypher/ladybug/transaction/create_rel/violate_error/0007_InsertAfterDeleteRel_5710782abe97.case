@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.violate_error.InsertAfterDeleteRel.5710782abe97","language":"cypher","ordered":true,"source":"transaction/create_rel/violate_error.test","source_case":"InsertAfterDeleteRel","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person), (p2:person) WHERE p1.ID = 11 AND p2.ID = 12 RETURN count(*)
+--- expected
+1

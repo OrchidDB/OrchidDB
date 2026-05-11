@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToMap.e9c5a7e56485","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("{12987=  123, 333333333333333333333  =33333333333333333333333}", "MAP(INT128, UINT128)")
+--- expected
+{12987=123, 333333333333333333333=33333333333333333333333}

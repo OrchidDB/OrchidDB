@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.HexLiteral.921042ef9a59","language":"cypher","ordered":true,"source":"projection/escape.test","source_case":"EscapePattern","source_log":"HexLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN size('\\xGG')
+--- expected
+4

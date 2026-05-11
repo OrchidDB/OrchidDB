@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.DateTest.d818b9f08c08","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"DateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(date('2022-06-06'))
+--- expected
+2022-06-06

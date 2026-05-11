@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.macro_transaction.MacroFuncTestCommit.19c3c66d6d44","language":"cypher","ordered":true,"source":"function/macro_transaction.test","source_case":"MacroFuncTestCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+return addWithDefault(4,7)
+--- expected
+11

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXhasXname_vadasX__valuesXnameX__valuesXageXX.79a46b1cd361","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXhasXname_vadasX__valuesXnameX__valuesXageXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.has("name", "vadas"),
+__.values("name"),
+__.values("age"))
+--- expected
+d[29].i
+vadas
+d[32].i
+d[35].i

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_label.UnLabelTest2.2fd89da52fb2","language":"cypher","ordered":true,"source":"match/multi_label.test","source_case":"MatchMultiLabel","source_log":"UnLabelTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[:knows|:studyAt]->(b)-[:knows|:studyAt]->(c) RETURN COUNT(*)
+--- expected
+43

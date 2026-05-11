@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastArrayToArray.a786f1255b64","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastArrayToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+Return cast(cast(cast(cast(Cast([0,-1,1], "INT32[3]"), "INT64[3]"), "INT16[3]"), "DOUBLE[3]"), "FLOAT[3]")
+--- expected
+[0.000000,-1.000000,1.000000]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.sinFunctionOnFloatTest.35f16d37c6ce","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"sinFunctionOnFloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN sin(a.height)
+--- expected
+0.987195
+0.836026
+0.841471
+0.963558
+0.994196
+0.998152
+0.999574
+0.969455

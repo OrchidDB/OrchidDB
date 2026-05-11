@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_VX1X_out_path_byXageX_byXnameX.5278b0bcd3d7","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_VX1X_out_path_byXageX_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out().path().by("age").by("name")
+--- expected
+p[d[29].i,lop]
+p[d[29].i,vadas]
+p[d[29].i,josh]

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Difference.g_V_out_out_path_byXnameX_differenceXdave_kelvinX.2fa6d5a95d47","language":"gremlin","ordered":false,"source":"map/Difference.feature","source_case":"g_V_out_out_path_byXnameX_differenceXdave_kelvinX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().out().path().by("name").difference(["dave","kelvin"])
+--- expected
+s[marko,josh,ripple]
+s[marko,josh,lop]

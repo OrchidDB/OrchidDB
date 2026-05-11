@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.update_each_element_of_large_list.updateEachElementOfLargeListRollbackNormalExecution.fdc74a8da1d1","language":"cypher","ordered":true,"source":"transaction/set_rel/update_each_element_of_large_list.test","source_case":"updateEachElementOfLargeListRollbackNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p0:person)-[e:knows]->(p1:person) WHERE p0.ID = 0 return e.length
+--- expected
+<FILE>:delete_rels.txt

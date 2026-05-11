@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedToNestedType.a000096dd031","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedToNestedType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{[123, 1432, 1142]={a: -1, b: 1, c: {1=1}}}", "MAP(INT64[], STRUCT(a INT8, b UINT8, c MAP(INT8, INT8)))"), "MAP(DOUBLE[], STRUCT(a FLOAT, b FLOAT, c MAP(DOUBLE, UINT8)))")
+--- expected
+{[123.000000,1432.000000,1142.000000]={a: -1.000000, b: 1.000000, c: {1.000000=1}}}

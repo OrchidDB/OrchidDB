@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampToEpoch.6092f0ae6b8e","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampToEpoch","status":"imported","suite":"ladybug","version":1}
+--- query
+return epoch_ms(to_epoch_ms(date('2015-05-01')))
+--- expected
+2015-05-01 00:00:00

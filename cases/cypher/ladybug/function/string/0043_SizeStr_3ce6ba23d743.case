@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.SizeStr.3ce6ba23d743","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"SizeStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN size(s.places[1])
+--- expected
+13
+14
+4

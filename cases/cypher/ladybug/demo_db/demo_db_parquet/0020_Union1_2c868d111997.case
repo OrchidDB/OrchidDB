@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Union1.2c868d111997","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Union1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u1:User)-[:LivesIn]->(c1:City) WHERE c1.name = "Waterloo" RETURN u1.name UNION ALL MATCH (u2:User)-[:LivesIn]->(c2:City) WHERE c2.name = "Kitchener" RETURN u2.name
+--- expected
+Karissa
+Adam
+Zhang

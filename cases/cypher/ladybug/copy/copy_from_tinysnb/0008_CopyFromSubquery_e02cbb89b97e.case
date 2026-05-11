@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_from_tinysnb.CopyFromSubquery.e02cbb89b97e","language":"cypher","ordered":true,"source":"copy/copy_from_tinysnb.test","source_case":"CopyFromSubquery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A)-[r:R]->(b:A) RETURN a.name, b.name
+--- expected
+Alice|Bob
+Alice|Carol
+Alice|Dan
+Bob|Alice
+Bob|Carol
+Bob|Dan
+Carol|Alice
+Carol|Bob
+Carol|Dan
+Dan|Alice
+Dan|Bob
+Dan|Carol
+Elizabeth|Farooq
+Elizabeth|Greg

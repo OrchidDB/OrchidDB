@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RightNegativeIdxUTF8String.a75a4259d56c","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RightNegativeIdxUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN right(m.name, -3)
+--- expected
+ó cón tu párejâ
+😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie
+a

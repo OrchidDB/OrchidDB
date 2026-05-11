@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.agg.hash_ldbc.TestCollectManyGroups.df4e1c4b8183","language":"cypher","ordered":true,"source":"agg/hash_ldbc.test","source_case":"AggHash","source_log":"TestCollectManyGroups","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Comment)-[e:replyOf_Comment]->(b:Comment) WITH b, collect(a) as aList RETURN b.id, size(aList) ORDER BY b.id DESC LIMIT 5
+--- expected
+1099511998009|1
+1099511998014|4
+1099511998015|4
+1099511998020|1
+1099511998025|1

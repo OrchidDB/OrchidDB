@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetByDictMultiLabelWithPruning.e926c765b79f","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetByDictMultiLabelWithPruning","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows|:studyAt]->(b:person:organisation) WHERE a.ID=0 RETURN e.year, e.date
+--- expected
+2021|
+|2023-11-11
+|2023-11-11
+|2023-11-11

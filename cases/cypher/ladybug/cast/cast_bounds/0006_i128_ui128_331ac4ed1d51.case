@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.cast_bounds.i128_ui128.331ac4ed1d51","language":"cypher","ordered":true,"source":"cast/cast_bounds.test","source_case":"i128 / ui128","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -170141183460469231731687303715884105729
+--- expected
+Conversion exception: Cast failed. Could not convert "-170141183460469231731687303715884105729" to UINT128.

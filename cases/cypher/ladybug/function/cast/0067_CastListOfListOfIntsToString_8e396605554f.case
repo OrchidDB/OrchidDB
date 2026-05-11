@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfListOfIntsToString.8e396605554f","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfListOfIntsToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN cast(p.courseScoresPerTerm, "string")
+--- expected
+[[10,8],[6,7,8]]
+[[8,9],[9,10]]
+[[8,10]]
+[[7,4],[8,8],[9]]
+[[6],[7],[8]]
+[[8]]
+[[10]]
+[[7],[10],[6,7]]

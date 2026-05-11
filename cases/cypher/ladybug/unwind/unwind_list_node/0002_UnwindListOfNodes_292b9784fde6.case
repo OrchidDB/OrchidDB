@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind_list_node.UnwindListOfNodes.292b9784fde6","language":"cypher","ordered":true,"source":"unwind/unwind_list_node.test","source_case":"UnwindListOfNodes","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 4 WITH collect(a) AS list_a UNWIND list_a AS a MATCH (a)-[:knows]->(b:person) RETURN a.fName, b.fName
+--- expected
+Alice|Bob
+Alice|Carol
+Alice|Dan
+Bob|Alice
+Bob|Carol
+Bob|Dan
+Carol|Alice
+Carol|Bob
+Carol|Dan

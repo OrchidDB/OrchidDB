@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Set.g_injectXsetX_isXtypeOfXGType_SETXX_groupCount.974be876d814","language":"gremlin","ordered":false,"source":"data/Set.feature","source_case":"g_injectXsetX_isXtypeOfXGType_SETXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject({"test"}).is(P.typeOf(GType.SET)).groupCount()
+--- expected
+m[{"s[test]":"d[1].l"}]

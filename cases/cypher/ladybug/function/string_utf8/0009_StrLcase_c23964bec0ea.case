@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrLcase.c23964bec0ea","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrLcase","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN lcase(m.name)
+--- expected
+sóló cón tu párejâ
+the 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie
+roma

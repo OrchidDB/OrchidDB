@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.InitCapStrings.1596f7239986","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"InitCapStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+match (o:organisation) return initcap(o.name)
+--- expected
+Abfsuni
+Cswork
+Deswork

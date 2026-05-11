@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.3042.0c80ec7d9719","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"3042","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:MyTask) RETURN n.*
+--- expected
+myid|[{input1=value1}]

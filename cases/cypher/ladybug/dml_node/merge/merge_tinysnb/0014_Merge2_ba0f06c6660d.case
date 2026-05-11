@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.merge.merge_tinysnb.Merge2.ba0f06c6660d","language":"cypher","ordered":true,"source":"dml_node/merge/merge_tinysnb.test","source_case":"Merge2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN COUNT(*)
+--- expected
+9

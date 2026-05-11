@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Sum.g_injectX1b_26b_3iX_fold_sumXlocalX.3f173a717add","language":"gremlin","ordered":false,"source":"map/Sum.feature","source_case":"g_injectX1b_26b_3iX_fold_sumXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1b,2b,3i).fold().sum(local)
+--- expected
+d[6].i

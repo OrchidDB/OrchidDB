@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.GroupCount.g_V_unionXoutXknowsX__outXcreatedX_inXcreatedXX_groupCount_selectXvaluesX_unfold_sum.a99eacc6fc9e","language":"gremlin","ordered":true,"source":"sideEffect/GroupCount.feature","source_case":"g_V_unionXoutXknowsX__outXcreatedX_inXcreatedXX_groupCount_selectXvaluesX_unfold_sum","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().union(__.out("knows"),
+__.out("created").in("created")).
+groupCount().
+select(Column.values).
+unfold().
+sum()
+--- expected
+d[12].l

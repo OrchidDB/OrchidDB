@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.ListPredicateInWhere.0fdc6880ac57","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"ListPredicateInWhere","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE none(name in a.usedNames WHERE name = 'Aida') RETURN a.fName
+--- expected
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

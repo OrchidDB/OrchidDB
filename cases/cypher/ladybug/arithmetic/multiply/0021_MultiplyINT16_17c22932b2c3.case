@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT16.17c22932b2c3","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(32767, "INT16") * CAST(10, "INT16")
+--- expected
+Overflow exception: Value 32767 * 10 is not within INT16 range.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedListToArray.1beef53deb73","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([[1,2], [3, 4], [5, 6]], "INT32[2][]")
+--- expected
+[[1,2],[3,4],[5,6]]

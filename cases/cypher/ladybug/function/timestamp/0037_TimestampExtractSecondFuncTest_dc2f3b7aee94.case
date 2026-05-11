@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampExtractSecondFuncTest.dc2f3b7aee94","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampExtractSecondFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("seConds", cast(p.registerTime, "TIMESTAMP_NS")), date_part("seConds", cast(p.registerTime, "TIMESTAMP_MS")), date_part("seConds", cast(p.registerTime, "TIMESTAMP_SEC")), date_part("seConds", cast(p.registerTime, "TIMESTAMP_TZ"))
+--- expected
+30|30|30|30
+30|30|30|30
+21|21|21|21
+30|30|30|30
+42|42|42|42
+30|30|30|30
+42|42|42|42
+30|30|30|30

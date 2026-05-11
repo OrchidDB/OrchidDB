@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpExtractAllWithoutGroup.b4623fca0e29","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpExtractAllWithoutGroup","status":"imported","suite":"ladybug","version":1}
+--- query
+Return regexp_extract_all('hello_world', '([a-z ]+)_?')
+--- expected
+[hello_,world]

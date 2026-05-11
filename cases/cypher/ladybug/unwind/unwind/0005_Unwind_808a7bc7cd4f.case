@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.Unwind.808a7bc7cd4f","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*1..2]->(b:person) UNWIND p AS x RETURN x
+--- expected
+Binder exception: p has data type RECURSIVE_REL but LIST was expected.

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario13.a0b31cdf25b6","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario13","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:T {name: 'a'})-[:R*]->(other:T) WHERE other <> a WITH a, other, min(length(p)) AS len RETURN a.name AS name, other.name, len
+--- expected
+a|b|1
+a|c|1

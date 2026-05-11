@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloUINTANDINT.d4343a24b248","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloUINTANDINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(255, "UINT8") % CAST(0, "INT16")
+--- expected
+Runtime exception: Modulo by zero.

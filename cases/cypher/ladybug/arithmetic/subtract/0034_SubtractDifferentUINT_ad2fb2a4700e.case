@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractDifferentUINT.ad2fb2a4700e","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractDifferentUINT","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(255, "UINT8") - CAST(65530, "UINT16")
+--- expected
+Overflow exception: Value 255 - 65530 is not within UINT16 range.

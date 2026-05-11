@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyNodeAfterDropAddCol.55202e9d1a68","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyNodeAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:User) RETURN n.name, n.age
+--- expected
+Alice|
+Adam|30
+Karissa|40
+Zhang|50
+Noura|25

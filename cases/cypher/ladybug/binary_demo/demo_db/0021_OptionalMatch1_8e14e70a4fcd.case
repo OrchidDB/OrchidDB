@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.OptionalMatch1.8e14e70a4fcd","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"OptionalMatch1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) OPTIONAL MATCH (u)-[:Follows]->(u1:User) RETURN u.name, u1.name
+--- expected
+Adam|Karissa
+Adam|Zhang
+Karissa|Zhang
+Zhang|Noura
+Noura|

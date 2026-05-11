@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.merge.merge_tinysnb.MultipleMerge.263d2610c21e","language":"cypher","ordered":true,"source":"dml_node/merge/merge_tinysnb.test","source_case":"MultipleMerge","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e:knows]->(b) WHERE a.ID = 0 RETURN b.ID, e.date
+--- expected
+102|2024-10-10
+2|2021-06-30
+3|2021-06-30
+5|2021-06-30

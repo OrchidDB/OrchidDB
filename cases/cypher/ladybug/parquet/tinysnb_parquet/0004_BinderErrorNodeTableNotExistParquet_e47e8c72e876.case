@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(tinysnb)","expected_kind":"rows","id":"cypher.ladybug.parquet.tinysnb_parquet.BinderErrorNodeTableNotExistParquet.e47e8c72e876","language":"cypher","ordered":true,"source":"parquet/tinysnb_parquet.test","source_case":"TinySnbParquet","source_log":"BinderErrorNodeTableNotExistParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:PERSON) RETURN COUNT(*)
+--- expected
+Binder exception: Node table PERSON does not exist.

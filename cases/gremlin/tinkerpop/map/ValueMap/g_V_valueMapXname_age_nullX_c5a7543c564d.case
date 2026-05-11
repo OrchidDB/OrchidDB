@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ValueMap.g_V_valueMapXname_age_nullX.c5a7543c564d","language":"gremlin","ordered":false,"source":"map/ValueMap.feature","source_case":"g_V_valueMapXname_age_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("name", "age", null)
+--- expected
+m[{"name": ["marko"], "age": [29]}]
+m[{"name": ["josh"], "age": [32]}]
+m[{"name": ["peter"], "age": [35]}]
+m[{"name": ["vadas"], "age": [27]}]
+m[{"name": ["lop"]}]
+m[{"name": ["ripple"]}]

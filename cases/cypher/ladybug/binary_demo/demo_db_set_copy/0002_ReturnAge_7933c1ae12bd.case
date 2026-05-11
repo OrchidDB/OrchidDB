@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_set_copy.ReturnAge.7933c1ae12bd","language":"cypher","ordered":true,"source":"binary_demo/demo_db_set_copy.test","source_case":"SetSingleLabelNodeTest","source_log":"ReturnAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) WHERE u.name='Adam' RETURN u.age
+--- expected
+50

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt16ToUint8OutOfRange.7ae8251b363e","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt16ToUint8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(cast(-100, "int16"), "uint8")
+--- expected
+Overflow exception: Value -100 is not within UINT8 range

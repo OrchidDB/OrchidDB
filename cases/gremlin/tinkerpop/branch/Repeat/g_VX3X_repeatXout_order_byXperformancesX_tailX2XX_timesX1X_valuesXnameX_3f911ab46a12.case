@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX3X_repeatXout_order_byXperformancesX_tailX2XX_timesX1X_valuesXnameX.3f911ab46a12","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX3X_repeatXout_order_byXperformancesX_tailX2XX_timesX1X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid3).repeat(__.out().order().by("performances").tail(2)).times(1).values("name")
+--- expected
+ME AND MY UNCLE
+DRUMS

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.CollectDistinct.e3353a1772e2","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"CollectDistinct","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,1] AS x MATCH (a:person)-[e:knows]->() WHERE a.ID = 5 MATCH (b:person) WHERE b.ID < 6 AND b.ID > 2 WITH e, COLLECT(DISTINCT b) AS bs UNWIND bs AS newB RETURN e.date, newB.fName
+--- expected
+1950-05-14|Carol
+1950-05-14|Dan
+2000-01-01|Carol
+2000-01-01|Dan
+2021-06-30|Carol
+2021-06-30|Dan

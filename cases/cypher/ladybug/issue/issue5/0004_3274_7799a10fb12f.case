@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.issue.issue5.3274.7799a10fb12f","language":"cypher","ordered":true,"source":"issue/issue5.test","source_case":"3274","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person)-[r:knows_with_null]->(b:Person) WHERE r.__EXTRAID IS NOT NULL RETURN COUNT(*)
+--- expected
+0

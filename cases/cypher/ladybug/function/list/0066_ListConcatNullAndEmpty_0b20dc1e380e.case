@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListConcatNullAndEmpty.0b20dc1e380e","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListConcatNullAndEmpty","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_CONCAT([NULL], [])
+--- expected
+[]

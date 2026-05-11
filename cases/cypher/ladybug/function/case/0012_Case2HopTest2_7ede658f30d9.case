@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.Case2HopTest2.7ede658f30d9","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"Case2HopTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE a.ID = 0 RETURN CASE WHEN (a.ID = 0 AND b.ID = 2) THEN a.ID WHEN true THEN b.ID ELSE 111 END
+--- expected
+0
+3
+5

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_V_valuesXnameX_order_tailXglobal_2X.ffb40faa2f6c","language":"gremlin","ordered":true,"source":"filter/Tail.feature","source_case":"g_V_valuesXnameX_order_tailXglobal_2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").order().tail(Scope.global, 2)
+--- expected
+ripple
+vadas

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LevenshteinDistance.2359a6948fee","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LevenshteinDistance","status":"imported","suite":"ladybug","version":1}
+--- query
+return levenshtein('book', 'back')
+--- expected
+2

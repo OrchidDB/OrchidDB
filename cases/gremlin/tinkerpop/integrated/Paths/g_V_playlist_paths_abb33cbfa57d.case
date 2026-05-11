@@ -1,0 +1,22 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.Paths.g_V_playlist_paths.abb33cbfa57d","language":"gremlin","ordered":false,"source":"integrated/Paths.feature","source_case":"g_V_playlist_paths","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(SeedStrategy(seed: 99999)).V().has("name", "Bob_Dylan").in("sungBy").as("a").
+repeat(__.out().order().by(Order.shuffle).simplePath().from("a")).
+until(__.out("writtenBy").has("name", "Johnny_Cash")).
+limit(1).as("b").
+repeat(__.out().order().by(Order.shuffle).as("c").simplePath().from("b").to("c")).
+until(__.out("sungBy").has("name", "Grateful_Dead")).
+limit(1).
+path().from("a").unfold().
+project("song", "artists").
+by("name").
+by(__.coalesce(__.out("sungBy", "writtenBy").dedup().values("name"),
+__.constant("Unknown")).fold())
+--- expected
+m[{"song":"I WANT YOU","artists":["Bob_Dylan"]}]
+m[{"song":"BABY BLUE","artists":["Unknown"]}]
+m[{"song":"CANDYMAN","artists":["Garcia","Hunter"]}]
+m[{"song":"BIG RIVER","artists":["Weir","Johnny_Cash"]}]
+m[{"song":"TERRAPIN STATION","artists":["Garcia","Hunter"]}]
+m[{"song":"DRUMS","artists":["Grateful_Dead"]}]

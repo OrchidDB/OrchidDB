@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.BasicLimitTest4.471314628cb4","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"BasicLimitTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person)-[:knows]->(d:person)-[:knows]->(e:person) WITH d.fName AS k LIMIT 5 RETURN COUNT(*)
+--- expected
+5

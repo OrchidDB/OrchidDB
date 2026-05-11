@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map2.Scenario4.7760a77f6cd6","language":"cypher","ordered":true,"source":"tck/expressions/map/Map2.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH map(['name'], ['Mats']) AS expr, null AS idx RETURN expr[idx] AS value
+--- expected
+null

@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.Unwind.2a3dfe71e055","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*1..1]->(b:person) UNWIND nodes(p) AS x RETURN x.fName, COUNT(*)
+--- expected
+Alice|6
+Bob|6
+Carol|6
+Dan|6
+Elizabeth|2
+Farooq|1
+Greg|1

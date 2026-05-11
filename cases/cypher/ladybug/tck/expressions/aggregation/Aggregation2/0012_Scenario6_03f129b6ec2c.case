@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation2.Scenario6.03f129b6ec2c","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,2.0,5,null,3.2,0.1] AS x RETURN min(x)
+--- expected
+0.1

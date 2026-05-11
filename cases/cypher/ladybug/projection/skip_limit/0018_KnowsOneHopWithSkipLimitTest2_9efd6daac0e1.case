@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.KnowsOneHopWithSkipLimitTest2.9efd6daac0e1","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"KnowsOneHopWithSkipLimitTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.age>20 WITH a SKIP 1 LIMIT 1 MATCH (a)-[e:knows]->(b:person) RETURN b.fName
+--- expected
+Alice
+Carol
+Dan

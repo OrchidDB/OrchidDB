@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Simple.29d2aceb8d0d","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Simple","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (z:tab) WHERE z.value = 340282366920938463463374607431768211455 RETURN z.*
+--- expected
+2|340282366920938463463374607431768211455
+3|340282366920938463463374607431768211455

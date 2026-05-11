@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TwoNodeCycleTest.00fb4725ca86","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TwoNodeCycleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person), (b)-[:knows]->(a), (a)-[:knows]->(b)  RETURN COUNT(*)
+--- expected
+12

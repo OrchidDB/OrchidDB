@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.csv.edge_cases.EdgeCases.34c65a62c8d5","language":"cypher","ordered":true,"source":"csv/edge_cases.test","source_case":"EdgeCases","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:`mixed-empty-lines-single-column`) RETURN m.B
+--- expected
+abc
+def
+ghi

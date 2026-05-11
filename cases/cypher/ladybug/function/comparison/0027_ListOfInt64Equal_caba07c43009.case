@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.ListOfInt64Equal.caba07c43009","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"ListOfInt64Equal","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.workedHours = [12, 8] RETURN p.ID
+--- expected
+2

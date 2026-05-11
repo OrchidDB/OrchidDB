@@ -1,0 +1,348 @@
+use crate::ir::plan::{
+    ApplyKind, Node, ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode, ProjectionItem,
+};
+use crate::ir::policy::OptionalMissing;
+use crate::language::cypher::ast::{Clause, MatchClause, ProcedureCallClause, UnwindClause};
+use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
+use crate::language::cypher::planner::lowering::{
+    Lowerer, context::CypherTraversalKind, pattern, predicate, project,
+};
+
+pub fn lower_clause(lowerer: &mut Lowerer, input: Node, clause: &Clause) -> CypherPlanResult<Node> {
+    match clause {
+        Clause::Match(clause) => lower_match(lowerer, input, clause),
+        Clause::Unwind(clause) => lower_unwind(lowerer, input, clause),
+        Clause::Call(clause) => lower_call(lowerer, input, clause),
+        Clause::With(clause) => project::lower_with(lowerer, input, clause),
+        Clause::Return(clause) => project::lower_return(lowerer, input, clause),
+    }
+}
+
+fn lower_match(
+    lowerer: &mut Lowerer,
+    mut input: Node,
+    clause: &MatchClause,
+) -> CypherPlanResult<Node> {
+    if clause.optional {
+        return lower_optional_match(lowerer, input, clause);
+    }
+
+    let history = pattern_history_binding(lowerer, &clause.patterns);
+    let mut history_available = false;
+    for part in &clause.patterns {
+        input = pattern::lower_pattern_part(
+            lowerer,
+            input,
+            part,
+            false,
+            history.as_deref(),
+            history_available,
+        )?;
+        if !part.element.chains.is_empty() {
+            history_available = true;
+        }
+    }
+    if let Some(predicate) = &clause.predicate {
+        let parent = lowerer.current_traversal().cloned();
+        if let Some(parent) = parent.as_ref() {
+            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
+            lowerer.push_traversal(traversal);
+        }
+        input = predicate::lower_where_predicate(lowerer, input, predicate)?;
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_correlation(lowerer.visible_fields());
+        if parent.is_some() {
+            lowerer.pop_traversal();
+        }
+    }
+    Ok(input)
+}
+
+fn lower_optional_match(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &MatchClause,
+) -> CypherPlanResult<Node> {
+    let outer_fields = lowerer.visible_fields();
+    let outer_visible = lowerer.visible_set();
+    let (right, outputs) = lowerer.with_preserved_scope(|lowerer| {
+        let parent = lowerer.current_traversal().cloned();
+        if let Some(parent) = parent.as_ref() {
+            let traversal =
+                lowerer.child_traversal(parent, CypherTraversalKind::OptionalMatchPattern);
+            lowerer.push_traversal(traversal);
+        }
+
+        let mut right = Node::GraphCorrelate {
+            bindings: outer_fields.clone(),
+        };
+        let history = pattern_history_binding(lowerer, &clause.patterns);
+        let mut history_available = false;
+        for part in &clause.patterns {
+            right = pattern::lower_pattern_part(
+                lowerer,
+                right,
+                part,
+                false,
+                history.as_deref(),
+                history_available,
+            )?;
+            if !part.element.chains.is_empty() {
+                history_available = true;
+            }
+        }
+        if let Some(predicate) = &clause.predicate {
+            let parent = lowerer.current_traversal().cloned();
+            if let Some(parent) = parent.as_ref() {
+                let traversal =
+                    lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
+                lowerer.push_traversal(traversal);
+            }
+            right = predicate::lower_where_predicate(lowerer, right, predicate)?;
+            lowerer.record_current_imports(lowerer.visible_fields());
+            lowerer.record_current_correlation(lowerer.visible_fields());
+            if parent.is_some() {
+                lowerer.pop_traversal();
+            }
+        }
+
+        let outputs = lowerer
+            .visible_fields()
+            .into_iter()
+            .filter(|binding| !outer_visible.contains(binding))
+            .collect::<Vec<_>>();
+        if parent.is_some() {
+            lowerer.pop_traversal();
+        }
+        Ok((right, outputs))
+    })?;
+
+    let node = Node::GraphApply {
+        kind: ApplyKind::Optional,
+        correlation: outer_fields.clone(),
+        outputs: outputs.clone(),
+        optional_missing: OptionalMissing::Null,
+        left: input.boxed(),
+        right: right.boxed(),
+    };
+    lowerer.record_current_imports(outer_fields.clone());
+    lowerer.record_current_correlation(outer_fields);
+    lowerer.record_current_outputs(outputs.clone());
+    lowerer.record_current_nullable(outputs.clone());
+    for output in outputs {
+        lowerer.add_nullable(output.clone());
+        lowerer.add_visible(output);
+    }
+    Ok(node)
+}
+
+fn lower_unwind(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &UnwindClause,
+) -> CypherPlanResult<Node> {
+    let parent = lowerer.current_traversal().cloned();
+    if let Some(parent) = parent.as_ref() {
+        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::Unwind);
+        lowerer.push_traversal(traversal);
+    }
+    if lowerer.is_visible(&clause.alias) {
+        if parent.is_some() {
+            lowerer.pop_traversal();
+        }
+        return Err(CypherPlanError::Invalid(format!(
+            "UNWIND alias `{}` is already in scope",
+            clause.alias
+        )));
+    }
+    project::validate_expression_scope(lowerer, &clause.expr, "UNWIND expression")?;
+    let (input, input_expr) = project::lower_expr_with_input(lowerer, input, &clause.expr)?;
+    let node = Node::GraphUnwind {
+        input_expr,
+        bind: clause.alias.clone(),
+        outer: false,
+        input: input.boxed(),
+    };
+    lowerer.record_current_imports(lowerer.visible_fields());
+    lowerer.record_current_outputs(vec![clause.alias.clone()]);
+    if parent.is_some() {
+        lowerer.pop_traversal();
+    }
+    lowerer.add_visible(clause.alias.clone());
+    Ok(node)
+}
+
+fn lower_call(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &ProcedureCallClause,
+) -> CypherPlanResult<Node> {
+    let (source_yields, alias_yields) = procedure_yields(clause);
+    validate_unique_yields(&alias_yields)?;
+    if !clause.standalone
+        && source_yields.is_empty()
+        && matches!(procedure_mode(&clause.name), ProcedureMode::Read)
+    {
+        return Err(CypherPlanError::Invalid(format!(
+            "procedure `{}` declares result fields and requires explicit YIELD inside a larger query",
+            clause.name
+        )));
+    }
+    let visible = lowerer.visible_set();
+    let rebound = alias_yields
+        .iter()
+        .filter(|yield_name| visible.contains(*yield_name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !rebound.is_empty() {
+        return Err(CypherPlanError::Invalid(format!(
+            "procedure `{}` tries to rebind variables already in scope: {}",
+            clause.name,
+            rebound.join(", ")
+        )));
+    }
+
+    let parent = lowerer.current_traversal().cloned();
+    if let Some(parent) = parent.as_ref() {
+        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ProcedureCall);
+        lowerer.push_traversal(traversal);
+    }
+
+    let mut call_input = input;
+    let mut args = Vec::with_capacity(clause.args.len());
+    for arg in &clause.args {
+        project::validate_expression_scope(lowerer, arg, "procedure argument")?;
+        let (next, value) = project::lower_expr_with_input(lowerer, call_input, arg)?;
+        call_input = next;
+        args.push(ProcedureArg { name: None, value });
+    }
+    let call = Node::GraphProcedureCall {
+        name: clause.name.clone(),
+        args,
+        yields: source_yields.clone(),
+        mode: procedure_mode(&clause.name),
+        input: if clause.standalone && clause.args.is_empty() {
+            None
+        } else {
+            Some(call_input.boxed())
+        },
+    };
+
+    let mut node = if source_yields != alias_yields {
+        let mut items = lowerer
+            .visible_fields()
+            .into_iter()
+            .map(|field| ProjectionItem {
+                alias: field.clone(),
+                expr: crate::ir::expr::IrExpr::Binding(field),
+            })
+            .collect::<Vec<_>>();
+        items.extend(
+            source_yields
+                .iter()
+                .zip(alias_yields.iter())
+                .map(|(field, alias)| ProjectionItem {
+                    alias: alias.clone(),
+                    expr: crate::ir::expr::IrExpr::Binding(field.clone()),
+                }),
+        );
+        Node::GraphProject {
+            mode: ProjectMode::ReplaceScope,
+            items,
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: call.boxed(),
+        }
+    } else {
+        call
+    };
+
+    let imports = lowerer.visible_fields();
+    for output in &alias_yields {
+        lowerer.add_visible(output.clone());
+    }
+    if let Some(predicate) = &clause.predicate {
+        let parent = lowerer.current_traversal().cloned();
+        if let Some(parent) = parent.as_ref() {
+            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
+            lowerer.push_traversal(traversal);
+        }
+        node = predicate::lower_where_predicate(lowerer, node, predicate)?;
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_correlation(lowerer.visible_fields());
+        if parent.is_some() {
+            lowerer.pop_traversal();
+        }
+    }
+
+    lowerer.record_current_imports(imports);
+    lowerer.record_current_outputs(alias_yields.clone());
+    if parent.is_some() {
+        lowerer.pop_traversal();
+    }
+    Ok(node)
+}
+
+fn validate_unique_yields(yields: &[String]) -> CypherPlanResult<()> {
+    let mut seen = std::collections::BTreeSet::new();
+    let duplicates = yields
+        .iter()
+        .filter(|yield_name| !seen.insert((*yield_name).clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(CypherPlanError::Invalid(format!(
+            "procedure YIELD contains duplicate output variables: {}",
+            duplicates.join(", ")
+        )))
+    }
+}
+
+fn procedure_yields(clause: &ProcedureCallClause) -> (Vec<String>, Vec<String>) {
+    if !clause.yields.is_empty() {
+        return (
+            clause
+                .yields
+                .iter()
+                .map(|item| item.field.clone())
+                .collect(),
+            clause
+                .yields
+                .iter()
+                .map(|item| item.alias.clone())
+                .collect(),
+        );
+    }
+    if clause.yield_all || clause.standalone {
+        let yields = default_procedure_yields(&clause.name);
+        return (yields.clone(), yields);
+    }
+    (Vec::new(), Vec::new())
+}
+
+fn default_procedure_yields(name: &str) -> Vec<String> {
+    match name.to_ascii_lowercase().as_str() {
+        "db.labels" => vec!["label".to_string()],
+        "db.relationshiptypes" => vec!["relationshipType".to_string()],
+        "db.propertykeys" => vec!["propertyKey".to_string()],
+        _ => vec!["value".to_string()],
+    }
+}
+
+fn procedure_mode(name: &str) -> ProcedureMode {
+    match name.to_ascii_lowercase().as_str() {
+        "db.labels" | "db.relationshiptypes" | "db.propertykeys" => ProcedureMode::Read,
+        _ => ProcedureMode::Write,
+    }
+}
+
+fn pattern_history_binding(
+    lowerer: &mut Lowerer,
+    patterns: &[crate::language::cypher::ast::PatternPart],
+) -> Option<String> {
+    patterns
+        .iter()
+        .any(|part| !part.element.chains.is_empty())
+        .then(|| lowerer.synthetic("match_history"))
+}

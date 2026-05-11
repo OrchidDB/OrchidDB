@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_injectX1_null_nullX_path.64889e4fbee2","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_injectX1_null_nullX_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1, null, null).path()
+--- expected
+p[d[1].i]
+p[null]
+p[null]

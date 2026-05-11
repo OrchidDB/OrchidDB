@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastListOfIntsToList.371271b09eed","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastListOfIntsToList","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE size(p.workedHours) > 1 RETURN cast(p.workedHours, "STRING[]")
+--- expected
+[1,9]
+[10,5]
+[12,8]
+[3,4,5,6,7]
+[4,5]
+[10,11,12,3,4,5,6,7]

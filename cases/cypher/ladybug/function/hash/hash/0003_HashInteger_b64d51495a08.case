@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashInteger.b64d51495a08","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashInteger","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash(123213213)
+--- expected
+5409473644860454233

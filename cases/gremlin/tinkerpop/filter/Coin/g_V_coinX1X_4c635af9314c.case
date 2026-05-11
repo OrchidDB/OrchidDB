@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Coin.g_V_coinX1X.4c635af9314c","language":"gremlin","ordered":false,"source":"filter/Coin.feature","source_case":"g_V_coinX1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().coin(1)
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

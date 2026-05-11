@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_hasXperson_name_markoX_elementMapXnameX_asXaX_unionXidentity_identityX_selectXaX_selectXnameX.d8da6d89bd03","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_hasXperson_name_markoX_elementMapXnameX_asXaX_unionXidentity_identityX_selectXaX_selectXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person","name","marko").elementMap("name").as("a").union(__.identity(),__.identity()).select("a").select("name")
+--- expected
+marko
+marko

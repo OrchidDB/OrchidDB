@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET CSV_TO_PARQUET(ldbc-sf01)","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short_parquet.IS6.3cdefb385f44","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short_parquet.test","source_case":"LDBCInteractiveShortParquet","source_log":"IS6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:Comment {id: 962072675825 })-[:replyOf_Post|:replyOf_Comment*1..2]->(p:Post)<-[:containerOf]-(f:Forum)-[:hasModerator]->(mod:Person) RETURN f.id AS forumId,f.title AS forumTitle,mod.id AS moderatorId,mod.firstName AS moderatorFirstName, mod.lastName AS moderatorLastName
+--- expected
+687194767491|Wall of Faisal Malik|21990232556585|Faisal|Malik

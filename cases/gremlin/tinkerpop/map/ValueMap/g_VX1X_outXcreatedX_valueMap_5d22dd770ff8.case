@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ValueMap.g_VX1X_outXcreatedX_valueMap.5d22dd770ff8","language":"gremlin","ordered":false,"source":"map/ValueMap.feature","source_case":"g_VX1X_outXcreatedX_valueMap","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out("created").valueMap()
+--- expected
+m[{"name": ["lop"], "lang": ["java"]}]

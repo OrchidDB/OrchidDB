@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.interval.MissingTheSpecifierString.aee30f9b7b87","language":"cypher","ordered":true,"source":"exceptions/types/interval.test","source_case":"CastStrToIntervalError","source_log":"MissingTheSpecifierString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return interval("3 years 2 months 45")
+--- expected
+Conversion exception: Error occurred during parsing interval. Field name is missing.

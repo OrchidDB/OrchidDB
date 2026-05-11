@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Comparability.InjectX1dX_notXfalseX.d9a62d15862e","language":"gremlin","ordered":false,"source":"semantics/Comparability.feature","source_case":"InjectX1dX_notXfalseX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1d).not(is(P.lt(0)))
+--- expected
+d[1].d

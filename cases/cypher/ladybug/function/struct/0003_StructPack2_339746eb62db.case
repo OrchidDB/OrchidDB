@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.StructPack2.339746eb62db","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"StructPack2","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN STRUCT_PACK("a", "b")
+--- expected
+Binder exception: Cannot infer field name for a.

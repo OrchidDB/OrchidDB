@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddNodePropertyIfNotExists.60b1f8f8719d","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"AddRelProperty","source_log":"AddNodePropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (c:Comment)-[r:replyOf]->(c2:Comment) RETURN SUM(r.propy)
+--- expected
+108027

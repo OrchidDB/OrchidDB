@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractDoubleExtract.84c3d42b7502","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractDoubleExtract","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.courseScoresPerTerm[1][1]
+--- expected
+10
+8
+8
+7
+6
+8
+10
+7

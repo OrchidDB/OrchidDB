@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMaxFloatTest.c3cfac7b70c9","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMaxFloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[w:workAt]->(:organisation) RETURN MAX(w.rating)
+--- expected
+9.200000

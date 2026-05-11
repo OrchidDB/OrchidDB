@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_injectX5iX_asNumber.c4ff2e133dc6","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_injectX5iX_asNumber","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(5i).asNumber()
+--- expected
+d[5].i

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashDouble.3788e53d1d53","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash(3.145454)
+--- expected
+7162734438776005526

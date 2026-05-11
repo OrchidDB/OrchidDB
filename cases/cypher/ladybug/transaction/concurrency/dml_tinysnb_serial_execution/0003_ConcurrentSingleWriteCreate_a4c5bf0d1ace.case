@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.dml_tinysnb_serial_execution.ConcurrentSingleWriteCreate.a4c5bf0d1ace","language":"cypher","ordered":true,"source":"transaction/concurrency/dml_tinysnb_serial_execution.test","source_case":"ConcurrentSingleWriteCreate","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.ID, p.fName
+--- expected
+0|Alice
+2|Bob
+3|Carol
+5|Dan
+7|Elizabeth
+8|Farooq
+9|Greg
+10|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff
+11|Ivan

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_injectX5_75fX_asNumber.fdc0ea7ef09a","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_injectX5_75fX_asNumber","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(5.75f).asNumber()
+--- expected
+d[5.75].f

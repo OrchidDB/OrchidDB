@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_emit_repeatXa_outXknows_filterXloops_isX0XX_lang.e6f05442ee0e","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_emit_repeatXa_outXknows_filterXloops_isX0XX_lang","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().emit().repeat("a", __.out("knows").filter(__.loops("a").is(0))).values("lang")
+--- expected
+java
+java

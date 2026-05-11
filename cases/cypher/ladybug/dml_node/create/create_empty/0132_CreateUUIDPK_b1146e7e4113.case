@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateUUIDPK.b1146e7e4113","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateUUIDPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+8fffffff-ffff-ffff-ffff-ffffffffffff
+a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12

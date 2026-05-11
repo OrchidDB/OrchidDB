@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2158.82242ac07cc9","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2158","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (n1:N1)-[:Rel1]->() return length(p)
+--- expected
+1

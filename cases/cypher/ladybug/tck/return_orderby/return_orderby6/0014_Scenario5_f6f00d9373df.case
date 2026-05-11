@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_orderby.return_orderby6.Scenario5.f6f00d9373df","language":"cypher","ordered":true,"source":"tck/return_orderby/return_orderby6.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (me: Person)--(you: Person) RETURN me.age + you.age, count(*) AS cnt ORDER BY me.age + you.age + count(*)
+--- expected
+AmbiguousAggregationExpression

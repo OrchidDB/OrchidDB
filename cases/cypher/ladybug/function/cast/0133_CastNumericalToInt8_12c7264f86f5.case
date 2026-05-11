@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastNumericalToInt8.12c7264f86f5","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastNumericalToInt8","status":"imported","suite":"ladybug","version":1}
+--- query
+Return cast(cast(1, "int64"), "int8"), cast(cast(2, "int32"), "int8"), cast(cast(3, "int16"), "int8"), cast(cast(4, "int8"), "int8"), cast(cast(5, "uint8"), "int8"), cast(cast(6, "uint16"), "int8"), cast(cast(7, "uint32"), "int8"), cast(cast(8, "uint64"), "int8"), cast(cast(9, "int128"), "int8"), cast(cast(10, "uint128"), "int8"), cast(cast(11, "float"), "int8"), cast(cast(12, "double"), "int8")
+--- expected
+1|2|3|4|5|6|7|8|9|10|11|12

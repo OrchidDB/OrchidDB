@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.DropAndCreateTables.30dc1a634d13","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"DropAndCreateTables","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b:books) RETURN b.*
+--- expected
+0|0.000000

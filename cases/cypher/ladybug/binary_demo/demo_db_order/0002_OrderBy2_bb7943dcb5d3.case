@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_order.OrderBy2.bb7943dcb5d3","language":"cypher","ordered":true,"source":"binary_demo/demo_db_order.test","source_case":"DemoDBOrderedTest","source_log":"OrderBy2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[:LivesIn]->(c:City) WHERE c.name = "Waterloo" RETURN u.name, u.age ORDER BY u.age DESC
+--- expected
+Karissa|40
+Adam|30

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastUint32ToUint16OutOfRange.5a4fb7157d1f","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastUint32ToUint16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(cast(65536, "uint32"), "uint16")
+--- expected
+Overflow exception: Value 65536 is not within UINT16 range

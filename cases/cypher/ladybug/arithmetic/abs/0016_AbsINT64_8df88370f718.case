@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.abs.AbsINT64.8df88370f718","language":"cypher","ordered":true,"source":"arithmetic/abs.test","source_case":"AbsINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN Abs(CAST(-9223372036854775808, "INT64"))
+--- expected
+Overflow exception: Cannot take the absolute value of -9223372036854775808 within INT64 range.

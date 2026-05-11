@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Math.g_V_mathXit_plus_itXbyXageX.7de8a1a42837","language":"gremlin","ordered":false,"source":"map/Math.feature","source_case":"g_V_mathXit_plus_itXbyXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().math("_+_").by("age")
+--- expected
+d[64.0].d
+d[58.0].d
+d[54.0].d
+d[70.0].d

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.MatchTwoHop.2c6974c7ff69","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"MatchTwoHop","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(:User)-[:LivesIn]->(c:City) WHERE a.name = "Adam" RETURN a, c.name, c.population
+--- expected
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|Kitchener|200000
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}|Waterloo|150000

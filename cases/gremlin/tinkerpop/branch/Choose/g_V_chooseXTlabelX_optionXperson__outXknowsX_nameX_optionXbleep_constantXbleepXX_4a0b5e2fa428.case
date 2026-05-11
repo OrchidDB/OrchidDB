@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXTlabelX_optionXperson__outXknowsX_nameX_optionXbleep_constantXbleepXX.4a0b5e2fa428","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXTlabelX_optionXperson__outXknowsX_nameX_optionXbleep_constantXbleepXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(T.label).
+option("person", __.out("knows").values("name")).
+option("bleep", __.constant("bleep"))
+--- expected
+vadas
+josh
+v[lop]
+v[ripple]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_localXaggregateXaXX_repeatXout_localXaggregateXaXXX_timesX2X_capXaX_unfold_groupCount.04b5895a84e1","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_localXaggregateXaXX_repeatXout_localXaggregateXaXXX_timesX2X_capXaX_unfold_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(aggregate("a")).repeat(__.out().local(aggregate("a"))).times(2).cap("a").unfold().values("name").groupCount()
+--- expected
+m[{"marko":"d[1].l","lop":"d[5].l","vadas":"d[2].l","josh":"d[2].l","ripple":"d[3].l","peter":"d[1].l"}]

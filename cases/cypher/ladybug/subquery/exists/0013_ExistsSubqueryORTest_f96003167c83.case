@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.exists.ExistsSubqueryORTest.f96003167c83","language":"cypher","ordered":true,"source":"subquery/exists.test","source_case":"ExistsSubquery","source_log":"ExistsSubqueryORTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE EXISTS { MATCH (a)-[:studyAt]->(b:organisation) } OR EXISTS { MATCH (a)-[:workAt]->(c:organisation) } RETURN COUNT(*)
+--- expected
+6

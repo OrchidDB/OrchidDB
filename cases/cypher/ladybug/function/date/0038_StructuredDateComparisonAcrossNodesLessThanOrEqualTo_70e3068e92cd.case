@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateComparisonAcrossNodesLessThanOrEqualTo.70e3068e92cd","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateComparisonAcrossNodesLessThanOrEqualTo","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE a.birthdate <= b.birthdate RETURN COUNT(*)
+--- expected
+9

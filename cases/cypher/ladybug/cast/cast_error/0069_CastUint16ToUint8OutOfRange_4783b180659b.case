@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastUint16ToUint8OutOfRange.4783b180659b","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastUint16ToUint8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return to_uint8(to_uint16(312))
+--- expected
+Overflow exception: Value 312 is not within UINT8 range

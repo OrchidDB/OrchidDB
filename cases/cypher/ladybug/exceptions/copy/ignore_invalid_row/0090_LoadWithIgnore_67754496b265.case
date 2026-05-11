@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.67754496b265","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"SerialSkipInvalidRelMixed","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[l:likes]->(b:movie) return a.ID, b.ID, l.score, l.comment
+--- expected
+0|3|8|good
+4|9|10|vgood
+6|1|1|vbad

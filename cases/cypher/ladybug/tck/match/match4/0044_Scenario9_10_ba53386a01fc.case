@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario9_10.ba53386a01fc","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario9&10","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) MATCH (a)-[:LIKES..]->(c) RETURN c.name
+--- expected
+Parser exception: Invalid input <MATCH (a:A)            MATCH (a)-[:LIKES..>: expected rule oC_SingleQuery (line: 1, offset: 40)
+"MATCH (a:A)            MATCH (a)-[:LIKES..]->(c)             RETURN c.name;"
+^^

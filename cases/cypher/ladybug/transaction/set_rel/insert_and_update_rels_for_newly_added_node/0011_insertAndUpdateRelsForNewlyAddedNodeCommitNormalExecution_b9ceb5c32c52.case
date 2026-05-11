@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.insert_and_update_rels_for_newly_added_node.insertAndUpdateRelsForNewlyAddedNodeCommitNormalExecution.b9ceb5c32c52","language":"cypher","ordered":true,"source":"transaction/set_rel/insert_and_update_rels_for_newly_added_node.test","source_case":"insertAndUpdateRelsForNewlyAddedNodeCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows]->(:person) where p.ID > 4 return e.length
+--- expected
+55
+201

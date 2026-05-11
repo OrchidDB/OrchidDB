@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_large.InsertLDBCFullCommit.02f94e07a9b0","language":"cypher","ordered":true,"source":"transaction/create_large.test","source_case":"InsertLDBCFullCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[t]->() RETURN count(*)
+--- expected
+1477965

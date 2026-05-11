@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.TypeOfGraph.g_V_hasXname_markoX_out_out_path_isXtypeOfXGType_PATHXX.98f7ce13b1bc","language":"gremlin","ordered":false,"source":"filter/TypeOfGraph.feature","source_case":"g_V_hasXname_markoX_out_out_path_isXtypeOfXGType_PATHXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "marko").out().out().path().is(P.typeOf(GType.PATH))
+--- expected
+p[v[marko],v[josh],v[ripple]]
+p[v[marko],v[josh],v[lop]]

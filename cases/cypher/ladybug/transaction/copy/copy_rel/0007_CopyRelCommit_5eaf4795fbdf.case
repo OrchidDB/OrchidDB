@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyRelCommit.5eaf4795fbdf","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:knows]->(:person) RETURN COUNT(e)
+--- expected
+6

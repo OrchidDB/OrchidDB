@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUInt128ToFloatDouble.f4f380da11ae","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastUInt128ToFloatDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_FLOAT(170141183460469231731687303715884105728), TO_DOUBLE(170141183460469231731687303715884105728)
+--- expected
+170141183460469231731687303715884105728.000000|170141183460469231731687303715884105728.000000

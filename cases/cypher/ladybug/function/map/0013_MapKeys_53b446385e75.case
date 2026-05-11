@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapKeys.53b446385e75","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapKeys","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_keys(map([[5], [28, 75, 32], [1], [33, 11, 66, 33]], ['a', 'b', 'd', 'e']))
+--- expected
+[[5],[28,75,32],[1],[33,11,66,33]]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredInt64ToMinutesFuncTest.bc3e73903c32","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredInt64ToMinutesFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_minutes(p.age)
+--- expected
+00:35:00
+00:30:00
+00:45:00
+00:20:00
+00:20:00
+00:25:00
+00:40:00
+01:23:00

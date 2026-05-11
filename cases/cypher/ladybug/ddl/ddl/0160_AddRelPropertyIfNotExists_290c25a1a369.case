@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.290c25a1a369","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"CreateNodeTableAs","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Test2) RETURN a.*
+--- expected
+0|Alice
+2|Bob

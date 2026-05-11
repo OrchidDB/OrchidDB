@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Min.g_V_aggregateXaX_byXfooX_capXaX_minXlocalX.3cbf41c9ed0f","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_V_aggregateXaX_byXfooX_capXaX_minXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().aggregate("a").by("foo").cap("a").min(Scope.local)
+--- expected
+

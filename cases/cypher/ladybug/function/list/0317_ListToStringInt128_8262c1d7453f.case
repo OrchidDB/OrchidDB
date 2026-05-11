@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListToStringInt128.8262c1d7453f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListToStringInt128","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TO_STRING('--', [CAST(5, 'INT128'), CAST(7, 'INT128'), CAST(10, 'INT128')])
+--- expected
+5--7--10

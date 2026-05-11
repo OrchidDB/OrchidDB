@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.Unwind.8f94614bc815","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*1..2]->(b:person) UNWIND nodes(p) AS n MATCH (a)-[]->(n) RETURN COUNT(*)
+--- expected
+Binder exception: Cannot bind n as node pattern.

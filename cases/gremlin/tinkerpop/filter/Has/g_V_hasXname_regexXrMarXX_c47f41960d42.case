@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXname_regexXrMarXX.c47f41960d42","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXname_regexXrMarXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", TextP.regex("^mar"))
+--- expected
+v[marko]

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.parser.syntax_error.ConjunctiveComparison.9b3cf180056b","language":"cypher","ordered":true,"source":"exceptions/parser/syntax_error.test","source_case":"ConjunctiveComparison","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[e1:knows]-(b:person)-[e2:knows]->(c:person) WHERE b.fName = e1.date = e2.date AND id(a) <> id(c) RETURN COUNT(*)
+--- expected
+Parser exception: Non-binary comparison (e.g. a=b=c) is not supported (line: 1, offset: 69)
+"MATCH (a:person)<-[e1:knows]-(b:person)-[e2:knows]->(c:person) WHERE b.fName = e1.date = e2.date AND id(a) <> id(c) RETURN COUNT(*);"
+^

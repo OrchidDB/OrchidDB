@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.insert_rels_to_different_nodes.insertRelsToDifferentNodesCommitNormalExecution.70cb3b2376f6","language":"cypher","ordered":true,"source":"transaction/create_rel/insert_rels_to_different_nodes.test","source_case":"insertRelsToDifferentNodesCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID > 50 RETURN e.length, e.place, e.tag
+--- expected
+143||[long long string]
+752|waterloo|[good test]
+|very very special string|
+||

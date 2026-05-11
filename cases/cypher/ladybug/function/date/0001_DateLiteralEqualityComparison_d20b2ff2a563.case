@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.DateLiteralEqualityComparison.d20b2ff2a563","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"DateLiteralEqualityComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate = date('1900-1-1') RETURN COUNT(*)
+--- expected
+2

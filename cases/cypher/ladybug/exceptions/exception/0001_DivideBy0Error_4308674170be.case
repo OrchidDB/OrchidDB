@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.DivideBy0Error.4308674170be","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"DivideBy0Error","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 1 / 0
+--- expected
+Runtime exception: Divide by zero.

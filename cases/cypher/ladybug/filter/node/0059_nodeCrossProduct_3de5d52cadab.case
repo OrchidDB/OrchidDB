@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.nodeCrossProduct.3de5d52cadab","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"nodeCrossProduct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person {ID:1000}), (b:person) RETURN COUNT(*)
+--- expected
+0

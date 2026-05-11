@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"NPY npy-1d","expected_kind":"rows","id":"cypher.ladybug.npy_1d.match.i32.397c6e45447a","language":"cypher","ordered":true,"source":"npy_1d/match.test","source_case":"MatchNpy_1d","source_log":"i32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.i32 ORDER BY n.i32
+--- expected
+1
+2
+3

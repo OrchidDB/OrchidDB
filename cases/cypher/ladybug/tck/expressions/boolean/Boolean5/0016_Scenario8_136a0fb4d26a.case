@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean5.Scenario8.136a0fb4d26a","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean5.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [true, false] AS a UNWIND [true, false] AS b RETURN a, b, NOT (a AND b) = (NOT (a) OR NOT (b)) AS result
+--- expected
+True|True|True
+True|False|True
+False|True|True
+False|False|True

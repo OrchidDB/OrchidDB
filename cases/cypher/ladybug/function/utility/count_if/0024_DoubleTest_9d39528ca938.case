@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.count_if.DoubleTest.9d39528ca938","language":"cypher","ordered":true,"source":"function/utility/count_if.test","source_case":"ConstantTests","source_log":"DoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count_if(cast(0, "DOUBLE"))
+--- expected
+0

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt32ToInt64.5e6d3140f860","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt32ToInt64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN to_int64(m.length)
+--- expected
+126
+2544
+298

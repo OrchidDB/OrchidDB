@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.With2.803bc26518ff","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"With2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WITH a ORDER BY a.age DESC LIMIT 1 MATCH (a)-[:Follows]->(b:User) RETURN *
+--- expected
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}|{_ID: 0:3, _LABEL: User, name: Noura, age: 25}

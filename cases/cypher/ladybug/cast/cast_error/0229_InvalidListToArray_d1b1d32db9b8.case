@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidListToArray.d1b1d32db9b8","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([43121], "INT8[1]")
+--- expected
+Overflow exception: Value 43121 is not within INT8 range

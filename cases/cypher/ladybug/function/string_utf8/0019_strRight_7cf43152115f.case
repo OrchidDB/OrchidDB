@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strRight.7cf43152115f","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strRight","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN right('😃🧘🏻‍♂️🌍🌦️🍞🚗', 3)
+--- expected
+🌦️🍞🚗

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_V_fold_asStringXlocalX_orderXlocalX.db1a408c2a92","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_V_fold_asStringXlocalX_orderXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().fold().asString(Scope.local).order(local)
+--- expected
+l[str[v[1]],str[v[2]],str[v[3]],str[v[4]],str[v[5]],str[v[6]]]

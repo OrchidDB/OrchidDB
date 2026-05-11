@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.KeysSingleNodeLabel.68e6ec26d871","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"KeysSingleNodeLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:movies) RETURN keys(p)
+--- expected
+[name,length,note,description,content,audience,grade]
+[name,length,note,description,content,audience,grade]
+[name,length,note,description,content,audience,grade]

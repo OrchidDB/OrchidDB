@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.StructExtractOnUserDefinedType.24676364cbba","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDT","source_log":"StructExtractOnUserDefinedType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:knows]->(p1:person) return p.description, p1.description, e.info
+--- expected
+{age: 1, name: Dan}|{age: 3, name: Bob}|{meetDate: 2011-11-12, length: 3 days 00:02:00}
+{age: 3, name: Bob}|{age: 5, name: Alice}|{meetDate: 1988-02-21, length: 03:00:00}
+{age: 5, name: Alice}|{age: 3, name: Bob}|{meetDate: 2020-05-03, length: 3 years 02:00:00}

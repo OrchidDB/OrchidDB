@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"GRAPH-STD demo-db/icebug-disk","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_graph_std.CountUsersPerCity.f42151c78da8","language":"cypher","ordered":true,"source":"demo_db/demo_db_graph_std.test","source_case":"DemoDBGraphStdTest","source_log":"CountUsersPerCity","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:user)-[l:livesin]->(c:city) RETURN c.name, COUNT(*) AS num_users ORDER BY num_users DESC
+--- expected
+Waterloo|2
+Guelph|1
+Kitchener|1

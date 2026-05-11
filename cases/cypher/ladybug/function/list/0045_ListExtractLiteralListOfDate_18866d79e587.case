@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListExtractLiteralListOfDate.18866d79e587","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListExtractLiteralListOfDate","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_extract([date('1992-05-03'), a.birthdate], a.gender)
+--- expected
+1992-05-03
+1900-01-01
+1992-05-03
+1950-07-23
+1992-05-03
+1980-10-26
+1980-10-26
+1990-11-27

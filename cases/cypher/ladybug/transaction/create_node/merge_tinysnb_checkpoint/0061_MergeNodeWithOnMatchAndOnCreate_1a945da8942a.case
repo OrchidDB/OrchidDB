@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.merge_tinysnb_checkpoint.MergeNodeWithOnMatchAndOnCreate.1a945da8942a","language":"cypher","ordered":true,"source":"transaction/create_node/merge_tinysnb_checkpoint.test","source_case":"MergeNodeWithOnMatchAndOnCreate","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:school) return p.id
+--- expected
+21
+25
+13

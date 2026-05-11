@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsString.g_injectX1_2X_asString.da88935caad6","language":"gremlin","ordered":false,"source":"map/AsString.feature","source_case":"g_injectX1_2X_asString","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1, 2).asString()
+--- expected
+1
+2

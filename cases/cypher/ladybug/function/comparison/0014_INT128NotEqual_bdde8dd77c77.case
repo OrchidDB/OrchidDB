@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.INT128NotEqual.bdde8dd77c77","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"INT128NotEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.hugedata <> -15 RETURN s.level
+--- expected
+120
+5

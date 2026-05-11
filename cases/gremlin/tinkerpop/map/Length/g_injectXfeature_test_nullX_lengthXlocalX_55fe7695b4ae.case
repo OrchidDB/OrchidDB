@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Length.g_injectXfeature_test_nullX_lengthXlocalX.55fe7695b4ae","language":"gremlin","ordered":false,"source":"map/Length.feature","source_case":"g_injectXfeature_test_nullX_lengthXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("feature", "test", null).length(Scope.local)
+--- expected
+d[7].i
+d[4].i
+null

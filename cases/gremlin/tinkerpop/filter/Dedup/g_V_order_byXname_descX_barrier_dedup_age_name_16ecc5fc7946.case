@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_order_byXname_descX_barrier_dedup_age_name.16ecc5fc7946","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_order_byXname_descX_barrier_dedup_age_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().order().by("name",desc).barrier().dedup().by("age").values("name")
+--- expected
+vadas
+peter
+marko
+josh

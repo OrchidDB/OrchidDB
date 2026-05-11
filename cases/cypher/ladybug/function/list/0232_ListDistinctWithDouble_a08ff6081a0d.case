@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithDouble.a08ff6081a0d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_distinct([1.1, 1.1, NULL, -3.4, 1.2, 5.1])
+--- expected
+[1.100000,-3.400000,1.200000,5.100000]

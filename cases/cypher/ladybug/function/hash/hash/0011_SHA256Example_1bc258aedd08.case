@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.SHA256Example.1bc258aedd08","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"SHA256Example","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN sha256('lbug')
+--- expected
+344b5ac05b050b2afa6054a2a8843a7c4c4a1829b6ba2198b12c626621503e59

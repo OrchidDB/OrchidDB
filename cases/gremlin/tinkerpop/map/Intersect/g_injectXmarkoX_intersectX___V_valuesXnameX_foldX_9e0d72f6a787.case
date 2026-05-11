@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Intersect.g_injectXmarkoX_intersectX___V_valuesXnameX_foldX.9e0d72f6a787","language":"gremlin","ordered":false,"source":"map/Intersect.feature","source_case":"g_injectXmarkoX_intersectX___V_valuesXnameX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(["marko"]).intersect(__.V().values("name").fold())
+--- expected
+s[marko]

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Tree.g_V_out_treeXaX_selectXaX_countXlocalX.ddc695a8c6d3","language":"gremlin","ordered":false,"source":"sideEffect/Tree.feature","source_case":"g_V_out_treeXaX_selectXaX_countXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().tree("a").select("a").count(local)
+--- expected
+d[3].l
+d[3].l
+d[3].l
+d[3].l
+d[3].l
+d[3].l

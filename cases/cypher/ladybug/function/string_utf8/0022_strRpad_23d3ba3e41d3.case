@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strRpad.23d3ba3e41d3","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strRpad","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN rpad('😃🌍♂🌦🍞🚗', 7,'<')
+--- expected
+😃🌍♂🌦🍞🚗<

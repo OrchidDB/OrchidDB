@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.IntervalTest.0eb55a972cbe","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"IntervalTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE 0 <= row.doubleColumn AND row.doubleColumn <= 10 AND 0 <= row.int64Column AND row.int64Column <= 10 RETURN count(*)
+--- expected
+546

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.WhereExists3.e2b68cbc7dd5","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"WhereExists3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.age < 100 AND EXISTS { MATCH (a)-[:Follows*3..3]->(b:User) WHERE EXISTS {MATCH (b)<-[:Follows]-(c:User)} } RETURN a.name, a.age
+--- expected
+Adam|30

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence2.Scenario1.4fe0ec598aa8","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 4 * 2 + 3 % 2 AS a, 4 * 2 + (3 % 2) AS b, 4 * (2 + 3) % 2 AS c
+--- expected
+9|9|0

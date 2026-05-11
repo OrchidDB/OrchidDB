@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.divide.DivideINT64.5d657034ecdd","language":"cypher","ordered":true,"source":"arithmetic/divide.test","source_case":"DivideINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-9223372036854775808, "INT64") / CAST(-1, "INT64")
+--- expected
+Overflow exception: Value -9223372036854775808 / -1 is not within INT64 range.

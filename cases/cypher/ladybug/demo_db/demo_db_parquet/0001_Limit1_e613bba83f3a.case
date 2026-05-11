@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_parquet.Limit1.e613bba83f3a","language":"cypher","ordered":true,"source":"demo_db/demo_db_parquet.test","source_case":"DemoDBTestFromParquet","source_log":"Limit1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name ORDER BY u.age DESC LIMIT 3
+--- expected
+Zhang
+Karissa
+Adam

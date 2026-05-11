@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashOnListOfListOfInt64.c8ae5dfb8083","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"ListHashTest","source_log":"HashOnListOfListOfInt64","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.courseScoresPerTerm, count(*)
+--- expected
+[[10,8],[6,7,8]]|1
+[[8,9],[9,10]]|1
+[[8,10]]|1
+[[7,4],[8,8],[9]]|1
+[[6],[7],[8]]|1
+[[8]]|1
+[[10]]|1
+[[7],[10],[6,7]]|1
+[[1,2],[3,4]]|2
+[[7,20]]|1

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.TwoHopDistinctAggTest.f8b12ae243fd","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"TwoHopDistinctAggTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person) RETURN a.ID, SUM(DISTINCT a.age), SUM(DISTINCT c.age)
+--- expected
+0|35|130
+2|30|130
+3|45|130
+5|20|130

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_skip_limit.return_skip_limit1.Scenario8.a9964899242c","language":"cypher","ordered":true,"source":"tck/return_skip_limit/return_skip_limit1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:Person) RETURN p.name AS name SKIP $_limit
+--- expected
+Binder exception: The number of rows to skip/limit must be a parameter/literal expression.

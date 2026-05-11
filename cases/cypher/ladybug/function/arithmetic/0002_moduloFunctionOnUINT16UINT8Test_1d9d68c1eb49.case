@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.moduloFunctionOnUINT16UINT8Test.1d9d68c1eb49","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"moduloFunctionOnUINT16UINT8Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[a:studyAt]->(:organisation) RETURN a.ulength % a.ulevel
+--- expected
+0
+90
+18

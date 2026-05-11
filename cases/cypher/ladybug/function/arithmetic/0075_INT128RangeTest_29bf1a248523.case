@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.INT128RangeTest.29bf1a248523","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"INT128RangeTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int128(170141183460469231731687303715884105727)
+--- expected
+170141183460469231731687303715884105727

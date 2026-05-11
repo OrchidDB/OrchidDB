@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List1.Scenario3.4ca93c9954a5","language":"cypher","ordered":true,"source":"tck/expressions/list/List1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH $expr AS expr, $idx AS idx RETURN expr[idx] AS value
+--- expected
+'Apa'

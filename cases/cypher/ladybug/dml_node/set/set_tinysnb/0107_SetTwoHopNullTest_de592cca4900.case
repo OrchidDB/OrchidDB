@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetTwoHopNullTest.de592cca4900","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetTwoHopNullTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID, a.age
+--- expected
+0|
+10|83
+2|
+3|
+5|
+7|20
+8|25
+9|40

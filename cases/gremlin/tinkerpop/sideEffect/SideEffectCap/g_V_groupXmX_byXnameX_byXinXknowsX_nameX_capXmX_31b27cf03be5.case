@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffectCap.g_V_groupXmX_byXnameX_byXinXknowsX_nameX_capXmX.31b27cf03be5","language":"gremlin","ordered":false,"source":"sideEffect/SideEffectCap.feature","source_case":"g_V_groupXmX_byXnameX_byXinXknowsX_nameX_capXmX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group("m").by("name").by(__.in("knows").values("name")).cap("m")
+--- expected
+m[{"vadas":"marko", "josh":"marko"}]

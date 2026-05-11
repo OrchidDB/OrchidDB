@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.InvalidNumberOfMacroParams.94b0b4ce3eef","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"InvalidNumberOfMacroParams","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN add5(a.age, 1)
+--- expected
+Binder exception: Invalid number of arguments for macro ADD5.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByMap.0a9fd4cde67f","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByMap","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) RETURN a ORDER BY a.audience
+--- expected
+Binder exception: Cannot order by a.audience. Order by MAP(STRING, INT64) is not supported.

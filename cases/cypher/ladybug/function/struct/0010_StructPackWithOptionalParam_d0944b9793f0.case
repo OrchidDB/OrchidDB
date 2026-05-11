@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.StructPackWithOptionalParam.d0944b9793f0","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"StructPackWithOptionalParam","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN STRUCT_PACK(x:=2,y:=3)
+--- expected
+{x: 2, y: 3}

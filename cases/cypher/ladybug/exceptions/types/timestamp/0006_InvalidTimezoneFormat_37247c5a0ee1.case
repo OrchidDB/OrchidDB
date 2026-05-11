@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.timestamp.InvalidTimezoneFormat.37247c5a0ee1","language":"cypher","ordered":true,"source":"exceptions/types/timestamp.test","source_case":"CastStrToTimestampError","source_log":"InvalidTimezoneFormat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return timestamp("1992-04-28T09:33:56-XX:DD")
+--- expected
+Conversion exception: Error occurred during parsing TIMESTAMP. Given: "1992-04-28T09:33:56-XX:DD". Expected format: (YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]])

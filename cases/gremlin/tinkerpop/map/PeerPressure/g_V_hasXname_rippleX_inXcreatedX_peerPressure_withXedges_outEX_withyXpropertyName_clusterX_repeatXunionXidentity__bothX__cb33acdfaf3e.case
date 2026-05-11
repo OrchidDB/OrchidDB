@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.PeerPressure.g_V_hasXname_rippleX_inXcreatedX_peerPressure_withXedges_outEX_withyXpropertyName_clusterX_repeatXunionXidentity__bothX_.cb33acdfaf3e","language":"gremlin","ordered":false,"source":"map/PeerPressure.feature","source_case":"g_V_hasXname_rippleX_inXcreatedX_peerPressure_withXedges_outEX_withyXpropertyName_clusterX_repeatXunionXidentity__bothX_timesX2X_dedup_valueMapXname_clusterX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "ripple").in("created").peerPressure().with("~tinkerpop.peerPressure.edges",__.outE()).with("~tinkerpop.peerPressure.propertyName", "cluster").repeat(__.union(__.identity(), __.both())).times(2).dedup().valueMap("name", "cluster")
+--- expected
+m[{"name": ["marko"], "cluster": [1]}]
+m[{"name": ["vadas"], "cluster": [2]}]
+m[{"name": ["lop"], "cluster": [4]}]
+m[{"name": ["josh"], "cluster": [4]}]
+m[{"name": ["ripple"], "cluster": [4]}]
+m[{"name": ["peter"], "cluster": [6]}]

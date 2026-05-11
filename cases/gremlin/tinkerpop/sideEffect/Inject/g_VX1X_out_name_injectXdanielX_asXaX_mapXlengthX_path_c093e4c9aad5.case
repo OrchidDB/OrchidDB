@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Inject.g_VX1X_out_name_injectXdanielX_asXaX_mapXlengthX_path.c093e4c9aad5","language":"gremlin","ordered":false,"source":"sideEffect/Inject.feature","source_case":"g_VX1X_out_name_injectXdanielX_asXaX_mapXlengthX_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out().values("name").inject("daniel").as("a").map(__.length()).path()
+--- expected
+p[daniel,d[6].i]
+p[v[marko],v[lop],lop,d[3].i]
+p[v[marko],v[vadas],vadas,d[5].i]
+p[v[marko],v[josh],josh,d[4].i]

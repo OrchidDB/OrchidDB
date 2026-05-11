@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffectCap.g_V_hasXperson_name_withinXvadas_peterXX_groupXaX_by_byXout_order_fold_countXlocalXX_capXaX.5129bf012000","language":"gremlin","ordered":false,"source":"sideEffect/SideEffectCap.feature","source_case":"g_V_hasXperson_name_withinXvadas_peterXX_groupXaX_by_byXout_order_fold_countXlocalXX_capXaX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person","name",P.within("vadas","peter")).group("a").by().by(__.out().order().fold().count(local)).cap("a")
+--- expected
+m[{"v[vadas]":"d[0].l", "v[peter]":"d[1].l"}]

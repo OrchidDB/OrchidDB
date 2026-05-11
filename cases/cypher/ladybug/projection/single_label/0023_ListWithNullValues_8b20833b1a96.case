@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ListWithNullValues.8b20833b1a96","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ListWithNullValues","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [5, null, 100, null, null]
+--- expected
+[5,,100,,]

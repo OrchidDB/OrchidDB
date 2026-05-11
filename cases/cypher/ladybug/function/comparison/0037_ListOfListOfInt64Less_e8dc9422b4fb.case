@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.ListOfListOfInt64Less.e8dc9422b4fb","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"ListOfListOfInt64Less","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.courseScoresPerTerm < [[8,9,2]] RETURN p.fName
+--- expected
+Bob
+Dan
+Elizabeth
+Farooq
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

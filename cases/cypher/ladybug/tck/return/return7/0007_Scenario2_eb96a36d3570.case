@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return7.Scenario2.eb96a36d3570","language":"cypher","ordered":true,"source":"tck/return/return7.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH () RETURN *
+--- expected
+Binder exception: RETURN or WITH * is not allowed when there are no variables in scope.

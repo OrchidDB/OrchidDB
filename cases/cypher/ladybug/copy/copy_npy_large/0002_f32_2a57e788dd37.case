@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"NPY npy-20k","expected_kind":"rows","id":"cypher.ladybug.copy.copy_npy_large.f32.2a57e788dd37","language":"cypher","ordered":true,"source":"copy/copy_npy_large.test","source_case":"CopyLargeNpyTest","source_log":"f32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN n.f32
+--- expected
+<FILE>:copy_npy_large_f32_answer.txt

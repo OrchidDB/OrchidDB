@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV snap/twitter/csv","expected_kind":"rows","id":"cypher.ladybug.agg.hash_large.AggHash.057ad68ab051","language":"cypher","ordered":true,"source":"agg/hash_large.test","source_case":"AggHash","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:account)-[]->(b:account) WHERE a.ID = 18776017 RETURN COUNT(b)
+--- expected
+2272

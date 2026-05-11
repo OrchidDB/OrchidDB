@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Mean.g_V_aggregateXaX_byXageX_capXaX_unfold_mean.7fb9aa03217e","language":"gremlin","ordered":false,"source":"map/Mean.feature","source_case":"g_V_aggregateXaX_byXageX_capXaX_unfold_mean","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().aggregate("a").by("age").cap("a").unfold().mean()
+--- expected
+d[30.75].d

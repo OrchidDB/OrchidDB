@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind5.cb52d69ab55f","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind5","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,2,3,4] AS x WITH x AS b WHERE b > 2 RETURN b
+--- expected
+3
+4

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StartsWithReturn1.607ff4685978","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StartsWithReturn1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName, a.fName STARTS WITH "A" ORDER BY a.fName
+--- expected
+Alice|True
+Bob|False
+Carol|False
+Dan|False
+Elizabeth|False
+Farooq|False
+Greg|False
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|False

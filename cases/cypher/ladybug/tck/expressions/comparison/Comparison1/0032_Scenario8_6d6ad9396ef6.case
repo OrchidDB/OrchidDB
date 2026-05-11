@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison1.Scenario8.6d6ad9396ef6","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 0.0 / 0.0 = 1 AS isEqual, 0.0 / 0.0 <> 1 AS isNotEqual
+--- expected
+False|True

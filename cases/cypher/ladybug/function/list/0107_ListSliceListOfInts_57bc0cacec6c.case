@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceListOfInts.57bc0cacec6c","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceListOfInts","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_slice(a.workedHours, 1, 2)
+--- expected
+[10,5]
+[12,8]
+[4,5]
+[1,9]
+[2]
+[3,4]
+[1]
+[10,11]

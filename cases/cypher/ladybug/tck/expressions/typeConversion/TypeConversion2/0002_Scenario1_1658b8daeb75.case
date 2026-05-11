@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion2.Scenario1.1658b8daeb75","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH 82.9 AS weight RETURN to_int64(weight)
+--- expected
+83

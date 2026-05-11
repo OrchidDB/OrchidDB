@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Inject.g_injectXnull_1_3_nullX.27fe649916bd","language":"gremlin","ordered":false,"source":"sideEffect/Inject.feature","source_case":"g_injectXnull_1_3_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(null, 1, 3, null)
+--- expected
+null
+d[1].i
+d[3].i
+null

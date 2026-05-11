@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXgroupCountXmX_byXnameX_outX_timesX2X_capXmX.49a07771cd5f","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXgroupCountXmX_byXnameX_outX_timesX2X_capXmX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.groupCount("m").by("name").out()).times(2).cap("m")
+--- expected
+m[{"ripple":"d[2].l","peter":"d[1].l","vadas":"d[2].l","josh":"d[2].l","lop":"d[4].l","marko":"d[1].l"}]

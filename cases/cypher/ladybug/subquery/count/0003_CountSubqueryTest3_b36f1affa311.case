@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.count.CountSubqueryTest3.b36f1affa311","language":"cypher","ordered":true,"source":"subquery/count.test","source_case":"CountSubquery","source_log":"CountSubqueryTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age, COUNT { MATCH (b:person) WHERE a.age < b.age }
+--- expected
+20|6
+20|6
+25|5
+30|4
+35|3
+40|2
+45|1
+83|0

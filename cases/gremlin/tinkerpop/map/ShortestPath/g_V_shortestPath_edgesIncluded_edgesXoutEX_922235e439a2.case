@@ -1,0 +1,20 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ShortestPath.g_V_shortestPath_edgesIncluded_edgesXoutEX.922235e439a2","language":"gremlin","ordered":false,"source":"map/ShortestPath.feature","source_case":"g_V_shortestPath_edgesIncluded_edgesXoutEX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().shortestPath().
+with("~tinkerpop.shortestPath.includeEdges").
+with("~tinkerpop.shortestPath.edges", __.outE())
+--- expected
+p[v[josh],e[josh-created->lop],v[lop]]
+p[v[josh],e[josh-created->ripple],v[ripple]]
+p[v[josh]]
+p[v[lop]]
+p[v[marko],e[marko-created->lop],v[lop]]
+p[v[marko],e[marko-knows->josh],v[josh],e[josh-created->ripple],v[ripple]]
+p[v[marko],e[marko-knows->josh],v[josh]]
+p[v[marko],e[marko-knows->vadas],v[vadas]]
+p[v[marko]]
+p[v[peter],e[peter-created->lop],v[lop]]
+p[v[peter]]
+p[v[ripple]]
+p[v[vadas]]

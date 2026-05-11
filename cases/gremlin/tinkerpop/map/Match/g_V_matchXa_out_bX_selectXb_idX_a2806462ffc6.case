@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_out_bX_selectXb_idX.a2806462ffc6","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_out_bX_selectXb_idX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out().as("b")).select("b").by(T.id)
+--- expected
+v[lop].id
+v[vadas].id
+v[josh].id
+v[ripple].id
+v[lop].id
+v[lop].id

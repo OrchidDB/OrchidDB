@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind9.d044008fa890","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind9","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:studyAt]->(b:organisation) WHERE b.ID = 1 AND a.fName = 'Farooq' UNWIND a.workedHours as x RETURN x,a.fName
+--- expected
+3|Farooq
+4|Farooq
+5|Farooq
+6|Farooq
+7|Farooq

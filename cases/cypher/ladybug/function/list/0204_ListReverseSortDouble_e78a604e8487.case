@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortDouble.e78a604e8487","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([1.1, 2.3, 4.5, NULL])
+--- expected
+[,4.500000,2.300000,1.100000]

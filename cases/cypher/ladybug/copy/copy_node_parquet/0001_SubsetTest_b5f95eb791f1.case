@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.SubsetTest.b5f95eb791f1","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"SubsetTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.id >= 20 AND row.id <= 24 RETURN row.*
+--- expected
+20|0|57.579280|True|2094-08-19|OdM|[85,11,98,6]|[wl7evae,lLtQIMJI,vNvYnjt27]|[[131,129]]|{ID: 717, name: 3oOf}
+21|7|64.630960|False|2090-07-13|AjbxHQThEtDDlOjbzMjCQSXlvGQEjcFLykESrnFHwPKX|[53,44,76,78]|[V0yNTz60W2i4J,LN3F2erCELm]|[[191,62],[64,259,183,130,116],[49,29,222,249,128],[222,169,22,80],[206,59]]|{ID: 956, name: GNX5sv9V}
+22|71|37.963386|True|2048-04-24|dRvHHdyNXYfSUcicaxBoQEKQUfgex|[74]|[GOLV1]|[[139,156,218],[148,187,62],[158,118],[297,151]]|{ID: 838, name: gRdEkZSI8qQ7dIH}
+23|58|42.774957|False|2043-08-19|ISImRVpUjynGMFRQyYmeIUVjM|[16,38,98,61,2]|[EzPWolZ2iCsga46o,lbhcKq7DDPeiX,yaxsyrbzolAyVWlxj,5Rlse62CKuIitVf4,yKOx0P]|[[95,209,75,7],[197],[69,244],[164,160,153,125]]|{ID: 682, name: 06SBnT}
+24|75|53.813224|False|1971-12-05|naDlQ|[94,17,22]|[gVYovI30hQyC,b6OpP]|[[81,66],[255,44],[37]]|{ID: 185, name: 7xymBThq}

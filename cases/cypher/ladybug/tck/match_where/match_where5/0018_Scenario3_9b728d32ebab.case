@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where5.Scenario3.9b728d32ebab","language":"cypher","ordered":true,"source":"tck/match_where/match_where5.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Root {name: 'x'})-->(i:TextNode) WHERE i.var > 'te' AND i.var IS NOT NULL RETURN i
+--- expected
+{_ID: 1:0, _LABEL: TextNode, ID: 0, var: text}

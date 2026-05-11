@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceStringLeft.29855f36a689","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceStringLeft","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName[..5]
+--- expected
+Alice
+Bob
+Carol
+Dan
+Eliza
+Faroo
+Greg
+Huber

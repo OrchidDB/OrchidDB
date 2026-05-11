@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.CheckNumLinesTest.a3ffcfa9675e","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"CheckNumLinesTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) RETURN count(*)
+--- expected
+49999

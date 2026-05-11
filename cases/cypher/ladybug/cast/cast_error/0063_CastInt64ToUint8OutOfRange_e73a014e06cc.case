@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt64ToUint8OutOfRange.e73a014e06cc","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt64ToUint8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return to_uint8(257)
+--- expected
+Overflow exception: Value 257 is not within UINT8 range

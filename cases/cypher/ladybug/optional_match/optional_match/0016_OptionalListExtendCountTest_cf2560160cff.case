@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.OptionalListExtendCountTest.cf2560160cff","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"OptionalListExtendCountTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) OPTIONAL MATCH (a)-[:studyAt]->(b:organisation) RETURN a.fName, b.name
+--- expected
+Alice|ABFsUni
+Bob|ABFsUni
+Carol|
+Dan|
+Elizabeth|
+Farooq|ABFsUni
+Greg|
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|

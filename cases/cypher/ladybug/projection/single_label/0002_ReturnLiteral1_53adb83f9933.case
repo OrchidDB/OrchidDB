@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnLiteral1.53adb83f9933","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnLiteral1","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 3 * 2, COUNT(*), MIN(2), COUNT(5)
+--- expected
+6|1|2|1

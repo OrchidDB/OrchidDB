@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.todatecast.ToDateCastTest.db47eb9aa4a6","language":"cypher","ordered":true,"source":"common/todatecast.test","source_case":"ToDateCastTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:todatecast) RETURN t.col1
+--- expected
+{a: 2023-04-05, b: 1}

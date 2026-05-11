@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.LargeInt64ToTimestampErrorTest.d15177052762","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"LargeInt64ToTimestampErrorTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_timestamp(9223372036854775808)
+--- expected
+Conversion exception: Could not convert epoch seconds to TIMESTAMP

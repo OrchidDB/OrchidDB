@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.dml_empty_serial_execution.NodeUpdatesMixedCommitAndRollback.77014fad1c28","language":"cypher","ordered":true,"source":"transaction/concurrency/dml_empty_serial_execution.test","source_case":"NodeUpdatesMixedCommitAndRollback","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:test) WHERE p.val>4000 RETURN COUNT(*)
+--- expected
+100

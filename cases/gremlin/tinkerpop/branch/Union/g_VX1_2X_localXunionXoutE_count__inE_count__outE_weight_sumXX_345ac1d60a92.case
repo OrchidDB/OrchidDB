@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_VX1_2X_localXunionXoutE_count__inE_count__outE_weight_sumXX.345ac1d60a92","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_VX1_2X_localXunionXoutE_count__inE_count__outE_weight_sumXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1, vid2).local(__.union(__.outE().count(), __.inE().count(), __.outE().values("weight").sum()))
+--- expected
+d[3].l
+d[0].l
+d[1.9].d
+d[0].l
+d[1].l

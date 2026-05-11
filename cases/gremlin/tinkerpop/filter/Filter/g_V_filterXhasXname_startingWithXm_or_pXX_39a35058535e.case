@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Filter.g_V_filterXhasXname_startingWithXm_or_pXX.39a35058535e","language":"gremlin","ordered":false,"source":"filter/Filter.feature","source_case":"g_V_filterXhasXname_startingWithXm_or_pXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().filter(__.has("name", TextP.startingWith("m").or(TextP.startingWith("p"))))
+--- expected
+v[marko]
+v[peter]

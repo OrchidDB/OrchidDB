@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Skip1.5c82b24c9d09","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Skip1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name ORDER BY u.age SKIP 2
+--- expected
+Karissa
+Zhang

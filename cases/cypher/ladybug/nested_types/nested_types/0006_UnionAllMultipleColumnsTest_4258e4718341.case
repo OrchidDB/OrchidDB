@@ -1,0 +1,21 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllMultipleColumnsTest.4258e4718341","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"Union","source_log":"UnionAllMultipleColumnsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.age, p.eyeSight UNION ALL MATCH (p1:person) RETURN p1.age, p1.eyeSight
+--- expected
+20|4.700000
+20|4.700000
+20|4.800000
+20|4.800000
+25|4.500000
+25|4.500000
+30|5.100000
+30|5.100000
+35|5.000000
+35|5.000000
+40|4.900000
+40|4.900000
+45|5.000000
+45|5.000000
+83|4.900000
+83|4.900000

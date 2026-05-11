@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListCreateFromLiteral2.7bc5acb0694f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListCreateFromLiteral2","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN array_contains([[100,200],[200,300],[300,400]], [100,200])
+--- expected
+True

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.6113bf6c17de","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"AddListOfINT64PropertyToStudyAtTableWithDefaultValueNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) return e.random
+--- expected
+[11,15,20]
+[11,15,20]
+[11,15,20]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.7afa287e6025","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [999.99] AS A WITH CAST(A, 'DECIMAL') AS B WITH CAST(B, 'DECIMAL(5, 2)') AS C RETURN CAST(C, 'DECIMAL(4, 1)')
+--- expected
+Overflow exception: Decimal Cast Failed: input 999.99 is not in range of DECIMAL(4, 1)

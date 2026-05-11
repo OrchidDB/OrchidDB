@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_function.list_append.ListAppendListOfINT128.d29a0890656c","language":"cypher","ordered":true,"source":"function/string_function/list_append.test","source_case":"ListAppendGeneralTests","source_log":"ListAppendListOfINT128","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[s:studyAt]->(:organisation) RETURN list_append([s.hugedata], s.hugedata)
+--- expected
+[1844674407370955161811111111,1844674407370955161811111111]
+[-1844674407370955161511,-1844674407370955161511]
+[-15,-15]

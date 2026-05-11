@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.DistinctRecursiveRel.a332ac6fcc71","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"Debug","source_log":"DistinctRecursiveRel","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,1,3] AS x MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID=5 WITH COLLECT(DISTINCT e) AS es UNWIND es AS newE RETURN newE.date
+--- expected
+1950-05-14
+2000-01-01
+2021-06-30

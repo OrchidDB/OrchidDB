@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.BindFunctionWithWrongNumParams.89621ad762df","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"BindFunctionWithWrongNumParams","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE date() < 2 RETURN COUNT(*)
+--- expected
+Binder exception: Function DATE did not receive correct arguments:
+Actual:   ()
+Expected: (STRING) -> DATE

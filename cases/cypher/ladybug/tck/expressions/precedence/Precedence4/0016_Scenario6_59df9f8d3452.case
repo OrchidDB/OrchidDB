@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence4.Scenario6.59df9f8d3452","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence4.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN True XOR null IS NOT NULL AS a, True XOR (null IS NOT NULL) AS b, (True XOR null) IS NOT NULL AS c
+--- expected
+True|True|False

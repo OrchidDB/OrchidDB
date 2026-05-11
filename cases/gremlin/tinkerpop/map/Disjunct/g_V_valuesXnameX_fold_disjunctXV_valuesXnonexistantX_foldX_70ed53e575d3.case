@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Disjunct.g_V_valuesXnameX_fold_disjunctXV_valuesXnonexistantX_foldX.70ed53e575d3","language":"gremlin","ordered":false,"source":"map/Disjunct.feature","source_case":"g_V_valuesXnameX_fold_disjunctXV_valuesXnonexistantX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").fold().disjunct(__.V().values("nonexistant").fold())
+--- expected
+s[marko,vadas,lop,josh,ripple,peter]

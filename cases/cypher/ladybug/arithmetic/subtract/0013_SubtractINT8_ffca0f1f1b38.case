@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.subtract.SubtractINT8.ffca0f1f1b38","language":"cypher","ordered":true,"source":"arithmetic/subtract.test","source_case":"SubtractINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-5, "INT8") - CAST(127, "INT8")
+--- expected
+Overflow exception: Value -5 - 127 is not within INT8 range.

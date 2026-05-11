@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Has.g_VX1X_hasXage_gt_30X.6e2da976e7dd","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_VX1X_hasXage_gt_30X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).has("age", P.gt(30))
+--- expected
+

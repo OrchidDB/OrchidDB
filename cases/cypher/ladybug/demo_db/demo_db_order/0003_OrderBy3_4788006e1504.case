@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_order.OrderBy3.4788006e1504","language":"cypher","ordered":true,"source":"demo_db/demo_db_order.test","source_case":"DemoDBOrderedTest","source_log":"OrderBy3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]->(b:User) RETURN b.age, a.name ORDER BY b.age DESC, a.name DESC
+--- expected
+50|Karissa
+50|Adam
+40|Adam
+25|Zhang

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario18.90bd63aacb76","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario18","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (n:Movie)--(m) RETURN p
+--- expected
+{_NODES: [{_ID: 0:0, _LABEL: Movie, ID: 0},{_ID: 1:0, _LABEL: A, ID: 0}], _RELS: [(1:0)-{_LABEL: T, _ID: 2:0}->(0:0)]}

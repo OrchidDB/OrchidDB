@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.TypeOfGraph.g_V_out_tree_isXtypeOfXGType_TREEXX_count.c362c6ac4469","language":"gremlin","ordered":false,"source":"filter/TypeOfGraph.feature","source_case":"g_V_out_tree_isXtypeOfXGType_TREEXX_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "marko").out().tree().is(P.typeOf(GType.TREE)).count()
+--- expected
+d[1].l

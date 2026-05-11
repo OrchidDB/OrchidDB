@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidListToArray.92551f595895","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("{3={}, 3= {a: 12}, 3={a:32, b:[1, 2, 3]}}", "MAP(STRING, STRUCT(a INT64, b INT64[]))"), "MAP(STRING, STRUCT(a INT64, b INT64[1]))")
+--- expected
+Conversion exception: Map does not allow duplicate keys.

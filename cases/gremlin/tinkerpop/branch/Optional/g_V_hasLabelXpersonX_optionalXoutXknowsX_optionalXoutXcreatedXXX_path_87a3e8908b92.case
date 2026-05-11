@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Optional.g_V_hasLabelXpersonX_optionalXoutXknowsX_optionalXoutXcreatedXXX_path.87a3e8908b92","language":"gremlin","ordered":false,"source":"branch/Optional.feature","source_case":"g_V_hasLabelXpersonX_optionalXoutXknowsX_optionalXoutXcreatedXXX_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+optional(__.out("knows").
+optional(__.out("created"))).
+path()
+--- expected
+p[v[marko],v[vadas]]
+p[v[marko],v[josh],v[ripple]]
+p[v[marko],v[josh],v[lop]]
+p[v[vadas]]
+p[v[josh]]
+p[v[peter]]

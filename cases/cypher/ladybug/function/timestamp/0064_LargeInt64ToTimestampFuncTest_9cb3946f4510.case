@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.LargeInt64ToTimestampFuncTest.9cb3946f4510","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"LargeInt64ToTimestampFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_timestamp(to_int128(9223372036854)), to_timestamp(-224372936854)
+--- expected
+294247-01-10 04:00:53.999616|5142-11-27 (BC) 00:12:26

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.InvalidUserDefinedTypeErr.01e4a7d27665","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDTPrimitiveType","source_log":"InvalidUserDefinedTypeErr","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(CAST(3 AS SMALLINT) AS BIGINT)
+--- expected
+3

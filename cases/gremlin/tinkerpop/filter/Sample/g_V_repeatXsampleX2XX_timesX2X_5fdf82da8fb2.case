@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"count","id":"gremlin.tinkerpop.filter.Sample.g_V_repeatXsampleX2XX_timesX2X.5fdf82da8fb2","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_V_repeatXsampleX2XX_timesX2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(sample(2)).times(2)
+--- expected
+2

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidListToArray.022fa89d4d92","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidListToArray","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast([1, 2], "DOUBLE[100]")
+--- expected
+Conversion exception: Unsupported casting LIST with incorrect list entry to ARRAY. Expected: 100, Actual: 2.

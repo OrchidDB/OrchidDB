@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.bb30662b0cb1","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":"ListTransform","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[:knows*1..2]->(b) WHERE a.ID = 0 RETURN size(list_transform(nodes(p), x->x))
+--- expected
+2
+2
+2
+3
+3
+3
+3
+3
+3
+3
+3
+3

@@ -1,0 +1,53 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.Paths.g_V_shortestpath.979eccdc14e1","language":"gremlin","ordered":false,"source":"integrated/Paths.feature","source_case":"g_V_shortestpath","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("v").both().as("v").
+project("src", "tgt", "p").
+by(__.select(first, "v")).
+by(__.select(last, "v")).
+by(__.select(Pop.all, "v")).as("triple").
+group("x").
+by(__.select("src", "tgt")).
+by(__.select("p").fold()).select("tgt").barrier().
+repeat(__.both().as("v").
+project("src", "tgt", "p").
+by(__.select(first, "v")).
+by(__.select(last, "v")).
+by(__.select(Pop.all, "v")).as("t").
+filter(__.select(Pop.all, "p").count(local).as("l").
+select(Pop.last, "t").select(Pop.all, "p").dedup(Scope.local).count(Scope.local).where(P.eq("l"))).
+where("src", P.neq("tgt")).
+select(Pop.last, "t").
+not(__.select(Pop.all, "p").as("p").count(local).as("l").
+select(Pop.all, "x").unfold().filter(select(keys).where(P.eq("t")).by(__.select("src", "tgt"))).
+filter(__.select(Column.values).unfold().or(__.count(Scope.local).where(P.lt("l")), __.where(P.eq("p"))))).
+barrier().
+group("x").
+by(__.select("src", "tgt")).
+by(__.select(Pop.all, "p").fold()).select("tgt").barrier()).
+cap("x").select(Column.values).unfold().unfold().map(__.unfold().values("name").fold())
+--- expected
+l[josh,marko,vadas]
+l[ripple,josh,lop]
+l[josh,lop]
+l[peter,lop,marko]
+l[ripple,josh,marko]
+l[josh,marko]
+l[marko,lop]
+l[lop,marko]
+l[josh,lop,peter]
+l[peter,lop,josh]
+l[vadas,marko]
+l[ripple,josh]
+l[josh,ripple]
+l[peter,lop]
+l[vadas,marko,josh]
+l[lop,josh,ripple]
+l[marko,josh]
+l[lop,marko,vadas]
+l[marko,josh,ripple]
+l[marko,vadas]
+l[vadas,marko,lop]
+l[lop,peter]
+l[lop,josh]
+l[marko,lop,peter]

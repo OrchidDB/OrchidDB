@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.CollectDistinct.6dca2825a095","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"CollectDistinct","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,1,3] AS a MATCH (b:person) WITH COLLECT(DISTINCT b) AS bs UNWIND bs AS newB RETURN newB.fName
+--- expected
+Alice
+Bob
+Carol
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Replace.g_injectXthat_this_test_nullX_replaceXh_jX.c57fc534d382","language":"gremlin","ordered":false,"source":"map/Replace.feature","source_case":"g_injectXthat_this_test_nullX_replaceXh_jX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("that", "this", "test", null).replace("h", "j")
+--- expected
+tjat
+tjis
+test
+null

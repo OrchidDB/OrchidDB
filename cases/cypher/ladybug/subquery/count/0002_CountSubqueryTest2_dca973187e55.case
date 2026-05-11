@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.count.CountSubqueryTest2.dca973187e55","language":"cypher","ordered":true,"source":"subquery/count.test","source_case":"CountSubquery","source_log":"CountSubqueryTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE COUNT { MATCH (a)-[:studyAt]->(b)} = 1 RETURN a.fName
+--- expected
+Alice
+Bob
+Farooq

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario5.a1cf85664406","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:Label1)<--(:Label2) RETURN p
+--- expected
+{_NODES: [{_ID: 0:0, _LABEL: Label1, ID: 0},{_ID: 1:0, _LABEL: Label2, ID: 0}], _RELS: [(1:0)-{_LABEL: TYPE, _ID: 2:0}->(0:0)]}

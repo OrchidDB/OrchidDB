@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_V_whereXoutXcreatedX_and_outXknowsX_or_inXknowsXX_valuesXnameX.3c97ea15df8b","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_V_whereXoutXcreatedX_and_outXknowsX_or_inXknowsXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.out("created").and().out("knows").or().in("knows")).values("name")
+--- expected
+marko
+vadas
+josh

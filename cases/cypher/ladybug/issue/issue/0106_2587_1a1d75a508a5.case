@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2587.1a1d75a508a5","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2587","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:T) RETURN t.*
+--- expected
+foo|
+123456789012|
+bar|fe38f9dc-f761-4184-8b8b-ec9a1b5ffb83
+ge38f9dc-f751-4174-8b8b-ec9a1b6gab83|
+1234567890123|

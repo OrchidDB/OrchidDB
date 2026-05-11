@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.insert_rels_to_newly_added_node.insertRelsToDifferentNodesCommitNormalExecution.0f3ea509158e","language":"cypher","ordered":true,"source":"transaction/create_rel/insert_rels_to_newly_added_node.test","source_case":"insertRelsToDifferentNodesCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(:person) WHERE a.ID > 2600 RETURN e.length, e.place
+--- expected
+43|
+50|long long string test
+|

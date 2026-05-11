@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_set_copy.ReturnAge.e5790e94964d","language":"cypher","ordered":true,"source":"demo_db/demo_db_set_copy.test","source_case":"SetSingleLabelNodeTest","source_log":"ReturnAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) WHERE u.name='Adam' RETURN u.age
+--- expected
+50

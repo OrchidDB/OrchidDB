@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.32404a5551cd","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastWithUnionNested","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH CAST([union_value(a := 4444)] AS UNION(x STRING, a INT64)[]) AS q RETURN q, union_tag(q[1])
+--- expected
+[4444]|a

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.cast_bounds.i64.8bec35e360c6","language":"cypher","ordered":true,"source":"cast/cast_bounds.test","source_case":"i64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(9223372036854775808 AS INT64)
+--- expected
+Overflow exception: Value 9223372036854775808 is not within INT64 range

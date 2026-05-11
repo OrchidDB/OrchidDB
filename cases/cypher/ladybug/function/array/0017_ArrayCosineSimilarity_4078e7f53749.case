@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayCosineSimilarity.4078e7f53749","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayCosineSimilarity","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_COSINE_SIMILARITY([1, 2, 3.0], [4, 5, 6.0])
+--- expected
+0.974632

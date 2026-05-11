@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.arrayimplicitcasting.ListArrayImplicitCast.3f52f4bb69a3","language":"cypher","ordered":true,"source":"common/arrayimplicitcasting.test","source_case":"ListArrayImplicitCast","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:T0) RETURN a.a, a.b, a.c, a.d
+--- expected
+0|[1,2]|[1.000000,2.000000]|[3,5]

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.MultiLabelTest1.f245aa8640e1","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"MultiLabelTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:meets|:marries|:studyAt*2..2]->(b) WHERE a.fName = 'Alice' RETURN b.ID, properties(rels(e), '_id'), properties(nodes(e), 'fName')
+--- expected
+1|[9:0,5:1]|[Bob]
+1|[11:0,5:1]|[Bob]
+5|[9:0,9:1]|[Bob]
+5|[11:0,9:1]|[Bob]

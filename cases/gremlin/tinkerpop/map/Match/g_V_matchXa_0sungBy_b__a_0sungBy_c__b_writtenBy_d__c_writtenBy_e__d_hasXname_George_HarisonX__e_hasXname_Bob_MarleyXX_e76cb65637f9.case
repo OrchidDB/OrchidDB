@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_0sungBy_b__a_0sungBy_c__b_writtenBy_d__c_writtenBy_e__d_hasXname_George_HarisonX__e_hasXname_Bob_MarleyXX.e76cb65637f9","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_0sungBy_b__a_0sungBy_c__b_writtenBy_d__c_writtenBy_e__d_hasXname_George_HarisonX__e_hasXname_Bob_MarleyXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").in("sungBy").as("b"),
+__.as("a").in("sungBy").as("c"),
+__.as("b").out("writtenBy").as("d"),
+__.as("c").out("writtenBy").as("e"),
+__.as("d").has("name", "George_Harrison"),
+__.as("e").has("name", "Bob_Marley"))
+--- expected
+m[{"a":"v[Garcia]","b":"v[I WANT TO TELL YOU]","c":"v[STIR IT UP]","d":"v[George_Harrison]","e":"v[Bob_Marley]"}]

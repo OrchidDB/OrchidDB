@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.PathProcessorStrategy.g_withoutStrategiesXPathProcessorStrategyX_V_asXaX_selectXaX_byXvaluesXnameXX.15c34fb1369e","language":"gremlin","ordered":false,"source":"integrated/PathProcessorStrategy.feature","source_case":"g_withoutStrategiesXPathProcessorStrategyX_V_asXaX_selectXaX_byXvaluesXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(PathProcessorStrategy).V().as("a").select("a").by(values("name"))
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

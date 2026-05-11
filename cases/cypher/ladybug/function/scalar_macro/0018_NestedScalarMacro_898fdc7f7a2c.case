@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.scalar_macro.NestedScalarMacro.898fdc7f7a2c","language":"cypher","ordered":true,"source":"function/scalar_macro.test","source_case":"ScalarMacro","source_log":"NestedScalarMacro","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return nestedScalarMacro(p.ID, p.gender, p.age)
+--- expected
+65
+63
+78
+56
+57
+64
+80
+124

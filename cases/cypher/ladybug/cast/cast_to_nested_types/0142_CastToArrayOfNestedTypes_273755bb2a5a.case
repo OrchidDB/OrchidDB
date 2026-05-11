@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.273755bb2a5a","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastWithUnionNested","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST({a: {b: 123}} AS STRUCT(a UNION(x BOOL, y STRUCT(b FLOAT))))
+--- expected
+{a: {b: 123.000000}}

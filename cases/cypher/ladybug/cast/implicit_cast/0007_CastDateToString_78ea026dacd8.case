@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.CastDateToString.78ea026dacd8","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"CastDateToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(Date('1950-05-14'), 10)
+--- expected
+1950-05-14

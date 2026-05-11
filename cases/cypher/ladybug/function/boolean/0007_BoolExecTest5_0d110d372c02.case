@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolExecTest5.0d110d372c02","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolExecTest5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.isWorker and (a.fName='Elizabeth' OR a.fName='Hubert Blaine Wolfeschlegelsteinhausenbergerdorff') RETURN a.fName
+--- expected
+Elizabeth
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

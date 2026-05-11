@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types_errors.DuplicateFields.bb2e13c666f6","language":"cypher","ordered":true,"source":"nested_types/nested_types_errors.test","source_case":"DuplicateFields","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {a: 22, a: 55}
+--- expected
+Binder exception: Found duplicate field a in STRUCT.

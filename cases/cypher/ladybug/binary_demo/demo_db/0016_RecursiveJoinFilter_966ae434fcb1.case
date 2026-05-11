@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.RecursiveJoinFilter.966ae434fcb1","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"RecursiveJoinFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:User)-[:Follows*1..2 (r, n | WHERE r.since < 2022 AND n.age > 45) ]->(b:User) WHERE a.name = 'Adam' RETURN DISTINCT b.name, COUNT(*)
+--- expected
+Karissa|1
+Zhang|1

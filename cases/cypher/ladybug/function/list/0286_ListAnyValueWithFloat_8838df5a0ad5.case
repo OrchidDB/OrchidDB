@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithFloat.8838df5a0ad5","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID=0 RETURN list_any_value([NULL, to_float(p.gender), to_float(p.gender), to_float(2.3)])
+--- expected
+1.000000

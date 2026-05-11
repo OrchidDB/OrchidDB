@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_V_repeatXoutX_timesX2X_path_byXitX_byXnameX_byXlangX.9640350c1c8a","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_V_repeatXoutX_timesX2X_path_byXitX_byXnameX_byXlangX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.out()).times(2).path().by().by("name").by("lang")
+--- expected
+p[v[marko],josh,java]
+p[v[marko],josh,java]

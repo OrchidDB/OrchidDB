@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnMapLiteralWithFlatUnflatProp1.f70468436ac2","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnMapLiteralWithFlatUnflatProp1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(p1:person) RETURN map([p.fName], [p1.age])
+--- expected
+{Alice=30}
+{Alice=45}
+{Alice=20}
+{Bob=35}
+{Bob=45}
+{Bob=20}
+{Carol=35}
+{Carol=30}
+{Carol=20}
+{Dan=35}
+{Dan=30}
+{Dan=45}
+{Elizabeth=25}
+{Elizabeth=40}

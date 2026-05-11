@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ConcatMultipleStrings.663a7f26f9d4","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ConcatMultipleStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person)-[:knows]->(p1:person) return concat("From: ", p.fName, ', To: ', p1.fName)
+--- expected
+From: Alice, To: Bob
+From: Alice, To: Carol
+From: Alice, To: Dan
+From: Bob, To: Alice
+From: Bob, To: Carol
+From: Bob, To: Dan
+From: Carol, To: Alice
+From: Carol, To: Bob
+From: Carol, To: Dan
+From: Dan, To: Alice
+From: Dan, To: Bob
+From: Dan, To: Carol
+From: Elizabeth, To: Farooq
+From: Elizabeth, To: Greg

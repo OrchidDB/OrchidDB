@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.45dd9c327988","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"ResizeAndDistribute","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Person)-[e:knows]->(b:Person) RETURN a.id, b.id, e.age
+--- expected
+0|1|100
+0|2|101

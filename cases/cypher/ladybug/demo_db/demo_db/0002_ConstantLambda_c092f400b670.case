@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ConstantLambda.c092f400b670","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTestListLambda","source_log":"ConstantLambda","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n)-[:LivesIn]->(:City) WITH collect(n.name) AS names MATCH p = (u:User {name: "Adam"})-[e:Follows*]->(u2:User {name: "Noura"}) WHERE size(list_filter(properties(nodes(e),'name'), x->x IN names)) > 0 RETURN properties(nodes(p),'name')
+--- expected
+[Adam,Karissa,Zhang,Noura]
+[Adam,Zhang,Noura]

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_n.KnowsOneToTwoHopWithFilterTest.a3f986eb3752","language":"cypher","ordered":true,"source":"recursive_join/n_n.test","source_case":"VarLengthExtendNNTests","source_log":"KnowsOneToTwoHopWithFilterTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows*1..2]->(b:person) WHERE a.ID = 7 RETURN b.fName
+--- expected
+Farooq
+Greg

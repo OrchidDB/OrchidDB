@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListToStringArray.a74049d7c92f","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListToStringArray","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return list_to_string('/', collect(p.grades))
+--- expected
+[96,54,86,92]/[98,42,93,88]/[91,75,21,95]/[76,88,99,89]/[96,59,65,88]/[80,78,34,83]/[43,83,67,43]/[77,64,100,54]

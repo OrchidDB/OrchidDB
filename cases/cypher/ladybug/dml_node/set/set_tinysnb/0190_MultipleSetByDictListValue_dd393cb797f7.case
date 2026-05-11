@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.MultipleSetByDictListValue.dd393cb797f7","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"MultipleSetByDictListValue","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID=10 RETURN a.usedNames
+--- expected
+[abcndwjbwesdsd,microsofthbbjuwgedsd]

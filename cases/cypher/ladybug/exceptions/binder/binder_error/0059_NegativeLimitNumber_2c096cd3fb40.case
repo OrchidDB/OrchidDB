@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.NegativeLimitNumber.2c096cd3fb40","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"NegativeLimitNumber","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.age LIMIT -1
+--- expected
+Runtime exception: The number of rows to skip/limit must be a non-negative integer.

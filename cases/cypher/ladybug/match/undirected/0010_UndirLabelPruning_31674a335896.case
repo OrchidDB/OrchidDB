@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirLabelPruning.31674a335896","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirLabelPruning","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows|:studyAt|:workAt]-(b:person) RETURN COUNT(*)
+--- expected
+28

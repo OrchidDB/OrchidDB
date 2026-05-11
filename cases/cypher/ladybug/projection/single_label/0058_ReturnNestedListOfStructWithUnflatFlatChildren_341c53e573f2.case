@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnNestedListOfStructWithUnflatFlatChildren.341c53e573f2","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnNestedListOfStructWithUnflatFlatChildren","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person)-[e:knows]->(p2:person) return [{description: {propA: [p1.gender, p2.gender], propB: e.date}, name: p1.fName}, {description: {propA: [p1.ID, p2.ID], propB: p1.birthdate}, name: p2.fName}]
+--- expected
+[{description: {propA: [1,2], propB: 2021-06-30}, name: Alice},{description: {propA: [0,2], propB: 1900-01-01}, name: Bob}]
+[{description: {propA: [1,1], propB: 2021-06-30}, name: Alice},{description: {propA: [0,3], propB: 1900-01-01}, name: Carol}]
+[{description: {propA: [1,2], propB: 2021-06-30}, name: Alice},{description: {propA: [0,5], propB: 1900-01-01}, name: Dan}]
+[{description: {propA: [2,1], propB: 2021-06-30}, name: Bob},{description: {propA: [2,0], propB: 1900-01-01}, name: Alice}]
+[{description: {propA: [2,1], propB: 1950-05-14}, name: Bob},{description: {propA: [2,3], propB: 1900-01-01}, name: Carol}]
+[{description: {propA: [2,2], propB: 1950-05-14}, name: Bob},{description: {propA: [2,5], propB: 1900-01-01}, name: Dan}]
+[{description: {propA: [1,1], propB: 2021-06-30}, name: Carol},{description: {propA: [3,0], propB: 1940-06-22}, name: Alice}]
+[{description: {propA: [1,2], propB: 1950-05-14}, name: Carol},{description: {propA: [3,2], propB: 1940-06-22}, name: Bob}]
+[{description: {propA: [1,2], propB: 2000-01-01}, name: Carol},{description: {propA: [3,5], propB: 1940-06-22}, name: Dan}]
+[{description: {propA: [2,1], propB: 2021-06-30}, name: Dan},{description: {propA: [5,0], propB: 1950-07-23}, name: Alice}]
+[{description: {propA: [2,2], propB: 1950-05-14}, name: Dan},{description: {propA: [5,2], propB: 1950-07-23}, name: Bob}]
+[{description: {propA: [2,1], propB: 2000-01-01}, name: Dan},{description: {propA: [5,3], propB: 1950-07-23}, name: Carol}]
+[{description: {propA: [1,2], propB: 1905-12-12}, name: Elizabeth},{description: {propA: [7,8], propB: 1980-10-26}, name: Farooq}]
+[{description: {propA: [1,2], propB: 1905-12-12}, name: Elizabeth},{description: {propA: [7,9], propB: 1980-10-26}, name: Greg}]

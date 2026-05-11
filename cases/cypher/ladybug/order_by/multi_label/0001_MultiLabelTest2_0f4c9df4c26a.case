@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.order_by.multi_label.MultiLabelTest2.0f4c9df4c26a","language":"cypher","ordered":true,"source":"order_by/multi_label.test","source_case":"OrderByMultiLabel","source_log":"MultiLabelTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:marries|:workAt]->(b:person) return a.ID, b.ID order by ID(e) desc LIMIT 4
+--- expected
+Binder exception: Cannot order by e._ID. Order by INTERNAL_ID is not supported.

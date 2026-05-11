@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_empty.DeleteAllRels.c62bb92424a3","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_empty.test","source_case":"DeleteAllRels","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[k:knows]->(b) where a.id = 17592186046041 return k.creationDate
+--- expected
+20110719184529612
+20110929173245977
+20111110222209521
+20111214221549624
+20111225070822925
+20120208132201752
+20120523102741692
+20120610085946076
+20120828085634951
+20120806215110197
+20120903202253152

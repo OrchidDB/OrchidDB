@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXunionXconstantXyX_limitX1X_identityXX_timesX3X.d5ac362a6b6a","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXunionXconstantXyX_limitX1X_identityXX_timesX3X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(union(constant('y').limit(1),identity())).times(2)
+--- expected
+y
+y
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

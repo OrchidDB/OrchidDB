@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Edge.g_EX11_nullX.5b25049a8d5c","language":"gremlin","ordered":false,"source":"map/Edge.feature","source_case":"g_EX11_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E(eid11,null)
+--- expected
+e[josh-created->lop]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Range.g_VX5X_repeatXrangeX0_1X_inX_untilXloopsXisX2XXX_valuesXnameX.00ebad529ac6","language":"gremlin","ordered":false,"source":"filter/Range.feature","source_case":"g_VX5X_repeatXrangeX0_1X_inX_untilXloopsXisX2XXX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid5).repeat(range(0, 1).in()).until(loops().is(2)).values("name")
+--- expected
+marko

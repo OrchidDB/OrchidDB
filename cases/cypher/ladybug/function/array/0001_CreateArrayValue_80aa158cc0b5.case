@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.CreateArrayValue.80aa158cc0b5","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"CreateArrayValue","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN ARRAY_VALUE(3.2, 5.4, 7.2, 32.3)
+--- expected
+[3.200000,5.400000,7.200000,32.300000]

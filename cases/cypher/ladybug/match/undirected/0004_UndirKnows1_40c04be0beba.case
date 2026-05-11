@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.undirected.UndirKnows1.40c04be0beba","language":"cypher","ordered":true,"source":"match/undirected.test","source_case":"MatchUndirected","source_log":"UndirKnows1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]-(b:person) WHERE b.fName = "Bob" RETURN a.fName
+--- expected
+Alice
+Carol
+Dan
+Alice
+Carol
+Dan

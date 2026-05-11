@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggAvgInt16Test.f3f8e97a4d97","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggAvgInt16Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN AVG(m.length), count(m.audience), count(m.grade)
+--- expected
+989.333333|3|3

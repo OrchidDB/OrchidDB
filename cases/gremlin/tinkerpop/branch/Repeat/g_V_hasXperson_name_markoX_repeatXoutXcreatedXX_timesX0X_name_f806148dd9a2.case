@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_hasXperson_name_markoX_repeatXoutXcreatedXX_timesX0X_name.f806148dd9a2","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_hasXperson_name_markoX_repeatXoutXcreatedXX_timesX0X_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("person","name","marko").repeat(out("created")).times(0).values("name")
+--- expected
+lop

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.StringTest.b5d2837afd99","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"StringTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof("hello")
+--- expected
+STRING

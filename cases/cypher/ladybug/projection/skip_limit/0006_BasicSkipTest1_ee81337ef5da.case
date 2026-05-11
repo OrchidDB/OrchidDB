@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.BasicSkipTest1.ee81337ef5da","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"BasicSkipTest1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName Skip 5
+--- expected
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

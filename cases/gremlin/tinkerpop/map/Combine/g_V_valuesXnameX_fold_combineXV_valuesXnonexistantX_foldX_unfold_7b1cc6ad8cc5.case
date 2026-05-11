@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Combine.g_V_valuesXnameX_fold_combineXV_valuesXnonexistantX_foldX_unfold.7b1cc6ad8cc5","language":"gremlin","ordered":false,"source":"map/Combine.feature","source_case":"g_V_valuesXnameX_fold_combineXV_valuesXnonexistantX_foldX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("name").fold().combine(__.V().values("nonexistant").fold()).unfold()
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

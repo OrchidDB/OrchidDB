@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"GRAPH-STD demo-db/icebug-disk","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_graph_std.MatchFollowsFilterBySourceAndDest.8a461558e940","language":"cypher","ordered":true,"source":"demo_db/demo_db_graph_std.test","source_case":"DemoDBGraphStdTest","source_log":"MatchFollowsFilterBySourceAndDest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:user)-[e:follows]->(b:user) WHERE a.age < 40 AND b.age >= 40 RETURN a.name, b.name
+--- expected
+Adam|Karissa
+Adam|Zhang

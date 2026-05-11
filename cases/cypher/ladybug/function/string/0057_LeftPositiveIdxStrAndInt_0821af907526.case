@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LeftPositiveIdxStrAndInt.0821af907526","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LeftPositiveIdxStrAndInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN left(o.name, o.ID)
+--- expected
+A
+CsWo
+DEsWor

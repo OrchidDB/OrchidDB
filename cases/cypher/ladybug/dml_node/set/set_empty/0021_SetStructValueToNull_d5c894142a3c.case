@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.SetStructValueToNull.d5c894142a3c","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"SetStructValueToNull","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.prop
+--- expected
+{age: 10, name: Alice}
+{age: 20, name: Bobdjiweknfwhuwiehfuw}
+{age: 30, name: Delta}

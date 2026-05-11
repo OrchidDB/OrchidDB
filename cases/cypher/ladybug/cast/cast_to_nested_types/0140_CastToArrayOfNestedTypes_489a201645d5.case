@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.489a201645d5","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastWithUnionNested","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST([[1, 2], [3], [4, 5, 6]] as UNION(a FLOAT[])[])
+--- expected
+[[1.000000,2.000000],[3.000000],[4.000000,5.000000,6.000000]]

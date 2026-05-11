@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromINT32.576097d45875","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromINT32","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) WHERE m.name='Roma' RETURN cast(m.length, "int16"), cast(m.length, "int64"), cast(m.length, "int128"), cast(m.length, "float"), cast(m.length, "double")
+--- expected
+298|298|298|298.000000|298.000000

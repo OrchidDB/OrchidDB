@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.correlated.CorrelatedSubqueryTest4.698e38f3c518","language":"cypher","ordered":true,"source":"subquery/correlated.test","source_case":"CorrelatedSubquery","source_log":"CorrelatedSubqueryTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:studyAt]->(b) WHERE EXISTS { MATCH (a)-[:knows]->(c:person) WHERE b.orgCode > c.age } RETURN a.ID, b.ID
+--- expected
+0|1
+2|1

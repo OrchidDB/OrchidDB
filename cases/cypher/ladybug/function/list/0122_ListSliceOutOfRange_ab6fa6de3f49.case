@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSliceOutOfRange.ab6fa6de3f49","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSliceOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName[7:]
+--- expected
+Blaine Wolfeschlegelsteinhausenbergerdorff
+eth

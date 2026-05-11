@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Unfold.g_V_localXoutE_foldX_unfold.180d323733e8","language":"gremlin","ordered":false,"source":"map/Unfold.feature","source_case":"g_V_localXoutE_foldX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(__.outE().fold()).unfold()
+--- expected
+e[marko-created->lop]
+e[marko-knows->vadas]
+e[marko-knows->josh]
+e[josh-created->ripple]
+e[josh-created->lop]
+e[peter-created->lop]

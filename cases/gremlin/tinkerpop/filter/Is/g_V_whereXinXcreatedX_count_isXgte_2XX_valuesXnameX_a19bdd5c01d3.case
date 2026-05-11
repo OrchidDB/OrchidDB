@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Is.g_V_whereXinXcreatedX_count_isXgte_2XX_valuesXnameX.a19bdd5c01d3","language":"gremlin","ordered":false,"source":"filter/Is.feature","source_case":"g_V_whereXinXcreatedX_count_isXgte_2XX_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().where(__.in("created").count().is(P.gte(2))).values("name")
+--- expected
+lop

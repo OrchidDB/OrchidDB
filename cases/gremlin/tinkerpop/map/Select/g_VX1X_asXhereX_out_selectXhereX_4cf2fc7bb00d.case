@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_VX1X_asXhereX_out_selectXhereX.4cf2fc7bb00d","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_VX1X_asXhereX_out_selectXhereX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).as("here").out().select("here")
+--- expected
+v[marko]
+v[marko]
+v[marko]

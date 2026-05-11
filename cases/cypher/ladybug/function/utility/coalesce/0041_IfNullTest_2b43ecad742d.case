@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullTest.2b43ecad742d","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"PredicateTest","source_log":"IfNullTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:tbl) WHERE NOT ifnull(NULL, t.bool) RETURN t.id
+--- expected
+2

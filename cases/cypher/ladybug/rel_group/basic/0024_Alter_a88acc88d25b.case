@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.Alter.a88acc88d25b","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"Alter","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:personA)-[e:hates]->(b:personB) RETURN e.s
+--- expected
+Binder exception: Cannot find property s for e.

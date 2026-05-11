@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.CrossProductReturn.bf1fe26f71dc","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"CrossProductReturn","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation), (b:organisation) RETURN a.orgCode = b.orgCode
+--- expected
+False
+False
+False
+False
+False
+False
+True
+True
+True

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayWithNull.e40f529e5108","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToArrayWithNull","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast({a: 12, b: {a: [[NULL]]}, c: 2132}, "STRUCT(a INT64, b STRUCT(a INT64[1][]), c INT64)")
+--- expected
+{a: 12, b: {a: [[]]}, c: 2132}

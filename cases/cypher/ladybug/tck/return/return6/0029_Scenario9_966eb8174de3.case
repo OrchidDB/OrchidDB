@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario9.966eb8174de3","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH () RETURN count(*) * 10 AS c
+--- expected
+10

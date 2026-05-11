@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Limit1.5c4a95cb5cd0","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Limit1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name ORDER BY u.age DESC LIMIT 3
+--- expected
+Zhang
+Karissa
+Adam

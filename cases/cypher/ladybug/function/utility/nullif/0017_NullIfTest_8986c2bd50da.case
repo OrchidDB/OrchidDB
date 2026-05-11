@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.8986c2bd50da","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t3:test3) RETURN t3.a, CASE WHEN t3.a>11 THEN CAST(t3.a, "STRING") ELSE CAST(t3.b, "STRING") END ORDER BY t3.a
+--- expected
+11|22
+12|12
+13|13

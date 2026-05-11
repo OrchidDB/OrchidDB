@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialParquet.4030f223eb46","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialParquet","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes12) WHERE row.id >= 20 AND row.id <= 24 RETURN row.*
+--- expected
+|False|42.774957|[16,38,98,61,2]||[EzPWolZ2iCsga46o,lbhcKq7DDPeiX,yaxsyrbzolAyVWlxj,5Rlse62CKuIitVf4,yKOx0P]|58||||||2043-08-19|[[95,209,75,7],[197],[69,244],[164,160,153,125]]|23|||{ID: 682, name: 06SBnT}|ISImRVpUjynGMFRQyYmeIUVjM|
+|False|53.813224|[94,17,22]||[gVYovI30hQyC,b6OpP]|75||||||1971-12-05|[[81,66],[255,44],[37]]|24|||{ID: 185, name: 7xymBThq}|naDlQ|
+|False|64.630960|[53,44,76,78]||[V0yNTz60W2i4J,LN3F2erCELm]|7||||||2090-07-13|[[191,62],[64,259,183,130,116],[49,29,222,249,128],[222,169,22,80],[206,59]]|21|||{ID: 956, name: GNX5sv9V}|AjbxHQThEtDDlOjbzMjCQSXlvGQEjcFLykESrnFHwPKX|
+|True|37.963386|[74]||[GOLV1]|71||||||2048-04-24|[[139,156,218],[148,187,62],[158,118],[297,151]]|22|||{ID: 838, name: gRdEkZSI8qQ7dIH}|dRvHHdyNXYfSUcicaxBoQEKQUfgex|
+|True|57.579280|[85,11,98,6]||[wl7evae,lLtQIMJI,vNvYnjt27]|0||||||2094-08-19|[[131,129]]|20|||{ID: 717, name: 3oOf}|OdM|

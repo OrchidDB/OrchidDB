@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List1.Scenario5.8a1d83d6bbb4","language":"cypher","ordered":true,"source":"tck/expressions/list/List1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH 123 AS list, 0 AS idx RETURN list[idx]
+--- expected
+Binder exception: Cannot match a built-in function for given function LIST_EXTRACT(INT64,INT64). Supported inputs are
+(LIST,INT64) -> ANY
+(STRING,INT64) -> STRING

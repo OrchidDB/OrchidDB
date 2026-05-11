@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListProductFloat.63064c8272f2","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListProductFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_product([to_float(1.111111111111), to_float(2.2), to_float(3.3), NULL])
+--- expected
+8.066668

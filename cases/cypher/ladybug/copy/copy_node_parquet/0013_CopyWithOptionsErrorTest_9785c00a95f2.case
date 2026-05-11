@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.CopyWithOptionsErrorTest.9785c00a95f2","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"IgnoreErrorsTest","source_log":"CopyWithOptionsErrorTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.ID
+--- expected
+1
+2
+3
+4
+5

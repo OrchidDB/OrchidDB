@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.StandardVerificationStrategy.g_withoutStrategiesXStandardVerificationStrategyX_V.81a39bde76ea","language":"gremlin","ordered":false,"source":"integrated/StandardVerificationStrategy.feature","source_case":"g_withoutStrategiesXStandardVerificationStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(StandardVerificationStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

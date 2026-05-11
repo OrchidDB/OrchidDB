@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.Disjunct.g_injectX3_threeX_disjunctXfive_three_7X.94173c4dba1f","language":"gremlin","ordered":false,"source":"map/Disjunct.feature","source_case":"g_injectX3_threeX_disjunctXfive_three_7X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([3i,"three"]).disjunct(["five","three",7i])
+--- expected
+s[d[3].i,five,d[7].i]

@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolExecTest2.736ff5a53b20","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolExecTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person) WHERE a.fName = 'Alice' RETURN a.fName, a.isStudent, b.fName, b.isStudent, c.fName, c.isStudent, (a.isStudent AND b.isStudent) OR c.isStudent
+--- expected
+Alice|True|Bob|True|Alice|True|True
+Alice|True|Bob|True|Carol|False|True
+Alice|True|Bob|True|Dan|False|True
+Alice|True|Carol|False|Alice|True|True
+Alice|True|Carol|False|Bob|True|True
+Alice|True|Carol|False|Dan|False|False
+Alice|True|Dan|False|Alice|True|True
+Alice|True|Dan|False|Bob|True|True
+Alice|True|Dan|False|Carol|False|False

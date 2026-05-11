@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidNameCast.321ead521481","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidNameCast","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast({'a':12, 'b':24} as struct (c int64, d int64))
+--- expected
+Conversion exception: Unsupported casting function from STRUCT(a INT64, b INT64) to STRUCT(c INT64, d INT64).

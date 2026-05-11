@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMinTimestampTest.1dd9cd3318b2","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMinTimestampTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN MIN(a.registerTime)
+--- expected
+1911-08-20 02:32:21

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.HashDistinctCollectDoubleTest.bc9048ed6319","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"HashDistinctCollectDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.gender, collect(distinct p.isStudent)
+--- expected
+1|[True,False]
+2|[True,False]

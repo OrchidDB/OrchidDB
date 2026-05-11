@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListToStringBOOL.3fd6403e0d88","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListToStringBOOL","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN LIST_TO_STRING('/', [true, false, false, true])
+--- expected
+True/False/False/True

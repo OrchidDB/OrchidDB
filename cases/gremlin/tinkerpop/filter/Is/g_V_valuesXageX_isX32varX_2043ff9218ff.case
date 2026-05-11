@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Is.g_V_valuesXageX_isX32varX.2043ff9218ff","language":"gremlin","ordered":false,"source":"filter/Is.feature","source_case":"g_V_valuesXageX_isX32varX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(xx1)
+--- expected
+d[32].i

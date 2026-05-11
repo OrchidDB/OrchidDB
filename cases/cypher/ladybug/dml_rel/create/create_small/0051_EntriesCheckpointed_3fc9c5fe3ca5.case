@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.3fc9c5fe3ca5","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneInBatch","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+--- query
+match (a)-[e]->(b) return e
+--- expected
+(1:0)-{_LABEL: own, _ID: 2:0}->(0:0)
+(1:1)-{_LABEL: own, _ID: 2:1}->(0:1)
+(1:2)-{_LABEL: own, _ID: 2:2}->(0:2)

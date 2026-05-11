@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.acc.acc_hj.AspOneMaskToMultiScan.3d684ffbbce4","language":"cypher","ordered":true,"source":"acc/acc_hj.test","source_case":"Acc","source_log":"AspOneMaskToMultiScan","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person), (a)-[e2:knows]->(b), (a)-[e3:knows]->(c:person)-[e4:knows]->(d:person) WHERE e1.date=date('1950-05-14') AND a.ID>0 AND c.fName='Bob' AND d.fName='Carol' RETURN a.fName, b.fName
+--- expected
+Carol|Bob
+Dan|Bob

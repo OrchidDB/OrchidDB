@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertRepeatedNToNRelTest.4a8adab2bfd7","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertRepeatedNToNRelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID=7 RETURN b.ID, e.validInterval
+--- expected
+8|00:47:58
+8|3 years
+9|00:47:58

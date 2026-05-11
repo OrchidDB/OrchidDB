@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.PersonNodesTestDouble.9b80fbbb7ab4","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"PersonNodesTestDouble","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.eyeSight
+--- expected
+5.000000
+5.100000
+5.000000
+4.800000
+4.700000
+4.500000
+4.900000
+4.900000

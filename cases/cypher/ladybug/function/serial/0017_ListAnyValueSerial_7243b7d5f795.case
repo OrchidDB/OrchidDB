@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListAnyValueSerial.7243b7d5f795","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListAnyValueSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_any_value([a.ID, a.ID])
+--- expected
+0
+1
+2
+3
+4
+5
+6
+7

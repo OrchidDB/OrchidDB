@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_matchXa_created_b__b_0created_aX.16af46062055","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_matchXa_created_b__b_0created_aX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().match(__.as("a").out("created").as("b"),
+__.as("b").in("created").as("a"))
+--- expected
+m[{"a":"v[marko]","b":"v[lop]"}]
+m[{"a":"v[josh]","b":"v[ripple]"}]
+m[{"a":"v[josh]","b":"v[lop]"}]
+m[{"a":"v[peter]","b":"v[lop]"}]

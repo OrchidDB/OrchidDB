@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV long-string-multiple-files","expected_kind":"rows","id":"cypher.ladybug.copy.copy_long_string_multiple_files.LongStringAlice.f19c367cb260","language":"cypher","ordered":true,"source":"copy/copy_long_string_multiple_files.test","source_case":"CopyLongStringMultipleFilesTest","source_log":"LongStringAlice","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN COUNT(*)
+--- expected
+220000

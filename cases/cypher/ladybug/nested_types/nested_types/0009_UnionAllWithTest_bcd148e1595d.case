@@ -1,0 +1,33 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.nested_types.nested_types.UnionAllWithTest.bcd148e1595d","language":"cypher","ordered":true,"source":"nested_types/nested_types.test","source_case":"Union","source_log":"UnionAllWithTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) with b return b.age + 3 UNION ALL MATCH (a:person)-[e:knows]->(b:person) with a RETURN a.age
+--- expected
+20
+20
+20
+20
+20
+23
+23
+23
+28
+30
+30
+30
+33
+33
+33
+35
+35
+35
+38
+38
+38
+43
+45
+45
+45
+48
+48
+48

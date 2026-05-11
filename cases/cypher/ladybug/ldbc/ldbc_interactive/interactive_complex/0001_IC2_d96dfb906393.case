@@ -1,0 +1,25 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_complex.IC2.d96dfb906393","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_complex.test","source_case":"LDBCInteractiveComplex","source_log":"IC2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Person {id: 32985348834100 })-[:knows]-(friend:Person)<-[:Post_hasCreator|:Comment_hasCreator]-(message:Comment:Post) WHERE message.creationDate < 20120710024241920 RETURN friend.id AS personId, friend.firstName AS personFirstName, friend.lastName AS personLastName, message.id AS postOrCommentId, CASE WHEN message.content is NULL THEN message.imageFile ELSE message.content END AS postOrCommentContent, message.creationDate AS postOrCommentCreationDate ORDER BY postOrCommentCreationDate DESC, postOrCommentId ASC LIMIT 20
+--- expected
+1050|Rafael|Magomaev|1030792258026|fine|20120709230911818
+17592186045408|Ayesha|Iqbal|1030792234469|right|20120709161921287
+24189255811254|Abdullah|Koksal|962072813844|roflol|20120709034941312
+19791209300507|Chaim Azriel|Epstein|962072941392|yes|20120709015445748
+19791209300507|Chaim Azriel|Epstein|962072809976|I see|20120709011511248
+2199023256816|K.|Bose|962072809961|duh|20120708212641734
+1050|Rafael|Magomaev|962072849025|photo962072849025.jpg|20120708203113410
+1050|Rafael|Magomaev|962072849024|photo962072849024.jpg|20120708203112410
+19791209300507|Chaim Azriel|Epstein|962072941389|good|20120708170052621
+2199023256816|K.|Bose|962072981826|good|20120708090249458
+2199023256816|K.|Bose|962072761043|fine|20120708035130945
+2199023256816|K.|Bose|962072741683|maybe|20120708000551436
+6597069768087|Abdul Jamil|Malik|962072877313|ok|20120707205357368
+2199023256816|K.|Bose|962072934715|About Nagorno-Karabakh Republic,  Republic (Armenian: Արցախի Հանրապետություն AAbout I Ca|20120707194820997
+2199023256816|K.|Bose|962072740704|About Jimmy Carter, n (at the end of 1979), 1980 Summer Olympics boycott by the U|20120707170809626
+24189255811254|Abdullah|Koksal|962073039032|About Charles Gounod, as Faust aAbout Silvio Berlusconi,  to the OrAbout James II|20120707143307901
+2199023256816|K.|Bose|962072981859|good|20120707062325042
+19791209300507|Chaim Azriel|Epstein|962072825672|thanks|20120707043516232
+19791209300507|Chaim Azriel|Epstein|962073022942|no way!|20120707012146963
+2199023256816|K.|Bose|962072894276|great|20120706195440195

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastUint64ToInt8OutOfRange.968eddb1cc84","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastUint64ToInt8OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:studyAt]->(:organisation) return to_int8(e.code)
+--- expected
+Overflow exception: Value 9223372036854775808 is not within INT8 range

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV multi-copy-worst-case-split","expected_kind":"rows","id":"cypher.ladybug.copy.multi_copy_worst_case_split.CopyWorstCaseSplit.4ac8cf44add7","language":"cypher","ordered":true,"source":"copy/multi_copy_worst_case_split.test","source_case":"CopyWorstCaseSplit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:Test) WHERE t.ID = 18846 RETURN t.ID
+--- expected
+18846

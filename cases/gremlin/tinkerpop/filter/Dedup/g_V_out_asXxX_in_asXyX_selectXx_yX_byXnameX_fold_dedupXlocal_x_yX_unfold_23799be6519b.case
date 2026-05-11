@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_out_asXxX_in_asXyX_selectXx_yX_byXnameX_fold_dedupXlocal_x_yX_unfold.23799be6519b","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_out_asXxX_in_asXyX_selectXx_yX_byXnameX_fold_dedupXlocal_x_yX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().as("x").in().as("y").select("x", "y").by("name").fold().dedup(Scope.local, "x", "y").unfold()
+--- expected
+m[{"x":"lop","y":"marko"}]
+m[{"x":"lop","y":"josh"}]
+m[{"x":"lop","y":"peter"}]
+m[{"x":"vadas","y":"marko"}]
+m[{"x":"josh","y":"marko"}]
+m[{"x":"ripple","y":"josh"}]

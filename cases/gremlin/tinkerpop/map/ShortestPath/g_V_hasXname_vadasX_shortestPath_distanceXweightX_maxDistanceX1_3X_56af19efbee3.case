@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ShortestPath.g_V_hasXname_vadasX_shortestPath_distanceXweightX_maxDistanceX1_3X.56af19efbee3","language":"gremlin","ordered":false,"source":"map/ShortestPath.feature","source_case":"g_V_hasXname_vadasX_shortestPath_distanceXweightX_maxDistanceX1_3X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name","vadas").shortestPath().
+with("~tinkerpop.shortestPath.distance", "weight").
+with("~tinkerpop.shortestPath.maxDistance", 1.3)
+--- expected
+p[v[vadas],v[marko],v[lop],v[josh]]
+p[v[vadas],v[marko],v[lop],v[peter]]
+p[v[vadas],v[marko],v[lop]]
+p[v[vadas],v[marko]]
+p[v[vadas]]

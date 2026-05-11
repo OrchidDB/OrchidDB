@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortFloatDescWithNullsLast.720e033b49b0","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortFloatDescWithNullsLast","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([to_float(2.1), to_float(3.2), to_float(1.11), NULL], 'DESC', 'NULLS LAST')
+--- expected
+[3.200000,2.100000,1.110000,]

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt64ToFloat.bf552d871cfb","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt64ToFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_float(p.gender)
+--- expected
+1.000000
+2.000000
+1.000000
+2.000000
+1.000000
+2.000000
+2.000000
+2.000000

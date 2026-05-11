@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.multi_label.MultiLabelReturn.6816cd5e3329","language":"cypher","ordered":true,"source":"projection/multi_label.test","source_case":"ProjectionMultiLabel","source_log":"MultiLabelReturn","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person:organisation) RETURN a.ID, label(a), a.fName, a.orgCode
+--- expected
+0|person|Alice|
+1|organisation||325
+2|person|Bob|
+3|person|Carol|
+4|organisation||934
+5|person|Dan|
+6|organisation||824
+7|person|Elizabeth|
+8|person|Farooq|
+9|person|Greg|
+10|person|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|

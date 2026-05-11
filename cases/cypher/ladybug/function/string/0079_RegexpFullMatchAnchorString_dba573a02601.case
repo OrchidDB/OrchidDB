@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpFullMatchAnchorString.dba573a02601","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpFullMatchAnchorString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) UNWIND a.usedNames as x WITH x AS name WHERE name =~ '^A.*$' RETURN name
+--- expected
+Ad
+Aida

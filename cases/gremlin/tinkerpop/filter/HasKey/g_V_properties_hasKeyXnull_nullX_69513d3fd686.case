@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.HasKey.g_V_properties_hasKeyXnull_nullX.69513d3fd686","language":"gremlin","ordered":false,"source":"filter/HasKey.feature","source_case":"g_V_properties_hasKeyXnull_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().properties().hasKey(null,null)
+--- expected
+

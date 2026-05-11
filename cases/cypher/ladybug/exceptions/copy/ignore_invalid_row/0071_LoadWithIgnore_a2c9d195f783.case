@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/invalid-row","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.ignore_invalid_row.LoadWithIgnore.a2c9d195f783","language":"cypher","ordered":true,"source":"exceptions/copy/ignore_invalid_row.test","source_case":"SkipInvalidAtEOF","source_log":"LoadWithIgnore","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.*
+--- expected
+0|4

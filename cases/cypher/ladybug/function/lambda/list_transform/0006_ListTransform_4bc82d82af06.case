@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_transform.ListTransform.4bc82d82af06","language":"cypher","ordered":true,"source":"function/lambda/list_transform.test","source_case":"ListTransform","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b) WHERE a.ID = 0 RETURN a.ID, b.ID, LIST_TRANSFORM([1,2,3], x->x + a.ID + b.ID)
+--- expected
+0|2|[3,4,5]
+0|3|[4,5,6]
+0|5|[6,7,8]

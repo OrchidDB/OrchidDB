@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.2b11ad652053","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateAndScanManyToManyRel","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:N2) RETURN n.ID
+--- expected
+12
+8

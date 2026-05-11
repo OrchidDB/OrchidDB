@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.dml_empty_serial_execution.MixedMultiTransactionRelCopyInsert.32e9e12c4a67","language":"cypher","ordered":true,"source":"transaction/concurrency/dml_empty_serial_execution.test","source_case":"MixedMultiTransactionRelCopyInsert","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p1:person)-[k:knows]->(p2:person) RETURN p1.ID,p2.ID
+--- expected
+0|2
+0|3
+0|5
+2|0
+2|3
+2|5
+3|5

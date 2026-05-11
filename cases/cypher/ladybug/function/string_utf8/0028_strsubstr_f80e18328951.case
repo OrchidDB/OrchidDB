@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strsubstr.f80e18328951","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strsubstr","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN substr('成績評価の甘い授業が高く評価', 1,3)
+--- expected
+成績評

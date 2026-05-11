@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.SideEffect.g_V_group_byXvaluesXnameX_sideEffectXconstantXzyxXX_substringX1XX_byXconstantX1X_sideEffectXconstantXxyzXXX.f14e931489ae","language":"gremlin","ordered":false,"source":"sideEffect/SideEffect.feature","source_case":"g_V_group_byXvaluesXnameX_sideEffectXconstantXzyxXX_substringX1XX_byXconstantX1X_sideEffectXconstantXxyzXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by(__.values("name").sideEffect(__.constant("zyx")).substring(0,1)).by(__.constant(1).sideEffect(__.constant("xyz")))
+--- expected
+m[{"p":"d[1].i", "r":"d[1].i", "v":"d[1].i", "j":"d[1].i", "l":"d[1].i", "m":"d[1].i"}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.4080.fc6143605954","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"4080","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH 2 as parent_id OPTIONAL MATCH (v1:V)-[:links_to*1..]->(:V) WHERE EXISTS {MATCH (v1)-[:parent]->(:V {id: parent_id})} RETURN v1.id
+--- expected
+1

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match1.Scenario4.828f243c7c2c","language":"cypher","ordered":true,"source":"tck/match/match1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n {name: 'bar'}) RETURN n
+--- expected
+{_ID: 0:0, _LABEL: A, ID: 0, name: bar}

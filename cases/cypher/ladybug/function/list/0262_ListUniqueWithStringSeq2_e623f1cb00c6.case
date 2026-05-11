@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithStringSeq2.e623f1cb00c6","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithStringSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_unique([NULL, a.usedNames[1], 'sss', NULL])
+--- expected
+2
+2
+2
+2
+2
+2
+2
+2

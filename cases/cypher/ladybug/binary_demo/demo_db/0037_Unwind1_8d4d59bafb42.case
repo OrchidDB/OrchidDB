@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Unwind1.8d4d59bafb42","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Unwind1","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ["Amy", "Bob", "Carol"] AS x RETURN 'name' as name, x
+--- expected
+name|Amy
+name|Bob
+name|Carol

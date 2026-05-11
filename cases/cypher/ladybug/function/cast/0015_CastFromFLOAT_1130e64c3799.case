@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastFromFLOAT.1130e64c3799","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"FunctionCast","source_log":"CastFromFLOAT","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID=0 RETURN to_int16(p.height), to_int32(p.height), to_int64(p.height), to_int128(p.height), to_double(p.height)
+--- expected
+2|2|2|2|1.731000

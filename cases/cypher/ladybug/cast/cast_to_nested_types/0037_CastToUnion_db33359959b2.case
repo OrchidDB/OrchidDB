@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToUnion.db33359959b2","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToUnion","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("324324", "UNION(uint64, int128, BOOLEAN)"), cast("-324324", "UNION(uint64, int128, BOOLEAN)"), cast("false", "UNION(uint64, int128, BOOLEAN)")
+--- expected
+324324|-324324|False

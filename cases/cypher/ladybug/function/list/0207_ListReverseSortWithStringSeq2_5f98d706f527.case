@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortWithStringSeq2.5f98d706f527","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortWithStringSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_reverse_sort([NULL, a.usedNames[1], 'Some val', NULL])
+--- expected
+[,,Some val,Ad]
+[,,Some val,Aida]
+[,,Some val,Bobby]
+[,,Some val,Carmen]
+[,,Some val,Ein]
+[,,Some val,Fesdwe]
+[,,Some val,Grad]
+[,,Wolfeschlegelstein,Some val]

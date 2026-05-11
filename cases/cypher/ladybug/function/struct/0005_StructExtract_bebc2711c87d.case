@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.struct.StructExtract.bebc2711c87d","language":"cypher","ordered":true,"source":"function/struct.test","source_case":"FunctionStruct","source_log":"StructExtract","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {a:1, b:{c: 'C', d: 'D'}} AS s RETURN s.b.c
+--- expected
+C

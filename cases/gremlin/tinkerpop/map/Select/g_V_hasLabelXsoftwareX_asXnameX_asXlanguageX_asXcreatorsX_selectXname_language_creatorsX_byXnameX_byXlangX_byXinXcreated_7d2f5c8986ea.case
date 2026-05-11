@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_hasLabelXsoftwareX_asXnameX_asXlanguageX_asXcreatorsX_selectXname_language_creatorsX_byXnameX_byXlangX_byXinXcreated.7d2f5c8986ea","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_hasLabelXsoftwareX_asXnameX_asXlanguageX_asXcreatorsX_selectXname_language_creatorsX_byXnameX_byXlangX_byXinXcreatedX_name_fold_orderXlocalXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").as("name").as("language").as("creators").select("name", "language", "creators").by("name").by("lang").
+by(__.in("created").values("name").fold().order(Scope.local))
+--- expected
+m[{"name":"lop","language":"java","creators":["josh","marko","peter"]}]
+m[{"name":"ripple","language":"java","creators":["josh"]}]

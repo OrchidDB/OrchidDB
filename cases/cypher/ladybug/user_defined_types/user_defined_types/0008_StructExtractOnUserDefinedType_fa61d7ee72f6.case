@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.StructExtractOnUserDefinedType.fa61d7ee72f6","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDT","source_log":"StructExtractOnUserDefinedType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN struct_extract(p.description, 'name')
+--- expected
+Alice
+Bob
+Dan

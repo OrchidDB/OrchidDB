@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.PartitionStrategy.g_withStrategiesXPartitionStrategyXwrite_a_read_a_bXX_V_bothE_dedup_weight.988000c3f03f","language":"gremlin","ordered":false,"source":"integrated/PartitionStrategy.feature","source_case":"g_withStrategiesXPartitionStrategyXwrite_a_read_a_bXX_V_bothE_dedup_weight","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new PartitionStrategy(partitionKey: "_partition", writePartition: "a", readPartitions: ["a", "b"])).V().
+bothE().dedup().values("weight")
+--- graph_initializer
+g.addV("person").property("_partition","a").property("name","alice").as("a").
+  addV("person").property("_partition","b").property("name","bob").as("b").
+  addE("knows").from("a").to("b").property("_partition","a").property("weight",1.0d).
+  addE("knows").from("b").to("a").property("_partition","b").property("weight",2.0d)
+--- expected
+d[1.0].d
+d[2.0].d

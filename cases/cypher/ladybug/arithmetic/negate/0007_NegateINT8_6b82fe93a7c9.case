@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.negate.NegateINT8.6b82fe93a7c9","language":"cypher","ordered":true,"source":"arithmetic/negate.test","source_case":"NegateINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -CAST(-128, "INT8")
+--- expected
+Overflow exception: Value -128 cannot be negated within INT8 range.

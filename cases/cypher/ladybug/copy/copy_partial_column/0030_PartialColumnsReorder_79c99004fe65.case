@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialColumnsReorder.79c99004fe65","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialColumnsReorder","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes4) WHERE row.id >= 20 AND row.id <= 24 RETURN row.*
+--- expected
+|False|AjbxHQThEtDDlOjbzMjCQSXlvGQEjcFLykESrnFHwPKX|7|||1307-01-26 03:31:08|||1307-01-26||64.630960|[]|21|
+|False|ISImRVpUjynGMFRQyYmeIUVjM|58|||1181-10-16 18:19:43|||1181-10-16||42.774957||23|
+|False|naDlQ|75|||1942-10-24 09:30:16|||1942-10-24||53.813224|[97,91,28,26,]|24|
+|True|OdM|0|||1731-09-26 03:30:08|||1731-09-26||57.579280|[93,,86,37]|20|
+|True|dRvHHdyNXYfSUcicaxBoQEKQUfgex|71|||1455-07-26 03:07:03|||1455-07-26||37.963386|[72,,45,,81]|22|

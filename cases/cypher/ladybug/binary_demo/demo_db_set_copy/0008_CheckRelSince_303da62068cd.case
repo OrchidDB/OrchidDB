@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db_set_copy.CheckRelSince.303da62068cd","language":"cypher","ordered":true,"source":"binary_demo/demo_db_set_copy.test","source_case":"SetSingleLabelRelTest","source_log":"CheckRelSince","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[f:Follows]->(u1:User) WHERE u.name='Adam' RETURN f.since, u1.name
+--- expected
+2012|Karissa
+2020|Zhang

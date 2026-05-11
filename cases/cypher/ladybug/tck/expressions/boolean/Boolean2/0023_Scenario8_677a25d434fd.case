@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean2.Scenario8.677a25d434fd","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean2.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN false OR 123
+--- expected
+Binder exception: Expression 123 has data type INT64 but expected BOOL. Implicit cast is not supported.

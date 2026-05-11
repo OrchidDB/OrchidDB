@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateWithNull.6d1946831621","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateWithNull","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+1|a|True
+2|b|
+3||False

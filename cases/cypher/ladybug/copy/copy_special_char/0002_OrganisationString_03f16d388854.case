@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV copy-special-char-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_special_char.OrganisationString.03f16d388854","language":"cypher","ordered":true,"source":"copy/copy_special_char.test","source_case":"CopySpecialChars","source_log":"OrganisationString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN o.name
+--- expected
+ABFsUni
+CsW,ork
+DEsW#ork

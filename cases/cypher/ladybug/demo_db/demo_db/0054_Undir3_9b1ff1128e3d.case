@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Undir3.9b1ff1128e3d","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Undir3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH ()-[]-() RETURN COUNT(*)
+--- expected
+16

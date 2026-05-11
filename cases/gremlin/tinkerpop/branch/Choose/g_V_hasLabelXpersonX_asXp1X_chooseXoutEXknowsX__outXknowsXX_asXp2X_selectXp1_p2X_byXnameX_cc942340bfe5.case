@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_hasLabelXpersonX_asXp1X_chooseXoutEXknowsX__outXknowsXX_asXp2X_selectXp1_p2X_byXnameX.cc942340bfe5","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_hasLabelXpersonX_asXp1X_chooseXoutEXknowsX__outXknowsXX_asXp2X_selectXp1_p2X_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").as("p1").
+choose(__.outE("knows"), __.out("knows")).as("p2").
+select("p1", "p2").
+by("name")
+--- expected
+m[{"p1":"marko", "p2":"vadas"}]
+m[{"p1":"marko", "p2":"josh"}]
+m[{"p1":"vadas", "p2":"vadas"}]
+m[{"p1":"josh", "p2":"josh"}]
+m[{"p1":"peter", "p2":"peter"}]

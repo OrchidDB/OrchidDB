@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithUUID.18d3bdcb7369","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithUUID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN list_unique([p.u, p.u, cast('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11', 'uuid')]), p.ID
+--- expected
+1|0
+2|10
+2|2
+2|3
+2|5
+2|7
+2|8
+2|9

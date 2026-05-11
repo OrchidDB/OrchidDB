@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.predicate.predicate.ListPredicateWithoutWhereError.8efd259d894c","language":"cypher","ordered":true,"source":"function/predicate/predicate.test","source_case":"ListPredicateWithoutWhereError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN SINGLE(x in [1,2,3])
+--- expected
+Parser exception: Invalid input <RETURN SINGLE(x in [1,2,3])>: expected rule oC_RegularQuery (line: 1, offset: 26)
+"RETURN SINGLE(x in [1,2,3])"
+^

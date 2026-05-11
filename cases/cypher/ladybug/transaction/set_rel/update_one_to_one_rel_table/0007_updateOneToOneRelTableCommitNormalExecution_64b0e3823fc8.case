@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV rel-update-tests","expected_kind":"rows","id":"cypher.ladybug.transaction.set_rel.update_one_to_one_rel_table.updateOneToOneRelTableCommitNormalExecution.64b0e3823fc8","language":"cypher","ordered":true,"source":"transaction/set_rel/update_one_to_one_rel_table.test","source_case":"updateOneToOneRelTableCommitNormalExecution","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:animal)-[e:hasOwner]->(:person) RETURN e.place
+--- expected
+1989
+1991
+1993
+199419941994
+1995
+1997
+1999
+db
+lbug

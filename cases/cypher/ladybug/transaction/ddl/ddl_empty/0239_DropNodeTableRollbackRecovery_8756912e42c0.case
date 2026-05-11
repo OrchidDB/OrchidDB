@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_empty.DropNodeTableRollbackRecovery.8756912e42c0","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_empty.test","source_case":"DropNodeTableRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (m:movies) return m.name
+--- expected
+Binder exception: Table movies does not exist.

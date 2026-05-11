@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.Skip1.c0a1e693ac76","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"Skip1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) RETURN u.name ORDER BY u.age SKIP 2
+--- expected
+Karissa
+Zhang

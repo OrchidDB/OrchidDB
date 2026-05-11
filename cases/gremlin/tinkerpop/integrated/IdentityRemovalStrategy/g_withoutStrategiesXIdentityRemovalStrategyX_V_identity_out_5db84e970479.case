@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.IdentityRemovalStrategy.g_withoutStrategiesXIdentityRemovalStrategyX_V_identity_out.5db84e970479","language":"gremlin","ordered":false,"source":"integrated/IdentityRemovalStrategy.feature","source_case":"g_withoutStrategiesXIdentityRemovalStrategyX_V_identity_out","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(IdentityRemovalStrategy).V().identity().out()
+--- expected
+v[lop]
+v[lop]
+v[lop]
+v[vadas]
+v[josh]
+v[ripple]

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.acc.acc_hj.AspMultiLabel.1da7b28f3b94","language":"cypher","ordered":true,"source":"acc/acc_hj.test","source_case":"Acc","source_log":"AspMultiLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows|:studyAt|:workAt]->(b:person:organisation) WHERE a.age > 35 RETURN b.fName, b.name
+--- expected
+Alice|
+Bob|
+Dan|
+|CsWork

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_long_string.LongStringSuccess.75794f95b576","language":"cypher","ordered":true,"source":"copy/copy_long_string.test","source_case":"LongStringError","source_log":"LongStringSuccess","status":"imported","suite":"ladybug","version":1}
+--- query
+match (p:person0) return p.fName
+--- expected
+<FILE>:long_string_valid.csv

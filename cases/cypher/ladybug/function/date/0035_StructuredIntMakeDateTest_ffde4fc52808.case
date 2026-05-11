@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredIntMakeDateTest.ffde4fc52808","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredIntMakeDateTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN make_date(o.orgCode * 3, o.ID, 20)
+--- expected
+0975-01-20
+2802-04-20
+2472-06-20

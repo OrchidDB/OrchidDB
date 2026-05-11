@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.case.CaseNull.63ed7b9e4273","language":"cypher","ordered":true,"source":"function/case.test","source_case":"FunctionCase","source_log":"CaseNull","status":"imported","suite":"ladybug","version":1}
+--- query
+return case 25 when 24 then NULL else 25 end
+--- expected
+25

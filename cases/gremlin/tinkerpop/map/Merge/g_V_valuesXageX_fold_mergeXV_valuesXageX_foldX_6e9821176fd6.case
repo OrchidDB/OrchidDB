@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Merge.g_V_valuesXageX_fold_mergeXV_valuesXageX_foldX.6e9821176fd6","language":"gremlin","ordered":false,"source":"map/Merge.feature","source_case":"g_V_valuesXageX_fold_mergeXV_valuesXageX_foldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").fold().merge(__.V().values("age").fold())
+--- expected
+s[d[35].i,d[32].i,d[29].i,d[27].i]

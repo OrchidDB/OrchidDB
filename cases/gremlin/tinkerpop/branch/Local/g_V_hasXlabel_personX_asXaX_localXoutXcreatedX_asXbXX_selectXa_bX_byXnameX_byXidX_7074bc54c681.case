@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Local.g_V_hasXlabel_personX_asXaX_localXoutXcreatedX_asXbXX_selectXa_bX_byXnameX_byXidX.7074bc54c681","language":"gremlin","ordered":false,"source":"branch/Local.feature","source_case":"g_V_hasXlabel_personX_asXaX_localXoutXcreatedX_asXbXX_selectXa_bX_byXnameX_byXidX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has(T.label, "person").as("a").local(__.out("created").as("b")).select("a", "b").by("name").by(T.id)
+--- expected
+m[{"a":"marko","b":"v[lop].id"}]
+m[{"a":"josh","b":"v[ripple].id"}]
+m[{"a":"josh","b":"v[lop].id"}]
+m[{"a":"peter","b":"v[lop].id"}]

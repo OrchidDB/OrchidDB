@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrAdd.e8ce0af2835a","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrAdd","status":"imported","suite":"ladybug","version":1}
+--- query
+return string("The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movies") + string("成績評価の甘い授業が高く評価")
+--- expected
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movies成績評価の甘い授業が高く評価

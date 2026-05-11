@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Match.g_V_notXmatchXa_age_b__a_name_cX_whereXb_eqXcXX_selectXaXX_name.e2bd9ea30b03","language":"gremlin","ordered":false,"source":"map/Match.feature","source_case":"g_V_notXmatchXa_age_b__a_name_cX_whereXb_eqXcXX_selectXaXX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().not(__.match(__.as("a").values("age").as("b"), __.as("a").values("name").as("c")).where("b", P.eq("c")).select("a")).values("name")
+--- expected
+marko
+vadas
+lop
+josh
+ripple
+peter

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Min.g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXageX_capXaX_unfold_min.7533c75f475b","language":"gremlin","ordered":false,"source":"map/Min.feature","source_case":"g_withStrategiesXProductiveByStrategyX_V_aggregateXaX_byXageX_capXaX_unfold_min","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(ProductiveByStrategy).V().aggregate("a").by("age").cap("a").unfold().min()
+--- expected
+d[27].i

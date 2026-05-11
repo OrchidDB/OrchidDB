@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Orderability.g_V_out_out_values_asXheadX_path_order_byXascX_selectXheadX.8bd5fa3531f2","language":"gremlin","ordered":true,"source":"semantics/Orderability.feature","source_case":"g_V_out_out_values_asXheadX_path_order_byXascX_selectXheadX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().out().values().as("head").path().order().by(asc).select("head")
+--- expected
+java
+lop
+java
+ripple

@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.ListReverseSortSerial.e1c645ca6f0a","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"ListReverseSortSerial","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN list_reverse_sort([b.ID, a.ID])
+--- expected
+[1,0]
+[1,0]
+[2,0]
+[2,0]
+[2,1]
+[2,1]
+[3,0]
+[3,0]
+[3,1]
+[3,1]
+[3,2]
+[3,2]
+[5,4]
+[6,4]

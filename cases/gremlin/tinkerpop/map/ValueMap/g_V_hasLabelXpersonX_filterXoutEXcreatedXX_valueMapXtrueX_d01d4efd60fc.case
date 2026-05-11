@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ValueMap.g_V_hasLabelXpersonX_filterXoutEXcreatedXX_valueMapXtrueX.d01d4efd60fc","language":"gremlin","ordered":false,"source":"map/ValueMap.feature","source_case":"g_V_hasLabelXpersonX_filterXoutEXcreatedXX_valueMapXtrueX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").filter(__.outE("created")).valueMap(true)
+--- expected
+m[{"name": ["marko"], "age": [29], "t[label]":"person", "t[id]":"v[marko].id"}]
+m[{"name": ["josh"], "age": [32], "t[label]":"person", "t[id]":"v[josh].id"}]
+m[{"name": ["peter"], "age": [35], "t[label]":"person", "t[id]":"v[peter].id"}]

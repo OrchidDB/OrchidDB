@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.multi_query_part.GroupByMultiQueryTest7.a9ab0567e1ec","language":"cypher","ordered":true,"source":"agg/multi_query_part.test","source_case":"AggMultiQueryPart","source_log":"GroupByMultiQueryTest7","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[r1:knows]->(b:person)-[r2:knows]->(c:person) WITH count(r1) AS numFollowers, c, b, r2 WHERE b.age >= 0 AND b.age <= 30 AND numFollowers > 0 RETURN b.fName, c.fName, numFollowers
+--- expected
+Bob|Alice|3
+Bob|Carol|3
+Bob|Dan|3
+Dan|Alice|3
+Dan|Bob|3
+Dan|Carol|3

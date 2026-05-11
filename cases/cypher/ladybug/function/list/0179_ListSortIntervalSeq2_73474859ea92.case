@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortIntervalSeq2.73474859ea92","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortIntervalSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([interval('2 hours 3 days 20 minutes'), interval('3 hours 3 days 20 minutes'), interval('4 hours 3 days 20 minutes'), NULL], 'DESC')
+--- expected
+[,3 days 04:20:00,3 days 03:20:00,3 days 02:20:00]

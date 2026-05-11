@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt32ToFloat.1e3f171e8f79","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt32ToFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN cast(m.length, "float")
+--- expected
+126.000000
+2544.000000
+298.000000

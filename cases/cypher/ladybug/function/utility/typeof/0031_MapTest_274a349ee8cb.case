@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.MapTest.274a349ee8cb","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"MapTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(map([1, 2], ['a', 'b']))
+--- expected
+MAP(INT64, STRING)

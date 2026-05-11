@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.HashCollectINT64Test.440074182f00","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"HashCollectINT64Test","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.gender, collect(p.age)
+--- expected
+1|[35,45,20]
+2|[30,20,25,40,83]

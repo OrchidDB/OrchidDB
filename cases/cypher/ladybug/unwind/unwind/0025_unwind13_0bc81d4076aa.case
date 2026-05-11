@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind13.0bc81d4076aa","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind13","status":"imported","suite":"ladybug","version":1}
+--- query
+WITH [1, 1, 2, 2] AS coll UNWIND coll AS x WITH DISTINCT x return x
+--- expected
+1
+2

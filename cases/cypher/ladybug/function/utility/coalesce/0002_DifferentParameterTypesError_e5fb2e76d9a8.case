@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.DifferentParameterTypesError.e5fb2e76d9a8","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"DifferentParameterTypesError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(1, "hello")
+--- expected
+Binder exception: Expression hello has data type STRING but expected INT64. Implicit cast is not supported.

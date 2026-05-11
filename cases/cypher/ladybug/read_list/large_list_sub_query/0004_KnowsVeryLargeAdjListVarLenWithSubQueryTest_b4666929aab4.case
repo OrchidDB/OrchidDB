@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV read-list-tests/large-list-sub-query-tests","expected_kind":"rows","id":"cypher.ladybug.read_list.large_list_sub_query.KnowsVeryLargeAdjListVarLenWithSubQueryTest.b4666929aab4","language":"cypher","ordered":true,"source":"read_list/large_list_sub_query.test","source_case":"LargeListSubQueryTest","source_log":"KnowsVeryLargeAdjListVarLenWithSubQueryTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE EXISTS { MATCH (a)-[:knows*2..2]->(b:person) } RETURN count(*)
+--- expected
+1

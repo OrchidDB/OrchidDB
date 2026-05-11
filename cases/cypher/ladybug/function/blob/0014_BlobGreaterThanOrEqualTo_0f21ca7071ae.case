@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.blob.BlobGreaterThanOrEqualTo.0f21ca7071ae","language":"cypher","ordered":true,"source":"function/blob.test","source_case":"FunctionBlob","source_log":"BlobGreaterThanOrEqualTo","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN m.content <= BLOB("pure ascii characters")
+--- expected
+False
+False
+True

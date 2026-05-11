@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.TypeOf.g_V_valuesXageX_isXtypeOfXGType_DATETIMEXX.0cc1cf159464","language":"gremlin","ordered":false,"source":"filter/TypeOf.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_DATETIMEXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.typeOf(GType.DATETIME))
+--- expected
+

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.ListOfListOfInt64Equal.db616befe1f3","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"ListOfListOfInt64Equal","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.courseScoresPerTerm = [[8,9],[9,10]] RETURN p.ID
+--- expected
+2

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.0f317be24626","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [123.123, 123.125, 123.126, -123.125, -123.124] AS A WITH CAST(A, 'DECIMAL') AS B RETURN CAST(B, 'DECIMAL(18, 2)')
+--- expected
+123.12
+123.13
+123.13

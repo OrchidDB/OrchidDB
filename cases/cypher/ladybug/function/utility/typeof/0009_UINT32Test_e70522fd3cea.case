@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.UINT32Test.e70522fd3cea","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"UINT32Test","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(cast(1, "UINT32"))
+--- expected
+UINT32

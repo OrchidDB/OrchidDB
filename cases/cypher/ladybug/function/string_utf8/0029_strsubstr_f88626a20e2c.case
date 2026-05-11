@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.strsubstr.f88626a20e2c","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"strsubstr","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [-99999, 0, 1, 4, 5, 10000000] AS startpoints RETURN substr("abcd", startpoints, 1)
+--- expected
+a
+d

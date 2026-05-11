@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.KnowsRelTestDate.c0f0d6d7e846","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"KnowsRelTestDate","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) RETURN e.date
+--- expected
+2021-06-30
+2021-06-30
+2021-06-30
+2021-06-30
+1950-05-14
+1950-05-14
+2021-06-30
+1950-05-14
+2000-01-01
+2021-06-30
+1950-05-14
+2000-01-01
+1905-12-12
+1905-12-12

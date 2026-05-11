@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.map.Order.g_V_hasLabelXsongX_order_byXperformances_descX_byXnameX_rangeX110_120X_name.f9d238a9b56a","language":"gremlin","ordered":true,"source":"map/Order.feature","source_case":"g_V_hasLabelXsongX_order_byXperformances_descX_byXnameX_rangeX110_120X_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("song").order().by("performances", desc).by("name").range(110, 120).values("name")
+--- expected
+WANG DANG DOODLE
+THE ELEVEN
+WAY TO GO HOME
+FOOLISH HEART
+GIMME SOME LOVING
+DUPREES DIAMOND BLUES
+CORRINA
+PICASSO MOON
+KNOCKING ON HEAVENS DOOR
+MEMPHIS BLUES

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastDoubleToInt64OutOfRange.5189793871b9","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastDoubleToInt64OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(9223372038854775807.452313, "int64")
+--- expected
+Overflow exception: Value 9223372038854774784.000000 is not within INT64 range

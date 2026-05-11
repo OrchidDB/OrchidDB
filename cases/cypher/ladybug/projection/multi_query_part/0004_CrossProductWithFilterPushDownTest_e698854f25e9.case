@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.multi_query_part.CrossProductWithFilterPushDownTest.e698854f25e9","language":"cypher","ordered":true,"source":"projection/multi_query_part.test","source_case":"ProjectionMultiQuery","source_log":"CrossProductWithFilterPushDownTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH a.age AS s, a.fName as n MATCH (b:person) WHERE s=b.age and n='Dan' RETURN n,b.fName,s
+--- expected
+Dan|Dan|20
+Dan|Elizabeth|20

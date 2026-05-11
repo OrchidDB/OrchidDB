@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.PersonNodesAgeFilteredTest8.735b388e14ac","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"FilterNode","source_log":"PersonNodesAgeFilteredTest8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.age IS NOT NULL RETURN COUNT(*)
+--- expected
+8

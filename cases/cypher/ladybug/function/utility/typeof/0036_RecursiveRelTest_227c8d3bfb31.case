@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.RecursiveRelTest.227c8d3bfb31","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"RecursiveRelTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows]->(b:person) RETURN typeof(p) LIMIT 1
+--- expected
+RECURSIVE_REL

@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.BitshiftLeftFunctionTest.43260f9183c0","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"BitshiftLeftFunctionTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.age << 2
+--- expected
+140
+120
+180
+80
+80
+100
+160
+332

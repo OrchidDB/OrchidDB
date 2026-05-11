@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.OneHopDistinctAggTest.5e82c802c6fb","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"OneHopDistinctAggTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[:knows]->(:person) RETURN count(distinct p.ID)
+--- expected
+5

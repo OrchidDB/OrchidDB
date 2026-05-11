@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.binder.binder_error.UnsupportedOrderByStruct.8098cedd0f2f","language":"cypher","ordered":true,"source":"exceptions/binder/binder_error.test","source_case":"BinderError","source_log":"UnsupportedOrderByStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:movies) RETURN a ORDER BY a.description
+--- expected
+Binder exception: Cannot order by a.description. Order by STRUCT(rating DOUBLE, stars INT8, views INT64, release TIMESTAMP, release_ns TIMESTAMP_NS, release_ms TIMESTAMP_MS, release_sec TIMESTAMP_SEC, release_tz TIMESTAMP_TZ, film DATE, u8 UINT8, u16 UINT16, u32 UINT32, u64 UINT64, hugedata INT128) is not supported.

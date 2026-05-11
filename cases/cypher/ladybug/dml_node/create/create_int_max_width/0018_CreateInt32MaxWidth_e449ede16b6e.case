@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_int_max_width.CreateInt32MaxWidth.e449ede16b6e","language":"cypher","ordered":true,"source":"dml_node/create/create_int_max_width.test","source_case":"CreateInt32MaxWidth","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.value
+--- expected
+2147483647
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_after_error.CopyRelAfterNodeCopyError.e0d15b0217e6","language":"cypher","ordered":true,"source":"copy/copy_after_error.test","source_case":"CopyRelAfterNodeCopyError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:Comment)-[r:replyOfComment]->(b:Comment) RETURN COUNT(*)
+--- expected
+0

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Dedup.g_V_repeatXdedupX_timesX2X_count.272a51d54a0f","language":"gremlin","ordered":false,"source":"filter/Dedup.feature","source_case":"g_V_repeatXdedupX_timesX2X_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.dedup()).times(2).count()
+--- expected
+d[0].l

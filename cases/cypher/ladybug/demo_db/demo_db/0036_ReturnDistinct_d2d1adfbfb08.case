@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ReturnDistinct.d2d1adfbfb08","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"ReturnDistinct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows]->(b:User) RETURN DISTINCT a.name, a.age, e.since
+--- expected
+Adam|30|2020
+Karissa|40|2021
+Zhang|50|2022

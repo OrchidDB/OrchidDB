@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.rowid.SingleQueryNodeRelRowID.793df6f3758e","language":"cypher","ordered":true,"source":"function/rowid.test","source_case":"FunctionRowID","source_log":"SingleQueryNodeRelRowID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n), ()-[e]->() WHERE rowid(n)=0 AND rowid(e)=0 RETURN count(*)
+--- expected
+15

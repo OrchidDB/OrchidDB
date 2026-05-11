@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapCardinality.28fee9a29446","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapCardinality","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cardinality(map([4, 2, 100, 20], ['a', 'b', 'd', 'e']))
+--- expected
+4

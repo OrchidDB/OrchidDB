@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.filter.None.g_injectX3_threeX_noneXeqX3XX.d9db5e7b83d3","language":"gremlin","ordered":false,"source":"filter/None.feature","source_case":"g_injectX3_threeX_noneXeqX3XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([3i,"three"]).none(P.eq(3))
+--- expected
+

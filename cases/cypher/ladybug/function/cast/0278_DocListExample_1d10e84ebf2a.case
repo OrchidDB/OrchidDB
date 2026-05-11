@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.1d10e84ebf2a","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND[CAST(1000, 'INT16')] AS A RETURN CAST(A, 'DECIMAL(3, 0)')
+--- expected
+Overflow exception: To Decimal Cast Failed: 1000 is not in DECIMAL(3, 0) range

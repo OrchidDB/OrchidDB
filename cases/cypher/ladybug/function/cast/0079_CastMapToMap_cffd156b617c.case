@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastMapToMap.cffd156b617c","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastMapToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH(m:movies) where m.length < 2000 RETURN cast(m.audience, "MAP(STRING, INT8)"), cast(m.audience, "MAP(STRING, INT16)"), cast(m.audience, "MAP(STRING, INT32)"), cast(m.audience, "MAP(STRING, INT64)"), cast(m.audience, "MAP(STRING, INT128)"), cast(m.audience, "MAP(STRING, DOUBLE)"), cast(m.audience, "MAP(STRING, FLOAT)"), cast(m.audience, "MAP(STRING, UINT8)"), cast(m.audience, "MAP(STRING, UINT16)"), cast(m.audience, "MAP(STRING, UINT32)"), cast(m.audience, "MAP(STRING, UINT64)"), cast(m.audience, "MAP(STRING, STRING)")
+--- expected
+{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52.000000, audience53=42.000000}|{audience1=52.000000, audience53=42.000000}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}|{audience1=52, audience53=42}
+{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}

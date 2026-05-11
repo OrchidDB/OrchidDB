@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListUniqueWithTimestamp.605f25ad911b","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListUniqueWithTimestamp","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_unique([cast('1994-05-03 11:13:25.123', "TIMESTAMP_SEC"), cast('1994-05-03 11:13:25.12345', "TIMESTAMP_SEC"), cast('1994-05-03 11:13:25', "TIMESTAMP_S"), cast('1994-05-03 11:13:24', "TIMESTAMP_SEC"), NULL])
+--- expected
+2

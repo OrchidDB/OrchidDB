@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastUIntToInt.a2a6ba4dece2","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastUIntToInt","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_INT128(TO_UINT128("85070591730234615865843651857942052864"))
+--- expected
+85070591730234615865843651857942052864

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.lambda.list_reduce.ListReduce.773b62b824a4","language":"cypher","ordered":true,"source":"function/lambda/list_reduce.test","source_case":"ListReduce","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.id <= 7 WITH CASE WHEN a.age <= 30 THEN [] ELSE a.workedHours END as workedHours RETURN LIST_REDUCE(workedHours, (x, y) -> x - y)
+--- expected
+Runtime exception: Cannot execute list_reduce on an empty list.

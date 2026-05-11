@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnUnionTag.974eb4e614db","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"NestedPropertyManyToManyRel","source_log":"ReturnUnionTag","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[e:knows]->(:person) RETURN e.notes
+--- expected
+1
+1
+10
+10
+15
+2
+2020-10-10
+4
+4
+8
+cool stuff found
+happy new year
+matthew perry
+nice weather

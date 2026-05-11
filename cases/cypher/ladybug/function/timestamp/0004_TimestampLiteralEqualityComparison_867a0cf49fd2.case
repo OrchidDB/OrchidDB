@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampLiteralEqualityComparison.867a0cf49fd2","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampLiteralEqualityComparison","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.registerTime = cast('1972-07-31 13:22:30.678559', "TIMESTAMP_NS") RETURN a.registerTime
+--- expected
+1972-07-31 13:22:30.678559

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetFlatUnFlatTest.daa41fc3542c","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetFlatUnFlatTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.ID < 4 RETURN a.ID, a.age
+--- expected
+0|20
+2|30
+3|45

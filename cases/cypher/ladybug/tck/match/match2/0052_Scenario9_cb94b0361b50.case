@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario9.cb94b0361b50","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (r)-[]-(), ()-[]-() MATCH ()-[r]-() RETURN r
+--- expected
+Binder exception: r has data type NODE but REL was expected.

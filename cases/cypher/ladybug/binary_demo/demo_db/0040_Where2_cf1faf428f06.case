@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Where2.cf1faf428f06","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Where2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User) WHERE a.age IS NOT NULL AND starts_with(a.name, "Kar") RETURN *
+--- expected
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateFloatPK.974fc5c1e9e6","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateFloatPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) WHERE t.id = -0.0 RETURN t.id
+--- expected
+0.000000

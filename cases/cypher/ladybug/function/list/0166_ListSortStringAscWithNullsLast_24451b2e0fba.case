@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortStringAscWithNullsLast.24451b2e0fba","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortStringAscWithNullsLast","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort(['sss', 'sssss', 'abs', NULL], 'ASC', 'NULLS LAST')
+--- expected
+[abs,sss,sssss,]

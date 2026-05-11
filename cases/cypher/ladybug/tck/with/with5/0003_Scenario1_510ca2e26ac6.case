@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with5.Scenario1.510ca2e26ac6","language":"cypher","ordered":true,"source":"tck/with/with5.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WITH DISTINCT a.name AS name RETURN name
+--- expected
+A
+B

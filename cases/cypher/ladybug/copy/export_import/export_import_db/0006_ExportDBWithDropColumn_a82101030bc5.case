@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import.export_import_db.ExportDBWithDropColumn.a82101030bc5","language":"cypher","ordered":true,"source":"copy/export_import/export_import_db.test","source_case":"ExportDBWithDropColumn","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.id, t.prop2, t.prop3
+--- expected
+1|B|10

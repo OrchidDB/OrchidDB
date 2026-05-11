@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Edge.g_EXe7_e11X.ad7af7013ab3","language":"gremlin","ordered":false,"source":"map/Edge.feature","source_case":"g_EXe7_e11X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E(e7,e11)
+--- expected
+e[marko-knows->vadas]
+e[josh-created->lop]

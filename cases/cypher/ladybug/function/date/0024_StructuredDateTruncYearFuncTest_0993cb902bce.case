@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateTruncYearFuncTest.0993cb902bce","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateTruncYearFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_trunc("year", p.birthdate)
+--- expected
+1900-01-01
+1900-01-01
+1940-01-01
+1950-01-01
+1980-01-01
+1980-01-01
+1980-01-01
+1990-01-01

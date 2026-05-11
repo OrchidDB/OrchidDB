@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.RecursiveJoinFilter2.ab5fc20c22d1","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"RecursiveJoinFilter2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[e:Follows*1..2 (r, n | WHERE r.since > 2020 | {r.since}, {n.name})]->(b:User) WHERE a.age > 0 RETURN nodes(e), rels(e)
+--- expected
+[]|[(0:1)-{_LABEL: Follows, _ID: 2:2, since: 2021}->(0:2)]
+[]|[(0:2)-{_LABEL: Follows, _ID: 2:3, since: 2022}->(0:3)]
+[{_ID: 0:2, _LABEL: User, name: Zhang}]|[(0:1)-{_LABEL: Follows, _ID: 2:2, since: 2021}->(0:2),(0:2)-{_LABEL: Follows, _ID: 2:3, since: 2022}->(0:3)]

@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Short.g_V_valuesXintX_asNumberXGType_SHORTX_isXtypeOfXGType_SHORTXX_maxX.2504beb9bfc3","language":"gremlin","ordered":false,"source":"data/Short.feature","source_case":"g_V_valuesXintX_asNumberXGType_SHORTX_isXtypeOfXGType_SHORTXX_maxX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.SHORT).is(P.typeOf(GType.SHORT)).max()
+--- graph_initializer
+g.addV("data").property("int", 15).
+  addV("data").property("int", 25).
+  addV("data").property("int", 35)
+--- expected
+d[35].s

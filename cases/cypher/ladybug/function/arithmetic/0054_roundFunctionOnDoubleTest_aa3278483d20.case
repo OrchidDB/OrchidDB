@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.roundFunctionOnDoubleTest.aa3278483d20","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"roundFunctionOnDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) WHERE a.ID <> 2 RETURN round(a.rating, 1)
+--- expected
+0.800000
+0.500000
+1.000000

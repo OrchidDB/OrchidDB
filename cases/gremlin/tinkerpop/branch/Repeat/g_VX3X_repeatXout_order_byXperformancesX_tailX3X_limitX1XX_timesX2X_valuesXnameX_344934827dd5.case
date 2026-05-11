@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_VX3X_repeatXout_order_byXperformancesX_tailX3X_limitX1XX_timesX2X_valuesXnameX.344934827dd5","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_VX3X_repeatXout_order_byXperformancesX_tailX3X_limitX1XX_timesX2X_valuesXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid3).repeat(__.out().order().by("performances").tail(3).limit(1)).times(2).values("name")
+--- expected
+THE OTHER ONE

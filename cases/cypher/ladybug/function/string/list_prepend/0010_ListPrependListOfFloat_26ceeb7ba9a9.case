@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.list_prepend.ListPrependListOfFloat.26ceeb7ba9a9","language":"cypher","ordered":true,"source":"function/string/list_prepend.test","source_case":"ListPrependGeneralTests","source_log":"ListPrependListOfFloat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_prepend([a.height], a.height)
+--- expected
+[1.731000,1.731000]
+[0.990000,0.990000]
+[1.000000,1.000000]
+[1.300000,1.300000]
+[1.463000,1.463000]
+[1.510000,1.510000]
+[1.600000,1.600000]
+[1.323000,1.323000]

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Choose.g_V_chooseXage_nameX.33a66240d1c1","language":"gremlin","ordered":false,"source":"branch/Choose.feature","source_case":"g_V_chooseXage_nameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.values("age"), __.values("name"))
+--- expected
+marko
+vadas
+v[lop]
+josh
+v[ripple]
+peter

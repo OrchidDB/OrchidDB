@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV copy-fault-tests/null-pk","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.null_pk.NullPrimaryKeyInNodeFileIgnoreErrors.350b68df66ba","language":"cypher","ordered":true,"source":"exceptions/copy/null_pk.test","source_case":"NullPrimaryKeyInNodeFileIgnoreErrors","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.fName
+--- expected
+alice
+bob

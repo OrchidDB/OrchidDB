@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.CheckSumTest.7394d227b88a","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"CheckSumTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) RETURN sum(row.id), sum(row.int64Column), sum(row.doubleColumn)
+--- expected
+1249925001|2500180|2504542.349696

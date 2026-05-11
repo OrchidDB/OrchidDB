@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Math.g_withSackX1X_injectX1X_repeatXsackXsumX_byXconstantX1XXX_timesX5X_emit_mathXsin__X_byXsackX.e681289c6eb2","language":"gremlin","ordered":false,"source":"map/Math.feature","source_case":"g_withSackX1X_injectX1X_repeatXsackXsumX_byXconstantX1XXX_timesX5X_emit_mathXsin__X_byXsackX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withSack(1).inject(1).
+repeat(__.sack(Operator.sum).by(__.constant(1))).
+times(5).
+emit().
+math("sin _").by(__.sack())
+--- expected
+d[0.9092974268256817].d
+d[0.1411200080598672].d
+d[-0.7568024953079282].d
+d[-0.9589242746631385].d
+d[-0.27941549819892586].d

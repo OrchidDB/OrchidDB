@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnStructStarTest.4a52cbc270b5","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnStructStarTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN a.state.*
+--- expected
+138|['toronto','montr,eal']|{price: [96,56], volume: 1000}
+152|["vanco,uver north area"]|{price: [15,78,671], volume: 432}
+558|['very long city name','new york']|{price: [22], volume: 99}

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_VX1X_asXaX_outXcreatedX_inXcreatedX_whereXneqXaXX_name.f953efbdccf5","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_VX1X_asXaX_outXcreatedX_inXcreatedX_whereXneqXaXX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).as("a").out("created").in("created").where(P.neq("a")).values("name")
+--- expected
+peter
+josh

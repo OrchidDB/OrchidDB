@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.Long.g_V_valuesXlongX_isXtypeOfXGType_LONGXX.727c8f2b4c3b","language":"gremlin","ordered":false,"source":"data/Long.feature","source_case":"g_V_valuesXlongX_isXtypeOfXGType_LONGXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("long").is(P.typeOf(GType.LONG))
+--- graph_initializer
+g.addV("data").property("long", 1L)
+--- expected
+d[1].l

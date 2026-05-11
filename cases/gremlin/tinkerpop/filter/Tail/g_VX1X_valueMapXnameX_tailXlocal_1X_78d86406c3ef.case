@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_VX1X_valueMapXnameX_tailXlocal_1X.78d86406c3ef","language":"gremlin","ordered":false,"source":"filter/Tail.feature","source_case":"g_VX1X_valueMapXnameX_tailXlocal_1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).valueMap("name").tail(Scope.local, 1)
+--- expected
+m[{"name":["marko"]}]

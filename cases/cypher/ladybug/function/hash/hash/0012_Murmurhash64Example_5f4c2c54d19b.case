@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.Murmurhash64Example.5f4c2c54d19b","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"Murmurhash64Example","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash('lbug')
+--- expected
+16428605471057359374

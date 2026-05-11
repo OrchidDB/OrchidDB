@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"count","id":"gremlin.tinkerpop.data.UUID.g_injectXUUIDXXX.e04be683798d","language":"gremlin","ordered":false,"source":"data/UUID.feature","source_case":"g_injectXUUIDXXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(UUID())
+--- expected
+1

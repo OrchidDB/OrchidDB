@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.copy.Both.de8abc07e7d4","language":"cypher","ordered":true,"source":"dml_rel/copy.test","source_case":"CopyRelSetStorageDirection","source_log":"Both","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[k:meets]->(b:person) RETURN COUNT(*)
+--- expected
+7

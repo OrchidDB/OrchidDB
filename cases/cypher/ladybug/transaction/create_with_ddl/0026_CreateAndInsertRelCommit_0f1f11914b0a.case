@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_with_ddl.CreateAndInsertRelCommit.0f1f11914b0a","language":"cypher","ordered":true,"source":"transaction/create_with_ddl.test","source_case":"CreateAndInsertRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[k:knows]->(:person) RETURN COUNT(*)
+--- expected
+14

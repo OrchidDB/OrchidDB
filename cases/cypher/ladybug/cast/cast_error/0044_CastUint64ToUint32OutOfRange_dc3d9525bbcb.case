@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastUint64ToUint32OutOfRange.dc3d9525bbcb","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastUint64ToUint32OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(cast(922337203685477580, "uint64"), "uint32")
+--- expected
+Overflow exception: Value 922337203685477580 is not within UINT32 range

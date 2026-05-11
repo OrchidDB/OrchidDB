@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Element.g_VX1X_properties_element.9128dcb3fe0e","language":"gremlin","ordered":false,"source":"map/Element.feature","source_case":"g_VX1X_properties_element","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid2).properties().element().limit(1)
+--- expected
+v[josh]

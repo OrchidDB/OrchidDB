@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Aggregate.g_V_repeatXaggregateXaXX_timesX2X_capXaX_unfold.89cf3731ae05","language":"gremlin","ordered":false,"source":"sideEffect/Aggregate.feature","source_case":"g_V_repeatXaggregateXaXX_timesX2X_capXaX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.aggregate("a")).times(2).cap("a").unfold()
+--- expected
+v[marko]
+v[marko]
+v[vadas]
+v[vadas]
+v[lop]
+v[lop]
+v[josh]
+v[josh]
+v[ripple]
+v[ripple]
+v[peter]
+v[peter]

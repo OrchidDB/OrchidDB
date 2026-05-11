@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.Unwind.ec64dc11ebd5","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WITH collect(a) as b UNWIND b AS d RETURN d._id, d.ID, d.fName, d.age + 3, substr(d.fName, 1, 3)
+--- expected
+0:0|0|Alice|38|Ali
+0:1|2|Bob|33|Bob
+0:2|3|Carol|48|Car
+0:3|5|Dan|23|Dan
+0:4|7|Elizabeth|23|Eli
+0:5|8|Farooq|28|Far
+0:6|9|Greg|43|Gre
+0:7|10|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|86|Hub

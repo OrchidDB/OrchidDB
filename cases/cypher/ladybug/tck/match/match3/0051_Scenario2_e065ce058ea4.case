@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.e065ce058ea4","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario13&14","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n)-[r]->(n) RETURN n, r
+--- expected
+{_ID: 0:0, _LABEL: A, ID: 0}|(0:0)-{_LABEL: LOOP, _ID: 1:0}->(0:0)

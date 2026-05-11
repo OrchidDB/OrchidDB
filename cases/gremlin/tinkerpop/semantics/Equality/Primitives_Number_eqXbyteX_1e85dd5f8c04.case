@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.semantics.Equality.Primitives_Number_eqXbyteX.1e85dd5f8c04","language":"gremlin","ordered":false,"source":"semantics/Equality.feature","source_case":"Primitives_Number_eqXbyteX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([1b,1s,1i,1l,1f,1d,1000i,1m,1n]).unfold().where(__.is(xx1))
+--- expected
+d[1].i
+d[1].l
+d[1].f
+d[1].d
+d[1].s
+d[1].n
+d[1].m
+d[1].b

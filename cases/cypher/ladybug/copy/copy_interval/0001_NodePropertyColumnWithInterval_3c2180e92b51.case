@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_interval.NodePropertyColumnWithInterval.3c2180e92b51","language":"cypher","ordered":true,"source":"copy/copy_interval.test","source_case":"NodePropertyColumnWithInterval","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.lastJobDuration
+--- expected
+00:18:00.024
+10 years 5 months 13:00:00.000024
+10 years 5 months 13:00:00.000024
+10 years 5 months 13:00:00.000024
+3 years 2 days 13:02:00
+3 years 2 days 13:02:00
+48:24:11
+48:24:11

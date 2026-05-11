@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXsubgraphDXX_EX12X_bothV.2f44abb9b459","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXsubgraphDXX_EX12X_bothV","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(checkAdjacentVertices: false,
+vertices: __.has("name", P.within("josh", "lop", "ripple")),
+edges: __.or(__.has("weight", 0.4).hasLabel("created"),
+__.has("weight", 1.0).hasLabel("created")))).E(eid12).bothV()
+--- expected
+

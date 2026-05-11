@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map3.Scenario4.1a4bc9040816","language":"cypher","ordered":true,"source":"tck/expressions/map/Map3.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map_keys(map(['k', 'l'], [null, 1])) AS keys
+--- expected
+[k,l]

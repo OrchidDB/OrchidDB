@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.MultiplyOutOfRange.d9dc982d9f8d","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"MultiplyOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(170141183460469232321983114074589757440, "uint128") * cast(4, "uint128")
+--- expected
+Overflow exception: UINT128 is out of range: cannot multiply.

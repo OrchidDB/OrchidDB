@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.StringToBlobUnterminatedHexCode.da603cbf126a","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"StringToBlobUnterminatedHexCode","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN BLOB('\\xa')
+--- expected
+Conversion exception: Invalid hex escape code encountered in string -> blob conversion: unterminated escape code at end of string

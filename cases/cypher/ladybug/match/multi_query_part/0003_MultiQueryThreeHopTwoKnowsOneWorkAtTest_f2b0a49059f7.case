@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_query_part.MultiQueryThreeHopTwoKnowsOneWorkAtTest.f2b0a49059f7","language":"cypher","ordered":true,"source":"match/multi_query_part.test","source_case":"MatchMultiQuery","source_log":"MultiQueryThreeHopTwoKnowsOneWorkAtTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WITH * MATCH (b)-[e2:knows]->(c:person)-[e3:workAt]->(d:organisation) RETURN COUNT(*)
+--- expected
+18

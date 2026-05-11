@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateArithmeticSubtractInterval.80efa30f29f0","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateArithmeticSubtractInterval","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate <> date('1900-01-01') RETURN a.birthdate - interval('4 years 11 months 31 days 100 seconds')
+--- expected
+1935-06-21
+1945-07-23
+1975-10-26
+1975-10-26
+1975-10-26
+1985-11-26

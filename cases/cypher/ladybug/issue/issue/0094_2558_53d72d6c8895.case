@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2558.53d72d6c8895","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2558","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (b {id: "non existent id"})-[r]->(c) RETURN b is NULL, r is NULL, c is NULL
+--- expected
+True|True|True

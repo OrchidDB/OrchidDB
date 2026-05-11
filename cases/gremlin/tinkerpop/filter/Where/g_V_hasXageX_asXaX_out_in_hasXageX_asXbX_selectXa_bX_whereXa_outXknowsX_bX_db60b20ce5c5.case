@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Where.g_V_hasXageX_asXaX_out_in_hasXageX_asXbX_selectXa_bX_whereXa_outXknowsX_bX.db60b20ce5c5","language":"gremlin","ordered":false,"source":"filter/Where.feature","source_case":"g_V_hasXageX_asXaX_out_in_hasXageX_asXbX_selectXa_bX_whereXa_outXknowsX_bX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("age").as("a").out().in().has("age").as("b").select("a", "b").where(__.as("a").out("knows").as("b"))
+--- expected
+m[{"a":"v[marko]","b":"v[josh]"}]

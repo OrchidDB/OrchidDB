@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateArithmeticAddInterval2.c6e7ccc7ef67","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateArithmeticAddInterval2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.birthdate <> date('1900-01-01') RETURN a.birthdate + interval('47 hours 60 minutes')
+--- expected
+1940-06-24
+1950-07-25
+1980-10-28
+1980-10-28
+1980-10-28
+1990-11-29

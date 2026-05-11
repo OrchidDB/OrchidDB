@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.multi_label.MultiLabelFilter.4c75607aeda8","language":"cypher","ordered":true,"source":"projection/multi_label.test","source_case":"ProjectionMultiLabel","source_log":"MultiLabelFilter","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WHERE label(a)='organisation' RETURN a.orgCode
+--- expected
+325
+934
+824

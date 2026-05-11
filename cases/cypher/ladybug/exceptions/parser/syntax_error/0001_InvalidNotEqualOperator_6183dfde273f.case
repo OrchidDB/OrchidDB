@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.parser.syntax_error.InvalidNotEqualOperator.6183dfde273f","language":"cypher","ordered":true,"source":"exceptions/parser/syntax_error.test","source_case":"InvalidNotEqualOperator)","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WHERE a.age != 1 RETURN *
+--- expected
+Parser exception: Unknown operation '!=' (you probably meant to use '<>', which is the operator for inequality testing.) (line: 1, offset: 22)
+"MATCH (a) WHERE a.age != 1 RETURN *;"
+^^

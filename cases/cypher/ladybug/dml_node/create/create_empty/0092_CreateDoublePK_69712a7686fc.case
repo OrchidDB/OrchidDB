@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateDoublePK.69712a7686fc","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateDoublePK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+0.100000
+0.200000

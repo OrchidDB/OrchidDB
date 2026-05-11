@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TriangleFilterWithProjectionTest.25f0958e9c83","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TriangleFilterWithProjectionTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person), (a)-[:knows]->(c) WHERE a.ID<b.ID and b.ID<c.ID RETURN a.fName, b.fName, c.fName
+--- expected
+Alice|Bob|Carol
+Alice|Bob|Dan
+Alice|Carol|Dan
+Bob|Carol|Dan

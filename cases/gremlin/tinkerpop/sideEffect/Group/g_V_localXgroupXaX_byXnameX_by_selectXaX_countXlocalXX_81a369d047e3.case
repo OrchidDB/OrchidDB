@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_localXgroupXaX_byXnameX_by_selectXaX_countXlocalXX.81a369d047e3","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_localXgroupXaX_byXnameX_by_selectXaX_countXlocalXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(group("a").by("name").by().select("a").count(local))
+--- expected
+d[1].l
+d[2].l
+d[3].l
+d[4].l
+d[5].l
+d[6].l

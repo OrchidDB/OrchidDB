@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleCollectSTRINGTest.a7dc4ba122df","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleCollectSTRINGTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN collect(p.fName)
+--- expected
+[Alice,Bob,Carol,Dan,Elizabeth,Farooq,Greg,Hubert Blaine Wolfeschlegelsteinhausenbergerdorff]

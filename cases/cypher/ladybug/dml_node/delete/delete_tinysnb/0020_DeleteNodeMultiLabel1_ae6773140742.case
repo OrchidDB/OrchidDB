@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_tinysnb.DeleteNodeMultiLabel1.ae6773140742","language":"cypher","ordered":true,"source":"dml_node/delete/delete_tinysnb.test","source_case":"DeleteNodeMultiLabel1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+--- expected
+5

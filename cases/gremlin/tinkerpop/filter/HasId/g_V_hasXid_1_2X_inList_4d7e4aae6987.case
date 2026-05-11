@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasId.g_V_hasXid_1_2X_inList.4d7e4aae6987","language":"gremlin","ordered":false,"source":"filter/HasId.feature","source_case":"g_V_hasXid_1_2X_inList","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasId(xx1)
+--- expected
+v[marko]
+v[vadas]

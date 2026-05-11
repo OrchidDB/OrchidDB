@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ConnectedComponent.g_V_hasLabelXsoftwareX_connectedComponent_project_byXnameX_byXcomponentX.abf77674abce","language":"gremlin","ordered":false,"source":"map/ConnectedComponent.feature","source_case":"g_V_hasLabelXsoftwareX_connectedComponent_project_byXnameX_byXcomponentX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").connectedComponent().project("name","component").by("name").by("gremlin.connectedComponentVertexProgram.component")
+--- expected
+m[{"name": "lop", "component": "1"}]
+m[{"name": "ripple", "component": "1"}]

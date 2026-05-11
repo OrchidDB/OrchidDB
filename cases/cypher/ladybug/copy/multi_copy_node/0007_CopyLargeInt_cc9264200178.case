@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.multi_copy_node.CopyLargeInt.cc9264200178","language":"cypher","ordered":true,"source":"copy/multi_copy_node.test","source_case":"CopyLargeInt","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+match (t:test) return count(*)
+--- expected
+200000

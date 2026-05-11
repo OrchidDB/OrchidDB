@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt64ToUint16OutOfRange.817f6b9c4560","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt64ToUint16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return to_uint16("922337203685")
+--- expected
+Conversion exception: Cast failed. Could not convert "922337203685" to UINT16.

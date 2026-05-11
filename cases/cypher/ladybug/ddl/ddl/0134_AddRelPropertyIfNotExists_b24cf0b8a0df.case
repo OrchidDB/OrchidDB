@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb copy-fault-tests/duplicate-ids","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl.AddRelPropertyIfNotExists.b24cf0b8a0df","language":"cypher","ordered":true,"source":"ddl/ddl.test","source_case":"RenamePropertyNormalExecution","source_log":"AddRelPropertyIfNotExists","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return p.newID
+--- expected
+0
+10
+2
+3
+5
+7
+8
+9

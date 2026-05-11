@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.RegexpSplitToArrayBasic.fd9fb5d0afc0","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"RegexpSplitToArrayBasic","status":"imported","suite":"ladybug","version":1}
+--- query
+Return regexp_split_to_array('hello world', ' ')
+--- expected
+[hello,world]

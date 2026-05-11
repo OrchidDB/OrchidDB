@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.multi_query_part.MultiQueryOneHopKnowsFilteredTest2.dc2ff373d2f8","language":"cypher","ordered":true,"source":"filter/multi_query_part.test","source_case":"FilterMultiQuery","source_log":"MultiQueryOneHopKnowsFilteredTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE (a.gender/2 <= 0.5) WITH b WHERE b.gender*3.5 = 7.0 RETURN COUNT(*)
+--- expected
+6

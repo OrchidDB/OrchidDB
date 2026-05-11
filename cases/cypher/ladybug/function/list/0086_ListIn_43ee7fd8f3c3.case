@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListIn.43ee7fd8f3c3","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListIn","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN [1+1] IN [[2], [3], [3,4,5]], "str" IN ["a", "Xiyang", "str"]
+--- expected
+True|True

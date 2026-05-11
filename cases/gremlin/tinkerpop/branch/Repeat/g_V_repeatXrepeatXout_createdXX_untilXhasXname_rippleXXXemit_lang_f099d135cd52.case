@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXrepeatXout_createdXX_untilXhasXname_rippleXXXemit_lang.f099d135cd52","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXrepeatXout_createdXX_untilXhasXname_rippleXXXemit_lang","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.repeat(__.out("created")).until(__.has("name", "ripple"))).emit().values("lang")
+--- expected
+java

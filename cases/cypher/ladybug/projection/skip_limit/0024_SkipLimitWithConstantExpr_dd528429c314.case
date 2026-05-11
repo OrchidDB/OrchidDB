@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.SkipLimitWithConstantExpr.dd528429c314","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"SkipLimitWithConstantExpr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.ID SKIP 1 + 2 LIMIT 0 + 1
+--- expected
+5

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.blob.BlobEqualTo.8bfa35dd04e1","language":"cypher","ordered":true,"source":"function/blob.test","source_case":"FunctionBlob","source_log":"BlobEqualTo","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN m.content = BLOB("\\xAA\\xABinteresting\\x0B")
+--- expected
+True
+False
+False

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.multi_label.MultiLabelSelfLoopTest2.08df1b78bcf5","language":"cypher","ordered":true,"source":"recursive_join/multi_label.test","source_case":"VarLengthMultiLabel","source_log":"MultiLabelSelfLoopTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation)-[e*2..2]-(a) RETURN COUNT(*)
+--- expected
+6

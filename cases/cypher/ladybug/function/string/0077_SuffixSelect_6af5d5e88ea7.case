@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.SuffixSelect.6af5d5e88ea7","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"SuffixSelect","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE suffix(p.fName, "l") RETURN p.fName
+--- expected
+Carol

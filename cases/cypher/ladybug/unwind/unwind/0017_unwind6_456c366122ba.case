@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind6.456c366122ba","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind6","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ${UNWIND_LIST} AS x WITH x AS b WHERE b > 4000 RETURN b
+--- expected
+4001

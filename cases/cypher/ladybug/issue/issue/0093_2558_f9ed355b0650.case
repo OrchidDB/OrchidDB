@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2558.f9ed355b0650","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2558","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (b{id: "non existent id"}) RETURN CASE WHEN b is NULL THEN "foo" ELSE "bar" END
+--- expected
+foo

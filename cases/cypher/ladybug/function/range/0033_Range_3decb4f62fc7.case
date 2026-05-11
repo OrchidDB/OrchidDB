@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.function.range.Range.3decb4f62fc7","language":"cypher","ordered":true,"source":"function/range.test","source_case":"Range","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(CAST(-128, 'INT128'), CAST(122, 'INT128'), CAST(125, 'INT128'))
+--- expected
+[-128,-3,122]

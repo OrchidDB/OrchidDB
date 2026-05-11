@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.list.List11.Scenario4.6933fb50f567","language":"cypher","ordered":true,"source":"tck/expressions/list/List11.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN range(0, 0, 0)
+--- expected
+Runtime exception: Step of range cannot be 0.

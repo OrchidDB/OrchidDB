@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.add.AddINT32.91960e95102d","language":"cypher","ordered":true,"source":"arithmetic/add.test","source_case":"AddINT32","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(2147483547, "INT32") + CAST(20000, "INT32")
+--- expected
+Overflow exception: Value 2147483547 + 20000 is not within INT32 range.

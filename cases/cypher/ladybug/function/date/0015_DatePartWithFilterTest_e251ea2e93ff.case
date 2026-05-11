@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.DatePartWithFilterTest.e251ea2e93ff","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"DatePartWithFilterTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE date_part("year", p.birthdate) > 1940 and date_part("year", p.birthdate) < 1976 RETURN p.fName
+--- expected
+Dan

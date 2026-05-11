@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastInt64ToInt8.3eeac346f360","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DataTypeCasting","source_log":"CastInt64ToInt8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN to_int8(p.age)
+--- expected
+35
+30
+45
+20
+20
+25
+40
+83

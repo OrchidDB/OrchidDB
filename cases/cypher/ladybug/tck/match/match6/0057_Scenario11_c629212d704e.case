@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario11.c629212d704e","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH path = (n)-->(m)--(o)--(p) RETURN path
+--- expected
+{_NODES: [{_ID: 3:0, _LABEL: D, ID: 0},{_ID: 2:0, _LABEL: C, ID: 0},{_ID: 1:0, _LABEL: B, ID: 0},{_ID: 0:0, _LABEL: A, ID: 0}], _RELS: [(3:0)-{_LABEL: T, _ID: 7:0}->(2:0),(2:0)-{_LABEL: T, _ID: 6:0}->(1:0),(1:0)-{_LABEL: KNOWS, _ID: 5:0}->(0:0)]}

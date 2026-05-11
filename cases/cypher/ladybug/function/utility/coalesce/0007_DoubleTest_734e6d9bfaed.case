@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.DoubleTest.734e6d9bfaed","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"ConstantTests","source_log":"DoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN coalesce(3.14, NULL, 1.23)
+--- expected
+3.140000

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.one_hop.OneHopWorkAtTest.4f205a90f3d5","language":"cypher","ordered":true,"source":"match/one_hop.test","source_case":"MatchOneHop","source_log":"OneHopWorkAtTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:workAt]->(b:organisation) RETURN COUNT(*)
+--- expected
+3

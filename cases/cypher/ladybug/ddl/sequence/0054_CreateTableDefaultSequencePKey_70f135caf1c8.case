@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.CreateTableDefaultSequencePKey.70f135caf1c8","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"CreateTableDefaultSequencePKey","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t:test) RETURN t.*
+--- expected
+1

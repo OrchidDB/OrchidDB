@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.BasicSkipTest4.f1053e3af904","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"BasicSkipTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person)-[:knows]->(d:person)-[:knows]->(e:person) WITH e.ID as dummy SKIP 300 RETURN COUNT(*)
+--- expected
+24

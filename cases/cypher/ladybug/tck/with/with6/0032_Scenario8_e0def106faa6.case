@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario8.e0def106faa6","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (me: Person)--(you: Person) WITH me.age + count(you.age) AS agg RETURN *
+--- expected
+Cannot evaluate expression with type PROPERTY.

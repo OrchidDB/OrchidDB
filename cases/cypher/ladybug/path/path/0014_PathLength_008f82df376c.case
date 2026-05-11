@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.path.path.PathLength.008f82df376c","language":"cypher","ordered":true,"source":"path/path.test","source_case":"Path","source_log":"PathLength","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*1..2]->(b:person) RETURN size(p)
+--- expected
+Binder exception: Function SIZE did not receive correct arguments:
+Actual:   (RECURSIVE_REL)
+Expected: (LIST) -> INT64
+(ARRAY) -> INT64
+(MAP) -> INT64
+(STRING) -> INT64

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListReverseSortInt32WithNullsLast.b630ef3ea84d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListReverseSortInt32WithNullsLast","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_reverse_sort([to_int32(1), to_int32(1), NULL, to_int32(-3), to_int32(1), to_int32(5)], 'NULLS LAST')
+--- expected
+[5,1,1,1,-3,]

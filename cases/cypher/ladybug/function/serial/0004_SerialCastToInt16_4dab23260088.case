@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb-serial","expected_kind":"rows","id":"cypher.ladybug.function.serial.SerialCastToInt16.4dab23260088","language":"cypher","ordered":true,"source":"function/serial.test","source_case":"SerialAdd","source_log":"SerialCastToInt16","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN to_int16(a.ID)
+--- expected
+0
+1
+2
+3
+4
+5
+6
+7

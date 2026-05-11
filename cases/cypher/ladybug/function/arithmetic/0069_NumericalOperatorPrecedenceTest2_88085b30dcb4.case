@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.NumericalOperatorPrecedenceTest2.88085b30dcb4","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"NumericalOperatorPrecedenceTest2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN 2 + 3 << 5 + 2 & 1 + o.orgCode
+--- expected
+0
+640
+512

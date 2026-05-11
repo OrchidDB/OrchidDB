@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampExtractMicroFuncTest.b3d7f4595653","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampExtractMicroFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN date_part("microSeconds", p.registerTime)
+--- expected
+30000000
+30000526
+21000000
+30000000
+42000000
+30678559
+42000000
+30000000

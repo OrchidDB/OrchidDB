@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.OptionalMatch1.5cc6f7bbf8e0","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"OptionalMatch1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User) OPTIONAL MATCH (u)-[:Follows]->(u1:User) RETURN u.name, u1.name
+--- expected
+Adam|Karissa
+Adam|Zhang
+Karissa|Zhang
+Zhang|Noura
+Noura|

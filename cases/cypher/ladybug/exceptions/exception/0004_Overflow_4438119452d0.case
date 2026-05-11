@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.Overflow.4438119452d0","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"Overflow","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN to_int16(10000000000)
+--- expected
+Overflow exception: Value 10000000000 is not within INT16 range

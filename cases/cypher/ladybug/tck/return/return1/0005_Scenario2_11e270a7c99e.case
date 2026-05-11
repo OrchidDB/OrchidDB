@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return1.Scenario2.11e270a7c99e","language":"cypher","ordered":true,"source":"tck/return/return1.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH () RETURN foo
+--- expected
+Binder exception: Variable foo is not in scope.

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashMediumLengthStrings.2e38c7018b10","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashMediumLengthStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash('aaaaaaaaaaaaaaa')
+--- expected
+2646437354086420181

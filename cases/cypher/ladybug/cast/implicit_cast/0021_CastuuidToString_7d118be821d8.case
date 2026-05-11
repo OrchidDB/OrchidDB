@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.CastuuidToString.7d118be821d8","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"CastuuidToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(uuid('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'), 36)
+--- expected
+a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11

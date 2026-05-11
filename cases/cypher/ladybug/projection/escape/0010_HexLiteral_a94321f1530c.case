@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.projection.escape.HexLiteral.a94321f1530c","language":"cypher","ordered":true,"source":"projection/escape.test","source_case":"EscapePattern","source_log":"HexLiteral","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN BLOB('\xAA\xBB\xCD\x1A')
+--- expected
+\xAA\xBB\xCD\x1A

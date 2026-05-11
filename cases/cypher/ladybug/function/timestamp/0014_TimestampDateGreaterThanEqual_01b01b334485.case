@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampDateGreaterThanEqual.01b01b334485","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampDateGreaterThanEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("1972-07-31 00:00:00.00012", "TIMESTAMP_MS") >= date('1972-07-31')
+--- expected
+True

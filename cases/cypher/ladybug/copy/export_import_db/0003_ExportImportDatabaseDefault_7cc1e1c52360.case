@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import_db.ExportImportDatabaseDefault.7cc1e1c52360","language":"cypher","ordered":true,"source":"copy/export_import_db.test","source_case":"ExportImportDatabaseDefault","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:User) WHERE p.name = "Adam" return p.random
+--- expected
+{key1=400, key2=250}

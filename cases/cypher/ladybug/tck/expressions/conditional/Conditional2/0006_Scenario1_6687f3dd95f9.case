@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.conditional.Conditional2.Scenario1.6687f3dd95f9","language":"cypher","ordered":true,"source":"tck/expressions/conditional/Conditional2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CASE 3000 WHEN -10 THEN 'minus ten' WHEN 0 THEN 'zero' WHEN 1 THEN 'one' WHEN 5 THEN 'five' WHEN 10 THEN 'ten' WHEN 3000 THEN 'three thousand' ELSE 'something else' END AS result
+--- expected
+three thousand

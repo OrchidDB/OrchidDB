@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_VX1X_out.fad174a2e468","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_VX1X_out","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).out()
+--- expected
+v[vadas]
+v[lop]
+v[josh]

@@ -1,0 +1,16 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_chooseXoutE_count_isX0X__asXaX__asXbXX_chooseXselectXaX__selectXaX__selectXbXX.959f5882588f","language":"gremlin","ordered":false,"source":"map/Select.feature","source_case":"g_V_chooseXoutE_count_isX0X__asXaX__asXbXX_chooseXselectXaX__selectXaX__selectXbXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().choose(__.outE().count().is(xx1),
+__.as("a"),
+__.as("b")).
+choose(__.select("a"),
+__.select("a"),
+__.select("b"))
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

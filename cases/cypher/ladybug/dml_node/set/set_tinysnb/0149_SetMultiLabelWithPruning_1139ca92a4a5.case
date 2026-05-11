@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_tinysnb.SetMultiLabelWithPruning.1139ca92a4a5","language":"cypher","ordered":true,"source":"dml_node/set/set_tinysnb.test","source_case":"SetMultiLabelWithPruning","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (b) RETURN b.name, b.fName
+--- expected
+ABFsUni|
+CsWork|
+DEsWork|
+Roma|
+Sóló cón tu párejâ|
+The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movie|
+|Alice
+|Elizabeth
+|Farooq
+|Greg
+|Hubert Blaine Wolfeschlegelsteinhausenbergerdorff
+|XX
+|XX
+|XX

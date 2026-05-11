@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.hash.hash.HashLongString.e7b2d22787a4","language":"cypher","ordered":true,"source":"function/hash/hash.test","source_case":"HashFuncTests","source_log":"HashLongString","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN hash('${test_long_string}')
+--- expected
+14828962630991367662

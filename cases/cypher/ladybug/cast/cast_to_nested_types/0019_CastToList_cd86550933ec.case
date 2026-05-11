@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToList.cd86550933ec","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastToList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast("[1,2,3]", "UINT8[]"), cast("[1,2,3]", "UINT16[]"), cast("[1,2,3]", "UINT32[]"), cast("[1,2,3]", "UINT64[]"), cast("[1,2,3]", "INT8[]"), cast("[1,2,3]", "INT16[]"), cast("[1,2,3]", "INT32[]"), cast("[1,2,3]", "INT64[]"), cast("[1,2,3]", "INT128[]"), cast("[1,2,3]", "UINT128[]"), cast("[1,2,3]", "FLOAT[]"), cast("[1,2,3]", "DOUBLE[]")
+--- expected
+[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1,2,3]|[1.000000,2.000000,3.000000]|[1.000000,2.000000,3.000000]

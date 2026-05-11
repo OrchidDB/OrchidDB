@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.interval.StructuredIntervalConcatenateString.bc3f2bc35e1e","language":"cypher","ordered":true,"source":"function/interval.test","source_case":"FunctionInterval","source_log":"StructuredIntervalConcatenateString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN concat(concat('The license is valid until ', string(o.licenseValidInterval)), ' test')
+--- expected
+The license is valid until 26 years 52 days 48:00:00 test
+The license is valid until 3 years 5 days test
+The license is valid until 82:00:00.1 test

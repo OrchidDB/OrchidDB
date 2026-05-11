@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXvertices_hasXname_withinXripple_josh_markoXXX_V_asXaX_out_in_asXbX_dedupXa_bX_name.bdc21028c895","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXvertices_hasXname_withinXripple_josh_markoXXX_V_asXaX_out_in_asXbX_dedupXa_bX_name","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertices: __.has("name", P.within("ripple", "josh", "marko")))).V().as("a").
+out().in().as("b").dedup("a", "b").values("name")
+--- expected
+marko
+josh

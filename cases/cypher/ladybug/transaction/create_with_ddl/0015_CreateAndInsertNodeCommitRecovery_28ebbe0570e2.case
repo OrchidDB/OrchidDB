@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_with_ddl.CreateAndInsertNodeCommitRecovery.28ebbe0570e2","language":"cypher","ordered":true,"source":"transaction/create_with_ddl.test","source_case":"CreateAndInsertNodeCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN count(*)
+--- expected
+8

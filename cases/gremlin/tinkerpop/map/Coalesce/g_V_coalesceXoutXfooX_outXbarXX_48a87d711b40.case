@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.map.Coalesce.g_V_coalesceXoutXfooX_outXbarXX.48a87d711b40","language":"gremlin","ordered":false,"source":"map/Coalesce.feature","source_case":"g_V_coalesceXoutXfooX_outXbarXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().coalesce(__.out("foo"), __.out("bar"))
+--- expected
+

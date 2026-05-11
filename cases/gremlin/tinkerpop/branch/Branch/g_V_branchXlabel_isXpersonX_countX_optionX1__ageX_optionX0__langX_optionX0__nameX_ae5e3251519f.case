@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Branch.g_V_branchXlabel_isXpersonX_countX_optionX1__ageX_optionX0__langX_optionX0__nameX.ae5e3251519f","language":"gremlin","ordered":false,"source":"branch/Branch.feature","source_case":"g_V_branchXlabel_isXpersonX_countX_optionX1__ageX_optionX0__langX_optionX0__nameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().
+branch(__.label().is("person").count()).
+option(xx1, __.values("age")).
+option(xx2, __.values("lang")).
+option(xx2, __.values("name"))
+--- expected
+java
+java
+lop
+ripple
+d[29].i
+d[27].i
+d[32].i
+d[35].i

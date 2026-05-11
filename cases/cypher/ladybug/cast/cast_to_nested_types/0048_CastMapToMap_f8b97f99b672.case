@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastMapToMap.f8b97f99b672","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastMapToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast(" { 213=1, -3123=0 } ","MAP(INT32, STRING)"), "MAP(INT64, INT64)"), cast(cast(" { 213=1, -3123=0 } ","MAP(STRING, STRING)"), "MAP(INT32, UINT8)"), cast(cast(" { 213=1, -3123=0 } ","MAP(STRING, STRING)"), "MAP(INT16, UINT16)"), cast(cast(" { 213=1, -3123=0 } ","MAP(STRING, STRING)"), "MAP(INT128, UINT32)"), cast(cast(" { 213=1, -3123=0 } ","MAP(STRING, STRING)"), "MAP(DOUBLE, UINT64)"), cast(cast(" { 213=1, -3123=0 } ","MAP(INT128, INT128)"), "MAP(STRING, FLOAT)")
+--- expected
+{213=1, -3123=0}|{213=1, -3123=0}|{213=1, -3123=0}|{213=1, -3123=0}|{213.000000=1, -3123.000000=0}|{213=1.000000, -3123=0.000000}

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.TimestampTest.b9b98c61d82e","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"TimestampTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(timestamp("1970-01-01 00:00:00.004666-10"))
+--- expected
+TIMESTAMP

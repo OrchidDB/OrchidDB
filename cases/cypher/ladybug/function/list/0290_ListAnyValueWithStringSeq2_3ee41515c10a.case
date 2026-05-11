@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithStringSeq2.3ee41515c10a","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithStringSeq2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN list_any_value([NULL, a.usedNames[1], 'sss'])
+--- expected
+Aida
+Bobby
+Carmen
+Wolfeschlegelstein
+Ein
+Fesdwe
+Grad
+Ad

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.SubgraphStrategy.g_withStrategiesXSubgraphStrategyXvertexProperties_hasXstartTime_gtX2005XXXX_V_asXaX_propertiesXlocationX_asXbX_selectXa.3fb902f91097","language":"gremlin","ordered":false,"source":"integrated/SubgraphStrategy.feature","source_case":"g_withStrategiesXSubgraphStrategyXvertexProperties_hasXstartTime_gtX2005XXXX_V_asXaX_propertiesXlocationX_asXbX_selectXaX_outE_properties_selectXbX_value_dedup","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SubgraphStrategy(vertexProperties: __.has("startTime", P.gt(2005)))).V().as("a").
+properties("location").as("b").select("a").outE().properties().select("b").value().dedup()
+--- expected
+purcellville
+baltimore
+oakland
+seattle
+aachen

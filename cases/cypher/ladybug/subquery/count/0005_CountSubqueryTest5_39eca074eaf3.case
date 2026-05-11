@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.subquery.count.CountSubqueryTest5.39eca074eaf3","language":"cypher","ordered":true,"source":"subquery/count.test","source_case":"CountSubquery","source_log":"CountSubqueryTest5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) WHERE a.ID = 0 RETURN a.fName, b.fName, COUNT { MATCH (b)-[:knows]->(a) WHERE a.age< b.age}
+--- expected
+Alice|Bob|0
+Alice|Carol|1
+Alice|Dan|0

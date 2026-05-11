@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnArrayNodeProp.13841d8300f9","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnArrayNodeProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.grades
+--- expected
+[96,54,86,92]
+[98,42,93,88]
+[91,75,21,95]
+[76,88,99,89]
+[96,59,65,88]
+[80,78,34,83]
+[43,83,67,43]
+[77,64,100,54]

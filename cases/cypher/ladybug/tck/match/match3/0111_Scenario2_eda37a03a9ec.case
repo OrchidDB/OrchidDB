@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.eda37a03a9ec","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario30","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n) WITH [n] AS users MATCH (users)-->(messages) RETURN messages
+--- expected
+Binder exception: Cannot bind users as node pattern.

@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.path.path.PathLength.8dec3370b8ef","language":"cypher","ordered":true,"source":"path/path.test","source_case":"Path","source_log":"PathLength","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p = (a:person)-[e:knows*1..2]->(b:person)-[:knows]->(c:person) WHERE a.ID = 0 AND b.ID = 2 AND c.ID = 0 RETURN length(p), length(e)
+--- expected
+2|1
+3|2
+3|2

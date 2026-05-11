@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXage_withoutX27_29X_count.02059661e5de","language":"gremlin","ordered":true,"source":"filter/Has.feature","source_case":"g_V_hasXage_withoutX27_29X_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("age", P.without(27,29)).count()
+--- expected
+d[2].l

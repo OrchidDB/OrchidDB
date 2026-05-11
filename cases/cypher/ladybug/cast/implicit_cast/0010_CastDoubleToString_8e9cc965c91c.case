@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.cast.implicit_cast.CastDoubleToString.8e9cc965c91c","language":"cypher","ordered":true,"source":"cast/implicit_cast.test","source_case":"CastDoubleToString","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN left(to_double(1.34), 8)
+--- expected
+1.340000

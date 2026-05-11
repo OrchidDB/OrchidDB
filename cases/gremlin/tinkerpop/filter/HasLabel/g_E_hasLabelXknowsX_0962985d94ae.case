@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.HasLabel.g_E_hasLabelXknowsX.0962985d94ae","language":"gremlin","ordered":false,"source":"filter/HasLabel.feature","source_case":"g_E_hasLabelXknowsX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E().hasLabel("knows")
+--- expected
+e[marko-knows->vadas]
+e[marko-knows->josh]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.modulo.ModuloINT16.5a12b64169fc","language":"cypher","ordered":true,"source":"arithmetic/modulo.test","source_case":"ModuloINT16","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(-32768, "INT16") % CAST(-1, "INT16")
+--- expected
+Overflow exception: Value -32768 % -1 is not within INT16 range.

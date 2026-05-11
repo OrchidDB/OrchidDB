@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Product.g_V_valuesXageX_order_byXdescX_limitX3X_fold_productXV_valuesXageX_order_byXascX_limitX2X_foldX_unfold.028ed2aed4e0","language":"gremlin","ordered":false,"source":"map/Product.feature","source_case":"g_V_valuesXageX_order_byXdescX_limitX3X_fold_productXV_valuesXageX_order_byXascX_limitX2X_foldX_unfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").order().by(desc).limit(3).fold().product(__.V().values("age").order().by(asc).limit(2).fold()).unfold()
+--- expected
+l[d[35].i,d[27].i]
+l[d[35].i,d[29].i]
+l[d[32].i,d[27].i]
+l[d[32].i,d[29].i]
+l[d[29].i,d[27].i]
+l[d[29].i,d[29].i]

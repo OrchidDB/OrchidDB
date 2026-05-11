@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.EdgesNoCycle.6b118e582133","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"EdgesNoCycle","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('overflowMax')
+--- expected
+Catalog exception: nextval: reached maximum value of sequence "overflowMax" 9223372036854775807

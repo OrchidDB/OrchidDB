@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.f8b38adfb169","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnionError","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST({a: 42} AS UNION(a INT64))
+--- expected
+Conversion exception: Cannot cast from STRUCT(a INT64) to UNION(a INT64), target type has no compatible field.

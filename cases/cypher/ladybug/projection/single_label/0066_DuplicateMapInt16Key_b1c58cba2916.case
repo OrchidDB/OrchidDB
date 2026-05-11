@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.DuplicateMapInt16Key.b1c58cba2916","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"DuplicateMapInt16Key","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN map([cast(21, 'int16'), cast(4, 'int16'), cast(4, 'int16')], [20, 34, 50])
+--- expected
+Runtime exception: Found duplicate key: 4 in map.

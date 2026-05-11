@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.error.ErrorTest.7b0229267f80","language":"cypher","ordered":true,"source":"function/utility/error.test","source_case":"ErrorTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN 42=error('hello world')
+--- expected
+Runtime exception: hello world

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithInt16.f34773c5d202","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithInt16","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) WHERE m.name='Roma' RETURN list_any_value([NULL, to_int16(m.length), to_int16(m.length)])
+--- expected
+298

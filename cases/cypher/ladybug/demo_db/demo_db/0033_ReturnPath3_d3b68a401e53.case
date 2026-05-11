@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db.ReturnPath3.d3b68a401e53","language":"cypher","ordered":true,"source":"demo_db/demo_db.test","source_case":"DemoDBTest","source_log":"ReturnPath3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH p1 = (a:User)-[:Follows]->(b:User), p2 = (b)-[:LivesIn]->(:City) WHERE a.name = 'Adam' RETURN p1, p2
+--- expected
+{_NODES: [{_ID: 0:0, _LABEL: User, name: Adam, age: 30},{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}], _RELS: [(0:0)-{_LABEL: Follows, _ID: 2:0, since: 2020}->(0:1)]}|{_NODES: [{_ID: 0:1, _LABEL: User, name: Karissa, age: 40},{_ID: 1:0, _LABEL: City, name: Waterloo, population: 150000}], _RELS: [(0:1)-{_LABEL: LivesIn, _ID: 4:1}->(1:0)]}
+{_NODES: [{_ID: 0:0, _LABEL: User, name: Adam, age: 30},{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}], _RELS: [(0:0)-{_LABEL: Follows, _ID: 2:1, since: 2020}->(0:2)]}|{_NODES: [{_ID: 0:2, _LABEL: User, name: Zhang, age: 50},{_ID: 1:1, _LABEL: City, name: Kitchener, population: 200000}], _RELS: [(0:2)-{_LABEL: LivesIn, _ID: 4:2}->(1:1)]}

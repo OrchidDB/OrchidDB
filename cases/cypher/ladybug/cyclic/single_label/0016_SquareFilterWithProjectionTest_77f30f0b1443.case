@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.SquareFilterWithProjectionTest.77f30f0b1443","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"SquareFilterWithProjectionTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)<-[:knows]-(b:person)-[:knows]->(c:person)-[:studyAt]->(d:organisation), (a)-[:studyAt]->(d) WHERE a.fName='Bob' RETURN a.fName, b.fName, c.fName, d.name
+--- expected
+Bob|Alice|Bob|ABFsUni
+Bob|Carol|Alice|ABFsUni
+Bob|Carol|Bob|ABFsUni
+Bob|Dan|Alice|ABFsUni
+Bob|Dan|Bob|ABFsUni

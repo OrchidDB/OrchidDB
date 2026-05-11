@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_nested.NodePropertyIntColumnWithList.87e722a1ef56","language":"cypher","ordered":true,"source":"copy/copy_nested.test","source_case":"NodePropertyIntColumnWithList","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.workedHours
+--- expected
+[1,9]
+[10,11,12,3,4,5,6,7]
+[10,5]
+[12,8]
+[1]
+[2]
+[3,4,5,6,7]
+[4,5]

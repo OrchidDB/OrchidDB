@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.parser.syntax_error.EmptyProperty.91d88466131d","language":"cypher","ordered":true,"source":"exceptions/parser/syntax_error.test","source_case":"EmptyProperty","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) WHERE a.`` != 1 RETURN *
+--- expected
+Parser exception: '' is not a valid token name. Token names cannot be empty or contain any null-bytes (line: 1, offset: 18)
+"MATCH (a) WHERE a.`` != 1 RETURN *;"
+^^

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_node.CopyTinySnbPersonAndKnows.1f0aba2e5ac3","language":"cypher","ordered":true,"source":"transaction/create_node/create_node.test","source_case":"CopyTinySnbPersonAndKnows","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN COUNT(*)
+--- expected
+5

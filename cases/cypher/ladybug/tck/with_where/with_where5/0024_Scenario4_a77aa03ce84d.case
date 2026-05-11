@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where5.Scenario4.a77aa03ce84d","language":"cypher","ordered":true,"source":"tck/with_where/with_where5.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:Root {name: 'x'})-->(i) WITH i WHERE i.var > 'te' OR i.var IS NOT NULL RETURN i
+--- expected
+{_ID: 1:0, _LABEL: TextNode, ID: 0, var: text}
+{_ID: 2:0, _LABEL: IntNode, ID: 0, var: 0}

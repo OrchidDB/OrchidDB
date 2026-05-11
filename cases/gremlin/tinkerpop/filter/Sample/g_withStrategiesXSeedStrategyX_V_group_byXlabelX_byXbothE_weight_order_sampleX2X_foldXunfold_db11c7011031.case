@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Sample.g_withStrategiesXSeedStrategyX_V_group_byXlabelX_byXbothE_weight_order_sampleX2X_foldXunfold.db11c7011031","language":"gremlin","ordered":false,"source":"filter/Sample.feature","source_case":"g_withStrategiesXSeedStrategyX_V_group_byXlabelX_byXbothE_weight_order_sampleX2X_foldXunfold","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(new SeedStrategy(seed: 999999)).V().group().by(T.label).by(__.bothE().values("weight").order().sample(2).fold()).unfold()
+--- expected
+m[{"software":"l[d[1.0].d,d[0.4].d]"}]
+m[{"person":"l[d[0.5].d,d[1.0].d]"}]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.blob.ReturnInvalidUTF8String.34c0564526bc","language":"cypher","ordered":true,"source":"function/blob.test","source_case":"FunctionBlob","source_log":"ReturnInvalidUTF8String","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN decode(BLOB('decode this invalid utf-8 char: \\xA1\\xBC'))
+--- expected
+Runtime exception: Failure in decode: could not convert blob to UTF8 string, the blob contained invalid UTF8 characters

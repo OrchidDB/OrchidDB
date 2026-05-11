@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.multiply.MultiplyINT64.593c368a3502","language":"cypher","ordered":true,"source":"arithmetic/multiply.test","source_case":"MultiplyINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(202474672468, "INT64") * CAST(102, "INT64")
+--- expected
+20652416591736

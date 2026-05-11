@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.KnowsOneHopTest3.a53a06b63951","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"KnowsOneHopTest3","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.age>20 RETURN b.fName
+--- expected
+Alice
+Alice
+Bob
+Bob
+Carol
+Carol
+Dan
+Dan
+Dan

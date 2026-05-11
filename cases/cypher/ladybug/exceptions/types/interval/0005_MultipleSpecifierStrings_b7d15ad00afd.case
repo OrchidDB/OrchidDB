@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.interval.MultipleSpecifierStrings.b7d15ad00afd","language":"cypher","ordered":true,"source":"exceptions/types/interval.test","source_case":"CastStrToIntervalError","source_log":"MultipleSpecifierStrings","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return interval("10 years 2 days 48 hours 28 seconds microseconds")
+--- expected
+Conversion exception: Error occurred during parsing interval. Given: "10 years 2 days 48 hours 28 seconds microseconds".

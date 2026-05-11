@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.label.FunctionLabel.197138dba765","language":"cypher","ordered":true,"source":"function/label.test","source_case":"FunctionLabel","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN DISTINCT label(a)
+--- expected
+movies
+organisation
+person

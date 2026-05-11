@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.issue_170.c01d2f15f377","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"issue_170","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:A) RETURN COUNT(*)
+--- expected
+1

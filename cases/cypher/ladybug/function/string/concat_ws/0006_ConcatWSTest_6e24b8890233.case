@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.concat_ws.ConcatWSTest.6e24b8890233","language":"cypher","ordered":true,"source":"function/string/concat_ws.test","source_case":"ConcatWSTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN CONCAT_WS(' name', 'org: ', o.name)
+--- expected
+org:  nameABFsUni
+org:  nameCsWork
+org:  nameDEsWork

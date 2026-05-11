@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastInt32ToUint16OutOfRange.8b7d21a09791","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastInt32ToUint16OutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+return cast(cast("-10244", "int32"), "uint16")
+--- expected
+Overflow exception: Value -10244 is not within UINT16 range

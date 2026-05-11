@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.abs.AbsINT8.19d97f70928c","language":"cypher","ordered":true,"source":"arithmetic/abs.test","source_case":"AbsINT8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN Abs(CAST(12, "INT8"))
+--- expected
+12

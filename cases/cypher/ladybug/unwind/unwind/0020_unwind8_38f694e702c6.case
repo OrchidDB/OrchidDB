@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwind8.38f694e702c6","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwind8","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName = 'Alice' UNWIND a.workedHours as x RETURN x,a.fName
+--- expected
+10|Alice
+5|Alice

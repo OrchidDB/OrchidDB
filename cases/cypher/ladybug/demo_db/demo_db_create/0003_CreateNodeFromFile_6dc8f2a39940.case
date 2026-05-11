@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_create.CreateNodeFromFile.6dc8f2a39940","language":"cypher","ordered":true,"source":"demo_db/demo_db_create.test","source_case":"CreateNodeFromFile","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User2) RETURN *
+--- expected
+{_ID: 6:0, _LABEL: User2, name: Adam, age: 30}
+{_ID: 6:1, _LABEL: User2, name: Karissa, age: 40}
+{_ID: 6:2, _LABEL: User2, name: Zhang, age: 50}
+{_ID: 6:3, _LABEL: User2, name: Noura, age: 25}

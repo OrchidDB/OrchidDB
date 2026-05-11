@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_injectX5_43X_asNumberXGType_INTX.56e698e98213","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_injectX5_43X_asNumberXGType_INTX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(5.43).asNumber(GType.INT)
+--- expected
+d[5].i

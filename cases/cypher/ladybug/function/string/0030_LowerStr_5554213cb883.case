@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.LowerStr.5554213cb883","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"LowerStr","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN lower(o.name)
+--- expected
+abfsuni
+cswork
+deswork

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyNodeRollbackDueToError.436559c69837","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyNodeRollbackDueToError","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) return count(*)
+--- expected
+0

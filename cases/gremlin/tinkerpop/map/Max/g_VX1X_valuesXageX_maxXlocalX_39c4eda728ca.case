@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Max.g_VX1X_valuesXageX_maxXlocalX.39c4eda728ca","language":"gremlin","ordered":false,"source":"map/Max.feature","source_case":"g_VX1X_valuesXageX_maxXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).values("age").max(Scope.local)
+--- expected
+d[29].i

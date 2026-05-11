@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Select.g_V_asXa_bX_out_asXcX_path_selectXkeysX.9a070e77d413","language":"gremlin","ordered":true,"source":"map/Select.feature","source_case":"g_V_asXa_bX_out_asXcX_path_selectXkeysX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a", "b").out().as("c").path().select(Column.keys)
+--- expected
+s[a,b]
+s[c]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Discard.g_V_discard_fold_constantX1X.21cc2ca62447","language":"gremlin","ordered":false,"source":"filter/Discard.feature","source_case":"g_V_discard_fold_constantX1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().discard().fold().constant(1)
+--- expected
+d[1].i

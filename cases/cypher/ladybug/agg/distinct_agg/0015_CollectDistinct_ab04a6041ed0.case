@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.distinct_agg.CollectDistinct.ab04a6041ed0","language":"cypher","ordered":true,"source":"agg/distinct_agg.test","source_case":"AggDistinct","source_log":"CollectDistinct","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [1,1] AS x MATCH (a:person) WHERE a.ID < 3 MATCH (b:person) WHERE b.ID < 6 AND b.ID > 2 WITH a, COLLECT(DISTINCT b) AS bs UNWIND bs AS newB RETURN a.fName, newB.fName
+--- expected
+Alice|Carol
+Alice|Dan
+Bob|Carol
+Bob|Dan

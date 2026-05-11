@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.exception.MultiplyOutOfRange.394da9eed62d","language":"cypher","ordered":true,"source":"exceptions/exception.test","source_case":"EXCEPTION","source_log":"MultiplyOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(-2, "INT16") * cast(16385, "INT16")
+--- expected
+Overflow exception: Value -2 * 16385 is not within INT16 range.

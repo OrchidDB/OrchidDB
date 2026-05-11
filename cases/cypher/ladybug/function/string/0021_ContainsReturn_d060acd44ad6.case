@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ContainsReturn.d060acd44ad6","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ContainsReturn","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.fName, a.fName CONTAINS "a" ORDER BY a.fName
+--- expected
+Alice|False
+Bob|False
+Carol|True
+Dan|True
+Elizabeth|True
+Farooq|True
+Greg|False
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|True

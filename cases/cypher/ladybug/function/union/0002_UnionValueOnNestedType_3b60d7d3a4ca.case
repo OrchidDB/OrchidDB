@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.union.UnionValueOnNestedType.3b60d7d3a4ca","language":"cypher","ordered":true,"source":"function/union.test","source_case":"FunctionUnion","source_log":"UnionValueOnNestedType","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN union_value(a := struct_pack(b := 123))
+--- expected
+{b: 123}

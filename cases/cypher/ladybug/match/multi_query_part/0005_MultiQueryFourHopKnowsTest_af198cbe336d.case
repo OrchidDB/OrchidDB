@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_query_part.MultiQueryFourHopKnowsTest.af198cbe336d","language":"cypher","ordered":true,"source":"match/multi_query_part.test","source_case":"MatchMultiQuery","source_log":"MultiQueryFourHopKnowsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person) WITH c MATCH (c)-[e3:knows]->(d:person)-[e4:knows]->(e:person) RETURN COUNT(*)
+--- expected
+324

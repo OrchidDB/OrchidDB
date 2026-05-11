@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.StrVarAndDoubleLiteralConcat.3e5abbc1570b","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"StrVarAndDoubleLiteralConcat","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE concat(a.fName, string(11.7)) = 'Farooq11.700000' RETURN COUNT(*)
+--- expected
+1

@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.optional_match.optional_match.InitOptionalMatch2.7d4c39332084","language":"cypher","ordered":true,"source":"optional_match/optional_match.test","source_case":"OptionalMatch","source_log":"InitOptionalMatch2","status":"imported","suite":"ladybug","version":1}
+--- query
+OPTIONAL MATCH (a:person) WHERE a.ID < 6 RETURN a.fName
+--- expected
+Alice
+Bob
+Carol
+Dan

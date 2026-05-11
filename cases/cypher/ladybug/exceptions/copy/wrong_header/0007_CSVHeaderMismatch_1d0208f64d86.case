@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.exceptions.copy.wrong_header.CSVHeaderMismatch.1d0208f64d86","language":"cypher","ordered":true,"source":"exceptions/copy/wrong_header.test","source_case":"CSVHeaderMismatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person1) RETURN a.ID STARTS WITH '1'
+--- expected
+False
+False
+True

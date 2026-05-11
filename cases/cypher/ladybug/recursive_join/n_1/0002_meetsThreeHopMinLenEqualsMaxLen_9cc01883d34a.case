@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.recursive_join.n_1.meetsThreeHopMinLenEqualsMaxLen.9cc01883d34a","language":"cypher","ordered":true,"source":"recursive_join/n_1.test","source_case":"VarLengthExtendN1Tests","source_log":"meetsThreeHopMinLenEqualsMaxLen","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:meets*3..3]->(b:person) RETURN COUNT(*)
+--- expected
+4

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidNameCast.c613369e2951","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidNameCast","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN {'a':12, 'b':24} = {'c':12, 'd':24}
+--- expected
+False

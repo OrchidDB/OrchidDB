@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.map.MapExtractInternalID.406c27bebc90","language":"cypher","ordered":true,"source":"function/map.test","source_case":"FunctionMap","source_log":"MapExtractInternalID","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN map_extract(map([a.age], [id(a)]), 20)
+--- expected
+[]
+[]
+[]
+[0:3]
+[0:4]
+[]
+[]
+[]

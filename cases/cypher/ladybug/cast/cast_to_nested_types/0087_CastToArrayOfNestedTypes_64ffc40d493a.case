@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.64ffc40d493a","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CASTNestedDecimal","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast([220], "decimal(21,4)[]"), "int[1]")
+--- expected
+[220]

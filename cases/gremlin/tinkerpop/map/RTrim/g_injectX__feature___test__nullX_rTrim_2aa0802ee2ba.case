@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.RTrim.g_injectX__feature___test__nullX_rTrim.2aa0802ee2ba","language":"gremlin","ordered":false,"source":"map/RTrim.feature","source_case":"g_injectX__feature___test__nullX_rTrim","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject("feature  ", "one test ", null, "", " ", "　abc", "abc　", "　abc　", "　　").rTrim()
+--- expected
+feature
+one test
+null
+str[]
+str[]
+str[　abc]
+str[abc]
+str[　abc]
+str[]

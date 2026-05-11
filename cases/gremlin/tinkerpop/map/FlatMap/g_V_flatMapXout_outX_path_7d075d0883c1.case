@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.FlatMap.g_V_flatMapXout_outX_path.7d075d0883c1","language":"gremlin","ordered":false,"source":"map/FlatMap.feature","source_case":"g_V_flatMapXout_outX_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().flatMap(out().out()).path()
+--- expected
+p[v[marko],v[ripple]]
+p[v[marko],v[lop]]

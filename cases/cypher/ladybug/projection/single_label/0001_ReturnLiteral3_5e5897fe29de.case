@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnLiteral3.5e5897fe29de","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnLiteral3","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN "abc", MIN(1)
+--- expected
+abc|1

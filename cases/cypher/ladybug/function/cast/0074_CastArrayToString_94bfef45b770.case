@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.CastArrayToString.94bfef45b770","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"CastDataTypeToString","source_log":"CastArrayToString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) where p.ID > 1 RETURN cast(p.grades, "string")
+--- expected
+[98,42,93,88]
+[91,75,21,95]
+[76,88,99,89]
+[96,59,65,88]
+[80,78,34,83]
+[43,83,67,43]
+[77,64,100,54]

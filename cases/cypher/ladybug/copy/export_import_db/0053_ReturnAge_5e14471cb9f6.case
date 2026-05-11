@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"CSV demo-db/csv","expected_kind":"rows","id":"cypher.ladybug.copy.export_import_db.ReturnAge.5e14471cb9f6","language":"cypher","ordered":true,"source":"copy/export_import_db.test","source_case":"ExportDatabaseWithSerialTable","source_log":"ReturnAge","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:twoserial) RETURN o.*
+--- expected
+0|Alice
+1|Bob
+2|Carol
+3|Dan

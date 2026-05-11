@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.catalog.catalog.CatalogExeception.8f057add4b04","language":"cypher","ordered":true,"source":"exceptions/catalog/catalog.test","source_case":"CatalogExeception","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE dummy() < 2 RETURN COUNT(*)
+--- expected
+Catalog exception: function DUMMY does not exist.

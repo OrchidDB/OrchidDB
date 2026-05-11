@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Has.g_V_hasXage_gt_30X.edc5473688b7","language":"gremlin","ordered":false,"source":"filter/Has.feature","source_case":"g_V_hasXage_gt_30X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("age", P.gt(30))
+--- expected
+v[josh]
+v[peter]

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.arithmetic.negate.NegateUINT64.1d0b9b7defea","language":"cypher","ordered":true,"source":"arithmetic/negate.test","source_case":"NegateUINT64","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN -CAST(202474672468, "UINT64")
+--- expected
+18446743871234879148

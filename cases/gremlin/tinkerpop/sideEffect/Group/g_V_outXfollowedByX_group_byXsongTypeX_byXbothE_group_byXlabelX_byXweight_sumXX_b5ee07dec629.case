@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_outXfollowedByX_group_byXsongTypeX_byXbothE_group_byXlabelX_byXweight_sumXX.b5ee07dec629","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_outXfollowedByX_group_byXsongTypeX_byXbothE_group_byXlabelX_byXweight_sumXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out("followedBy").group().by("songType").by(__.bothE().group().by(T.label).by(__.values("weight").sum()))
+--- expected
+m[{"cover":{"followedBy":"d[777982].i"}, "":{"followedBy":"d[179350].i"}, "original":{"followedBy":"d[2185613].i"}}]

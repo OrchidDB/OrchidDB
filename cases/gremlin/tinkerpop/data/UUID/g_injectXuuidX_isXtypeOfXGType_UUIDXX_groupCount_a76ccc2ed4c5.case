@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.UUID.g_injectXuuidX_isXtypeOfXGType_UUIDXX_groupCount.a76ccc2ed4c5","language":"gremlin","ordered":false,"source":"data/UUID.feature","source_case":"g_injectXuuidX_isXtypeOfXGType_UUIDXX_groupCount","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(UUID("f47af10b-58cc-4372-a567-0f02b2f3d479")).is(P.typeOf(GType.UUID)).groupCount()
+--- expected
+m[{"uuid[f47af10b-58cc-4372-a567-0f02b2f3d479]":"d[1].l"}]

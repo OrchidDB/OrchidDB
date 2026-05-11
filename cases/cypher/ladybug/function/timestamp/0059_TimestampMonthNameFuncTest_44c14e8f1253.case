@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.timestamp.TimestampMonthNameFuncTest.44c14e8f1253","language":"cypher","ordered":true,"source":"function/timestamp.test","source_case":"FunctionTimestamp","source_log":"TimestampMonthNameFuncTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN monthname(cast(p.registerTime, "TIMESTAMP_NS")), monthname(cast(p.registerTime, "TIMESTAMP_MS")), monthname(cast(p.registerTime, "TIMESTAMP_SEC")), monthname(cast(p.registerTime, "TIMESTAMP_TZ"))
+--- expected
+August|August|August|August
+November|November|November|November
+August|August|August|August
+November|November|November|November
+December|December|December|December
+July|July|July|July
+December|December|December|December
+February|February|February|February

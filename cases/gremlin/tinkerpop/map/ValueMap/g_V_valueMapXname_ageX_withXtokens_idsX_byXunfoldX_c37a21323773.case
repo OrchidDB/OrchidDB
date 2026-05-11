@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.ValueMap.g_V_valueMapXname_ageX_withXtokens_idsX_byXunfoldX.c37a21323773","language":"gremlin","ordered":false,"source":"map/ValueMap.feature","source_case":"g_V_valueMapXname_ageX_withXtokens_idsX_byXunfoldX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("name", "age").with(WithOptions.tokens, WithOptions.ids).by(__.unfold())
+--- expected
+m[{"t[id]": "v[marko].id", "name": "marko", "age": 29}]
+m[{"t[id]": "v[josh].id", "name": "josh", "age": 32}]
+m[{"t[id]": "v[peter].id", "name": "peter", "age": 35}]
+m[{"t[id]": "v[vadas].id", "name": "vadas", "age": 27}]
+m[{"t[id]": "v[lop].id", "name": "lop"}]
+m[{"t[id]": "v[ripple].id", "name": "ripple"}]

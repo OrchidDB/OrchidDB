@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.INT128KeyTest.44a5c212be5d","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"INT128KeyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[s:studyAt]->(o:organisation) WHERE s.hugedata = 1844674407370955161811111111 RETURN p.ID, o.ID
+--- expected
+0|1

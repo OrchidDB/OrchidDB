@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.LambdaRestrictionStrategy.g_withoutStrategiesXLambdaRestrictionStrategyX_V.ad57bf1f4d2b","language":"gremlin","ordered":false,"source":"integrated/LambdaRestrictionStrategy.feature","source_case":"g_withoutStrategiesXLambdaRestrictionStrategyX_V","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withoutStrategies(LambdaRestrictionStrategy).V()
+--- expected
+v[marko]
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]
+v[peter]

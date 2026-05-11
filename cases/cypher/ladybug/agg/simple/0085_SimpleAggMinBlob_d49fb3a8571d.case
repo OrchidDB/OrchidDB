@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMinBlob.d49fb3a8571d","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMinBlob","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN MIN(m.content)
+--- expected
+pure ascii characters

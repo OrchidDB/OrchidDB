@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.map.Conjoin.g_V_valueMapXlocationX_selectXvaluesX_unfold_orderXlocalX_conjoinX1X.dd446eb29870","language":"gremlin","ordered":false,"source":"map/Conjoin.feature","source_case":"g_V_valueMapXlocationX_selectXvaluesX_unfold_orderXlocalX_conjoinX1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().valueMap("location").select(values).unfold().order(Scope.local).conjoin("1")
+--- expected
+brussels1san diego1santa cruz1santa fe
+centreville1dulles1purcellville
+baltimore1bremen1oakland1seattle
+aachen1kaiserslautern1spremberg

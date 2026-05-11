@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.SimplePath.g_V_both_asXaX_both_asXbX_simplePath_path_byXageX__fromXaX_toXbX.0da3380a05c3","language":"gremlin","ordered":false,"source":"filter/SimplePath.feature","source_case":"g_V_both_asXaX_both_asXbX_simplePath_path_byXageX__fromXaX_toXbX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().both().as('a').both().as('b').simplePath().path().by('age').from('a').to('b')
+--- expected
+p[d[29].i,d[32].i]
+p[d[29].i,d[27].i]
+p[d[29].i,d[32].i]
+p[d[32].i,d[29].i]
+p[d[29].i,d[27].i]
+p[d[32].i,d[29].i]

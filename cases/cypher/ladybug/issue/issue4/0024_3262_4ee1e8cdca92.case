@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue4.3262.4ee1e8cdca92","language":"cypher","ordered":true,"source":"issue/issue4.test","source_case":"3262","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (usr:User)-[h1:has]->(src:Source {xxx: "1-src"}) RETURN h1
+--- expected
+(4:0)-{_LABEL: has, _ID: 5:0, xxx: has}->(3:0)

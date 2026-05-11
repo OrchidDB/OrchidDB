@@ -1,0 +1,17 @@
+--- metadata
+{"dataset":"CSV copy-multiple-files-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_multiple_files.copy_multiple_files.d7a1d2c4d815","language":"cypher","ordered":true,"source":"copy/copy_multiple_files.test","source_case":"copy_multiple_files","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) RETURN p.ID
+--- expected
+1
+12
+15
+20
+21
+4
+5
+6
+7
+8
+9
+]

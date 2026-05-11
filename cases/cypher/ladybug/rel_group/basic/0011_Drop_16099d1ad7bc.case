@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV rel-group","expected_kind":"rows","id":"cypher.ladybug.rel_group.basic.Drop.16099d1ad7bc","language":"cypher","ordered":true,"source":"rel_group/basic.test","source_case":"Drop","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:personA)-[e:knows]->(b) RETURN COUNT(*)
+--- expected
+Binder exception: Table knows does not exist.

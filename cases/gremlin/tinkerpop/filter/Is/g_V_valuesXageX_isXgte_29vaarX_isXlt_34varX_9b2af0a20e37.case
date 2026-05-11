@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Is.g_V_valuesXageX_isXgte_29vaarX_isXlt_34varX.9b2af0a20e37","language":"gremlin","ordered":false,"source":"filter/Is.feature","source_case":"g_V_valuesXageX_isXgte_29vaarX_isXlt_34varX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.gte(xx1)).is(P.lt(xx2))
+--- expected
+d[29].i
+d[32].i

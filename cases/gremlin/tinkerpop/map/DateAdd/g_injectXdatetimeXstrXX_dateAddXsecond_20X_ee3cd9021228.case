@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.DateAdd.g_injectXdatetimeXstrXX_dateAddXsecond_20X.ee3cd9021228","language":"gremlin","ordered":false,"source":"map/DateAdd.feature","source_case":"g_injectXdatetimeXstrXX_dateAddXsecond_20X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(datetime('2023-08-02T00:00:00Z'), DateTime('2023-08-02T00:00:00Z')).dateAdd(second, 20)
+--- expected
+dt[2023-08-02T00:00:20Z]
+dt[2023-08-02T00:00:20Z]

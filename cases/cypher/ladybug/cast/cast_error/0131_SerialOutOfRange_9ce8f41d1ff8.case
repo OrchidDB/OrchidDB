@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.SerialOutOfRange.9ce8f41d1ff8","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"SerialOutOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_SERIAL(TO_UINT64(9223372036854775807) * TO_UINT64(2))
+--- expected
+Overflow exception: Value 18446744073709551614 is not within INT64 range

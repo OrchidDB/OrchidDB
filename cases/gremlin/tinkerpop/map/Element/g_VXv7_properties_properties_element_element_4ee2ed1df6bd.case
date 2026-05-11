@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"crew","expected_kind":"rows","id":"gremlin.tinkerpop.map.Element.g_VXv7_properties_properties_element_element.4ee2ed1df6bd","language":"gremlin","ordered":false,"source":"map/Element.feature","source_case":"g_VXv7_properties_properties_element_element","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid7).properties().properties().element().element().limit(1)
+--- expected
+v[stephen]

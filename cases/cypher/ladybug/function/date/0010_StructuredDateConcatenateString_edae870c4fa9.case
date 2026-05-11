@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.date.StructuredDateConcatenateString.edae870c4fa9","language":"cypher","ordered":true,"source":"function/date.test","source_case":"FunctionDate","source_log":"StructuredDateConcatenateString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN concat(concat('Birthdate: ', string(a.birthdate)), ' test')
+--- expected
+Birthdate: 1900-01-01 test
+Birthdate: 1900-01-01 test
+Birthdate: 1940-06-22 test
+Birthdate: 1950-07-23 test
+Birthdate: 1980-10-26 test
+Birthdate: 1980-10-26 test
+Birthdate: 1980-10-26 test
+Birthdate: 1990-11-27 test

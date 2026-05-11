@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListContainsUnmatchType.08917c008975","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListContainsUnmatchType","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) where list_contains(cast([2, 3] as int16[]), a.ID) return a.ID
+--- expected
+2
+3

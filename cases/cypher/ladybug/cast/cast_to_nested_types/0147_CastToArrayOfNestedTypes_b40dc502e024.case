@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.b40dc502e024","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnionError","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(CAST(1282158 AS INT64) AS UNION(a INT32, b INT16, c UINT8, d INT8))
+--- expected
+Conversion exception: Cannot cast from INT64 to UNION(a INT32, b INT16, c UINT8, d INT8), target type has no compatible field.

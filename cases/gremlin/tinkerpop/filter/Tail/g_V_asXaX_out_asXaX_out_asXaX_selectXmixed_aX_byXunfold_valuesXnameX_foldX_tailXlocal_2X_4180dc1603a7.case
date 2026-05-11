@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.filter.Tail.g_V_asXaX_out_asXaX_out_asXaX_selectXmixed_aX_byXunfold_valuesXnameX_foldX_tailXlocal_2X.4180dc1603a7","language":"gremlin","ordered":false,"source":"filter/Tail.feature","source_case":"g_V_asXaX_out_asXaX_out_asXaX_selectXmixed_aX_byXunfold_valuesXnameX_foldX_tailXlocal_2X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out().as("a").out().as("a").select(Pop.mixed, "a").by(__.unfold().values("name").fold()).tail(Scope.local, 2)
+--- expected
+l[josh,ripple]
+l[josh,lop]

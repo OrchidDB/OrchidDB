@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_tinysnb.InsertNodeAndRelTest.4cc65c303054","language":"cypher","ordered":true,"source":"dml_node/create/create_tinysnb.test","source_case":"InsertNodeAndRelTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.ID > 50 RETURN a.ID, b.ID, e.date
+--- expected
+100|202|1997-03-22

@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Combine.g_V_out_out_path_byXnameX_combineXempty_listX.83452293c163","language":"gremlin","ordered":false,"source":"map/Combine.feature","source_case":"g_V_out_out_path_byXnameX_combineXempty_listX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().out().path().by("name").combine([])
+--- expected
+l[marko,josh,ripple]
+l[marko,josh,lop]

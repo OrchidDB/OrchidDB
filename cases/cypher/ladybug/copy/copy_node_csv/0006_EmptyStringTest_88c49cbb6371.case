@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV copy-test/node/csv","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_csv.EmptyStringTest.88c49cbb6371","language":"cypher","ordered":true,"source":"copy/copy_node_csv.test","source_case":"CopyNodeTest","source_log":"EmptyStringTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) WHERE row.id = 49992 RETURN row.*
+--- expected
+49992|50|31.582059|False|1551-07-19|1551-07-19 16:28:31||[5,67,66]

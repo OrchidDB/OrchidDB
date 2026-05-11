@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"empty","id":"gremlin.tinkerpop.sideEffect.Read.g_io_read_withXreader_graphsonX.612b2daaf04f","language":"gremlin","ordered":false,"source":"sideEffect/Read.feature","source_case":"g_io_read_withXreader_graphsonX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.io("data/tinkerpop-modern.json").with(IO.reader, IO.graphson).read()
+--- expected
+

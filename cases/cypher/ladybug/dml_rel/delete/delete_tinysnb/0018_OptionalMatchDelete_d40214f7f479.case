@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_tinysnb.OptionalMatchDelete.d40214f7f479","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_tinysnb.test","source_case":"OptionalMatchDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (:person)-[:knows]->(:person) RETURN COUNT(*)
+--- expected
+12

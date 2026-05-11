@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string.ReplaceAllString.a9b4d4d93417","language":"cypher","ordered":true,"source":"function/string.test","source_case":"FunctionString","source_log":"ReplaceAllString","status":"imported","suite":"ladybug","version":1}
+--- query
+Return replace('aaaa', 'aa', 'b')
+--- expected
+bb

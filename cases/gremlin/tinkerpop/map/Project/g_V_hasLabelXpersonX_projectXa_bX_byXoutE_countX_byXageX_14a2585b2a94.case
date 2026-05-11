@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Project.g_V_hasLabelXpersonX_projectXa_bX_byXoutE_countX_byXageX.14a2585b2a94","language":"gremlin","ordered":false,"source":"map/Project.feature","source_case":"g_V_hasLabelXpersonX_projectXa_bX_byXoutE_countX_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").
+project("a", "b").
+by(__.outE().count()).
+by("age")
+--- expected
+m[{"a":"d[3].l", "b":"d[29].i"}]
+m[{"a":"d[0].l", "b":"d[27].i"}]
+m[{"a":"d[2].l", "b":"d[32].i"}]
+m[{"a":"d[1].l", "b":"d[35].i"}]

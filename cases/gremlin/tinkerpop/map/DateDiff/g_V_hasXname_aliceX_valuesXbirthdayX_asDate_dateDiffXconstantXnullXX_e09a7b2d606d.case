@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.DateDiff.g_V_hasXname_aliceX_valuesXbirthdayX_asDate_dateDiffXconstantXnullXX.e09a7b2d606d","language":"gremlin","ordered":false,"source":"map/DateDiff.feature","source_case":"g_V_hasXname_aliceX_valuesXbirthdayX_asDate_dateDiffXconstantXnullXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "alice").values("birthday").asDate().dateDiff(__.constant(null))
+--- graph_initializer
+g.addV("person").property("name", "alice").property("birthday", 1596326400000)
+--- expected
+d[1596326400000].l

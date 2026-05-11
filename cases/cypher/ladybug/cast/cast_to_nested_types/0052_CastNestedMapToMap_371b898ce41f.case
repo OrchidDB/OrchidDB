@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastNestedMapToMap.371b898ce41f","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToNestedTypes","source_log":"CastNestedMapToMap","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast(cast("{=, {NULL=NULL, NULL=1.1, {}=NULL, {}=1.12}={1.23={a=10}}, {{0=0, 1=, 0=NULL, =}=1.232}={1.321={}}, {{1=1,2=2}=1.232, {3=3}=1.432}={1.321={a=0}, 2={b=1}}, =}", "MAP(MAP(MAP(INT8, INT8), FLOAT), MAP(DOUBLE, MAP(STRING, UINT8)))"), "MAP(MAP(MAP(INT8, INT8), FLOAT), MAP(DOUBLE, MAP(STRING, UINT8)))"), "MAP(MAP(MAP(INT32, UINT8), DOUBLE), MAP(FLOAT, MAP(STRING, INT128)))"), cast(cast("{=, {NULL=NULL, NULL=1.1, {}=NULL, {}=1.12}={1.23={a=10}}, {{0=0, 1=, 0=NULL, =}=1.232}={1.321={}}, {{1=1,2=2}=1.232, {3=3}=1.432}={1.321={a=0}, 2={b=1}}, =}", "MAP(MAP(MAP(INT8, INT8), FLOAT), MAP(DOUBLE, MAP(STRING, UINT8)))"), "MAP(MAP(STRING, INT16), MAP(INT128, STRING))")
+--- expected
+Conversion exception: Map does not allow null as key.

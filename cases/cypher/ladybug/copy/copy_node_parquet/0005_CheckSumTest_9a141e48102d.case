@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"PARQUET copy-test/node/parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_node_parquet.CheckSumTest.9a141e48102d","language":"cypher","ordered":true,"source":"copy/copy_node_parquet.test","source_case":"CopyNodeTest","source_log":"CheckSumTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (row:tableOfTypes) RETURN sum(row.id), sum(row.int64Column), sum(row.doubleColumn)
+--- expected
+1249925001|2500180|2504542.349696

@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.MatchAnyNodeLabel.d3421564398c","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"MatchAnyNodeLabel","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a
+--- expected
+{_ID: 0:0, _LABEL: User, name: Adam, age: 30}
+{_ID: 0:1, _LABEL: User, name: Karissa, age: 40}
+{_ID: 0:2, _LABEL: User, name: Zhang, age: 50}
+{_ID: 0:3, _LABEL: User, name: Noura, age: 25}
+{_ID: 1:0, _LABEL: City, name: Waterloo, population: 150000}
+{_ID: 1:1, _LABEL: City, name: Kitchener, population: 200000}
+{_ID: 1:2, _LABEL: City, name: Guelph, population: 75000}

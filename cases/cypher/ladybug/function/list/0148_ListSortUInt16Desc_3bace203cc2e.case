@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListSortUInt16Desc.3bace203cc2e","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListSortUInt16Desc","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_sort([to_uint16(2), to_uint16(3), to_uint16(1), to_uint16(5), NULL], 'DESC')
+--- expected
+[,5,3,2,1]

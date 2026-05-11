@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.string_utf8.StrEndsWith.3eea6d90e4f5","language":"cypher","ordered":true,"source":"function/string_utf8.test","source_case":"StringFunctionUTF8","source_log":"StrEndsWith","status":"imported","suite":"ladybug","version":1}
+--- query
+return ends_with(string("The 😂😃🧘🏻‍♂️🌍🌦️🍞🚗 movies"),string("🍞🚗 movies"))
+--- expected
+True

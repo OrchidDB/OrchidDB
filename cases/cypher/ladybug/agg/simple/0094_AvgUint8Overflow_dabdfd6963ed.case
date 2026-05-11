@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.AvgUint8Overflow.dabdfd6963ed","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"AvgUint8Overflow","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[s:studyAt]->(o:organisation) RETURN AVG(3 * s.ulevel) + 40
+--- expected
+522.000000

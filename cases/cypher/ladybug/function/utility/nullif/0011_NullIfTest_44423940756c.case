@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.44423940756c","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (t2:test2) RETURN NULLIF(t2.a, t2.b)
+--- expected
+blabla
+blabla2
+blabla3

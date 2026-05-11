@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.utility.typeof.IntervalTest.e9003bdaf4a1","language":"cypher","ordered":true,"source":"function/utility/typeof.test","source_case":"ConstantTest","source_log":"IntervalTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN typeof(interval("1 year 2 days"))
+--- expected
+INTERVAL

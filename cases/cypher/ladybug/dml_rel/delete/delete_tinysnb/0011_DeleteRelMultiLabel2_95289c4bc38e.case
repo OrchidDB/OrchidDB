@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_tinysnb.DeleteRelMultiLabel2.95289c4bc38e","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_tinysnb.test","source_case":"DeleteRelMultiLabel2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e]->(b) WHERE a.ID = 0 RETURN a.ID, b.ID, id(e)
+--- expected
+0|1|5:0
+0|2|3:0
+0|2|11:0
+0|2|9:0
+0|3|3:1
+0|5|3:2

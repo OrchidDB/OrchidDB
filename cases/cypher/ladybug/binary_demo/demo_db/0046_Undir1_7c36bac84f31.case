@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"LBUG binary-demo","expected_kind":"rows","id":"cypher.ladybug.binary_demo.demo_db.Undir1.7c36bac84f31","language":"cypher","ordered":true,"source":"binary_demo/demo_db.test","source_case":"DemoDBTest","source_log":"Undir1","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:User)-[:Follows]-(b:User) RETURN a.name, b.age
+--- expected
+Adam|40
+Adam|50
+Karissa|50
+Zhang|25
+Karissa|30
+Zhang|30
+Zhang|40
+Noura|50

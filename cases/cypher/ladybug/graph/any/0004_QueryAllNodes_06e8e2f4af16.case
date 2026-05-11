@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.graph.any.QueryAllNodes.06e8e2f4af16","language":"cypher","ordered":true,"source":"graph/any.test","source_case":"CreateAnyGraphAndQuery","source_log":"QueryAllNodes","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a) RETURN a.*
+--- expected
+0|[User]|{"age":30,"name":"Alice"}
+1|[City]|{"population":8000000,"name":"New York"}

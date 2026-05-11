@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario13.8aa6c132505f","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario13","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH 123.4 AS r MATCH ()-[r]-() RETURN r
+--- expected
+Binder exception: r has data type DOUBLE but REL was expected.

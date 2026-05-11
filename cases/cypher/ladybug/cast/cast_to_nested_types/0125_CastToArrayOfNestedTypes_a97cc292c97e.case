@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV load-from-test","expected_kind":"rows","id":"cypher.ladybug.cast.cast_to_nested_types.CastToArrayOfNestedTypes.a97cc292c97e","language":"cypher","ordered":true,"source":"cast/cast_to_nested_types.test","source_case":"CastToUnionAllTypes","source_log":"CastToArrayOfNestedTypes","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN CAST(CAST(127.3, "DECIMAL(5, 2)") AS UNION(a DECIMAL(5, 2)))
+--- expected
+127.30

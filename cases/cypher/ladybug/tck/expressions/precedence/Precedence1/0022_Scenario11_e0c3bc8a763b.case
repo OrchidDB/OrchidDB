@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.precedence.Precedence1.Scenario11.e0c3bc8a763b","language":"cypher","ordered":true,"source":"tck/expressions/precedence/Precedence1.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN False = True IN [True, False] AS a, False = (True IN [True, False]) AS b, (False = True) IN [True, False] AS c
+--- expected
+False|False|True

@@ -1,0 +1,12 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.array.ArrayDistance.deedc69559e6","language":"cypher","ordered":true,"source":"function/array.test","source_case":"ArrayValue","source_log":"ArrayDistance","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person)-[e:meets]->(p1:person) return round(ARRAY_DISTANCE(e.location, array_value(to_float(3.4), to_float(2.7))),2)
+--- expected
+1.350000
+1.600000
+1.620000
+2.530000
+4.500000
+5.750000
+6.410000

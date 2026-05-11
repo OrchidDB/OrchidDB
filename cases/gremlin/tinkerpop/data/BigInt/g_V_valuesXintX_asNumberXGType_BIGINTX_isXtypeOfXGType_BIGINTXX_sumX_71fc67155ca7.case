@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.data.BigInt.g_V_valuesXintX_asNumberXGType_BIGINTX_isXtypeOfXGType_BIGINTXX_sumX.71fc67155ca7","language":"gremlin","ordered":false,"source":"data/BigInt.feature","source_case":"g_V_valuesXintX_asNumberXGType_BIGINTX_isXtypeOfXGType_BIGINTXX_sumX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("int").asNumber(GType.BIGINT).is(P.typeOf(GType.BIGINT)).sum()
+--- graph_initializer
+g.addV("data").property("int", 10).
+  addV("data").property("int", 20).
+  addV("data").property("int", 30)
+--- expected
+d[60].n

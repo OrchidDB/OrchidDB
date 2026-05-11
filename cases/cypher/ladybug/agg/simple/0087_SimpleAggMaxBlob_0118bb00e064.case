@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.simple.SimpleAggMaxBlob.0118bb00e064","language":"cypher","ordered":true,"source":"agg/simple.test","source_case":"AggSimple","source_log":"SimpleAggMaxBlob","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:movies) RETURN MAX(m.content)
+--- expected
+\xAB\xCD

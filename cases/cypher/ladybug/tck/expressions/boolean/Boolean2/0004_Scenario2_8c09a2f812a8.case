@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean2.Scenario2.8c09a2f812a8","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean2.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN true OR true OR true AS ttt, true OR true OR false AS ttf, true OR true OR null AS ttn, true OR false OR true AS tft, true OR false OR false AS tff, true OR false OR null AS tfn, true OR null OR true AS tnt, true OR null OR false AS tnf, true OR null OR null AS tnn, false OR true OR true AS ftt, false OR true OR false AS ftf, false OR true OR null AS ftn, false OR false OR true AS fft, false OR false OR false AS fff, false OR false OR null AS ffn, false OR null OR true AS fnt, false OR null OR false AS fnf, false OR null OR null AS fnn, null OR true OR true AS ntt, null OR true OR false AS ntf, null OR true OR null AS ntn, null OR false OR true AS nft, null OR false OR false AS nff, null OR false OR null AS nfn, null OR null OR true AS nnt, null OR null OR false AS nnf, null OR null OR null AS nnn
+--- expected
+True|True|True|True|True|True|True|True|True|True|True|True|True|False||True|||True|True|True|True|||True||

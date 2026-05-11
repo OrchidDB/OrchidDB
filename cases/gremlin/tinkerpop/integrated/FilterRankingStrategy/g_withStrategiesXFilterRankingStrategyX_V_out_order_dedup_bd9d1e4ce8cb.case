@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.FilterRankingStrategy.g_withStrategiesXFilterRankingStrategyX_V_out_order_dedup.bd9d1e4ce8cb","language":"gremlin","ordered":false,"source":"integrated/FilterRankingStrategy.feature","source_case":"g_withStrategiesXFilterRankingStrategyX_V_out_order_dedup","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.withStrategies(FilterRankingStrategy).V().out().order().dedup()
+--- expected
+v[vadas]
+v[lop]
+v[josh]
+v[ripple]

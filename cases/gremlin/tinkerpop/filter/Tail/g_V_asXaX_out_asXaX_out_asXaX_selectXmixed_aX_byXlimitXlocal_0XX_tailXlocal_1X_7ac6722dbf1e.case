@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Tail.g_V_asXaX_out_asXaX_out_asXaX_selectXmixed_aX_byXlimitXlocal_0XX_tailXlocal_1X.7ac6722dbf1e","language":"gremlin","ordered":false,"source":"filter/Tail.feature","source_case":"g_V_asXaX_out_asXaX_out_asXaX_selectXmixed_aX_byXlimitXlocal_0XX_tailXlocal_1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().as("a").out().as("a").out().as("a").select(Pop.mixed, "a").by(__.limit(Scope.local, 0)).tail(Scope.local, 1)
+--- expected
+

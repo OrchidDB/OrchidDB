@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.count_if.FloatTest.13610d33b808","language":"cypher","ordered":true,"source":"function/utility/count_if.test","source_case":"ConstantTests","source_log":"FloatTest","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN count_if(cast(1, "FLOAT"))
+--- expected
+1

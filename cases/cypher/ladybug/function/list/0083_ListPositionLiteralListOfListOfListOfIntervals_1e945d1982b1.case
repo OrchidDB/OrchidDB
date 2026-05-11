@@ -1,0 +1,13 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListPositionLiteralListOfListOfListOfIntervals.1e945d1982b1","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListPositionLiteralListOfListOfListOfIntervals","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN array_indexof([[[7,4],[8,8],[9]]], a.courseScoresPerTerm)
+--- expected
+0
+0
+0
+1
+0
+0
+0
+0

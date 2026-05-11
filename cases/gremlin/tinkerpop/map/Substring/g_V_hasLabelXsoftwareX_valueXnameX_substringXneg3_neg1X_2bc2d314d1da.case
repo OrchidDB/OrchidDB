@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Substring.g_V_hasLabelXsoftwareX_valueXnameX_substringXneg3_neg1X.2bc2d314d1da","language":"gremlin","ordered":false,"source":"map/Substring.feature","source_case":"g_V_hasLabelXsoftwareX_valueXnameX_substringXneg3_neg1X","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").values("name").substring(-3, -1)
+--- expected
+lo
+pl

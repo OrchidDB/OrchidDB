@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.skip_limit.KnowsTwoHopLimitTest.a60166f9f8b7","language":"cypher","ordered":true,"source":"projection/skip_limit.test","source_case":"ProjectionSkipLimit","source_log":"KnowsTwoHopLimitTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(:person)-[:knows]->(b:person) WHERE a.age=35 RETURN b.fName AS k ORDER BY k LIMIT 1
+--- expected
+Alice

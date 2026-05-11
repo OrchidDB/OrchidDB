@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.exceptions.types.interval.MissingTheNumberBeforeTheSpecifierString.43bfb430253b","language":"cypher","ordered":true,"source":"exceptions/types/interval.test","source_case":"CastStrToIntervalError","source_log":"MissingTheNumberBeforeTheSpecifierString","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) return interval("20 years 30 months 20 days minutes")
+--- expected
+Conversion exception: Error occurred during parsing interval. Given: "20 years 30 months 20 days minutes".

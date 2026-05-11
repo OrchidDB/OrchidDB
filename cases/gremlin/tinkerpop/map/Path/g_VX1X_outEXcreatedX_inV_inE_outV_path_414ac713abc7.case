@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Path.g_VX1X_outEXcreatedX_inV_inE_outV_path.414ac713abc7","language":"gremlin","ordered":false,"source":"map/Path.feature","source_case":"g_VX1X_outEXcreatedX_inV_inE_outV_path","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).outE("created").inV().inE().outV().path()
+--- expected
+p[v[marko],e[marko-created->lop],v[lop],e[marko-created->lop],v[marko]]
+p[v[marko],e[marko-created->lop],v[lop],e[josh-created->lop],v[josh]]
+p[v[marko],e[marko-created->lop],v[lop],e[peter-created->lop],v[peter]]

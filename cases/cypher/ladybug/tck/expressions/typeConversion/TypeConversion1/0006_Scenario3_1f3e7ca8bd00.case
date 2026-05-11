@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion1.Scenario3.1f3e7ca8bd00","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND ['true', 'false'] AS s RETURN to_Bool(s) AS b
+--- expected
+True
+False

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.recursive_join.semantic_empty.ThreeCycle.cf3237b5b9ec","language":"cypher","ordered":true,"source":"recursive_join/semantic_empty.test","source_case":"ThreeCycle","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a)-[e*2..2]->(b) WHERE a.ID = 0 RETURN COUNT(*)
+--- expected
+1

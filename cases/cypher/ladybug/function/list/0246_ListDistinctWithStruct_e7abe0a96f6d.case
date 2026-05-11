@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListDistinctWithStruct.e7abe0a96f6d","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListDistinctWithStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (o:organisation) RETURN list_distinct([o.state, o.state, {'revenue': cast(138, 'int16'), location: ["'toronto'", "'montr,eal'"], stock: {price: [96, 56], volume: 1000}}])
+--- expected
+[{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}]
+[{revenue: 152, location: ["vanco,uver north area"], stock: {price: [15,78,671], volume: 432}},{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}]
+[{revenue: 558, location: ['very long city name','new york'], stock: {price: [22], volume: 99}},{revenue: 138, location: ['toronto','montr,eal'], stock: {price: [96,56], volume: 1000}}]

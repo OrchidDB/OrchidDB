@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.comparison.INT64GreaterEqual.9733b00aa5e7","language":"cypher","ordered":true,"source":"function/comparison.test","source_case":"FunctionComparison","source_log":"INT64GreaterEqual","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.ID >= 5 RETURN p.fName
+--- expected
+Dan
+Elizabeth
+Farooq
+Greg
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff

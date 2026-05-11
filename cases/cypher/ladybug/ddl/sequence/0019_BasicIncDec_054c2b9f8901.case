@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.BasicIncDec.054c2b9f8901","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"BasicIncDec","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN nextval('inc')
+--- expected
+1

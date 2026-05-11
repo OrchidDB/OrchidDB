@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Index.g_V_hasLabelXsoftwareX_name_fold_orderXlocalX_index_unfold_order_byXtailXlocal_1XX.1e10326490bc","language":"gremlin","ordered":false,"source":"map/Index.feature","source_case":"g_V_hasLabelXsoftwareX_name_fold_orderXlocalX_index_unfold_order_byXtailXlocal_1XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("software").values("name").fold().order(Scope.local).index().unfold().order().by(__.tail(Scope.local, 1))
+--- expected
+l[lop,d[0].i]
+l[ripple,d[1].i]

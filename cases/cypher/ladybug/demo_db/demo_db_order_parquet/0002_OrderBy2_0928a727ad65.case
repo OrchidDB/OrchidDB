@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"PARQUET demo-db/parquet","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_order_parquet.OrderBy2.0928a727ad65","language":"cypher","ordered":true,"source":"demo_db/demo_db_order_parquet.test","source_case":"DemoDBOrderedTestFromParquet","source_log":"OrderBy2","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (u:User)-[:LivesIn]->(c:City) WHERE c.name = "Waterloo" RETURN u.name, u.age ORDER BY u.age DESC
+--- expected
+Karissa|40
+Adam|30

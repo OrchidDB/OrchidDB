@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.cast.DocListExample.a2db09b780a0","language":"cypher","ordered":true,"source":"function/cast.test","source_case":"DECIMALCAST","source_log":"DocListExample","status":"imported","suite":"ladybug","version":1}
+--- query
+UNWIND [999.99] AS A WITH CAST(A, 'DECIMAL') AS B RETURN CAST(B, 'DECIMAL(5, 2)')
+--- expected
+999.99

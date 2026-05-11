@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Union.g_VX_hasLabelXpersonX_unionX_whereX_out_count_isXgtX2XXX_valuesXageX_notX_whereX_bothE_count_isXgt2XXX_valusXnameXX.6d1ab6e42615","language":"gremlin","ordered":false,"source":"branch/Union.feature","source_case":"g_VX_hasLabelXpersonX_unionX_whereX_out_count_isXgtX2XXX_valuesXageX_notX_whereX_bothE_count_isXgt2XXX_valusXnameXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().hasLabel("person").union(where(outE().count().is(P.gt(2))).values("age"),
+__.not(where(outE().count().is(P.gt(2)))).values("name"))
+--- expected
+d[29].i
+vadas
+josh
+peter

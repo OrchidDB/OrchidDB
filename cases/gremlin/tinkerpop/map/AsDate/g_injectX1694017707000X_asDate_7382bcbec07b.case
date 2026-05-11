@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsDate.g_injectX1694017707000X_asDate.7382bcbec07b","language":"gremlin","ordered":false,"source":"map/AsDate.feature","source_case":"g_injectX1694017707000X_asDate","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject(1694017707000).asDate()
+--- expected
+dt[2023-09-06T16:28:27Z]

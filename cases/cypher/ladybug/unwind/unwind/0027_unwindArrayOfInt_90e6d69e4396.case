@@ -1,0 +1,37 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.unwind.unwind.unwindArrayOfInt.90e6d69e4396","language":"cypher","ordered":true,"source":"unwind/unwind.test","source_case":"Unwind","source_log":"unwindArrayOfInt","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) UNWIND a.grades as x RETURN x
+--- expected
+96
+54
+86
+92
+98
+42
+93
+88
+91
+75
+21
+95
+76
+88
+99
+89
+96
+59
+65
+88
+80
+78
+34
+83
+43
+83
+67
+43
+77
+64
+100
+54

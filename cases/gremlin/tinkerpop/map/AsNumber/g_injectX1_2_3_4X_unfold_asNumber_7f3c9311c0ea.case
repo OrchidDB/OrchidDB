@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"empty","expected_kind":"rows","id":"gremlin.tinkerpop.map.AsNumber.g_injectX1_2_3_4X_unfold_asNumber.7f3c9311c0ea","language":"gremlin","ordered":false,"source":"map/AsNumber.feature","source_case":"g_injectX1_2_3_4X_unfold_asNumber","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.inject([1, 2, 3, 4]).unfold().asNumber()
+--- expected
+d[1].i
+d[2].i
+d[3].i
+d[4].i

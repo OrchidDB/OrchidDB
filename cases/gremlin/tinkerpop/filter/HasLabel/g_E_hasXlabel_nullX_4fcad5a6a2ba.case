@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.HasLabel.g_E_hasXlabel_nullX.4fcad5a6a2ba","language":"gremlin","ordered":false,"source":"filter/HasLabel.feature","source_case":"g_E_hasXlabel_nullX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.E().has(T.label, null)
+--- expected
+

@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"NPY npy-1d","expected_kind":"rows","id":"cypher.ladybug.npy_1d.match.count.cfc1e82baa59","language":"cypher","ordered":true,"source":"npy_1d/match.test","source_case":"MatchNpy_1d","source_log":"count","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n:npytable) RETURN COUNT(*)
+--- expected
+3

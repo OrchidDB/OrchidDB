@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.four_five_hop.FourHopKnowsFilterTest.aef8f76828a7","language":"cypher","ordered":true,"source":"filter/four_five_hop.test","source_case":"FourHopFilter","source_log":"FourHopKnowsFilterTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person)-[e2:knows]->(c:person)-[e3:knows]->(d:person)-[e4:knows]->(e:person) WHERE a.fName = 'Alice' OR e.fName = 'Alice' RETURN COUNT(*)
+--- expected
+141

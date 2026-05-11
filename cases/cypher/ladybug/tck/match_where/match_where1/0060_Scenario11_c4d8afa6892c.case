@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario11.c4d8afa6892c","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (n)-[r]->(x) WHERE LABEL(r) = 'KNOWS' OR LABEL(r) = 'HATES' RETURN r
+--- expected
+(0:0)-{_LABEL: KNOWS, _ID: 3:0}->(1:0)
+(0:0)-{_LABEL: HATES, _ID: 5:0}->(2:0)

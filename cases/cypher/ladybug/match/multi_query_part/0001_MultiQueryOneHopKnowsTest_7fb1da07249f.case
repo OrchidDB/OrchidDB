@@ -1,0 +1,19 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.match.multi_query_part.MultiQueryOneHopKnowsTest.7fb1da07249f","language":"cypher","ordered":true,"source":"match/multi_query_part.test","source_case":"MatchMultiQuery","source_log":"MultiQueryOneHopKnowsTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WITH b.age AS m RETURN m
+--- expected
+20
+20
+20
+25
+30
+30
+30
+35
+35
+35
+40
+45
+45
+45

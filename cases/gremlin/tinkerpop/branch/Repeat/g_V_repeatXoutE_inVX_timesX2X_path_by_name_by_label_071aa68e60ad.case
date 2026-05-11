@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Repeat.g_V_repeatXoutE_inVX_timesX2X_path_by_name_by_label.071aa68e60ad","language":"gremlin","ordered":false,"source":"branch/Repeat.feature","source_case":"g_V_repeatXoutE_inVX_timesX2X_path_by_name_by_label","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().repeat(__.outE().inV()).times(2).path().by("name").by(T.label)
+--- expected
+p[marko,knows,josh,created,lop]
+p[marko,knows,josh,created,ripple]

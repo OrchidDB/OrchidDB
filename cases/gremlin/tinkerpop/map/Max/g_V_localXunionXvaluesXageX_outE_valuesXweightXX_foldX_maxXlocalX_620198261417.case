@@ -1,0 +1,9 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Max.g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_maxXlocalX.620198261417","language":"gremlin","ordered":false,"source":"map/Max.feature","source_case":"g_V_localXunionXvaluesXageX_outE_valuesXweightXX_foldX_maxXlocalX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(union(values("age"), outE().values("weight")).fold()).max(local)
+--- expected
+d[29].d
+d[27].i
+d[32].d
+d[35].d

@@ -1,0 +1,11 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.branch.Local.g_V_localXmatchXproject__created_person__person_name_nameX_selectXname_projectX_by_byXnameX.da8fe27fe6fd","language":"gremlin","ordered":false,"source":"branch/Local.feature","source_case":"g_V_localXmatchXproject__created_person__person_name_nameX_selectXname_projectX_by_byXnameX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().local(__.match(
+__.as("project").in("created").as("person"),
+__.as("person").values("name").as("name"))).select("name", "project").by().by("name")
+--- expected
+m[{"name":"marko","project":"lop"}]
+m[{"name":"josh","project":"lop"}]
+m[{"name":"peter","project":"lop"}]
+m[{"name":"josh","project":"ripple"}]

@@ -1,0 +1,21 @@
+--- metadata
+{"dataset":"grateful","expected_kind":"rows","id":"gremlin.tinkerpop.integrated.Recommendation.g_V_classic_recommendation.4c26fd959e95","language":"gremlin","ordered":false,"source":"integrated/Recommendation.feature","source_case":"g_V_classic_recommendation","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().has("name", "DARK STAR").as("a").out("followedBy").aggregate("stash").
+in("followedBy").where(P.neq("a").and(P.not(P.within("stash")))).
+groupCount().
+unfold().
+project("x", "y", "z").
+by(__.select(Column.keys).values("name")).
+by(__.select(Column.keys).values("performances")).
+by(__.select(Column.values)).
+order().
+by(__.select("z"), Order.desc).
+by(__.select("y"), Order.asc).
+limit(5).local(aggregate("m")).select("x")
+--- expected
+LET IT GROW
+UNCLE JOHNS BAND
+I KNOW YOU RIDER
+SHIP OF FOOLS
+GOOD LOVING

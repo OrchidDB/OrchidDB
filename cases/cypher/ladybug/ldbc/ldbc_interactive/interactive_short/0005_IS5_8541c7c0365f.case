@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_short.IS5.8541c7c0365f","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_short.test","source_case":"LDBCInteractiveShort","source_log":"IS5","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (m:Post:Comment {id: 1030792151050})-[:Post_hasCreator|:Comment_hasCreator]->(p:Person) RETURN p.id AS personId, p.firstName AS firstName, p.lastName AS lastName
+--- expected
+2199023256077|Ibrahim Bare|Ousmane

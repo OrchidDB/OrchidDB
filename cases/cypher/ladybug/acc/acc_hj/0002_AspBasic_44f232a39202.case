@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.acc.acc_hj.AspBasic.44f232a39202","language":"cypher","ordered":true,"source":"acc/acc_hj.test","source_case":"Acc","source_log":"AspBasic","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e1:knows]->(b:person) WHERE a.age > 35 RETURN b.fName
+--- expected
+Alice
+Bob
+Dan

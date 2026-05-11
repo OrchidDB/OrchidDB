@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Count.g_V_out_count.5ed9e87e0c4b","language":"gremlin","ordered":true,"source":"map/Count.feature","source_case":"g_V_out_count","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().out().count()
+--- expected
+d[6].l

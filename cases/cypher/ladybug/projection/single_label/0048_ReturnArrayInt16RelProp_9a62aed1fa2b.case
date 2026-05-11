@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.projection.single_label.ReturnArrayInt16RelProp.9a62aed1fa2b","language":"cypher","ordered":true,"source":"projection/single_label.test","source_case":"ProjectionSingleLabel","source_log":"ReturnArrayInt16RelProp","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[e:marries]->(b:person) RETURN e.address
+--- expected
+[4,5]
+[2,5]
+[3,9]

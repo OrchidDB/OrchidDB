@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_node.delete_node.DeleteLocalNode.868cca465602","language":"cypher","ordered":true,"source":"transaction/delete_node/delete_node.test","source_case":"DeleteLocalNode","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (p:person) WHERE p.fName='Dave' RETURN ID(p), p.fName
+--- expected
+0:3|Dave

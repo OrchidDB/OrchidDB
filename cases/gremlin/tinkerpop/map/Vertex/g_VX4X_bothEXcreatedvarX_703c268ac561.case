@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Vertex.g_VX4X_bothEXcreatedvarX.703c268ac561","language":"gremlin","ordered":false,"source":"map/Vertex.feature","source_case":"g_VX4X_bothEXcreatedvarX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid4).bothE(xx1)
+--- expected
+e[josh-created->lop]
+e[josh-created->ripple]

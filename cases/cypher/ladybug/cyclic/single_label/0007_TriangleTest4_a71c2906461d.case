@@ -1,0 +1,7 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cyclic.single_label.TriangleTest4.a71c2906461d","language":"cypher","ordered":true,"source":"cyclic/single_label.test","source_case":"CyclicSingleLabel","source_log":"TriangleTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person)-[:knows]->(c:person), (a)-[:knows]->(c) WHERE a.ID = b.ID + c.ID  RETURN a.ID,b.ID,c.ID
+--- expected
+5|3|2
+5|2|3

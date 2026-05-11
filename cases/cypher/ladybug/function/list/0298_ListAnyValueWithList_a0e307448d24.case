@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.list.ListAnyValueWithList.a0e307448d24","language":"cypher","ordered":true,"source":"function/list.test","source_case":"FunctionList","source_log":"ListAnyValueWithList","status":"imported","suite":"ladybug","version":1}
+--- query
+Return list_any_value([NULL, [1,2,3], [3,4,5]])
+--- expected
+[1,2,3]

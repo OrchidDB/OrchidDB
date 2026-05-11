@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.node_empty.CreateNodeWithNestedType.1a75ba6ec566","language":"cypher","ordered":true,"source":"transaction/recovery/node_empty.test","source_case":"CreateNodeWithNestedType","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) RETURN a.*
+--- expected
+0|[10,5]|[Aida]|[[10,8],[6,7,8]]|[96,54,86,92]|1.731000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+2|[12,8]|[Bobby]|[[8,9],[9,10]]|[98,42,93,88]|0.990000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12
+3|[4,5]|[Carmen,Fred]|[[8,10]]|[91,75,21,95]|1.000000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13
+5|[1,9]|[Wolfeschlegelstein,Daniel]|[[7,4],[8,8],[9]]|[76,88,99,89]|1.300000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14
+7|[2]|[Ein]|[[6],[7],[8]]|[96,59,65,88]|1.463000|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15

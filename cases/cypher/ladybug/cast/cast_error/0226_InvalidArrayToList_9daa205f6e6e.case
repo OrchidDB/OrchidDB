@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.InvalidArrayToList.9daa205f6e6e","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastStringToNestedError","source_log":"InvalidArrayToList","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast("[1, -1]", "INT64[2]"), "UINT8[]")
+--- expected
+Overflow exception: Value -1 is not within UINT8 range

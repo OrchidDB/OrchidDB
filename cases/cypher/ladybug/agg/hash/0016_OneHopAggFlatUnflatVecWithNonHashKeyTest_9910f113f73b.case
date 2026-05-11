@@ -1,0 +1,14 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.agg.hash.OneHopAggFlatUnflatVecWithNonHashKeyTest.9910f113f73b","language":"cypher","ordered":true,"source":"agg/hash.test","source_case":"AggHash","source_log":"OneHopAggFlatUnflatVecWithNonHashKeyTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person)-[:knows]->(b:person) RETURN a.ID, a.gender, b.gender, sum(b.age)
+--- expected
+0|1|1|45
+0|1|2|50
+2|2|1|80
+2|2|2|20
+3|1|1|35
+3|1|2|50
+5|2|1|80
+5|2|2|30
+7|1|2|65

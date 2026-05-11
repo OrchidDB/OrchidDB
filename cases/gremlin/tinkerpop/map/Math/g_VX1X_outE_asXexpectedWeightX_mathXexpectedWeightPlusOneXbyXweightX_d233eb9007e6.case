@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Math.g_VX1X_outE_asXexpectedWeightX_mathXexpectedWeightPlusOneXbyXweightX.d233eb9007e6","language":"gremlin","ordered":false,"source":"map/Math.feature","source_case":"g_VX1X_outE_asXexpectedWeightX_mathXexpectedWeightPlusOneXbyXweightX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V(vid1).outE().as("expectedWeight").math("expectedWeight + 1").by("weight")
+--- expected
+d[1.4].d
+d[1.5].d
+d[2.0].d

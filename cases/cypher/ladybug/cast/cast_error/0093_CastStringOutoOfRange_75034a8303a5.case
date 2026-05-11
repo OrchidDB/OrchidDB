@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.CastStringOutoOfRange.75034a8303a5","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"CastStringOutoOfRange","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN TO_UINT128("340282366920938463463374607431768211456")
+--- expected
+Conversion exception: Cast failed. Could not convert "340282366920938463463374607431768211456" to UINT128.

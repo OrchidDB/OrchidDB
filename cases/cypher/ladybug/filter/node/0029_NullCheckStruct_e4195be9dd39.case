@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.filter.node.NullCheckStruct.e4195be9dd39","language":"cypher","ordered":true,"source":"filter/node.test","source_case":"ZoneMapUpdateThenQueryWithoutCheckpoint","source_log":"NullCheckStruct","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) WHERE a.state IS NOT NULL RETURN COUNT(*)
+--- expected
+2

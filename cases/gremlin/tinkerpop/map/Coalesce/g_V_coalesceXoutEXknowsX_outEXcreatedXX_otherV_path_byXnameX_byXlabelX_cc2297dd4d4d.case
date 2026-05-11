@@ -1,0 +1,10 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.map.Coalesce.g_V_coalesceXoutEXknowsX_outEXcreatedXX_otherV_path_byXnameX_byXlabelX.cc2297dd4d4d","language":"gremlin","ordered":false,"source":"map/Coalesce.feature","source_case":"g_V_coalesceXoutEXknowsX_outEXcreatedXX_otherV_path_byXnameX_byXlabelX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().coalesce(__.outE("knows"), __.outE("created")).otherV().path().by("name").by(T.label)
+--- expected
+p[marko,knows,vadas]
+p[marko,knows,josh]
+p[josh,created,ripple]
+p[josh,created,lop]
+p[peter,created,lop]

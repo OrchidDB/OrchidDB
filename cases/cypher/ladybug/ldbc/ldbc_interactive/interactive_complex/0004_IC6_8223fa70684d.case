@@ -1,0 +1,15 @@
+--- metadata
+{"dataset":"CSV ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ldbc.ldbc_interactive.interactive_complex.IC6.8223fa70684d","language":"cypher","ordered":true,"source":"ldbc/ldbc_interactive/interactive_complex.test","source_case":"LDBCInteractiveComplex","source_log":"IC6","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (knownTag:Tag { name: "Carl_Gustaf_Emil_Mannerheim" }) WITH knownTag.id as knownTagId MATCH (person:Person { id: 28587302322524 })-[:knows*1..2]-(friend) WHERE NOT person.id=friend.id WITH knownTagId, collect(distinct friend.id) as friends UNWIND friends as f MATCH (:Person {id: f})<-[:Post_hasCreator]-(post:Post), (post)-[:Post_hasTag]->(t:Tag{id: knownTagId}), (post)-[:Post_hasTag]->(tag:Tag) WHERE NOT t.id = tag.id WITH tag.name as tagName, count(post) as postCount RETURN tagName, postCount ORDER BY postCount DESC, tagName ASC LIMIT 10
+--- expected
+Another_One_Rides_the_Bus|1
+Assumption_of_Mary|1
+Back_Door_Man|1
+Classical_Gas|1
+Colombia|1
+Dancing_Queen|1
+David_Cameron|1
+Edgar_Allan_Poe|1
+Elvis_Costello|1
+Euripides|1

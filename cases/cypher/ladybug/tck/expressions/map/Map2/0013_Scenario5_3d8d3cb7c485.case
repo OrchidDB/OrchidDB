@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.map.Map2.Scenario5.3d8d3cb7c485","language":"cypher","ordered":true,"source":"tck/expressions/map/Map2.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+--- query
+WITH {name: 'Mats', Name: 'Pontus'} AS map RETURN map['nAMe'] AS result
+--- expected
+null

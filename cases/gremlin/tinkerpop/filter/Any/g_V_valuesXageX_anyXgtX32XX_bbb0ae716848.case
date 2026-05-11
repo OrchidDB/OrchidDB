@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.filter.Any.g_V_valuesXageX_anyXgtX32XX.bbb0ae716848","language":"gremlin","ordered":false,"source":"filter/Any.feature","source_case":"g_V_valuesXageX_anyXgtX32XX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").any(P.gt(32))
+--- expected
+

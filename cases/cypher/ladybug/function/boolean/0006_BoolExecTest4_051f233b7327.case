@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.boolean.BoolExecTest4.051f233b7327","language":"cypher","ordered":true,"source":"function/boolean.test","source_case":"FunctionBoolean","source_log":"BoolExecTest4","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:person) WHERE a.fName = 'Alice' RETURN a.isStudent and a.isWorker
+--- expected
+False

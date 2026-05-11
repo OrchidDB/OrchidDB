@@ -1,0 +1,8 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.function.arithmetic.atan2FunctionOnDoubleDoubleTest.df6dfabdf421","language":"cypher","ordered":true,"source":"function/arithmetic.test","source_case":"FunctionArithmetic","source_log":"atan2FunctionOnDoubleDoubleTest","status":"imported","suite":"ladybug","version":1}
+--- query
+MATCH (a:organisation) RETURN atan2(a.mark, a.mark)
+--- expected
+0.785398
+0.785398
+0.785398

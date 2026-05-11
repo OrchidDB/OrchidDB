@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"rows","id":"gremlin.tinkerpop.sideEffect.Group.g_V_group_byXnameX_byXageX.2c49a056b7e2","language":"gremlin","ordered":false,"source":"sideEffect/Group.feature","source_case":"g_V_group_byXnameX_byXageX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().group().by("name").by("age")
+--- expected
+m[{"ripple":[], "peter":"l[d[35].i]", "vadas":"l[d[27].i]", "josh": "l[d[32].i]", "lop":[], "marko":"l[d[29].i]"}]

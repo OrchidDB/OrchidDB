@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"modern","expected_kind":"empty","id":"gremlin.tinkerpop.data.Float.g_V_valuesXageX_isXtypeOfXGType_FLOATXX.239a93fffd65","language":"gremlin","ordered":false,"source":"data/Float.feature","source_case":"g_V_valuesXageX_isXtypeOfXGType_FLOATXX","status":"imported","suite":"tinkerpop","version":1}
+--- query
+g.V().values("age").is(P.typeOf(GType.FLOAT))
+--- expected
+

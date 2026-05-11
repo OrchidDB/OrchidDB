@@ -1,0 +1,6 @@
+--- metadata
+{"dataset":"CSV tinysnb","expected_kind":"rows","id":"cypher.ladybug.cast.cast_error.UINT128CastToError.999c96e80baa","language":"cypher","ordered":true,"source":"cast/cast_error.test","source_case":"CastError","source_log":"UINT128CastToError","status":"imported","suite":"ladybug","version":1}
+--- query
+RETURN cast(cast(314159265358979323846264338, "uint128"), "uint64")
+--- expected
+Overflow exception: Value 314159265358979323846264338 is not within UINT64 range
