@@ -328,9 +328,26 @@ pub(crate) fn cast_to_bool(v: &Value) -> Value {
 pub(crate) fn cast_to_date(v: &Value) -> Value {
     match v {
         Value::DateTime(_) => v.clone(),
-        Value::String(s) => parse_datetime_string(s)
-            .map(Value::DateTime)
-            .unwrap_or(Value::Null),
+        Value::String(s) => {
+            // `date("1900-1-1")` / `date("1900-01-01")` arrives without a
+            // time component; lift it to a midnight UTC datetime so
+            // equality comparisons against a stored DATE work. Falls back
+            // to the normalized date string if no time fits the parser.
+            if let Some(parsed) = parse_datetime_string(s) {
+                return Value::DateTime(parsed);
+            }
+            let trimmed = s.trim();
+            let parts: Vec<&str> = trimmed.split('-').collect();
+            if parts.len() == 3
+                && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
+            {
+                return Value::DateTime(format!(
+                    "{:0>4}-{:0>2}-{:0>2}",
+                    parts[0], parts[1], parts[2]
+                ));
+            }
+            Value::Null
+        }
         Value::Byte(n) => epoch_millis_to_datetime(*n as i64)
             .map(Value::DateTime)
             .unwrap_or(Value::Null),

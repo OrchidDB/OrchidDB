@@ -165,6 +165,11 @@ impl Value {
             }
             (Self::String(a), Self::String(b)) => a == b,
             (Self::DateTime(a), Self::DateTime(b)) => a == b,
+            // The Cypher loader stores DATE / TIMESTAMP columns as
+            // String values in Arrow (no native date type yet); cross-
+            // compare DateTime literals against those String columns so
+            // `a.birthdate = date('1900-1-1')` resolves correctly.
+            (Self::DateTime(a), Self::String(b)) | (Self::String(b), Self::DateTime(a)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Node { label: la, id: ia }, Self::Node { label: lb, id: ib }) => {
                 la == lb && ia == ib
