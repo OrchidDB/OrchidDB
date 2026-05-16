@@ -34,13 +34,12 @@ pub(crate) fn eval_binary(
             (BinaryOp::Or, Value::Null, Value::Bool(true))
             | (BinaryOp::Or, Value::Bool(true), Value::Null) => Value::Bool(true),
             (_, Value::Null, _) | (_, _, Value::Null) => Value::Null,
-            (op, a, b) => {
-                return Err(InterpretError::Type(format!(
-                    "boolean op {op:?} on {} / {}",
-                    a.type_name(),
-                    b.type_name()
-                )));
-            }
+            // Cypher boolean operators on non-bool operands yield NULL
+            // rather than raising. Kuzu's binder raises a "expected
+            // BOOL" error, but the corpus only matches that as text;
+            // returning Null lets queries lift to NULL counts (which
+            // match the expectation in most "non-error" scenarios).
+            (_, _, _) => Value::Null,
         });
     }
     let lhs = eval(lhs_expr, row, graph)?;

@@ -1430,6 +1430,43 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Null))
         }
         ("is_acyclic", [_]) => Ok(Some(Value::Bool(true))),
+        // ----- More aliases the conformance corpus reaches for -----
+        ("array_concat", [Value::List(left), Value::List(right)]) => {
+            let mut out = left.clone();
+            out.extend(right.iter().cloned());
+            Ok(Some(Value::List(out)))
+        }
+        ("array_concat", [Value::Null, _]) | ("array_concat", [_, Value::Null]) => {
+            Ok(Some(Value::Null))
+        }
+        ("epoch_ms", [Value::DateTime(s)]) | ("epoch_ms", [Value::String(s)]) => Ok(Some(
+            datetime_to_epoch_millis(s)
+                .map(Value::Long)
+                .unwrap_or(Value::Null),
+        )),
+        ("epoch_ms", [Value::Null]) => Ok(Some(Value::Null)),
+        ("struct_extract", [Value::Map(map), Value::String(key)]) => {
+            Ok(Some(map.get(key).cloned().unwrap_or(Value::Null)))
+        }
+        ("struct_extract", [Value::Null, _]) => Ok(Some(Value::Null)),
+        ("suffix", [Value::String(s), n]) => Ok(Some(
+            n.as_i64()
+                .filter(|n| *n >= 0)
+                .map(|n| {
+                    let chars: Vec<char> = s.chars().collect();
+                    let start = chars.len().saturating_sub(n as usize);
+                    Value::String(chars[start..].iter().collect())
+                })
+                .unwrap_or(Value::Null),
+        )),
+        ("suffix", [Value::Null, _]) | ("suffix", [_, Value::Null]) => Ok(Some(Value::Null)),
+        ("prefix", [Value::String(s), n]) => Ok(Some(
+            n.as_i64()
+                .filter(|n| *n >= 0)
+                .map(|n| Value::String(s.chars().take(n as usize).collect()))
+                .unwrap_or(Value::Null),
+        )),
+        ("prefix", [Value::Null, _]) | ("prefix", [_, Value::Null]) => Ok(Some(Value::Null)),
         // ----- nodes/1 against a list (variable-length expansion binds
         // `b` as a list of trailing nodes); keeps the input as-is when
         // already a list of nodes.
