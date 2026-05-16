@@ -1535,7 +1535,30 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("gen_random_uuid", []) => Ok(Some(Value::String(
             "00000000-0000-0000-0000-000000000000".to_string(),
         ))),
-        ("uuid", [v]) => Ok(Some(cast_to_string(v))),
+        ("uuid", [v]) => Ok(Some(match v {
+            Value::String(s) => {
+                // Lower-case and re-hyphenate UUID-shaped input so the
+                // round-trip `UUID("A0EEBC99-...")` lifts to Kuzu's
+                // canonical form.
+                let inner = s.trim().trim_start_matches('{').trim_end_matches('}');
+                let hex: String = inner.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+                if hex.len() == 32 {
+                    let lower = hex.to_ascii_lowercase();
+                    Value::String(format!(
+                        "{}-{}-{}-{}-{}",
+                        &lower[..8],
+                        &lower[8..12],
+                        &lower[12..16],
+                        &lower[16..20],
+                        &lower[20..32]
+                    ))
+                } else {
+                    Value::String(s.clone())
+                }
+            }
+            Value::Null => Value::Null,
+            other => cast_to_string(other),
+        })),
         ("internal_id", [v]) => Ok(Some(match v {
             Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
             _ => Value::Null,
