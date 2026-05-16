@@ -171,8 +171,12 @@ pub(crate) fn cast_to_int(v: &Value) -> Value {
         Value::Short(n) => Value::Int(*n as i64),
         Value::Int(_) => v.clone(),
         Value::Long(n) => Value::Int(*n),
-        Value::Float32(f) => Value::Int(*f as i64),
-        Value::Float(f) => Value::Int(*f as i64),
+        // Kuzu rounds when narrowing a float to an integer (e.g.
+        // `to_int32(1.731)` → 2). Match that with `f.round()` instead
+        // of Rust's default `as i64` truncation so the conformance
+        // cases that exercise CAST<-FLOAT line up.
+        Value::Float32(f) => Value::Int(f.round() as i64),
+        Value::Float(f) => Value::Int(f.round() as i64),
         Value::BigInt(n) => n.to_i64().map(Value::Int).unwrap_or(Value::Null),
         Value::BigDecimal(d) => d.to_i64().map(Value::Int).unwrap_or(Value::Null),
         Value::Bool(true) => Value::Int(1),
@@ -354,8 +358,10 @@ fn numeric_i64(v: &Value) -> Option<i64> {
         Value::Short(n) => Some(*n as i64),
         Value::Int(n) => Some(*n),
         Value::Long(n) => Some(*n),
-        Value::Float32(f) => Some(*f as i64),
-        Value::Float(f) => Some(*f as i64),
+        // Same rounding convention as `cast_to_int` — used by the
+        // narrow-int casters (`cast_to_byte`, `cast_to_short`, `cast_to_long`).
+        Value::Float32(f) => Some(f.round() as i64),
+        Value::Float(f) => Some(f.round() as i64),
         Value::BigInt(n) => n.to_i64(),
         Value::BigDecimal(d) => d.to_i64(),
         Value::Bool(true) => Some(1),

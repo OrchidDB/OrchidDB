@@ -190,15 +190,15 @@ fn format_double(body: &str) -> String {
 }
 
 fn render_float(value: f64) -> String {
-    // Kuzu prints doubles with six trailing decimals (`4.700000`); keep
-    // that for integer-valued floats so the comparator can use direct
-    // string equality, and let non-trivial floats fall back to Rust's
-    // default for "shortest round-trip" formatting.
-    if value.is_finite() && value.fract() == 0.0 {
-        format!("{value:.6}")
-    } else {
-        format!("{value}")
+    // Kuzu always prints doubles with six trailing decimals
+    // (`4.700000`, `1.731000`), even when they have a non-trivial
+    // fractional part; the conformance comparator uses
+    // `normalize_numbers` to fold `1.731000` and `1.731` together so
+    // padding here is safe.
+    if !value.is_finite() {
+        return value.to_string();
     }
+    format!("{value:.6}")
 }
 
 /// Split a tagged body on `delim`, respecting bracket nesting and
