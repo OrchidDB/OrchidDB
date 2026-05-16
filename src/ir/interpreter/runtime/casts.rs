@@ -479,7 +479,19 @@ fn parse_datetime_parts(raw: &str) -> Option<ParsedDateTime> {
         .strip_prefix("dt[")
         .and_then(|s| s.strip_suffix(']'))
         .unwrap_or(raw.trim());
-    let (date, time_zone) = inner.split_once('T')?;
+    // Date-only inputs (`1976-12-23`) lift to midnight UTC so the
+    // comparison side ends up with a fully-specified timestamp instead
+    // of falling out as Null.
+    let (date, time_zone) = if let Some(split) = inner.split_once('T') {
+        split
+    } else if let Some(split) = inner.split_once(' ') {
+        // Kuzu also accepts space-separated timestamp literals
+        // (`1976-12-23 11:21:42`); recognize that here so the
+        // `timestamp(...)` function lowers as expected.
+        split
+    } else {
+        (inner, "00:00:00Z")
+    };
     let mut date_parts = date.split('-');
     let year = date_parts.next()?.parse().ok()?;
     let month = date_parts.next()?.parse().ok()?;
@@ -528,10 +540,16 @@ fn split_time_zone(raw: &str) -> Option<(&str, i32)> {
     if let Some(time) = raw.strip_suffix('Z') {
         return Some((time, 0));
     }
-    let offset_idx = raw
+    // No `Z`, no `+HH:MM` — treat as UTC. Kuzu's `timestamp(...)`
+    // literal does the same (`"1976-12-23 11:21:42"` parses fine).
+    let offset_idx = match raw
         .char_indices()
         .rev()
-        .find_map(|(idx, ch)| (idx > 0 && (ch == '+' || ch == '-')).then_some(idx))?;
+        .find_map(|(idx, ch)| (idx > 0 && (ch == '+' || ch == '-')).then_some(idx))
+    {
+        Some(idx) => idx,
+        None => return Some((raw, 0)),
+    };
     let (time, offset) = raw.split_at(offset_idx);
     let sign = if offset.starts_with('-') { -1 } else { 1 };
     let mut parts = offset[1..].split(':');
