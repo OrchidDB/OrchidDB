@@ -214,8 +214,10 @@ pub(crate) fn cast_to_bigint(v: &Value) -> Value {
         Value::Short(n) => Value::BigInt(BigInt::from(*n)),
         Value::Int(n) => Value::BigInt(BigInt::from(*n)),
         Value::Long(n) => Value::BigInt(BigInt::from(*n)),
-        Value::Float32(f) => Value::BigInt(BigInt::from(*f as i64)),
-        Value::Float(f) => Value::BigInt(BigInt::from(*f as i64)),
+        // Same half-away-from-zero rounding as the narrow casters; Kuzu
+        // applies the same convention to `to_int128(1.7)` → 2.
+        Value::Float32(f) => Value::BigInt(BigInt::from(f.round() as i64)),
+        Value::Float(f) => Value::BigInt(BigInt::from(f.round() as i64)),
         Value::BigDecimal(d) => {
             // Truncate the fractional component, like Java's BigDecimal::toBigInteger.
             let (int, _scale) = d.as_bigint_and_exponent();
