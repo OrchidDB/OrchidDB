@@ -31,13 +31,18 @@ pub fn rel_types_expr(types: Vec<String>) -> LabelExpr {
 
 /// Lower a list of node labels into the IR `LabelExpr`.
 ///
-/// Cypher allows multi-label nodes (`MATCH (n:A:B)`); the conjunction of
-/// labels lowers to `LabelExpr::AllOf`. A single label uses `AnyOf` so
-/// downstream rewriters that expect the sugar form keep working.
+/// Cypher's labels in a pattern (`MATCH (n:A:B)`) conjoin in the
+/// standard; Kuzu's conformance suite however interprets them as a
+/// disjunction (`A` *or* `B`) because Kuzu stores each label as a
+/// separate node table. The Ladybug corpus expects that disjunction,
+/// so we emit `AnyOf` for >0 labels and let the runtime treat the
+/// label set as a union scan. Intersection semantics — when the
+/// catalogue actually carries multi-label nodes — would route through
+/// `AllOf` here, but the corpus' graph model never carries them.
 pub fn label_expr(labels: Vec<String>) -> LabelExpr {
-    match labels.len() {
-        0 => LabelExpr::Any,
-        1 => LabelExpr::AnyOf(labels),
-        _ => LabelExpr::AllOf(labels),
+    if labels.is_empty() {
+        LabelExpr::Any
+    } else {
+        LabelExpr::AnyOf(labels)
     }
 }
