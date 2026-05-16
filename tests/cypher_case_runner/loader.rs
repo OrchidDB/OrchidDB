@@ -70,6 +70,13 @@ struct EdgeDef {
 struct Schema {
     nodes: HashMap<String, NodeDef>,
     edges: HashMap<String, EdgeDef>,
+    /// Order in which `CREATE NODE TABLE` declarations appeared in the
+    /// schema. Kuzu numbers node tables in this order when printing
+    /// node `_ID` values, so the loader has to remember it instead of
+    /// falling back to alphabetic iteration over the HashMap.
+    node_order: Vec<String>,
+    /// Same for `CREATE REL TABLE`.
+    edge_order: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,13 +112,19 @@ pub fn build(directory_name: &str) -> Result<PropertyGraph, DatasetError> {
 fn parse_schema(text: &str) -> Schema {
     let mut nodes: HashMap<String, NodeDef> = HashMap::new();
     let mut edges: HashMap<String, EdgeDef> = HashMap::new();
+    let mut node_order: Vec<String> = Vec::new();
+    let mut edge_order: Vec<String> = Vec::new();
     for stmt in split_statements(text) {
         let lower = stmt.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("create node table") {
             let original_rest = &stmt[(stmt.len() - rest.len())..];
             if let Some((label, body)) = split_table_signature(original_rest) {
                 if let Some(def) = parse_node_body(&label, &body) {
-                    nodes.insert(label.to_ascii_lowercase(), def);
+                    let key = label.to_ascii_lowercase();
+                    if !node_order.contains(&key) {
+                        node_order.push(key.clone());
+                    }
+                    nodes.insert(key, def);
                 }
             }
         } else if let Some(rest) = lower.strip_prefix("create rel table group") {
@@ -121,22 +134,32 @@ fn parse_schema(text: &str) -> Schema {
             // sharing the rel_type name.
             if let Some((label, body)) = split_table_signature(original_rest) {
                 for def in parse_rel_group_body(&label, &body) {
-                    edges.insert(
-                        format!("{}@{}->{}", def.rel_type, def.src_label, def.dst_label),
-                        def,
-                    );
+                    let key = format!("{}@{}->{}", def.rel_type, def.src_label, def.dst_label);
+                    if !edge_order.contains(&def.rel_type) {
+                        edge_order.push(def.rel_type.clone());
+                    }
+                    edges.insert(key, def);
                 }
             }
         } else if let Some(rest) = lower.strip_prefix("create rel table") {
             let original_rest = &stmt[(stmt.len() - rest.len())..];
             if let Some((label, body)) = split_table_signature(original_rest) {
                 if let Some(def) = parse_rel_body(&label, &body) {
-                    edges.insert(label.to_ascii_lowercase(), def);
+                    let key = label.to_ascii_lowercase();
+                    if !edge_order.contains(&key) {
+                        edge_order.push(key.clone());
+                    }
+                    edges.insert(key, def);
                 }
             }
         }
     }
-    Schema { nodes, edges }
+    Schema {
+        nodes,
+        edges,
+        node_order,
+        edge_order,
+    }
 }
 
 /// Split a statement after the `create <kind> table` keyword: returns
@@ -561,11 +584,32 @@ fn build_property_graph(
             .push(entry);
     }
 
-    // Stable order: nodes first, edges second, alphabetically within
-    // each. Edges depend on node row indices, so this ordering matters.
-    let mut node_keys: Vec<&String> = schema.nodes.keys().collect();
-    node_keys.sort();
-    for key in node_keys {
+    // Stable order: nodes first, edges second, in the order that each
+    // `CREATE NODE/REL TABLE` declaration appeared in `schema.cypher`.
+    // Kuzu's printed `_ID` values encode that index, so this is the only
+    // ordering that lines up with the conformance fixtures.
+    let mut visited_nodes = std::collections::HashSet::new();
+    for key in &schema.node_order {
+        if !schema.nodes.contains_key(key) {
+            continue;
+        }
+        visited_nodes.insert(key.clone());
+        let def = &schema.nodes[key];
+        let entries = by_table.get(key).cloned().unwrap_or_default();
+        match build_node_table(root, def, &entries, &mut pk_index) {
+            Ok(table) => graph.add_nodes(table),
+            Err(_) => continue,
+        }
+    }
+    // Fallback: any node declared outside the recorded order (e.g.,
+    // alternate schema flow) loads alphabetically so we don't drop it.
+    let mut remaining: Vec<&String> = schema
+        .nodes
+        .keys()
+        .filter(|k| !visited_nodes.contains(*k))
+        .collect();
+    remaining.sort();
+    for key in remaining {
         let def = &schema.nodes[key];
         let entries = by_table.get(key).cloned().unwrap_or_default();
         match build_node_table(root, def, &entries, &mut pk_index) {
@@ -574,8 +618,28 @@ fn build_property_graph(
         }
     }
 
-    let mut edge_keys: Vec<&String> = schema.edges.keys().collect();
-    edge_keys.sort();
+    let mut edge_keys: Vec<&String> = schema
+        .edge_order
+        .iter()
+        .flat_map(|order_key| {
+            schema
+                .edges
+                .keys()
+                .filter(move |actual_key| actual_key == &order_key || actual_key.starts_with(&format!("{order_key}@")))
+        })
+        .collect();
+    let mut seen_keys: std::collections::HashSet<&String> = edge_keys.iter().copied().collect();
+    let mut fallback: Vec<&String> = schema
+        .edges
+        .keys()
+        .filter(|k| !seen_keys.contains(k))
+        .collect();
+    fallback.sort();
+    for fk in &fallback {
+        if seen_keys.insert(*fk) {
+            edge_keys.push(*fk);
+        }
+    }
     for key in edge_keys {
         let def = &schema.edges[key];
         let entries = by_table

@@ -98,6 +98,7 @@ pub struct ReturnedBatches {
 }
 
 pub fn execute(plan: &GraphPlan, graph: &PropertyGraph) -> IrResult<ReturnedBatches> {
+    let policy = plan.policy.clone();
     let rows = match &*plan.root {
         Node::GraphReturn {
             fields,
@@ -105,7 +106,7 @@ pub fn execute(plan: &GraphPlan, graph: &PropertyGraph) -> IrResult<ReturnedBatc
             input,
         } => {
             let rows = run(input, graph)?;
-            return finalize_return(fields, *result_form, rows);
+            return finalize_return(fields, *result_form, rows, graph, &policy);
         }
         _ => run(&plan.root, graph)?,
     };
@@ -115,7 +116,7 @@ pub fn execute(plan: &GraphPlan, graph: &PropertyGraph) -> IrResult<ReturnedBatc
         .first()
         .map(|row| row.bindings.keys().cloned().collect())
         .unwrap_or_default();
-    finalize_return(&fields, ResultForm::RowSet, rows)
+    finalize_return(&fields, ResultForm::RowSet, rows, graph, &policy)
 }
 
 /// Variant of `execute` that returns the raw `Row` stream — useful for

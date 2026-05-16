@@ -34,7 +34,9 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use new_graph::ir::interpreter::{ReturnedBatches, execute};
 use new_graph::ir::plan::explain;
@@ -45,11 +47,10 @@ use new_graph::language::cypher::planner::CypherPlanner;
 mod case_file;
 #[path = "gremlin_case_runner/compare.rs"]
 mod compare;
-#[path = "gremlin_case_runner/format.rs"]
-mod format;
 
 mod cypher_case_runner;
 use cypher_case_runner::dataset;
+use cypher_case_runner::format;
 
 const CASES_ROOT: &str = "cases/cypher/ladybug";
 /// Failure dump dir under `target/`. Cleared at the start of every run so
@@ -81,8 +82,18 @@ fn cypher_ladybug_cases() {
 
     let started = Instant::now();
     let mut summary = Summary::default();
+    let suite_filter = std::env::var("CYPHER_SUITE").ok();
+    let timeout_ms: u64 = std::env::var("CYPHER_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     walk_cases(&root, &mut |path| {
-        let run = run_one(path);
+        if let Some(filter) = &suite_filter {
+            if !path.to_string_lossy().contains(filter.as_str()) {
+                return;
+            }
+        }
+        let run = run_with_timeout(path, timeout_ms);
         if !matches!(run.outcome, Outcome::Correct) {
             if let Err(err) = dump_failure(&failures_dir, path, &run) {
                 eprintln!(
@@ -122,6 +133,95 @@ impl CaseRun {
             plan_tree: None,
             outcome,
         }
+    }
+}
+
+/// Cheap textual check for whether a Cypher query contains an `ORDER BY`
+/// clause outside of string literals. Used to decide whether ordered
+/// comparison applies: a query without `ORDER BY` makes no promises
+/// about row order, so we degrade to multiset comparison.
+fn query_has_order_by(query: &str) -> bool {
+    let bytes = query.as_bytes();
+    let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_backtick = false;
+    let lower = query.to_ascii_lowercase();
+    let lower_bytes = lower.as_bytes();
+    while i < bytes.len() {
+        let ch = bytes[i] as char;
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            if ch == '"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_backtick {
+            if ch == '`' {
+                in_backtick = false;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            '\'' => {
+                in_single = true;
+                i += 1;
+                continue;
+            }
+            '"' => {
+                in_double = true;
+                i += 1;
+                continue;
+            }
+            '`' => {
+                in_backtick = true;
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
+        if i + 8 <= lower_bytes.len()
+            && &lower_bytes[i..i + 8] == b"order by"
+            && (i == 0 || !is_ident_char(bytes[i - 1] as char))
+            && (i + 8 == bytes.len() || !is_ident_char(bytes[i + 8] as char))
+        {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn is_ident_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn run_with_timeout(path: &Path, timeout_ms: u64) -> CaseRun {
+    if timeout_ms == 0 {
+        return run_one(path);
+    }
+    let path_buf = path.to_path_buf();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let run = run_one(&path_buf);
+        let _ = tx.send(run);
+    });
+    match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+        Ok(run) => run,
+        Err(_) => CaseRun {
+            query: None,
+            plan_tree: None,
+            outcome: Outcome::RunError(format!("timeout after {timeout_ms}ms")),
+        },
     }
 }
 
@@ -198,10 +298,24 @@ fn run_one(path: &Path) -> CaseRun {
 
     let actual_lines = format::lines_from_batch(&returned);
 
+    // Cypher's contract: row order is undefined without an explicit
+    // `ORDER BY`. The Ladybug metadata still tags every case
+    // `ordered=true` because that's how Kuzu records the snapshot it
+    // got, but a sortless query that comes back as a row-set should
+    // really be compared as a multiset — the snapshot order is an
+    // implementation detail of Kuzu, not part of the spec. Detect
+    // sortless queries and downgrade to unordered comparison so the
+    // accuracy number reflects semantic correctness instead of
+    // execution-order coincidences.
+    let ordered = if case.metadata.ordered && !query_has_order_by(&query) {
+        false
+    } else {
+        case.metadata.ordered
+    };
     let outcome = match compare::matches(
         &actual_lines,
         &case.expected,
-        case.metadata.ordered,
+        ordered,
         &case.metadata.expected_kind,
     ) {
         compare::Verdict::Match => Outcome::Correct,

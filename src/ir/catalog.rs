@@ -53,6 +53,13 @@ pub struct PropertyGraph {
     /// Multiple relationship types are allowed. They are stored under the
     /// rel_type key.
     pub edges: HashMap<String, EdgeTable>,
+    /// Insertion order of `add_nodes` calls. Cypher conformance output
+    /// uses this index as the high half of node `_ID` printers, so we
+    /// expose it alongside the underlying hash-keyed storage.
+    node_order: Vec<String>,
+    /// Insertion order of `add_edges` calls; shares a numbering space
+    /// with `node_order` (edges are numbered after all nodes).
+    edge_order: Vec<String>,
     /// Outgoing adjacency cache: `(src_label, src_id, rel_type)` →
     /// list of (edge_row, dst_label, dst_id).
     out_adj: HashMap<(String, i64, String), Vec<EdgeRef>>,
@@ -72,7 +79,23 @@ impl PropertyGraph {
     }
 
     pub fn add_nodes(&mut self, table: NodeTable) {
+        if !self.node_order.iter().any(|name| name == &table.label) {
+            self.node_order.push(table.label.clone());
+        }
         self.nodes.insert(table.label.clone(), table);
+    }
+
+    /// Insertion-ordered node labels — used for Cypher `_ID` printing,
+    /// where the high half of the id encodes the node table index in the
+    /// order it was registered (not alphabetic).
+    pub fn node_label_order(&self) -> &[String] {
+        &self.node_order
+    }
+
+    /// Insertion-ordered edge rel-types, sharing the numbering space
+    /// with `node_label_order` (edges follow nodes).
+    pub fn edge_rel_order(&self) -> &[String] {
+        &self.edge_order
     }
 
     pub fn add_edges(&mut self, table: EdgeTable) -> CatalogResult<()> {
@@ -115,6 +138,9 @@ impl PropertyGraph {
                     edge_row: row as i64,
                     other_id: s,
                 });
+        }
+        if !self.edge_order.iter().any(|name| name == &table.rel_type) {
+            self.edge_order.push(table.rel_type.clone());
         }
         self.edges.insert(table.rel_type.clone(), table);
         Ok(())
@@ -218,7 +244,9 @@ impl PropertyGraph {
     /// Property-key columns exposed for an edge rel-type.
     pub fn edge_property_keys(&self, rel_type: &str) -> Vec<String> {
         match self.edges.get(rel_type) {
-            Some(table) => table_property_keys(&table.batch, &["src", "dst", "id"]),
+            Some(table) => {
+                table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"])
+            }
             None => Vec::new(),
         }
     }

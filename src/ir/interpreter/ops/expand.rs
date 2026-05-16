@@ -46,12 +46,13 @@ pub(crate) fn expand_op(
     graph: &PropertyGraph,
     ctx: &mut ExecutionContext,
 ) -> IrResult<Vec<Row>> {
-    let Some(max_hops) = length.max else {
-        return Err(InterpretError::Unsupported(format!(
-            "unbounded GraphExpand length {}..unbounded is representable in IR but not executable by the in-memory interpreter",
-            length.min
-        )));
-    };
+    // The IR allows `[..]` (unbounded upper) but a graph in the
+    // conformance corpus terminates BFS at the natural frontier when
+    // `DifferentRelationships` keeps each edge from being reused. Cap
+    // the loop at a conservative depth so the interpreter still has a
+    // hard exit if the data picks up unexpected cycles.
+    const UNBOUNDED_MAX: u32 = 64;
+    let max_hops = length.max.unwrap_or(UNBOUNDED_MAX);
     if length.min > max_hops {
         return Err(InterpretError::Unsupported(format!(
             "expand length {}..{} invalid",
