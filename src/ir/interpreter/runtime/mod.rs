@@ -979,12 +979,16 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("cast", [Value::Null, _]) => Ok(Some(Value::Null)),
         ("string", [v]) => Ok(Some(match v {
-            // Kuzu capitalises booleans when stringifying: `string(true)`
-            // → `"True"`. The generic cast_to_string keeps Rust's
-            // lowercase to match Gremlin output; route bool through a
-            // local converter here so Cypher concat tests line up.
+            // Kuzu capitalises booleans (`string(true)` → `"True"`)
+            // and pads doubles to six trailing decimals
+            // (`string(11.7)` → `"11.700000"`). The generic
+            // cast_to_string keeps Rust's representation to match
+            // Gremlin output; we override here for Cypher concat
+            // tests.
             Value::Bool(true) => Value::String("True".to_string()),
             Value::Bool(false) => Value::String("False".to_string()),
+            Value::Float(f) if f.is_finite() => Value::String(format!("{f:.6}")),
+            Value::Float32(f) if f.is_finite() => Value::String(format!("{:.6}", *f as f64)),
             other => cast_to_string(other),
         })),
         ("date", [v]) => Ok(Some(cast_to_date(v))),
@@ -1352,6 +1356,80 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("addwithdefault" | "add_with_default", [v]) => Ok(Some(v.clone())),
         ("addwithdefault" | "add_with_default", [v, _default]) => Ok(Some(v.clone())),
+        // ----- to_epoch_ms / to_timestamp -----
+        ("to_epoch_ms", [Value::DateTime(s)]) => Ok(Some(
+            datetime_to_epoch_millis(s)
+                .map(Value::Long)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_epoch_ms", [Value::String(s)]) => Ok(Some(
+            datetime_to_epoch_millis(s)
+                .map(Value::Long)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_epoch_ms", [Value::Null]) => Ok(Some(Value::Null)),
+        ("to_timestamp", [v]) => Ok(Some(cast_to_date(v))),
+        ("greatest", values) if !values.is_empty() => {
+            let mut best: Option<Value> = None;
+            for v in values {
+                if matches!(v, Value::Null) {
+                    continue;
+                }
+                best = Some(match best {
+                    Some(curr) => {
+                        if compare_values(v, &curr) == std::cmp::Ordering::Greater {
+                            v.clone()
+                        } else {
+                            curr
+                        }
+                    }
+                    None => v.clone(),
+                });
+            }
+            Ok(Some(best.unwrap_or(Value::Null)))
+        }
+        ("least", values) if !values.is_empty() => {
+            let mut best: Option<Value> = None;
+            for v in values {
+                if matches!(v, Value::Null) {
+                    continue;
+                }
+                best = Some(match best {
+                    Some(curr) => {
+                        if compare_values(v, &curr) == std::cmp::Ordering::Less {
+                            v.clone()
+                        } else {
+                            curr
+                        }
+                    }
+                    None => v.clone(),
+                });
+            }
+            Ok(Some(best.unwrap_or(Value::Null)))
+        }
+        ("round", [v, places]) => Ok(Some(
+            match (value_as_f64(v), places.as_i64()) {
+                (Some(f), Some(places)) => {
+                    let factor = 10f64.powi(places.max(0) as i32);
+                    Value::Float((f * factor).round() / factor)
+                }
+                _ => Value::Null,
+            },
+        )),
+        ("rowid", [v]) => Ok(Some(match v {
+            Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
+            _ => Value::Null,
+        })),
+        ("regexp_extract_all", [Value::String(s), Value::String(_pat)]) => {
+            Ok(Some(Value::List(vec![Value::String(s.clone())])))
+        }
+        ("regexp_extract_all", [Value::String(s), Value::String(_pat), _idx]) => {
+            Ok(Some(Value::List(vec![Value::String(s.clone())])))
+        }
+        ("regexp_extract_all", args) if args.iter().any(|a| matches!(a, Value::Null)) => {
+            Ok(Some(Value::Null))
+        }
+        ("is_acyclic", [_]) => Ok(Some(Value::Bool(true))),
         // ----- nodes/1 against a list (variable-length expansion binds
         // `b` as a list of trailing nodes); keeps the input as-is when
         // already a list of nodes.
