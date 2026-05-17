@@ -30,16 +30,32 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(12);
             buf.push(*n as u8);
         }
+        Value::UInt8(n) => {
+            buf.push(18);
+            buf.push(*n);
+        }
         Value::Short(n) => {
             buf.push(13);
+            buf.extend_from_slice(&n.to_be_bytes());
+        }
+        Value::UInt16(n) => {
+            buf.push(19);
             buf.extend_from_slice(&n.to_be_bytes());
         }
         Value::Int(n) => {
             buf.push(2);
             buf.extend_from_slice(&n.to_be_bytes());
         }
+        Value::UInt32(n) => {
+            buf.push(20);
+            buf.extend_from_slice(&n.to_be_bytes());
+        }
         Value::Long(n) => {
             buf.push(14);
+            buf.extend_from_slice(&n.to_be_bytes());
+        }
+        Value::UInt64(n) => {
+            buf.push(21);
             buf.extend_from_slice(&n.to_be_bytes());
         }
         Value::Float32(f) => {
@@ -101,6 +117,10 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
         }
         Value::BigInt(n) => {
             buf.push(10);
+            buf.extend_from_slice(n.to_string().as_bytes());
+        }
+        Value::UInt128(n) => {
+            buf.push(22);
             buf.extend_from_slice(n.to_string().as_bytes());
         }
         Value::BigDecimal(d) => {

@@ -25,12 +25,17 @@ fn display_for_as_string(v: &Value) -> String {
         Value::String(s) => normalize_collection_string(s),
         Value::Bool(b) => b.to_string(),
         Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
         Value::Int(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
         Value::Long(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
         Value::Float32(f) => (*f as f64).to_string(),
         Value::Float(f) => f.to_string(),
         Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
@@ -320,12 +325,17 @@ fn tinker_edge_id(rel_type: &str, id: i64) -> i64 {
 pub(crate) fn cast_to_number(v: &Value) -> Value {
     match v {
         Value::Byte(_)
+        | Value::UInt8(_)
         | Value::Short(_)
+        | Value::UInt16(_)
         | Value::Int(_)
+        | Value::UInt32(_)
         | Value::Long(_)
+        | Value::UInt64(_)
         | Value::Float32(_)
         | Value::Float(_)
         | Value::BigInt(_)
+        | Value::UInt128(_)
         | Value::BigDecimal(_) => v.clone(),
         Value::Bool(true) => Value::Int(1),
         Value::Bool(false) => Value::Int(0),
@@ -350,9 +360,13 @@ pub(crate) fn cast_to_int(v: &Value) -> Value {
     use num_traits::ToPrimitive;
     match v {
         Value::Byte(n) => Value::Int(*n as i64),
+        Value::UInt8(n) => Value::Int(*n as i64),
         Value::Short(n) => Value::Int(*n as i64),
+        Value::UInt16(n) => Value::Int(*n as i64),
         Value::Int(_) => v.clone(),
+        Value::UInt32(n) => Value::Int(*n as i64),
         Value::Long(n) => Value::Int(*n),
+        Value::UInt64(n) => i64::try_from(*n).map(Value::Int).unwrap_or(Value::Null),
         // Kuzu rounds when narrowing a float to an integer (e.g.
         // `to_int32(1.731)` → 2). Match that with `f.round()` instead
         // of Rust's default `as i64` truncation so the conformance
@@ -360,6 +374,7 @@ pub(crate) fn cast_to_int(v: &Value) -> Value {
         Value::Float32(f) => Value::Int(f.round() as i64),
         Value::Float(f) => Value::Int(f.round() as i64),
         Value::BigInt(n) => n.to_i64().map(Value::Int).unwrap_or(Value::Null),
+        Value::UInt128(n) => n.to_i64().map(Value::Int).unwrap_or(Value::Null),
         Value::BigDecimal(d) => d.to_i64().map(Value::Int).unwrap_or(Value::Null),
         Value::Bool(true) => Value::Int(1),
         Value::Bool(false) => Value::Int(0),
@@ -393,9 +408,14 @@ pub(crate) fn cast_to_bigint(v: &Value) -> Value {
     match v {
         Value::BigInt(_) => v.clone(),
         Value::Byte(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt8(n) => Value::BigInt(BigInt::from(*n)),
         Value::Short(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt16(n) => Value::BigInt(BigInt::from(*n)),
         Value::Int(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt32(n) => Value::BigInt(BigInt::from(*n)),
         Value::Long(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt64(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt128(n) => Value::BigInt(n.clone()),
         // Same half-away-from-zero rounding as the narrow casters; Kuzu
         // applies the same convention to `to_int128(1.7)` → 2.
         Value::Float32(f) => Value::BigInt(BigInt::from(f.round() as i64)),
@@ -427,11 +447,16 @@ pub(crate) fn cast_to_float(v: &Value) -> Value {
     match v {
         Value::Float(_) => v.clone(),
         Value::Byte(n) => Value::Float(*n as f64),
+        Value::UInt8(n) => Value::Float(*n as f64),
         Value::Short(n) => Value::Float(*n as f64),
+        Value::UInt16(n) => Value::Float(*n as f64),
         Value::Int(n) => Value::Float(*n as f64),
+        Value::UInt32(n) => Value::Float(*n as f64),
         Value::Long(n) => Value::Float(*n as f64),
+        Value::UInt64(n) => Value::Float(*n as f64),
         Value::Float32(f) => Value::Float(*f as f64),
         Value::BigInt(n) => n.to_f64().map(Value::Float).unwrap_or(Value::Null),
+        Value::UInt128(n) => n.to_f64().map(Value::Float).unwrap_or(Value::Null),
         Value::BigDecimal(d) => d.to_f64().map(Value::Float).unwrap_or(Value::Null),
         Value::Bool(true) => Value::Float(1.0),
         Value::Bool(false) => Value::Float(0.0),
@@ -446,10 +471,15 @@ pub(crate) fn cast_to_float32(v: &Value) -> Value {
         Value::Float32(_) => v.clone(),
         Value::Float(f) => Value::Float32(*f as f32),
         Value::Byte(n) => Value::Float32(*n as f32),
+        Value::UInt8(n) => Value::Float32(*n as f32),
         Value::Short(n) => Value::Float32(*n as f32),
+        Value::UInt16(n) => Value::Float32(*n as f32),
         Value::Int(n) => Value::Float32(*n as f32),
+        Value::UInt32(n) => Value::Float32(*n as f32),
         Value::Long(n) => Value::Float32(*n as f32),
+        Value::UInt64(n) => Value::Float32(*n as f32),
         Value::BigInt(n) => n.to_f32().map(Value::Float32).unwrap_or(Value::Null),
+        Value::UInt128(n) => n.to_f32().map(Value::Float32).unwrap_or(Value::Null),
         Value::BigDecimal(d) => d.to_f32().map(Value::Float32).unwrap_or(Value::Null),
         Value::Bool(true) => Value::Float32(1.0),
         Value::Bool(false) => Value::Float32(0.0),
@@ -465,9 +495,13 @@ pub(crate) fn cast_to_bigdecimal(v: &Value) -> Value {
     match v {
         Value::BigDecimal(_) => v.clone(),
         Value::Byte(n) => Value::BigDecimal(BigDecimal::from(*n)),
+        Value::UInt8(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Short(n) => Value::BigDecimal(BigDecimal::from(*n)),
+        Value::UInt16(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Int(n) => Value::BigDecimal(BigDecimal::from(*n)),
+        Value::UInt32(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Long(n) => Value::BigDecimal(BigDecimal::from(*n)),
+        Value::UInt64(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Float32(f) if f.is_finite() => BigDecimal::from_str(&f.to_string())
             .map(Value::BigDecimal)
             .unwrap_or(Value::Null),
@@ -475,6 +509,7 @@ pub(crate) fn cast_to_bigdecimal(v: &Value) -> Value {
             .map(Value::BigDecimal)
             .unwrap_or(Value::Null),
         Value::BigInt(n) => Value::BigDecimal(BigDecimal::from(n.clone())),
+        Value::UInt128(n) => Value::BigDecimal(BigDecimal::from(n.clone())),
         Value::Bool(true) => Value::BigDecimal(BigDecimal::from(1)),
         Value::Bool(false) => Value::BigDecimal(BigDecimal::from(0)),
         Value::String(s) => BigDecimal::from_str(s)
@@ -489,14 +524,19 @@ pub(crate) fn cast_to_bool(v: &Value) -> Value {
     match v {
         Value::Bool(_) => v.clone(),
         Value::Byte(n) => Value::Bool(*n != 0),
+        Value::UInt8(n) => Value::Bool(*n != 0),
         Value::Short(n) => Value::Bool(*n != 0),
+        Value::UInt16(n) => Value::Bool(*n != 0),
         Value::Int(n) => Value::Bool(*n != 0),
+        Value::UInt32(n) => Value::Bool(*n != 0),
         Value::Long(n) => Value::Bool(*n != 0),
+        Value::UInt64(n) => Value::Bool(*n != 0),
         // NaN coerces to `false` (matches Gremlin's `asBool` semantics);
         // any other non-zero finite/infinite value coerces to `true`.
         Value::Float32(f) => Value::Bool(!f.is_nan() && *f != 0.0),
         Value::Float(f) => Value::Bool(!f.is_nan() && *f != 0.0),
         Value::BigInt(n) => Value::Bool(!n.is_zero()),
+        Value::UInt128(n) => Value::Bool(!n.is_zero()),
         Value::BigDecimal(d) => Value::Bool(!d.is_zero()),
         Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
             "true" | "t" | "1" | "yes" => Value::Bool(true),
@@ -532,13 +572,34 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
         Value::Byte(n) => epoch_millis_to_datetime(*n as i64)
             .map(Value::DateTime)
             .unwrap_or(Value::Null),
+        Value::UInt8(n) => epoch_millis_to_datetime(*n as i64)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
         Value::Short(n) => epoch_millis_to_datetime(*n as i64)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
+        Value::UInt16(n) => epoch_millis_to_datetime(*n as i64)
             .map(Value::DateTime)
             .unwrap_or(Value::Null),
         Value::Int(n) | Value::Long(n) => epoch_millis_to_datetime(*n)
             .map(Value::DateTime)
             .unwrap_or(Value::Null),
+        Value::UInt32(n) => epoch_millis_to_datetime(*n as i64)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
+        Value::UInt64(n) => i64::try_from(*n)
+            .ok()
+            .and_then(epoch_millis_to_datetime)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
         Value::BigInt(n) => {
+            use num_traits::ToPrimitive;
+            n.to_i64()
+                .and_then(epoch_millis_to_datetime)
+                .map(Value::DateTime)
+                .unwrap_or(Value::Null)
+        }
+        Value::UInt128(n) => {
             use num_traits::ToPrimitive;
             n.to_i64()
                 .and_then(epoch_millis_to_datetime)
@@ -553,14 +614,19 @@ fn numeric_i64(v: &Value) -> Option<i64> {
     use num_traits::ToPrimitive;
     match v {
         Value::Byte(n) => Some(*n as i64),
+        Value::UInt8(n) => Some(*n as i64),
         Value::Short(n) => Some(*n as i64),
+        Value::UInt16(n) => Some(*n as i64),
         Value::Int(n) => Some(*n),
+        Value::UInt32(n) => Some(*n as i64),
         Value::Long(n) => Some(*n),
+        Value::UInt64(n) => i64::try_from(*n).ok(),
         // Same rounding convention as `cast_to_int` — used by the
         // narrow-int casters (`cast_to_byte`, `cast_to_short`, `cast_to_long`).
         Value::Float32(f) => Some(f.round() as i64),
         Value::Float(f) => Some(f.round() as i64),
         Value::BigInt(n) => n.to_i64(),
+        Value::UInt128(n) => n.to_i64(),
         Value::BigDecimal(d) => d.to_i64(),
         Value::Bool(true) => Some(1),
         Value::Bool(false) => Some(0),

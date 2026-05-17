@@ -7,7 +7,7 @@ mod binary;
 mod compare;
 mod path_predicate;
 
-pub(crate) use arithmetic::arithmetic;
+pub(crate) use arithmetic::{arithmetic, modulo};
 pub(crate) use binary::eval_binary;
 pub(crate) use compare::compare_values;
 pub(crate) use path_predicate::is_simple_path;

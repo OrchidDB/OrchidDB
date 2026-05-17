@@ -11,6 +11,9 @@ use super::super::{InterpretError, IrResult};
 pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Value> {
     use bigdecimal::BigDecimal;
     use num_bigint::BigInt;
+    if let (Some(left), Some(right)) = (integer_operand(lhs), integer_operand(rhs)) {
+        return integer_arith(op, left, right);
+    }
     fn bigdecimal_arith(
         op: BinaryOp,
         a: bigdecimal::BigDecimal,
@@ -73,8 +76,13 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
         }
         (Value::BigDecimal(a), other) => {
             let promoted = match other {
+                Value::UInt8(n) => Some(BigDecimal::from(*n)),
+                Value::UInt16(n) => Some(BigDecimal::from(*n)),
+                Value::UInt32(n) => Some(BigDecimal::from(*n)),
+                Value::UInt64(n) => Some(BigDecimal::from(*n)),
                 Value::Int(n) => Some(BigDecimal::from(*n)),
                 Value::BigInt(n) => Some(BigDecimal::from(n.clone())),
+                Value::UInt128(n) => Some(BigDecimal::from(n.clone())),
                 _ => None,
             };
             match promoted {
@@ -84,8 +92,13 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
         }
         (other, Value::BigDecimal(b)) => {
             let promoted = match other {
+                Value::UInt8(n) => Some(BigDecimal::from(*n)),
+                Value::UInt16(n) => Some(BigDecimal::from(*n)),
+                Value::UInt32(n) => Some(BigDecimal::from(*n)),
+                Value::UInt64(n) => Some(BigDecimal::from(*n)),
                 Value::Int(n) => Some(BigDecimal::from(*n)),
                 Value::BigInt(n) => Some(BigDecimal::from(n.clone())),
+                Value::UInt128(n) => Some(BigDecimal::from(n.clone())),
                 _ => None,
             };
             match promoted {
@@ -289,6 +302,427 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
         // Null rather than failing the run. The harness checks output
         // shape; Null is closer to right than killing the query.
         _ => Ok(Value::Null),
+    }
+}
+
+pub(crate) fn modulo(lhs: &Value, rhs: &Value) -> IrResult<Value> {
+    use num_traits::Zero;
+
+    match (lhs, rhs) {
+        (Value::Null, _) | (_, Value::Null) => return Ok(Value::Null),
+        _ => {}
+    }
+
+    if let (Some(left), Some(right)) = (integer_operand(lhs), integer_operand(rhs)) {
+        return integer_modulo(left, right);
+    }
+
+    if let (Some(left), Some(right)) = (decimal_operand(lhs), decimal_operand(rhs)) {
+        if right.is_zero() {
+            return Err(modulo_by_zero_error());
+        }
+        return Ok(Value::BigDecimal(left % right));
+    }
+
+    let (Some(left), Some(right)) = (float_operand(lhs), float_operand(rhs)) else {
+        return Ok(Value::Null);
+    };
+    if right == 0.0 {
+        return Err(modulo_by_zero_error());
+    }
+    Ok(Value::Float(left % right))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegerKind {
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    I128,
+    U128,
+}
+
+#[derive(Debug, Clone)]
+struct IntegerOperand {
+    value: num_bigint::BigInt,
+    kind: IntegerKind,
+}
+
+fn integer_operand(value: &Value) -> Option<IntegerOperand> {
+    use num_bigint::BigInt;
+    Some(match value {
+        Value::Byte(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::I8,
+        },
+        Value::UInt8(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::U8,
+        },
+        Value::Short(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::I16,
+        },
+        Value::UInt16(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::U16,
+        },
+        Value::Int(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: if i32::try_from(*n).is_ok() {
+                IntegerKind::I32
+            } else {
+                IntegerKind::I64
+            },
+        },
+        Value::UInt32(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::U32,
+        },
+        Value::Long(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::I64,
+        },
+        Value::UInt64(n) => IntegerOperand {
+            value: BigInt::from(*n),
+            kind: IntegerKind::U64,
+        },
+        Value::BigInt(n) => IntegerOperand {
+            value: n.clone(),
+            kind: IntegerKind::I128,
+        },
+        Value::UInt128(n) => IntegerOperand {
+            value: n.clone(),
+            kind: IntegerKind::U128,
+        },
+        _ => return None,
+    })
+}
+
+fn integer_arith(op: BinaryOp, left: IntegerOperand, right: IntegerOperand) -> IrResult<Value> {
+    use num_traits::{ToPrimitive, Zero};
+
+    let result_kind = integer_result_kind(&left, &right);
+    let result = match op {
+        BinaryOp::Add => &left.value + &right.value,
+        BinaryOp::Sub => &left.value - &right.value,
+        BinaryOp::Mul => &left.value * &right.value,
+        BinaryOp::Div => {
+            if right.value.is_zero() {
+                return Err(InterpretError::Runtime(
+                    "Runtime exception: Divide by zero.".into(),
+                ));
+            }
+            &left.value / &right.value
+        }
+        _ => return Ok(Value::Null),
+    };
+    let (min, max) = integer_bounds(result_kind);
+    if result < min || result > max {
+        return Err(integer_overflow_error(
+            &left.value,
+            &right.value,
+            op,
+            result_kind,
+        ));
+    }
+    Ok(match result_kind {
+        IntegerKind::I8 => {
+            Value::Byte(result.to_i8().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::U8 => {
+            Value::UInt8(result.to_u8().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::I16 => {
+            Value::Short(result.to_i16().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::U16 => {
+            Value::UInt16(result.to_u16().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::I32 => {
+            Value::Int(result.to_i64().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::U32 => {
+            Value::UInt32(result.to_u32().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::I64 => {
+            Value::Long(result.to_i64().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::U64 => {
+            Value::UInt64(result.to_u64().ok_or_else(|| {
+                integer_overflow_error(&left.value, &right.value, op, result_kind)
+            })?)
+        }
+        IntegerKind::I128 => Value::BigInt(result),
+        IntegerKind::U128 => Value::UInt128(result),
+    })
+}
+
+fn integer_modulo(left: IntegerOperand, right: IntegerOperand) -> IrResult<Value> {
+    use num_traits::Zero;
+
+    let result_kind = integer_result_kind(&left, &right);
+    if right.value.is_zero() {
+        return Err(modulo_by_zero_error());
+    }
+    let (min, max) = integer_bounds(result_kind);
+    if !integer_unsigned(result_kind)
+        && left.value == min
+        && right.value == -num_bigint::BigInt::from(1)
+    {
+        return Err(integer_modulo_overflow_error(
+            &left.value,
+            &right.value,
+            result_kind,
+        ));
+    }
+
+    let result = &left.value % &right.value;
+    if result < min || result > max {
+        return Err(integer_modulo_overflow_error(
+            &left.value,
+            &right.value,
+            result_kind,
+        ));
+    }
+    integer_value(
+        result,
+        result_kind,
+        &left.value,
+        &right.value,
+        BinaryOp::Div,
+    )
+}
+
+fn integer_value(
+    result: num_bigint::BigInt,
+    result_kind: IntegerKind,
+    left: &num_bigint::BigInt,
+    right: &num_bigint::BigInt,
+    op: BinaryOp,
+) -> IrResult<Value> {
+    use num_traits::ToPrimitive;
+
+    Ok(match result_kind {
+        IntegerKind::I8 => Value::Byte(
+            result
+                .to_i8()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::U8 => Value::UInt8(
+            result
+                .to_u8()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::I16 => Value::Short(
+            result
+                .to_i16()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::U16 => Value::UInt16(
+            result
+                .to_u16()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::I32 => Value::Int(
+            result
+                .to_i64()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::U32 => Value::UInt32(
+            result
+                .to_u32()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::I64 => Value::Long(
+            result
+                .to_i64()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::U64 => Value::UInt64(
+            result
+                .to_u64()
+                .ok_or_else(|| integer_overflow_error(left, right, op, result_kind))?,
+        ),
+        IntegerKind::I128 => Value::BigInt(result),
+        IntegerKind::U128 => Value::UInt128(result),
+    })
+}
+
+fn decimal_operand(value: &Value) -> Option<bigdecimal::BigDecimal> {
+    if let Value::BigDecimal(decimal) = value {
+        return Some(decimal.clone());
+    }
+    integer_operand(value).map(|operand| bigdecimal::BigDecimal::from(operand.value))
+}
+
+fn float_operand(value: &Value) -> Option<f64> {
+    use num_traits::ToPrimitive;
+    match value {
+        Value::Byte(n) => Some(*n as f64),
+        Value::UInt8(n) => Some(*n as f64),
+        Value::Short(n) => Some(*n as f64),
+        Value::UInt16(n) => Some(*n as f64),
+        Value::Int(n) | Value::Long(n) => Some(*n as f64),
+        Value::UInt32(n) => Some(*n as f64),
+        Value::UInt64(n) => Some(*n as f64),
+        Value::Float32(n) => Some(*n as f64),
+        Value::Float(n) => Some(*n),
+        Value::BigInt(n) | Value::UInt128(n) => n.to_f64(),
+        Value::BigDecimal(n) => n.to_f64(),
+        _ => None,
+    }
+}
+
+fn modulo_by_zero_error() -> InterpretError {
+    InterpretError::Runtime("Runtime exception: Modulo by zero.".into())
+}
+
+fn integer_result_kind(left: &IntegerOperand, right: &IntegerOperand) -> IntegerKind {
+    use num_traits::Signed;
+    let left_kind = left.kind;
+    let right_kind = right.kind;
+    if matches!(
+        (left_kind, right_kind),
+        (IntegerKind::U128, IntegerKind::I128) | (IntegerKind::I128, IntegerKind::U128)
+    ) && !left.value.is_negative()
+        && !right.value.is_negative()
+    {
+        return IntegerKind::U128;
+    }
+    let left_rank = integer_rank(left_kind);
+    let right_rank = integer_rank(right_kind);
+    if left_rank > right_rank {
+        left_kind
+    } else if right_rank > left_rank {
+        right_kind
+    } else if integer_unsigned(left_kind) && integer_unsigned(right_kind) {
+        left_kind
+    } else {
+        match left_rank {
+            1 => IntegerKind::I8,
+            2 => IntegerKind::I16,
+            3 => IntegerKind::I32,
+            4 => IntegerKind::I64,
+            _ => IntegerKind::I128,
+        }
+    }
+}
+
+fn integer_rank(kind: IntegerKind) -> u8 {
+    match kind {
+        IntegerKind::I8 | IntegerKind::U8 => 1,
+        IntegerKind::I16 | IntegerKind::U16 => 2,
+        IntegerKind::I32 | IntegerKind::U32 => 3,
+        IntegerKind::I64 | IntegerKind::U64 => 4,
+        IntegerKind::I128 | IntegerKind::U128 => 5,
+    }
+}
+
+fn integer_unsigned(kind: IntegerKind) -> bool {
+    matches!(
+        kind,
+        IntegerKind::U8
+            | IntegerKind::U16
+            | IntegerKind::U32
+            | IntegerKind::U64
+            | IntegerKind::U128
+    )
+}
+
+fn integer_bounds(kind: IntegerKind) -> (num_bigint::BigInt, num_bigint::BigInt) {
+    use num_bigint::BigInt;
+    match kind {
+        IntegerKind::I8 => (BigInt::from(i8::MIN), BigInt::from(i8::MAX)),
+        IntegerKind::U8 => (BigInt::from(0), BigInt::from(u8::MAX)),
+        IntegerKind::I16 => (BigInt::from(i16::MIN), BigInt::from(i16::MAX)),
+        IntegerKind::U16 => (BigInt::from(0), BigInt::from(u16::MAX)),
+        IntegerKind::I32 => (BigInt::from(i32::MIN), BigInt::from(i32::MAX)),
+        IntegerKind::U32 => (BigInt::from(0), BigInt::from(u32::MAX)),
+        IntegerKind::I64 => (BigInt::from(i64::MIN), BigInt::from(i64::MAX)),
+        IntegerKind::U64 => (BigInt::from(0), BigInt::from(u64::MAX)),
+        IntegerKind::I128 => (BigInt::from(i128::MIN), BigInt::from(i128::MAX)),
+        IntegerKind::U128 => (
+            BigInt::from(0),
+            (BigInt::from(1u8) << 128) - BigInt::from(1u8),
+        ),
+    }
+}
+
+fn integer_overflow_error(
+    left: &num_bigint::BigInt,
+    right: &num_bigint::BigInt,
+    op: BinaryOp,
+    kind: IntegerKind,
+) -> InterpretError {
+    let operation = match op {
+        BinaryOp::Add => "add",
+        BinaryOp::Sub => "subtract",
+        BinaryOp::Mul => "multiply",
+        BinaryOp::Div => "divide",
+        _ => "operate",
+    };
+    if matches!(kind, IntegerKind::I128 | IntegerKind::U128) {
+        return InterpretError::Runtime(format!(
+            "Overflow exception: {} is out of range: cannot {operation}.",
+            integer_type_name(kind)
+        ));
+    }
+    let symbol = match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        _ => "?",
+    };
+    InterpretError::Runtime(format!(
+        "Overflow exception: Value {left} {symbol} {right} is not within {} range.",
+        integer_type_name(kind)
+    ))
+}
+
+fn integer_modulo_overflow_error(
+    left: &num_bigint::BigInt,
+    right: &num_bigint::BigInt,
+    kind: IntegerKind,
+) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Value {left} % {right} is not within {} range.",
+        integer_type_name(kind)
+    ))
+}
+
+fn integer_type_name(kind: IntegerKind) -> &'static str {
+    match kind {
+        IntegerKind::I8 => "INT8",
+        IntegerKind::U8 => "UINT8",
+        IntegerKind::I16 => "INT16",
+        IntegerKind::U16 => "UINT16",
+        IntegerKind::I32 => "INT32",
+        IntegerKind::U32 => "UINT32",
+        IntegerKind::I64 => "INT64",
+        IntegerKind::U64 => "UINT64",
+        IntegerKind::I128 => "INT128",
+        IntegerKind::U128 => "UINT128",
     }
 }
 

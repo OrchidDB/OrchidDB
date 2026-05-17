@@ -57,6 +57,13 @@ pub struct PropertyGraph {
     /// Multiple relationship types are allowed. They are stored under the
     /// rel_type key.
     pub edges: HashMap<String, EdgeTable>,
+    /// All physical edge tables for a relationship type. Cypher fixtures
+    /// can model relationship groups such as `LIKES(FROM A TO B, FROM B TO C)`;
+    /// the public `edges` map keeps a representative table for older callers,
+    /// while scans/expands use this grouped storage.
+    edge_tables: HashMap<String, Vec<EdgeTable>>,
+    edge_row_locations: HashMap<(String, i64), EdgeRowLocation>,
+    edge_row_counts: HashMap<String, i64>,
     /// Insertion order of `add_nodes` calls. Cypher conformance output
     /// uses this index as the high half of node `_ID` printers, so we
     /// expose it alongside the underlying hash-keyed storage.
@@ -75,10 +82,17 @@ pub struct PropertyGraph {
     overlay: RefCell<GraphOverlay>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct EdgeRef {
     edge_row: i64,
+    other_label: String,
     other_id: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EdgeRowLocation {
+    table_index: usize,
+    local_row: i64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -136,28 +150,49 @@ impl PropertyGraph {
             .as_any()
             .downcast_ref::<Int64Array>()
             .ok_or_else(|| CatalogError::Schema("edge __dst_id must be Int64".into()))?;
+        let rel_type = table.rel_type.clone();
+        let table_index = self
+            .edge_tables
+            .get(&rel_type)
+            .map(|tables| tables.len())
+            .unwrap_or(0);
+        let base_row = self.edge_row_counts.get(&rel_type).copied().unwrap_or(0);
         for row in 0..table.batch.num_rows() {
             let s = src.value(row);
             let d = dst.value(row);
+            let global_row = base_row + row as i64;
             self.out_adj
                 .entry((table.src_label.clone(), s, table.rel_type.clone()))
                 .or_default()
                 .push(EdgeRef {
-                    edge_row: row as i64,
+                    edge_row: global_row,
+                    other_label: table.dst_label.clone(),
                     other_id: d,
                 });
             self.in_adj
                 .entry((table.dst_label.clone(), d, table.rel_type.clone()))
                 .or_default()
                 .push(EdgeRef {
-                    edge_row: row as i64,
+                    edge_row: global_row,
+                    other_label: table.src_label.clone(),
                     other_id: s,
                 });
+            self.edge_row_locations.insert(
+                (rel_type.clone(), global_row),
+                EdgeRowLocation {
+                    table_index,
+                    local_row: row as i64,
+                },
+            );
         }
         if !self.edge_order.iter().any(|name| name == &table.rel_type) {
             self.edge_order.push(table.rel_type.clone());
         }
-        self.edges.insert(table.rel_type.clone(), table);
+        *self.edge_row_counts.entry(rel_type.clone()).or_insert(0) += table.batch.num_rows() as i64;
+        self.edges
+            .entry(rel_type.clone())
+            .or_insert_with(|| table.clone());
+        self.edge_tables.entry(rel_type).or_default().push(table);
         Ok(())
     }
 
@@ -187,7 +222,12 @@ impl PropertyGraph {
 
     /// All relationship types.
     pub fn rel_types(&self) -> Vec<String> {
-        let mut out = self.edges.keys().cloned().collect::<Vec<_>>();
+        let mut out = self.edge_tables.keys().cloned().collect::<Vec<_>>();
+        for rel_type in self.edges.keys() {
+            if !out.iter().any(|existing| existing == rel_type) {
+                out.push(rel_type.clone());
+            }
+        }
         out.sort();
         out
     }
@@ -218,18 +258,14 @@ impl PropertyGraph {
                 .out_adj
                 .get(&(src_label.to_string(), src_id, rel.to_string()))
             {
-                let edge = match self.edges.get(rel) {
-                    Some(edge) => edge,
-                    None => continue,
-                };
                 for r in refs {
                     if overlay
                         .deleted_nodes
-                        .contains(&(edge.dst_label.clone(), r.other_id))
+                        .contains(&(r.other_label.clone(), r.other_id))
                     {
                         continue;
                     }
-                    out.push((rel.clone(), r.edge_row, edge.dst_label.clone(), r.other_id));
+                    out.push((rel.clone(), r.edge_row, r.other_label.clone(), r.other_id));
                 }
             }
         }
@@ -260,18 +296,14 @@ impl PropertyGraph {
                 .in_adj
                 .get(&(dst_label.to_string(), dst_id, rel.to_string()))
             {
-                let edge = match self.edges.get(rel) {
-                    Some(edge) => edge,
-                    None => continue,
-                };
                 for r in refs {
                     if overlay
                         .deleted_nodes
-                        .contains(&(edge.src_label.clone(), r.other_id))
+                        .contains(&(r.other_label.clone(), r.other_id))
                     {
                         continue;
                     }
-                    out.push((rel.clone(), r.edge_row, edge.src_label.clone(), r.other_id));
+                    out.push((rel.clone(), r.edge_row, r.other_label.clone(), r.other_id));
                 }
             }
         }
@@ -304,12 +336,21 @@ impl PropertyGraph {
 
     /// Property-key columns exposed for an edge rel-type.
     pub fn edge_property_keys(&self, rel_type: &str) -> Vec<String> {
-        match self.edges.get(rel_type) {
-            Some(table) => {
-                table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"])
+        let mut out = Vec::new();
+        if let Some(tables) = self.edge_tables.get(rel_type) {
+            for table in tables {
+                for key in
+                    table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"])
+                {
+                    if !out.iter().any(|existing| existing == &key) {
+                        out.push(key);
+                    }
+                }
             }
-            None => Vec::new(),
+        } else if let Some(table) = self.edges.get(rel_type) {
+            out = table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"]);
         }
+        out
     }
 
     /// Read a property of a node by id. Returns `Value::Null` when the
@@ -337,10 +378,37 @@ impl PropertyGraph {
 
     /// Read a property of an edge by edge row id.
     pub fn edge_property(&self, rel_type: &str, edge_row: i64, key: &str) -> Value {
+        if let Some(location) = self
+            .edge_row_locations
+            .get(&(rel_type.to_string(), edge_row))
+        {
+            let Some(table) = self
+                .edge_tables
+                .get(rel_type)
+                .and_then(|tables| tables.get(location.table_index))
+            else {
+                return Value::Null;
+            };
+            return column_value(&table.batch, key, location.local_row);
+        }
         let Some(table) = self.edges.get(rel_type) else {
             return Value::Null;
         };
         column_value(&table.batch, key, edge_row)
+    }
+
+    pub fn edge_ids(&self, rel_type: &str) -> Vec<i64> {
+        let count = self
+            .edge_row_counts
+            .get(rel_type)
+            .copied()
+            .unwrap_or_else(|| {
+                self.edges
+                    .get(rel_type)
+                    .map(|table| table.batch.num_rows() as i64)
+                    .unwrap_or(0)
+            });
+        (0..count).collect()
     }
 
     /// Iterate node ids of a given label, optionally filtered by a label
@@ -446,6 +514,35 @@ impl PropertyGraph {
         rel_type: &str,
         edge_row: i64,
     ) -> Option<(String, i64, String, i64)> {
+        if let Some(location) = self
+            .edge_row_locations
+            .get(&(rel_type.to_string(), edge_row))
+        {
+            let table = self
+                .edge_tables
+                .get(rel_type)
+                .and_then(|tables| tables.get(location.table_index))?;
+            let src = table
+                .batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()?;
+            let dst = table
+                .batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()?;
+            let row = location.local_row as usize;
+            if row >= table.batch.num_rows() {
+                return None;
+            }
+            return Some((
+                table.src_label.clone(),
+                src.value(row),
+                table.dst_label.clone(),
+                dst.value(row),
+            ));
+        }
         let table = self.edges.get(rel_type)?;
         let src = table
             .batch

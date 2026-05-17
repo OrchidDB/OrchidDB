@@ -209,8 +209,15 @@ impl ColumnBuilder {
                 for v in self.values {
                     match v {
                         Value::Byte(n) => builder.append_value(n as i64),
+                        Value::UInt8(n) => builder.append_value(n as i64),
                         Value::Short(n) => builder.append_value(n as i64),
+                        Value::UInt16(n) => builder.append_value(n as i64),
                         Value::Int(n) | Value::Long(n) => builder.append_value(n),
+                        Value::UInt32(n) => builder.append_value(n as i64),
+                        Value::UInt64(n) => match i64::try_from(n) {
+                            Ok(n) => builder.append_value(n),
+                            Err(_) => builder.append_null(),
+                        },
                         Value::Null => builder.append_null(),
                         Value::Float32(f) => builder.append_value(f as i64),
                         Value::Float(f) => builder.append_value(f as i64),
@@ -226,8 +233,12 @@ impl ColumnBuilder {
                         Value::Float(f) => builder.append_value(f),
                         Value::Float32(f) => builder.append_value(f as f64),
                         Value::Byte(n) => builder.append_value(n as f64),
+                        Value::UInt8(n) => builder.append_value(n as f64),
                         Value::Short(n) => builder.append_value(n as f64),
+                        Value::UInt16(n) => builder.append_value(n as f64),
                         Value::Int(n) | Value::Long(n) => builder.append_value(n as f64),
+                        Value::UInt32(n) => builder.append_value(n as f64),
+                        Value::UInt64(n) => builder.append_value(n as f64),
                         Value::Null => builder.append_null(),
                         _ => builder.append_null(),
                     }
@@ -252,9 +263,25 @@ impl ColumnBuilder {
                         Value::String(s) => builder.append_value(s),
                         Value::Null => builder.append_null(),
                         Value::Byte(n) => builder.append_value(format!("d[{n}].b")),
+                        Value::UInt8(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
+                        Value::UInt8(n) => builder.append_value(format!("d[{n}].u8")),
                         Value::Short(n) => builder.append_value(format!("d[{n}].s")),
+                        Value::UInt16(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
+                        Value::UInt16(n) => builder.append_value(format!("d[{n}].u16")),
                         Value::Int(n) => builder.append_value(n.to_string()),
+                        Value::UInt32(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
+                        Value::UInt32(n) => builder.append_value(format!("d[{n}].u32")),
                         Value::Long(n) => builder.append_value(format!("d[{n}].l")),
+                        Value::UInt64(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
+                        Value::UInt64(n) => builder.append_value(format!("d[{n}].u64")),
                         Value::Float32(f) => builder.append_value(format!("d[{}].f", f as f64)),
                         Value::Float(f) => builder.append_value(f.to_string()),
                         Value::Bool(b) => builder.append_value(b.to_string()),
@@ -268,6 +295,10 @@ impl ColumnBuilder {
                             builder.append_value(n.to_string())
                         }
                         Value::BigInt(n) => builder.append_value(format!("d[{n}].n")),
+                        Value::UInt128(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
+                        Value::UInt128(n) => builder.append_value(format!("d[{n}].u128")),
                         Value::DateTime(s) if self.cypher_output => builder.append_value(s),
                         Value::DateTime(s) => builder.append_value(format!("dt[{s}]")),
                         Value::Node { label, id } => {
@@ -409,11 +440,16 @@ fn format_property_value(value: &Value) -> String {
         Value::Bool(true) => "True".into(),
         Value::Bool(false) => "False".into(),
         Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
         Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
         Value::Float32(f) => format_float(*f as f64),
         Value::Float(f) => format_float(*f),
         Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
@@ -570,7 +606,15 @@ pub(crate) fn infer_kind(values: &[Value]) -> ColumnKind {
     for v in values {
         let candidate = match v {
             Value::Null => continue,
-            Value::Byte(_) | Value::Short(_) | Value::Int(_) | Value::Long(_) => ColumnKind::Int,
+            Value::Byte(_)
+            | Value::UInt8(_)
+            | Value::Short(_)
+            | Value::UInt16(_)
+            | Value::Int(_)
+            | Value::UInt32(_)
+            | Value::Long(_) => ColumnKind::Int,
+            Value::UInt64(n) if i64::try_from(*n).is_ok() => ColumnKind::Int,
+            Value::UInt64(_) => ColumnKind::Utf8,
             Value::Float32(_) | Value::Float(_) => ColumnKind::Float,
             Value::Bool(_) => ColumnKind::Bool,
             _ => ColumnKind::Utf8,

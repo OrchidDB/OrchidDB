@@ -45,7 +45,7 @@ pub(crate) fn lower_range_literal<'input>(
     if let Some(max_bound) = max {
         if min > max_bound {
             return Err(crate::language::cypher::parser::CypherParseError::Parse(
-                format!("relationship range lower bound {min} exceeds upper bound {max_bound}"),
+                "Binder exception: Lower bound of rel  is greater than upperBound.".to_string(),
             ));
         }
     }

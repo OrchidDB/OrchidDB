@@ -37,7 +37,7 @@ use strings::{regex_match_literal, substring};
 use type_check::typeof_matches;
 
 use super::element_id::element_internal_id;
-use super::expr::compare_values;
+use super::expr::{compare_values, modulo};
 
 use super::{InterpretError, IrResult};
 
@@ -562,31 +562,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             (Some(l), Some(r)) => Ok(Some(Value::Float(l.powf(r)))),
             _ => Ok(Some(Value::Null)),
         },
-        ("mod", [a, b]) => {
-            if matches!(a, Value::Null) || matches!(b, Value::Null) {
-                return Ok(Some(Value::Null));
-            }
-            match (value_as_i64_exact(a), value_as_i64_exact(b)) {
-                (_, Some(0)) => {
-                    return Err(InterpretError::Runtime(
-                        "Runtime exception: Modulo by zero.".into(),
-                    ));
-                }
-                (Some(l), Some(r)) => {
-                    return l.checked_rem(r).map(Value::Long).map(Some).ok_or_else(|| {
-                        InterpretError::Type("integer overflow during modulo".into())
-                    });
-                }
-                _ => {}
-            }
-            match (value_as_f64(a), value_as_f64(b)) {
-                (_, Some(r)) if r == 0.0 => Err(InterpretError::Runtime(
-                    "Runtime exception: Modulo by zero.".into(),
-                )),
-                (Some(l), Some(r)) => Ok(Some(Value::Float(l % r))),
-                _ => Ok(Some(Value::Null)),
-            }
-        }
+        ("mod", [a, b]) => modulo(a, b).map(Some),
         ("xor", [Value::Bool(a), Value::Bool(b)]) => Ok(Some(Value::Bool(*a ^ *b))),
         ("xor", [Value::Null, _]) | ("xor", [_, Value::Null]) => Ok(Some(Value::Null)),
         ("in", [needle, container]) if runtime_list(container).is_some() => {
@@ -1363,12 +1339,19 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             let mut sum: f64 = 0.0;
             let mut int_only = true;
             for item in items {
-                if let Some(n) = value_as_f64(item) {
-                    if matches!(item, Value::Float(_) | Value::Float32(_)) {
-                        int_only = false;
-                    }
-                    sum += n;
+                if matches!(item, Value::Null) {
+                    continue;
                 }
+                let Some(n) = value_as_f64(item) else {
+                    return Ok(Some(Value::String(format!(
+                        "Binder exception: Unsupported inner data type for LIST_SUM: {}",
+                        cypher_list_type_name(item)
+                    ))));
+                };
+                if matches!(item, Value::Float(_) | Value::Float32(_)) {
+                    int_only = false;
+                }
+                sum += n;
             }
             Ok(Some(if int_only {
                 Value::Long(sum as i64)
@@ -2694,12 +2677,17 @@ fn numeric_type(value: &Value) -> bool {
     matches!(
         value,
         Value::Byte(_)
+            | Value::UInt8(_)
             | Value::Short(_)
+            | Value::UInt16(_)
             | Value::Int(_)
+            | Value::UInt32(_)
             | Value::Long(_)
+            | Value::UInt64(_)
             | Value::Float32(_)
             | Value::Float(_)
             | Value::BigInt(_)
+            | Value::UInt128(_)
             | Value::BigDecimal(_)
     )
 }
@@ -2709,11 +2697,16 @@ fn cypher_list_type_name(value: &Value) -> String {
         Value::Null => "NULL".to_string(),
         Value::Bool(_) => "BOOL".to_string(),
         Value::Byte(_) => "INT8".to_string(),
+        Value::UInt8(_) => "UINT8".to_string(),
         Value::Short(_) => "INT16".to_string(),
+        Value::UInt16(_) => "UINT16".to_string(),
         Value::Int(_) | Value::Long(_) => "INT64".to_string(),
+        Value::UInt32(_) => "UINT32".to_string(),
+        Value::UInt64(_) => "UINT64".to_string(),
         Value::Float32(_) => "FLOAT".to_string(),
         Value::Float(_) => "DOUBLE".to_string(),
         Value::BigInt(_) => "INT128".to_string(),
+        Value::UInt128(_) => "UINT128".to_string(),
         Value::BigDecimal(_) => "DECIMAL".to_string(),
         Value::DateTime(_) => "DATE".to_string(),
         Value::InternalId { .. } => "INTERNAL_ID".to_string(),
@@ -3159,11 +3152,16 @@ fn value_type_name(value: &Value) -> &'static str {
         Value::String(_) => "STRING",
         Value::Bool(_) => "BOOL",
         Value::Byte(_) => "INT8",
+        Value::UInt8(_) => "UINT8",
         Value::Short(_) => "INT16",
+        Value::UInt16(_) => "UINT16",
         Value::Int(_) | Value::Long(_) => "INT64",
+        Value::UInt32(_) => "UINT32",
+        Value::UInt64(_) => "UINT64",
         Value::Float32(_) => "FLOAT",
         Value::Float(_) => "DOUBLE",
         Value::BigInt(_) => "INT128",
+        Value::UInt128(_) => "UINT128",
         Value::BigDecimal(_) => "DECIMAL",
         Value::DateTime(_) => "TIMESTAMP",
         Value::InternalId { .. } => "INTERNAL_ID",
@@ -3552,24 +3550,24 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
                 .map(|opt| opt.map(|n| Value::Byte(n as i8)).unwrap_or(Value::Null))
         }
         "UINT8" => strict_or_lenient_i64(v, 0, u8::MAX as i128, "UINT8", mode)
-            .map(|opt| opt.map(|n| Value::Short(n as i16)).unwrap_or(Value::Null)),
+            .map(|opt| opt.map(|n| Value::UInt8(n as u8)).unwrap_or(Value::Null)),
         "INT16" | "SMALLINT" => {
             strict_or_lenient_i64(v, i16::MIN as i128, i16::MAX as i128, "INT16", mode)
                 .map(|opt| opt.map(|n| Value::Short(n as i16)).unwrap_or(Value::Null))
         }
         "UINT16" => strict_or_lenient_i64(v, 0, u16::MAX as i128, "UINT16", mode)
-            .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null)),
+            .map(|opt| opt.map(|n| Value::UInt16(n as u16)).unwrap_or(Value::Null)),
         "INT32" | "INT" | "INTEGER" => {
             strict_or_lenient_i64(v, i32::MIN as i128, i32::MAX as i128, "INT32", mode)
                 .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null))
         }
         "UINT32" => strict_or_lenient_i64(v, 0, u32::MAX as i128, "UINT32", mode)
-            .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null)),
+            .map(|opt| opt.map(|n| Value::UInt32(n as u32)).unwrap_or(Value::Null)),
         "INT64" | "BIGINT" | "LONG" | "SERIAL" => {
             strict_or_lenient_i64(v, i64::MIN as i128, i64::MAX as i128, "INT64", mode)
                 .map(|opt| opt.map(Value::Long).unwrap_or(Value::Null))
         }
-        "UINT64" => strict_or_lenient_uint64_bigint(v, mode),
+        "UINT64" => strict_or_lenient_uint64(v, mode),
         "INT128" => match strict_cast_int128(v) {
             Ok(value) => Ok(value),
             Err(err) => downgrade_or_err(err, mode),
@@ -3777,8 +3775,8 @@ fn strict_or_lenient_i64(
     }
 }
 
-fn strict_or_lenient_uint64_bigint(value: &Value, mode: CastMode) -> IrResult<Value> {
-    match strict_cast_uint64_bigint(value) {
+fn strict_or_lenient_uint64(value: &Value, mode: CastMode) -> IrResult<Value> {
+    match strict_cast_uint64(value) {
         Ok(value) => Ok(value),
         Err(err) => downgrade_or_err(err, mode),
     }
@@ -3958,12 +3956,17 @@ fn union_string_fallback_score(value: &Value) -> Option<u8> {
         Value::String(_) => Some(8),
         Value::Bool(_)
         | Value::Byte(_)
+        | Value::UInt8(_)
         | Value::Short(_)
+        | Value::UInt16(_)
         | Value::Int(_)
+        | Value::UInt32(_)
         | Value::Long(_)
+        | Value::UInt64(_)
         | Value::Float32(_)
         | Value::Float(_)
         | Value::BigInt(_)
+        | Value::UInt128(_)
         | Value::BigDecimal(_)
         | Value::DateTime(_)
         | Value::InternalId { .. } => Some(8),
@@ -4191,10 +4194,15 @@ fn numeric_exact_match(value: &Value, target_head: &str) -> bool {
     matches!(
         (value, target_head),
         (Value::Byte(_), "INT8")
-            | (Value::Short(_), "INT16" | "UINT8")
+            | (Value::UInt8(_), "UINT8")
+            | (Value::Short(_), "INT16")
+            | (Value::UInt16(_), "UINT16")
             | (Value::Int(_), "INT64")
+            | (Value::UInt32(_), "UINT32")
             | (Value::Long(_), "INT64")
-            | (Value::BigInt(_), "INT128" | "UINT128")
+            | (Value::UInt64(_), "UINT64")
+            | (Value::BigInt(_), "INT128")
+            | (Value::UInt128(_), "UINT128")
             | (Value::Float32(_), "FLOAT")
             | (Value::Float(_), "DOUBLE")
             | (Value::BigDecimal(_), "DECIMAL")
@@ -4204,9 +4212,11 @@ fn numeric_exact_match(value: &Value, target_head: &str) -> bool {
 fn value_numeric_rank(value: &Value) -> Option<u8> {
     Some(match value {
         Value::Byte(_) => 1,
-        Value::Short(_) => 2,
-        Value::Int(_) | Value::Long(_) => 4,
-        Value::BigInt(_) => 6,
+        Value::UInt8(_) | Value::Short(_) => 2,
+        Value::UInt16(_) => 3,
+        Value::Int(_) | Value::UInt32(_) | Value::Long(_) => 4,
+        Value::UInt64(_) => 5,
+        Value::BigInt(_) | Value::UInt128(_) => 6,
         Value::Float32(_) => 5,
         Value::Float(_) | Value::BigDecimal(_) => 6,
         Value::String(_) => return Some(0),
@@ -4216,6 +4226,8 @@ fn value_numeric_rank(value: &Value) -> Option<u8> {
 
 fn strict_cast_i64(value: &Value, min: i128, max: i128, target_type: &str) -> IrResult<i64> {
     let string_input = matches!(value, Value::String(_));
+    let int128_input = matches!(value, Value::BigInt(_));
+    let unsigned_target = min == 0 && target_type.starts_with("UINT");
     let parsed = match value {
         Value::Float32(f) => strict_float_to_i128(*f as f64)?,
         Value::Float(f) => strict_float_to_i128(*f)?,
@@ -4224,6 +4236,10 @@ fn strict_cast_i64(value: &Value, min: i128, max: i128, target_type: &str) -> Ir
     if parsed < min || parsed > max {
         return if string_input {
             Err(cast_conversion_to_type_error(value, target_type))
+        } else if unsigned_target && int128_input && parsed < 0 {
+            Err(cast_negative_unsigned_error(&num_bigint::BigInt::from(
+                parsed,
+            )))
         } else {
             Err(cast_range_error(parsed, target_type))
         };
@@ -4235,9 +4251,14 @@ fn strict_value_to_i128(value: &Value) -> IrResult<i128> {
     use num_traits::ToPrimitive;
     match value {
         Value::Byte(n) => Ok(*n as i128),
+        Value::UInt8(n) => Ok(*n as i128),
         Value::Short(n) => Ok(*n as i128),
+        Value::UInt16(n) => Ok(*n as i128),
         Value::Int(n) | Value::Long(n) => Ok(*n as i128),
+        Value::UInt32(n) => Ok(*n as i128),
+        Value::UInt64(n) => Ok(*n as i128),
         Value::BigInt(n) => n.to_i128().ok_or_else(cast_overflow_error),
+        Value::UInt128(n) => n.to_i128().ok_or_else(cast_overflow_error),
         Value::BigDecimal(n) => n.to_i128().ok_or_else(cast_overflow_error),
         Value::Bool(true) => Ok(1),
         Value::Bool(false) => Ok(0),
@@ -4270,11 +4291,16 @@ fn strict_cast_f64(value: &Value) -> IrResult<f64> {
     use num_traits::ToPrimitive;
     let converted = match value {
         Value::Byte(n) => Ok(*n as f64),
+        Value::UInt8(n) => Ok(*n as f64),
         Value::Short(n) => Ok(*n as f64),
+        Value::UInt16(n) => Ok(*n as f64),
         Value::Int(n) | Value::Long(n) => Ok(*n as f64),
+        Value::UInt32(n) => Ok(*n as f64),
+        Value::UInt64(n) => Ok(*n as f64),
         Value::Float32(n) => Ok(*n as f64),
         Value::Float(n) => Ok(*n),
         Value::BigInt(n) => n.to_f64().ok_or_else(cast_overflow_error),
+        Value::UInt128(n) => n.to_f64().ok_or_else(cast_overflow_error),
         Value::BigDecimal(n) => n.to_f64().ok_or_else(cast_overflow_error),
         Value::Bool(true) => Ok(1.0),
         Value::Bool(false) => Ok(0.0),
@@ -4318,8 +4344,9 @@ fn strict_cast_int128(value: &Value) -> IrResult<Value> {
     }
 }
 
-fn strict_cast_uint64_bigint(value: &Value) -> IrResult<Value> {
+fn strict_cast_uint64(value: &Value) -> IrResult<Value> {
     use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
     let string_input = matches!(value, Value::String(_));
     let int128_input = matches!(value, Value::BigInt(_));
     let max = BigInt::from(u64::MAX);
@@ -4342,7 +4369,7 @@ fn strict_cast_uint64_bigint(value: &Value) -> IrResult<Value> {
             Err(cast_bigint_range_error(n, "UINT64"))
         }
     } else {
-        Ok(converted)
+        Ok(Value::UInt64(n.to_u64().ok_or_else(cast_overflow_error)?))
     }
 }
 
@@ -4375,7 +4402,7 @@ fn strict_cast_uint128(value: &Value) -> IrResult<Value> {
             Err(cast_bigint_range_error(n, "UINT128"))
         }
     } else {
-        Ok(converted)
+        Ok(Value::UInt128(n.clone()))
     }
 }
 
@@ -4385,8 +4412,13 @@ fn strict_cast_unbounded_bigint(value: &Value) -> IrResult<Value> {
     Ok(match value {
         Value::BigInt(_) => value.clone(),
         Value::Byte(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt8(n) => Value::BigInt(BigInt::from(*n)),
         Value::Short(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt16(n) => Value::BigInt(BigInt::from(*n)),
         Value::Int(n) | Value::Long(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt32(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt64(n) => Value::BigInt(BigInt::from(*n)),
+        Value::UInt128(n) => Value::BigInt(n.clone()),
         Value::Float32(n) => Value::BigInt(strict_float_to_bigint(*n as f64)?),
         Value::Float(n) => Value::BigInt(strict_float_to_bigint(*n)?),
         Value::BigDecimal(n) => Value::BigInt(BigInt::from(strict_value_to_i128(
@@ -4612,11 +4644,16 @@ fn decimal_overflow_message(
 fn decimal_input_display(value: &Value, decimal: &bigdecimal::BigDecimal) -> String {
     match value {
         Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
         Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
         Value::Float32(n) => n.to_string(),
         Value::Float(n) => n.to_string(),
         Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
         Value::Bool(true) => "1".to_string(),
         Value::Bool(false) => "0".to_string(),
         _ => decimal.to_string(),
@@ -4672,11 +4709,28 @@ fn parse_map_literal_entries(raw: &str) -> Option<Vec<(Value, Value)>> {
         let Some(sep_idx) = find_top_level_map_separator(entry) else {
             return None;
         };
-        let key = parse_runtime_atom(entry[..sep_idx].trim());
-        let value = parse_runtime_atom(entry[sep_idx + 1..].trim());
+        let key = parse_map_cast_atom(entry[..sep_idx].trim());
+        let value = parse_map_cast_atom(entry[sep_idx + 1..].trim());
         out.push((key, value));
     }
     Some(out)
+}
+
+fn parse_map_cast_atom(trimmed: &str) -> Value {
+    if let Some(items) = parse_runtime_list_literal(trimmed) {
+        return Value::List(items);
+    }
+    if trimmed.len() >= 2
+        && ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+    {
+        return Value::String(trimmed[1..trimmed.len() - 1].to_string());
+    }
+    if trimmed.eq_ignore_ascii_case("null") {
+        Value::Null
+    } else {
+        Value::String(trimmed.to_string())
+    }
 }
 
 fn find_top_level_map_separator(entry: &str) -> Option<usize> {
@@ -4780,9 +4834,14 @@ fn cast_input_text(value: &Value) -> String {
     match value {
         Value::String(text) => text.trim().to_string(),
         Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
         Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
         Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
         Value::Float32(n) => n.to_string(),
         Value::Float(n) => n.to_string(),
         Value::BigDecimal(n) => n.to_string(),
@@ -4922,8 +4981,12 @@ fn hash_value_u64(value: &Value) -> u64 {
         Value::Null => u64::MAX,
         Value::Bool(value) => murmurhash64(u64::from(*value)),
         Value::Byte(value) => murmurhash64(*value as u64),
+        Value::UInt8(value) => murmurhash64(*value as u64),
         Value::Short(value) => murmurhash64(*value as u64),
+        Value::UInt16(value) => murmurhash64(*value as u64),
         Value::Int(value) | Value::Long(value) => murmurhash64(*value as u64),
+        Value::UInt32(value) => murmurhash64(*value as u64),
+        Value::UInt64(value) => murmurhash64(*value),
         Value::Float32(value) => {
             if *value == 0.0 {
                 murmurhash64(0)
@@ -4943,6 +5006,14 @@ fn hash_value_u64(value: &Value) -> u64 {
             if let Some(value) = value.to_i128() {
                 murmurhash64(value as u64) ^ murmurhash64((value >> 64) as u64)
             } else if let Some(value) = value.to_u128() {
+                murmurhash64(value as u64) ^ murmurhash64((value >> 64) as u64)
+            } else {
+                hash_string_u64(&value.to_string())
+            }
+        }
+        Value::UInt128(value) => {
+            use num_traits::ToPrimitive;
+            if let Some(value) = value.to_u128() {
                 murmurhash64(value as u64) ^ murmurhash64((value >> 64) as u64)
             } else {
                 hash_string_u64(&value.to_string())
@@ -5053,11 +5124,15 @@ fn value_as_f64(value: &Value) -> Option<f64> {
     use num_traits::ToPrimitive;
     match value {
         Value::Byte(n) => Some(*n as f64),
+        Value::UInt8(n) => Some(*n as f64),
         Value::Short(n) => Some(*n as f64),
+        Value::UInt16(n) => Some(*n as f64),
         Value::Int(n) | Value::Long(n) => Some(*n as f64),
+        Value::UInt32(n) => Some(*n as f64),
+        Value::UInt64(n) => Some(*n as f64),
         Value::Float32(n) => Some(*n as f64),
         Value::Float(n) => Some(*n),
-        Value::BigInt(n) => n.to_f64(),
+        Value::BigInt(n) | Value::UInt128(n) => n.to_f64(),
         Value::BigDecimal(n) => n.to_f64(),
         _ => None,
     }
@@ -5067,9 +5142,13 @@ fn value_as_i64_exact(value: &Value) -> Option<i64> {
     use num_traits::ToPrimitive;
     match value {
         Value::Byte(n) => Some(*n as i64),
+        Value::UInt8(n) => Some(*n as i64),
         Value::Short(n) => Some(*n as i64),
+        Value::UInt16(n) => Some(*n as i64),
         Value::Int(n) | Value::Long(n) => Some(*n),
-        Value::BigInt(n) => n.to_i64(),
+        Value::UInt32(n) => Some(*n as i64),
+        Value::UInt64(n) => i64::try_from(*n).ok(),
+        Value::BigInt(n) | Value::UInt128(n) => n.to_i64(),
         _ => None,
     }
 }
@@ -5185,9 +5264,13 @@ fn value_as_bigint(value: &Value) -> Option<num_bigint::BigInt> {
 
     match value {
         Value::Byte(n) => Some(BigInt::from(*n)),
+        Value::UInt8(n) => Some(BigInt::from(*n)),
         Value::Short(n) => Some(BigInt::from(*n)),
+        Value::UInt16(n) => Some(BigInt::from(*n)),
         Value::Int(n) | Value::Long(n) => Some(BigInt::from(*n)),
-        Value::BigInt(n) => Some(n.clone()),
+        Value::UInt32(n) => Some(BigInt::from(*n)),
+        Value::UInt64(n) => Some(BigInt::from(*n)),
+        Value::BigInt(n) | Value::UInt128(n) => Some(n.clone()),
         Value::BigDecimal(n) => n.to_i128().map(BigInt::from),
         Value::Bool(true) => Some(BigInt::from(1)),
         Value::Bool(false) => Some(BigInt::from(0)),
@@ -5243,11 +5326,16 @@ fn display_for_list_to_string(value: &Value) -> String {
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
         Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
         Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
         Value::Float32(n) => (*n as f64).to_string(),
         Value::Float(n) => n.to_string(),
         Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(n) => n.to_string(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
@@ -5600,9 +5688,13 @@ fn range_integer_arg(value: &Value) -> Option<i64> {
     use num_traits::ToPrimitive;
     match value {
         Value::Byte(value) => Some(*value as i64),
+        Value::UInt8(value) => Some(*value as i64),
         Value::Short(value) => Some(*value as i64),
+        Value::UInt16(value) => Some(*value as i64),
         Value::Int(value) | Value::Long(value) => Some(*value),
-        Value::BigInt(value) => value.to_i64(),
+        Value::UInt32(value) => Some(*value as i64),
+        Value::UInt64(value) => i64::try_from(*value).ok(),
+        Value::BigInt(value) | Value::UInt128(value) => value.to_i64(),
         _ => None,
     }
 }

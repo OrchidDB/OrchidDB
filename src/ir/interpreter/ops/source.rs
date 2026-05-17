@@ -69,17 +69,15 @@ pub(crate) fn rel_scan(
     let mut out = Vec::new();
     let candidate_types = matching_rel_types(types, graph);
     for rel_type in candidate_types {
-        let table = graph.edge_table(&rel_type)?;
-        for row_id in 0..table.batch.num_rows() {
-            let (src_label, src_id, dst_label, dst_id) = graph
-                .edge_endpoints(&rel_type, row_id as i64)
-                .expect("endpoints");
+        for row_id in graph.edge_ids(&rel_type) {
+            let (src_label, src_id, dst_label, dst_id) =
+                graph.edge_endpoints(&rel_type, row_id).expect("endpoints");
             let mut row = Row::new();
             row.bindings.insert(
                 binding.to_string(),
                 Value::Edge {
                     rel_type: rel_type.clone(),
-                    id: row_id as i64,
+                    id: row_id,
                     src_label,
                     src_id,
                     dst_label,

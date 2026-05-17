@@ -14,12 +14,17 @@ fn orderability_tag(v: &Value) -> u8 {
         Value::Null => 0,
         Value::Bool(_) => 1,
         Value::Byte(_)
+        | Value::UInt8(_)
         | Value::Short(_)
+        | Value::UInt16(_)
         | Value::Int(_)
+        | Value::UInt32(_)
         | Value::Long(_)
+        | Value::UInt64(_)
         | Value::Float32(_)
         | Value::Float(_)
         | Value::BigInt(_)
+        | Value::UInt128(_)
         | Value::BigDecimal(_) => 2,
         Value::DateTime(_) => 3,
         Value::InternalId { .. } => 4,
@@ -178,12 +183,17 @@ fn compare_numeric_values(a: &Value, b: &Value) -> std::cmp::Ordering {
     fn decimal(value: &Value) -> Option<BigDecimal> {
         match value {
             Value::Byte(n) => Some(BigDecimal::from(*n)),
+            Value::UInt8(n) => Some(BigDecimal::from(*n)),
             Value::Short(n) => Some(BigDecimal::from(*n)),
+            Value::UInt16(n) => Some(BigDecimal::from(*n)),
             Value::Int(n) => Some(BigDecimal::from(*n)),
+            Value::UInt32(n) => Some(BigDecimal::from(*n)),
             Value::Long(n) => Some(BigDecimal::from(*n)),
+            Value::UInt64(n) => Some(BigDecimal::from(*n)),
             Value::Float32(n) => BigDecimal::from_f32(*n),
             Value::Float(n) => BigDecimal::from_f64(*n),
             Value::BigInt(n) => Some(BigDecimal::from(n.clone())),
+            Value::UInt128(n) => Some(BigDecimal::from(n.clone())),
             Value::BigDecimal(n) => Some(n.clone()),
             _ => None,
         }

@@ -21,14 +21,19 @@ pub enum Value {
     Null,
     Bool(bool),
     Byte(i8),
+    UInt8(u8),
     Short(i16),
+    UInt16(u16),
     Int(i64),
+    UInt32(u32),
     Long(i64),
+    UInt64(u64),
     Float32(f32),
     Float(f64),
     /// Arbitrary-precision integer — Gremlin `BigInteger` / `GType.BIGINT`.
     /// Promoted from `Int` when an `asNumber(GType.BIGINT)` cast hits.
     BigInt(BigInt),
+    UInt128(BigInt),
     /// Arbitrary-precision decimal — Gremlin `BigDecimal` /
     /// `GType.BIGDECIMAL`. Carries the type identity so
     /// `P.typeOf(GType.BIGDECIMAL)` matches and the harness's
@@ -73,12 +78,17 @@ impl Value {
             Self::Null => "null",
             Self::Bool(_) => "bool",
             Self::Byte(_) => "byte",
+            Self::UInt8(_) => "uint8",
             Self::Short(_) => "short",
+            Self::UInt16(_) => "uint16",
             Self::Int(_) => "int",
+            Self::UInt32(_) => "uint32",
             Self::Long(_) => "long",
+            Self::UInt64(_) => "uint64",
             Self::Float32(_) => "float",
             Self::Float(_) => "float",
             Self::BigInt(_) => "bigint",
+            Self::UInt128(_) => "uint128",
             Self::BigDecimal(_) => "bigdecimal",
             Self::DateTime(_) => "datetime",
             Self::InternalId { .. } => "internal_id",
@@ -102,12 +112,17 @@ impl Value {
         use num_traits::ToPrimitive;
         match self {
             Self::Byte(value) => Some(*value as i64),
+            Self::UInt8(value) => Some(*value as i64),
             Self::Short(value) => Some(*value as i64),
+            Self::UInt16(value) => Some(*value as i64),
             Self::Int(value) => Some(*value),
+            Self::UInt32(value) => Some(*value as i64),
             Self::Long(value) => Some(*value),
+            Self::UInt64(value) => i64::try_from(*value).ok(),
             Self::Float32(value) => Some(*value as i64),
             Self::Float(value) => Some(*value as i64),
             Self::BigInt(value) => value.to_i64(),
+            Self::UInt128(value) => value.to_i64(),
             Self::BigDecimal(value) => value.to_i64(),
             _ => None,
         }
@@ -126,12 +141,17 @@ impl Value {
             use bigdecimal::FromPrimitive;
             match value {
                 Value::Byte(n) => Some(BigDecimal::from(*n)),
+                Value::UInt8(n) => Some(BigDecimal::from(*n)),
                 Value::Short(n) => Some(BigDecimal::from(*n)),
+                Value::UInt16(n) => Some(BigDecimal::from(*n)),
                 Value::Int(n) => Some(BigDecimal::from(*n)),
+                Value::UInt32(n) => Some(BigDecimal::from(*n)),
                 Value::Long(n) => Some(BigDecimal::from(*n)),
+                Value::UInt64(n) => Some(BigDecimal::from(*n)),
                 Value::Float32(n) => BigDecimal::from_f32(*n),
                 Value::Float(n) => BigDecimal::from_f64(*n),
                 Value::BigInt(n) => Some(BigDecimal::from(n.clone())),
+                Value::UInt128(n) => Some(BigDecimal::from(n.clone())),
                 Value::BigDecimal(n) => Some(n.clone()),
                 _ => None,
             }

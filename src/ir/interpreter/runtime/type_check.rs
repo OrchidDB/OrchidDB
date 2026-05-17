@@ -15,9 +15,13 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::Null => normalised == "null",
         Value::Bool(_) => matches!(normalised.as_str(), "boolean" | "bool"),
         Value::Byte(_) => normalised == "byte",
+        Value::UInt8(_) => matches!(normalised.as_str(), "uint8" | "byte"),
         Value::Short(_) => normalised == "short",
+        Value::UInt16(_) => normalised == "uint16",
         Value::Int(_) => matches!(normalised.as_str(), "int" | "integer"),
+        Value::UInt32(_) => normalised == "uint32",
         Value::Long(_) => normalised == "long",
+        Value::UInt64(_) => normalised == "uint64",
         Value::Float32(_) => normalised == "float",
         Value::Float(_) => normalised == "double",
         // BigInt / BigDecimal carry their typed identity from
@@ -26,6 +30,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         // so `typeOf(GType.LONG)` still passes for a BigInt that
         // would semantically fit in a 64-bit integer.
         Value::BigInt(_) => matches!(normalised.as_str(), "bigint" | "biginteger"),
+        Value::UInt128(_) => normalised == "uint128",
         Value::BigDecimal(_) => matches!(normalised.as_str(), "bigdecimal" | "decimal"),
         Value::DateTime(_) => matches!(normalised.as_str(), "datetime" | "date"),
         Value::InternalId { .. } => matches!(normalised.as_str(), "internal_id" | "internalid"),
