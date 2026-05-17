@@ -435,6 +435,24 @@ pub trait CypherListener<'input>: ParseTreeListener<'input, CypherParserContextT
      */
     fn exit_oC_RelationshipDetail(&mut self, _ctx: &OC_RelationshipDetailContext<'input>) {}
     /**
+     * Enter a parse tree produced by {@link CypherParser#oC_RecursiveRelationshipFilter}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_RecursiveRelationshipFilter(
+        &mut self,
+        _ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) {
+    }
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_RecursiveRelationshipFilter}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_RecursiveRelationshipFilter(
+        &mut self,
+        _ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) {
+    }
+    /**
      * Enter a parse tree produced by {@link CypherParser#oC_Properties}.
      * @param ctx the parse tree
      */
@@ -885,6 +903,56 @@ pub trait CypherListener<'input>: ParseTreeListener<'input, CypherParserContextT
      * @param ctx the parse tree
      */
     fn exit_oC_FunctionInvocation(&mut self, _ctx: &OC_FunctionInvocationContext<'input>) {}
+    /**
+     * Enter a parse tree produced by {@link CypherParser#oC_CastExpression}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_CastExpression(&mut self, _ctx: &OC_CastExpressionContext<'input>) {}
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_CastExpression}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_CastExpression(&mut self, _ctx: &OC_CastExpressionContext<'input>) {}
+    /**
+     * Enter a parse tree produced by {@link CypherParser#oC_CastType}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_CastType(&mut self, _ctx: &OC_CastTypeContext<'input>) {}
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_CastType}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_CastType(&mut self, _ctx: &OC_CastTypeContext<'input>) {}
+    /**
+     * Enter a parse tree produced by {@link CypherParser#oC_CastTypeArgument}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_CastTypeArgument(&mut self, _ctx: &OC_CastTypeArgumentContext<'input>) {}
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_CastTypeArgument}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_CastTypeArgument(&mut self, _ctx: &OC_CastTypeArgumentContext<'input>) {}
+    /**
+     * Enter a parse tree produced by {@link CypherParser#oC_CastTypeField}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_CastTypeField(&mut self, _ctx: &OC_CastTypeFieldContext<'input>) {}
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_CastTypeField}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_CastTypeField(&mut self, _ctx: &OC_CastTypeFieldContext<'input>) {}
+    /**
+     * Enter a parse tree produced by {@link CypherParser#oC_CastTypeName}.
+     * @param ctx the parse tree
+     */
+    fn enter_oC_CastTypeName(&mut self, _ctx: &OC_CastTypeNameContext<'input>) {}
+    /**
+     * Exit a parse tree produced by {@link CypherParser#oC_CastTypeName}.
+     * @param ctx the parse tree
+     */
+    fn exit_oC_CastTypeName(&mut self, _ctx: &OC_CastTypeNameContext<'input>) {}
     /**
      * Enter a parse tree produced by {@link CypherParser#oC_FunctionName}.
      * @param ctx the parse tree

@@ -56,15 +56,541 @@ pub fn parse_cypher(input: &str) -> Result<CypherProgram> {
 }
 
 pub fn parse_query(input: &str) -> Result<Query> {
-    let (root, _syntax) = parse_root(input)?;
+    let normalized = normalize_cypher_extensions(input);
+    let (root, _syntax) = parse_root(&normalized)?;
     let mut visitor = lowering::visitor::AstLoweringVisitor::new();
     visitor.visit_oC_Cypher(&root);
     visitor.finish()
 }
 
 pub fn parse_syntax(input: &str) -> Result<CypherSyntax> {
-    let (_root, syntax) = parse_root(input)?;
+    let normalized = normalize_cypher_extensions(input);
+    let (_root, syntax) = parse_root(&normalized)?;
     Ok(syntax)
+}
+
+fn normalize_cypher_extensions(input: &str) -> String {
+    let normalized = normalize_named_function_args(input);
+    normalize_colon_slices(&normalize_lambda_list_functions(&normalized))
+}
+
+fn normalize_named_function_args(input: &str) -> String {
+    if !input.contains(":=") && !input.contains("\":") && !input.contains("':") {
+        return input.to_string();
+    }
+    let mut out = String::with_capacity(input.len() + 8);
+    let chars: Vec<(usize, char)> = input.char_indices().collect();
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut named_depths: Vec<i32> = Vec::new();
+    while i < chars.len() {
+        let (byte_idx, ch) = chars[i];
+        if let Some(q) = quote {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            '\'' | '"' => {
+                if let Some((key, next)) = read_quoted_map_key(input, &chars, i) {
+                    out.push_str(&key);
+                    i = next;
+                    continue;
+                }
+                quote = Some(ch);
+                out.push(ch);
+                i += 1;
+                continue;
+            }
+            '(' | '[' | '{' => {
+                for depth in &mut named_depths {
+                    *depth += 1;
+                }
+            }
+            ')' | ']' | '}' => {
+                while matches!(named_depths.last(), Some(0)) {
+                    out.push('}');
+                    named_depths.pop();
+                }
+                for depth in &mut named_depths {
+                    *depth -= 1;
+                }
+            }
+            ',' => {
+                while matches!(named_depths.last(), Some(0)) {
+                    out.push('}');
+                    named_depths.pop();
+                }
+            }
+            _ => {}
+        }
+        if is_identifier_start(ch) {
+            let start = i;
+            let mut end = i + 1;
+            while end < chars.len() && is_identifier_continue(chars[end].1) {
+                end += 1;
+            }
+            let mut after = end;
+            while after < chars.len() && chars[after].1.is_whitespace() {
+                after += 1;
+            }
+            if after + 1 < chars.len() && chars[after].1 == ':' && chars[after + 1].1 == '=' {
+                let ident_start = chars[start].0;
+                let ident_end = if end < chars.len() {
+                    chars[end].0
+                } else {
+                    input.len()
+                };
+                out.push('{');
+                out.push_str(&input[ident_start..ident_end]);
+                out.push(':');
+                i = after + 2;
+                while i < chars.len() && chars[i].1.is_whitespace() {
+                    out.push(chars[i].1);
+                    i += 1;
+                }
+                named_depths.push(0);
+                continue;
+            }
+            out.push_str(
+                &input[byte_idx..if end < chars.len() {
+                    chars[end].0
+                } else {
+                    input.len()
+                }],
+            );
+            i = end;
+            continue;
+        }
+        out.push(ch);
+        i += 1;
+    }
+    while named_depths.pop().is_some() {
+        out.push('}');
+    }
+    out
+}
+
+fn is_identifier_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn read_quoted_map_key(
+    input: &str,
+    chars: &[(usize, char)],
+    start: usize,
+) -> Option<(String, usize)> {
+    let quote = chars[start].1;
+    let mut end = start + 1;
+    let mut escaped = false;
+    while end < chars.len() {
+        let ch = chars[end].1;
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == quote {
+            break;
+        }
+        end += 1;
+    }
+    if end >= chars.len() {
+        return None;
+    }
+    let mut after = end + 1;
+    while after < chars.len() && chars[after].1.is_whitespace() {
+        after += 1;
+    }
+    if after >= chars.len() || chars[after].1 != ':' {
+        return None;
+    }
+    if after + 1 < chars.len() && chars[after + 1].1 == '=' {
+        return None;
+    }
+    let key_start = chars[start].0 + quote.len_utf8();
+    let key_end = chars[end].0;
+    let key = &input[key_start..key_end];
+    if key.is_empty()
+        || !key.chars().next().is_some_and(is_identifier_start)
+        || !key.chars().all(is_identifier_continue)
+    {
+        return None;
+    }
+    Some((key.to_string(), end + 1))
+}
+
+fn normalize_lambda_list_functions(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut index = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    while index < input.len() {
+        let ch = input[index..].chars().next().unwrap();
+        if let Some(q) = quote {
+            out.push(ch);
+            index += ch.len_utf8();
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            out.push(ch);
+            index += ch.len_utf8();
+            continue;
+        }
+        if let Some((replacement, end)) = rewrite_lambda_function_at(input, index) {
+            out.push_str(&replacement);
+            index = end;
+            continue;
+        }
+        out.push(ch);
+        index += ch.len_utf8();
+    }
+    out
+}
+
+fn rewrite_lambda_function_at(input: &str, index: usize) -> Option<(String, usize)> {
+    let (name, after_name) = ["list_transform", "list_filter", "list_reduce"]
+        .into_iter()
+        .find_map(|name| match_keyword_at(input, index, name).map(|after| (name, after)))?;
+    let cursor = skip_space(input, after_name);
+    if input[cursor..].chars().next()? != '(' {
+        return None;
+    }
+    let end = find_matching(input, cursor, '(', ')')?;
+    let args = split_top_level_args(&input[cursor + 1..end]);
+    let replacement = match name {
+        "list_transform" => {
+            if args.len() != 2 {
+                return None;
+            }
+            let (variable, body) = split_single_lambda(args[1])?;
+            format!(
+                "__list_transform({}, '{}', {})",
+                normalize_lambda_list_functions(args[0].trim()),
+                variable,
+                normalize_lambda_list_functions(body.trim())
+            )
+        }
+        "list_filter" => {
+            if args.len() != 2 {
+                return None;
+            }
+            let (variable, body) = split_single_lambda(args[1])?;
+            format!(
+                "__list_filter({}, '{}', {})",
+                normalize_lambda_list_functions(args[0].trim()),
+                variable,
+                normalize_lambda_list_functions(body.trim())
+            )
+        }
+        "list_reduce" => {
+            if args.len() != 2 {
+                return None;
+            }
+            let (accumulator, variable, body) = split_reduce_lambda(args[1])?;
+            format!(
+                "__list_reduce({}, '{}', '{}', {})",
+                normalize_lambda_list_functions(args[0].trim()),
+                accumulator,
+                variable,
+                normalize_lambda_list_functions(body.trim())
+            )
+        }
+        _ => return None,
+    };
+    Some((replacement, end + 1))
+}
+
+fn match_keyword_at(input: &str, index: usize, keyword: &str) -> Option<usize> {
+    if index > 0 {
+        let prev = input[..index].chars().next_back()?;
+        if is_identifier_continue(prev) {
+            return None;
+        }
+    }
+    let end = index.checked_add(keyword.len())?;
+    let candidate = input.get(index..end)?;
+    if !candidate.eq_ignore_ascii_case(keyword) {
+        return None;
+    }
+    if end < input.len() {
+        let next = input[end..].chars().next()?;
+        if is_identifier_continue(next) {
+            return None;
+        }
+    }
+    Some(end)
+}
+
+fn skip_space(input: &str, mut index: usize) -> usize {
+    while index < input.len() {
+        let ch = input[index..].chars().next().unwrap();
+        if !ch.is_whitespace() {
+            break;
+        }
+        index += ch.len_utf8();
+    }
+    index
+}
+
+fn find_matching(input: &str, open_index: usize, open: char, close: char) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (offset, ch) in input[open_index..].char_indices() {
+        let index = open_index + offset;
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            c if c == open => depth += 1,
+            c if c == close => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn split_top_level_args(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut brace = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (index, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            '{' => brace += 1,
+            '}' => brace -= 1,
+            ',' if paren == 0 && bracket == 0 && brace == 0 => {
+                parts.push(input[start..index].trim());
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(input[start..].trim());
+    parts
+}
+
+fn split_single_lambda(input: &str) -> Option<(String, &str)> {
+    let arrow = top_level_arrow(input)?;
+    let variable = strip_wrapping_parens(input[..arrow].trim()).trim();
+    if variable.is_empty() || variable.contains(',') {
+        return None;
+    }
+    Some((variable.to_string(), &input[arrow + 2..]))
+}
+
+fn split_reduce_lambda(input: &str) -> Option<(String, String, &str)> {
+    let arrow = top_level_arrow(input)?;
+    let params = split_top_level_args(strip_wrapping_parens(input[..arrow].trim()));
+    if params.len() != 2 {
+        return None;
+    }
+    Some((
+        params[0].trim().to_string(),
+        params[1].trim().to_string(),
+        &input[arrow + 2..],
+    ))
+}
+
+fn strip_wrapping_parens(input: &str) -> &str {
+    let trimmed = input.trim();
+    if trimmed.starts_with('(')
+        && trimmed.ends_with(')')
+        && find_matching(trimmed, 0, '(', ')') == Some(trimmed.len() - 1)
+    {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    }
+}
+
+fn top_level_arrow(input: &str) -> Option<usize> {
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut brace = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (index, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            '{' => brace += 1,
+            '}' => brace -= 1,
+            '-' if paren == 0
+                && bracket == 0
+                && brace == 0
+                && input[index + ch.len_utf8()..].starts_with('>') =>
+            {
+                return Some(index);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn normalize_colon_slices(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut index = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    while index < input.len() {
+        let ch = input[index..].chars().next().unwrap();
+        if let Some(q) = quote {
+            out.push(ch);
+            index += ch.len_utf8();
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            out.push(ch);
+            index += ch.len_utf8();
+            continue;
+        }
+        if ch == '[' {
+            if let Some(end) = find_matching(input, index, '[', ']') {
+                let inner = &input[index + 1..end];
+                if let Some(colon) = top_level_colon_slice(inner) {
+                    out.push('[');
+                    out.push_str(&normalize_colon_slices(&inner[..colon]));
+                    out.push_str("..");
+                    out.push_str(&normalize_colon_slices(&inner[colon + 1..]));
+                    out.push(']');
+                    index = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(ch);
+        index += ch.len_utf8();
+    }
+    out
+}
+
+fn top_level_colon_slice(input: &str) -> Option<usize> {
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut brace = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut colon = None;
+    for (index, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            '{' => brace += 1,
+            '}' => brace -= 1,
+            ':' if paren == 0 && bracket == 0 && brace == 0 => {
+                if colon.replace(index).is_some() {
+                    return None;
+                }
+            }
+            '.' if paren == 0 && bracket == 0 && brace == 0 && input[index..].starts_with("..") => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    let colon = colon?;
+    let left = input[..colon].trim();
+    let right = input[colon + 1..].trim();
+    let right_starts_name = right
+        .chars()
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic());
+    if (left.is_empty()
+        || left
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric()))
+        && right_starts_name
+    {
+        return None;
+    }
+    Some(colon)
 }
 
 fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)> {

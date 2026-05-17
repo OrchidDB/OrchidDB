@@ -1,6 +1,6 @@
 use crate::grammar::generated::cypher::cypherparser::{
-    OC_LabelNameContext, OC_NodeLabelContext, OC_RelTypeNameContext, OC_SymbolicNameContext,
-    OC_VariableContext,
+    OC_LabelNameContext, OC_NodeLabelContext, OC_NodeLabelContextAttrs, OC_RelTypeNameContext,
+    OC_SymbolicNameContext, OC_VariableContext,
 };
 use crate::language::cypher::parser::Result;
 use antlr4rust::tree::ParseTree;
@@ -19,6 +19,17 @@ pub(crate) fn lower_label_name(ctx: &OC_LabelNameContext<'_>) -> Result<String> 
 
 pub(crate) fn lower_node_label(ctx: &OC_NodeLabelContext<'_>) -> Result<String> {
     Ok(clean_label(&ctx.get_text()))
+}
+
+pub(crate) fn lower_node_label_names(ctx: &OC_NodeLabelContext<'_>) -> Result<Vec<String>> {
+    let labels = ctx.oC_LabelName_all();
+    if labels.is_empty() {
+        return Ok(vec![clean_label(&ctx.get_text())]);
+    }
+    labels
+        .into_iter()
+        .map(|label| lower_label_name(label.as_ref()))
+        .collect()
 }
 
 pub(crate) fn lower_rel_type_name(ctx: &OC_RelTypeNameContext<'_>) -> Result<String> {

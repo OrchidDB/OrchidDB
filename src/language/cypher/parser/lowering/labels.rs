@@ -7,10 +7,11 @@ use crate::language::cypher::parser::Result;
 use super::names;
 
 pub(crate) fn lower_node_labels(ctx: &OC_NodeLabelsContext<'_>) -> Result<Vec<String>> {
-    ctx.oC_NodeLabel_all()
-        .into_iter()
-        .map(|label| lower_node_label(label.as_ref()))
-        .collect()
+    let mut labels = Vec::new();
+    for label in ctx.oC_NodeLabel_all() {
+        labels.extend(names::lower_node_label_names(label.as_ref())?);
+    }
+    Ok(labels)
 }
 
 pub(crate) fn lower_node_label(ctx: &OC_NodeLabelContext<'_>) -> Result<String> {

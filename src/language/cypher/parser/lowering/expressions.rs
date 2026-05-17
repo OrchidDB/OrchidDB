@@ -4,14 +4,15 @@ use crate::grammar::generated::cypher::cypherparser::{
     OC_AddOrSubtractExpressionContext, OC_AddOrSubtractExpressionContextAttrs,
     OC_AndExpressionContext, OC_AndExpressionContextAttrs, OC_AtomContext, OC_AtomContextAttrs,
     OC_BooleanLiteralContextAttrs, OC_CaseAlternativeContext, OC_CaseAlternativeContextAttrs,
-    OC_CaseExpressionContext, OC_CaseExpressionContextAttrs, OC_ComparisonExpressionContext,
+    OC_CaseExpressionContext, OC_CaseExpressionContextAttrs, OC_CastExpressionContext,
+    OC_CastExpressionContextAttrs, OC_ComparisonExpressionContext,
     OC_ComparisonExpressionContextAttrs, OC_ExpressionContext, OC_ExpressionContextAttrs,
     OC_FunctionInvocationContext, OC_FunctionInvocationContextAttrs, OC_FunctionNameContext,
     OC_FunctionNameContextAttrs, OC_ListLiteralContextAttrs, OC_ListOperatorExpressionContext,
     OC_ListOperatorExpressionContextAttrs, OC_ListPredicateExpressionContextAttrs,
     OC_LiteralContextAttrs, OC_MapLiteralContextAttrs, OC_MultiplyDivideModuloExpressionContext,
-    OC_MultiplyDivideModuloExpressionContextAttrs, OC_NamespaceContextAttrs,
-    OC_NodeLabelsContext, OC_NodeLabelsContextAttrs, OC_NonArithmeticOperatorExpressionContext,
+    OC_MultiplyDivideModuloExpressionContextAttrs, OC_NamespaceContextAttrs, OC_NodeLabelsContext,
+    OC_NodeLabelsContextAttrs, OC_NonArithmeticOperatorExpressionContext,
     OC_NonArithmeticOperatorExpressionContextAttrs, OC_NotExpressionContext,
     OC_NotExpressionContextAttrs, OC_NullPredicateExpressionContextAttrs,
     OC_NumberLiteralContextAttrs, OC_OrExpressionContext, OC_OrExpressionContextAttrs,
@@ -449,11 +450,10 @@ fn lower_list_operator_parts(
 }
 
 fn lower_node_labels(ctx: &OC_NodeLabelsContext<'_>) -> Result<Vec<String>> {
-    let labels = ctx
-        .oC_NodeLabel_all()
-        .into_iter()
-        .map(|label| names::lower_node_label(label.as_ref()))
-        .collect::<Result<Vec<_>>>()?;
+    let mut labels = Vec::new();
+    for label in ctx.oC_NodeLabel_all() {
+        labels.extend(names::lower_node_label_names(label.as_ref())?);
+    }
     if labels.is_empty() {
         return context::missing("label predicate missing label");
     }
@@ -475,6 +475,9 @@ pub(crate) fn lower_atom(ctx: &OC_AtomContext<'_>) -> Result<Expr> {
     }
     if let Some(case) = ctx.oC_CaseExpression() {
         return lower_case_expression(case.as_ref());
+    }
+    if let Some(cast) = ctx.oC_CastExpression() {
+        return lower_cast_expression(cast.as_ref());
     }
     if let Some(list) = ctx.oC_ListComprehension() {
         return collections::lower_list_comprehension(list.as_ref());
@@ -519,10 +522,84 @@ pub(crate) fn lower_function_invocation(ctx: &OC_FunctionInvocationContext<'_>) 
         .into_iter()
         .map(|arg| lower_expression(arg.as_ref()))
         .collect::<Result<Vec<_>>>()?;
+    if name.eq_ignore_ascii_case("__list_reduce") {
+        let [
+            collection,
+            Expr::Literal(Literal::String(accumulator)),
+            Expr::Literal(Literal::String(variable)),
+            map,
+        ] = args.as_slice()
+        else {
+            return context::missing(
+                "LIST_REDUCE lambda lowering expected list, accumulator, variable, and body",
+            );
+        };
+        return Ok(Expr::ListReduce {
+            accumulator: accumulator.clone(),
+            variable: variable.clone(),
+            collection: Box::new(collection.clone()),
+            map: Box::new(map.clone()),
+        });
+    }
+    if name.eq_ignore_ascii_case("__list_transform") {
+        let [
+            collection,
+            Expr::Literal(Literal::String(variable)),
+            map,
+        ] = args.as_slice()
+        else {
+            return context::missing(
+                "LIST_TRANSFORM lambda lowering expected list, variable, and body",
+            );
+        };
+        return Ok(Expr::ListTransform {
+            variable: variable.clone(),
+            collection: Box::new(collection.clone()),
+            map: Box::new(map.clone()),
+        });
+    }
+    if name.eq_ignore_ascii_case("__list_filter") {
+        let [
+            collection,
+            Expr::Literal(Literal::String(variable)),
+            predicate,
+        ] = args.as_slice()
+        else {
+            return context::missing(
+                "LIST_FILTER lambda lowering expected list, variable, and predicate",
+            );
+        };
+        return Ok(Expr::ListFilter {
+            variable: variable.clone(),
+            collection: Box::new(collection.clone()),
+            predicate: Box::new(predicate.clone()),
+        });
+    }
     Ok(Expr::Function {
         name,
         distinct: ctx.DISTINCT().is_some(),
         args,
+    })
+}
+
+pub(crate) fn lower_cast_expression(ctx: &OC_CastExpressionContext<'_>) -> Result<Expr> {
+    let expressions = ctx.oC_Expression_all();
+    let Some(value) = expressions.first() else {
+        return context::missing("CAST expression missing value");
+    };
+    let value = lower_expression(value.as_ref())?;
+    let target = if let Some(type_expr) = expressions.get(1) {
+        lower_expression(type_expr.as_ref())?
+    } else {
+        let Some(cast_type) = ctx.oC_CastType() else {
+            return context::missing("CAST expression missing target type");
+        };
+        Expr::Literal(Literal::String(cast_type.get_text()))
+    };
+    Ok(Expr::Function {
+        name: "cast".to_string(),
+        distinct: false,
+        args: vec![value, target],
     })
 }
 

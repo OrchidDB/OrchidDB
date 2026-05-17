@@ -340,9 +340,7 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
             }
             let trimmed = s.trim();
             let parts: Vec<&str> = trimmed.split('-').collect();
-            if parts.len() == 3
-                && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
-            {
+            if parts.len() == 3 && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) {
                 return Value::DateTime(format!(
                     "{:0>4}-{:0>2}-{:0>2}",
                     parts[0], parts[1], parts[2]

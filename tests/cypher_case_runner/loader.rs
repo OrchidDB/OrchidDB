@@ -645,10 +645,9 @@ fn build_property_graph(
         .edge_order
         .iter()
         .flat_map(|order_key| {
-            schema
-                .edges
-                .keys()
-                .filter(move |actual_key| actual_key == &order_key || actual_key.starts_with(&format!("{order_key}@")))
+            schema.edges.keys().filter(move |actual_key| {
+                actual_key == &order_key || actual_key.starts_with(&format!("{order_key}@"))
+            })
         })
         .collect();
     let mut seen_keys: std::collections::HashSet<&String> = edge_keys.iter().copied().collect();
@@ -1006,10 +1005,7 @@ fn normalize_interval(raw: &str) -> String {
 /// strip passes through.
 fn normalize_uuid(raw: &str) -> String {
     let trimmed = raw.trim();
-    let inner = trimmed
-        .trim_start_matches('{')
-        .trim_end_matches('}')
-        .trim();
+    let inner = trimmed.trim_start_matches('{').trim_end_matches('}').trim();
     let hex: String = inner.chars().filter(|c| c.is_ascii_hexdigit()).collect();
     if hex.len() != 32 {
         return raw.to_string();
@@ -1067,7 +1063,10 @@ fn normalize_timestamp(raw: &str) -> String {
         return format!("{date_norm} {time_body}");
     }
     let mut date_parts = date_norm.split('-');
-    let year: i64 = date_parts.next().and_then(|s| s.parse().ok()).unwrap_or(1970);
+    let year: i64 = date_parts
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1970);
     let month: u32 = date_parts.next().and_then(|s| s.parse().ok()).unwrap_or(1);
     let day: u32 = date_parts.next().and_then(|s| s.parse().ok()).unwrap_or(1);
     let mut time_parts = time_body.split(':');

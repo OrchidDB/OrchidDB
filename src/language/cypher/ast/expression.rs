@@ -50,6 +50,24 @@ pub enum Expr {
         predicate: Option<Box<Expr>>,
         map: Box<Expr>,
     },
+    ListReduce {
+        accumulator: String,
+        variable: String,
+        collection: Box<Expr>,
+        map: Box<Expr>,
+    },
+    /// Kuzu `list_transform(list, x -> expr)`.
+    ListTransform {
+        variable: String,
+        collection: Box<Expr>,
+        map: Box<Expr>,
+    },
+    /// Kuzu `list_filter(list, x -> predicate)`.
+    ListFilter {
+        variable: String,
+        collection: Box<Expr>,
+        predicate: Box<Expr>,
+    },
     PatternComprehension {
         variable: Option<String>,
         pattern: Box<PatternPart>,

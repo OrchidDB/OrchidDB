@@ -51,10 +51,7 @@ pub(crate) fn aggregate_op(
             && aggs.iter().all(|agg| {
                 matches!(
                     agg.kind,
-                    AggKind::Sum
-                        | AggKind::Min
-                        | AggKind::Max
-                        | AggKind::Avg
+                    AggKind::Sum | AggKind::Min | AggKind::Max | AggKind::Avg
                 )
             });
         if all_drop_on_empty {
@@ -292,14 +289,12 @@ pub(crate) fn compute_aggregate(
                 current = match current.take() {
                     None => Some(v),
                     Some(existing) => match (existing.three_valued_cmp(&v), agg.kind) {
-                        (
-                            Some(std::cmp::Ordering::Greater),
-                            AggKind::Min | AggKind::MinOrNull,
-                        ) => Some(v),
-                        (
-                            Some(std::cmp::Ordering::Less),
-                            AggKind::Max | AggKind::MaxOrNull,
-                        ) => Some(v),
+                        (Some(std::cmp::Ordering::Greater), AggKind::Min | AggKind::MinOrNull) => {
+                            Some(v)
+                        }
+                        (Some(std::cmp::Ordering::Less), AggKind::Max | AggKind::MaxOrNull) => {
+                            Some(v)
+                        }
                         (_, _) => Some(existing),
                     },
                 };
@@ -436,11 +431,7 @@ fn stddev(values: &[f64], sample: bool) -> f64 {
     (variance_sum / denominator).sqrt()
 }
 
-fn percentile_value(
-    expr: &IrExpr,
-    rows: &[Row],
-    graph: &PropertyGraph,
-) -> IrResult<Option<f64>> {
+fn percentile_value(expr: &IrExpr, rows: &[Row], graph: &PropertyGraph) -> IrResult<Option<f64>> {
     let row = rows.first().cloned().unwrap_or_else(Row::new);
     Ok(numeric_f64(&eval(expr, &row, graph)?).map(|value| value.clamp(0.0, 1.0)))
 }

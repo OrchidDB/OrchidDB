@@ -16,6 +16,7 @@ use std::sync::{Mutex, OnceLock};
 
 use new_graph::ir::catalog::PropertyGraph;
 
+use super::initializer;
 use super::loader;
 
 const LADYBUG_ROOT: &str = "tests/data/ladybug/dataset";
@@ -40,7 +41,33 @@ fn cache() -> &'static DatasetCache {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[allow(dead_code)]
 pub fn build(name: &str) -> Result<PropertyGraph, DatasetError> {
+    build_with_initializer(name, None)
+}
+
+/// Build a `PropertyGraph` for a case, preferring a per-scenario inline
+/// graph initializer when one is provided.
+///
+/// The existing schema/copy-backed loader path remains the default for
+/// Ladybug fixtures with real CSVs (e.g. `tinysnb`, `demo-db/csv`,
+/// `ldbc-sf01`). When the case file ships an explicit
+/// `--- graph_initializer` section, we ignore the named dataset and
+/// build a fresh `PropertyGraph` from the structured DSL handled by
+/// [`super::initializer`]. The `name` argument is still consulted on
+/// the empty-initializer path so the runner falls back transparently
+/// for fixtures that don't need scenario setup.
+pub fn build_with_initializer(
+    name: &str,
+    inline_source: Option<&str>,
+) -> Result<PropertyGraph, DatasetError> {
+    if let Some(source) = inline_source {
+        let trimmed = source.trim();
+        if !trimmed.is_empty() {
+            let scenario = initializer::parse(trimmed)?;
+            return initializer::build(&scenario);
+        }
+    }
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Ok(PropertyGraph::new());

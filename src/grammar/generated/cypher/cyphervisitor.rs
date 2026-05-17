@@ -353,6 +353,17 @@ pub trait CypherVisitor<'input>: ParseTreeVisitor<'input, CypherParserContextTyp
     }
 
     /**
+     * Visit a parse tree produced by {@link CypherParser#oC_RecursiveRelationshipFilter}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_RecursiveRelationshipFilter(
+        &mut self,
+        ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) {
+        self.visit_children(ctx)
+    }
+
+    /**
      * Visit a parse tree produced by {@link CypherParser#oC_Properties}.
      * @param ctx the parse tree
      */
@@ -675,6 +686,46 @@ pub trait CypherVisitor<'input>: ParseTreeVisitor<'input, CypherParserContextTyp
      * @param ctx the parse tree
      */
     fn visit_oC_FunctionInvocation(&mut self, ctx: &OC_FunctionInvocationContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastExpression}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastExpression(&mut self, ctx: &OC_CastExpressionContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastType}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastType(&mut self, ctx: &OC_CastTypeContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeArgument}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeArgument(&mut self, ctx: &OC_CastTypeArgumentContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeField}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeField(&mut self, ctx: &OC_CastTypeFieldContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeName}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeName(&mut self, ctx: &OC_CastTypeNameContext<'input>) {
         self.visit_children(ctx)
     }
 
@@ -1238,6 +1289,17 @@ pub trait CypherVisitorCompat<'input>:
     }
 
     /**
+     * Visit a parse tree produced by {@link CypherParser#oC_RecursiveRelationshipFilter}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_RecursiveRelationshipFilter(
+        &mut self,
+        ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
      * Visit a parse tree produced by {@link CypherParser#oC_Properties}.
      * @param ctx the parse tree
      */
@@ -1593,6 +1655,49 @@ pub trait CypherVisitorCompat<'input>:
         &mut self,
         ctx: &OC_FunctionInvocationContext<'input>,
     ) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastExpression}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastExpression(&mut self, ctx: &OC_CastExpressionContext<'input>) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastType}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastType(&mut self, ctx: &OC_CastTypeContext<'input>) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeArgument}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeArgument(
+        &mut self,
+        ctx: &OC_CastTypeArgumentContext<'input>,
+    ) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeField}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeField(&mut self, ctx: &OC_CastTypeFieldContext<'input>) -> Self::Return {
+        self.visit_children(ctx)
+    }
+
+    /**
+     * Visit a parse tree produced by {@link CypherParser#oC_CastTypeName}.
+     * @param ctx the parse tree
+     */
+    fn visit_oC_CastTypeName(&mut self, ctx: &OC_CastTypeNameContext<'input>) -> Self::Return {
         self.visit_children(ctx)
     }
 
@@ -2015,6 +2120,14 @@ where
         *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
     }
 
+    fn visit_oC_RecursiveRelationshipFilter(
+        &mut self,
+        ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_RecursiveRelationshipFilter(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
     fn visit_oC_Properties(&mut self, ctx: &OC_PropertiesContext<'input>) {
         let result = <Self as CypherVisitorCompat>::visit_oC_Properties(self, ctx);
         *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
@@ -2231,6 +2344,31 @@ where
 
     fn visit_oC_FunctionInvocation(&mut self, ctx: &OC_FunctionInvocationContext<'input>) {
         let result = <Self as CypherVisitorCompat>::visit_oC_FunctionInvocation(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
+    fn visit_oC_CastExpression(&mut self, ctx: &OC_CastExpressionContext<'input>) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_CastExpression(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
+    fn visit_oC_CastType(&mut self, ctx: &OC_CastTypeContext<'input>) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_CastType(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
+    fn visit_oC_CastTypeArgument(&mut self, ctx: &OC_CastTypeArgumentContext<'input>) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_CastTypeArgument(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
+    fn visit_oC_CastTypeField(&mut self, ctx: &OC_CastTypeFieldContext<'input>) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_CastTypeField(self, ctx);
+        *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
+    }
+
+    fn visit_oC_CastTypeName(&mut self, ctx: &OC_CastTypeNameContext<'input>) {
+        let result = <Self as CypherVisitorCompat>::visit_oC_CastTypeName(self, ctx);
         *<Self as ParseTreeVisitorCompat>::temp_result(self) = result;
     }
 

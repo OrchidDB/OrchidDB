@@ -5,7 +5,9 @@ use crate::ir::policy::OptionalMissing;
 use crate::language::cypher::ast::{Clause, MatchClause, ProcedureCallClause, UnwindClause};
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
-    Lowerer, context::CypherTraversalKind, pattern, predicate, project,
+    Lowerer,
+    context::{BindingKind, CypherTraversalKind},
+    pattern, predicate, project,
 };
 
 pub fn lower_clause(lowerer: &mut Lowerer, input: Node, clause: &Clause) -> CypherPlanResult<Node> {
@@ -65,7 +67,7 @@ fn lower_optional_match(
 ) -> CypherPlanResult<Node> {
     let outer_fields = lowerer.visible_fields();
     let outer_visible = lowerer.visible_set();
-    let (right, outputs) = lowerer.with_preserved_scope(|lowerer| {
+    let (right, outputs, output_kinds) = lowerer.with_preserved_scope(|lowerer| {
         let parent = lowerer.current_traversal().cloned();
         if let Some(parent) = parent.as_ref() {
             let traversal =
@@ -111,10 +113,21 @@ fn lower_optional_match(
             .into_iter()
             .filter(|binding| !outer_visible.contains(binding))
             .collect::<Vec<_>>();
+        let output_kinds = outputs
+            .iter()
+            .map(|binding| {
+                (
+                    binding.clone(),
+                    lowerer
+                        .binding_kind(binding)
+                        .unwrap_or(BindingKind::Unknown),
+                )
+            })
+            .collect::<Vec<_>>();
         if parent.is_some() {
             lowerer.pop_traversal();
         }
-        Ok((right, outputs))
+        Ok((right, outputs, output_kinds))
     })?;
 
     let node = Node::GraphApply {
@@ -131,7 +144,11 @@ fn lower_optional_match(
     lowerer.record_current_nullable(outputs.clone());
     for output in outputs {
         lowerer.add_nullable(output.clone());
-        lowerer.add_visible(output);
+        let kind = output_kinds
+            .iter()
+            .find_map(|(binding, kind)| (binding == &output).then_some(*kind))
+            .unwrap_or(BindingKind::Unknown);
+        lowerer.add_visible_kind(output, kind);
     }
     Ok(node)
 }

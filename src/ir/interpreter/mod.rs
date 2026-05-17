@@ -45,6 +45,8 @@ pub enum InterpretError {
     Catalog(#[from] CatalogError),
     #[error("type error: {0}")]
     Type(String),
+    #[error("{0}")]
+    Runtime(String),
     #[error("unbound binding `{0}`")]
     Unbound(String),
     #[error("unsupported: {0}")]

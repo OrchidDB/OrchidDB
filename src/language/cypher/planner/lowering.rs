@@ -13,7 +13,7 @@ use crate::ir::policy::GraphPlanPolicy;
 use crate::language::cypher::ast::Query;
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 
-use context::{CypherTraversalContext, CypherTraversalKind, ScopeFrame};
+use context::{BindingKind, CypherTraversalContext, CypherTraversalKind, ScopeFrame};
 
 pub fn lower_query(query: &Query) -> CypherPlanResult<GraphPlan> {
     let (root, _) = lower_query_node(query)?;
@@ -208,9 +208,21 @@ impl Lowerer {
     }
 
     pub(crate) fn add_visible(&mut self, binding: impl Into<BindingId>) {
+        self.add_visible_kind(binding, BindingKind::Unknown);
+    }
+
+    pub(crate) fn add_visible_kind(&mut self, binding: impl Into<BindingId>, kind: BindingKind) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.visible.insert(binding.into());
+            let binding = binding.into();
+            scope.visible.insert(binding.clone());
+            scope.kinds.insert(binding, kind);
         }
+    }
+
+    pub(crate) fn binding_kind(&self, binding: &str) -> Option<BindingKind> {
+        self.scopes
+            .last()
+            .and_then(|scope| scope.kinds.get(binding).copied())
     }
 
     pub(crate) fn add_nullable(&mut self, binding: impl Into<BindingId>) {
@@ -261,6 +273,9 @@ impl Lowerer {
     {
         if let Some(scope) = self.scopes.last_mut() {
             scope.visible = bindings.into_iter().collect();
+            scope
+                .kinds
+                .retain(|binding, _| scope.visible.contains(binding));
             scope.nullable.clear();
         }
     }

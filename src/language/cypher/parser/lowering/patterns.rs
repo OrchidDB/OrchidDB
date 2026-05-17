@@ -98,11 +98,11 @@ pub(crate) fn lower_node_pattern(ctx: &OC_NodePatternContext<'_>) -> Result<Node
     let labels = ctx
         .oC_NodeLabels()
         .map(|labels| {
-            labels
-                .oC_NodeLabel_all()
-                .into_iter()
-                .map(|label| names::lower_node_label(label.as_ref()))
-                .collect::<Result<Vec<_>>>()
+            let mut lowered = Vec::new();
+            for label in labels.oC_NodeLabel_all() {
+                lowered.extend(names::lower_node_label_names(label.as_ref())?);
+            }
+            Ok(lowered)
         })
         .transpose()?
         .unwrap_or_default();

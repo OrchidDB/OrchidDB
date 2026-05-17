@@ -5,9 +5,8 @@ use crate::ir::plan::{
 };
 use crate::ir::policy::{OptionalMissing, PropertyMissing, ResultForm};
 use crate::language::cypher::ast::{
-    BinaryOp, Clause, ExistsSubquery, Expr, Literal, PatternPart, ProjectionBody, Query,
-    QuantifierKind,
-    ReturnClause, SortDirection, UnaryOp, WithClause,
+    BinaryOp, Clause, ExistsSubquery, Expr, Literal, PatternPart, ProjectionBody, QuantifierKind,
+    Query, ReturnClause, SortDirection, UnaryOp, WithClause,
 };
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
@@ -21,35 +20,96 @@ pub fn lower_with(
     clause: &WithClause,
 ) -> CypherPlanResult<Node> {
     validate_with_projection_aliases(&clause.projection)?;
+    let predicate_placement = clause
+        .predicate
+        .as_ref()
+        .map(|predicate| lower_with_predicate_placement(lowerer, &clause.projection, predicate))
+        .transpose()?;
+
+    let input = match &predicate_placement {
+        Some(WithPredicatePlacement::BeforeProjection(predicate)) => {
+            lower_with_where_predicate(lowerer, input, &predicate)?
+        }
+        Some(WithPredicatePlacement::AfterProjection) | None => input,
+    };
+    let (node, fields) = lower_with_projection_body(lowerer, input, &clause.projection)?;
+    lowerer.replace_scope(fields.clone());
+    let node = match (&clause.predicate, predicate_placement) {
+        (Some(filter), Some(WithPredicatePlacement::AfterProjection)) => {
+            lower_with_where_predicate(lowerer, node, filter)?
+        }
+        _ => node,
+    };
+    Ok(node)
+}
+
+enum WithPredicatePlacement {
+    BeforeProjection(Expr),
+    AfterProjection,
+}
+
+fn lower_with_projection_body(
+    lowerer: &mut Lowerer,
+    input: Node,
+    projection: &ProjectionBody,
+) -> CypherPlanResult<(Node, Vec<String>)> {
     let parent = lowerer.current_traversal().cloned();
     if let Some(parent) = parent.as_ref() {
         let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WithProjection);
         lowerer.push_traversal(traversal);
     }
-    let (node, fields) = lower_projection_body(lowerer, input, &clause.projection, true)?;
-    lowerer.record_current_imports(lowerer.visible_fields());
-    lowerer.record_current_outputs(fields.clone());
+    let result = lower_projection_body(lowerer, input, projection, true);
+    if let Ok((_, fields)) = &result {
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_outputs(fields.clone());
+    }
     if parent.is_some() {
         lowerer.pop_traversal();
     }
-    lowerer.replace_scope(fields.clone());
-    let node = if let Some(filter) = &clause.predicate {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-            lowerer.push_traversal(traversal);
-        }
-        let node = predicate::lower_where_predicate(lowerer, node, filter)?;
+    result
+}
+
+fn lower_with_where_predicate(
+    lowerer: &mut Lowerer,
+    input: Node,
+    filter: &Expr,
+) -> CypherPlanResult<Node> {
+    let parent = lowerer.current_traversal().cloned();
+    if let Some(parent) = parent.as_ref() {
+        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
+        lowerer.push_traversal(traversal);
+    }
+    let result = predicate::lower_where_predicate(lowerer, input, filter);
+    if result.is_ok() {
         lowerer.record_current_imports(lowerer.visible_fields());
         lowerer.record_current_correlation(lowerer.visible_fields());
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        node
-    } else {
-        node
-    };
-    Ok(node)
+    }
+    if parent.is_some() {
+        lowerer.pop_traversal();
+    }
+    result
+}
+
+fn lower_with_predicate_placement(
+    lowerer: &Lowerer,
+    body: &ProjectionBody,
+    predicate: &Expr,
+) -> CypherPlanResult<WithPredicatePlacement> {
+    let source_fields = lowerer.visible_set();
+    let projected_fields = projection_output_names(body, &source_fields);
+    if validate_expression_refs(predicate, &projected_fields, "WHERE predicate").is_ok() {
+        return Ok(WithPredicatePlacement::AfterProjection);
+    }
+
+    let has_aggregate = body.items.iter().any(|item| contains_aggregate(&item.expr));
+    if has_aggregate {
+        validate_expression_refs(predicate, &projected_fields, "WHERE predicate")?;
+        return Ok(WithPredicatePlacement::AfterProjection);
+    }
+
+    let substituted = substitute_projection_aliases(predicate, &projection_aliases(body));
+    validate_expression_refs(&substituted, &source_fields, "WHERE predicate")?;
+    Ok(WithPredicatePlacement::BeforeProjection(substituted))
 }
 
 fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<()> {
@@ -184,8 +244,9 @@ fn lower_projection_body(
                             || shadowed_source_fields.contains(name))
                 });
                 let sort_expr = if has_projection_only_ref {
-                    let refs_in_projection =
-                        refs.iter().all(|name| fields.iter().any(|field| field == name));
+                    let refs_in_projection = refs
+                        .iter()
+                        .all(|name| fields.iter().any(|field| field == name));
                     if has_projection_only_ref && refs_in_projection {
                         plans.push(ProjectionSortPlan::Deferred {
                             expr: item.expr.clone(),
@@ -560,17 +621,15 @@ fn rewrite_aggregate_projection_expr(
                 distinct: false,
                 args: args
                     .iter()
-                    .map(|arg| rewrite_aggregate_projection_expr(lowerer, arg, rewrite, None, bound))
+                    .map(|arg| {
+                        rewrite_aggregate_projection_expr(lowerer, arg, rewrite, None, bound)
+                    })
                     .collect::<CypherPlanResult<_>>()?,
             })
         }
-        _ if !contains_aggregate(expr) => rewrite_non_aggregate_projection_expr(
-            lowerer,
-            expr,
-            rewrite,
-            preferred_alias,
-            bound,
-        ),
+        _ if !contains_aggregate(expr) => {
+            rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, preferred_alias, bound)
+        }
         Expr::Unary { op, expr } => Ok(Expr::Unary {
             op: *op,
             expr: Box::new(rewrite_aggregate_projection_expr(
@@ -685,6 +744,71 @@ fn rewrite_aggregate_projection_expr(
                 map: Box::new(map),
             })
         }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let collection =
+                rewrite_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let acc_was_bound = bound.contains(accumulator);
+            let variable_was_bound = bound.contains(variable);
+            bound.insert(accumulator.clone());
+            bound.insert(variable.clone());
+            let map = rewrite_aggregate_projection_expr(lowerer, map, rewrite, None, bound)?;
+            if !acc_was_bound {
+                bound.remove(accumulator);
+            }
+            if !variable_was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListReduce {
+                accumulator: accumulator.clone(),
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            })
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let collection =
+                rewrite_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let map = rewrite_aggregate_projection_expr(lowerer, map, rewrite, None, bound)?;
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListTransform {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            })
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let collection =
+                rewrite_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let predicate =
+                rewrite_aggregate_projection_expr(lowerer, predicate, rewrite, None, bound)?;
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListFilter {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate: Box::new(predicate),
+            })
+        }
         Expr::Quantifier {
             kind,
             variable,
@@ -750,13 +874,9 @@ fn rewrite_aggregate_projection_expr(
                 map: Box::new(map),
             })
         }
-        Expr::Exists(_) | Expr::PatternPredicate(_) => rewrite_non_aggregate_projection_expr(
-            lowerer,
-            expr,
-            rewrite,
-            preferred_alias,
-            bound,
-        ),
+        Expr::Exists(_) | Expr::PatternPredicate(_) => {
+            rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, preferred_alias, bound)
+        }
         Expr::Star | Expr::Variable(_) | Expr::Parameter(_) | Expr::Literal(_) => {
             rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, preferred_alias, bound)
         }
@@ -816,9 +936,9 @@ fn rewrite_non_aggregate_projection_expr(
                 lowerer, rhs, rewrite, None, bound,
             )?),
         }),
-        Expr::IsNull(expr) => Ok(Expr::IsNull(Box::new(rewrite_non_aggregate_projection_expr(
-            lowerer, expr, rewrite, None, bound,
-        )?))),
+        Expr::IsNull(expr) => Ok(Expr::IsNull(Box::new(
+            rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, None, bound)?,
+        ))),
         Expr::IsNotNull(expr) => Ok(Expr::IsNotNull(Box::new(
             rewrite_non_aggregate_projection_expr(lowerer, expr, rewrite, None, bound)?,
         ))),
@@ -844,7 +964,9 @@ fn rewrite_non_aggregate_projection_expr(
             distinct: *distinct,
             args: args
                 .iter()
-                .map(|arg| rewrite_non_aggregate_projection_expr(lowerer, arg, rewrite, None, bound))
+                .map(|arg| {
+                    rewrite_non_aggregate_projection_expr(lowerer, arg, rewrite, None, bound)
+                })
                 .collect::<CypherPlanResult<_>>()?,
         }),
         Expr::Case {
@@ -879,7 +1001,9 @@ fn rewrite_non_aggregate_projection_expr(
         Expr::List(items) => Ok(Expr::List(
             items
                 .iter()
-                .map(|item| rewrite_non_aggregate_projection_expr(lowerer, item, rewrite, None, bound))
+                .map(|item| {
+                    rewrite_non_aggregate_projection_expr(lowerer, item, rewrite, None, bound)
+                })
                 .collect::<CypherPlanResult<_>>()?,
         )),
         Expr::Map(items) => Ok(Expr::Map(
@@ -921,6 +1045,71 @@ fn rewrite_non_aggregate_projection_expr(
                 collection: Box::new(collection),
                 predicate,
                 map: Box::new(map),
+            })
+        }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let collection =
+                rewrite_non_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let acc_was_bound = bound.contains(accumulator);
+            let variable_was_bound = bound.contains(variable);
+            bound.insert(accumulator.clone());
+            bound.insert(variable.clone());
+            let map = rewrite_non_aggregate_projection_expr(lowerer, map, rewrite, None, bound)?;
+            if !acc_was_bound {
+                bound.remove(accumulator);
+            }
+            if !variable_was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListReduce {
+                accumulator: accumulator.clone(),
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            })
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let collection =
+                rewrite_non_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let map = rewrite_non_aggregate_projection_expr(lowerer, map, rewrite, None, bound)?;
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListTransform {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            })
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let collection =
+                rewrite_non_aggregate_projection_expr(lowerer, collection, rewrite, None, bound)?;
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let predicate =
+                rewrite_non_aggregate_projection_expr(lowerer, predicate, rewrite, None, bound)?;
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Ok(Expr::ListFilter {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate: Box::new(predicate),
             })
         }
         Expr::Quantifier {
@@ -1377,7 +1566,10 @@ fn order_expr_after_cardinality_projection(
 
     let mut refs = BTreeSet::new();
     collect_free_variables(expr, &mut BTreeSet::new(), &mut refs);
-    if refs.iter().all(|name| fields.iter().any(|field| field == name)) {
+    if refs
+        .iter()
+        .all(|name| fields.iter().any(|field| field == name))
+    {
         return Ok(Some(lower_expr(lowerer, expr)?));
     }
     Ok(None)
@@ -1405,10 +1597,7 @@ fn free_variable_names_for_sort(
     refs
 }
 
-fn free_variable_names_for_local_scope(
-    expr: &Expr,
-    locals: &BTreeSet<String>,
-) -> BTreeSet<String> {
+fn free_variable_names_for_local_scope(expr: &Expr, locals: &BTreeSet<String>) -> BTreeSet<String> {
     let mut refs = free_variable_names(expr);
     remove_local_exists_bindings(expr, locals, &mut refs);
     add_candidate_pattern_bindings(expr, locals, &mut refs);
@@ -1420,7 +1609,10 @@ pub(crate) fn validate_expression_scope(
     expr: &Expr,
     clause: &str,
 ) -> CypherPlanResult<()> {
-    let candidates = lowerer.visible_fields().into_iter().collect::<BTreeSet<_>>();
+    let candidates = lowerer
+        .visible_fields()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
     validate_expression_refs(expr, &candidates, clause)
 }
 
@@ -1544,6 +1736,26 @@ fn add_candidate_pattern_bindings(
                 add_candidate_pattern_bindings(predicate, candidates, refs);
             }
             add_candidate_pattern_bindings(map, candidates, refs);
+        }
+        Expr::ListReduce {
+            collection, map, ..
+        } => {
+            add_candidate_pattern_bindings(collection, candidates, refs);
+            add_candidate_pattern_bindings(map, candidates, refs);
+        }
+        Expr::ListTransform {
+            collection, map, ..
+        } => {
+            add_candidate_pattern_bindings(collection, candidates, refs);
+            add_candidate_pattern_bindings(map, candidates, refs);
+        }
+        Expr::ListFilter {
+            collection,
+            predicate,
+            ..
+        } => {
+            add_candidate_pattern_bindings(collection, candidates, refs);
+            add_candidate_pattern_bindings(predicate, candidates, refs);
         }
         Expr::Quantifier {
             collection,
@@ -1802,6 +2014,38 @@ fn add_candidate_pattern_bindings_scoped(
             }
             add_candidate_pattern_bindings_scoped(map, candidates, &item_locals, refs);
         }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            add_candidate_pattern_bindings_scoped(collection, candidates, locals, refs);
+            let mut item_locals = locals.clone();
+            item_locals.insert(accumulator.clone());
+            item_locals.insert(variable.clone());
+            add_candidate_pattern_bindings_scoped(map, candidates, &item_locals, refs);
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            add_candidate_pattern_bindings_scoped(collection, candidates, locals, refs);
+            let mut item_locals = locals.clone();
+            item_locals.insert(variable.clone());
+            add_candidate_pattern_bindings_scoped(map, candidates, &item_locals, refs);
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            add_candidate_pattern_bindings_scoped(collection, candidates, locals, refs);
+            let mut item_locals = locals.clone();
+            item_locals.insert(variable.clone());
+            add_candidate_pattern_bindings_scoped(predicate, candidates, &item_locals, refs);
+        }
         Expr::Quantifier {
             variable,
             collection,
@@ -1955,9 +2199,27 @@ fn remove_local_exists_bindings(
             }
             remove_local_exists_bindings(map, candidates, refs);
         }
-        Expr::PatternComprehension {
-            predicate, map, ..
+        Expr::ListReduce {
+            collection, map, ..
         } => {
+            remove_local_exists_bindings(collection, candidates, refs);
+            remove_local_exists_bindings(map, candidates, refs);
+        }
+        Expr::ListTransform {
+            collection, map, ..
+        } => {
+            remove_local_exists_bindings(collection, candidates, refs);
+            remove_local_exists_bindings(map, candidates, refs);
+        }
+        Expr::ListFilter {
+            collection,
+            predicate,
+            ..
+        } => {
+            remove_local_exists_bindings(collection, candidates, refs);
+            remove_local_exists_bindings(predicate, candidates, refs);
+        }
+        Expr::PatternComprehension { predicate, map, .. } => {
             if let Some(predicate) = predicate {
                 remove_local_exists_bindings(predicate, candidates, refs);
             }
@@ -2047,11 +2309,7 @@ fn remove_local_projection_bindings(
 ) {
     for item in &body.items {
         remove_local_exists_bindings(&item.expr, candidates, refs);
-        if let Some(alias) = item
-            .alias
-            .as_deref()
-            .or_else(|| item.expr.variable_name())
-        {
+        if let Some(alias) = item.alias.as_deref().or_else(|| item.expr.variable_name()) {
             remove_query_local_name(alias, candidates, refs);
         }
     }
@@ -2102,10 +2360,7 @@ fn remove_query_local_name(
     refs.remove(name);
 }
 
-fn shadowed_projection_fields(
-    body: &ProjectionBody,
-    source_fields: &[String],
-) -> BTreeSet<String> {
+fn shadowed_projection_fields(body: &ProjectionBody, source_fields: &[String]) -> BTreeSet<String> {
     body.items
         .iter()
         .filter_map(|item| {
@@ -2164,12 +2419,18 @@ fn substitute_projection_aliases_with_bound(
         },
         Expr::Unary { op, expr } => Expr::Unary {
             op: *op,
-            expr: Box::new(substitute_projection_aliases_with_bound(expr, aliases, bound)),
+            expr: Box::new(substitute_projection_aliases_with_bound(
+                expr, aliases, bound,
+            )),
         },
         Expr::Binary { op, lhs, rhs } => Expr::Binary {
             op: *op,
-            lhs: Box::new(substitute_projection_aliases_with_bound(lhs, aliases, bound)),
-            rhs: Box::new(substitute_projection_aliases_with_bound(rhs, aliases, bound)),
+            lhs: Box::new(substitute_projection_aliases_with_bound(
+                lhs, aliases, bound,
+            )),
+            rhs: Box::new(substitute_projection_aliases_with_bound(
+                rhs, aliases, bound,
+            )),
         },
         Expr::IsNull(expr) => Expr::IsNull(Box::new(substitute_projection_aliases_with_bound(
             expr, aliases, bound,
@@ -2264,6 +2525,67 @@ fn substitute_projection_aliases_with_bound(
                 collection: Box::new(collection),
                 predicate,
                 map: Box::new(map),
+            }
+        }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let collection = substitute_projection_aliases_with_bound(collection, aliases, bound);
+            let acc_was_bound = bound.contains(accumulator);
+            let variable_was_bound = bound.contains(variable);
+            bound.insert(accumulator.clone());
+            bound.insert(variable.clone());
+            let map = substitute_projection_aliases_with_bound(map, aliases, bound);
+            if !acc_was_bound {
+                bound.remove(accumulator);
+            }
+            if !variable_was_bound {
+                bound.remove(variable);
+            }
+            Expr::ListReduce {
+                accumulator: accumulator.clone(),
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            }
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let collection = substitute_projection_aliases_with_bound(collection, aliases, bound);
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let map = substitute_projection_aliases_with_bound(map, aliases, bound);
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Expr::ListTransform {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            }
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let collection = substitute_projection_aliases_with_bound(collection, aliases, bound);
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            let predicate = substitute_projection_aliases_with_bound(predicate, aliases, bound);
+            if !was_bound {
+                bound.remove(variable);
+            }
+            Expr::ListFilter {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate: Box::new(predicate),
             }
         }
         Expr::Quantifier {
@@ -2556,6 +2878,51 @@ pub(crate) fn collect_free_variables(
                 bound.remove(variable);
             }
         }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            collect_free_variables(collection, bound, out);
+            let acc_was_bound = bound.contains(accumulator);
+            let variable_was_bound = bound.contains(variable);
+            bound.insert(accumulator.clone());
+            bound.insert(variable.clone());
+            collect_free_variables(map, bound, out);
+            if !acc_was_bound {
+                bound.remove(accumulator);
+            }
+            if !variable_was_bound {
+                bound.remove(variable);
+            }
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            collect_free_variables(collection, bound, out);
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            collect_free_variables(map, bound, out);
+            if !was_bound {
+                bound.remove(variable);
+            }
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            collect_free_variables(collection, bound, out);
+            let was_bound = bound.contains(variable);
+            bound.insert(variable.clone());
+            collect_free_variables(predicate, bound, out);
+            if !was_bound {
+                bound.remove(variable);
+            }
+        }
         Expr::Quantifier {
             variable,
             collection,
@@ -2623,10 +2990,7 @@ pub(crate) fn collect_free_variables(
                 collect_pattern_property_variables(part, bound, out);
             }
         }
-        Expr::Star
-        | Expr::Parameter(_)
-        | Expr::Literal(_)
-        | Expr::CountStar => {}
+        Expr::Star | Expr::Parameter(_) | Expr::Literal(_) | Expr::CountStar => {}
     }
 }
 
@@ -2791,6 +3155,9 @@ fn literal_u64(expr: &Expr) -> CypherPlanResult<Option<u64>> {
             .parse::<u64>()
             .map(Some)
             .map_err(|_| CypherPlanError::Invalid("slice bound is outside u64 range".to_string())),
+        Expr::Literal(Literal::Float(_)) => Err(CypherPlanError::Invalid(
+            "slice bounds must be non-negative integers".to_string(),
+        )),
         Expr::Unary {
             op: UnaryOp::Neg,
             expr,
@@ -2877,9 +3244,8 @@ fn materialize_expr(
             name,
             distinct: false,
             args,
-        }
-            if name.eq_ignore_ascii_case("size")
-                && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
+        } if name.eq_ignore_ascii_case("size")
+            && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
         {
             let [Expr::PatternPredicate(patterns)] = args.as_slice() else {
                 unreachable!("size(pattern) guard matched");
@@ -2890,9 +3256,8 @@ fn materialize_expr(
             name,
             distinct: false,
             args,
-        }
-            if name.eq_ignore_ascii_case("exists")
-                && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
+        } if name.eq_ignore_ascii_case("exists")
+            && matches!(args.as_slice(), [Expr::PatternPredicate(_)]) =>
         {
             let [Expr::PatternPredicate(patterns)] = args.as_slice() else {
                 unreachable!("exists(pattern) guard matched");
@@ -2983,6 +3348,53 @@ fn materialize_expr(
                     name: name.clone(),
                     distinct: *distinct,
                     args: lowered,
+                },
+            ))
+        }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let (input, collection) = materialize_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListReduce {
+                    accumulator: accumulator.clone(),
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    map: map.clone(),
+                },
+            ))
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let (input, collection) = materialize_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListTransform {
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    map: map.clone(),
+                },
+            ))
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let (input, collection) = materialize_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListFilter {
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    predicate: predicate.clone(),
                 },
             ))
         }
@@ -3166,6 +3578,53 @@ fn materialize_pre_aggregate_expr(
                     name: name.clone(),
                     distinct: *distinct,
                     args: lowered,
+                },
+            ))
+        }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let (input, collection) = materialize_pre_aggregate_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListReduce {
+                    accumulator: accumulator.clone(),
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    map: map.clone(),
+                },
+            ))
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let (input, collection) = materialize_pre_aggregate_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListTransform {
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    map: map.clone(),
+                },
+            ))
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let (input, collection) = materialize_pre_aggregate_expr(lowerer, input, collection)?;
+            Ok((
+                input,
+                Expr::ListFilter {
+                    variable: variable.clone(),
+                    collection: Box::new(collection),
+                    predicate: predicate.clone(),
                 },
             ))
         }
@@ -3709,8 +4168,8 @@ fn materialize_pattern_comprehension(
         let start = Node::GraphCorrelate {
             bindings: lowerer.visible_fields(),
         };
-        let history = (!pattern_part.element.chains.is_empty())
-            .then(|| lowerer.synthetic("pattern_history"));
+        let history =
+            (!pattern_part.element.chains.is_empty()).then(|| lowerer.synthetic("pattern_history"));
         let mut right = pattern::lower_pattern_part(
             lowerer,
             start,
@@ -3848,9 +4307,7 @@ fn lower_exists_right_plan(
         lowerer.push_traversal(traversal);
     }
     let right = if let Some(query) = &exists.query {
-        lowerer
-            .lower_query_with_unions(query)
-            .map(|(node, _)| node)
+        lowerer.lower_query_with_unions(query).map(|(node, _)| node)
     } else {
         let mut right = Node::GraphCorrelate {
             bindings: lowerer.visible_fields(),
@@ -3963,6 +4420,35 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 .map(|item| lower_expr(lowerer, item))
                 .collect::<CypherPlanResult<_>>()?,
         ),
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => IrExpr::ListReduce {
+            collection: Box::new(lower_expr(lowerer, collection)?),
+            accumulator: accumulator.clone(),
+            item: variable.clone(),
+            map: Box::new(lower_expr(lowerer, map)?),
+        },
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => IrExpr::ListTransform {
+            list: Box::new(lower_expr(lowerer, collection)?),
+            item: variable.clone(),
+            map: Box::new(lower_expr(lowerer, map)?),
+        },
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => IrExpr::ListFilter {
+            list: Box::new(lower_expr(lowerer, collection)?),
+            item: variable.clone(),
+            predicate: Box::new(lower_expr(lowerer, predicate)?),
+        },
         Expr::Map(items) => IrExpr::Call {
             name: "map".to_string(),
             args: items
@@ -4126,6 +4612,17 @@ fn contains_aggregate(expr: &Expr) -> bool {
                 || predicate.as_deref().is_some_and(contains_aggregate)
                 || contains_aggregate(map)
         }
+        Expr::ListReduce {
+            collection, map, ..
+        } => contains_aggregate(collection) || contains_aggregate(map),
+        Expr::ListTransform {
+            collection, map, ..
+        } => contains_aggregate(collection) || contains_aggregate(map),
+        Expr::ListFilter {
+            collection,
+            predicate,
+            ..
+        } => contains_aggregate(collection) || contains_aggregate(predicate),
         Expr::PatternComprehension {
             pattern,
             predicate,
@@ -4175,6 +4672,80 @@ fn lower_quantifier_kind(kind: QuantifierKind) -> IrQuantifierKind {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::language::cypher::ast::ProjectionItem as AstProjectionItem;
+
+    fn projection_body(items: Vec<AstProjectionItem>) -> ProjectionBody {
+        ProjectionBody {
+            distinct: false,
+            include_existing: false,
+            items,
+            order_by: Vec::new(),
+            skip: None,
+            limit: None,
+        }
+    }
+
+    fn property(target: Expr, key: &str) -> Expr {
+        Expr::Property {
+            target: Box::new(target),
+            key: key.to_string(),
+        }
+    }
+
+    fn aliased(expr: Expr, alias: &str) -> AstProjectionItem {
+        AstProjectionItem {
+            expr,
+            alias: Some(alias.to_string()),
+            explicit_alias: true,
+        }
+    }
+
+    #[test]
+    fn with_where_using_incoming_variable_filters_before_projection() {
+        let mut lowerer = Lowerer::new();
+        lowerer.add_visible("a");
+        let body = projection_body(vec![aliased(
+            property(Expr::Variable("a".to_string()), "name"),
+            "name",
+        )]);
+        let predicate = Expr::Binary {
+            op: BinaryOp::Eq,
+            lhs: Box::new(property(Expr::Variable("a".to_string()), "name")),
+            rhs: Box::new(Expr::Literal(Literal::String("B".to_string()))),
+        };
+
+        assert!(matches!(
+            lower_with_predicate_placement(&lowerer, &body, &predicate).unwrap(),
+            WithPredicatePlacement::BeforeProjection(_)
+        ));
+    }
+
+    #[test]
+    fn with_where_using_aggregate_alias_filters_after_projection() {
+        let lowerer = Lowerer::new();
+        let body = projection_body(vec![aliased(Expr::CountStar, "count")]);
+        let predicate = Expr::Binary {
+            op: BinaryOp::Gt,
+            lhs: Box::new(Expr::Variable("count".to_string())),
+            rhs: Box::new(Expr::Literal(Literal::Integer("0".to_string()))),
+        };
+
+        assert!(matches!(
+            lower_with_predicate_placement(&lowerer, &body, &predicate).unwrap(),
+            WithPredicatePlacement::AfterProjection
+        ));
+    }
+
+    #[test]
+    fn literal_float_slice_bound_is_invalid() {
+        let err = literal_u64(&Expr::Literal(Literal::Float(1.5))).unwrap_err();
+        assert!(format!("{err}").contains("slice bounds must be non-negative integers"));
+    }
+}
+
 fn requires_scoped_materialization(expr: &Expr) -> bool {
     match expr {
         Expr::Exists(_)
@@ -4196,6 +4767,20 @@ fn requires_scoped_materialization(expr: &Expr) -> bool {
         }
         Expr::Function { args, .. } | Expr::List(args) => {
             args.iter().any(requires_scoped_materialization)
+        }
+        Expr::ListReduce {
+            collection, map, ..
+        } => requires_scoped_materialization(collection) || requires_scoped_materialization(map),
+        Expr::ListTransform {
+            collection, map, ..
+        } => requires_scoped_materialization(collection) || requires_scoped_materialization(map),
+        Expr::ListFilter {
+            collection,
+            predicate,
+            ..
+        } => {
+            requires_scoped_materialization(collection)
+                || requires_scoped_materialization(predicate)
         }
         Expr::Map(items) => items
             .iter()

@@ -82,9 +82,7 @@ pub(crate) fn lower_exists_apply(
             lowerer.push_traversal(traversal);
         }
         let right = if let Some(query) = &exists.query {
-            lowerer
-                .lower_query_with_unions(query)
-                .map(|(node, _)| node)
+            lowerer.lower_query_with_unions(query).map(|(node, _)| node)
         } else {
             let mut right = Node::GraphCorrelate {
                 bindings: lowerer.visible_fields(),

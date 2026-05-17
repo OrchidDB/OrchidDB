@@ -132,6 +132,85 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                 .collect::<IrResult<Vec<_>>>()?;
             Ok(Value::List(evaluated))
         }
+        IrExpr::ListReduce {
+            collection,
+            accumulator,
+            item,
+            map,
+        } => {
+            let source = eval(collection, row, graph)?;
+            let items = match source {
+                Value::List(items) => items,
+                Value::Null => return Ok(Value::Null),
+                other => vec![other],
+            };
+            let mut iter = items.into_iter();
+            let Some(mut acc) = iter.next() else {
+                return Err(InterpretError::Type(
+                    "Cannot execute list_reduce on an empty list".to_string(),
+                ));
+            };
+            for value in iter {
+                let mut scratch = row.clone();
+                scratch.bindings.insert(accumulator.clone(), acc);
+                scratch.bindings.insert(item.clone(), value);
+                acc = eval(map, &scratch, graph)?;
+            }
+            Ok(acc)
+        }
+        IrExpr::ListTransform { list, item, map } => {
+            let source = eval(list, row, graph)?;
+            let items = match source {
+                Value::List(items) => items,
+                Value::Null => return Ok(Value::Null),
+                other => {
+                    return Err(InterpretError::Type(format!(
+                        "list_transform expects a list, got {}",
+                        other.type_name()
+                    )));
+                }
+            };
+            let mut out = Vec::with_capacity(items.len());
+            for value in items {
+                let mut scratch = row.clone();
+                scratch.bindings.insert(item.clone(), value);
+                out.push(eval(map, &scratch, graph)?);
+            }
+            Ok(Value::List(out))
+        }
+        IrExpr::ListFilter {
+            list,
+            item,
+            predicate,
+        } => {
+            let source = eval(list, row, graph)?;
+            let items = match source {
+                Value::List(items) => items,
+                Value::Null => return Ok(Value::Null),
+                other => {
+                    return Err(InterpretError::Type(format!(
+                        "list_filter expects a list, got {}",
+                        other.type_name()
+                    )));
+                }
+            };
+            let mut out = Vec::with_capacity(items.len());
+            for value in items {
+                let mut scratch = row.clone();
+                scratch.bindings.insert(item.clone(), value.clone());
+                match eval(predicate, &scratch, graph)? {
+                    Value::Bool(true) => out.push(value),
+                    Value::Bool(false) | Value::Null => {}
+                    other => {
+                        return Err(InterpretError::Type(format!(
+                            "list_filter predicate must be boolean, got {}",
+                            other.type_name()
+                        )));
+                    }
+                }
+            }
+            Ok(Value::List(out))
+        }
         IrExpr::Call { name, args } => {
             let evaluated = args
                 .iter()
@@ -150,5 +229,159 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                 None => Ok(Value::Null),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::expr::BinaryOp;
+    use crate::ir::interpreter::Row;
+
+    fn empty_graph() -> PropertyGraph {
+        PropertyGraph::new()
+    }
+
+    fn list_lit(items: Vec<i64>) -> IrExpr {
+        IrExpr::List(items.into_iter().map(IrExpr::lit_int).collect())
+    }
+
+    fn add_binding(a: &str, b: i64) -> IrExpr {
+        IrExpr::Binary {
+            op: BinaryOp::Add,
+            lhs: Box::new(IrExpr::Binding(a.to_string())),
+            rhs: Box::new(IrExpr::lit_int(b)),
+        }
+    }
+
+    #[test]
+    fn list_transform_evaluates_lazily() {
+        let expr = IrExpr::ListTransform {
+            list: Box::new(list_lit(vec![1, 2, 3])),
+            item: "x".to_string(),
+            map: Box::new(add_binding("x", 10)),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![Value::Int(11), Value::Int(12), Value::Int(13)])
+        );
+    }
+
+    #[test]
+    fn list_transform_returns_null_on_null_input() {
+        let expr = IrExpr::ListTransform {
+            list: Box::new(IrExpr::Lit(Lit::Null)),
+            item: "x".to_string(),
+            map: Box::new(IrExpr::Binding("x".to_string())),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert!(matches!(value, Value::Null));
+    }
+
+    #[test]
+    fn list_filter_drops_null_predicate_results() {
+        // predicate: x = NULL -> Value::Null for every row.
+        let predicate = IrExpr::Binary {
+            op: BinaryOp::Eq,
+            lhs: Box::new(IrExpr::Binding("x".to_string())),
+            rhs: Box::new(IrExpr::Lit(Lit::Null)),
+        };
+        let expr = IrExpr::ListFilter {
+            list: Box::new(list_lit(vec![1, 2, 3])),
+            item: "x".to_string(),
+            predicate: Box::new(predicate),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert_eq!(value, Value::List(vec![]));
+    }
+
+    #[test]
+    fn list_filter_returns_null_on_null_input() {
+        let expr = IrExpr::ListFilter {
+            list: Box::new(IrExpr::Lit(Lit::Null)),
+            item: "x".to_string(),
+            predicate: Box::new(IrExpr::Lit(Lit::Bool(true))),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert!(matches!(value, Value::Null));
+    }
+
+    #[test]
+    fn list_transform_captures_outer_bindings() {
+        // map = x + outer, where outer is bound in the row.
+        let map = IrExpr::Binary {
+            op: BinaryOp::Add,
+            lhs: Box::new(IrExpr::Binding("x".to_string())),
+            rhs: Box::new(IrExpr::Binding("outer".to_string())),
+        };
+        let expr = IrExpr::ListTransform {
+            list: Box::new(list_lit(vec![1, 2, 3])),
+            item: "x".to_string(),
+            map: Box::new(map),
+        };
+        let row = Row::new().with("outer", Value::Int(100));
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![Value::Int(101), Value::Int(102), Value::Int(103)])
+        );
+    }
+
+    #[test]
+    fn list_transform_nested_lambdas() {
+        // list_transform([[1,2],[3,4]], xs -> list_transform(xs, y -> y * 0 + y + 1))
+        // Use addition since we don't have a Mul-only here; equivalent: y -> y + 1.
+        let inner = IrExpr::ListTransform {
+            list: Box::new(IrExpr::Binding("xs".to_string())),
+            item: "y".to_string(),
+            map: Box::new(add_binding("y", 1)),
+        };
+        let outer = IrExpr::ListTransform {
+            list: Box::new(IrExpr::List(vec![
+                list_lit(vec![1, 2]),
+                list_lit(vec![3, 4]),
+            ])),
+            item: "xs".to_string(),
+            map: Box::new(inner),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&outer, &row, &graph).unwrap();
+        assert_eq!(
+            value,
+            Value::List(vec![
+                Value::List(vec![Value::Int(2), Value::Int(3)]),
+                Value::List(vec![Value::Int(4), Value::Int(5)]),
+            ])
+        );
+    }
+
+    #[test]
+    fn list_filter_keeps_truthy_elements() {
+        // Predicate: x = 2
+        let predicate = IrExpr::Binary {
+            op: BinaryOp::Eq,
+            lhs: Box::new(IrExpr::Binding("x".to_string())),
+            rhs: Box::new(IrExpr::lit_int(2)),
+        };
+        let expr = IrExpr::ListFilter {
+            list: Box::new(list_lit(vec![1, 2, 3, 2])),
+            item: "x".to_string(),
+            predicate: Box::new(predicate),
+        };
+        let row = Row::new();
+        let graph = empty_graph();
+        let value = eval(&expr, &row, &graph).unwrap();
+        assert_eq!(value, Value::List(vec![Value::Int(2), Value::Int(2)]));
     }
 }

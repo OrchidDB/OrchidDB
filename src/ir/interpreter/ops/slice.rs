@@ -59,7 +59,9 @@ fn evaluate_slice_bound(name: &str, expr: &IrExpr, graph: &PropertyGraph) -> IrR
         Value::Float(value) if value.is_finite() && value >= 0.0 => Ok(value as u64),
         Value::Float32(value) if value.is_finite() && value >= 0.0 => Ok(value as u64),
         Value::BigInt(value) => value.to_string().parse::<u64>().map_err(|_| {
-            InterpretError::Type(format!("{name} expression must evaluate to a non-negative integer"))
+            InterpretError::Type(format!(
+                "{name} expression must evaluate to a non-negative integer"
+            ))
         }),
         // Cypher's NULL LIMIT / NULL SKIP semantics: treat as "no
         // bound" rather than fail. Returning `u64::MAX` lets the

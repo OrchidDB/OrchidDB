@@ -4,14 +4,34 @@
 //! traversal stack and lexical row scope. Individual modules lower one syntax
 //! family, but they do not own independent context objects.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::expr::BindingId;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BindingKind {
+    Unknown,
+    Node,
+    Relationship,
+    RecursiveRelationship,
+}
+
+impl BindingKind {
+    pub(crate) const fn cypher_type_name(self) -> &'static str {
+        match self {
+            BindingKind::Unknown => "ANY",
+            BindingKind::Node => "NODE",
+            BindingKind::Relationship => "REL",
+            BindingKind::RecursiveRelationship => "RECURSIVE_REL",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ScopeFrame {
     pub(crate) visible: BTreeSet<BindingId>,
     pub(crate) nullable: BTreeSet<BindingId>,
+    pub(crate) kinds: BTreeMap<BindingId, BindingKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

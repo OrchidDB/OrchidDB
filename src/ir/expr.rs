@@ -79,6 +79,28 @@ pub enum IrExpr {
     /// of kind `Path`.
     SimplePath(BindingId),
     List(Vec<IrExpr>),
+    /// Kuzu-style `list_reduce(list, (acc, item) -> expr)`.
+    ListReduce {
+        collection: Box<IrExpr>,
+        accumulator: BindingId,
+        item: BindingId,
+        map: Box<IrExpr>,
+    },
+    /// Kuzu-style `list_transform(list, x -> expr)`. Lazy: the map body is
+    /// evaluated per item with `item` bound in a row-local overlay so outer
+    /// bindings remain visible without plan-level materialization.
+    ListTransform {
+        list: Box<IrExpr>,
+        item: BindingId,
+        map: Box<IrExpr>,
+    },
+    /// Kuzu-style `list_filter(list, x -> predicate)`. Same lazy semantics as
+    /// `ListTransform`; null/non-true predicate results drop the element.
+    ListFilter {
+        list: Box<IrExpr>,
+        item: BindingId,
+        predicate: Box<IrExpr>,
+    },
     /// Function call. Used for `lcase`, `distance`, `point`, custom UDFs etc.
     Call {
         name: String,

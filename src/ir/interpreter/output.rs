@@ -231,10 +231,7 @@ fn edge_table_index(graph: &PropertyGraph, rel_type: &str) -> i64 {
 
 fn format_node(graph: &PropertyGraph, label: &str, id: i64) -> String {
     let table_id = node_table_index(graph, label);
-    let mut parts = vec![
-        format!("_ID: {table_id}:{id}"),
-        format!("_LABEL: {label}"),
-    ];
+    let mut parts = vec![format!("_ID: {table_id}:{id}"), format!("_LABEL: {label}")];
     for key in graph.node_property_keys(label) {
         let value = graph.node_property(label, id, &key);
         if matches!(value, Value::Null) {

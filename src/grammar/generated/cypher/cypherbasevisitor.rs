@@ -221,6 +221,14 @@ pub trait CypherBaseVisitor<'input>: ParseTreeVisitor<'input, CypherParserContex
         self.visit_children(ctx)
     }
 
+    // Visit a parse tree produced by CypherParser#oC_RecursiveRelationshipFilter.
+    fn visit_oc_recursiverelationshipfilter(
+        &mut self,
+        ctx: &OC_RecursiveRelationshipFilterContext<'input>,
+    ) {
+        self.visit_children(ctx)
+    }
+
     // Visit a parse tree produced by CypherParser#oC_Properties.
     fn visit_oc_properties(&mut self, ctx: &OC_PropertiesContext<'input>) {
         self.visit_children(ctx)
@@ -433,6 +441,31 @@ pub trait CypherBaseVisitor<'input>: ParseTreeVisitor<'input, CypherParserContex
 
     // Visit a parse tree produced by CypherParser#oC_FunctionInvocation.
     fn visit_oc_functioninvocation(&mut self, ctx: &OC_FunctionInvocationContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    // Visit a parse tree produced by CypherParser#oC_CastExpression.
+    fn visit_oc_castexpression(&mut self, ctx: &OC_CastExpressionContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    // Visit a parse tree produced by CypherParser#oC_CastType.
+    fn visit_oc_casttype(&mut self, ctx: &OC_CastTypeContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    // Visit a parse tree produced by CypherParser#oC_CastTypeArgument.
+    fn visit_oc_casttypeargument(&mut self, ctx: &OC_CastTypeArgumentContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    // Visit a parse tree produced by CypherParser#oC_CastTypeField.
+    fn visit_oc_casttypefield(&mut self, ctx: &OC_CastTypeFieldContext<'input>) {
+        self.visit_children(ctx)
+    }
+
+    // Visit a parse tree produced by CypherParser#oC_CastTypeName.
+    fn visit_oc_casttypename(&mut self, ctx: &OC_CastTypeNameContext<'input>) {
         self.visit_children(ctx)
     }
 

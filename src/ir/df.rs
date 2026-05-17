@@ -2195,7 +2195,12 @@ fn infer_expr_type(expr: &IrExpr) -> DataType {
         | IrExpr::IsBound(_)
         | IrExpr::SimplePath(_)
         | IrExpr::HasLabel { .. } => DataType::Boolean,
-        IrExpr::List(_) | IrExpr::Case { .. } | IrExpr::Call { .. } => DataType::Utf8,
+        IrExpr::List(_)
+        | IrExpr::ListReduce { .. }
+        | IrExpr::ListTransform { .. }
+        | IrExpr::ListFilter { .. }
+        | IrExpr::Case { .. }
+        | IrExpr::Call { .. } => DataType::Utf8,
         IrExpr::Binding(_) | IrExpr::Property { .. } | IrExpr::Id(_) | IrExpr::Label(_) => {
             DataType::Utf8
         }

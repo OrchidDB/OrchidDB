@@ -7,12 +7,14 @@ use crate::ir::policy::{MatchMode, OptionalMissing, PathMode};
 use crate::language::cypher::ast::{
     Expr, Literal, NodePattern, PatternPart, QuantifierKind, RangeLiteral, RelationshipPattern,
 };
-use crate::language::cypher::planner::error::CypherPlanResult;
+use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
-    Lowerer, context::CypherTraversalKind, project, sources,
+    Lowerer,
+    context::{BindingKind, CypherTraversalKind},
+    project, sources,
 };
 use crate::language::cypher::semantics::DEFAULT_GRAPH;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn lower_pattern_part(
     lowerer: &mut Lowerer,
@@ -39,12 +41,22 @@ pub fn lower_pattern_part(
         property_correlation.insert(history.to_string());
     }
     let mut outputs = Vec::new();
+    let mut output_kinds = BTreeMap::new();
+    let mut pattern_kinds = binding_kinds(lowerer, &outer_visible);
+    validate_path_binding(part, &outer_visible)?;
     if let Some(path) = &part.variable {
         if !outer_visible.contains(path) {
-            outputs.push(path.clone());
+            push_output(
+                &mut outputs,
+                &mut output_kinds,
+                path.clone(),
+                BindingKind::RecursiveRelationship,
+            );
+            pattern_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
         }
     }
     let mut source = node_binding(lowerer, &part.element.start);
+    validate_node_binding(&source, &pattern_kinds)?;
     let mut traversal = lower_node_start(
         lowerer,
         &part.element.start,
@@ -55,7 +67,11 @@ pub fn lower_pattern_part(
     )?;
     let mut pattern_visible = outer_visible.clone();
     if part.element.start.variable.is_some() {
+        if !outer_visible.contains(&source) {
+            output_kinds.insert(source.clone(), BindingKind::Node);
+        }
         pattern_visible.insert(source.clone());
+        pattern_kinds.insert(source.clone(), BindingKind::Node);
     }
     let shared_path_binding = part.variable.clone();
 
@@ -64,9 +80,29 @@ pub fn lower_pattern_part(
         let target_exists = pattern_visible.contains(&target);
         let variable_length = is_variable_length(&chain.relationship.range);
         let user_rel_binding = chain.relationship.variable.clone();
-        let path_binding = shared_path_binding.clone().or_else(|| {
-            variable_length.then(|| lowerer.synthetic("path"))
-        });
+        if let Some(rel) = &user_rel_binding {
+            let expected = if variable_length {
+                BindingKind::RecursiveRelationship
+            } else {
+                BindingKind::Relationship
+            };
+            validate_relationship_binding(rel, expected, &pattern_kinds)?;
+        }
+        let mut chain_kinds = pattern_kinds.clone();
+        if let Some(rel) = &user_rel_binding {
+            let kind = if variable_length {
+                BindingKind::RecursiveRelationship
+            } else {
+                BindingKind::Relationship
+            };
+            chain_kinds.insert(rel.clone(), kind);
+        }
+        if chain.node.variable.is_some() {
+            validate_node_binding(&target, &chain_kinds)?;
+        }
+        let path_binding = shared_path_binding
+            .clone()
+            .or_else(|| variable_length.then(|| lowerer.synthetic("path")));
         let rel_binding = expand_relationship_binding(
             lowerer,
             &chain.relationship,
@@ -75,11 +111,21 @@ pub fn lower_pattern_part(
         );
         if let Some(rel) = &user_rel_binding {
             if !pattern_visible.contains(rel) {
-                outputs.push(rel.clone());
+                let kind = if variable_length {
+                    BindingKind::RecursiveRelationship
+                } else {
+                    BindingKind::Relationship
+                };
+                push_output(&mut outputs, &mut output_kinds, rel.clone(), kind);
             }
         }
         if !target_exists && chain.node.variable.is_some() {
-            outputs.push(target.clone());
+            push_output(
+                &mut outputs,
+                &mut output_kinds,
+                target.clone(),
+                BindingKind::Node,
+            );
         }
         traversal = lower_expand(
             traversal,
@@ -130,9 +176,16 @@ pub fn lower_pattern_part(
         traversal = apply_node_filters(lowerer, traversal, &target, &chain.node, &node_allowed)?;
         if let Some(rel) = &user_rel_binding {
             pattern_visible.insert(rel.clone());
+            let kind = if variable_length {
+                BindingKind::RecursiveRelationship
+            } else {
+                BindingKind::Relationship
+            };
+            pattern_kinds.insert(rel.clone(), kind);
         }
         if chain.node.variable.is_some() {
             pattern_visible.insert(target.clone());
+            pattern_kinds.insert(target.clone(), BindingKind::Node);
         }
         source = target;
     }
@@ -157,7 +210,9 @@ pub fn lower_pattern_part(
     outputs.dedup();
     let correlation: Vec<String> = outer_visible
         .iter()
-        .filter(|binding| pattern_mentions(part, binding) || property_correlation.contains(*binding))
+        .filter(|binding| {
+            pattern_mentions(part, binding) || property_correlation.contains(*binding)
+        })
         .cloned()
         .collect();
     let mut correlation = correlation;
@@ -200,7 +255,11 @@ pub fn lower_pattern_part(
         if optional {
             lowerer.add_nullable(output.clone());
         }
-        lowerer.add_visible(output);
+        let kind = output_kinds
+            .get(&output)
+            .copied()
+            .unwrap_or(BindingKind::Unknown);
+        lowerer.add_visible_kind(output, kind);
     }
     Ok(node)
 }
@@ -225,6 +284,77 @@ fn expand_relationship_binding(
     } else {
         None
     }
+}
+
+fn binding_kinds(lowerer: &Lowerer, visible: &BTreeSet<String>) -> BTreeMap<String, BindingKind> {
+    visible
+        .iter()
+        .filter_map(|binding| {
+            lowerer
+                .binding_kind(binding)
+                .map(|kind| (binding.clone(), kind))
+        })
+        .collect()
+}
+
+fn push_output(
+    outputs: &mut Vec<String>,
+    output_kinds: &mut BTreeMap<String, BindingKind>,
+    binding: String,
+    kind: BindingKind,
+) {
+    outputs.push(binding.clone());
+    output_kinds.insert(binding, kind);
+}
+
+fn validate_path_binding(
+    part: &PatternPart,
+    outer_visible: &BTreeSet<String>,
+) -> CypherPlanResult<()> {
+    let Some(path) = &part.variable else {
+        return Ok(());
+    };
+    if outer_visible.contains(path) || pattern_element_declares(&part.element, path) {
+        return Err(CypherPlanError::Invalid(
+            "SyntaxError: VariableAlreadyBound".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_node_binding(
+    _binding: &str,
+    _kinds: &BTreeMap<String, BindingKind>,
+) -> CypherPlanResult<()> {
+    Ok(())
+}
+
+fn validate_relationship_binding(
+    binding: &str,
+    expected: BindingKind,
+    kinds: &BTreeMap<String, BindingKind>,
+) -> CypherPlanResult<()> {
+    match kinds.get(binding).copied() {
+        Some(kind) if kind != expected && kind != BindingKind::Unknown => {
+            Err(CypherPlanError::Invalid(format!(
+                "Binder exception: {binding} has data type {} but {} was expected.",
+                kind.cypher_type_name(),
+                expected.cypher_type_name()
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn pattern_element_declares(
+    element: &crate::language::cypher::ast::PatternElement,
+    binding: &str,
+) -> bool {
+    element.start.variable.as_deref() == Some(binding)
+        || element.chains.iter().any(|chain| {
+            chain.node.variable.as_deref() == Some(binding)
+                || chain.relationship.variable.as_deref() == Some(binding)
+        })
 }
 
 fn lower_node_start(
@@ -426,10 +556,7 @@ fn apply_variable_length_property_filters(
             let predicate = Expr::Function {
                 name: "cypher_properties_match".to_string(),
                 distinct: false,
-                args: vec![
-                    Expr::Variable(item.clone()),
-                    Expr::Parameter(name.clone()),
-                ],
+                args: vec![Expr::Variable(item.clone()), Expr::Parameter(name.clone())],
             };
             let (input, condition) = lower_property_expr_with_allowed(
                 lowerer,
@@ -469,14 +596,23 @@ fn pattern_property_correlation(
 ) -> BTreeSet<String> {
     let mut refs = BTreeSet::new();
     if let Some(properties) = &part.element.start.properties {
-        refs.extend(project::expression_candidate_refs(properties, outer_visible));
+        refs.extend(project::expression_candidate_refs(
+            properties,
+            outer_visible,
+        ));
     }
     for chain in &part.element.chains {
         if let Some(properties) = &chain.relationship.properties {
-            refs.extend(project::expression_candidate_refs(properties, outer_visible));
+            refs.extend(project::expression_candidate_refs(
+                properties,
+                outer_visible,
+            ));
         }
         if let Some(properties) = &chain.node.properties {
-            refs.extend(project::expression_candidate_refs(properties, outer_visible));
+            refs.extend(project::expression_candidate_refs(
+                properties,
+                outer_visible,
+            ));
         }
     }
     refs

@@ -244,7 +244,10 @@ oC_RelationshipPattern
                        ;
 
 oC_RelationshipDetail
-                  :  '[' SP? ( oC_Variable SP? )? ( oC_RelationshipTypes SP? )? oC_RangeLiteral? ( oC_Properties SP? )? ']' ;
+                  :  '[' SP? ( oC_Variable SP? )? ( oC_RelationshipTypes SP? )? oC_RangeLiteral? ( SP? oC_RecursiveRelationshipFilter )? ( oC_Properties SP? )? ']' ;
+
+oC_RecursiveRelationshipFilter
+                  :  '(' ( oC_RecursiveRelationshipFilter | ~( '(' | ')' ) )* ')' ;
 
 oC_Properties
           :  oC_MapLiteral
@@ -258,7 +261,7 @@ oC_NodeLabels
           :  oC_NodeLabel ( SP? oC_NodeLabel )* ;
 
 oC_NodeLabel
-         :  ':' SP? oC_LabelName ;
+         :  ':' SP? oC_LabelName ( SP? '|' ':'? SP? oC_LabelName )* ;
 
 oC_RangeLiteral
             :  '*' SP? ( oC_IntegerLiteral SP? )? ( '..' SP? ( oC_IntegerLiteral SP? )? )? ;
@@ -362,6 +365,7 @@ oC_Atom
     :  oC_Literal
         | oC_Parameter
         | oC_CaseExpression
+        | oC_CastExpression
         | ( COUNT SP? '(' SP? '*' SP? ')' )
         | oC_ListComprehension
         | oC_PatternComprehension
@@ -425,11 +429,32 @@ oC_IdInColl
 oC_FunctionInvocation
                   :  oC_FunctionName SP? '(' SP? ( DISTINCT SP? )? ( oC_Expression SP? ( ',' SP? oC_Expression SP? )* )? ')' ;
 
+oC_CastExpression
+                  :  CAST SP? '(' SP? oC_Expression SP? ( ( ',' SP? oC_Expression ) | ( AS SP oC_CastType ) ) SP? ')' ;
+
+CAST : ( 'C' | 'c' ) ( 'A' | 'a' ) ( 'S' | 's' ) ( 'T' | 't' ) ;
+
+oC_CastType
+          :  oC_CastTypeName ( SP? '(' SP? oC_CastTypeArgument ( SP? ',' SP? oC_CastTypeArgument )* SP? ')' )? ( SP? '[' SP? DecimalInteger? SP? ']' )*
+          ;
+
+oC_CastTypeArgument
+                  :  DecimalInteger
+                      | oC_CastTypeField
+                      | oC_CastType
+                  ;
+
+oC_CastTypeField
+              :  oC_CastTypeName SP oC_CastType ;
+
+oC_CastTypeName
+             :  oC_SchemaName ;
+
 oC_FunctionName
             :  oC_Namespace oC_SymbolicName ;
 
 oC_ExistentialSubquery
-                   :  EXISTS SP? '{' SP? ( oC_RegularQuery | ( oC_Pattern ( SP? oC_Where )? ) ) SP? '}' ;
+                   :  EXISTS SP? '{' SP? ( ( MATCH SP? oC_Pattern ( SP? oC_Where )? ) | oC_RegularQuery | ( oC_Pattern ( SP? oC_Where )? ) ) SP? '}' ;
 
 EXISTS : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'I' | 'i' ) ( 'S' | 's' ) ( 'T' | 't' ) ( 'S' | 's' ) ;
 
@@ -610,6 +635,7 @@ oC_ReservedWord
                 | TRUE
                 | NULL
                 | CONSTRAINT
+                | CAST
                 | DO
                 | FOR
                 | REQUIRE

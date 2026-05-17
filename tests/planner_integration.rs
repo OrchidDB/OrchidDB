@@ -12,6 +12,8 @@ use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_colum
 use new_graph::ir::expr::{BinaryOp, Lit};
 use new_graph::ir::interpreter::execute;
 use new_graph::ir::plan::{Direction, Length, SortDir};
+use new_graph::language::cypher::parser::parse_query;
+use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
 use new_graph::planner::{CypherPlanner, GremlinPlanner};
 
 fn fixture_graph() -> PropertyGraph {
@@ -152,4 +154,38 @@ fn gremlin_planner_filters_then_traverses() {
     let mut names: Vec<&str> = (0..array.len()).map(|i| array.value(i)).collect();
     names.sort();
     assert_eq!(names, vec!["bob", "carol"]);
+}
+
+fn plan_cypher_error(query: &str) -> String {
+    let parsed = parse_query(query).expect("parse");
+    AstCypherPlanner::new()
+        .plan(&parsed)
+        .expect_err("query should fail planning")
+        .to_string()
+}
+
+#[test]
+fn cypher_allows_relationship_reused_as_node_pattern_for_now() {
+    let parsed = parse_query("MATCH ()-[r]-() MATCH (r) RETURN r").expect("parse");
+    AstCypherPlanner::new().plan(&parsed).expect(
+        "relationship-as-node reuse remains executable until binder semantics are stricter",
+    );
+}
+
+#[test]
+fn cypher_rejects_node_reused_as_relationship_pattern() {
+    let err = plan_cypher_error("MATCH (r) MATCH ()-[r]-() RETURN r");
+    assert!(err.contains("Binder exception: r has data type NODE but REL was expected."));
+}
+
+#[test]
+fn cypher_rejects_path_reused_as_relationship_pattern() {
+    let err = plan_cypher_error("MATCH r = ()-[*1..2]->() MATCH ()-[r]-() RETURN r");
+    assert!(err.contains("Binder exception: r has data type RECURSIVE_REL but REL was expected."));
+}
+
+#[test]
+fn cypher_rejects_rebinding_visible_path_variable() {
+    let err = plan_cypher_error("MATCH (p) MATCH p = ()-[]-() RETURN p");
+    assert!(err.contains("SyntaxError: VariableAlreadyBound"));
 }
