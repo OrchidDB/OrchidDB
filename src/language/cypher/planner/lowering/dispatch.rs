@@ -152,7 +152,7 @@ fn lower_unwind(
     let node = lowerer.with_child_traversal(CypherTraversalKind::Unwind, |lowerer| {
         if lowerer.is_visible(&clause.alias) {
             return Err(CypherPlanError::Invalid(format!(
-                "UNWIND alias `{}` is already in scope",
+                "Binder exception: Variable {} already exists.",
                 clause.alias
             )));
         }

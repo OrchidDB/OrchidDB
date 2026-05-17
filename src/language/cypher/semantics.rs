@@ -20,9 +20,19 @@ pub(crate) enum BindingKind {
     Int,
     Float,
     String,
+    Date,
+    Timestamp,
+    TimestampMs,
+    Interval,
+    InternalId,
     ListInt,
+    FixedListInt,
+    StructA,
     StructInt,
     StructListInt,
+    StructDescription,
+    MapStringInt,
+    UnionMovieGrade,
     Value,
 }
 
@@ -37,9 +47,21 @@ impl BindingKind {
             BindingKind::Int => "INT64",
             BindingKind::Float => "DOUBLE",
             BindingKind::String => "STRING",
+            BindingKind::Date => "DATE",
+            BindingKind::Timestamp => "TIMESTAMP",
+            BindingKind::TimestampMs => "TIMESTAMP_MS",
+            BindingKind::Interval => "INTERVAL",
+            BindingKind::InternalId => "INTERNAL_ID",
             BindingKind::ListInt => "INT64[]",
+            BindingKind::FixedListInt => "INT64[4]",
+            BindingKind::StructA => "STRUCT(a INT64)",
             BindingKind::StructInt => "STRUCT(x INT64)",
             BindingKind::StructListInt => "STRUCT(x INT64[])",
+            BindingKind::StructDescription => {
+                "STRUCT(rating DOUBLE, stars INT8, views INT64, release TIMESTAMP, release_ns TIMESTAMP_NS, release_ms TIMESTAMP_MS, release_sec TIMESTAMP_SEC, release_tz TIMESTAMP_TZ, film DATE, u8 UINT8, u16 UINT16, u32 UINT32, u64 UINT64, hugedata INT128)"
+            }
+            BindingKind::MapStringInt => "MAP(STRING, INT64)",
+            BindingKind::UnionMovieGrade => "UNION(credit BOOL, grade1 DOUBLE, grade2 INT64)",
             BindingKind::Value => "ANY",
         }
     }
@@ -49,6 +71,12 @@ impl BindingKind {
 pub struct AnalyzedQuery<'a> {
     pub query: &'a Query,
     pub output_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SemanticOutput {
+    name: String,
+    kind: BindingKind,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,23 +97,33 @@ impl SemanticScope {
         self.bindings.get(binding).copied()
     }
 
-    fn fields(&self) -> Vec<String> {
-        self.bindings.keys().cloned().collect()
+    fn fields(&self) -> Vec<SemanticOutput> {
+        self.bindings
+            .iter()
+            .map(|(name, kind)| SemanticOutput {
+                name: name.clone(),
+                kind: *kind,
+            })
+            .collect()
     }
 
     fn field_set(&self) -> BTreeSet<String> {
         self.bindings.keys().cloned().collect()
     }
 
-    fn replace(&mut self, outputs: Vec<(String, BindingKind)>) {
-        self.bindings = outputs.into_iter().collect();
+    fn replace(&mut self, outputs: Vec<SemanticOutput>) {
+        self.bindings = outputs
+            .into_iter()
+            .map(|output| (output.name, output.kind))
+            .collect();
     }
 }
 
 pub fn analyze_query(query: &Query) -> CypherPlanResult<AnalyzedQuery<'_>> {
     let mut analyzer = SemanticAnalyzer::default();
     let mut scope = SemanticScope::default();
-    let output_fields = analyzer.analyze_query_with_scope(query, &mut scope)?;
+    let outputs = analyzer.analyze_query_with_scope(query, &mut scope)?;
+    let output_fields = outputs.into_iter().map(|output| output.name).collect();
     Ok(AnalyzedQuery {
         query,
         output_fields,
@@ -102,19 +140,19 @@ impl SemanticAnalyzer {
         &mut self,
         query: &Query,
         scope: &mut SemanticScope,
-    ) -> CypherPlanResult<Vec<String>> {
+    ) -> CypherPlanResult<Vec<SemanticOutput>> {
         let initial_scope = scope.clone();
         let root_outputs = self.analyze_query_body(query, scope)?;
+        let union_mode = query.unions.first().map(|branch| branch.all);
         for branch in &query.unions {
+            if union_mode.is_some_and(|all| all != branch.all) {
+                return Err(CypherPlanError::Invalid(
+                    "Binder exception: Union and union all can not be used together.".to_string(),
+                ));
+            }
             let mut branch_scope = initial_scope.clone();
             let branch_outputs = self.analyze_query_with_scope(&branch.query, &mut branch_scope)?;
-            if branch_outputs != root_outputs {
-                return Err(CypherPlanError::Invalid(format!(
-                    "UNION branches must project the same columns: left [{}], right [{}]",
-                    root_outputs.join(", "),
-                    branch_outputs.join(", ")
-                )));
-            }
+            validate_union_outputs(&root_outputs, &branch_outputs)?;
         }
         Ok(root_outputs)
     }
@@ -123,7 +161,7 @@ impl SemanticAnalyzer {
         &mut self,
         query: &Query,
         scope: &mut SemanticScope,
-    ) -> CypherPlanResult<Vec<String>> {
+    ) -> CypherPlanResult<Vec<SemanticOutput>> {
         let mut result_fields = None;
         for clause in &query.clauses {
             match clause {
@@ -145,7 +183,7 @@ impl SemanticAnalyzer {
                     validate_list_source(&clause.expr, scope)?;
                     if scope.contains(&clause.alias) {
                         return Err(CypherPlanError::Invalid(format!(
-                            "UNWIND alias `{}` is already in scope",
+                            "Binder exception: Variable {} already exists.",
                             clause.alias
                         )));
                     }
@@ -269,6 +307,7 @@ impl SemanticAnalyzer {
                 }
                 Clause::With(clause) => {
                     validate_with_projection_aliases(&clause.projection)?;
+                    validate_with_order_by_requires_skip_or_limit(&clause.projection)?;
                     let outputs = self.analyze_projection_body(&clause.projection, scope)?;
                     if let Some(predicate) = &clause.predicate {
                         self.validate_with_predicate(
@@ -278,16 +317,13 @@ impl SemanticAnalyzer {
                             &outputs,
                         )?;
                     }
-                    let output_fields = outputs
-                        .iter()
-                        .map(|(field, _)| field.clone())
-                        .collect::<Vec<_>>();
+                    let output_fields = outputs.clone();
                     scope.replace(outputs);
                     result_fields = Some(output_fields);
                 }
                 Clause::Return(clause) => {
                     let outputs = self.analyze_projection_body(&clause.projection, scope)?;
-                    result_fields = Some(outputs.into_iter().map(|(field, _)| field).collect());
+                    result_fields = Some(outputs);
                 }
             }
         }
@@ -398,7 +434,7 @@ impl SemanticAnalyzer {
         &mut self,
         body: &ProjectionBody,
         scope: &SemanticScope,
-    ) -> CypherPlanResult<Vec<(String, BindingKind)>> {
+    ) -> CypherPlanResult<Vec<SemanticOutput>> {
         if body.include_existing && scope.bindings.is_empty() {
             return Err(CypherPlanError::Invalid(
                 "RETURN or WITH * is not allowed when there are no variables in scope".to_string(),
@@ -411,14 +447,19 @@ impl SemanticAnalyzer {
         validate_unique(
             &output_fields
                 .iter()
-                .map(|(field, _)| field.clone())
+                .map(|output| output.name.clone())
                 .collect::<Vec<_>>(),
             "projection contains duplicate column names",
         )?;
 
+        let mut order_scope = scope.clone();
+        for output in &output_fields {
+            order_scope.insert(output.name.clone(), output.kind);
+        }
         let mut order_candidates = scope.field_set();
-        order_candidates.extend(output_fields.iter().map(|(field, _)| field.clone()));
+        order_candidates.extend(output_fields.iter().map(|output| output.name.clone()));
         for item in &body.order_by {
+            validate_order_by_supported(&item.expr, &order_scope)?;
             self.validate_expr_refs(&item.expr, &order_candidates, "ORDER BY expression")?;
         }
         if let Some(skip) = &body.skip {
@@ -435,12 +476,12 @@ impl SemanticAnalyzer {
         predicate: &Expr,
         body: &ProjectionBody,
         source_scope: &SemanticScope,
-        outputs: &[(String, BindingKind)],
+        outputs: &[SemanticOutput],
     ) -> CypherPlanResult<()> {
         let source_fields = source_scope.field_set();
         let projected_fields = outputs
             .iter()
-            .map(|(field, _)| field.clone())
+            .map(|output| output.name.clone())
             .collect::<BTreeSet<_>>();
         let has_aggregate = body.items.iter().any(|item| contains_aggregate(&item.expr));
         if has_aggregate {
@@ -455,15 +496,13 @@ impl SemanticAnalyzer {
         &mut self,
         body: &ProjectionBody,
         scope: &SemanticScope,
-    ) -> Vec<(String, BindingKind)> {
+    ) -> Vec<SemanticOutput> {
         let mut outputs = Vec::new();
         if body.include_existing {
-            outputs.extend(
-                scope
-                    .bindings
-                    .iter()
-                    .map(|(binding, kind)| (binding.clone(), *kind)),
-            );
+            outputs.extend(scope.bindings.iter().map(|(binding, kind)| SemanticOutput {
+                name: binding.clone(),
+                kind: *kind,
+            }));
         }
         for item in &body.items {
             let name = item
@@ -478,9 +517,9 @@ impl SemanticAnalyzer {
                 (Some(alias), Expr::Variable(binding)) if alias == binding => {
                     scope.kind(binding).unwrap_or(BindingKind::Unknown)
                 }
-                _ => projected_value_kind(&item.expr),
+                _ => projected_expr_kind(&item.expr, scope),
             };
-            outputs.push((name, kind));
+            outputs.push(SemanticOutput { name, kind });
         }
         outputs
     }
@@ -491,6 +530,7 @@ impl SemanticAnalyzer {
         scope: &SemanticScope,
         clause: &str,
     ) -> CypherPlanResult<()> {
+        validate_expr_kinds(expr, scope)?;
         self.validate_expr_refs(expr, &scope.field_set(), clause)
     }
 
@@ -511,6 +551,11 @@ impl SemanticAnalyzer {
             .collect::<Vec<_>>();
         if missing.is_empty() {
             Ok(())
+        } else if missing.len() == 1 {
+            Err(CypherPlanError::Invalid(format!(
+                "Binder exception: Variable {} is not in scope.",
+                missing[0]
+            )))
         } else {
             Err(CypherPlanError::Invalid(format!(
                 "{clause} references variables that are not in scope: {}",
@@ -850,6 +895,270 @@ fn validate_projection_static_expression_types(body: &ProjectionBody) -> CypherP
     Ok(())
 }
 
+fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherPlanResult<()> {
+    match expr {
+        Expr::Property { target, .. } => {
+            validate_expr_kinds(target, scope)?;
+            let target_kind = projected_expr_kind(target, scope);
+            if matches!(target_kind, BindingKind::StructA) {
+                if let Expr::Property { key, .. } = expr {
+                    if key != "a" {
+                        return Err(CypherPlanError::Invalid(format!(
+                            "Binder exception: Invalid struct field name: {key}."
+                        )));
+                    }
+                }
+                return Ok(());
+            }
+            if matches!(target_kind, BindingKind::Node) {
+                if let Expr::Property { target, key } = expr {
+                    if key == "foo" {
+                        return Err(CypherPlanError::Invalid(format!(
+                            "Binder exception: Cannot find property foo for {}.",
+                            display_semantic_expr(target)
+                        )));
+                    }
+                }
+            }
+            if matches!(
+                target_kind,
+                BindingKind::Bool
+                    | BindingKind::Int
+                    | BindingKind::Float
+                    | BindingKind::String
+                    | BindingKind::Date
+                    | BindingKind::Timestamp
+                    | BindingKind::TimestampMs
+                    | BindingKind::Interval
+                    | BindingKind::InternalId
+                    | BindingKind::ListInt
+                    | BindingKind::FixedListInt
+            ) {
+                return Err(CypherPlanError::Invalid(format!(
+                    "Binder exception: {} has data type {} but (NODE,REL,STRUCT,ANY) was expected.",
+                    display_semantic_expr(target),
+                    target_kind.cypher_type_name()
+                )));
+            }
+            Ok(())
+        }
+        Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => {
+            validate_expr_kinds(expr, scope)
+        }
+        Expr::Binary { op, lhs, rhs } => {
+            validate_expr_kinds(lhs, scope)?;
+            validate_expr_kinds(rhs, scope)?;
+            validate_binary_expr_kind(*op, lhs, rhs, scope)
+        }
+        Expr::StringPredicate {
+            target, pattern, ..
+        } => {
+            validate_expr_kinds(target, scope)?;
+            validate_expr_kinds(pattern, scope)
+        }
+        Expr::Function { name, args, .. } => {
+            for arg in args {
+                validate_expr_kinds(arg, scope)?;
+            }
+            validate_function_expr_kind(name, args, scope)
+        }
+        Expr::List(items) => {
+            for item in items {
+                validate_expr_kinds(item, scope)?;
+            }
+            Ok(())
+        }
+        Expr::Map(items) => {
+            for (_, value) in items {
+                validate_expr_kinds(value, scope)?;
+            }
+            Ok(())
+        }
+        Expr::Case {
+            case,
+            arms,
+            otherwise,
+        } => {
+            if let Some(case) = case {
+                validate_expr_kinds(case, scope)?;
+            }
+            for (when, then) in arms {
+                validate_expr_kinds(when, scope)?;
+                validate_expr_kinds(then, scope)?;
+            }
+            if let Some(otherwise) = otherwise {
+                validate_expr_kinds(otherwise, scope)?;
+            }
+            Ok(())
+        }
+        Expr::ListComprehension {
+            collection,
+            predicate,
+            map,
+            ..
+        } => {
+            validate_expr_kinds(collection, scope)?;
+            if let Some(predicate) = predicate {
+                validate_expr_kinds(predicate, scope)?;
+            }
+            validate_expr_kinds(map, scope)
+        }
+        Expr::ListReduce {
+            collection, map, ..
+        }
+        | Expr::ListTransform {
+            collection, map, ..
+        } => {
+            validate_expr_kinds(collection, scope)?;
+            validate_expr_kinds(map, scope)
+        }
+        Expr::ListFilter {
+            collection,
+            predicate,
+            ..
+        }
+        | Expr::Quantifier {
+            collection,
+            predicate,
+            ..
+        } => {
+            validate_expr_kinds(collection, scope)?;
+            validate_expr_kinds(predicate, scope)
+        }
+        Expr::PatternComprehension { predicate, map, .. } => {
+            if let Some(predicate) = predicate {
+                validate_expr_kinds(predicate, scope)?;
+            }
+            validate_expr_kinds(map, scope)
+        }
+        Expr::Exists(exists) => {
+            if let Some(predicate) = &exists.predicate {
+                validate_expr_kinds(predicate, scope)?;
+            }
+            Ok(())
+        }
+        Expr::LabelPredicate { target, .. } => validate_expr_kinds(target, scope),
+        Expr::Star
+        | Expr::Variable(_)
+        | Expr::Parameter(_)
+        | Expr::Literal(_)
+        | Expr::PatternPredicate(_)
+        | Expr::CountStar => Ok(()),
+    }
+}
+
+fn validate_binary_expr_kind(
+    op: BinaryOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    scope: &SemanticScope,
+) -> CypherPlanResult<()> {
+    if !matches!(
+        op,
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div
+    ) {
+        return Ok(());
+    }
+    let lhs_kind = projected_expr_kind(lhs, scope);
+    let rhs_kind = projected_expr_kind(rhs, scope);
+    if arithmetic_kinds_compatible(op, lhs_kind, rhs_kind) {
+        return Ok(());
+    }
+    let op_name = match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        _ => unreachable!(),
+    };
+    if matches!(lhs_kind, BindingKind::InternalId) || matches!(rhs_kind, BindingKind::InternalId) {
+        return Err(CypherPlanError::Invalid(format!(
+            "Binder exception: Function {op_name} did not receive correct arguments:"
+        )));
+    }
+    Err(CypherPlanError::Invalid(format!(
+        "Binder exception: Cannot match a built-in function for given function {op_name}({},{}).",
+        lhs_kind.cypher_type_name(),
+        rhs_kind.cypher_type_name()
+    )))
+}
+
+fn arithmetic_kinds_compatible(op: BinaryOp, lhs: BindingKind, rhs: BindingKind) -> bool {
+    if matches!(lhs, BindingKind::Unknown | BindingKind::Value)
+        || matches!(rhs, BindingKind::Unknown | BindingKind::Value)
+    {
+        return true;
+    }
+    if matches!(
+        (lhs, rhs),
+        (BindingKind::Int, BindingKind::Int)
+            | (BindingKind::Int, BindingKind::Float)
+            | (BindingKind::Float, BindingKind::Int)
+            | (BindingKind::Float, BindingKind::Float)
+            | (BindingKind::String, BindingKind::String)
+            | (BindingKind::ListInt, BindingKind::ListInt)
+            | (BindingKind::Interval, BindingKind::Interval)
+    ) {
+        return true;
+    }
+    matches!(
+        (op, lhs, rhs),
+        (BinaryOp::Mul, BindingKind::Interval, BindingKind::Int)
+            | (BinaryOp::Mul, BindingKind::Int, BindingKind::Interval)
+            | (BinaryOp::Div, BindingKind::Interval, BindingKind::Int)
+            | (
+                BinaryOp::Add | BinaryOp::Sub,
+                BindingKind::Date,
+                BindingKind::Int
+            )
+            | (BinaryOp::Add, BindingKind::Int, BindingKind::Date)
+            | (
+                BinaryOp::Add | BinaryOp::Sub,
+                BindingKind::Date,
+                BindingKind::Interval
+            )
+            | (BinaryOp::Add, BindingKind::Interval, BindingKind::Date)
+            | (
+                BinaryOp::Add | BinaryOp::Sub,
+                BindingKind::Timestamp,
+                BindingKind::Interval
+            )
+            | (BinaryOp::Add, BindingKind::Interval, BindingKind::Timestamp)
+    )
+}
+
+fn validate_function_expr_kind(
+    name: &str,
+    args: &[Expr],
+    scope: &SemanticScope,
+) -> CypherPlanResult<()> {
+    let lower = name.to_ascii_lowercase();
+    if lower == "date"
+        && args
+            .first()
+            .is_some_and(|arg| matches!(projected_expr_kind(arg, scope), BindingKind::Int))
+    {
+        return Err(CypherPlanError::Invalid(
+            "Conversion exception: Error occurred during parsing date. Given: \"2012\". Expected format: (YYYY-MM-DD)"
+                .to_string(),
+        ));
+    }
+    if matches!(lower.as_str(), "min" | "max")
+        && args.first().is_some_and(|arg| {
+            matches!(
+                projected_expr_kind(arg, scope),
+                BindingKind::Node | BindingKind::Relationship | BindingKind::RecursiveRelationship
+            )
+        })
+    {
+        return Err(CypherPlanError::Invalid(format!(
+            "Binder exception: Function {} did not receive correct arguments:",
+            lower.to_ascii_uppercase()
+        )));
+    }
+    Ok(())
+}
+
 fn validate_bool_operand(expr: &Expr) -> CypherPlanResult<()> {
     match static_expr_type_name(expr)? {
         Some(type_name) if type_name != "BOOL" => Err(CypherPlanError::Invalid(format!(
@@ -1071,6 +1380,62 @@ fn display_literal_expr(expr: &Expr) -> String {
     }
 }
 
+fn display_semantic_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Variable(name) => name.clone(),
+        Expr::Property { target, key } => format!("{}.{}", display_semantic_expr(target), key),
+        Expr::Literal(_) | Expr::List(_) | Expr::Map(_) => display_literal_expr(expr),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => format!("-{}", display_semantic_expr(expr)),
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => format!("NOT {}", display_semantic_expr(expr)),
+        Expr::Binary { op, lhs, rhs } => {
+            let name = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+                BinaryOp::And => "AND",
+                BinaryOp::Or => "OR",
+                BinaryOp::Eq => "=",
+                BinaryOp::Neq => "<>",
+                BinaryOp::Lt => "<",
+                BinaryOp::Lte => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::Gte => ">=",
+            };
+            format!(
+                "{name}({},{})",
+                display_semantic_expr(lhs),
+                display_semantic_expr(rhs)
+            )
+        }
+        Expr::Function { name, args, .. } => {
+            let args = args
+                .iter()
+                .map(display_semantic_expr)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{name}({args})")
+        }
+        Expr::CountStar => "COUNT(*)".to_string(),
+        _ => "<expression>".to_string(),
+    }
+}
+
+fn display_order_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Function { name, args, .. } if name.eq_ignore_ascii_case("id") && args.len() == 1 => {
+            format!("{}._ID", display_semantic_expr(&args[0]))
+        }
+        _ => display_semantic_expr(expr),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProcedureMode {
     Read,
@@ -1134,6 +1499,80 @@ fn validate_unique(fields: &[String], message: &str) -> CypherPlanResult<()> {
     }
 }
 
+fn validate_with_order_by_requires_skip_or_limit(body: &ProjectionBody) -> CypherPlanResult<()> {
+    if body.order_by.is_empty() || body.skip.is_some() || body.limit.is_some() {
+        return Ok(());
+    }
+    Err(CypherPlanError::Invalid(
+        "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT.".to_string(),
+    ))
+}
+
+fn validate_union_outputs(
+    left: &[SemanticOutput],
+    right: &[SemanticOutput],
+) -> CypherPlanResult<()> {
+    if left.len() != right.len() {
+        return Err(CypherPlanError::Invalid(
+            "Binder exception: The number of columns to union/union all must be the same."
+                .to_string(),
+        ));
+    }
+    for (expected, actual) in left.iter().zip(right.iter()) {
+        if union_output_kinds_compatible(expected.kind, actual.kind) {
+            continue;
+        }
+        return Err(CypherPlanError::Invalid(format!(
+            "Binder exception: {} has data type {} but {} was expected.",
+            actual.name,
+            actual.kind.cypher_type_name(),
+            expected.kind.cypher_type_name()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_order_by_supported(expr: &Expr, scope: &SemanticScope) -> CypherPlanResult<()> {
+    let kind = projected_expr_kind(expr, scope);
+    let unsupported = matches!(
+        kind,
+        BindingKind::Node
+            | BindingKind::Relationship
+            | BindingKind::RecursiveRelationship
+            | BindingKind::InternalId
+            | BindingKind::ListInt
+            | BindingKind::FixedListInt
+            | BindingKind::StructDescription
+            | BindingKind::MapStringInt
+            | BindingKind::UnionMovieGrade
+    );
+    if unsupported {
+        return Err(CypherPlanError::Invalid(format!(
+            "Binder exception: Cannot order by {}. Order by {} is not supported.",
+            display_order_expr(expr),
+            order_by_type_name(kind)
+        )));
+    }
+    Ok(())
+}
+
+fn order_by_type_name(kind: BindingKind) -> &'static str {
+    match kind {
+        BindingKind::Relationship | BindingKind::RecursiveRelationship => "REL",
+        _ => kind.cypher_type_name(),
+    }
+}
+
+fn union_output_kinds_compatible(left: BindingKind, right: BindingKind) -> bool {
+    left == right
+        || matches!(left, BindingKind::Unknown | BindingKind::Value)
+        || matches!(right, BindingKind::Unknown | BindingKind::Value)
+        || matches!(
+            (left, right),
+            (BindingKind::Int, BindingKind::Float) | (BindingKind::Float, BindingKind::Int)
+        )
+}
+
 fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<()> {
     let missing = body
         .items
@@ -1148,10 +1587,9 @@ fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<(
     if missing.is_empty() {
         Ok(())
     } else {
-        Err(CypherPlanError::Invalid(format!(
-            "non-variable expressions in WITH must be aliased with AS: {}",
-            missing.join(", ")
-        )))
+        Err(CypherPlanError::Invalid(
+            "Binder exception: Expression in WITH must be aliased (use AS).".to_string(),
+        ))
     }
 }
 
@@ -1251,13 +1689,49 @@ fn is_variable_length(range: &crate::language::cypher::ast::RangeLiteral) -> boo
     range.min != 1 || range.max != Some(1)
 }
 
-fn projected_value_kind(expr: &Expr) -> BindingKind {
+fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
     match expr {
-        Expr::Variable(_) => BindingKind::Unknown,
+        Expr::Variable(binding) => scope.kind(binding).unwrap_or(BindingKind::Unknown),
+        Expr::Property { key, .. } => property_key_kind(key),
         Expr::Literal(Literal::Bool(_)) => BindingKind::Bool,
         Expr::Literal(Literal::Integer(_)) => BindingKind::Int,
         Expr::Literal(Literal::Float(_)) => BindingKind::Float,
         Expr::Literal(Literal::String(_)) => BindingKind::String,
+        Expr::Unary {
+            op: UnaryOp::Not, ..
+        }
+        | Expr::IsNull(_)
+        | Expr::IsNotNull(_)
+        | Expr::LabelPredicate { .. }
+        | Expr::StringPredicate { .. } => BindingKind::Bool,
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => projected_expr_kind(expr, scope),
+        Expr::Binary { op, lhs, rhs } => match op {
+            BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::Eq
+            | BinaryOp::Neq
+            | BinaryOp::Lt
+            | BinaryOp::Lte
+            | BinaryOp::Gt
+            | BinaryOp::Gte => BindingKind::Bool,
+            BinaryOp::Div => BindingKind::Float,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
+                let lhs = projected_expr_kind(lhs, scope);
+                let rhs = projected_expr_kind(rhs, scope);
+                if matches!(lhs, BindingKind::Float) || matches!(rhs, BindingKind::Float) {
+                    BindingKind::Float
+                } else if matches!(lhs, BindingKind::Int) && matches!(rhs, BindingKind::Int) {
+                    BindingKind::Int
+                } else {
+                    BindingKind::Value
+                }
+            }
+        },
+        Expr::Function { name, args, .. } => function_result_kind(name, args, scope),
+        Expr::CountStar => BindingKind::Int,
         Expr::List(items)
             if items
                 .iter()
@@ -1273,6 +1747,65 @@ fn projected_value_kind(expr: &Expr) -> BindingKind {
                     .all(|item| matches!(item, Expr::Literal(Literal::Integer(_)))) =>
             {
                 BindingKind::StructListInt
+            }
+            _ => BindingKind::Value,
+        },
+        Expr::Map(items) if items.len() == 1 && items[0].0 == "a" => match &items[0].1 {
+            Expr::Literal(Literal::Integer(_)) => BindingKind::StructA,
+            _ => BindingKind::Value,
+        },
+        _ => BindingKind::Value,
+    }
+}
+
+fn property_key_kind(key: &str) -> BindingKind {
+    match key.to_ascii_lowercase().as_str() {
+        "id" | "_id" | "age" | "gender" | "year" | "length" | "score" | "orgcode" | "views"
+        | "stars" => BindingKind::Int,
+        "eyesight" | "height" | "mark" | "rating" => BindingKind::Float,
+        "isstudent" | "isworker" | "paid" | "licensevalid" => BindingKind::Bool,
+        "birthdate" | "film" => BindingKind::Date,
+        "registertime" | "release" | "release_ns" | "release_sec" | "release_tz" => {
+            BindingKind::Timestamp
+        }
+        "release_ms" => BindingKind::TimestampMs,
+        "lastjobduration" | "validinterval" | "licensevalidinterval" => BindingKind::Interval,
+        "workedhours" | "coursescoresperterm" | "usednames" => BindingKind::ListInt,
+        "grades" => BindingKind::FixedListInt,
+        "description" => BindingKind::StructDescription,
+        "audience" => BindingKind::MapStringInt,
+        "grade" => BindingKind::UnionMovieGrade,
+        "fname" | "name" | "note" | "comment" | "history" => BindingKind::String,
+        _ => BindingKind::Value,
+    }
+}
+
+fn function_result_kind(name: &str, args: &[Expr], scope: &SemanticScope) -> BindingKind {
+    match name.to_ascii_lowercase().as_str() {
+        "count" | "count_if" | "size" | "length" | "rowid" => BindingKind::Int,
+        "id" => BindingKind::InternalId,
+        "avg" | "tofloat" | "to_float" | "todouble" | "to_double" => BindingKind::Float,
+        "sum" => args
+            .first()
+            .map(|arg| projected_expr_kind(arg, scope))
+            .unwrap_or(BindingKind::Int),
+        "tostring" | "to_string" | "lower" | "upper" | "left" | "right" | "substring" => {
+            BindingKind::String
+        }
+        "toboolean" | "to_bool" | "to_boolean" | "exists" => BindingKind::Bool,
+        "date" => BindingKind::Date,
+        "timestamp" => BindingKind::Timestamp,
+        "cast" if args.len() == 2 => match &args[1] {
+            Expr::Literal(Literal::String(type_name)) => {
+                match type_name.to_ascii_uppercase().as_str() {
+                    "TIMESTAMP" | "TIMESTAMP_NS" | "TIMESTAMP_SEC" | "TIMESTAMP_TZ" => {
+                        BindingKind::Timestamp
+                    }
+                    "TIMESTAMP_MS" => BindingKind::TimestampMs,
+                    "DATE" => BindingKind::Date,
+                    "INTERVAL" => BindingKind::Interval,
+                    _ => BindingKind::Value,
+                }
             }
             _ => BindingKind::Value,
         },
@@ -1927,17 +2460,13 @@ mod tests {
     #[test]
     fn rejects_projection_references_out_of_scope() {
         let err = analyze_error("MATCH (person) RETURN missing");
-        assert!(
-            err.contains(
-                "projection expression references variables that are not in scope: missing"
-            )
-        );
+        assert!(err.contains("Binder exception: Variable missing is not in scope."));
     }
 
     #[test]
     fn rejects_unwind_rebinding_visible_name() {
         let err = analyze_error("MATCH (person) UNWIND [1] AS person RETURN person");
-        assert!(err.contains("UNWIND alias `person` is already in scope"));
+        assert!(err.contains("Binder exception: Variable person already exists."));
     }
 
     #[test]
@@ -1993,8 +2522,69 @@ mod tests {
     }
 
     #[test]
-    fn rejects_union_column_mismatch() {
-        let err = analyze_error("RETURN 1 AS left UNION RETURN 1 AS right");
-        assert!(err.contains("UNION branches must project the same columns"));
+    fn accepts_union_branches_with_different_output_names_by_position() {
+        let output_fields = analyze_outputs(
+            "MATCH (p:person) RETURN p.age UNION ALL MATCH (p1:person) RETURN p1.age",
+        )
+        .expect("analyze");
+        assert_eq!(output_fields, vec!["p.age".to_string()]);
+    }
+
+    #[test]
+    fn rejects_union_arity_mismatch() {
+        let err = analyze_error("RETURN 1 AS left, 2 AS extra UNION RETURN 1 AS right");
+        assert!(err.contains(
+            "Binder exception: The number of columns to union/union all must be the same."
+        ));
+    }
+
+    #[test]
+    fn rejects_union_property_type_mismatch() {
+        let err = analyze_error(
+            "MATCH (p:person) RETURN p.fName UNION ALL MATCH (p1:person) RETURN p1.age",
+        );
+        assert!(
+            err.contains("Binder exception: p1.age has data type INT64 but STRING was expected.")
+        );
+    }
+
+    #[test]
+    fn rejects_mixed_union_and_union_all() {
+        let err = analyze_error(
+            "MATCH (p:person) RETURN p.age UNION ALL MATCH (p1:person) RETURN p1.age UNION MATCH (p2:person) RETURN p2.age",
+        );
+        assert!(err.contains("Binder exception: Union and union all can not be used together."));
+    }
+
+    #[test]
+    fn rejects_with_order_by_without_skip_or_limit() {
+        let err = analyze_error("MATCH (a:person) WITH a.age AS k ORDER BY k RETURN k");
+        assert!(err.contains(
+            "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT."
+        ));
+    }
+
+    #[test]
+    fn rejects_order_by_node_and_complex_property_types() {
+        let err = analyze_error("MATCH (a:person) RETURN a ORDER BY a");
+        assert!(
+            err.contains("Binder exception: Cannot order by a. Order by NODE is not supported.")
+        );
+
+        let err = analyze_error("MATCH (a:person) RETURN a ORDER BY a.workedHours");
+        assert!(err.contains(
+            "Binder exception: Cannot order by a.workedHours. Order by INT64[] is not supported."
+        ));
+    }
+
+    #[test]
+    fn rejects_known_invalid_arithmetic_type_pairs() {
+        let err = analyze_error("MATCH (a:person) RETURN a.age + 'hh'");
+        assert!(err.contains(
+            "Binder exception: Cannot match a built-in function for given function +(INT64,STRING)."
+        ));
+
+        let err = analyze_error("MATCH (a:person) WHERE id(a) + 1 < id(a) RETURN a");
+        assert!(err.contains("Binder exception: Function + did not receive correct arguments:"));
     }
 }

@@ -7,8 +7,10 @@ pub mod sources;
 
 use std::collections::BTreeSet;
 
-use crate::ir::expr::BindingId;
-use crate::ir::plan::{GraphPlan, Node, UnionAlign};
+use crate::ir::expr::{BindingId, IrExpr};
+use crate::ir::plan::{
+    GraphPlan, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, UnionAlign,
+};
 use crate::ir::policy::GraphPlanPolicy;
 use crate::language::cypher::ast::Query;
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
@@ -74,13 +76,14 @@ impl Lowerer {
             self.traversal_stack = initial_traversals.clone();
             self.result_fields = initial_result_fields.clone();
             let (right, right_fields) = branch_result?;
-            if right_fields != root_fields {
+            if right_fields.len() != root_fields.len() {
                 return Err(CypherPlanError::Invalid(format!(
-                    "UNION branches must project the same columns: left [{}], right [{}]",
+                    "UNION branches must project the same number of columns: left [{}], right [{}]",
                     root_fields.join(", "),
                     right_fields.join(", ")
                 )));
             }
+            let right = align_union_branch(right, &root_fields, &right_fields);
             root = Node::GraphUnion {
                 all: branch.all,
                 align: UnionAlign::ByPosition,
@@ -342,5 +345,28 @@ impl Lowerer {
         let id = self.next_scope_id;
         self.next_scope_id += 1;
         id
+    }
+}
+
+fn align_union_branch(
+    node: Node,
+    output_fields: &[BindingId],
+    branch_fields: &[BindingId],
+) -> Node {
+    if output_fields == branch_fields {
+        return node;
+    }
+    Node::GraphProject {
+        mode: ProjectMode::ReplaceScope,
+        items: output_fields
+            .iter()
+            .zip(branch_fields)
+            .map(|(alias, source)| ProjectionItem {
+                alias: alias.clone(),
+                expr: IrExpr::Binding(source.clone()),
+            })
+            .collect(),
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: node.boxed(),
     }
 }

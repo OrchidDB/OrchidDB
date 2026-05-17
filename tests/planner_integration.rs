@@ -204,6 +204,29 @@ fn cypher_create_set_and_delete_use_graph_ir_mutations() {
 }
 
 #[test]
+fn cypher_union_aligns_branch_outputs_by_position() {
+    let parsed =
+        parse_query("MATCH (p:Person) RETURN p.age UNION ALL MATCH (q:Person) RETURN q.age")
+            .expect("parse");
+    let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
+    let plan_text = new_graph::ir::plan::explain(&plan);
+    assert!(plan_text.contains("GraphUnion(all=[true], align=[ByPosition])"));
+
+    let result = execute(&plan, &fixture_graph()).expect("execute");
+    let ages = result
+        .batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    let mut values = (0..ages.len())
+        .map(|idx| ages.value(idx))
+        .collect::<Vec<_>>();
+    values.sort();
+    assert_eq!(values, vec![28, 28, 30, 30, 41, 41]);
+}
+
+#[test]
 fn gremlin_planner_filters_then_traverses() {
     let traversal = gb::GremlinTraversal {
         steps: vec![

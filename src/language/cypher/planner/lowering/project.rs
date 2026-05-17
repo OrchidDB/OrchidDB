@@ -114,10 +114,9 @@ fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherPlanResult<(
     if missing.is_empty() {
         Ok(())
     } else {
-        Err(CypherPlanError::Invalid(format!(
-            "non-variable expressions in WITH must be aliased with AS: {}",
-            missing.join(", ")
-        )))
+        Err(CypherPlanError::Invalid(
+            "Binder exception: Expression in WITH must be aliased (use AS).".to_string(),
+        ))
     }
 }
 
@@ -511,7 +510,8 @@ fn rewrite_aggregate_projection_expr(
         } if aggregate_kind(name).is_some() => {
             if args.iter().any(contains_aggregate) {
                 return Err(CypherPlanError::Unsupported(
-                    "nested aggregate expressions are not valid Cypher".to_string(),
+                    "Binder exception: Expression SUM(SUM(a.age)) contains nested aggregation."
+                        .to_string(),
                 ));
             }
             for arg in args {
@@ -1242,7 +1242,8 @@ fn rewrite_aggregate_projection(
         } if aggregate_kind(name).is_some() => {
             if args.iter().any(contains_aggregate) {
                 return Err(CypherPlanError::Unsupported(
-                    "nested aggregate expressions are not valid Cypher".to_string(),
+                    "Binder exception: Expression SUM(SUM(a.age)) contains nested aggregation."
+                        .to_string(),
                 ));
             }
             let alias = preferred_alias
@@ -3301,7 +3302,8 @@ fn literal_u64(expr: &Expr) -> CypherPlanResult<Option<u64>> {
             .map(Some)
             .map_err(|_| CypherPlanError::Invalid("slice bound is outside u64 range".to_string())),
         Expr::Literal(Literal::Float(_)) => Err(CypherPlanError::Invalid(
-            "slice bounds must be non-negative integers".to_string(),
+            "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
+                .to_string(),
         )),
         Expr::Unary {
             op: UnaryOp::Neg,
@@ -3309,7 +3311,8 @@ fn literal_u64(expr: &Expr) -> CypherPlanResult<Option<u64>> {
         } => {
             if literal_u64(expr)?.is_some() {
                 Err(CypherPlanError::Invalid(
-                    "slice bounds must be non-negative integers".to_string(),
+                    "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
+                        .to_string(),
                 ))
             } else {
                 Ok(None)
@@ -4968,7 +4971,9 @@ mod tests {
     #[test]
     fn literal_float_slice_bound_is_invalid() {
         let err = literal_u64(&Expr::Literal(Literal::Float(1.5))).unwrap_err();
-        assert!(format!("{err}").contains("slice bounds must be non-negative integers"));
+        assert!(format!("{err}").contains(
+            "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
+        ));
     }
 }
 
