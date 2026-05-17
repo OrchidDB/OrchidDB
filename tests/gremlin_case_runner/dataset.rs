@@ -290,10 +290,11 @@ fn parse_value_arg(arg: &str) -> Result<Value, DatasetError> {
     if let Some(args) = call_args(token, "datetime") {
         return parse_string_arg(args).map(Value::DateTime);
     }
-    // UUID("...") — represented as a String at runtime; `typeOf(GType.UUID)`
-    // accepts string-valued UUIDs (see runtime/type_check.rs).
+    // UUID("...") uses the same tagged string representation produced by
+    // the Gremlin parser for UUID literals, so equality, typeOf, and output
+    // formatting all see one canonical runtime value.
     if let Some(args) = call_args(token, "UUID") {
-        return parse_string_arg(args).map(Value::String);
+        return parse_string_arg(args).map(|uuid| Value::String(format!("uuid[{uuid}]")));
     }
     // List / Set: `[...]` and `{...}`. Maps share `[` with lists but contain
     // `:` between keys and values — disambiguate before recursing.
@@ -605,18 +606,39 @@ enum ValueKind {
     Float,
     String,
     DateTime,
-    Map,
+    Value,
 }
 
 impl ValueKind {
     fn of(value: &Value) -> Self {
         match value {
             Value::Bool(_) => Self::Bool,
-            Value::Int(_) | Value::Long(_) => Self::Int,
-            Value::Float(_) | Value::Float32(_) => Self::Float,
+            Value::Int(_) => Self::Int,
+            Value::Float(_) => Self::Float,
             Value::DateTime(_) => Self::DateTime,
-            Value::Map(_) => Self::Map,
-            _ => Self::String,
+            Value::String(_) => Self::String,
+            // Preserve Gremlin-specific typed initializer values through the
+            // Arrow-backed catalog. Without this, Long/List/Set/Map properties
+            // are read back as plain ints/nulls/strings before the planner can
+            // apply Gremlin type semantics.
+            Value::Byte(_)
+            | Value::UInt8(_)
+            | Value::Short(_)
+            | Value::UInt16(_)
+            | Value::Long(_)
+            | Value::UInt32(_)
+            | Value::UInt64(_)
+            | Value::Float32(_)
+            | Value::BigInt(_)
+            | Value::UInt128(_)
+            | Value::BigDecimal(_)
+            | Value::InternalId { .. }
+            | Value::Node { .. }
+            | Value::Edge { .. }
+            | Value::List(_)
+            | Value::Map(_)
+            | Value::Path(_)
+            | Value::Null => Self::Value,
         }
     }
 }
@@ -663,11 +685,11 @@ fn value_column(
                     .collect::<Vec<_>>(),
             )) as ArrayRef,
         )),
-        ValueKind::String | ValueKind::DateTime | ValueKind::Map => {
+        ValueKind::String | ValueKind::DateTime | ValueKind::Value => {
             let mut field = Field::new(name, DataType::Utf8, true);
             let value_type = match kind {
                 ValueKind::DateTime => Some("datetime"),
-                ValueKind::Map => Some("map"),
+                ValueKind::Value => Some("value"),
                 _ => None,
             };
             if let Some(value_type) = value_type {
@@ -683,7 +705,9 @@ fn value_column(
                         .iter()
                         .map(|value| match value {
                             Some(Value::DateTime(v)) | Some(Value::String(v)) => Some(v.clone()),
-                            Some(Value::Map(_)) => value.map(|value| format!("{value:?}")),
+                            Some(_) if matches!(kind, ValueKind::Value) => {
+                                value.map(|value| format!("{value:?}"))
+                            }
                             _ => None,
                         })
                         .collect::<Vec<_>>(),

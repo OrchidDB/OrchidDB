@@ -202,7 +202,11 @@ impl ColumnBuilder {
     }
 
     fn finish(self) -> (DataType, ArrayRef) {
-        let kind = infer_kind(&self.values);
+        let kind = if self.cypher_output {
+            infer_kind(&self.values)
+        } else {
+            infer_gremlin_kind(&self.values)
+        };
         match kind {
             ColumnKind::Int => {
                 let mut builder = Int64Builder::with_capacity(self.values.len());
@@ -282,8 +286,16 @@ impl ColumnBuilder {
                             builder.append_value(n.to_string())
                         }
                         Value::UInt64(n) => builder.append_value(format!("d[{n}].u64")),
-                        Value::Float32(f) => builder.append_value(format!("d[{}].f", f as f64)),
-                        Value::Float(f) => builder.append_value(f.to_string()),
+                        Value::Float32(f) if self.cypher_output => {
+                            builder.append_value((f as f64).to_string())
+                        }
+                        Value::Float32(f) => {
+                            builder.append_value(format!("d[{}].f", gremlin_float_text(f as f64)))
+                        }
+                        Value::Float(f) if self.cypher_output => {
+                            builder.append_value(f.to_string())
+                        }
+                        Value::Float(f) => builder.append_value(gremlin_float_text(f)),
                         Value::Bool(b) => builder.append_value(b.to_string()),
                         // Gremlin expects tagged arbitrary-precision and
                         // datetime displays; Cypher/Kuzu prints them plain.
@@ -634,6 +646,72 @@ pub(crate) fn infer_kind(values: &[Value]) -> ColumnKind {
         });
     }
     kind.unwrap_or(ColumnKind::Utf8)
+}
+
+fn infer_gremlin_kind(values: &[Value]) -> ColumnKind {
+    let mut kind: Option<ColumnKind> = None;
+    let mut numeric_tag: Option<u8> = None;
+    for value in values {
+        if matches!(value, Value::Null) {
+            continue;
+        }
+        if let Some(tag) = gremlin_numeric_tag(value) {
+            if numeric_tag.is_some_and(|existing| existing != tag) {
+                return ColumnKind::Utf8;
+            }
+            numeric_tag = Some(tag);
+        }
+        let candidate = match value {
+            Value::Byte(_)
+            | Value::UInt8(_)
+            | Value::Short(_)
+            | Value::UInt16(_)
+            | Value::Int(_)
+            | Value::UInt32(_)
+            | Value::Long(_) => ColumnKind::Int,
+            Value::UInt64(n) if i64::try_from(*n).is_ok() => ColumnKind::Int,
+            Value::Float32(_) | Value::Float(_) => ColumnKind::Float,
+            Value::Bool(_) => ColumnKind::Bool,
+            _ => ColumnKind::Utf8,
+        };
+        kind = Some(match kind {
+            None => candidate,
+            Some(existing) if existing == candidate => existing,
+            _ => ColumnKind::Utf8,
+        });
+    }
+    kind.unwrap_or(ColumnKind::Utf8)
+}
+
+fn gremlin_numeric_tag(value: &Value) -> Option<u8> {
+    Some(match value {
+        Value::Byte(_) => 1,
+        Value::UInt8(_) => 2,
+        Value::Short(_) => 3,
+        Value::UInt16(_) => 4,
+        Value::Int(_) => 5,
+        Value::UInt32(_) => 6,
+        Value::Long(_) => 7,
+        Value::UInt64(_) => 8,
+        Value::Float32(_) => 9,
+        Value::Float(_) => 10,
+        Value::BigInt(_) => 11,
+        Value::UInt128(_) => 12,
+        Value::BigDecimal(_) => 13,
+        _ => return None,
+    })
+}
+
+fn gremlin_float_text(value: f64) -> String {
+    if value == f64::INFINITY {
+        "Infinity".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-Infinity".to_string()
+    } else if value.is_nan() {
+        "NaN".to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 #[cfg(test)]

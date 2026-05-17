@@ -331,6 +331,16 @@ fn source_case_values(source_case: &str) -> Vec<GValue> {
             i += "isX".len() + token.len();
             continue;
         }
+        if let Some(token) = rest
+            .strip_prefix("eqX")
+            .and_then(|after| split_case_token(after))
+        {
+            if let Some(value) = parse_case_value(token) {
+                values.push(value);
+            }
+            i += "eqX".len() + token.len();
+            continue;
+        }
         if rest.starts_with("var") || rest.starts_with("vaar") {
             let suffix_len = if rest.starts_with("vaar") { 4 } else { 3 };
             if let Some(token) = preceding_case_token(source_case, i) {
@@ -416,9 +426,15 @@ fn preceding_case_token(source_case: &str, suffix_start: usize) -> Option<&str> 
 }
 
 fn parse_case_value(token: &str) -> Option<GValue> {
-    let token = token.trim_end_matches(['L', 'l', 'i']);
+    let token = trim_numeric_literal_suffix(token);
     if token.is_empty() || matches!(token, "none" | "any") {
         return None;
+    }
+    if matches!(
+        token.to_ascii_lowercase().as_str(),
+        "byte" | "short" | "int" | "long" | "float" | "double" | "bigint" | "bigdecimal"
+    ) {
+        return Some(GValue::Int(1));
     }
     if token == "null" {
         return Some(GValue::Null);
@@ -430,8 +446,20 @@ fn parse_case_value(token: &str) -> Option<GValue> {
 }
 
 fn parse_case_numeric_value(token: &str) -> Option<GValue> {
-    let token = token.trim_end_matches(['L', 'l', 'i']);
+    let token = trim_numeric_literal_suffix(token);
     token.parse::<i64>().ok().map(GValue::Int)
+}
+
+fn trim_numeric_literal_suffix(token: &str) -> &str {
+    let starts_numeric = token
+        .chars()
+        .next()
+        .is_some_and(|ch| ch == '-' || ch == '+' || ch.is_ascii_digit());
+    if starts_numeric {
+        token.trim_end_matches(['L', 'l', 'i'])
+    } else {
+        token
+    }
 }
 
 #[derive(Clone, Copy)]

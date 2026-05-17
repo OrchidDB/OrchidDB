@@ -168,6 +168,23 @@ pub(super) fn lower_side_effect_bag_as_list(
     Some(lower_fold(union_all(projected)))
 }
 
+pub(super) fn lower_side_effect_value(input: Node, label: &str, lo: &Lowerer) -> Option<Node> {
+    if let Some(input) = lower_side_effect_bag_as_list(input.clone(), label, lo) {
+        return Some(input);
+    }
+    let seed = lo.side_effect_seeds.get(label)?;
+    let expr = gvalue_to_expr(seed).ok()?;
+    Some(Node::GraphProject {
+        mode: ProjectMode::ReplaceCurrent,
+        items: vec![ProjectionItem {
+            alias: CURRENT.into(),
+            expr,
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    })
+}
+
 fn union_all(mut nodes: Vec<Node>) -> Node {
     let mut acc = nodes.remove(0);
     for n in nodes {

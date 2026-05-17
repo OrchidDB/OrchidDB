@@ -39,8 +39,8 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         Value::UInt32(n) => n.to_string(),
         Value::Long(n) => n.to_string(),
         Value::UInt64(n) => n.to_string(),
-        Value::Float32(f) => f.to_string(),
-        Value::Float(f) => f.to_string(),
+        Value::Float32(f) => display_float(*f as f64),
+        Value::Float(f) => display_float(*f),
         Value::BigInt(n) => format!("d[{n}].n"),
         Value::UInt128(n) => format!("d[{n}].u128"),
         Value::BigDecimal(d) => format!("d[{d}].m"),
@@ -88,6 +88,18 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
                 .collect::<Vec<_>>();
             format!("p[{}]", parts.join(","))
         }
+    }
+}
+
+fn display_float(value: f64) -> String {
+    if value == f64::INFINITY {
+        "Infinity".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-Infinity".to_string()
+    } else if value.is_nan() {
+        "NaN".to_string()
+    } else {
+        value.to_string()
     }
 }
 

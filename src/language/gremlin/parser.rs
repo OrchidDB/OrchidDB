@@ -3216,47 +3216,15 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalMethod_substringContextAll<'input>,
     ) {
-        let (start, end, scope_local) = match ctx {
-            TraversalMethod_substringContextAll::TraversalMethod_substring_intContext(c) => {
-                let start = c
-                    .integerLiteral()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok())
-                    .unwrap_or(0);
-                (start, None, false)
-            }
-            TraversalMethod_substringContextAll::TraversalMethod_substring_int_intContext(c) => {
-                let mut iter = c.integerLiteral_all().into_iter();
-                let start = iter
-                    .next()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok())
-                    .unwrap_or(0);
-                let end = iter
-                    .next()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok());
-                (start, end, false)
-            }
-            TraversalMethod_substringContextAll::TraversalMethod_substring_Scope_intContext(c) => {
-                let start = c
-                    .integerLiteral()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok())
-                    .unwrap_or(0);
-                (start, None, true)
-            }
-            TraversalMethod_substringContextAll::TraversalMethod_substring_Scope_int_intContext(
-                c,
-            ) => {
-                let mut iter = c.integerLiteral_all().into_iter();
-                let start = iter
-                    .next()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok())
-                    .unwrap_or(0);
-                let end = iter
-                    .next()
-                    .and_then(|lit| parse_integer_literal(&lit.get_text()).ok());
-                (start, end, true)
-            }
-            TraversalMethod_substringContextAll::Error(_) => (0, None, false),
-        };
+        let text = ctx.get_text();
+        let args = extract_top_level_args(&text);
+        let scope_local = args.iter().any(|arg| is_scope_local_arg(arg));
+        let mut numbers = args
+            .iter()
+            .filter(|arg| !is_scope_local_arg(arg))
+            .filter_map(|arg| parse_integer_literal(arg.trim()).ok());
+        let start = numbers.next().unwrap_or(0);
+        let end = numbers.next();
         let op = Step::StringOp(StringOp::Substring { start, end });
         if scope_local {
             self.steps.push(Step::LocalScoped(Box::new(op)));
@@ -5184,6 +5152,55 @@ fn contains_scope_local(raw: &str) -> bool {
     has_local_scope_arg(raw)
 }
 
+fn is_scope_local_arg(raw: &str) -> bool {
+    matches!(raw.trim(), "Scope.local" | "local")
+}
+
+fn extract_top_level_args(raw: &str) -> Vec<&str> {
+    let Some(open) = raw.find('(') else {
+        return Vec::new();
+    };
+    let mut args = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut escape = false;
+    let mut depth = 0i32;
+    let mut start = open + 1;
+    for (idx, ch) in raw[open + 1..].char_indices() {
+        let idx = open + 1 + idx;
+        if let Some(q) = quote {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => {
+                let arg = raw[start..idx].trim();
+                if !arg.is_empty() {
+                    args.push(arg);
+                }
+                return args;
+            }
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                let arg = raw[start..idx].trim();
+                if !arg.is_empty() {
+                    args.push(arg);
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    args
+}
+
 /// Extracts the first top-level (depth-1) quoted string argument from a
 /// method-call text fragment such as `tree("a")` or `subgraph('sg')`.
 /// Returns the decoded value (handles `\\`, `\'`, `\"` escapes); returns
@@ -5392,5 +5409,47 @@ mod tests {
             matches!(&traversal.steps[1], Step::HasLabel(labels) if labels == &vec!["person".to_string()])
         );
         assert!(matches!(&traversal.steps[2], Step::Has { .. }));
+    }
+
+    #[test]
+    fn lowers_substring_arguments_from_method_text() {
+        let traversal = parse_traversal("g.inject('test').substring(Scope.local, -3, -1)")
+            .expect("lower substring");
+        assert!(matches!(
+            traversal.steps.as_slice(),
+            [
+                Step::Inject(_),
+                Step::LocalScoped(inner)
+            ] if matches!(inner.as_ref(), Step::StringOp(StringOp::Substring { start: -3, end: Some(-1) }))
+        ));
+
+        let traversal =
+            parse_traversal("g.inject('test').substring(1, 8)").expect("lower scalar substring");
+        assert!(matches!(
+            traversal.steps.as_slice(),
+            [
+                Step::Inject(_),
+                Step::StringOp(StringOp::Substring {
+                    start: 1,
+                    end: Some(8)
+                })
+            ]
+        ));
+
+        let traversal =
+            parse_traversal(r#"g.V().hasLabel("software").values("name").substring(2)"#)
+                .expect("lower chained scalar substring");
+        assert!(matches!(
+            traversal.steps.as_slice(),
+            [
+                Step::V { .. },
+                Step::HasLabel(_),
+                Step::Values(_),
+                Step::StringOp(StringOp::Substring {
+                    start: 2,
+                    end: None
+                })
+            ]
+        ));
     }
 }

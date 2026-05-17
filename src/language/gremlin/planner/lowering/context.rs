@@ -209,6 +209,9 @@ pub(super) struct Lowerer {
     /// `aggregate("x").by(...)`. `cap("x")` folds the recorded binding
     /// when the straight-line writer is visible.
     pub(super) side_effect_bags: BTreeMap<String, String>,
+    /// Root `withSideEffect(label, seed)` values. These are global traversal
+    /// entries and can be read by `select(label)` without a row-local writer.
+    pub(super) side_effect_seeds: BTreeMap<String, GValue>,
     /// Reducer-style side effects configured by
     /// `withSideEffect(label, seed, op)`.
     pub(super) side_effect_reducers: BTreeMap<String, (GValue, SackOp)>,
@@ -234,6 +237,7 @@ impl Lowerer {
             productive_by: false,
             sack_initial: None,
             side_effect_bags: BTreeMap::new(),
+            side_effect_seeds: BTreeMap::new(),
             side_effect_reducers: BTreeMap::new(),
             group_count_side_effects: BTreeSet::new(),
             in_subgraph_filter_eval: false,

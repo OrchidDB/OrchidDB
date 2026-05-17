@@ -34,10 +34,11 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::BigDecimal(_) => matches!(normalised.as_str(), "bigdecimal" | "decimal"),
         Value::DateTime(_) => matches!(normalised.as_str(), "datetime" | "date"),
         Value::InternalId { .. } => matches!(normalised.as_str(), "internal_id" | "internalid"),
-        Value::String(_) => matches!(
-            normalised.as_str(),
-            "string" | "char" | "character" | "uuid"
-        ),
+        Value::String(value) => match normalised.as_str() {
+            "uuid" => is_uuid_tagged(value),
+            "string" | "char" | "character" => !is_uuid_tagged(value),
+            _ => false,
+        },
         Value::List(_) => matches!(normalised.as_str(), "list" | "set" | "graph"),
         // `tree()` materializes its result as a nested Map, and a
         // `subgraph()` cap surfaces as a Map of edges; accept those
@@ -51,4 +52,26 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::Node { .. } => matches!(normalised.as_str(), "vertex" | "node"),
         Value::Edge { .. } => matches!(normalised.as_str(), "edge" | "relationship"),
     }
+}
+
+fn is_uuid_tagged(value: &str) -> bool {
+    let Some(inner) = value
+        .strip_prefix("uuid[")
+        .and_then(|s| s.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let parts = inner.split('-').collect::<Vec<_>>();
+    matches!(
+        parts.as_slice(),
+        [a, b, c, d, e]
+            if a.len() == 8
+                && b.len() == 4
+                && c.len() == 4
+                && d.len() == 4
+                && e.len() == 12
+                && parts
+                    .iter()
+                    .all(|part| part.chars().all(|ch| ch.is_ascii_hexdigit()))
+    )
 }

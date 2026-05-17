@@ -98,6 +98,9 @@ fn render_string_cell(value: &str) -> String {
     if let Some(rendered) = render_debug_map(value) {
         return rendered;
     }
+    if value.is_empty() {
+        return "str[]".to_string();
+    }
     match value {
         "person#0" => "marko".to_string(),
         "person#1" => "vadas".to_string(),
@@ -189,6 +192,15 @@ fn render_debug_list_item(value: &str) -> String {
 fn render_float(value: f64) -> String {
     // Cases use "0.5" / "1.0" / "0.2" style; never "5e-1". Preserve a
     // single decimal for whole values so expected lines can match.
+    if value == f64::INFINITY {
+        return "Infinity".to_string();
+    }
+    if value == f64::NEG_INFINITY {
+        return "-Infinity".to_string();
+    }
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
     if value.is_finite() && value.fract() == 0.0 {
         format!("{value:.1}")
     } else {
@@ -207,6 +219,8 @@ pub fn strip_expected_tags(line: &str) -> String {
         s.to_string()
     } else if let Some(s) = strip_int_tag(trimmed) {
         s.to_string()
+    } else if let Some(s) = strip_string_tag(trimmed) {
+        s.to_string()
     } else if trimmed.starts_with("v[") && trimmed.ends_with(']') {
         trimmed[2..trimmed.len() - 1].to_string()
     } else if trimmed.starts_with("s[") && trimmed.ends_with(']') {
@@ -218,7 +232,7 @@ pub fn strip_expected_tags(line: &str) -> String {
     } else {
         trimmed.to_string()
     };
-    normalize_trailing_zero(&stripped)
+    normalize_trailing_zero(&strip_embedded_string_tags(&stripped))
 }
 
 pub fn ignore_unrepresented_empty_rows() -> bool {
@@ -248,10 +262,24 @@ fn normalize_expected_map(line: &str) -> Option<String> {
         let (key, value) = entry.split_once(':')?;
         entries.push((
             key.trim().trim_matches('"').to_string(),
-            normalize_embedded_string_value(value.trim().trim_matches('"')),
+            normalize_embedded_map_value(value.trim().trim_matches('"')),
         ));
     }
     Some(render_map_entries(entries))
+}
+
+fn normalize_embedded_map_value(value: &str) -> String {
+    let value = normalize_embedded_string_value(value);
+    if value == "l[]" {
+        return "[]".to_string();
+    }
+    if let Some(stripped) = strip_double(&value) {
+        return stripped.to_string();
+    }
+    if let Some(stripped) = strip_int_tag(&value) {
+        return stripped.to_string();
+    }
+    value
 }
 
 fn normalize_embedded_string_value(value: &str) -> String {
@@ -307,7 +335,7 @@ fn strip_double(line: &str) -> Option<&str> {
     let close_idx = after.find(']')?;
     let body = &after[..close_idx];
     let rest = &after[close_idx + 1..];
-    if rest.is_empty() || rest == ".d" || rest == ".f" {
+    if rest.is_empty() || rest == ".d" || rest == ".f" || rest == ".m" {
         Some(body)
     } else {
         None
@@ -325,4 +353,26 @@ fn strip_int_tag(line: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+fn strip_string_tag(line: &str) -> Option<&str> {
+    line.strip_prefix("str[")?.strip_suffix(']')
+}
+
+fn strip_embedded_string_tags(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(start) = rest.find("str[") {
+        out.push_str(&rest[..start]);
+        let body_start = start + "str[".len();
+        let Some(end_rel) = rest[body_start..].find(']') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let body_end = body_start + end_rel;
+        out.push_str(&rest[body_start..body_end]);
+        rest = &rest[body_end + 1..];
+    }
+    out.push_str(rest);
+    out
 }

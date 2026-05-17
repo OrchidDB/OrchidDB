@@ -4,6 +4,7 @@ use std::iter::Peekable;
 
 use super::context::{CURRENT, Lowerer, TraversalContext};
 use super::helpers::{apply_by_spec, apply_project_by_spec, consume_by};
+use super::literals::gvalue_to_expr;
 use super::reduce::agg_kind;
 use crate::ir::expr::{AggCall, AggKind, IrExpr};
 use crate::ir::plan::{GroupValue, Node};
@@ -126,6 +127,12 @@ fn group_value_aggregate(spec: &BySpec) -> GremlinPlanResult<Option<AggCall>> {
             kind: AggKind::CollectTraversers,
             alias: value_alias,
             arg: Some(property(&keys[0])),
+            distinct: false,
+        },
+        [Step::Constant(value)] => AggCall {
+            kind: AggKind::Min,
+            alias: value_alias,
+            arg: Some(gvalue_to_expr(value)?),
             distinct: false,
         },
         [Step::Aggregate(kind)] => AggCall {

@@ -135,6 +135,7 @@ where
                 steps.next();
             }
             Step::WithSideEffect { label, initial, op } => {
+                lo.side_effect_seeds.insert(label.clone(), initial.clone());
                 if let Some(op) = op {
                     lo.side_effect_reducers
                         .insert(label.clone(), (initial.clone(), *op));

@@ -1581,6 +1581,12 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Int(runtime_list(value).unwrap_or_default().len() as i64)))
         }
         ("cardinality", [Value::Null]) => Ok(Some(Value::Null)),
+        ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Some(Value::List(vec![
+            map.get("key").cloned().unwrap_or(Value::Null),
+        ]))),
+        ("map_values", [Value::Map(map)]) if is_map_entry(map) => Ok(Some(Value::List(vec![
+            map.get("value").cloned().unwrap_or(Value::Null),
+        ]))),
         ("map_keys", [Value::Map(map)]) => Ok(Some(Value::List(
             kuzu_map_keys(map)
                 .and_then(|value| match value {
@@ -2451,6 +2457,10 @@ fn visible_map_values(map: &BTreeMap<String, Value>) -> Vec<Value> {
         .into_iter()
         .filter_map(|key| map.get(&key).cloned())
         .collect()
+}
+
+fn is_map_entry(map: &BTreeMap<String, Value>) -> bool {
+    map.len() == 2 && map.contains_key("key") && map.contains_key("value")
 }
 
 fn union_display_value(map: &BTreeMap<String, Value>) -> Option<&Value> {
@@ -5865,6 +5875,16 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Ok(Value::Path(rev))
         }
         ("reverse", [other]) => Ok(other.clone()),
+        ("gremlin_substring", [Value::String(s), start]) => Ok(start
+            .as_i64()
+            .map(|start| Value::String(substring(s, start, None)))
+            .unwrap_or(Value::Null)),
+        ("gremlin_substring", [Value::String(s), start, end]) => {
+            Ok(match (start.as_i64(), end.as_i64()) {
+                (Some(start), Some(end)) => Value::String(substring(s, start, Some(end))),
+                _ => Value::Null,
+            })
+        }
         ("substring", [Value::String(s), Value::Int(start)]) => {
             Ok(Value::String(substring(s, *start, None)))
         }
@@ -6035,6 +6055,12 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Ok(Value::Map(map))
         }
         // ----- select(Column.keys|values) on a map-shaped traverser -----
+        ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
+            map.get("key").cloned().unwrap_or(Value::Null),
+        ])),
+        ("map_values", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
+            map.get("value").cloned().unwrap_or(Value::Null),
+        ])),
         ("map_keys", [Value::Map(map)]) => Ok(Value::List(
             map.keys().cloned().map(Value::String).collect(),
         )),
@@ -6293,8 +6319,8 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             }
             Ok(Value::List(out))
         }
-        ("local_count", [Value::List(items)]) => Ok(Value::Int(items.len() as i64)),
-        ("local_count", [Value::Map(items)]) => Ok(Value::Int(items.len() as i64)),
+        ("local_count", [Value::List(items)]) => Ok(Value::Long(items.len() as i64)),
+        ("local_count", [Value::Map(items)]) => Ok(Value::Long(items.len() as i64)),
         ("local_sum", [Value::List(items)]) => Ok(reduce_list_numeric(items, "sum")),
         ("local_min", [Value::List(items)]) => Ok(reduce_list_numeric(items, "min")),
         ("local_max", [Value::List(items)]) => Ok(reduce_list_numeric(items, "max")),
@@ -6477,7 +6503,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("local_tail" | "local_limit" | "local_skip", [other, Value::Int(_n)]) => Ok(other.clone()),
         ("local_range", [other, Value::Int(_), Value::Int(_)]) => Ok(other.clone()),
         ("local_order" | "local_dedup", [other]) => Ok(other.clone()),
-        ("local_count", [_]) => Ok(Value::Int(1)),
+        ("local_count", [_]) => Ok(Value::Long(1)),
         ("local_sum" | "local_min" | "local_max" | "local_mean", [scalar]) => Ok(scalar.clone()),
         // ----- list / set operators against a folded list traverser -----
         ("list_combine", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
@@ -6625,7 +6651,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("trim" | "ltrim" | "rtrim" | "lcase" | "ucase" | "length" | "size", [Value::Null]) => {
             Ok(Value::Null)
         }
-        ("substring" | "replace" | "concat" | "conjoin" | "split", args)
+        ("gremlin_substring" | "substring" | "replace" | "concat" | "conjoin" | "split", args)
             if args.iter().any(|a| matches!(a, Value::Null)) =>
         {
             Ok(Value::Null)
@@ -7260,6 +7286,39 @@ mod list_function_tests {
             Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
         );
         assert_eq!(string_slice, Value::String("abcd".into()));
+    }
+
+    #[test]
+    fn gremlin_substring_uses_zero_based_end_exclusive_bounds() {
+        assert_eq!(
+            call(
+                "gremlin_substring",
+                &[
+                    Value::String("hello world".into()),
+                    Value::Int(1),
+                    Value::Int(8)
+                ]
+            ),
+            Value::String("ello wo".into())
+        );
+        assert_eq!(
+            call(
+                "gremlin_substring",
+                &[Value::String("ripple".into()), Value::Int(2)]
+            ),
+            Value::String("pple".into())
+        );
+        assert_eq!(
+            call(
+                "gremlin_substring",
+                &[
+                    Value::String("ripple".into()),
+                    Value::Int(-3),
+                    Value::Int(-1)
+                ]
+            ),
+            Value::String("pl".into())
+        );
     }
 
     #[test]

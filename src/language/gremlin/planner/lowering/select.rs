@@ -5,7 +5,7 @@ use std::iter::Peekable;
 
 use super::context::{CURRENT, Lowerer, TraversalContext};
 use super::helpers::{apply_by_spec, consume_by};
-use super::side_effects::lower_side_effect_bag_as_list;
+use super::side_effects::lower_side_effect_value;
 use crate::ir::expr::{BinaryOp, IrExpr, Lit};
 use crate::ir::plan::{BindKind, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem};
 use crate::language::gremlin::ast::{BySpec, MapColumn, Pop, Step};
@@ -46,7 +46,7 @@ pub(super) fn lower_select_label<'a, I>(
 where
     I: Iterator<Item = &'a Step>,
 {
-    if let Some(input) = lower_side_effect_bag_as_list(input.clone(), label, lo) {
+    if let Some(input) = lower_side_effect_value(input.clone(), label, lo) {
         return Ok(input);
     }
     // `select("a")` only produces a row when "a" is reachable: either as

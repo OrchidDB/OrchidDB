@@ -30,7 +30,7 @@ pub(super) fn lower_string_op(
             if let Some(end) = end {
                 args.push(IrExpr::Lit(Lit::Int(*end)));
             }
-            Ok(project_call(input, "substring", args))
+            Ok(project_call(input, "gremlin_substring", args))
         }
         AstStringOp::Replace { old, new } => Ok(project_call(
             input,
