@@ -115,7 +115,9 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
             BinaryOp::Mul => checked_int(a.checked_mul(*b), "multiplication")?,
             BinaryOp::Div => {
                 if *b == 0 {
-                    return Ok(Value::Null);
+                    return Err(InterpretError::Runtime(
+                        "Runtime exception: Divide by zero.".into(),
+                    ));
                 }
                 checked_int(a.checked_div(*b), "division")?
             }

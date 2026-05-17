@@ -364,8 +364,10 @@ pub(crate) fn compute_aggregate(
                 .ok_or_else(|| InterpretError::Type("collect requires an argument".into()))?;
             let mut list = Vec::new();
             let mut seen = BTreeSet::new();
+            let mut evaluated = 0usize;
             for row in rows {
                 let v = eval(expr, row, graph)?;
+                evaluated += 1;
                 if matches!(v, Value::Null) {
                     continue;
                 }
@@ -379,6 +381,9 @@ pub(crate) fn compute_aggregate(
                 } else {
                     list.push(v);
                 }
+            }
+            if matches!(agg.kind, AggKind::CollectRows) && evaluated > 0 && list.is_empty() {
+                return Ok(Value::Null);
             }
             Ok(Value::List(list))
         }

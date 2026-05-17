@@ -337,7 +337,7 @@ fn validate_node_binding(
     kinds: &BTreeMap<String, BindingKind>,
 ) -> CypherPlanResult<()> {
     match kinds.get(binding).copied() {
-        Some(BindingKind::Relationship | BindingKind::RecursiveRelationship) => {
+        Some(kind) if !matches!(kind, BindingKind::Unknown | BindingKind::Node) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: Cannot bind {binding} as node pattern."
             )))

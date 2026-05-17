@@ -559,16 +559,31 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             (Some(l), Some(r)) => Ok(Some(Value::Float(l.powf(r)))),
             _ => Ok(Some(Value::Null)),
         },
-        ("mod", [a, b]) => match (a.as_i64(), b.as_i64()) {
-            (_, Some(0)) => Ok(Some(Value::Null)),
-            (Some(l), Some(r)) => l
-                .checked_rem(r)
-                .map(Value::Long)
-                .map(Some)
-                .ok_or_else(|| InterpretError::Type("integer overflow during modulo".into())),
-            _ if matches!(a, Value::Null) || matches!(b, Value::Null) => Ok(Some(Value::Null)),
-            _ => Ok(Some(Value::Null)),
-        },
+        ("mod", [a, b]) => {
+            if matches!(a, Value::Null) || matches!(b, Value::Null) {
+                return Ok(Some(Value::Null));
+            }
+            match (value_as_i64_exact(a), value_as_i64_exact(b)) {
+                (_, Some(0)) => {
+                    return Err(InterpretError::Runtime(
+                        "Runtime exception: Modulo by zero.".into(),
+                    ));
+                }
+                (Some(l), Some(r)) => {
+                    return l.checked_rem(r).map(Value::Long).map(Some).ok_or_else(|| {
+                        InterpretError::Type("integer overflow during modulo".into())
+                    });
+                }
+                _ => {}
+            }
+            match (value_as_f64(a), value_as_f64(b)) {
+                (_, Some(r)) if r == 0.0 => Err(InterpretError::Runtime(
+                    "Runtime exception: Modulo by zero.".into(),
+                )),
+                (Some(l), Some(r)) => Ok(Some(Value::Float(l % r))),
+                _ => Ok(Some(Value::Null)),
+            }
+        }
         ("xor", [Value::Bool(a), Value::Bool(b)]) => Ok(Some(Value::Bool(*a ^ *b))),
         ("xor", [Value::Null, _]) | ("xor", [_, Value::Null]) => Ok(Some(Value::Null)),
         ("in", [needle, container]) if runtime_list(container).is_some() => {
@@ -588,7 +603,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Bool(false)))
         }
         ("in", [_, Value::Null]) => Ok(Some(Value::Null)),
-        ("cypher_subscript", [target, index]) => Ok(Some(cypher_subscript(target, index, graph))),
+        ("cypher_subscript", [target, index]) => Ok(Some(cypher_subscript(target, index, graph)?)),
         ("list_at", [Value::List(items), Value::Int(idx)]) => Ok(Some(list_index(items, *idx))),
         ("list_at", [Value::String(s), Value::Int(idx)]) => Ok(Some(string_index(s, *idx))),
         ("list_at", [Value::Null, _]) | ("list_at", [_, Value::Null]) => Ok(Some(Value::Null)),
@@ -1299,14 +1314,20 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         // ----- list_extract / list_unique / list_any_value -----
         ("list_extract", [items, idx]) if runtime_list(items).is_some() => {
             let Some(index) = idx.as_i64() else {
-                return Ok(Some(Value::Null));
+                if matches!(idx, Value::Null) {
+                    return Ok(Some(Value::Null));
+                }
+                return Err(list_extract_type_error());
             };
             let items = runtime_list(items).unwrap_or_default();
             Ok(Some(list_extract_value(&items, index)?))
         }
         ("list_extract", [Value::String(s), idx]) => {
             let Some(index) = idx.as_i64() else {
-                return Ok(Some(Value::Null));
+                if matches!(idx, Value::Null) {
+                    return Ok(Some(Value::Null));
+                }
+                return Err(list_extract_type_error());
             };
             let chars = s
                 .chars()
@@ -1562,11 +1583,11 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 )),
             }
         }
-        // ----- interval(N, "unit") helpers — best-effort interval parsing -----
+        // ----- interval/duration constructors -----
         ("interval" | "duration", [Value::String(spec)]) => Ok(Some(Value::String(
-            temporal::parse_interval(spec)
+            temporal::parse_interval_strict(spec)
                 .map(temporal::format_interval)
-                .unwrap_or_else(|| normalize_interval_spec(spec)),
+                .map_err(|err| InterpretError::Runtime(err.message().to_string()))?,
         ))),
         ("interval" | "duration", [Value::Null]) => Ok(Some(Value::Null)),
         ("to_bool" | "tobool", [v]) => Ok(Some(strict_cast_to_named_type(v, "BOOL")?)),
@@ -3447,7 +3468,11 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
         "STRING" | "VARCHAR" | "CHAR" | "TEXT" => Ok(cast_to_string(v)),
         "BLOB" | "BYTEA" => cast_to_blob(v),
         "INTERVAL" => Ok(match cast_to_string(v) {
-            Value::String(text) => Value::String(normalize_interval_spec(&text)),
+            Value::String(text) => Value::String(
+                temporal::parse_interval_strict(&text)
+                    .map(temporal::format_interval)
+                    .map_err(|err| InterpretError::Runtime(err.message().to_string()))?,
+            ),
             other => other,
         }),
         "INT8" | "TINYINT" => strict_or_lenient_i64(v, i8::MIN as i128, i8::MAX as i128, mode)
@@ -4818,13 +4843,10 @@ fn hash_struct_map_u64(map: &BTreeMap<String, Value>) -> u64 {
 }
 
 fn hash_interval_string(value: &str) -> Option<u64> {
-    let interval = temporal::parse_interval(value)?;
+    let (months, days, micros) = temporal::interval_sort_key(value)?;
     Some(combine_hash_scalar(
-        murmurhash64(interval.months as u64),
-        combine_hash_scalar(
-            murmurhash64(interval.days as u64),
-            murmurhash64(interval.micros as u64),
-        ),
+        murmurhash64(months as u64),
+        combine_hash_scalar(murmurhash64(days as u64), murmurhash64(micros as u64)),
     ))
 }
 
@@ -5325,29 +5347,37 @@ fn string_index(text: &str, index: i64) -> Value {
     }
 }
 
-fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> Value {
+fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> IrResult<Value> {
     if let Some(items) = runtime_list(target) {
-        return index
-            .as_i64()
-            .map(|index| list_index_1_based(&items, index))
-            .unwrap_or(Value::Null);
+        return match index.as_i64() {
+            Some(index) => Ok(list_index_1_based(&items, index)),
+            None if matches!(index, Value::Null) => Ok(Value::Null),
+            None => Err(list_extract_type_error()),
+        };
     }
     match (target, index) {
-        (Value::String(text), index) => index
-            .as_i64()
-            .map(|index| string_index_1_based(text, index))
-            .unwrap_or(Value::Null),
+        (Value::String(text), index) => match index.as_i64() {
+            Some(index) => Ok(string_index_1_based(text, index)),
+            None if matches!(index, Value::Null) => Ok(Value::Null),
+            None => Err(list_extract_type_error()),
+        },
         (Value::Map(map), key) if kuzu_map_entries(map).is_some() => {
-            kuzu_map_first(map, key).unwrap_or(Value::Null)
+            Ok(kuzu_map_first(map, key).unwrap_or(Value::Null))
         }
-        (Value::Map(map), Value::String(key)) => map.get(key).cloned().unwrap_or(Value::Null),
+        (Value::Map(map), Value::String(key)) => Ok(map.get(key).cloned().unwrap_or(Value::Null)),
         (
             Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. },
             Value::String(key),
-        ) => graph_element_property(graph, target, key),
-        (Value::Null, _) | (_, Value::Null) => Value::Null,
-        _ => Value::Null,
+        ) => Ok(graph_element_property(graph, target, key)),
+        (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
+        _ => Ok(Value::Null),
     }
+}
+
+fn list_extract_type_error() -> InterpretError {
+    InterpretError::Runtime(
+        "Binder exception: Function LIST_EXTRACT did not receive correct arguments:".into(),
+    )
 }
 
 fn slice_bounds(len: usize, start: &Value, end: &Value) -> (usize, usize) {
@@ -6351,6 +6381,13 @@ mod list_function_tests {
         eval_call(name, args.to_vec(), &graph).unwrap_or(Value::Null)
     }
 
+    fn call_error(name: &str, args: &[Value]) -> String {
+        let graph = PropertyGraph::new();
+        eval_call(name, args.to_vec(), &graph)
+            .expect_err("runtime call should fail")
+            .to_string()
+    }
+
     fn call_with_graph(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
         eval_call(name, args.to_vec(), graph).unwrap_or(Value::Null)
     }
@@ -6616,6 +6653,60 @@ mod list_function_tests {
 
         assert_eq!(observed, Value::Int(5));
         assert_eq!(from_text, Value::Long(5));
+    }
+
+    #[test]
+    fn list_extract_rejects_non_integer_index() {
+        let err = call_error(
+            "list_extract",
+            &[
+                Value::List(vec![Value::Int(5), Value::Int(2), Value::Int(8)]),
+                Value::Bool(true),
+            ],
+        );
+
+        assert!(err.contains(
+            "Binder exception: Function LIST_EXTRACT did not receive correct arguments:"
+        ));
+    }
+
+    #[test]
+    fn interval_constructor_normalizes_fractional_and_large_units() {
+        assert_eq!(
+            call("interval", &[Value::String("1.5 microsecond".into())]),
+            Value::String("00:00:00.000002".into())
+        );
+        assert_eq!(
+            call("interval", &[Value::String("1.5 quarter".into())]),
+            Value::String("4 months 15 days".into())
+        );
+        assert_eq!(
+            call("duration", &[Value::String("3 millennium".into())]),
+            Value::String("3000 years".into())
+        );
+    }
+
+    #[test]
+    fn interval_constructor_reports_strict_parse_errors() {
+        assert_eq!(
+            call_error("interval", &[Value::String(String::new())]),
+            "Conversion exception: Error occurred during parsing interval. Given empty string."
+        );
+        assert_eq!(
+            call_error("interval", &[Value::String("12".into())]),
+            "Conversion exception: Error occurred during parsing interval. Field name is missing."
+        );
+        assert_eq!(
+            call_error("interval", &[Value::String("12 13".into())]),
+            "Conversion exception: Unrecognized interval specifier string: 13."
+        );
+        assert_eq!(
+            call_error(
+                "interval",
+                &[Value::String("9999999999:54:32.101234".into())],
+            ),
+            "Conversion exception: Error occurred during parsing time. Given: \"9999999999:54:32.101234\"."
+        );
     }
 
     #[test]

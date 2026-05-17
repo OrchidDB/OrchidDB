@@ -16,6 +16,14 @@ pub(crate) enum BindingKind {
     Node,
     Relationship,
     RecursiveRelationship,
+    Bool,
+    Int,
+    Float,
+    String,
+    ListInt,
+    StructInt,
+    StructListInt,
+    Value,
 }
 
 impl BindingKind {
@@ -25,6 +33,14 @@ impl BindingKind {
             BindingKind::Node => "NODE",
             BindingKind::Relationship => "REL",
             BindingKind::RecursiveRelationship => "RECURSIVE_REL",
+            BindingKind::Bool => "BOOL",
+            BindingKind::Int => "INT64",
+            BindingKind::Float => "DOUBLE",
+            BindingKind::String => "STRING",
+            BindingKind::ListInt => "INT64[]",
+            BindingKind::StructInt => "STRUCT(x INT64)",
+            BindingKind::StructListInt => "STRUCT(x INT64[])",
+            BindingKind::Value => "ANY",
         }
     }
 }
@@ -112,8 +128,13 @@ impl SemanticAnalyzer {
         for clause in &query.clauses {
             match clause {
                 Clause::Match(clause) => {
+                    let mut clause_relationships = BTreeMap::new();
                     for part in &clause.patterns {
-                        self.analyze_pattern_part(part, scope)?;
+                        self.analyze_pattern_part_with_clause(
+                            part,
+                            scope,
+                            Some(&mut clause_relationships),
+                        )?;
                     }
                     if let Some(predicate) = &clause.predicate {
                         self.validate_expr_scope(predicate, scope, "WHERE predicate")?;
@@ -121,13 +142,14 @@ impl SemanticAnalyzer {
                 }
                 Clause::Unwind(clause) => {
                     self.validate_expr_scope(&clause.expr, scope, "UNWIND expression")?;
+                    validate_list_source(&clause.expr, scope)?;
                     if scope.contains(&clause.alias) {
                         return Err(CypherPlanError::Invalid(format!(
                             "UNWIND alias `{}` is already in scope",
                             clause.alias
                         )));
                     }
-                    scope.insert(clause.alias.clone(), BindingKind::Unknown);
+                    scope.insert(clause.alias.clone(), BindingKind::Value);
                 }
                 Clause::Call(clause) => {
                     let (source_yields, alias_yields) = procedure_yields(clause);
@@ -277,8 +299,18 @@ impl SemanticAnalyzer {
         part: &PatternPart,
         scope: &mut SemanticScope,
     ) -> CypherPlanResult<()> {
+        self.analyze_pattern_part_with_clause(part, scope, None)
+    }
+
+    fn analyze_pattern_part_with_clause(
+        &mut self,
+        part: &PatternPart,
+        scope: &mut SemanticScope,
+        mut clause_relationships: Option<&mut BTreeMap<String, BindingKind>>,
+    ) -> CypherPlanResult<()> {
         validate_path_binding(part, scope)?;
         let mut local_kinds = scope.bindings.clone();
+        let mut local_relationships = BTreeSet::new();
         let declared = pattern_binding_names(part);
         let mut allowed = scope.field_set();
         allowed.extend(declared.iter().cloned());
@@ -290,6 +322,9 @@ impl SemanticAnalyzer {
             if !scope.contains(path) {
                 scope.insert(path.clone(), BindingKind::RecursiveRelationship);
                 local_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
+                if let Some(bindings) = clause_relationships.as_deref_mut() {
+                    bindings.insert(path.clone(), BindingKind::RecursiveRelationship);
+                }
             }
         }
         if let Some(node) = &part.element.start.variable {
@@ -311,11 +346,36 @@ impl SemanticAnalyzer {
                 } else {
                     BindingKind::Relationship
                 };
+                let repeated_in_part = local_relationships.contains(rel);
+                let repeated_in_clause = clause_relationships
+                    .as_ref()
+                    .and_then(|bindings| bindings.get(rel).copied());
+                if repeated_in_part {
+                    return Err(CypherPlanError::Invalid(format!(
+                        "Binder exception: Bind relationship {rel} to relationship with same name is not supported."
+                    )));
+                }
+                if let Some(previous) = repeated_in_clause {
+                    if previous == expected {
+                        return Err(CypherPlanError::Invalid(format!(
+                            "Binder exception: Bind relationship {rel} to relationship with same name is not supported."
+                        )));
+                    }
+                    return Err(CypherPlanError::Invalid(format!(
+                        "Binder exception: {rel} has data type {} but {} was expected.",
+                        previous.cypher_type_name(),
+                        expected.cypher_type_name()
+                    )));
+                }
                 validate_relationship_binding(rel, expected, &local_kinds)?;
                 if !scope.contains(rel) {
                     scope.insert(rel.clone(), expected);
                 }
                 local_kinds.insert(rel.clone(), expected);
+                local_relationships.insert(rel.clone());
+                if let Some(bindings) = clause_relationships.as_deref_mut() {
+                    bindings.insert(rel.clone(), expected);
+                }
             }
             if let Some(properties) = &chain.relationship.properties {
                 self.validate_expr_refs(properties, &allowed, "pattern property expression")?;
@@ -418,7 +478,7 @@ impl SemanticAnalyzer {
                 (Some(alias), Expr::Variable(binding)) if alias == binding => {
                     scope.kind(binding).unwrap_or(BindingKind::Unknown)
                 }
-                _ => BindingKind::Unknown,
+                _ => projected_value_kind(&item.expr),
             };
             outputs.push((name, kind));
         }
@@ -1129,7 +1189,7 @@ fn validate_node_binding(
     kinds: &BTreeMap<String, BindingKind>,
 ) -> CypherPlanResult<()> {
     match kinds.get(binding).copied() {
-        Some(BindingKind::Relationship | BindingKind::RecursiveRelationship) => {
+        Some(kind) if !matches!(kind, BindingKind::Unknown | BindingKind::Node) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: Cannot bind {binding} as node pattern."
             )))
@@ -1189,6 +1249,70 @@ fn pattern_binding_names(pattern: &PatternPart) -> BTreeSet<String> {
 
 fn is_variable_length(range: &crate::language::cypher::ast::RangeLiteral) -> bool {
     range.min != 1 || range.max != Some(1)
+}
+
+fn projected_value_kind(expr: &Expr) -> BindingKind {
+    match expr {
+        Expr::Variable(_) => BindingKind::Unknown,
+        Expr::Literal(Literal::Bool(_)) => BindingKind::Bool,
+        Expr::Literal(Literal::Integer(_)) => BindingKind::Int,
+        Expr::Literal(Literal::Float(_)) => BindingKind::Float,
+        Expr::Literal(Literal::String(_)) => BindingKind::String,
+        Expr::List(items)
+            if items
+                .iter()
+                .all(|item| matches!(item, Expr::Literal(Literal::Integer(_)))) =>
+        {
+            BindingKind::ListInt
+        }
+        Expr::Map(items) if items.len() == 1 && items[0].0 == "x" => match &items[0].1 {
+            Expr::Literal(Literal::Integer(_)) => BindingKind::StructInt,
+            Expr::List(values)
+                if values
+                    .iter()
+                    .all(|item| matches!(item, Expr::Literal(Literal::Integer(_)))) =>
+            {
+                BindingKind::StructListInt
+            }
+            _ => BindingKind::Value,
+        },
+        _ => BindingKind::Value,
+    }
+}
+
+fn validate_list_source(expr: &Expr, scope: &SemanticScope) -> CypherPlanResult<()> {
+    if let Expr::Variable(name) = expr {
+        if let Some(
+            kind @ (BindingKind::Node
+            | BindingKind::Relationship
+            | BindingKind::RecursiveRelationship),
+        ) = scope.kind(name)
+        {
+            return Err(CypherPlanError::Invalid(format!(
+                "Binder exception: {name} has data type {} but LIST was expected.",
+                kind.cypher_type_name()
+            )));
+        }
+    }
+    if let Some(actual) = static_non_list_type_name(expr) {
+        return Err(CypherPlanError::Invalid(format!(
+            "Binder exception: {} has data type {actual} but LIST was expected.",
+            display_literal_expr(expr)
+        )));
+    }
+    Ok(())
+}
+
+fn static_non_list_type_name(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::Literal(Literal::Bool(_)) => Some("BOOL"),
+        Expr::Literal(Literal::Integer(_)) => Some("INT64"),
+        Expr::Literal(Literal::Float(_)) => Some("DOUBLE"),
+        Expr::Literal(Literal::String(_)) => Some("STRING"),
+        Expr::Map(_) => Some("STRUCT"),
+        Expr::Literal(Literal::Null) | Expr::List(_) => None,
+        _ => None,
+    }
 }
 
 fn scope_from_candidates(candidates: &BTreeSet<String>) -> SemanticScope {
@@ -1829,9 +1953,37 @@ mod tests {
     }
 
     #[test]
+    fn rejects_value_alias_reused_as_node() {
+        let err = analyze_error("WITH 123 AS n MATCH (n) RETURN n");
+        assert!(err.contains("Binder exception: Cannot bind n as node pattern."));
+    }
+
+    #[test]
     fn same_pattern_node_reuse_takes_precedence_over_relationship() {
         let err = analyze_error("MATCH ()-[r]-(r) RETURN r");
         assert!(err.contains("Binder exception: r has data type NODE but REL was expected."));
+    }
+
+    #[test]
+    fn rejects_repeated_relationship_name_in_one_match_clause() {
+        let err = analyze_error("MATCH ()-[r]->(), ()-[r]->() RETURN r");
+        assert!(err.contains(
+            "Binder exception: Bind relationship r to relationship with same name is not supported."
+        ));
+    }
+
+    #[test]
+    fn rejects_unwind_of_non_list_literal() {
+        let err = analyze_error("UNWIND 1 AS a RETURN a");
+        assert!(err.contains("Binder exception: 1 has data type INT64 but LIST was expected."));
+    }
+
+    #[test]
+    fn rejects_unwind_of_path_binding() {
+        let err = analyze_error("MATCH p = ()-[*1..2]->() UNWIND p AS x RETURN x");
+        assert!(
+            err.contains("Binder exception: p has data type RECURSIVE_REL but LIST was expected.")
+        );
     }
 
     #[test]

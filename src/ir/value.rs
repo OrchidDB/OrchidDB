@@ -416,7 +416,8 @@ fn interval_sort_key(value: &str) -> Option<(i64, i64, i128)> {
         }
         index += 2;
     }
-    Some((months, days, micros))
+    let days = days.checked_add(months.checked_mul(30)?)?;
+    Some((0, days, micros))
 }
 
 fn strip_temporal_timezone(time: &str) -> &str {

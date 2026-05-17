@@ -159,10 +159,41 @@ fn push_unique(out: &mut Vec<String>, value: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use new_graph::ir::value::Value;
 
     #[test]
     fn csv_empty_builds_empty_graph() {
         let graph = build_with_initializer("CSV empty", None).unwrap();
         assert!(graph.node_label_order().is_empty());
+    }
+
+    #[test]
+    fn serial_node_ids_are_generated_when_copy_omits_pk_column() {
+        let graph = build_with_initializer("CSV tinysnb-serial", None).unwrap();
+        assert_eq!(graph.node_ids("person").unwrap().len(), 8);
+        assert_eq!(graph.node_property("person", 0, "ID"), Value::Int(0));
+        assert_eq!(
+            graph.node_property("person", 0, "fName"),
+            Value::String("Alice".into())
+        );
+        assert_eq!(
+            graph.out_edges("person", 0, &["knows".to_string()]).len(),
+            3
+        );
+    }
+
+    #[test]
+    fn newline_terminated_schema_and_copy_files_load_all_tables() {
+        let graph = build_with_initializer("CSV demo-db/csv", None).unwrap();
+        assert_eq!(graph.node_ids("User").unwrap().len(), 4);
+        assert_eq!(graph.node_ids("City").unwrap().len(), 3);
+        assert_eq!(
+            graph.out_edges("User", 0, &["Follows".to_string()]).len(),
+            2
+        );
+        assert_eq!(
+            graph.out_edges("User", 0, &["LivesIn".to_string()]).len(),
+            1
+        );
     }
 }

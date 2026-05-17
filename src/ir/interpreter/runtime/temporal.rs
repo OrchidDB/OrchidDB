@@ -21,6 +21,98 @@ pub(crate) struct IntervalParts {
     pub(crate) micros: i128,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IntervalParseError {
+    message: String,
+}
+
+impl IntervalParseError {
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    fn conversion(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    fn overflow(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    fn empty_string() -> Self {
+        Self::conversion(
+            "Conversion exception: Error occurred during parsing interval. Given empty string.",
+        )
+    }
+
+    fn generic(raw: &str) -> Self {
+        Self::conversion(format!(
+            "Conversion exception: Error occurred during parsing interval. Given: \"{raw}\"."
+        ))
+    }
+
+    fn field_name_missing() -> Self {
+        Self::conversion(
+            "Conversion exception: Error occurred during parsing interval. Field name is missing.",
+        )
+    }
+
+    fn unrecognized_unit(unit: &str) -> Self {
+        Self::conversion(format!(
+            "Conversion exception: Unrecognized interval specifier string: {unit}."
+        ))
+    }
+
+    fn time(raw: &str) -> Self {
+        Self::conversion(format!(
+            "Conversion exception: Error occurred during parsing time. Given: \"{raw}\"."
+        ))
+    }
+
+    fn cast_int64(raw: &str) -> Self {
+        Self::conversion(format!(
+            "Conversion exception: Cast failed. Could not convert \"{raw}\" to INT64."
+        ))
+    }
+
+    fn int32_range(value: i128) -> Self {
+        Self::overflow(format!(
+            "Overflow exception: Value {value} is not within INT32 range"
+        ))
+    }
+
+    fn interval_range() -> Self {
+        Self::overflow("Overflow exception: Interval value is out of range")
+    }
+
+    fn interval_fraction_range() -> Self {
+        Self::overflow("Overflow exception: Interval fraction is out of range")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DecimalAmount {
+    numerator: i128,
+    scale: i128,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IntervalUnit {
+    Months(i128),
+    Days(i128),
+    Micros(i128),
+}
+
+const MAX_INTERVAL_FIELD: i128 = i32::MAX as i128;
+const MIN_INTERVAL_FIELD: i128 = i32::MIN as i128;
+const MAX_INTERVAL_MICROS: i128 = i64::MAX as i128;
+const MIN_INTERVAL_MICROS: i128 = i64::MIN as i128;
+const MICROS_PER_DAY: i128 = 86_400_000_000;
+
 pub(crate) fn parse_temporal(raw: &str) -> Option<TemporalParts> {
     let inner = raw
         .trim()
@@ -74,68 +166,50 @@ pub(crate) fn parse_temporal(raw: &str) -> Option<TemporalParts> {
 }
 
 pub(crate) fn parse_interval(raw: &str) -> Option<IntervalParts> {
+    parse_interval_strict(raw).ok()
+}
+
+pub(crate) fn parse_interval_strict(raw: &str) -> Result<IntervalParts, IntervalParseError> {
+    if raw.is_empty() {
+        return Err(IntervalParseError::empty_string());
+    }
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return None;
+        return Err(IntervalParseError::generic(raw));
     }
 
     let mut interval = IntervalParts::default();
     let parts = trimmed.split_whitespace().collect::<Vec<_>>();
     let mut i = 0;
     while i < parts.len() {
-        if let Some(time) = parse_interval_time(parts[i]) {
-            interval.micros = interval.micros.checked_add(time)?;
+        let part = parts[i];
+        if part.contains(':') {
+            if i + 1 != parts.len() {
+                return Err(IntervalParseError::time(&parts[i..].join(" ")));
+            }
+            add_micros(&mut interval, parse_interval_time_strict(part)?, false)?;
             i += 1;
             continue;
         }
-        let (value, unit, consumed) = if let Ok(value) = parts[i].parse::<i64>() {
-            (value, parts.get(i + 1)?.to_ascii_lowercase(), 2)
-        } else {
-            let (value, unit) = split_compact_interval_part(parts[i])?;
-            (value, unit, 1)
+
+        let parsed = split_interval_value_unit(part, raw)?;
+        let (amount, unit, consumed) = match parsed {
+            IntervalValueToken::ValueOnly(amount) => {
+                let Some(unit) = parts.get(i + 1) else {
+                    return Err(IntervalParseError::field_name_missing());
+                };
+                (amount, unit.to_ascii_lowercase(), 2)
+            }
+            IntervalValueToken::ValueAndUnit(amount, unit) => (amount, unit, 1),
         };
-        match unit.as_str() {
-            "year" | "years" | "y" | "yr" | "yrs" => {
-                interval.months = interval.months.checked_add(value.checked_mul(12)?)?;
-            }
-            "month" | "months" | "mon" | "mons" => {
-                interval.months = interval.months.checked_add(value)?;
-            }
-            "week" | "weeks" => {
-                interval.days = interval.days.checked_add(value.checked_mul(7)?)?;
-            }
-            "day" | "days" | "d" => {
-                interval.days = interval.days.checked_add(value)?;
-            }
-            "hour" | "hours" | "h" | "hr" | "hrs" => {
-                interval.micros = interval
-                    .micros
-                    .checked_add((value as i128).checked_mul(3_600_000_000)?)?;
-            }
-            "minute" | "minutes" | "m" | "min" | "mins" => {
-                interval.micros = interval
-                    .micros
-                    .checked_add((value as i128).checked_mul(60_000_000)?)?;
-            }
-            "second" | "seconds" | "s" | "sec" | "secs" => {
-                interval.micros = interval
-                    .micros
-                    .checked_add((value as i128).checked_mul(1_000_000)?)?;
-            }
-            "millisecond" | "milliseconds" | "ms" => {
-                interval.micros = interval
-                    .micros
-                    .checked_add((value as i128).checked_mul(1_000)?)?;
-            }
-            "microsecond" | "microseconds" | "us" | "µs" => {
-                interval.micros = interval.micros.checked_add(value as i128)?;
-            }
-            _ => return None,
-        }
+        let Some(unit) = normalize_interval_unit(&unit) else {
+            return Err(IntervalParseError::unrecognized_unit(&unit));
+        };
+        add_interval_amount(&mut interval, amount, unit)?;
         i += consumed;
     }
 
-    Some(interval)
+    Ok(interval)
 }
 
 pub(crate) fn format_interval(interval: IntervalParts) -> String {
@@ -487,7 +561,10 @@ pub(crate) fn temporal_sort_key(value: &str) -> Option<(i64, u32, u32, i64, i64,
 
 pub(crate) fn interval_sort_key(value: &str) -> Option<(i64, i64, i128)> {
     let interval = parse_interval(value)?;
-    Some((interval.months, interval.days, interval.micros))
+    let days = interval
+        .days
+        .checked_add(interval.months.checked_mul(30)?)?;
+    Some((0, days, interval.micros))
 }
 
 fn normalized_unit(unit: &str) -> String {
@@ -529,14 +606,6 @@ fn interval_part(unit: &str, interval: IntervalParts) -> Option<i64> {
     Some(value)
 }
 
-fn split_compact_interval_part(part: &str) -> Option<(i64, String)> {
-    let split = part
-        .char_indices()
-        .find_map(|(idx, ch)| (idx > 0 && !ch.is_ascii_digit() && ch != '-').then_some(idx))?;
-    let (value, unit) = part.split_at(split);
-    Some((value.parse().ok()?, unit.to_ascii_lowercase()))
-}
-
 fn strip_timezone(time: &str) -> &str {
     if let Some(time) = time.strip_suffix('Z') {
         return time;
@@ -560,7 +629,271 @@ fn parse_fraction_micros(fraction: &str) -> Option<i64> {
     padded.parse().ok()
 }
 
-fn parse_interval_time(raw: &str) -> Option<i128> {
+enum IntervalValueToken {
+    ValueOnly(DecimalAmount),
+    ValueAndUnit(DecimalAmount, String),
+}
+
+fn split_interval_value_unit(
+    part: &str,
+    raw: &str,
+) -> Result<IntervalValueToken, IntervalParseError> {
+    let Some(split) = interval_numeric_prefix_len(part) else {
+        return Err(IntervalParseError::generic(raw));
+    };
+    let (value, unit) = part.split_at(split);
+    let amount = parse_decimal_amount(value)?;
+    if unit.is_empty() {
+        Ok(IntervalValueToken::ValueOnly(amount))
+    } else {
+        Ok(IntervalValueToken::ValueAndUnit(
+            amount,
+            unit.to_ascii_lowercase(),
+        ))
+    }
+}
+
+fn interval_numeric_prefix_len(part: &str) -> Option<usize> {
+    let mut chars = part.char_indices().peekable();
+    if matches!(chars.peek(), Some((_, '+' | '-'))) {
+        chars.next();
+    }
+
+    let mut saw_digit = false;
+    let mut saw_dot = false;
+    let mut end = None;
+    for (idx, ch) in chars {
+        if ch.is_ascii_digit() {
+            saw_digit = true;
+            end = Some(idx + ch.len_utf8());
+            continue;
+        }
+        if ch == '.' && !saw_dot {
+            saw_dot = true;
+            end = Some(idx + ch.len_utf8());
+            continue;
+        }
+        break;
+    }
+    saw_digit.then_some(end.unwrap_or(0))
+}
+
+fn parse_decimal_amount(raw: &str) -> Result<DecimalAmount, IntervalParseError> {
+    let negative = raw.starts_with('-');
+    let unsigned = raw.trim_start_matches(['+', '-']);
+    let (whole_text, fraction_text) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let whole_text = if whole_text.is_empty() {
+        "0"
+    } else {
+        whole_text
+    };
+    if !whole_text.chars().all(|ch| ch.is_ascii_digit())
+        || !fraction_text.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return Err(IntervalParseError::generic(raw));
+    }
+    if fraction_text.len() > 18 {
+        return Err(IntervalParseError::cast_int64(raw));
+    }
+
+    let whole = whole_text
+        .parse::<i128>()
+        .map_err(|_| IntervalParseError::cast_int64(raw))?;
+    let scale = 10_i128
+        .checked_pow(fraction_text.len() as u32)
+        .ok_or_else(|| IntervalParseError::cast_int64(raw))?;
+    let fraction = if fraction_text.is_empty() {
+        0
+    } else {
+        fraction_text
+            .parse::<i128>()
+            .map_err(|_| IntervalParseError::cast_int64(raw))?
+    };
+    let unsigned_numerator = whole
+        .checked_mul(scale)
+        .and_then(|value| value.checked_add(fraction))
+        .ok_or_else(|| IntervalParseError::cast_int64(raw))?;
+    let max_scaled = (i64::MAX as i128)
+        .checked_mul(scale)
+        .ok_or_else(|| IntervalParseError::cast_int64(raw))?;
+    if unsigned_numerator > max_scaled {
+        return Err(IntervalParseError::cast_int64(raw));
+    }
+
+    Ok(DecimalAmount {
+        numerator: if negative {
+            -unsigned_numerator
+        } else {
+            unsigned_numerator
+        },
+        scale,
+    })
+}
+
+fn normalize_interval_unit(unit: &str) -> Option<IntervalUnit> {
+    match unit {
+        "year" | "years" | "y" | "yr" | "yrs" => Some(IntervalUnit::Months(12)),
+        "month" | "months" | "mon" | "mons" => Some(IntervalUnit::Months(1)),
+        "quarter" | "quarters" => Some(IntervalUnit::Months(3)),
+        "decade" | "decades" => Some(IntervalUnit::Months(120)),
+        "century" | "centuries" => Some(IntervalUnit::Months(1200)),
+        "millennium" | "millenniums" | "millennia" => Some(IntervalUnit::Months(12000)),
+        "week" | "weeks" => Some(IntervalUnit::Days(7)),
+        "day" | "days" | "d" => Some(IntervalUnit::Days(1)),
+        "hour" | "hours" | "h" | "hr" | "hrs" => Some(IntervalUnit::Micros(3_600_000_000)),
+        "minute" | "minutes" | "m" | "min" | "mins" => Some(IntervalUnit::Micros(60_000_000)),
+        "second" | "seconds" | "s" | "sec" | "secs" => Some(IntervalUnit::Micros(1_000_000)),
+        "millisecond" | "milliseconds" | "millis" | "msec" | "msecs" | "ms" => {
+            Some(IntervalUnit::Micros(1_000))
+        }
+        "microsecond" | "microseconds" | "micros" | "usec" | "usecs" | "us" | "µs" => {
+            Some(IntervalUnit::Micros(1))
+        }
+        _ => None,
+    }
+}
+
+fn add_interval_amount(
+    interval: &mut IntervalParts,
+    amount: DecimalAmount,
+    unit: IntervalUnit,
+) -> Result<(), IntervalParseError> {
+    match unit {
+        IntervalUnit::Months(factor) => {
+            let total_months = amount
+                .numerator
+                .checked_mul(factor)
+                .ok_or_else(IntervalParseError::interval_range)?;
+            let whole_months = total_months / amount.scale;
+            let month_remainder = total_months % amount.scale;
+            add_interval_months(interval, whole_months, false)?;
+            if month_remainder != 0 {
+                let fractional_days = month_remainder
+                    .checked_mul(30)
+                    .ok_or_else(IntervalParseError::interval_fraction_range)?;
+                add_days_and_fraction(interval, fractional_days, amount.scale, true)?;
+            }
+        }
+        IntervalUnit::Days(factor) => {
+            let total_days = amount
+                .numerator
+                .checked_mul(factor)
+                .ok_or_else(IntervalParseError::interval_range)?;
+            add_days_and_fraction(interval, total_days, amount.scale, false)?;
+        }
+        IntervalUnit::Micros(factor) => {
+            let total_micros = amount
+                .numerator
+                .checked_mul(factor)
+                .ok_or_else(IntervalParseError::interval_range)?;
+            let micros = round_div(total_micros, amount.scale)
+                .ok_or_else(IntervalParseError::interval_range)?;
+            add_micros(interval, micros, false)?;
+        }
+    }
+    Ok(())
+}
+
+fn add_days_and_fraction(
+    interval: &mut IntervalParts,
+    day_numerator: i128,
+    scale: i128,
+    from_fraction: bool,
+) -> Result<(), IntervalParseError> {
+    let whole_days = day_numerator / scale;
+    let day_remainder = day_numerator % scale;
+    add_days(interval, whole_days, from_fraction)?;
+    if day_remainder != 0 {
+        let micros = day_remainder
+            .checked_mul(MICROS_PER_DAY)
+            .and_then(|value| round_div(value, scale))
+            .ok_or_else(IntervalParseError::interval_fraction_range)?;
+        add_micros(interval, micros, from_fraction)?;
+    }
+    Ok(())
+}
+
+fn add_interval_months(
+    interval: &mut IntervalParts,
+    component: i128,
+    from_fraction: bool,
+) -> Result<(), IntervalParseError> {
+    add_i32_component(&mut interval.months, component, from_fraction)
+}
+
+fn add_days(
+    interval: &mut IntervalParts,
+    component: i128,
+    from_fraction: bool,
+) -> Result<(), IntervalParseError> {
+    add_i32_component(&mut interval.days, component, from_fraction)
+}
+
+fn add_i32_component(
+    target: &mut i64,
+    component: i128,
+    from_fraction: bool,
+) -> Result<(), IntervalParseError> {
+    if !(MIN_INTERVAL_FIELD..=MAX_INTERVAL_FIELD).contains(&component) {
+        return if from_fraction {
+            Err(IntervalParseError::interval_fraction_range())
+        } else {
+            Err(IntervalParseError::int32_range(component))
+        };
+    }
+    let next = (*target as i128)
+        .checked_add(component)
+        .ok_or_else(IntervalParseError::interval_range)?;
+    if !(MIN_INTERVAL_FIELD..=MAX_INTERVAL_FIELD).contains(&next) {
+        return if from_fraction {
+            Err(IntervalParseError::interval_fraction_range())
+        } else {
+            Err(IntervalParseError::interval_range())
+        };
+    }
+    *target = next as i64;
+    Ok(())
+}
+
+fn add_micros(
+    interval: &mut IntervalParts,
+    component: i128,
+    from_fraction: bool,
+) -> Result<(), IntervalParseError> {
+    if !(MIN_INTERVAL_MICROS..=MAX_INTERVAL_MICROS).contains(&component) {
+        return if from_fraction {
+            Err(IntervalParseError::interval_fraction_range())
+        } else {
+            Err(IntervalParseError::interval_range())
+        };
+    }
+    let next = interval
+        .micros
+        .checked_add(component)
+        .ok_or_else(IntervalParseError::interval_range)?;
+    if !(MIN_INTERVAL_MICROS..=MAX_INTERVAL_MICROS).contains(&next) {
+        return if from_fraction {
+            Err(IntervalParseError::interval_fraction_range())
+        } else {
+            Err(IntervalParseError::interval_range())
+        };
+    }
+    interval.micros = next;
+    Ok(())
+}
+
+fn round_div(numerator: i128, denominator: i128) -> Option<i128> {
+    let quotient = numerator / denominator;
+    let remainder = numerator % denominator;
+    let doubled = remainder.abs().checked_mul(2)?;
+    if doubled >= denominator.abs() {
+        quotient.checked_add(if numerator.is_negative() { -1 } else { 1 })
+    } else {
+        Some(quotient)
+    }
+}
+
+fn parse_interval_time_strict(raw: &str) -> Result<i128, IntervalParseError> {
     let mut sign = 1i128;
     let mut text = raw;
     if let Some(rest) = text.strip_prefix('-') {
@@ -569,20 +902,43 @@ fn parse_interval_time(raw: &str) -> Option<i128> {
     }
     let parts = text.split(':').collect::<Vec<_>>();
     if parts.len() != 3 {
-        return None;
+        return Err(IntervalParseError::time(raw));
     }
-    let hours = parts[0].parse::<i128>().ok()?;
-    let minutes = parts[1].parse::<i128>().ok()?;
+    let hours = parts[0]
+        .parse::<i128>()
+        .map_err(|_| IntervalParseError::time(raw))?;
+    let minutes = parts[1]
+        .parse::<i128>()
+        .map_err(|_| IntervalParseError::time(raw))?;
     let (seconds_text, fraction) = parts[2].split_once('.').unwrap_or((parts[2], ""));
-    let seconds = seconds_text.parse::<i128>().ok()?;
-    let micros = parse_fraction_micros(fraction)? as i128;
-    sign.checked_mul(
-        hours
-            .checked_mul(3_600_000_000)?
-            .checked_add(minutes.checked_mul(60_000_000)?)?
-            .checked_add(seconds.checked_mul(1_000_000)?)?
-            .checked_add(micros)?,
-    )
+    let seconds = seconds_text
+        .parse::<i128>()
+        .map_err(|_| IntervalParseError::time(raw))?;
+    let micros = parse_interval_fraction_micros_strict(fraction, raw)? as i128;
+    let value = hours
+        .checked_mul(3_600_000_000)
+        .and_then(|value| value.checked_add(minutes.checked_mul(60_000_000)?))
+        .and_then(|value| value.checked_add(seconds.checked_mul(1_000_000)?))
+        .and_then(|value| value.checked_add(micros))
+        .and_then(|value| value.checked_mul(sign))
+        .ok_or_else(|| IntervalParseError::time(raw))?;
+    if !(MIN_INTERVAL_MICROS..=MAX_INTERVAL_MICROS).contains(&value) {
+        return Err(IntervalParseError::time(raw));
+    }
+    Ok(value)
+}
+
+fn parse_interval_fraction_micros_strict(
+    fraction: &str,
+    raw: &str,
+) -> Result<i64, IntervalParseError> {
+    if fraction.is_empty() {
+        return Ok(0);
+    }
+    if !fraction.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(IntervalParseError::time(raw));
+    }
+    parse_fraction_micros(fraction).ok_or_else(|| IntervalParseError::time(raw))
 }
 
 fn format_interval_time(micros: i128) -> String {

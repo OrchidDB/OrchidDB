@@ -43,6 +43,9 @@ const KUZU_MAP_ENTRIES_KEY: &str = "\u{0}kuzu_map_entries";
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ColumnType {
     Int64,
+    /// Kuzu SERIAL columns are generated when COPY input omits the
+    /// column. They are stored as Int64 once materialized.
+    Serial,
     Float64,
     Bool,
     String,
@@ -410,8 +413,9 @@ fn classify_type(text: &str) -> ColumnType {
         .next()
         .unwrap_or("");
     match head {
-        "INT" | "INT8" | "INT16" | "INT32" | "INT64" | "INT128" | "BIGINT" | "SERIAL" | "UINT8"
-        | "UINT16" | "UINT32" | "UINT64" | "BYTE" | "SHORT" | "LONG" => ColumnType::Int64,
+        "SERIAL" => ColumnType::Serial,
+        "INT" | "INT8" | "INT16" | "INT32" | "INT64" | "INT128" | "BIGINT" | "UINT8" | "UINT16"
+        | "UINT32" | "UINT64" | "BYTE" | "SHORT" | "LONG" => ColumnType::Int64,
         "FLOAT" | "FLOAT32" | "FLOAT64" | "DOUBLE" | "DECIMAL" => ColumnType::Float64,
         "BOOL" | "BOOLEAN" => ColumnType::Bool,
         "DATE" => ColumnType::Date,
@@ -475,6 +479,7 @@ fn split_statements(text: &str) -> Vec<String> {
     let mut in_single = false;
     let mut in_double = false;
     let mut in_backtick = false;
+    let mut depth = 0i32;
     for ch in text.chars() {
         if in_single {
             buf.push(ch);
@@ -510,7 +515,22 @@ fn split_statements(text: &str) -> Vec<String> {
                 in_backtick = true;
                 buf.push(ch);
             }
+            '(' => {
+                depth += 1;
+                buf.push(ch);
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                buf.push(ch);
+            }
             ';' => {
+                let trimmed = buf.trim().to_string();
+                if !trimmed.is_empty() {
+                    out.push(trimmed);
+                }
+                buf.clear();
+            }
+            '\n' if depth == 0 => {
                 let trimmed = buf.trim().to_string();
                 if !trimmed.is_empty() {
                     out.push(trimmed);
@@ -710,8 +730,21 @@ fn build_node_table(
             rows.remove(0);
         }
         for row in rows {
+            let omitted_serial_pk = matches!(def.columns[def.pk_index].ty, ColumnType::Serial)
+                && row.len() + 1 == def.columns.len();
+            let generated_serial =
+                omitted_serial_pk.then(|| columns[def.pk_index].len().to_string());
             for idx in 0..def.columns.len() {
-                let cell = row.get(idx).cloned().flatten();
+                let cell = if omitted_serial_pk {
+                    if idx == def.pk_index {
+                        generated_serial.clone()
+                    } else {
+                        let source_idx = if idx < def.pk_index { idx } else { idx - 1 };
+                        row.get(source_idx).cloned().flatten()
+                    }
+                } else {
+                    row.get(idx).cloned().flatten()
+                };
                 columns[idx].push(cell);
             }
         }
@@ -754,7 +787,7 @@ fn build_edge_table(
         let mut rows = parse_csv(&raw);
         let has_header = entry
             .has_header_hint
-            .unwrap_or_else(|| infer_edge_header(&rows));
+            .unwrap_or_else(|| infer_edge_header(&rows, def, pk_index));
         if has_header && !rows.is_empty() {
             rows.remove(0);
         }
@@ -818,8 +851,10 @@ fn infer_header(rows: &[Vec<Option<String>>], def: &NodeDef) -> bool {
         if cell.eq_ignore_ascii_case(pk_name) {
             return true;
         }
-        if matches!(&def.columns[def.pk_index].ty, ColumnType::Int64)
-            && cell.trim().parse::<i64>().is_err()
+        if matches!(
+            &def.columns[def.pk_index].ty,
+            ColumnType::Int64 | ColumnType::Serial
+        ) && cell.trim().parse::<i64>().is_err()
         {
             return true;
         }
@@ -831,10 +866,24 @@ fn infer_header(rows: &[Vec<Option<String>>], def: &NodeDef) -> bool {
 /// references. We treat the row as a header iff the first cell isn't
 /// parseable as an integer (FROM is virtually always a numeric PK in
 /// the corpus) and matches a small set of header tokens.
-fn infer_edge_header(rows: &[Vec<Option<String>>]) -> bool {
+fn infer_edge_header(
+    rows: &[Vec<Option<String>>],
+    def: &EdgeDef,
+    pk_index: &HashMap<(String, String), i64>,
+) -> bool {
     let Some(first) = rows.first() else {
         return false;
     };
+    if let (Some(from), Some(to)) = (
+        first.first().and_then(|c| c.as_deref()),
+        first.get(1).and_then(|c| c.as_deref()),
+    ) {
+        let from_key = (def.src_label.to_ascii_lowercase(), from.to_string());
+        let to_key = (def.dst_label.to_ascii_lowercase(), to.to_string());
+        if pk_index.contains_key(&from_key) && pk_index.contains_key(&to_key) {
+            return false;
+        }
+    }
     if let Some(cell) = first.first().and_then(|c| c.as_deref()) {
         let lower = cell.trim().to_ascii_lowercase();
         if matches!(
@@ -843,16 +892,13 @@ fn infer_edge_header(rows: &[Vec<Option<String>>]) -> bool {
         ) {
             return true;
         }
-        if cell.trim().parse::<i64>().is_err() && !cell.trim().is_empty() {
-            return true;
-        }
     }
     false
 }
 
 fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Field, ArrayRef) {
     match ty {
-        ColumnType::Int64 => {
+        ColumnType::Int64 | ColumnType::Serial => {
             let parsed: Vec<Option<i64>> = values
                 .iter()
                 .map(|cell| cell.as_deref().and_then(parse_i64))
