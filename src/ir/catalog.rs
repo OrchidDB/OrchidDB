@@ -362,10 +362,10 @@ impl PropertyGraph {
             return Value::Null;
         }
         if let Some(props) = overlay.inserted_nodes.get(&node_key) {
-            return props.get(key).cloned().unwrap_or(Value::Null);
+            return map_property_value(props, key);
         }
         if let Some(props) = overlay.node_property_overrides.get(&node_key) {
-            if let Some(value) = props.get(key) {
+            if let Some(value) = map_property_value_if_present(props, key) {
                 return value.clone();
             }
         }
@@ -579,11 +579,44 @@ fn table_property_keys(batch: &RecordBatch, exclude: &[&str]) -> Vec<String> {
 
 fn column_value(batch: &RecordBatch, name: &str, row_id: i64) -> Value {
     let row = row_id as usize;
-    let Ok(idx) = batch.schema().index_of(name) else {
+    let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
         return Value::Null;
     };
     let field = batch.schema().field(idx).clone();
     array_value(batch.column(idx).as_ref(), row, Some(field.as_ref()))
+}
+
+fn schema_index(schema: &Schema, name: &str) -> Option<usize> {
+    if let Ok(idx) = schema.index_of(name) {
+        return Some(idx);
+    }
+    let mut matches = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, field)| field.name().eq_ignore_ascii_case(name).then_some(idx));
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
+fn map_property_value(props: &BTreeMap<String, Value>, key: &str) -> Value {
+    map_property_value_if_present(props, key)
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn map_property_value_if_present<'a>(
+    props: &'a BTreeMap<String, Value>,
+    key: &str,
+) -> Option<&'a Value> {
+    if let Some(value) = props.get(key) {
+        return Some(value);
+    }
+    let mut matches = props
+        .iter()
+        .filter_map(|(name, value)| name.eq_ignore_ascii_case(key).then_some(value));
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Value {
@@ -889,5 +922,40 @@ pub fn edges_from_columns(
         src_label: src_label.into(),
         dst_label: dst_label.into(),
         batch,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::array::Int64Array;
+
+    use super::*;
+
+    #[test]
+    fn property_lookup_falls_back_to_unique_case_insensitive_column() {
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(nodes_from_columns(
+            "person",
+            vec![("ID", Arc::new(Int64Array::from(vec![7])) as ArrayRef)],
+        ));
+
+        assert_eq!(graph.node_property("person", 0, "id"), Value::Int(7));
+        assert_eq!(graph.node_property("person", 0, "ID"), Value::Int(7));
+    }
+
+    #[test]
+    fn property_lookup_keeps_ambiguous_case_misses_null() {
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(nodes_from_columns(
+            "person",
+            vec![
+                ("ID", Arc::new(Int64Array::from(vec![7])) as ArrayRef),
+                ("id", Arc::new(Int64Array::from(vec![8])) as ArrayRef),
+            ],
+        ));
+
+        assert_eq!(graph.node_property("person", 0, "Id"), Value::Null);
     }
 }

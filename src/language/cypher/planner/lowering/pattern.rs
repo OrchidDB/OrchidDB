@@ -34,6 +34,12 @@ pub fn lower_pattern_part(
         lowerer.with_child_traversal(traversal_kind, |lowerer| {
             let outer_visible: BTreeSet<_> = lowerer.visible_set();
             let mut property_correlation = pattern_property_correlation(part, &outer_visible);
+            property_correlation.extend(
+                outer_visible
+                    .iter()
+                    .filter(|binding| pattern_mentions(part, binding))
+                    .cloned(),
+            );
             if let Some(history) = history.filter(|_| history_available) {
                 property_correlation.insert(history.to_string());
             }
@@ -508,7 +514,7 @@ fn apply_relationship_binding_projection(
         let Some(path_binding) = path_binding else {
             return input;
         };
-        let recursive_rel = path_segment_expr(path_binding, source_binding);
+        let recursive_rel = recursive_relationship_expr(path_binding, source_binding);
         if already_visible {
             return Node::GraphFilter {
                 condition: IrExpr::Binary {
@@ -753,9 +759,9 @@ fn path_segment_ast_expr(path_binding: &str, source_binding: &str) -> Expr {
     }
 }
 
-fn path_segment_expr(path_binding: &str, source_binding: &str) -> IrExpr {
+fn recursive_relationship_expr(path_binding: &str, source_binding: &str) -> IrExpr {
     IrExpr::Call {
-        name: "path_from".to_string(),
+        name: "recursive_relationship_path".to_string(),
         args: vec![
             IrExpr::Binding(path_binding.to_string()),
             IrExpr::Lit(Lit::String(String::new())),
@@ -1139,7 +1145,7 @@ fn rewrite_recursive_filter_vars_with_bound(
 }
 
 fn is_variable_length(range: &RangeLiteral) -> bool {
-    range.min != 1 || range.max != Some(1)
+    range.explicit || range.min != 1 || range.max != Some(1)
 }
 
 fn lower_property_expr_with_allowed(

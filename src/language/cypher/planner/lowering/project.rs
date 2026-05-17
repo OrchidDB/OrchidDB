@@ -4442,7 +4442,6 @@ fn lower_exists_right_plan(
                 .iter()
                 .any(|part| !part.element.chains.is_empty())
                 .then(|| lowerer.synthetic("exists_history"));
-            let mut history_available = false;
             for part in &exists.patterns {
                 right = pattern::lower_pattern_part(
                     lowerer,
@@ -4450,11 +4449,8 @@ fn lower_exists_right_plan(
                     part,
                     false,
                     history.as_deref(),
-                    history_available,
+                    false,
                 )?;
-                if !part.element.chains.is_empty() {
-                    history_available = true;
-                }
             }
             if let Some(predicate_expr) = &exists.predicate {
                 right = lowerer.with_child_traversal(

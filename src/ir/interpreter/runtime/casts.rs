@@ -550,14 +550,14 @@ pub(crate) fn cast_to_bool(v: &Value) -> Value {
 
 pub(crate) fn cast_to_date(v: &Value) -> Value {
     match v {
-        Value::DateTime(_) => v.clone(),
+        Value::DateTime(raw) => Value::DateTime(date_part(raw).unwrap_or(raw).to_string()),
         Value::String(s) => {
             // `date("1900-1-1")` / `date("1900-01-01")` arrives without a
             // time component; lift it to a midnight UTC datetime so
             // equality comparisons against a stored DATE work. Falls back
             // to the normalized date string if no time fits the parser.
             if let Some(parsed) = parse_datetime_string(s) {
-                return Value::DateTime(parsed);
+                return Value::DateTime(date_part(&parsed).unwrap_or(&parsed).to_string());
             }
             let trimmed = s.trim();
             let parts: Vec<&str> = trimmed.split('-').collect();
@@ -608,6 +608,30 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
         }
         _ => Value::Null,
     }
+}
+
+fn date_part(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    let end = trimmed
+        .char_indices()
+        .find_map(|(idx, ch)| matches!(ch, 'T' | ' ').then_some(idx))
+        .unwrap_or(trimmed.len());
+    let candidate = &trimmed[..end];
+    let mut parts = candidate.split('-');
+    let year = parts.next()?;
+    let month = parts.next()?;
+    let day = parts.next()?;
+    if parts.next().is_some()
+        || year.len() != 4
+        || month.len() != 2
+        || day.len() != 2
+        || !year.chars().all(|ch| ch.is_ascii_digit())
+        || !month.chars().all(|ch| ch.is_ascii_digit())
+        || !day.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(candidate)
 }
 
 fn numeric_i64(v: &Value) -> Option<i64> {

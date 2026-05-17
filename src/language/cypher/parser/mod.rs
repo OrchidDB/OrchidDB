@@ -1730,7 +1730,11 @@ fn clean_label(text: &str) -> String {
 fn parse_range(text: &str) -> RangeLiteral {
     let body = text.trim().trim_start_matches('*');
     if body.is_empty() {
-        return RangeLiteral { min: 1, max: None };
+        return RangeLiteral {
+            min: 1,
+            max: None,
+            explicit: true,
+        };
     }
     if let Some((min, max)) = body.split_once("..") {
         return RangeLiteral {
@@ -1740,12 +1744,14 @@ fn parse_range(text: &str) -> RangeLiteral {
             } else {
                 max.parse().ok()
             },
+            explicit: true,
         };
     }
     let exact = body.parse().unwrap_or(1);
     RangeLiteral {
         min: exact,
         max: Some(exact),
+        explicit: true,
     }
 }
 

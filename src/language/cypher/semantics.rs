@@ -1143,6 +1143,9 @@ fn validate_function_expr_kind(
                 .to_string(),
         ));
     }
+    if lower == "coalesce" {
+        validate_coalesce_static_types(args)?;
+    }
     if matches!(lower.as_str(), "min" | "max")
         && args.first().is_some_and(|arg| {
             matches!(
@@ -1155,6 +1158,32 @@ fn validate_function_expr_kind(
             "Binder exception: Function {} did not receive correct arguments:",
             lower.to_ascii_uppercase()
         )));
+    }
+    Ok(())
+}
+
+fn validate_coalesce_static_types(args: &[Expr]) -> CypherPlanResult<()> {
+    if args.is_empty() {
+        return Err(CypherPlanError::Invalid(
+            "Binder exception: COALESCE requires at least one argument".to_string(),
+        ));
+    }
+
+    let mut expected: Option<String> = None;
+    for arg in args {
+        let Some(actual) = static_expr_type_name(arg)? else {
+            continue;
+        };
+        if let Some(expected_type) = &expected {
+            if expected_type != &actual {
+                return Err(CypherPlanError::Invalid(format!(
+                    "Binder exception: Expression {} has data type {actual} but expected {expected_type}. Implicit cast is not supported.",
+                    display_literal_expr(arg)
+                )));
+            }
+        } else {
+            expected = Some(actual);
+        }
     }
     Ok(())
 }
@@ -1686,7 +1715,7 @@ fn pattern_binding_names(pattern: &PatternPart) -> BTreeSet<String> {
 }
 
 fn is_variable_length(range: &crate::language::cypher::ast::RangeLiteral) -> bool {
-    range.min != 1 || range.max != Some(1)
+    range.explicit || range.min != 1 || range.max != Some(1)
 }
 
 fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
@@ -2586,5 +2615,16 @@ mod tests {
 
         let err = analyze_error("MATCH (a:person) WHERE id(a) + 1 < id(a) RETURN a");
         assert!(err.contains("Binder exception: Function + did not receive correct arguments:"));
+    }
+
+    #[test]
+    fn rejects_invalid_coalesce_static_calls() {
+        let err = analyze_error("RETURN coalesce()");
+        assert!(err.contains("Binder exception: COALESCE requires at least one argument"));
+
+        let err = analyze_error("RETURN coalesce(1, 'hello')");
+        assert!(err.contains(
+            "Binder exception: Expression hello has data type STRING but expected INT64."
+        ));
     }
 }

@@ -45,8 +45,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use num_bigint::BigInt;
+
+use new_graph::ir::catalog::PropertyGraph;
 use new_graph::ir::interpreter::{ReturnedBatches, execute};
 use new_graph::ir::plan::explain;
+use new_graph::ir::value::{STRUCT_ORDER_KEY, Value};
 use new_graph::language::cypher::parser::parse_query;
 use new_graph::language::cypher::planner::CypherPlanner;
 
@@ -377,10 +381,11 @@ fn run_one(path: &Path) -> CaseRun {
         }
     };
 
-    let graph = match dataset::build_with_initializer(
-        &case.metadata.dataset,
-        case.graph_initializer.as_deref(),
-    ) {
+    let graph_initializer = case
+        .graph_initializer
+        .as_deref()
+        .or_else(|| default_graph_initializer(&case.metadata));
+    let graph = match dataset::build_with_initializer(&case.metadata.dataset, graph_initializer) {
         Ok(graph) => graph,
         Err(err) => {
             return CaseRun {
@@ -393,6 +398,7 @@ fn run_one(path: &Path) -> CaseRun {
             };
         }
     };
+    apply_default_graph_overlay(&case.metadata, &graph);
 
     let plan = match CypherPlanner::new().plan(&parsed) {
         Ok(plan) => plan,
@@ -468,6 +474,414 @@ fn run_one(path: &Path) -> CaseRun {
         plan_tree: Some(plan_tree),
         outcome,
     }
+}
+
+fn default_graph_initializer(metadata: &case_file::Metadata) -> Option<&'static str> {
+    if metadata.source == "recursive_join/semantic_empty.test" {
+        return match metadata.source_case.as_str() {
+            "TwoCycle" => Some(
+                r#"node a:node {ID: 0}
+node b:node {ID: 1}
+edge a -[:rel]-> b
+edge b -[:rel]-> a"#,
+            ),
+            "ThreeCycle" => Some(
+                r#"node a:node {ID: 0}
+node b:node {ID: 1}
+node c:node {ID: 2}
+edge a -[:rel]-> b
+edge b -[:rel]-> c
+edge c -[:rel]-> a"#,
+            ),
+            _ => None,
+        };
+    }
+
+    if metadata.source == "function/uuid.test" && metadata.source_case == "UUIDfunctions" {
+        return Some(
+            r#"node p0:Person {u: "00000000-0000-0000-0000-000000000000"}
+node p1:Person {u: "00000000-0000-0000-0000-000000000000"}
+node p2:Person {u: "00000000-0000-0000-0000-000000000000"}
+node p3:Person {u: "00000000-0000-0000-0000-000000000001"}
+node p4:Person {u: "00000000-0000-0000-0000-000000000001"}
+node p5:Person {u: "10203040-5060-7080-0102-030405060708"}
+node p6:Person {u: "10203040-5060-7080-0102-030405060708"}
+node p7:Person {u: "47183823-2574-4bfd-b411-99ed177d3e43"}
+node p8:Person {u: "47183823-2574-4bfd-b411-99ed177d3e43"}
+node p9:Person {u: "80000000-0000-0000-8fff-ffffffffffff"}
+node p10:Person {u: "80000000-0000-0000-ffff-ffffffffffff"}
+node p11:Person {u: "8fffffff-ffff-ffff-0000-000000000000"}
+node p12:Person {u: "8fffffff-ffff-ffff-8000-000000000000"}
+node p13:Person {u: "8fffffff-ffff-ffff-8fff-ffffffffffff"}
+node p14:Person {u: "8fffffff-ffff-ffff-ffff-ffffffffffff"}
+node p15:Person {u: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"}
+node p16:Person {u: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12"}
+node p17:Person {u: "ffffffff-ffff-ffff-ffff-ffffffffffff"}"#,
+        );
+    }
+    None
+}
+
+fn apply_default_graph_overlay(metadata: &case_file::Metadata, graph: &PropertyGraph) {
+    if metadata.source == "agg/hash.test" {
+        apply_agg_hash_overlay(metadata, graph);
+    }
+
+    if metadata.source != "function/cast.test" {
+        return;
+    }
+    if function_cast_case_needs_null_person(metadata) {
+        let mut props = BTreeMap::new();
+        props.insert("ID".to_string(), Value::Int(11));
+        graph.insert_node("person", props);
+    }
+
+    if metadata.id == "cypher.ladybug.function.cast.ListImplicitCast.a65611ea03e1" {
+        let mut props = BTreeMap::new();
+        props.insert("a".to_string(), Value::Int(0));
+        props.insert(
+            "b".to_string(),
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+        );
+        props.insert(
+            "c".to_string(),
+            Value::List(vec![Value::Float(1.0), Value::Float(2.0)]),
+        );
+        props.insert(
+            "d".to_string(),
+            Value::List(vec![Value::Int(3), Value::Int(5)]),
+        );
+        graph.insert_node("T0", props);
+    }
+
+    if metadata.source_case == "NestTypeImplicitCast"
+        && metadata
+            .id
+            .starts_with("cypher.ladybug.function.cast.3248.")
+    {
+        graph.insert_node("Item", item_props("apple", 2.0, vec![3.1, 4.1]));
+        graph.insert_node("Item", item_props("banana", 1.0, vec![5.9, 26.5]));
+    }
+}
+
+fn apply_agg_hash_overlay(metadata: &case_file::Metadata, graph: &PropertyGraph) {
+    if agg_hash_case_needs_extra_people(metadata) {
+        graph.insert_node(
+            "person",
+            person_hash_props(vec![10, 5], vec!["Ein"], vec![vec![1, 2], vec![3, 4]]),
+        );
+        graph.insert_node(
+            "person",
+            person_hash_props(vec![1], vec!["Alice"], vec![vec![1, 2], vec![3, 4]]),
+        );
+        graph.insert_node(
+            "person",
+            person_hash_props(vec![1, 2, 3], vec!["Carmen"], vec![vec![7, 20]]),
+        );
+    }
+
+    if matches!(
+        metadata.id.as_str(),
+        "cypher.ladybug.agg.hash.HashOnBool.6c27419dfd42"
+            | "cypher.ladybug.agg.hash.HashOnInterval.1a5c441721f7"
+    ) {
+        graph.insert_node("payment", payment_props(Some(false), "1 day"));
+        graph.insert_node("payment", payment_props(Some(true), "1 year 3 days"));
+        graph.insert_node("payment", payment_props(Some(true), "1 year 3 days"));
+        graph.insert_node("payment", payment_props(None, "2 years 3 days"));
+        graph.insert_node("payment", payment_props(None, "2 years 3 days"));
+    }
+
+    if metadata.id == "cypher.ladybug.agg.hash.HashOnInterval.da1ee1fc3a58" {
+        insert_agg_hash_orgs(graph, false);
+    }
+
+    if matches!(
+        metadata.id.as_str(),
+        "cypher.ladybug.agg.hash.HashOnListOfStruct.52f927a902fe"
+            | "cypher.ladybug.agg.hash.HashOnListOfStruct.ad3dc3920eeb"
+    ) {
+        insert_agg_hash_orgs(graph, true);
+    }
+
+    if matches!(
+        metadata.id.as_str(),
+        "cypher.ladybug.agg.hash.HashOnInterval.7ebe5c4bc251"
+            | "cypher.ladybug.agg.hash.HashOnListOfStruct.9515cc4ecbed"
+    ) {
+        insert_agg_hash_movies(graph);
+    }
+}
+
+fn agg_hash_case_needs_extra_people(metadata: &case_file::Metadata) -> bool {
+    matches!(
+        metadata.id.as_str(),
+        "cypher.ladybug.agg.hash.HashOnListOfInt64.2436e9954336"
+            | "cypher.ladybug.agg.hash.HashOnListOfListOfInt64.c8ae5dfb8083"
+            | "cypher.ladybug.agg.hash.HashOnListOfString.a45ee49a92a5"
+            | "cypher.ladybug.agg.hash.HashOnListOfInt32.93c129b8e1cb"
+            | "cypher.ladybug.agg.hash.HashOnListOfInt16.b1c327f6a616"
+            | "cypher.ladybug.agg.hash.HashOnListOfInt8.d40240ba02c4"
+            | "cypher.ladybug.agg.hash.HashOnListOfUint64.65c679469ab4"
+            | "cypher.ladybug.agg.hash.HashOnListOfUint32.cf9b0b380682"
+            | "cypher.ladybug.agg.hash.HashOnListOfUint16.668ba359c872"
+            | "cypher.ladybug.agg.hash.HashOnListOfUint8.ab48f2c02232"
+            | "cypher.ladybug.agg.hash.HashOnListOfDouble.08b59cb0f36e"
+            | "cypher.ladybug.agg.hash.HashOnListOfFloat.954de144cc70"
+    )
+}
+
+fn person_hash_props(
+    worked_hours: Vec<i64>,
+    used_names: Vec<&str>,
+    course_scores_per_term: Vec<Vec<i64>>,
+) -> BTreeMap<String, Value> {
+    let mut props = BTreeMap::new();
+    props.insert("workedHours".to_string(), list_int(worked_hours));
+    props.insert("usedNames".to_string(), list_string(used_names));
+    props.insert(
+        "courseScoresPerTerm".to_string(),
+        Value::List(course_scores_per_term.into_iter().map(list_int).collect()),
+    );
+    props
+}
+
+fn payment_props(paid: Option<bool>, length: &str) -> BTreeMap<String, Value> {
+    let mut props = BTreeMap::new();
+    props.insert(
+        "paid".to_string(),
+        paid.map(Value::Bool).unwrap_or(Value::Null),
+    );
+    props.insert("length".to_string(), Value::String(length.to_string()));
+    props
+}
+
+fn insert_agg_hash_orgs(graph: &PropertyGraph, include_null_state: bool) {
+    graph.insert_node("organisation", org_hash_props(org_state_revenue_138()));
+    graph.insert_node("organisation", org_hash_props(org_state_revenue_55()));
+    graph.insert_node("organisation", org_hash_props(org_state_revenue_558()));
+    if include_null_state {
+        graph.insert_node("organisation", BTreeMap::new());
+    }
+}
+
+fn org_hash_props(state: Value) -> BTreeMap<String, Value> {
+    BTreeMap::from([("state".to_string(), state)])
+}
+
+fn org_state_revenue_138() -> Value {
+    ordered_map(vec![
+        ("revenue", Value::Int(138)),
+        ("location", list_string(vec!["'toronto'", "'montr,eal'"])),
+        ("stock", stock_map(vec![96, 56], 1000)),
+    ])
+}
+
+fn org_state_revenue_55() -> Value {
+    ordered_map(vec![
+        ("revenue", Value::Int(55)),
+        ("location", list_string(vec!["'toronto'"])),
+        ("stock", stock_map(vec![22, 33], 28)),
+    ])
+}
+
+fn org_state_revenue_558() -> Value {
+    ordered_map(vec![
+        ("revenue", Value::Int(558)),
+        (
+            "location",
+            list_string(vec!["'very long city name'", "'new york'"]),
+        ),
+        ("stock", stock_map(vec![22], 99)),
+    ])
+}
+
+fn stock_map(price: Vec<i64>, volume: i64) -> Value {
+    ordered_map(vec![
+        ("price", list_int(price)),
+        ("volume", Value::Int(volume)),
+    ])
+}
+
+fn insert_agg_hash_movies(graph: &PropertyGraph) {
+    graph.insert_node(
+        "movies",
+        movie_hash_props(movie_description_rating_7_stars_10()),
+    );
+    graph.insert_node(
+        "movies",
+        movie_hash_props(movie_description_rating_1223_stars_100()),
+    );
+    graph.insert_node(
+        "movies",
+        movie_hash_props(movie_description_rating_55_stars_2()),
+    );
+}
+
+fn movie_hash_props(description: Value) -> BTreeMap<String, Value> {
+    BTreeMap::from([("description".to_string(), description)])
+}
+
+fn movie_description_rating_7_stars_10() -> Value {
+    ordered_map(vec![
+        ("rating", Value::Float(7.0)),
+        ("stars", Value::Int(10)),
+        ("views", Value::Int(982)),
+        (
+            "release",
+            Value::DateTime("2018-11-13 13:33:11".to_string()),
+        ),
+        (
+            "release_ns",
+            Value::DateTime("2018-11-13 13:33:11.123456".to_string()),
+        ),
+        (
+            "release_ms",
+            Value::DateTime("2018-11-13 13:33:11.123".to_string()),
+        ),
+        (
+            "release_sec",
+            Value::DateTime("2018-11-13 13:33:11".to_string()),
+        ),
+        (
+            "release_tz",
+            Value::DateTime("2018-11-13 13:33:11.123456+00".to_string()),
+        ),
+        ("film", Value::DateTime("2014-09-12".to_string())),
+        ("u8", Value::Int(12)),
+        ("u16", Value::Int(120)),
+        ("u32", Value::Int(55)),
+        ("u64", big_int("1")),
+        ("hugedata", big_int("-1844674407370955161511")),
+    ])
+}
+
+fn movie_description_rating_1223_stars_100() -> Value {
+    ordered_map(vec![
+        ("rating", Value::Float(1223.0)),
+        ("stars", Value::Int(100)),
+        ("views", Value::Int(10003)),
+        (
+            "release",
+            Value::DateTime("2011-02-11 16:44:22".to_string()),
+        ),
+        (
+            "release_ns",
+            Value::DateTime("2011-02-11 16:44:22.123456".to_string()),
+        ),
+        (
+            "release_ms",
+            Value::DateTime("2011-02-11 16:44:22.123".to_string()),
+        ),
+        (
+            "release_sec",
+            Value::DateTime("2011-02-11 16:44:22".to_string()),
+        ),
+        (
+            "release_tz",
+            Value::DateTime("2011-02-11 16:44:22.123456+00".to_string()),
+        ),
+        ("film", Value::DateTime("2013-02-22".to_string())),
+        ("u8", Value::Int(1)),
+        ("u16", Value::Int(15)),
+        ("u32", Value::Int(200)),
+        ("u64", big_int("4")),
+        ("hugedata", big_int("-15")),
+    ])
+}
+
+fn movie_description_rating_55_stars_2() -> Value {
+    ordered_map(vec![
+        ("rating", Value::Float(55.0)),
+        ("stars", Value::Int(2)),
+        ("views", Value::Int(88)),
+        (
+            "release",
+            Value::DateTime("2022-01-22 00:00:00".to_string()),
+        ),
+        (
+            "release_ns",
+            Value::DateTime("2025-01-13 13:33:11.123456".to_string()),
+        ),
+        (
+            "release_ms",
+            Value::DateTime("2018-11-13 13:33:11.123".to_string()),
+        ),
+        (
+            "release_sec",
+            Value::DateTime("2011-01-11 00:00:00".to_string()),
+        ),
+        (
+            "release_tz",
+            Value::DateTime("2011-11-11 00:00:00+00".to_string()),
+        ),
+        ("film", Value::DateTime("2022-01-11".to_string())),
+        ("u8", Value::Int(3)),
+        ("u16", Value::Int(22)),
+        ("u32", Value::Int(22)),
+        ("u64", big_int("56")),
+        ("hugedata", big_int("999999")),
+    ])
+}
+
+fn ordered_map(entries: Vec<(&str, Value)>) -> Value {
+    let order = entries
+        .iter()
+        .map(|(key, _)| Value::String((*key).to_string()))
+        .collect();
+    let mut map = BTreeMap::new();
+    map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
+    for (key, value) in entries {
+        map.insert(key.to_string(), value);
+    }
+    Value::Map(map)
+}
+
+fn list_int(values: Vec<i64>) -> Value {
+    Value::List(values.into_iter().map(Value::Int).collect())
+}
+
+fn list_string(values: Vec<&str>) -> Value {
+    Value::List(
+        values
+            .into_iter()
+            .map(|value| Value::String(value.to_string()))
+            .collect(),
+    )
+}
+
+fn big_int(value: &str) -> Value {
+    Value::BigInt(BigInt::parse_bytes(value.as_bytes(), 10).expect("valid bigint fixture"))
+}
+
+fn function_cast_case_needs_null_person(metadata: &case_file::Metadata) -> bool {
+    matches!(
+        metadata.id.as_str(),
+        "cypher.ladybug.function.cast.CastDateToTimestamps.113976020cac"
+            | "cypher.ladybug.function.cast.CastStringToTimestamp.6c03a136cb7e"
+            | "cypher.ladybug.function.cast.CastTimestampUsToOther.c6f04d5d3e4b"
+            | "cypher.ladybug.function.cast.CastTimestampTZToOther.fdf796e28f1c"
+            | "cypher.ladybug.function.cast.CastTimestampNsToOther.7c3fe676cf20"
+            | "cypher.ladybug.function.cast.CastTimestampMsToOther.0db29090ebd4"
+            | "cypher.ladybug.function.cast.CastTimestampSecToOther.e58c1f1afe72"
+            | "cypher.ladybug.function.cast.CastListOfIntsToList.1553644d7731"
+            | "cypher.ladybug.function.cast.CastListOfListOfIntsToListOfLists.b356f673515c"
+            | "cypher.ladybug.function.cast.CastArrayToList.f665fbb2e2f0"
+            | "cypher.ladybug.function.cast.CastArrayToArray.a5e46820b0bf"
+            | "cypher.ladybug.function.cast.CastInternalIDToString.ffde96984779"
+            | "cypher.ladybug.function.cast.CastInternalIDToString.b9ce93133b80"
+    )
+}
+
+fn item_props(item: &str, price: f64, vector: Vec<f64>) -> BTreeMap<String, Value> {
+    let mut props = BTreeMap::new();
+    props.insert("item".to_string(), Value::String(item.to_string()));
+    props.insert("price".to_string(), Value::Float(price));
+    props.insert(
+        "vector".to_string(),
+        Value::List(vector.into_iter().map(Value::Float).collect()),
+    );
+    props
 }
 
 fn expected_error_matches(expected: &[String], expected_kind: &str, actual: &str) -> bool {

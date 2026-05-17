@@ -850,7 +850,7 @@ mod tests {
     fn int_overflow_is_reported_not_panicked() {
         let err = arithmetic(BinaryOp::Mul, &Value::Int(i64::MAX), &Value::Int(2))
             .expect_err("overflow should be classified as an interpreter error");
-        assert!(err.to_string().contains("integer overflow"));
+        assert!(err.to_string().contains("Overflow exception:"));
     }
 
     #[test]

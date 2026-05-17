@@ -487,11 +487,17 @@ fn format_property_value(value: &Value) -> String {
         Value::Path(items) => {
             let mut nodes = Vec::new();
             let mut rels = Vec::new();
-            for (idx, item) in items.iter().enumerate() {
-                if idx % 2 == 0 {
-                    nodes.push(format_property_value(item));
-                } else {
-                    rels.push(format_property_value(item));
+            for item in items {
+                match item {
+                    Value::Node { .. } => nodes.push(format_property_value(item)),
+                    Value::Edge { .. } => rels.push(format_property_value(item)),
+                    Value::String(text) if text.starts_with("{_ID:") => {
+                        nodes.push(format_property_value(item))
+                    }
+                    Value::String(text) if text.starts_with('(') => {
+                        rels.push(format_property_value(item))
+                    }
+                    _ => {}
                 }
             }
             format!(
@@ -646,6 +652,15 @@ mod tests {
         assert_eq!(
             rendered,
             "{_NODES: [{_ID: 0:0, _LABEL: person},{_ID: 0:1, _LABEL: person}], _RELS: [({0:0})-{_LABEL: knows, _ID: 3:0}->(0:1)]}"
+        );
+
+        let rendered = format_property_value(&Value::Path(vec![
+            Value::String("({0:0})-{_LABEL: knows, _ID: 3:0}->(0:1)".into()),
+            Value::String("{_ID: 0:1, _LABEL: person}".into()),
+        ]));
+        assert_eq!(
+            rendered,
+            "{_NODES: [{_ID: 0:1, _LABEL: person}], _RELS: [({0:0})-{_LABEL: knows, _ID: 3:0}->(0:1)]}"
         );
     }
 

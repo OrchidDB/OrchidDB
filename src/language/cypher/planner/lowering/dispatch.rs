@@ -37,19 +37,9 @@ fn lower_match(
     }
 
     let history = pattern_history_binding(lowerer, &clause.patterns);
-    let mut history_available = false;
     for part in &clause.patterns {
-        input = pattern::lower_pattern_part(
-            lowerer,
-            input,
-            part,
-            false,
-            history.as_deref(),
-            history_available,
-        )?;
-        if !part.element.chains.is_empty() {
-            history_available = true;
-        }
+        input =
+            pattern::lower_pattern_part(lowerer, input, part, false, history.as_deref(), false)?;
     }
     if let Some(predicate) = &clause.predicate {
         input = lowerer.with_child_traversal(CypherTraversalKind::WherePredicate, |lowerer| {
@@ -75,7 +65,6 @@ fn lower_optional_match(
                 bindings: outer_fields.clone(),
             };
             let history = pattern_history_binding(lowerer, &clause.patterns);
-            let mut history_available = false;
             for part in &clause.patterns {
                 right = pattern::lower_pattern_part(
                     lowerer,
@@ -83,11 +72,8 @@ fn lower_optional_match(
                     part,
                     false,
                     history.as_deref(),
-                    history_available,
+                    false,
                 )?;
-                if !part.element.chains.is_empty() {
-                    history_available = true;
-                }
             }
             if let Some(predicate) = &clause.predicate {
                 right = lowerer.with_child_traversal(

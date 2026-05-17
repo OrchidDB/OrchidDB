@@ -88,7 +88,6 @@ pub(crate) fn lower_exists_apply(
                     .iter()
                     .any(|part| !part.element.chains.is_empty())
                     .then(|| lowerer.synthetic("exists_history"));
-                let mut history_available = false;
                 for part in &exists.patterns {
                     right = pattern::lower_pattern_part(
                         lowerer,
@@ -96,11 +95,8 @@ pub(crate) fn lower_exists_apply(
                         part,
                         false,
                         history.as_deref(),
-                        history_available,
+                        false,
                     )?;
-                    if !part.element.chains.is_empty() {
-                        history_available = true;
-                    }
                 }
                 if let Some(predicate) = &exists.predicate {
                     right = lowerer.with_child_traversal(
@@ -143,7 +139,6 @@ pub(crate) fn lower_pattern_predicate_apply(
                 .iter()
                 .any(|part| !part.element.chains.is_empty())
                 .then(|| lowerer.synthetic("pattern_history"));
-            let mut history_available = false;
             for part in patterns {
                 right = pattern::lower_pattern_part(
                     lowerer,
@@ -151,11 +146,8 @@ pub(crate) fn lower_pattern_predicate_apply(
                     part,
                     false,
                     history.as_deref(),
-                    history_available,
+                    false,
                 )?;
-                if !part.element.chains.is_empty() {
-                    history_available = true;
-                }
             }
             Ok(right)
         })

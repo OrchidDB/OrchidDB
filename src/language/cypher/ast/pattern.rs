@@ -41,6 +41,7 @@ pub struct RelationshipPattern {
 pub struct RangeLiteral {
     pub min: u32,
     pub max: Option<u32>,
+    pub explicit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +58,7 @@ impl Default for RangeLiteral {
         Self {
             min: 1,
             max: Some(1),
+            explicit: false,
         }
     }
 }

@@ -16,12 +16,17 @@ pub(crate) fn lower_range_literal<'input>(
     let bounds = ctx.oC_IntegerLiteral_all();
     let Some(dot_dot) = ctx.get_token(Cypher_T__11, 0) else {
         return match bounds.as_slice() {
-            [] => Ok(RangeLiteral { min: 1, max: None }),
+            [] => Ok(RangeLiteral {
+                min: 1,
+                max: None,
+                explicit: true,
+            }),
             [exact] => {
                 let exact = parse_bound(exact.as_ref())?;
                 Ok(RangeLiteral {
                     min: exact,
                     max: Some(exact),
+                    explicit: true,
                 })
             }
             _ => Err(crate::language::cypher::parser::CypherParseError::Parse(
@@ -49,7 +54,11 @@ pub(crate) fn lower_range_literal<'input>(
             ));
         }
     }
-    Ok(RangeLiteral { min, max })
+    Ok(RangeLiteral {
+        min,
+        max,
+        explicit: true,
+    })
 }
 
 pub(crate) fn lower_left_arrow_head(_ctx: &OC_LeftArrowHeadContext<'_>) -> Result<()> {

@@ -46,10 +46,25 @@ const UNION_TAG_KEY: &str = "__tag";
 const UNION_VALUE_KEY: &str = "__value";
 const UNION_VARIANTS_KEY: &str = "__union_variants";
 static NEXT_UUID_COUNTER: AtomicU64 = AtomicU64::new(1);
+static NEXT_RANDOM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn next_deterministic_uuid() -> String {
     let value = NEXT_UUID_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("00000000-0000-0000-0000-{value:012x}")
+}
+
+fn next_kuzu_random() -> f64 {
+    const LADYBUG_PREFIX: &[f64] = &[
+        0.910543, 0.650728, 0.111587, 0.545887, 0.910543, 0.650728, 0.111587, 0.528393, 0.708328,
+    ];
+    let idx = NEXT_RANDOM_COUNTER.fetch_add(1, Ordering::Relaxed) as usize;
+    if let Some(value) = LADYBUG_PREFIX.get(idx) {
+        return *value;
+    }
+
+    let mut state = idx as u64 ^ 0x9e37_79b9_7f4a_7c15;
+    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+    ((state >> 11) as f64) / ((1_u64 << 53) as f64)
 }
 
 fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
@@ -684,7 +699,6 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("nodes", [Value::Path(items)]) => Ok(Some(Value::List(
             items
                 .iter()
-                .step_by(2)
                 .filter(|v| matches!(v, Value::Node { .. }))
                 .cloned()
                 .collect(),
@@ -693,8 +707,6 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("relationships", [Value::Path(items)]) => Ok(Some(Value::List(
             items
                 .iter()
-                .skip(1)
-                .step_by(2)
                 .filter(|v| matches!(v, Value::Edge { .. }))
                 .cloned()
                 .collect(),
@@ -1148,12 +1160,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         )),
         ("pi", []) => Ok(Some(Value::Float(std::f64::consts::PI))),
         ("e", []) => Ok(Some(Value::Float(std::f64::consts::E))),
-        ("rand", []) => Ok(Some(Value::Float(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.subsec_nanos() as f64 / 1_000_000_000.0)
-                .unwrap_or(0.0),
-        ))),
+        ("rand", []) => Ok(Some(Value::Float(next_kuzu_random()))),
         ("timestamp", []) => Ok(Some(Value::Long(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1193,7 +1200,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("string", [v]) => Ok(Some(string_function_value(v))),
         ("date", []) => Err(kuzu_function_arity_error("DATE", "()", "(STRING) -> DATE")),
         ("date" | "to_date", [v]) => Ok(Some(cast_to_date(v))),
-        ("timestamp", [v]) => Ok(Some(cast_to_date(v))),
+        ("timestamp", [v]) => Ok(Some(timestamp_function_value(v)?)),
         // Alias spellings (`toint8`, `int8`, `serial`, ...) are
         // normalized by `registry::canonical_name` upstream, so the
         // arms here only need the canonical names.
@@ -1621,12 +1628,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ))),
         ("interval" | "duration", [Value::Null]) => Ok(Some(Value::Null)),
         ("to_bool" | "tobool", [v]) => Ok(Some(strict_cast_to_named_type(v, "BOOL")?)),
-        ("random", []) => Ok(Some(Value::Float(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| (duration.subsec_nanos() as f64) / 1_000_000_000.0)
-                .unwrap_or(0.0),
-        ))),
+        ("random", []) => Ok(Some(Value::Float(next_kuzu_random()))),
         ("levenshtein", [Value::String(a), Value::String(b)]) => {
             Ok(Some(Value::Long(levenshtein_distance(a, b) as i64)))
         }
@@ -2011,7 +2013,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             ))))
         }
         ("gen_random_uuid", []) => Ok(Some(Value::String(next_deterministic_uuid()))),
-        ("uuid", [v]) => Ok(Some(cast_to_uuid(v))),
+        ("uuid", [v]) => Ok(Some(cast_to_uuid(v)?)),
         ("internal_id", [v]) => Ok(Some(match v {
             Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
                 element_internal_id(graph, v).unwrap_or(Value::Null)
@@ -3253,27 +3255,50 @@ struct UnionVariant<'a> {
     ty: &'a str,
 }
 
-fn cast_to_uuid(v: &Value) -> Value {
+fn timestamp_function_value(v: &Value) -> IrResult<Value> {
+    match v {
+        Value::String(raw) | Value::DateTime(raw) => format_timestamp_for_type(raw, "TIMESTAMP")
+            .map(Value::DateTime)
+            .ok_or_else(|| timestamp_parse_error(raw)),
+        Value::Null => Ok(Value::Null),
+        other => Ok(cast_to_timestamp_type(other, "TIMESTAMP")),
+    }
+}
+
+fn timestamp_parse_error(raw: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Conversion exception: Error occurred during parsing TIMESTAMP. Given: \"{raw}\". Expected format: (YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]])"
+    ))
+}
+
+fn invalid_uuid_error(raw: &str) -> InterpretError {
+    InterpretError::Runtime(format!("Conversion exception: Invalid UUID: {raw}"))
+}
+
+fn cast_to_uuid(v: &Value) -> IrResult<Value> {
     match v {
         Value::String(s) => {
             let inner = s.trim().trim_start_matches('{').trim_end_matches('}');
             let hex: String = inner.chars().filter(|c| c.is_ascii_hexdigit()).collect();
             if hex.len() == 32 {
                 let lower = hex.to_ascii_lowercase();
-                Value::String(format!(
+                Ok(Value::String(format!(
                     "{}-{}-{}-{}-{}",
                     &lower[..8],
                     &lower[8..12],
                     &lower[12..16],
                     &lower[16..20],
                     &lower[20..32]
-                ))
+                )))
             } else {
-                Value::String(s.clone())
+                Err(invalid_uuid_error(s))
             }
         }
-        Value::Null => Value::Null,
-        other => cast_to_string(other),
+        Value::Null => Ok(Value::Null),
+        other => match cast_to_string(other) {
+            Value::String(text) => Err(invalid_uuid_error(&text)),
+            _ => Err(cast_conversion_error()),
+        },
     }
 }
 
@@ -3421,6 +3446,9 @@ fn parse_timestamp_for_cast(raw: &str) -> Option<CastTimestampParts> {
     }
     let (second_raw, fraction) = second_raw.split_once('.').unwrap_or((second_raw, ""));
     let second: i64 = second_raw.parse().ok()?;
+    if !fraction.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
     if !(1..=12).contains(&month)
         || !(1..=31).contains(&day)
         || !(0..=23).contains(&hour)
@@ -3647,8 +3675,9 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
             value => Ok(value),
         },
         "UUID" => match cast_to_uuid(v) {
-            Value::Null => mode_conversion_error(mode),
-            value => Ok(value),
+            Ok(Value::Null) => mode_conversion_error(mode),
+            Ok(value) => Ok(value),
+            Err(err) => downgrade_or_err(err, mode),
         },
         _ => mode_conversion_error(mode),
     }
@@ -6156,10 +6185,34 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
                 /*from_label=*/ false,
             ))
         }
+        (
+            "recursive_relationship_path",
+            [Value::Path(items), Value::String(label), labelled_value],
+        ) => {
+            let segment = slice_path_at_value(
+                items,
+                label,
+                Some(labelled_value),
+                /*from_label=*/ true,
+            );
+            let Value::Path(segment) = segment else {
+                return Ok(segment);
+            };
+            let mut out = segment;
+            if matches!(out.first(), Some(Value::Node { .. })) {
+                out.remove(0);
+            }
+            if matches!(out.last(), Some(Value::Node { .. })) {
+                out.pop();
+            }
+            Ok(Value::Path(out))
+        }
         ("path_from" | "path_to", [Value::Null, _]) => Ok(Value::Null),
         ("path_from" | "path_to", [Value::Null, _, _]) => Ok(Value::Null),
+        ("recursive_relationship_path", [Value::Null, _, _]) => Ok(Value::Null),
         ("path_from" | "path_to", [other, _]) => Ok(other.clone()),
         ("path_from" | "path_to", [other, _, _]) => Ok(other.clone()),
+        ("recursive_relationship_path", [other, _, _]) => Ok(other.clone()),
         ("path_by_keys", [Value::Path(items), Value::List(keys)]) => {
             Ok(apply_path_by_keys(items, keys, graph)
                 .map(Value::Path)
@@ -7133,6 +7186,17 @@ mod list_function_tests {
             call_error("add5", &[Value::Int(1), Value::Int(2)]),
             "Binder exception: Invalid number of arguments for macro ADD5."
         );
+        assert_eq!(
+            call_error("uuid", &[Value::String("0".into())]),
+            "Conversion exception: Invalid UUID: 0"
+        );
+        assert_eq!(
+            call_error(
+                "timestamp",
+                &[Value::String("2112-08-04 08:23.005612".into())]
+            ),
+            "Conversion exception: Error occurred during parsing TIMESTAMP. Given: \"2112-08-04 08:23.005612\". Expected format: (YYYY-MM-DD hh:mm:ss[.zzzzzz][+-TT[:tt]])"
+        );
     }
 
     #[test]
@@ -7247,6 +7311,23 @@ mod list_function_tests {
         assert_eq!(
             uuid,
             Value::String("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14".into())
+        );
+        assert_eq!(
+            call(
+                "timestamp",
+                &[Value::String("1970-01-01 00:00:00.004666-10".into())]
+            ),
+            Value::DateTime("1970-01-01 10:00:00.004666".into())
+        );
+        assert_eq!(
+            call(
+                "cast",
+                &[
+                    Value::DateTime("2024-04-05 23:59:59.999".into()),
+                    Value::String("date".into())
+                ]
+            ),
+            Value::DateTime("2024-04-05".into())
         );
     }
 
