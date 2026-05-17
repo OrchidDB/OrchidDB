@@ -417,11 +417,16 @@ fn aggregate_truthy(value: &Value) -> bool {
     match value {
         Value::Bool(value) => *value,
         Value::Byte(value) => *value != 0,
+        Value::UInt8(value) => *value != 0,
         Value::Short(value) => *value != 0,
+        Value::UInt16(value) => *value != 0,
         Value::Int(value) | Value::Long(value) => *value != 0,
+        Value::UInt32(value) => *value != 0,
+        Value::UInt64(value) => *value != 0,
         Value::Float32(value) => !value.is_nan() && *value != 0.0,
         Value::Float(value) => !value.is_nan() && *value != 0.0,
         Value::BigInt(value) => !value.is_zero(),
+        Value::UInt128(value) => !value.is_zero(),
         Value::BigDecimal(value) => !value.is_zero(),
         _ => false,
     }
@@ -509,4 +514,26 @@ fn flatten_group_lists(value: Value) -> Value {
         }
     }
     Value::List(flattened)
+}
+
+#[cfg(test)]
+mod tests {
+    use num_bigint::BigInt;
+
+    use super::*;
+
+    #[test]
+    fn count_if_truthiness_includes_unsigned_numbers() {
+        assert!(aggregate_truthy(&Value::UInt8(1)));
+        assert!(aggregate_truthy(&Value::UInt16(1)));
+        assert!(aggregate_truthy(&Value::UInt32(1)));
+        assert!(aggregate_truthy(&Value::UInt64(1)));
+        assert!(aggregate_truthy(&Value::UInt128(BigInt::from(1))));
+
+        assert!(!aggregate_truthy(&Value::UInt8(0)));
+        assert!(!aggregate_truthy(&Value::UInt16(0)));
+        assert!(!aggregate_truthy(&Value::UInt32(0)));
+        assert!(!aggregate_truthy(&Value::UInt64(0)));
+        assert!(!aggregate_truthy(&Value::UInt128(BigInt::from(0))));
+    }
 }

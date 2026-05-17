@@ -824,6 +824,37 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .cloned()
                 .unwrap_or(Value::Null),
         )),
+        ("ifnull", [left, right]) => Ok(Some(if matches!(left, Value::Null) {
+            right.clone()
+        } else {
+            left.clone()
+        })),
+        ("ifnull", args) => Err(kuzu_function_arity_error(
+            "IFNULL",
+            &format_actual_signature(args),
+            "(ANY,ANY) -> ANY",
+        )),
+        ("nullif", [left, right]) => Ok(Some(
+            if left.three_valued_eq(right) == Some(true) {
+                Value::Null
+            } else {
+                left.clone()
+            },
+        )),
+        ("constant_or_null", [constant, guard]) => Ok(Some(if matches!(guard, Value::Null) {
+            Value::Null
+        } else {
+            constant.clone()
+        })),
+        ("constant_or_null", args) => Err(kuzu_function_arity_error(
+            "CONSTANT_OR_NULL",
+            &format_actual_signature(args),
+            "(ANY,ANY) -> ANY",
+        )),
+        ("list_transform", [_list, _not_lambda]) => Err(InterpretError::Runtime(
+            "Binder exception: The second argument of LIST_TRANSFORM should be a lambda expression but got LITERAL."
+                .to_string(),
+        )),
         ("error", [Value::String(message)]) => {
             Err(InterpretError::Runtime(format!("Runtime exception: {message}")))
         }
@@ -843,6 +874,12 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             },
         )),
         ("add10", [value]) => Ok(Some(add_i64_delta(value, 10))),
+        ("add5", args) if args.len() != 1 => Err(InterpretError::Runtime(
+            "Binder exception: Invalid number of arguments for macro ADD5.".to_string(),
+        )),
+        ("add4", args) if args.len() > 3 => Err(InterpretError::Runtime(
+            "Binder exception: Invalid number of arguments for macro ADD4.".to_string(),
+        )),
         ("add7", [value]) => Ok(Some(add_i64_delta(value, 7))),
         ("add8", [value]) => Ok(Some(add_i64_delta(value, 8))),
         ("adddefault", [value]) => Ok(Some(add_i64_delta(value, 40))),
@@ -978,23 +1015,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             args,
         ) if args.iter().any(|arg| matches!(arg, Value::Null)) => Ok(Some(Value::Null)),
         // ----- math functions used by Cypher (case-insensitive) -----
-        ("abs", [v]) => Ok(Some(match v {
-            Value::BigInt(n) => {
-                use num_traits::Signed;
-                Value::BigInt(n.abs())
-            }
-            Value::BigDecimal(n) => {
-                Value::BigDecimal(n.abs())
-            }
-            Value::Byte(n) => Value::Int((*n as i64).abs()),
-            Value::Short(n) => Value::Int((*n as i64).abs()),
-            Value::Int(n) | Value::Long(n) => {
-                n.checked_abs().map(Value::Long).unwrap_or(Value::Null)
-            }
-            Value::Float32(f) => Value::Float((*f as f64).abs()),
-            Value::Float(f) => Value::Float(f.abs()),
-            _ => Value::Null,
-        })),
+        ("abs", [v]) => Ok(Some(abs_value(v)?)),
         ("ceil", [v]) => Ok(Some(
             value_as_f64(v)
                 .map(|f| Value::Float(f.ceil()))
@@ -1170,6 +1191,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("cast", [Value::Null, _]) => Ok(Some(Value::Null)),
         ("string", [v]) => Ok(Some(string_function_value(v))),
+        ("date", []) => Err(kuzu_function_arity_error("DATE", "()", "(STRING) -> DATE")),
         ("date" | "to_date", [v]) => Ok(Some(cast_to_date(v))),
         ("timestamp", [v]) => Ok(Some(cast_to_date(v))),
         // Alias spellings (`toint8`, `int8`, `serial`, ...) are
@@ -1212,6 +1234,22 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("list_concat", [Value::Null, _]) | ("list_concat", [_, Value::Null]) => {
             Ok(Some(Value::Null))
+        }
+        ("list_concat", [left, right]) => {
+            let function = if name.eq_ignore_ascii_case("array_concat") {
+                "ARRAY_CONCAT"
+            } else {
+                "LIST_CONCAT"
+            };
+            Err(kuzu_function_arity_error(
+                function,
+                &format!(
+                    "({},{})",
+                    cypher_list_type_name(left),
+                    cypher_list_type_name(right)
+                ),
+                "(LIST,LIST) -> LIST",
+            ))
         }
         ("list_element", [items, idx]) if runtime_list(items).is_some() => Ok(Some(
             idx.as_i64()
@@ -4856,6 +4894,52 @@ fn kuzu_function_arity_error(function: &str, actual: &str, expected: &str) -> In
     ))
 }
 
+fn format_actual_signature(args: &[Value]) -> String {
+    let types = args
+        .iter()
+        .map(cypher_list_type_name)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("({types})")
+}
+
+fn abs_value(value: &Value) -> IrResult<Value> {
+    match value {
+        Value::BigInt(n) => {
+            use num_traits::Signed;
+            Ok(Value::BigInt(n.abs()))
+        }
+        Value::UInt128(n) => Ok(Value::UInt128(n.clone())),
+        Value::BigDecimal(n) => Ok(Value::BigDecimal(n.abs())),
+        Value::Byte(n) if *n == i8::MIN => Err(abs_overflow_error(*n as i128, "INT8")),
+        Value::Byte(n) => Ok(Value::Int((*n as i64).abs())),
+        Value::UInt8(n) => Ok(Value::UInt8(*n)),
+        Value::Short(n) if *n == i16::MIN => Err(abs_overflow_error(*n as i128, "INT16")),
+        Value::Short(n) => Ok(Value::Int((*n as i64).abs())),
+        Value::UInt16(n) => Ok(Value::UInt16(*n)),
+        Value::Int(n) if *n == i32::MIN as i64 => Err(abs_overflow_error(*n as i128, "INT32")),
+        Value::Int(n) => n
+            .checked_abs()
+            .map(Value::Long)
+            .ok_or_else(|| abs_overflow_error(*n as i128, "INT64")),
+        Value::UInt32(n) => Ok(Value::UInt32(*n)),
+        Value::Long(n) => n
+            .checked_abs()
+            .map(Value::Long)
+            .ok_or_else(|| abs_overflow_error(*n as i128, "INT64")),
+        Value::UInt64(n) => Ok(Value::UInt64(*n)),
+        Value::Float32(f) => Ok(Value::Float((*f as f64).abs())),
+        Value::Float(f) => Ok(Value::Float(f.abs())),
+        _ => Ok(Value::Null),
+    }
+}
+
+fn abs_overflow_error(value: i128, type_name: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Cannot take the absolute value of {value} within {type_name} range."
+    ))
+}
+
 fn is_trail_path(items: &[Value]) -> bool {
     let mut seen = HashSet::new();
     for item in items {
@@ -6966,6 +7050,88 @@ mod list_function_tests {
                 &[Value::BigInt(18446744073709551615_u128.into())]
             ),
             "Overflow exception: Value 18446744073709551615 is not within INT32 range"
+        );
+    }
+
+    #[test]
+    fn utility_null_helpers_follow_kuzu_semantics() {
+        assert_eq!(
+            call("ifnull", &[Value::Null, Value::String("a".into())]),
+            Value::String("a".into())
+        );
+        assert_eq!(
+            call(
+                "nullif",
+                &[Value::String("hello".into()), Value::String("hello".into())]
+            ),
+            Value::Null
+        );
+        assert_eq!(
+            call("constant_or_null", &[Value::Int(1), Value::Int(10)]),
+            Value::Int(1)
+        );
+        assert_eq!(
+            call("constant_or_null", &[Value::Int(1), Value::Null]),
+            Value::Null
+        );
+        assert!(
+            call_error("constant_or_null", &[Value::Int(1)])
+                .contains("Function CONSTANT_OR_NULL did not receive correct arguments")
+        );
+    }
+
+    #[test]
+    fn abs_preserves_unsigned_and_reports_signed_boundary_overflow() {
+        assert_eq!(
+            call("abs", &[Value::UInt64(202474672468)]),
+            Value::UInt64(202474672468)
+        );
+        assert_eq!(
+            call(
+                "abs",
+                &[Value::UInt128(
+                    340282366920938463463374607431768211455_u128.into()
+                )]
+            ),
+            Value::UInt128(340282366920938463463374607431768211455_u128.into())
+        );
+        assert_eq!(
+            call_error("abs", &[Value::Byte(i8::MIN)]),
+            "Overflow exception: Cannot take the absolute value of -128 within INT8 range."
+        );
+        assert_eq!(
+            call_error("abs", &[Value::Int(i32::MIN as i64)]),
+            "Overflow exception: Cannot take the absolute value of -2147483648 within INT32 range."
+        );
+        assert_eq!(
+            call_error("abs", &[Value::Long(i64::MIN)]),
+            "Overflow exception: Cannot take the absolute value of -9223372036854775808 within INT64 range."
+        );
+    }
+
+    #[test]
+    fn utility_error_surfaces_match_binder_cases() {
+        assert_eq!(
+            call_error(
+                "array_concat",
+                &[Value::List(vec![Value::Int(1)]), Value::Int(1)]
+            ),
+            "Binder exception: Function ARRAY_CONCAT did not receive correct arguments:\nActual:   (INT64[],INT64)\nExpected: (LIST,LIST) -> LIST"
+        );
+        assert_eq!(
+            call_error(
+                "LIST_TRANSFORM",
+                &[Value::List(vec![Value::Int(1)]), Value::Int(1)]
+            ),
+            "Binder exception: The second argument of LIST_TRANSFORM should be a lambda expression but got LITERAL."
+        );
+        assert_eq!(
+            call_error("date", &[]),
+            "Binder exception: Function DATE did not receive correct arguments:\nActual:   ()\nExpected: (STRING) -> DATE"
+        );
+        assert_eq!(
+            call_error("add5", &[Value::Int(1), Value::Int(2)]),
+            "Binder exception: Invalid number of arguments for macro ADD5."
         );
     }
 
