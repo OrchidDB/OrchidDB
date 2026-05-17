@@ -1628,6 +1628,7 @@ impl AstVisitor {
                 .as_ref()
                 .and_then(|detail| detail.oC_Properties())
                 .map(|props| parse_expr_text(&props.get_text())),
+            recursive: None,
         })
     }
 

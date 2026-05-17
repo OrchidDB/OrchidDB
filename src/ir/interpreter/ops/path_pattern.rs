@@ -196,6 +196,7 @@ fn expand_one_step(
                     src_id: sid,
                     dst_label: dl,
                     dst_id: did,
+                    projected_properties: None,
                 };
                 p.push(edge_value.clone());
                 p.push(Value::Node {

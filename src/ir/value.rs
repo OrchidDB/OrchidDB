@@ -56,6 +56,9 @@ pub enum Value {
         src_id: i64,
         dst_label: String,
         dst_id: i64,
+        /// Optional Cypher recursive-relationship projection keys. `None`
+        /// means render the edge's full catalog property bag.
+        projected_properties: Option<Vec<String>>,
     },
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),

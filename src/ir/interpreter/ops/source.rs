@@ -84,6 +84,7 @@ pub(crate) fn rel_scan(
                     src_id,
                     dst_label,
                     dst_id,
+                    projected_properties: None,
                 },
             );
             out.push(row);

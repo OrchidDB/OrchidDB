@@ -42,6 +42,7 @@ fn display_for_as_string(v: &Value) -> String {
             src_id,
             dst_label,
             dst_id,
+            ..
         } => format!(
             "str[e[{}][{}-{}->{}]]",
             tinker_edge_id(rel_type, *id),

@@ -26,11 +26,13 @@ use casts::{
     cast_to_short, cast_to_string, datetime_offset_seconds, datetime_to_epoch_millis,
     epoch_millis_to_datetime_with_offset, parse_datetime_string,
 };
-use path::{apply_path_by_keys, slice_path_at, slice_path_at_value};
+use path::{
+    apply_path_by_keys, path_pairs, project_path_edges, slice_path_at, slice_path_at_value,
+};
 use property_object::{eval_property_element, eval_property_object};
 use reductions::apply_sack_op;
 use reductions::{fold_reduce_op, reduce_list_numeric};
-pub(crate) use strings::{display_for_concat, display_for_group_key};
+pub(crate) use strings::{display_for_concat, display_for_group_key, display_for_kuzu_map_item};
 use strings::{regex_match_literal, substring};
 use type_check::typeof_matches;
 
@@ -400,6 +402,7 @@ fn shortest_path_between(
                             src_id,
                             dst_label,
                             dst_id,
+                            projected_properties: None,
                         },
                     ),
                 );
@@ -694,6 +697,12 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             label: dst_label.clone(),
             id: *dst_id,
         })),
+        ("start_node", [Value::Path(_) | Value::List(_)]) => Err(InterpretError::Runtime(
+            "Binder exception: Function START_NODE did not receive correct arguments:\nActual:   (RECURSIVE_REL)\nExpected: (REL)".to_string(),
+        )),
+        ("end_node", [Value::Path(_) | Value::List(_)]) => Err(InterpretError::Runtime(
+            "Binder exception: Function END_NODE did not receive correct arguments:\nActual:   (RECURSIVE_REL)\nExpected: (REL)".to_string(),
+        )),
         ("start_node" | "end_node", [Value::Null]) => Ok(Some(Value::Null)),
         // `nodes(path)` — every other element starting from index 0.
         ("nodes", [Value::Path(items)]) => Ok(Some(Value::List(
@@ -2327,6 +2336,22 @@ pub(crate) fn runtime_list(value: &Value) -> Option<Vec<Value>> {
 }
 
 fn make_kuzu_map(keys: Vec<Value>, values: Vec<Value>) -> IrResult<Value> {
+    let mut seen = Vec::with_capacity(keys.len());
+    for key in &keys {
+        if matches!(key, Value::Null) {
+            return Err(InterpretError::Runtime(
+                "Runtime exception: Null value key is not allowed in map.".to_string(),
+            ));
+        }
+        if seen.iter().any(|seen| list_semantic_eq(seen, key)) {
+            return Err(InterpretError::Runtime(format!(
+                "Runtime exception: Found duplicate key: {} in map.",
+                display_for_map_error_key(key)
+            )));
+        }
+        seen.push(key.clone());
+    }
+
     let mut entries = Vec::with_capacity(keys.len().min(values.len()));
     for (key, value) in keys.into_iter().zip(values.into_iter()) {
         entries.push(Value::List(vec![key, value]));
@@ -2335,6 +2360,53 @@ fn make_kuzu_map(keys: Vec<Value>, values: Vec<Value>) -> IrResult<Value> {
     let mut map = BTreeMap::new();
     map.insert(KUZU_MAP_ENTRIES_KEY.to_string(), Value::List(entries));
     Ok(Value::Map(map))
+}
+
+fn display_for_map_error_key(value: &Value) -> String {
+    match value {
+        Value::Float32(n) => format_map_error_float(*n as f64),
+        Value::Float(n) => format_map_error_float(*n),
+        Value::List(items) | Value::Path(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_map_error_key)
+                .collect::<Vec<_>>();
+            format!("[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            if let Some(entries) = kuzu_map_entries(map) {
+                let parts = entries
+                    .iter()
+                    .filter_map(kuzu_map_entry)
+                    .map(|(key, value)| {
+                        format!(
+                            "{}={}",
+                            display_for_map_error_key(key),
+                            display_for_map_error_key(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", parts.join(", "));
+            }
+            let parts = visible_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key}: {}", display_for_map_error_key(value)))
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", parts.join(", "))
+        }
+        other => display_for_kuzu_map_item(other),
+    }
+}
+
+fn format_map_error_float(value: f64) -> String {
+    if value.is_finite() {
+        format!("{value:.6}")
+    } else {
+        value.to_string()
+    }
 }
 
 fn visible_map_len(map: &BTreeMap<String, Value>) -> usize {
@@ -3475,22 +3547,26 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
             ),
             other => other,
         }),
-        "INT8" | "TINYINT" => strict_or_lenient_i64(v, i8::MIN as i128, i8::MAX as i128, mode)
-            .map(|opt| opt.map(|n| Value::Byte(n as i8)).unwrap_or(Value::Null)),
-        "UINT8" => strict_or_lenient_i64(v, 0, u8::MAX as i128, mode)
+        "INT8" | "TINYINT" => {
+            strict_or_lenient_i64(v, i8::MIN as i128, i8::MAX as i128, "INT8", mode)
+                .map(|opt| opt.map(|n| Value::Byte(n as i8)).unwrap_or(Value::Null))
+        }
+        "UINT8" => strict_or_lenient_i64(v, 0, u8::MAX as i128, "UINT8", mode)
             .map(|opt| opt.map(|n| Value::Short(n as i16)).unwrap_or(Value::Null)),
-        "INT16" | "SMALLINT" => strict_or_lenient_i64(v, i16::MIN as i128, i16::MAX as i128, mode)
-            .map(|opt| opt.map(|n| Value::Short(n as i16)).unwrap_or(Value::Null)),
-        "UINT16" => strict_or_lenient_i64(v, 0, u16::MAX as i128, mode)
+        "INT16" | "SMALLINT" => {
+            strict_or_lenient_i64(v, i16::MIN as i128, i16::MAX as i128, "INT16", mode)
+                .map(|opt| opt.map(|n| Value::Short(n as i16)).unwrap_or(Value::Null))
+        }
+        "UINT16" => strict_or_lenient_i64(v, 0, u16::MAX as i128, "UINT16", mode)
             .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null)),
         "INT32" | "INT" | "INTEGER" => {
-            strict_or_lenient_i64(v, i32::MIN as i128, i32::MAX as i128, mode)
+            strict_or_lenient_i64(v, i32::MIN as i128, i32::MAX as i128, "INT32", mode)
                 .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null))
         }
-        "UINT32" => strict_or_lenient_i64(v, 0, u32::MAX as i128, mode)
+        "UINT32" => strict_or_lenient_i64(v, 0, u32::MAX as i128, "UINT32", mode)
             .map(|opt| opt.map(Value::Int).unwrap_or(Value::Null)),
         "INT64" | "BIGINT" | "LONG" | "SERIAL" => {
-            strict_or_lenient_i64(v, i64::MIN as i128, i64::MAX as i128, mode)
+            strict_or_lenient_i64(v, i64::MIN as i128, i64::MAX as i128, "INT64", mode)
                 .map(|opt| opt.map(Value::Long).unwrap_or(Value::Null))
         }
         "UINT64" => strict_or_lenient_uint64_bigint(v, mode),
@@ -3689,9 +3765,10 @@ fn strict_or_lenient_i64(
     value: &Value,
     min: i128,
     max: i128,
+    target_type: &str,
     mode: CastMode,
 ) -> IrResult<Option<i64>> {
-    match strict_cast_i64(value, min, max) {
+    match strict_cast_i64(value, min, max, target_type) {
         Ok(n) => Ok(Some(n)),
         Err(err) => match mode {
             CastMode::ExplicitStrict => Err(err),
@@ -4137,7 +4214,7 @@ fn value_numeric_rank(value: &Value) -> Option<u8> {
     })
 }
 
-fn strict_cast_i64(value: &Value, min: i128, max: i128) -> IrResult<i64> {
+fn strict_cast_i64(value: &Value, min: i128, max: i128, target_type: &str) -> IrResult<i64> {
     let string_input = matches!(value, Value::String(_));
     let parsed = match value {
         Value::Float32(f) => strict_float_to_i128(*f as f64)?,
@@ -4146,9 +4223,9 @@ fn strict_cast_i64(value: &Value, min: i128, max: i128) -> IrResult<i64> {
     };
     if parsed < min || parsed > max {
         return if string_input {
-            Err(cast_conversion_error())
+            Err(cast_conversion_to_type_error(value, target_type))
         } else {
-            Err(cast_overflow_error())
+            Err(cast_range_error(parsed, target_type))
         };
     }
     i64::try_from(parsed).map_err(|_| cast_overflow_error())
@@ -4223,8 +4300,8 @@ fn strict_cast_int128(value: &Value) -> IrResult<Value> {
     let string_input = matches!(value, Value::String(_));
     let min = BigInt::from(i128::MIN);
     let max = BigInt::from(i128::MAX);
-    let value = strict_cast_unbounded_bigint(value)?;
-    let Value::BigInt(n) = &value else {
+    let converted = strict_cast_unbounded_bigint(value)?;
+    let Value::BigInt(n) = &converted else {
         return Err(cast_conversion_error());
     };
     if n < &min || n > &max {
@@ -4232,33 +4309,40 @@ fn strict_cast_int128(value: &Value) -> IrResult<Value> {
         // inputs that don't fit; out-of-range arithmetic uses
         // "Overflow exception". Match the source-side convention.
         if string_input {
-            Err(cast_conversion_error())
+            Err(cast_conversion_to_type_error(value, "INT128"))
         } else {
-            Err(cast_overflow_error())
+            Err(cast_bigint_range_error(n, "INT128"))
         }
     } else {
-        Ok(value)
+        Ok(converted)
     }
 }
 
 fn strict_cast_uint64_bigint(value: &Value) -> IrResult<Value> {
     use num_bigint::BigInt;
     let string_input = matches!(value, Value::String(_));
+    let int128_input = matches!(value, Value::BigInt(_));
     let max = BigInt::from(u64::MAX);
-    let value = strict_cast_unbounded_bigint(value)?;
-    let Value::BigInt(n) = &value else {
+    let converted = strict_cast_unbounded_bigint(value)?;
+    let Value::BigInt(n) = &converted else {
         return Err(cast_conversion_error());
     };
     if n < &BigInt::from(0) {
-        Err(cast_conversion_error())
+        if string_input {
+            Err(cast_conversion_to_type_error(value, "UINT64"))
+        } else if int128_input {
+            Err(cast_negative_unsigned_error(n))
+        } else {
+            Err(cast_bigint_range_error(n, "UINT64"))
+        }
     } else if n > &max {
         if string_input {
-            Err(cast_conversion_error())
+            Err(cast_conversion_to_type_error(value, "UINT64"))
         } else {
-            Err(cast_overflow_error())
+            Err(cast_bigint_range_error(n, "UINT64"))
         }
     } else {
-        Ok(value)
+        Ok(converted)
     }
 }
 
@@ -4270,21 +4354,28 @@ fn strict_cast_uint128(value: &Value) -> IrResult<Value> {
         return Ok(Value::BigInt(BigInt::from(0)));
     }
     let string_input = matches!(value, Value::String(_));
+    let int128_input = matches!(value, Value::BigInt(_));
     let max = (BigInt::from(1u8) << 128) - BigInt::from(1u8);
-    let value = strict_cast_unbounded_bigint(value)?;
-    let Value::BigInt(n) = &value else {
+    let converted = strict_cast_unbounded_bigint(value)?;
+    let Value::BigInt(n) = &converted else {
         return Err(cast_conversion_error());
     };
     if n < &BigInt::from(0) {
-        Err(cast_conversion_error())
+        if string_input {
+            Err(cast_conversion_to_type_error(value, "UINT128"))
+        } else if int128_input {
+            Err(cast_negative_int128_to_uint128_error(n))
+        } else {
+            Err(cast_bigint_range_error(n, "UINT128"))
+        }
     } else if n > &max {
         if string_input {
-            Err(cast_conversion_error())
+            Err(cast_conversion_to_type_error(value, "UINT128"))
         } else {
-            Err(cast_overflow_error())
+            Err(cast_bigint_range_error(n, "UINT128"))
         }
     } else {
-        Ok(value)
+        Ok(converted)
     }
 }
 
@@ -4651,6 +4742,53 @@ fn cast_conversion_error() -> InterpretError {
 
 fn cast_overflow_error() -> InterpretError {
     InterpretError::Runtime("Overflow exception:".to_string())
+}
+
+fn cast_conversion_to_type_error(value: &Value, target_type: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Conversion exception: Cast failed. Could not convert \"{}\" to {}.",
+        cast_input_text(value),
+        target_type
+    ))
+}
+
+fn cast_range_error(value: i128, target_type: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Value {value} is not within {target_type} range"
+    ))
+}
+
+fn cast_bigint_range_error(value: &num_bigint::BigInt, target_type: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Value {value} is not within {target_type} range"
+    ))
+}
+
+fn cast_negative_unsigned_error(value: &num_bigint::BigInt) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Cast failed. Cannot cast {value} to unsigned type."
+    ))
+}
+
+fn cast_negative_int128_to_uint128_error(value: &num_bigint::BigInt) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Overflow exception: Cannot cast negative INT128 value {value} to UINT128"
+    ))
+}
+
+fn cast_input_text(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.trim().to_string(),
+        Value::Byte(n) => n.to_string(),
+        Value::Short(n) => n.to_string(),
+        Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::BigInt(n) => n.to_string(),
+        Value::Float32(n) => n.to_string(),
+        Value::Float(n) => n.to_string(),
+        Value::BigDecimal(n) => n.to_string(),
+        Value::Bool(value) => value.to_string(),
+        other => format!("{other:?}"),
+    }
 }
 
 fn kuzu_function_arity_error(function: &str, actual: &str, expected: &str) -> InterpretError {
@@ -5861,6 +5999,14 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
                 .map(Value::Path)
                 .unwrap_or(Value::Null))
         }
+        ("path_pairs", [Value::Path(items)]) => Ok(path_pairs(items)),
+        ("path_pairs", [Value::Null]) => Ok(Value::List(Vec::new())),
+        ("path_project_edges", [Value::Path(items), Value::List(keys)]) => {
+            Ok(project_path_edges(items, keys))
+        }
+        ("path_project_edges", [other, Value::List(keys)]) => {
+            Ok(project_path_edges(&[other.clone()], keys))
+        }
         // ----- LocalScoped(<step>) — per-list-element variants -----
         ("local_tail", [Value::List(items), Value::Int(n)]) => {
             let n = (*n).max(0) as usize;
@@ -6419,6 +6565,7 @@ mod list_function_tests {
             src_id: 7,
             dst_label: "person".into(),
             dst_id: 6,
+            projected_properties: None,
         };
         let repeated_node = Value::Path(vec![
             Value::Node {
@@ -6437,6 +6584,7 @@ mod list_function_tests {
                 src_id: 6,
                 dst_label: "person".into(),
                 dst_id: 7,
+                projected_properties: None,
             },
             Value::Node {
                 label: "person".into(),
@@ -6474,6 +6622,7 @@ mod list_function_tests {
             src_id: 0,
             dst_label: "person".into(),
             dst_id: 1,
+            projected_properties: None,
         };
 
         assert_eq!(
@@ -6706,6 +6855,66 @@ mod list_function_tests {
                 &[Value::String("9999999999:54:32.101234".into())],
             ),
             "Conversion exception: Error occurred during parsing time. Given: \"9999999999:54:32.101234\"."
+        );
+    }
+
+    #[test]
+    fn unsigned_casts_report_kuzu_range_errors() {
+        assert_eq!(
+            call_error("to_uint64", &[Value::Int(-500)]),
+            "Overflow exception: Value -500 is not within UINT64 range"
+        );
+        assert_eq!(
+            call_error("to_uint64", &[Value::BigInt((-15).into())]),
+            "Overflow exception: Cast failed. Cannot cast -15 to unsigned type."
+        );
+        assert_eq!(
+            call_error(
+                "to_int32",
+                &[Value::BigInt(18446744073709551615_u128.into())]
+            ),
+            "Overflow exception: Value 18446744073709551615 is not within INT32 range"
+        );
+    }
+
+    #[test]
+    fn map_rejects_null_and_duplicate_keys() {
+        assert_eq!(
+            call_error(
+                "map",
+                &[
+                    Value::List(vec![Value::Null, Value::Null]),
+                    Value::List(vec![Value::Int(1), Value::Int(2)])
+                ]
+            ),
+            "Runtime exception: Null value key is not allowed in map."
+        );
+        assert_eq!(
+            call_error(
+                "map",
+                &[
+                    Value::List(vec![
+                        Value::Float(2.75),
+                        Value::Float(3.2),
+                        Value::Float(3.2)
+                    ]),
+                    Value::List(vec![Value::Int(20), Value::Int(34), Value::Int(50)])
+                ]
+            ),
+            "Runtime exception: Found duplicate key: 3.200000 in map."
+        );
+        assert_eq!(
+            call_error(
+                "map",
+                &[
+                    Value::List(vec![
+                        Value::List(vec![Value::Int(7), Value::Int(8)]),
+                        Value::List(vec![Value::Int(7), Value::Int(8)])
+                    ]),
+                    Value::List(vec![Value::Int(20), Value::Int(34)])
+                ]
+            ),
+            "Runtime exception: Found duplicate key: [7,8] in map."
         );
     }
 

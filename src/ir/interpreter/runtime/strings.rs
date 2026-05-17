@@ -104,7 +104,7 @@ fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
     Some((key, value))
 }
 
-fn display_for_kuzu_map_item(v: &Value) -> String {
+pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),

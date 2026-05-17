@@ -77,6 +77,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
                 src_id: six,
                 dst_label: dlx,
                 dst_id: dix,
+                ..
             },
             Value::Edge {
                 rel_type: ty,
@@ -85,6 +86,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
                 src_id: siy,
                 dst_label: dly,
                 dst_id: diy,
+                ..
             },
         ) => (tx, ix, slx, six, dlx, dix).cmp(&(ty, iy, sly, siy, dly, diy)),
         (Value::Path(x), Value::Path(y)) => compare_slices(x, y),

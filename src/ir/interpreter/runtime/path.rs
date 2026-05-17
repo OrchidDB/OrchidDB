@@ -2,6 +2,8 @@
 //!
 //! Extracted from `interpreter.rs` lines 2795..2845.
 
+use std::collections::BTreeMap;
+
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::value::Value;
 
@@ -16,7 +18,13 @@ pub(crate) fn slice_path_at_value(
     from_label: bool,
 ) -> Value {
     let position = labelled_value
-        .and_then(|value| items.iter().rposition(|item| item == value))
+        .and_then(|value| {
+            if from_label {
+                items.iter().position(|item| item == value)
+            } else {
+                items.iter().rposition(|item| item == value)
+            }
+        })
         .or_else(|| {
             items.iter().position(|item| match item {
                 Value::Node { label: l, .. } => l == label,
@@ -52,6 +60,61 @@ pub(crate) fn apply_path_by_keys(
         out.push(projected);
     }
     Some(out)
+}
+
+pub(crate) fn path_pairs(items: &[Value]) -> Value {
+    let pairs = items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| {
+            if idx % 2 == 0 || !matches!(item, Value::Edge { .. }) {
+                return None;
+            }
+            let mut pair = BTreeMap::new();
+            pair.insert("r".to_string(), item.clone());
+            pair.insert(
+                "n".to_string(),
+                items.get(idx + 1).cloned().unwrap_or(Value::Null),
+            );
+            Some(Value::Map(pair))
+        })
+        .collect();
+    Value::List(pairs)
+}
+
+pub(crate) fn project_path_edges(items: &[Value], rel_keys: &[Value]) -> Value {
+    let keys = rel_keys
+        .iter()
+        .filter_map(|value| match value {
+            Value::String(key) => Some(key.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    Value::Path(
+        items
+            .iter()
+            .map(|item| match item {
+                Value::Edge {
+                    rel_type,
+                    id,
+                    src_label,
+                    src_id,
+                    dst_label,
+                    dst_id,
+                    ..
+                } => Value::Edge {
+                    rel_type: rel_type.clone(),
+                    id: *id,
+                    src_label: src_label.clone(),
+                    src_id: *src_id,
+                    dst_label: dst_label.clone(),
+                    dst_id: *dst_id,
+                    projected_properties: Some(keys.clone()),
+                },
+                other => other.clone(),
+            })
+            .collect(),
+    )
 }
 
 pub(crate) fn project_value_by_key(value: &Value, key: &str, graph: &PropertyGraph) -> Value {

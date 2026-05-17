@@ -13,13 +13,16 @@ pub(crate) fn node_table_index(graph: &PropertyGraph, label: &str) -> i64 {
 }
 
 pub(crate) fn edge_table_index(graph: &PropertyGraph, rel_type: &str) -> i64 {
-    // Kuzu numbers edge tables after node tables in one shared namespace.
+    // Kuzu numbers relationship table IDs in the same namespace as
+    // node tables, and reserves a second internal slot per rel type for
+    // the reverse adjacency table. User-visible IDs therefore advance
+    // by two for each relationship type in schema order.
     let node_count = graph.node_label_order().len() as i64;
     graph
         .edge_rel_order()
         .iter()
         .position(|candidate| candidate == rel_type)
-        .map(|idx| node_count + idx as i64)
+        .map(|idx| node_count + (idx as i64 * 2))
         .unwrap_or(node_count)
 }
 

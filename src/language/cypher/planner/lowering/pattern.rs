@@ -5,7 +5,8 @@ use crate::ir::plan::{
 };
 use crate::ir::policy::{MatchMode, OptionalMissing, PathMode};
 use crate::language::cypher::ast::{
-    Expr, Literal, NodePattern, PatternPart, QuantifierKind, RangeLiteral, RelationshipPattern,
+    Expr, Literal, NodePattern, PatternPart, QuantifierKind, RangeLiteral,
+    RecursiveRelationshipPattern, RelationshipPattern,
 };
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
@@ -108,7 +109,7 @@ pub fn lower_pattern_part(
                     lowerer,
                     &chain.relationship,
                     &pattern_visible,
-                    variable_length,
+                    variable_length && matches!(chain.relationship.direction, Direction::Both),
                 );
                 if let Some(rel) = &user_rel_binding {
                     if !pattern_visible.contains(rel) {
@@ -138,14 +139,22 @@ pub fn lower_pattern_part(
                     &chain.node,
                     path_binding.clone(),
                     history.map(ToString::to_string),
-                    // Kuzu's path-function fixtures materialize undirected
-                    // recursive paths as walks, then classify them with
-                    // `is_trail` / `is_acyclic`. Keep ordinary recursive
-                    // joins on different-relationship semantics.
-                    variable_length
-                        && shared_path_binding.is_some()
-                        && matches!(chain.relationship.direction, Direction::Both),
+                    variable_length,
                 );
+                if variable_length {
+                    if let (Some(recursive), Some(path)) =
+                        (&chain.relationship.recursive, path_binding.as_deref())
+                    {
+                        let mut allowed = pattern_visible.clone();
+                        allowed.insert(source.clone());
+                        allowed.insert(path.to_string());
+                        traversal = apply_recursive_relationship_predicate(
+                            lowerer, traversal, path, &source, recursive, &allowed,
+                        )?;
+                        traversal =
+                            apply_recursive_relationship_projection(traversal, path, recursive);
+                    }
+                }
                 if let Some(rel) = &user_rel_binding {
                     traversal = apply_relationship_binding_projection(
                         traversal,
@@ -499,13 +508,13 @@ fn apply_relationship_binding_projection(
         let Some(path_binding) = path_binding else {
             return input;
         };
-        let rels = relationships_expr(path_binding, source_binding);
+        let recursive_rel = path_segment_expr(path_binding, source_binding);
         if already_visible {
             return Node::GraphFilter {
                 condition: IrExpr::Binary {
                     op: IrBinaryOp::Eq,
                     lhs: Box::new(IrExpr::Binding(user_binding.to_string())),
-                    rhs: Box::new(rels),
+                    rhs: Box::new(recursive_rel),
                 },
                 input: input.boxed(),
             };
@@ -514,7 +523,7 @@ fn apply_relationship_binding_projection(
             mode: ProjectMode::PreserveVisible,
             items: vec![ProjectionItem {
                 alias: user_binding.to_string(),
-                expr: rels,
+                expr: recursive_rel,
             }],
             error_policy: ProjectErrorPolicy::PropagateError,
             input: input.boxed(),
@@ -534,6 +543,67 @@ fn apply_relationship_binding_projection(
         }
     }
     input
+}
+
+fn apply_recursive_relationship_predicate(
+    lowerer: &mut Lowerer,
+    input: Node,
+    path_binding: &str,
+    source_binding: &str,
+    recursive: &RecursiveRelationshipPattern,
+    allowed_bindings: &BTreeSet<String>,
+) -> CypherPlanResult<Node> {
+    let Some(predicate) = &recursive.predicate else {
+        return Ok(input);
+    };
+    let pair = lowerer.synthetic("recursive_pair");
+    let predicate = rewrite_recursive_filter_vars(
+        predicate,
+        &recursive.rel_variable,
+        &recursive.node_variable,
+        &pair,
+    );
+    let quantifier = Expr::Quantifier {
+        kind: QuantifierKind::All,
+        variable: pair,
+        collection: Box::new(path_pair_collection_expr(path_binding, source_binding)),
+        predicate: Box::new(predicate),
+    };
+    let (input, condition) =
+        lower_property_expr_with_allowed(lowerer, input, &quantifier, allowed_bindings)?;
+    Ok(Node::GraphFilter {
+        condition,
+        input: input.boxed(),
+    })
+}
+
+fn apply_recursive_relationship_projection(
+    input: Node,
+    path_binding: &str,
+    recursive: &RecursiveRelationshipPattern,
+) -> Node {
+    let Some(keys) = &recursive.rel_projection_keys else {
+        return input;
+    };
+    Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem {
+            alias: path_binding.to_string(),
+            expr: IrExpr::Call {
+                name: "path_project_edges".to_string(),
+                args: vec![
+                    IrExpr::Binding(path_binding.to_string()),
+                    IrExpr::List(
+                        keys.iter()
+                            .map(|key| IrExpr::Lit(Lit::String(key.clone())))
+                            .collect(),
+                    ),
+                ],
+            },
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    }
 }
 
 fn apply_variable_length_property_filters(
@@ -659,29 +729,412 @@ fn relationship_collection_expr(path_binding: &str, source_binding: &str) -> Exp
     Expr::Function {
         name: "relationships".to_string(),
         distinct: false,
-        args: vec![Expr::Function {
-            name: "path_from".to_string(),
-            distinct: false,
-            args: vec![
-                Expr::Variable(path_binding.to_string()),
-                Expr::Literal(Literal::String(String::new())),
-                Expr::Variable(source_binding.to_string()),
-            ],
-        }],
+        args: vec![path_segment_ast_expr(path_binding, source_binding)],
     }
 }
 
-fn relationships_expr(path_binding: &str, source_binding: &str) -> IrExpr {
+fn path_pair_collection_expr(path_binding: &str, source_binding: &str) -> Expr {
+    Expr::Function {
+        name: "path_pairs".to_string(),
+        distinct: false,
+        args: vec![path_segment_ast_expr(path_binding, source_binding)],
+    }
+}
+
+fn path_segment_ast_expr(path_binding: &str, source_binding: &str) -> Expr {
+    Expr::Function {
+        name: "path_from".to_string(),
+        distinct: false,
+        args: vec![
+            Expr::Variable(path_binding.to_string()),
+            Expr::Literal(Literal::String(String::new())),
+            Expr::Variable(source_binding.to_string()),
+        ],
+    }
+}
+
+fn path_segment_expr(path_binding: &str, source_binding: &str) -> IrExpr {
     IrExpr::Call {
-        name: "relationships".to_string(),
-        args: vec![IrExpr::Call {
-            name: "path_from".to_string(),
-            args: vec![
-                IrExpr::Binding(path_binding.to_string()),
-                IrExpr::Lit(Lit::String(String::new())),
-                IrExpr::Binding(source_binding.to_string()),
-            ],
-        }],
+        name: "path_from".to_string(),
+        args: vec![
+            IrExpr::Binding(path_binding.to_string()),
+            IrExpr::Lit(Lit::String(String::new())),
+            IrExpr::Binding(source_binding.to_string()),
+        ],
+    }
+}
+
+fn rewrite_recursive_filter_vars(
+    expr: &Expr,
+    rel_variable: &str,
+    node_variable: &str,
+    pair_variable: &str,
+) -> Expr {
+    rewrite_recursive_filter_vars_with_bound(
+        expr,
+        rel_variable,
+        node_variable,
+        pair_variable,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn rewrite_recursive_filter_vars_with_bound(
+    expr: &Expr,
+    rel_variable: &str,
+    node_variable: &str,
+    pair_variable: &str,
+    bound: &mut BTreeSet<String>,
+) -> Expr {
+    let pair_property = |key: &str| Expr::Property {
+        target: Box::new(Expr::Variable(pair_variable.to_string())),
+        key: key.to_string(),
+    };
+    match expr {
+        Expr::Variable(name) if !bound.contains(name) && name == rel_variable => pair_property("r"),
+        Expr::Variable(name) if !bound.contains(name) && name == node_variable => {
+            pair_property("n")
+        }
+        Expr::Property { target, key } => Expr::Property {
+            target: Box::new(rewrite_recursive_filter_vars_with_bound(
+                target,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+            key: key.clone(),
+        },
+        Expr::LabelPredicate { target, labels } => Expr::LabelPredicate {
+            target: Box::new(rewrite_recursive_filter_vars_with_bound(
+                target,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+            labels: labels.clone(),
+        },
+        Expr::List(items) => Expr::List(
+            items
+                .iter()
+                .map(|item| {
+                    rewrite_recursive_filter_vars_with_bound(
+                        item,
+                        rel_variable,
+                        node_variable,
+                        pair_variable,
+                        bound,
+                    )
+                })
+                .collect(),
+        ),
+        Expr::Map(items) => Expr::Map(
+            items
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        rewrite_recursive_filter_vars_with_bound(
+                            value,
+                            rel_variable,
+                            node_variable,
+                            pair_variable,
+                            bound,
+                        ),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(rewrite_recursive_filter_vars_with_bound(
+                expr,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+        },
+        Expr::Binary { op, lhs, rhs } => Expr::Binary {
+            op: *op,
+            lhs: Box::new(rewrite_recursive_filter_vars_with_bound(
+                lhs,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+            rhs: Box::new(rewrite_recursive_filter_vars_with_bound(
+                rhs,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+        },
+        Expr::IsNull(inner) => Expr::IsNull(Box::new(rewrite_recursive_filter_vars_with_bound(
+            inner,
+            rel_variable,
+            node_variable,
+            pair_variable,
+            bound,
+        ))),
+        Expr::IsNotNull(inner) => {
+            Expr::IsNotNull(Box::new(rewrite_recursive_filter_vars_with_bound(
+                inner,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )))
+        }
+        Expr::StringPredicate {
+            op,
+            target,
+            pattern,
+        } => Expr::StringPredicate {
+            op: *op,
+            target: Box::new(rewrite_recursive_filter_vars_with_bound(
+                target,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+            pattern: Box::new(rewrite_recursive_filter_vars_with_bound(
+                pattern,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            )),
+        },
+        Expr::Function {
+            name,
+            distinct,
+            args,
+        } => Expr::Function {
+            name: name.clone(),
+            distinct: *distinct,
+            args: args
+                .iter()
+                .map(|arg| {
+                    rewrite_recursive_filter_vars_with_bound(
+                        arg,
+                        rel_variable,
+                        node_variable,
+                        pair_variable,
+                        bound,
+                    )
+                })
+                .collect(),
+        },
+        Expr::Case {
+            case,
+            arms,
+            otherwise,
+        } => Expr::Case {
+            case: case.as_ref().map(|case| {
+                Box::new(rewrite_recursive_filter_vars_with_bound(
+                    case,
+                    rel_variable,
+                    node_variable,
+                    pair_variable,
+                    bound,
+                ))
+            }),
+            arms: arms
+                .iter()
+                .map(|(when, then)| {
+                    (
+                        rewrite_recursive_filter_vars_with_bound(
+                            when,
+                            rel_variable,
+                            node_variable,
+                            pair_variable,
+                            bound,
+                        ),
+                        rewrite_recursive_filter_vars_with_bound(
+                            then,
+                            rel_variable,
+                            node_variable,
+                            pair_variable,
+                            bound,
+                        ),
+                    )
+                })
+                .collect(),
+            otherwise: otherwise.as_ref().map(|otherwise| {
+                Box::new(rewrite_recursive_filter_vars_with_bound(
+                    otherwise,
+                    rel_variable,
+                    node_variable,
+                    pair_variable,
+                    bound,
+                ))
+            }),
+        },
+        Expr::ListComprehension {
+            variable,
+            collection,
+            predicate,
+            map,
+        } => {
+            let collection = rewrite_recursive_filter_vars_with_bound(
+                collection,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.insert(variable.clone());
+            let predicate = predicate.as_ref().map(|predicate| {
+                Box::new(rewrite_recursive_filter_vars_with_bound(
+                    predicate,
+                    rel_variable,
+                    node_variable,
+                    pair_variable,
+                    bound,
+                ))
+            });
+            let map = rewrite_recursive_filter_vars_with_bound(
+                map,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.remove(variable);
+            Expr::ListComprehension {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate,
+                map: Box::new(map),
+            }
+        }
+        Expr::ListReduce {
+            accumulator,
+            variable,
+            collection,
+            map,
+        } => {
+            let collection = rewrite_recursive_filter_vars_with_bound(
+                collection,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.insert(accumulator.clone());
+            bound.insert(variable.clone());
+            let map = rewrite_recursive_filter_vars_with_bound(
+                map,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.remove(accumulator);
+            bound.remove(variable);
+            Expr::ListReduce {
+                accumulator: accumulator.clone(),
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            }
+        }
+        Expr::ListTransform {
+            variable,
+            collection,
+            map,
+        } => {
+            let collection = rewrite_recursive_filter_vars_with_bound(
+                collection,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.insert(variable.clone());
+            let map = rewrite_recursive_filter_vars_with_bound(
+                map,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.remove(variable);
+            Expr::ListTransform {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                map: Box::new(map),
+            }
+        }
+        Expr::ListFilter {
+            variable,
+            collection,
+            predicate,
+        } => {
+            let collection = rewrite_recursive_filter_vars_with_bound(
+                collection,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.insert(variable.clone());
+            let predicate = rewrite_recursive_filter_vars_with_bound(
+                predicate,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.remove(variable);
+            Expr::ListFilter {
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate: Box::new(predicate),
+            }
+        }
+        Expr::Quantifier {
+            kind,
+            variable,
+            collection,
+            predicate,
+        } => {
+            let collection = rewrite_recursive_filter_vars_with_bound(
+                collection,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.insert(variable.clone());
+            let predicate = rewrite_recursive_filter_vars_with_bound(
+                predicate,
+                rel_variable,
+                node_variable,
+                pair_variable,
+                bound,
+            );
+            bound.remove(variable);
+            Expr::Quantifier {
+                kind: *kind,
+                variable: variable.clone(),
+                collection: Box::new(collection),
+                predicate: Box::new(predicate),
+            }
+        }
+        Expr::PatternComprehension { .. }
+        | Expr::Exists(_)
+        | Expr::PatternPredicate(_)
+        | Expr::Star
+        | Expr::Variable(_)
+        | Expr::Parameter(_)
+        | Expr::Literal(_)
+        | Expr::CountStar => expr.clone(),
     }
 }
 

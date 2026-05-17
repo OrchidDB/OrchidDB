@@ -34,12 +34,22 @@ pub struct RelationshipPattern {
     pub range: RangeLiteral,
     pub direction: Direction,
     pub properties: Option<Expr>,
+    pub recursive: Option<RecursiveRelationshipPattern>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeLiteral {
     pub min: u32,
     pub max: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecursiveRelationshipPattern {
+    pub rel_variable: String,
+    pub node_variable: String,
+    pub predicate: Option<Expr>,
+    pub rel_projection_keys: Option<Vec<String>>,
+    pub node_projection_keys: Option<Vec<String>>,
 }
 
 impl Default for RangeLiteral {

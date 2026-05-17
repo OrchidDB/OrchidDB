@@ -143,30 +143,43 @@ pub(crate) fn expand_op(
             for (cur_label, cur_id, history_so_far, path_so_far) in frontier {
                 ctx.charge(1)?;
                 let edges = match dir {
-                    Direction::Out => graph.out_edges(&cur_label, cur_id, &rel_filter),
-                    Direction::In => graph.in_edges(&cur_label, cur_id, &rel_filter),
+                    Direction::Out => graph
+                        .out_edges(&cur_label, cur_id, &rel_filter)
+                        .into_iter()
+                        .map(|edge| (Direction::Out, edge))
+                        .collect::<Vec<_>>(),
+                    Direction::In => graph
+                        .in_edges(&cur_label, cur_id, &rel_filter)
+                        .into_iter()
+                        .map(|edge| (Direction::In, edge))
+                        .collect::<Vec<_>>(),
                     Direction::Both => {
-                        let mut both = graph.out_edges(&cur_label, cur_id, &rel_filter);
-                        both.extend(graph.in_edges(&cur_label, cur_id, &rel_filter));
-                        both.sort();
-                        both.dedup();
+                        let mut both = graph
+                            .out_edges(&cur_label, cur_id, &rel_filter)
+                            .into_iter()
+                            .map(|edge| (Direction::Out, edge))
+                            .collect::<Vec<_>>();
+                        both.extend(
+                            graph
+                                .in_edges(&cur_label, cur_id, &rel_filter)
+                                .into_iter()
+                                .map(|edge| (Direction::In, edge)),
+                        );
                         both
                     }
                 };
-                for (rel_type, edge_row, other_label, other_id) in edges {
+                for (edge_dir, (rel_type, edge_row, other_label, other_id)) in edges {
                     ctx.charge(1)?;
                     let mut history = history_so_far.clone();
                     let mut path = path_so_far.clone();
-                    let (sl, sid, dl, did) = graph
-                        .edge_endpoints(&rel_type, edge_row)
-                        .expect("endpoints");
                     let edge_value = Value::Edge {
                         rel_type: rel_type.clone(),
                         id: edge_row,
-                        src_label: sl,
-                        src_id: sid,
-                        dst_label: dl,
-                        dst_id: did,
+                        src_label: oriented_edge_src_label(edge_dir, &cur_label, &other_label),
+                        src_id: oriented_edge_src_id(edge_dir, cur_id, other_id),
+                        dst_label: oriented_edge_dst_label(edge_dir, &cur_label, &other_label),
+                        dst_id: oriented_edge_dst_id(edge_dir, cur_id, other_id),
+                        projected_properties: None,
                     };
                     let target_node = Value::Node {
                         label: other_label.clone(),
@@ -263,6 +276,34 @@ pub(crate) fn label_matches(label: &str, expr: &LabelExpr) -> bool {
         LabelExpr::AnyOf(names) => names.iter().any(|n| n == label),
         LabelExpr::AllOf(names) => names.len() == 1 && names[0] == label,
         LabelExpr::Not(inner) => !label_matches(label, inner),
+    }
+}
+
+fn oriented_edge_src_label(dir: Direction, current: &str, other: &str) -> String {
+    match dir {
+        Direction::In => other.to_string(),
+        Direction::Out | Direction::Both => current.to_string(),
+    }
+}
+
+fn oriented_edge_src_id(dir: Direction, current: i64, other: i64) -> i64 {
+    match dir {
+        Direction::In => other,
+        Direction::Out | Direction::Both => current,
+    }
+}
+
+fn oriented_edge_dst_label(dir: Direction, current: &str, other: &str) -> String {
+    match dir {
+        Direction::In => current.to_string(),
+        Direction::Out | Direction::Both => other.to_string(),
+    }
+}
+
+fn oriented_edge_dst_id(dir: Direction, current: i64, other: i64) -> i64 {
+    match dir {
+        Direction::In => current,
+        Direction::Out | Direction::Both => other,
     }
 }
 

@@ -31,7 +31,7 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
         };
         Value::BigDecimal(result)
     }
-    fn bigint_arith(op: BinaryOp, a: num_bigint::BigInt, b: num_bigint::BigInt) -> Value {
+    fn bigint_arith(op: BinaryOp, a: num_bigint::BigInt, b: num_bigint::BigInt) -> IrResult<Value> {
         use num_traits::Zero;
         let result = match op {
             BinaryOp::Add => a + b,
@@ -39,13 +39,16 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
             BinaryOp::Mul => a * b,
             BinaryOp::Div => {
                 if b.is_zero() {
-                    return Value::Null;
+                    return Ok(Value::Null);
                 }
                 a / b
             }
-            _ => return Value::Null,
+            _ => return Ok(Value::Null),
         };
-        Value::BigInt(result)
+        if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) {
+            check_int128_range(&result, op)?;
+        }
+        Ok(Value::BigInt(result))
     }
     match (lhs, rhs) {
         (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
@@ -91,9 +94,9 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
             }
         }
         // ----- BigInt absorbs Int/Bool; promotes to BigDecimal vs Float -----
-        (Value::BigInt(a), Value::BigInt(b)) => Ok(bigint_arith(op, a.clone(), b.clone())),
-        (Value::BigInt(a), Value::Int(b)) => Ok(bigint_arith(op, a.clone(), BigInt::from(*b))),
-        (Value::Int(a), Value::BigInt(b)) => Ok(bigint_arith(op, BigInt::from(*a), b.clone())),
+        (Value::BigInt(a), Value::BigInt(b)) => bigint_arith(op, a.clone(), b.clone()),
+        (Value::BigInt(a), Value::Int(b)) => bigint_arith(op, a.clone(), BigInt::from(*b)),
+        (Value::Int(a), Value::BigInt(b)) => bigint_arith(op, BigInt::from(*a), b.clone()),
         (Value::BigInt(a), Value::Float(b)) => {
             use num_traits::ToPrimitive;
             let Some(a) = a.to_f64() else {
@@ -305,6 +308,24 @@ fn checked_int(value: Option<i64>, operation: &str) -> IrResult<Value> {
         .ok_or_else(|| InterpretError::Type(format!("integer overflow during {operation}")))
 }
 
+fn check_int128_range(value: &num_bigint::BigInt, op: BinaryOp) -> IrResult<()> {
+    use num_bigint::BigInt;
+    let min = BigInt::from(i128::MIN);
+    let max = BigInt::from(i128::MAX);
+    if value < &min || value > &max {
+        let operation = match op {
+            BinaryOp::Add => "add",
+            BinaryOp::Sub => "subtract",
+            BinaryOp::Mul => "multiply",
+            _ => "operate",
+        };
+        return Err(InterpretError::Runtime(format!(
+            "Overflow exception: INT128 is out of range: cannot {operation}."
+        )));
+    }
+    Ok(())
+}
+
 /// Add (or subtract) `days` from a `YYYY-MM-DD[…]` string and return
 /// the resulting date as `Value::DateTime`. Anything we can't parse
 /// surfaces as `Null` so the row drops instead of carrying junk.
@@ -396,6 +417,18 @@ mod tests {
         let err = arithmetic(BinaryOp::Mul, &Value::Int(i64::MAX), &Value::Int(2))
             .expect_err("overflow should be classified as an interpreter error");
         assert!(err.to_string().contains("integer overflow"));
+    }
+
+    #[test]
+    fn int128_overflow_uses_kuzu_error_text() {
+        let max = Value::BigInt(num_bigint::BigInt::from(i128::MAX));
+        let err = arithmetic(BinaryOp::Add, &max, &Value::BigInt(10.into()))
+            .expect_err("INT128 overflow should be classified as a runtime error");
+
+        assert_eq!(
+            err.to_string(),
+            "Overflow exception: INT128 is out of range: cannot add."
+        );
     }
 }
 

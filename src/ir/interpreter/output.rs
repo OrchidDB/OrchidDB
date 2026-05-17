@@ -317,8 +317,16 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
             src_id,
             dst_label,
             dst_id,
+            projected_properties,
         } => Value::String(format_edge(
-            graph, &rel_type, id, &src_label, src_id, &dst_label, dst_id,
+            graph,
+            &rel_type,
+            id,
+            &src_label,
+            src_id,
+            &dst_label,
+            dst_id,
+            projected_properties.as_deref(),
         )),
         Value::List(items) => Value::List(
             items
@@ -362,6 +370,7 @@ fn format_edge(
     src_id: i64,
     dst_label: &str,
     dst_id: i64,
+    projected_properties: Option<&[String]>,
 ) -> String {
     let table_id = edge_table_index(graph, rel_type);
     let src_table = node_table_index(graph, src_label);
@@ -373,7 +382,10 @@ fn format_edge(
         format!("_LABEL: {rel_type}"),
         format!("_ID: {table_id}:{id}"),
     ];
-    for key in graph.edge_property_keys(rel_type) {
+    let keys = projected_properties
+        .map(|keys| keys.to_vec())
+        .unwrap_or_else(|| graph.edge_property_keys(rel_type));
+    for key in keys {
         let value = graph.edge_property(rel_type, id, &key);
         if matches!(value, Value::Null) {
             continue;
@@ -393,7 +405,7 @@ fn format_edge(
 fn format_property_value(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
-        Value::String(s) => unescape_display_quotes(s),
+        Value::String(s) => format_bytea_display(s).unwrap_or_else(|| unescape_display_quotes(s)),
         Value::Bool(true) => "True".into(),
         Value::Bool(false) => "False".into(),
         Value::Byte(n) => n.to_string(),
@@ -437,8 +449,20 @@ fn format_property_value(value: &Value) -> String {
             format!("{{{}}}", body.join(", "))
         }
         Value::Path(items) => {
-            let body: Vec<String> = items.iter().map(format_property_value).collect();
-            format!("[{}]", body.join(","))
+            let mut nodes = Vec::new();
+            let mut rels = Vec::new();
+            for (idx, item) in items.iter().enumerate() {
+                if idx % 2 == 0 {
+                    nodes.push(format_property_value(item));
+                } else {
+                    rels.push(format_property_value(item));
+                }
+            }
+            format!(
+                "{{_NODES: [{}], _RELS: [{}]}}",
+                nodes.join(","),
+                rels.join(",")
+            )
         }
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
@@ -454,6 +478,27 @@ fn unescape_display_quotes(text: &str) -> String {
         out = out.replace("\\'", "'");
     }
     out
+}
+
+fn format_bytea_display(text: &str) -> Option<String> {
+    if !text.starts_with("\\x") {
+        return None;
+    }
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(hex) = rest.strip_prefix("\\x") {
+        if hex.len() < 2 {
+            return None;
+        }
+        let byte = u8::from_str_radix(&hex[..2], 16).ok()?;
+        if (0x20..=0x7e).contains(&byte) && byte != b'\\' {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("\\x{byte:02X}"));
+        }
+        rest = &hex[2..];
+    }
+    if rest.is_empty() { Some(out) } else { None }
 }
 
 fn kuzu_map_entries(map: &std::collections::BTreeMap<String, Value>) -> Option<&[Value]> {
@@ -539,4 +584,36 @@ pub(crate) fn infer_kind(values: &[Value]) -> ColumnKind {
         });
     }
     kind.unwrap_or(ColumnKind::Utf8)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_property_value;
+    use crate::ir::value::Value;
+
+    #[test]
+    fn cypher_path_output_uses_node_and_relationship_sections() {
+        let rendered = format_property_value(&Value::Path(vec![
+            Value::String("{_ID: 0:0, _LABEL: person}".into()),
+            Value::String("({0:0})-{_LABEL: knows, _ID: 3:0}->(0:1)".into()),
+            Value::String("{_ID: 0:1, _LABEL: person}".into()),
+        ]));
+
+        assert_eq!(
+            rendered,
+            "{_NODES: [{_ID: 0:0, _LABEL: person},{_ID: 0:1, _LABEL: person}], _RELS: [({0:0})-{_LABEL: knows, _ID: 3:0}->(0:1)]}"
+        );
+    }
+
+    #[test]
+    fn cypher_bytea_output_decodes_printable_bytes() {
+        assert_eq!(
+            format_property_value(&Value::String("\\x3A\\xA3".into())),
+            ":\\xA3"
+        );
+        assert_eq!(
+            format_property_value(&Value::String("\\xAA\\xBB".into())),
+            "\\xAA\\xBB"
+        );
+    }
 }

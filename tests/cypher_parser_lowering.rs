@@ -84,6 +84,29 @@ fn parses_recursive_relationship_filter_syntax() {
 }
 
 #[test]
+fn lowers_recursive_relationship_filter_projection() {
+    let query = parse_query(
+        "MATCH (a)-[e:knows*2..2 (r, n | WHERE r.date > date('2020-01-01') | {r.date}, {n.ID})]->(b) RETURN e",
+    )
+    .unwrap();
+    let Clause::Match(m) = &query.clauses[0] else {
+        panic!("expected MATCH clause");
+    };
+    let recursive = m.patterns[0].element.chains[0]
+        .relationship
+        .recursive
+        .as_ref()
+        .expect("recursive relationship filter");
+
+    assert!(recursive.predicate.is_some());
+    assert_eq!(
+        recursive.rel_projection_keys,
+        Some(vec!["date".to_string()])
+    );
+    assert_eq!(recursive.node_projection_keys, Some(vec!["ID".to_string()]));
+}
+
+#[test]
 fn lowers_kuzu_list_transform_lambda_to_list_transform() {
     let query = parse_query("RETURN LIST_TRANSFORM([1,2,3], x->x + 1)").unwrap();
     let Clause::Return(ret) = &query.clauses[0] else {
