@@ -538,6 +538,7 @@ fn rewrite_aggregate_projection_expr(
                         AggKind::CountRows
                     }
                 }
+                "count_if" => AggKind::CountIf,
                 "sum" => AggKind::SumOrZero,
                 "avg" => AggKind::AvgOrNull,
                 "min" => AggKind::MinOrNull,
@@ -1256,6 +1257,7 @@ fn rewrite_aggregate_projection(
                         AggKind::CountRows
                     }
                 }
+                "count_if" => AggKind::CountIf,
                 "sum" => AggKind::SumOrZero,
                 "avg" => AggKind::AvgOrNull,
                 "min" => AggKind::MinOrNull,
@@ -1440,6 +1442,7 @@ fn ensure_group_key(
 fn aggregate_kind(name: &str) -> Option<AggKind> {
     match name.to_ascii_lowercase().as_str() {
         "count" => Some(AggKind::CountRows),
+        "count_if" => Some(AggKind::CountIf),
         "sum" => Some(AggKind::SumOrZero),
         "avg" => Some(AggKind::AvgOrNull),
         "min" => Some(AggKind::MinOrNull),

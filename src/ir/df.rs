@@ -2211,7 +2211,8 @@ fn infer_agg_type(kind: &crate::ir::expr::AggKind) -> DataType {
     match kind {
         crate::ir::expr::AggKind::CountRows
         | crate::ir::expr::AggKind::CountBulk
-        | crate::ir::expr::AggKind::CountDistinct => DataType::Int64,
+        | crate::ir::expr::AggKind::CountDistinct
+        | crate::ir::expr::AggKind::CountIf => DataType::Int64,
         crate::ir::expr::AggKind::Avg
         | crate::ir::expr::AggKind::AvgOrZero
         | crate::ir::expr::AggKind::AvgOrNull

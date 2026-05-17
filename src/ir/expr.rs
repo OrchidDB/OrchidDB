@@ -189,6 +189,8 @@ pub enum AggKind {
     CountBulk,
     /// `count(DISTINCT x)` style.
     CountDistinct,
+    /// `count_if(predicate)` — counts rows where the argument coerces true.
+    CountIf,
     Sum,
     Avg,
     Min,

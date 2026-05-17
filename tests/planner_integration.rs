@@ -127,6 +127,42 @@ fn gremlin_planner_round_trips_v_count() {
 }
 
 #[test]
+fn cypher_count_if_uses_aggregate_path() {
+    let parsed = parse_query("MATCH (p:Person) RETURN count_if(p.age > 29)").expect("parse");
+    let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
+    let result = execute(&plan, &fixture_graph()).expect("execute");
+    let array = result
+        .batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(array.value(0), 2);
+}
+
+#[test]
+fn cypher_left_uses_kuzu_string_coercion() {
+    let parsed =
+        parse_query("RETURN left(to_double(1.34), 8), left(to_bool('true'), 4)").expect("parse");
+    let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
+    let result = execute(&plan, &PropertyGraph::new()).expect("execute");
+    let double_text = result
+        .batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let bool_text = result
+        .batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(double_text.value(0), "1.340000");
+    assert_eq!(bool_text.value(0), "True");
+}
+
+#[test]
 fn gremlin_planner_filters_then_traverses() {
     let traversal = gb::GremlinTraversal {
         steps: vec![
@@ -165,11 +201,9 @@ fn plan_cypher_error(query: &str) -> String {
 }
 
 #[test]
-fn cypher_allows_relationship_reused_as_node_pattern_for_now() {
-    let parsed = parse_query("MATCH ()-[r]-() MATCH (r) RETURN r").expect("parse");
-    AstCypherPlanner::new().plan(&parsed).expect(
-        "relationship-as-node reuse remains executable until binder semantics are stricter",
-    );
+fn cypher_rejects_relationship_reused_as_node_pattern() {
+    let err = plan_cypher_error("MATCH ()-[r]-() MATCH (r) RETURN r");
+    assert!(err.contains("Binder exception: Cannot bind r as node pattern."));
 }
 
 #[test]

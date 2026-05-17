@@ -123,7 +123,9 @@ pub(crate) fn map_key(value: &Value) -> String {
 
 pub(crate) fn agg_identity(kind: AggKind) -> Value {
     match kind {
-        AggKind::CountRows | AggKind::CountBulk | AggKind::CountDistinct => Value::Long(0),
+        AggKind::CountRows | AggKind::CountBulk | AggKind::CountDistinct | AggKind::CountIf => {
+            Value::Long(0)
+        }
         AggKind::Sum | AggKind::SumOrZero => Value::Int(0),
         AggKind::AvgOrZero => Value::Float(0.0),
         AggKind::AvgOrNull => Value::Null,
@@ -174,6 +176,24 @@ pub(crate) fn compute_aggregate(
                     continue;
                 }
                 if seen.insert(encode_value(&v)) {
+                    count += 1;
+                }
+            }
+            Ok(Value::Long(count))
+        }
+        AggKind::CountIf => {
+            let expr = agg
+                .arg
+                .as_ref()
+                .ok_or_else(|| InterpretError::Type("count_if requires an argument".into()))?;
+            let mut seen = BTreeSet::new();
+            let mut count = 0i64;
+            for row in rows {
+                let value = eval(expr, row, graph)?;
+                if agg.distinct && !seen.insert(encode_value(&value)) {
+                    continue;
+                }
+                if aggregate_truthy(&value) {
                     count += 1;
                 }
             }
@@ -384,6 +404,22 @@ fn aggregate_values(
         values.push(value);
     }
     Ok(values)
+}
+
+fn aggregate_truthy(value: &Value) -> bool {
+    use num_traits::Zero;
+
+    match value {
+        Value::Bool(value) => *value,
+        Value::Byte(value) => *value != 0,
+        Value::Short(value) => *value != 0,
+        Value::Int(value) | Value::Long(value) => *value != 0,
+        Value::Float32(value) => !value.is_nan() && *value != 0.0,
+        Value::Float(value) => !value.is_nan() && *value != 0.0,
+        Value::BigInt(value) => !value.is_zero(),
+        Value::BigDecimal(value) => !value.is_zero(),
+        _ => false,
+    }
 }
 
 fn numeric_aggregate_values(
