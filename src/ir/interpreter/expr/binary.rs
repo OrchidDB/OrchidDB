@@ -6,7 +6,8 @@ use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::{BinaryOp, IrExpr};
 use crate::ir::value::Value;
 
-use super::super::{InterpretError, IrResult, Row};
+use super::super::runtime::temporal;
+use super::super::{IrResult, Row};
 use super::arithmetic;
 use super::eval;
 
@@ -54,7 +55,7 @@ pub(crate) fn eval_binary(
             None => Value::Null,
         }),
         BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
-            match lhs.three_valued_cmp(&rhs) {
+            match temporal_cmp(&lhs, &rhs).or_else(|| lhs.three_valued_cmp(&rhs)) {
                 Some(ord) => Ok(Value::Bool(match op {
                     BinaryOp::Lt => ord == std::cmp::Ordering::Less,
                     BinaryOp::Lte => ord != std::cmp::Ordering::Greater,
@@ -67,5 +68,29 @@ pub(crate) fn eval_binary(
         }
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => arithmetic(op, &lhs, &rhs),
         BinaryOp::And | BinaryOp::Or => unreachable!(),
+    }
+}
+
+fn temporal_cmp(lhs: &Value, rhs: &Value) -> Option<std::cmp::Ordering> {
+    match (lhs, rhs) {
+        (Value::DateTime(left), Value::DateTime(right))
+        | (Value::DateTime(left), Value::String(right))
+        | (Value::String(left), Value::DateTime(right))
+        | (Value::String(left), Value::String(right)) => {
+            if let (Some(left), Some(right)) = (
+                temporal::temporal_sort_key(left),
+                temporal::temporal_sort_key(right),
+            ) {
+                return Some(left.cmp(&right));
+            }
+            if let (Some(left), Some(right)) = (
+                temporal::interval_sort_key(left),
+                temporal::interval_sort_key(right),
+            ) {
+                return Some(left.cmp(&right));
+            }
+            None
+        }
+        _ => None,
     }
 }

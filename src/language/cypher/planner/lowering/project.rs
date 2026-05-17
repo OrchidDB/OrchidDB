@@ -53,20 +53,14 @@ fn lower_with_projection_body(
     input: Node,
     projection: &ProjectionBody,
 ) -> CypherPlanResult<(Node, Vec<String>)> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WithProjection);
-        lowerer.push_traversal(traversal);
-    }
-    let result = lower_projection_body(lowerer, input, projection, true);
-    if let Ok((_, fields)) = &result {
-        lowerer.record_current_imports(lowerer.visible_fields());
-        lowerer.record_current_outputs(fields.clone());
-    }
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
-    result
+    lowerer.with_child_traversal(CypherTraversalKind::WithProjection, |lowerer| {
+        let result = lower_projection_body(lowerer, input, projection, true);
+        if let Ok((_, fields)) = &result {
+            lowerer.record_current_imports(lowerer.visible_fields());
+            lowerer.record_current_outputs(fields.clone());
+        }
+        result
+    })
 }
 
 fn lower_with_where_predicate(
@@ -74,20 +68,14 @@ fn lower_with_where_predicate(
     input: Node,
     filter: &Expr,
 ) -> CypherPlanResult<Node> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-        lowerer.push_traversal(traversal);
-    }
-    let result = predicate::lower_where_predicate(lowerer, input, filter);
-    if result.is_ok() {
-        lowerer.record_current_imports(lowerer.visible_fields());
-        lowerer.record_current_correlation(lowerer.visible_fields());
-    }
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
-    result
+    lowerer.with_child_traversal(CypherTraversalKind::WherePredicate, |lowerer| {
+        let result = predicate::lower_where_predicate(lowerer, input, filter);
+        if result.is_ok() {
+            lowerer.record_current_imports(lowerer.visible_fields());
+            lowerer.record_current_correlation(lowerer.visible_fields());
+        }
+        result
+    })
 }
 
 fn lower_with_predicate_placement(
@@ -138,17 +126,13 @@ pub fn lower_return(
     input: Node,
     clause: &ReturnClause,
 ) -> CypherPlanResult<Node> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ReturnProjection);
-        lowerer.push_traversal(traversal);
-    }
-    let (input, fields) = lower_projection_body(lowerer, input, &clause.projection, true)?;
-    lowerer.record_current_imports(lowerer.visible_fields());
-    lowerer.record_current_outputs(fields.clone());
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
+    let (input, fields) =
+        lowerer.with_child_traversal(CypherTraversalKind::ReturnProjection, |lowerer| {
+            let (input, fields) = lower_projection_body(lowerer, input, &clause.projection, true)?;
+            lowerer.record_current_imports(lowerer.visible_fields());
+            lowerer.record_current_outputs(fields.clone());
+            Ok((input, fields))
+        })?;
     lowerer.replace_scope(fields.clone());
     lowerer.set_result_fields(fields.clone());
     Ok(Node::GraphReturn {
@@ -323,20 +307,21 @@ fn lower_projection_body(
             keys,
             input: node.boxed(),
         };
-        if !hidden_sort_fields.is_empty() {
-            node = Node::GraphProject {
-                mode: ProjectMode::ReplaceScope,
-                items: fields
-                    .iter()
-                    .map(|field| ProjectionItem {
-                        alias: field.clone(),
-                        expr: IrExpr::Binding(field.clone()),
-                    })
-                    .collect(),
-                error_policy: ProjectErrorPolicy::PropagateError,
-                input: node.boxed(),
-            };
-        }
+    }
+    if !hidden_sort_fields.is_empty() {
+        let items = fields
+            .iter()
+            .map(|field| ProjectionItem {
+                alias: field.clone(),
+                expr: IrExpr::Binding(field.clone()),
+            })
+            .collect();
+        node = Node::GraphProject {
+            mode: ProjectMode::ReplaceScope,
+            items,
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: node.boxed(),
+        };
     }
     match slice_from_projection(lowerer, body, &source_fields)? {
         ProjectionSlice::None => {}
@@ -364,66 +349,62 @@ fn lower_aggregate(
     existing_fields: &[String],
     fields: &mut Vec<String>,
 ) -> CypherPlanResult<AggregateLowering> {
-    let mut rewrite = AggregateRewrite::default();
-    let mut input = input;
-    let mut final_exprs = Vec::new();
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::Aggregation);
-        lowerer.push_traversal(traversal);
-    }
-    for visible in existing_fields {
-        fields.push(visible.clone());
-        rewrite.group.push(ProjectionItem {
-            alias: visible.clone(),
-            expr: IrExpr::Binding(visible.clone()),
-        });
-        final_exprs.push((visible.clone(), Expr::Variable(visible.clone())));
-    }
-    for item in &body.items {
-        validate_expression_scope(lowerer, &item.expr, "aggregate projection expression")?;
-        let (next, expr) = materialize_pre_aggregate_expr(lowerer, input, &item.expr)?;
-        input = next;
-        let alias = item
-            .alias
-            .clone()
-            .or_else(|| expr.variable_name().map(ToString::to_string))
-            .unwrap_or_else(|| lowerer.synthetic("agg"));
-        fields.push(alias.clone());
-        let expr = rewrite_aggregate_projection_expr(
-            lowerer,
-            &expr,
-            &mut rewrite,
-            Some(&alias),
-            &mut BTreeSet::new(),
-        )?;
-        final_exprs.push((alias, expr));
-    }
-    let mut sort_keys = Vec::new();
-    for item in &body.order_by {
-        let Some(expr) =
-            order_expr_after_cardinality_projection(lowerer, body, fields, &item.expr)?
-        else {
-            return Err(invalid_order_scope());
-        };
-        sort_keys.push(sort_key(expr, item.direction));
-    }
-    lowerer.record_current_outputs(fields.clone());
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
-    let aggregate_fields: Vec<String> = rewrite
-        .group
-        .iter()
-        .map(|item| item.alias.clone())
-        .chain(rewrite.aggs.iter().map(|agg| agg.alias.clone()))
-        .collect();
-    let mut aggregate = Node::GraphAggregate {
-        group: rewrite.group,
-        aggs: rewrite.aggs,
-        fields: aggregate_fields.clone(),
-        input: input.boxed(),
-    };
+    let (aggregate_fields, final_exprs, sort_keys, mut aggregate) =
+        lowerer.with_child_traversal(CypherTraversalKind::Aggregation, |lowerer| {
+            let mut rewrite = AggregateRewrite::default();
+            let mut input = input;
+            let mut final_exprs = Vec::new();
+            for visible in existing_fields {
+                fields.push(visible.clone());
+                rewrite.group.push(ProjectionItem {
+                    alias: visible.clone(),
+                    expr: IrExpr::Binding(visible.clone()),
+                });
+                final_exprs.push((visible.clone(), Expr::Variable(visible.clone())));
+            }
+            for item in &body.items {
+                validate_expression_scope(lowerer, &item.expr, "aggregate projection expression")?;
+                let (next, expr) = materialize_pre_aggregate_expr(lowerer, input, &item.expr)?;
+                input = next;
+                let alias = item
+                    .alias
+                    .clone()
+                    .or_else(|| expr.variable_name().map(ToString::to_string))
+                    .unwrap_or_else(|| lowerer.synthetic("agg"));
+                fields.push(alias.clone());
+                let expr = rewrite_aggregate_projection_expr(
+                    lowerer,
+                    &expr,
+                    &mut rewrite,
+                    Some(&alias),
+                    &mut BTreeSet::new(),
+                )?;
+                final_exprs.push((alias, expr));
+            }
+            let mut sort_keys = Vec::new();
+            for item in &body.order_by {
+                let Some(expr) =
+                    order_expr_after_cardinality_projection(lowerer, body, fields, &item.expr)?
+                else {
+                    return Err(invalid_order_scope());
+                };
+                sort_keys.push(sort_key(expr, item.direction));
+            }
+            lowerer.record_current_outputs(fields.clone());
+            let aggregate_fields: Vec<String> = rewrite
+                .group
+                .iter()
+                .map(|item| item.alias.clone())
+                .chain(rewrite.aggs.iter().map(|agg| agg.alias.clone()))
+                .collect();
+            let aggregate = Node::GraphAggregate {
+                group: rewrite.group,
+                aggs: rewrite.aggs,
+                fields: aggregate_fields.clone(),
+                input: input.boxed(),
+            };
+            Ok((aggregate_fields, final_exprs, sort_keys, aggregate))
+        })?;
     let final_items = lowerer.with_preserved_scope(|lowerer| {
         lowerer.replace_scope(aggregate_fields);
         let mut items = Vec::with_capacity(final_exprs.len());
@@ -1329,11 +1310,7 @@ fn rewrite_aggregate_projection(
         Expr::Binary { op, lhs, rhs } => {
             let lhs = rewrite_aggregate_projection(lowerer, lhs, rewrite, None)?;
             let rhs = rewrite_aggregate_projection(lowerer, rhs, rewrite, None)?;
-            Ok(IrExpr::Binary {
-                op: lower_binary_op(*op),
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            })
+            Ok(lower_cypher_binary_expr(*op, lhs, rhs))
         }
         Expr::Property { target, key } => {
             let target = rewrite_aggregate_projection(lowerer, target, rewrite, None)?;
@@ -1490,6 +1467,29 @@ fn lower_binary_op(op: BinaryOp) -> IrBinaryOp {
         BinaryOp::Sub => IrBinaryOp::Sub,
         BinaryOp::Mul => IrBinaryOp::Mul,
         BinaryOp::Div => IrBinaryOp::Div,
+    }
+}
+
+fn lower_cypher_binary_expr(op: BinaryOp, lhs: IrExpr, rhs: IrExpr) -> IrExpr {
+    let function_name = match op {
+        BinaryOp::Eq => Some("cypher_eq"),
+        BinaryOp::Neq => Some("cypher_neq"),
+        BinaryOp::Lt => Some("cypher_lt"),
+        BinaryOp::Lte => Some("cypher_lte"),
+        BinaryOp::Gt => Some("cypher_gt"),
+        BinaryOp::Gte => Some("cypher_gte"),
+        _ => None,
+    };
+    if let Some(name) = function_name {
+        return IrExpr::Call {
+            name: name.to_string(),
+            args: vec![lhs, rhs],
+        };
+    }
+    IrExpr::Binary {
+        op: lower_binary_op(op),
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
     }
 }
 
@@ -3917,79 +3917,73 @@ fn materialize_list_comprehension(
     let collection_is_null = lowerer.synthetic("list_collection_null");
     let collected_alias = lowerer.synthetic("list_values");
     let right = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ListComprehension);
-            lowerer.push_traversal(traversal);
-        }
-        let start = Node::GraphCorrelate {
-            bindings: lowerer.visible_fields(),
-        };
-        let (right, collection) = lower_expr_with_input(lowerer, start, collection)?;
-        let collection_project = Node::GraphProject {
-            mode: ProjectMode::PreserveVisible,
-            items: vec![
-                ProjectionItem {
-                    alias: collection_alias.clone(),
-                    expr: collection.clone(),
-                },
-                ProjectionItem {
-                    alias: collection_is_null.clone(),
-                    expr: IrExpr::IsNull(Box::new(collection)),
-                },
-            ],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: right.boxed(),
-        };
-        lowerer.add_visible(collection_alias.clone());
-        lowerer.add_visible(collection_is_null.clone());
-        let collection_scope = lowerer.visible_fields();
-        let start = Node::GraphCorrelate {
-            bindings: collection_scope.clone(),
-        };
-        let mut right = Node::GraphUnwind {
-            input_expr: IrExpr::Binding(collection_alias.clone()),
-            bind: variable.to_string(),
-            outer: false,
-            input: start.boxed(),
-        };
-        lowerer.add_visible(variable.to_string());
-        if let Some(predicate_expr) = predicate_expr {
-            right = predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
-        }
-        let (right, value) = lower_expr_with_input(lowerer, right, map)?;
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        let collect = Node::GraphCollect {
-            value,
-            distinct: false,
-            order: Vec::new(),
-            alias: collected_alias.clone(),
-            input: right.boxed(),
-        };
-        let right = Node::GraphApply {
-            kind: ApplyKind::Scalar,
-            correlation: collection_scope,
-            outputs: vec![collected_alias.clone()],
-            optional_missing: OptionalMissing::Null,
-            left: collection_project.boxed(),
-            right: collect.boxed(),
-        };
-        Ok(Node::GraphProject {
-            mode: ProjectMode::ReplaceScope,
-            items: vec![ProjectionItem {
-                alias: alias.clone(),
-                expr: IrExpr::Case {
-                    arms: vec![(
-                        IrExpr::Binding(collection_is_null.clone()),
-                        IrExpr::Lit(Lit::Null),
-                    )],
-                    otherwise: Some(Box::new(IrExpr::Binding(collected_alias.clone()))),
-                },
-            }],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: right.boxed(),
+        lowerer.with_child_traversal(CypherTraversalKind::ListComprehension, |lowerer| {
+            let start = Node::GraphCorrelate {
+                bindings: lowerer.visible_fields(),
+            };
+            let (right, collection) = lower_expr_with_input(lowerer, start, collection)?;
+            let collection_project = Node::GraphProject {
+                mode: ProjectMode::PreserveVisible,
+                items: vec![
+                    ProjectionItem {
+                        alias: collection_alias.clone(),
+                        expr: collection.clone(),
+                    },
+                    ProjectionItem {
+                        alias: collection_is_null.clone(),
+                        expr: IrExpr::IsNull(Box::new(collection)),
+                    },
+                ],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: right.boxed(),
+            };
+            lowerer.add_visible(collection_alias.clone());
+            lowerer.add_visible(collection_is_null.clone());
+            let collection_scope = lowerer.visible_fields();
+            let start = Node::GraphCorrelate {
+                bindings: collection_scope.clone(),
+            };
+            let mut right = Node::GraphUnwind {
+                input_expr: IrExpr::Binding(collection_alias.clone()),
+                bind: variable.to_string(),
+                outer: false,
+                input: start.boxed(),
+            };
+            lowerer.add_visible(variable.to_string());
+            if let Some(predicate_expr) = predicate_expr {
+                right = predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
+            }
+            let (right, value) = lower_expr_with_input(lowerer, right, map)?;
+            let collect = Node::GraphCollect {
+                value,
+                distinct: false,
+                order: Vec::new(),
+                alias: collected_alias.clone(),
+                input: right.boxed(),
+            };
+            let right = Node::GraphApply {
+                kind: ApplyKind::Scalar,
+                correlation: collection_scope,
+                outputs: vec![collected_alias.clone()],
+                optional_missing: OptionalMissing::Null,
+                left: collection_project.boxed(),
+                right: collect.boxed(),
+            };
+            Ok(Node::GraphProject {
+                mode: ProjectMode::ReplaceScope,
+                items: vec![ProjectionItem {
+                    alias: alias.clone(),
+                    expr: IrExpr::Case {
+                        arms: vec![(
+                            IrExpr::Binding(collection_is_null.clone()),
+                            IrExpr::Lit(Lit::Null),
+                        )],
+                        otherwise: Some(Box::new(IrExpr::Binding(collected_alias.clone()))),
+                    },
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: right.boxed(),
+            })
         })
     })?;
     Ok((
@@ -4036,104 +4030,98 @@ fn materialize_quantifier(
     let collection_alias = lowerer.synthetic("quantifier_collection");
     let collection_is_null = lowerer.synthetic("quantifier_collection_null");
     let right = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::Quantifier);
-            lowerer.push_traversal(traversal);
-        }
-        let start = Node::GraphCorrelate {
-            bindings: lowerer.visible_fields(),
-        };
-        let (right, collection) = lower_expr_with_input(lowerer, start, collection)?;
-        let right = Node::GraphProject {
-            mode: ProjectMode::PreserveVisible,
-            items: vec![
-                ProjectionItem {
-                    alias: collection_alias.clone(),
-                    expr: collection.clone(),
-                },
-                ProjectionItem {
-                    alias: collection_is_null.clone(),
-                    expr: IrExpr::IsNull(Box::new(collection)),
-                },
-            ],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: right.boxed(),
-        };
-        lowerer.add_visible(collection_alias.clone());
-        lowerer.add_visible(collection_is_null.clone());
-        let collection_scope = lowerer.visible_fields();
+        lowerer.with_child_traversal(CypherTraversalKind::Quantifier, |lowerer| {
+            let start = Node::GraphCorrelate {
+                bindings: lowerer.visible_fields(),
+            };
+            let (right, collection) = lower_expr_with_input(lowerer, start, collection)?;
+            let right = Node::GraphProject {
+                mode: ProjectMode::PreserveVisible,
+                items: vec![
+                    ProjectionItem {
+                        alias: collection_alias.clone(),
+                        expr: collection.clone(),
+                    },
+                    ProjectionItem {
+                        alias: collection_is_null.clone(),
+                        expr: IrExpr::IsNull(Box::new(collection)),
+                    },
+                ],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: right.boxed(),
+            };
+            lowerer.add_visible(collection_alias.clone());
+            lowerer.add_visible(collection_is_null.clone());
+            let collection_scope = lowerer.visible_fields();
 
-        let aggregate_start = Node::GraphCorrelate {
-            bindings: collection_scope.clone(),
-        };
-        let mut rows = Node::GraphUnwind {
-            input_expr: IrExpr::Binding(collection_alias.clone()),
-            bind: variable.to_string(),
-            outer: false,
-            input: aggregate_start.boxed(),
-        };
-        lowerer.add_visible(variable.to_string());
-        let (rows, predicate) = lower_expr_with_input(lowerer, rows, predicate_expr)?;
-        let true_value = IrExpr::Case {
-            arms: vec![(predicate.clone(), IrExpr::Lit(Lit::Int(1)))],
-            otherwise: None,
-        };
-        let aggregate = Node::GraphAggregate {
-            group: Vec::new(),
-            aggs: vec![
-                AggCall {
-                    kind: AggKind::CountRows,
-                    alias: total_count.clone(),
-                    arg: None,
-                    distinct: false,
-                },
-                AggCall {
-                    kind: AggKind::CountRows,
-                    alias: known_count.clone(),
-                    arg: Some(predicate),
-                    distinct: false,
-                },
-                AggCall {
-                    kind: AggKind::CountRows,
-                    alias: true_count.clone(),
-                    arg: Some(true_value),
-                    distinct: false,
-                },
-            ],
-            fields: vec![total_count.clone(), known_count.clone(), true_count.clone()],
-            input: rows.boxed(),
-        };
-        let right = Node::GraphApply {
-            kind: ApplyKind::Scalar,
-            correlation: collection_scope,
-            outputs: vec![total_count.clone(), known_count.clone(), true_count.clone()],
-            optional_missing: OptionalMissing::Null,
-            left: right.boxed(),
-            right: aggregate.boxed(),
-        };
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        Ok(Node::GraphProject {
-            mode: ProjectMode::ReplaceScope,
-            items: vec![ProjectionItem {
-                alias: alias.clone(),
-                expr: IrExpr::Case {
-                    arms: vec![(
-                        IrExpr::Binding(collection_is_null.clone()),
-                        IrExpr::Lit(Lit::Null),
-                    )],
-                    otherwise: Some(Box::new(quantifier_result_expr(
-                        kind,
-                        &total_count,
-                        &known_count,
-                        &true_count,
-                    ))),
-                },
-            }],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: right.boxed(),
+            let aggregate_start = Node::GraphCorrelate {
+                bindings: collection_scope.clone(),
+            };
+            let rows = Node::GraphUnwind {
+                input_expr: IrExpr::Binding(collection_alias.clone()),
+                bind: variable.to_string(),
+                outer: false,
+                input: aggregate_start.boxed(),
+            };
+            lowerer.add_visible(variable.to_string());
+            let (rows, predicate) = lower_expr_with_input(lowerer, rows, predicate_expr)?;
+            let true_value = IrExpr::Case {
+                arms: vec![(predicate.clone(), IrExpr::Lit(Lit::Int(1)))],
+                otherwise: None,
+            };
+            let aggregate = Node::GraphAggregate {
+                group: Vec::new(),
+                aggs: vec![
+                    AggCall {
+                        kind: AggKind::CountRows,
+                        alias: total_count.clone(),
+                        arg: None,
+                        distinct: false,
+                    },
+                    AggCall {
+                        kind: AggKind::CountRows,
+                        alias: known_count.clone(),
+                        arg: Some(predicate),
+                        distinct: false,
+                    },
+                    AggCall {
+                        kind: AggKind::CountRows,
+                        alias: true_count.clone(),
+                        arg: Some(true_value),
+                        distinct: false,
+                    },
+                ],
+                fields: vec![total_count.clone(), known_count.clone(), true_count.clone()],
+                input: rows.boxed(),
+            };
+            let right = Node::GraphApply {
+                kind: ApplyKind::Scalar,
+                correlation: collection_scope,
+                outputs: vec![total_count.clone(), known_count.clone(), true_count.clone()],
+                optional_missing: OptionalMissing::Null,
+                left: right.boxed(),
+                right: aggregate.boxed(),
+            };
+            Ok(Node::GraphProject {
+                mode: ProjectMode::ReplaceScope,
+                items: vec![ProjectionItem {
+                    alias: alias.clone(),
+                    expr: IrExpr::Case {
+                        arms: vec![(
+                            IrExpr::Binding(collection_is_null.clone()),
+                            IrExpr::Lit(Lit::Null),
+                        )],
+                        otherwise: Some(Box::new(quantifier_result_expr(
+                            kind,
+                            &total_count,
+                            &known_count,
+                            &true_count,
+                        ))),
+                    },
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: right.boxed(),
+            })
         })
     })?;
     Ok((
@@ -4159,38 +4147,31 @@ fn materialize_pattern_comprehension(
 ) -> CypherPlanResult<(Node, Expr)> {
     let alias = lowerer.synthetic("pattern_list");
     let right = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal =
-                lowerer.child_traversal(parent, CypherTraversalKind::PatternComprehension);
-            lowerer.push_traversal(traversal);
-        }
-        let start = Node::GraphCorrelate {
-            bindings: lowerer.visible_fields(),
-        };
-        let history =
-            (!pattern_part.element.chains.is_empty()).then(|| lowerer.synthetic("pattern_history"));
-        let mut right = pattern::lower_pattern_part(
-            lowerer,
-            start,
-            pattern_part,
-            false,
-            history.as_deref(),
-            false,
-        )?;
-        if let Some(predicate_expr) = predicate_expr {
-            right = predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
-        }
-        let (right, value) = lower_expr_with_input(lowerer, right, map)?;
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        Ok(Node::GraphCollect {
-            value,
-            distinct: false,
-            order: Vec::new(),
-            alias: alias.clone(),
-            input: right.boxed(),
+        lowerer.with_child_traversal(CypherTraversalKind::PatternComprehension, |lowerer| {
+            let start = Node::GraphCorrelate {
+                bindings: lowerer.visible_fields(),
+            };
+            let history = (!pattern_part.element.chains.is_empty())
+                .then(|| lowerer.synthetic("pattern_history"));
+            let mut right = pattern::lower_pattern_part(
+                lowerer,
+                start,
+                pattern_part,
+                false,
+                history.as_deref(),
+                false,
+            )?;
+            if let Some(predicate_expr) = predicate_expr {
+                right = predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
+            }
+            let (right, value) = lower_expr_with_input(lowerer, right, map)?;
+            Ok(Node::GraphCollect {
+                value,
+                distinct: false,
+                order: Vec::new(),
+                alias: alias.clone(),
+                input: right.boxed(),
+            })
         })
     })?;
     Ok((
@@ -4301,56 +4282,47 @@ fn lower_exists_right_plan(
     lowerer: &mut Lowerer,
     exists: &ExistsSubquery,
 ) -> CypherPlanResult<Node> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ExistsSubquery);
-        lowerer.push_traversal(traversal);
-    }
-    let right = if let Some(query) = &exists.query {
-        lowerer.lower_query_with_unions(query).map(|(node, _)| node)
-    } else {
-        let mut right = Node::GraphCorrelate {
-            bindings: lowerer.visible_fields(),
-        };
-        let history = exists
-            .patterns
-            .iter()
-            .any(|part| !part.element.chains.is_empty())
-            .then(|| lowerer.synthetic("exists_history"));
-        let mut history_available = false;
-        for part in &exists.patterns {
-            right = pattern::lower_pattern_part(
-                lowerer,
-                right,
-                part,
-                false,
-                history.as_deref(),
-                history_available,
-            )?;
-            if !part.element.chains.is_empty() {
-                history_available = true;
+    lowerer.with_child_traversal(CypherTraversalKind::ExistsSubquery, |lowerer| {
+        if let Some(query) = &exists.query {
+            lowerer.lower_query_with_unions(query).map(|(node, _)| node)
+        } else {
+            let mut right = Node::GraphCorrelate {
+                bindings: lowerer.visible_fields(),
+            };
+            let history = exists
+                .patterns
+                .iter()
+                .any(|part| !part.element.chains.is_empty())
+                .then(|| lowerer.synthetic("exists_history"));
+            let mut history_available = false;
+            for part in &exists.patterns {
+                right = pattern::lower_pattern_part(
+                    lowerer,
+                    right,
+                    part,
+                    false,
+                    history.as_deref(),
+                    history_available,
+                )?;
+                if !part.element.chains.is_empty() {
+                    history_available = true;
+                }
             }
+            if let Some(predicate_expr) = &exists.predicate {
+                right = lowerer.with_child_traversal(
+                    CypherTraversalKind::WherePredicate,
+                    |lowerer| {
+                        let right =
+                            predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
+                        lowerer.record_current_imports(lowerer.visible_fields());
+                        lowerer.record_current_correlation(lowerer.visible_fields());
+                        Ok(right)
+                    },
+                )?;
+            }
+            Ok(right)
         }
-        if let Some(predicate_expr) = &exists.predicate {
-            let parent = lowerer.current_traversal().cloned();
-            if let Some(parent) = parent.as_ref() {
-                let traversal =
-                    lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-                lowerer.push_traversal(traversal);
-            }
-            right = predicate::lower_where_predicate(lowerer, right, predicate_expr)?;
-            lowerer.record_current_imports(lowerer.visible_fields());
-            lowerer.record_current_correlation(lowerer.visible_fields());
-            if parent.is_some() {
-                lowerer.pop_traversal();
-            }
-        }
-        Ok(right)
-    };
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
-    right
+    })
 }
 
 pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
@@ -4365,7 +4337,7 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
         },
         Expr::Variable(name) => IrExpr::Binding(name.clone()),
         Expr::Property { target, key } if key == "*" => IrExpr::Call {
-            name: "properties".to_string(),
+            name: "cypher_property_star".to_string(),
             args: vec![lower_expr(lowerer, target)?],
         },
         Expr::Property { target, key } => match target.as_ref() {
@@ -4469,24 +4441,11 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 rhs: Box::new(lower_expr(lowerer, expr)?),
             },
         },
-        Expr::Binary { op, lhs, rhs } => IrExpr::Binary {
-            op: match op {
-                BinaryOp::Or => IrBinaryOp::Or,
-                BinaryOp::And => IrBinaryOp::And,
-                BinaryOp::Eq => IrBinaryOp::Eq,
-                BinaryOp::Neq => IrBinaryOp::Neq,
-                BinaryOp::Lt => IrBinaryOp::Lt,
-                BinaryOp::Lte => IrBinaryOp::Lte,
-                BinaryOp::Gt => IrBinaryOp::Gt,
-                BinaryOp::Gte => IrBinaryOp::Gte,
-                BinaryOp::Add => IrBinaryOp::Add,
-                BinaryOp::Sub => IrBinaryOp::Sub,
-                BinaryOp::Mul => IrBinaryOp::Mul,
-                BinaryOp::Div => IrBinaryOp::Div,
-            },
-            lhs: Box::new(lower_expr(lowerer, lhs)?),
-            rhs: Box::new(lower_expr(lowerer, rhs)?),
-        },
+        Expr::Binary { op, lhs, rhs } => {
+            let lhs = lower_expr(lowerer, lhs)?;
+            let rhs = lower_expr(lowerer, rhs)?;
+            lower_cypher_binary_expr(*op, lhs, rhs)
+        }
         Expr::IsNull(expr) => IrExpr::IsNull(Box::new(lower_expr(lowerer, expr)?)),
         Expr::IsNotNull(expr) => IrExpr::IsNotNull(Box::new(lower_expr(lowerer, expr)?)),
         Expr::StringPredicate {
@@ -4503,6 +4462,11 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             distinct,
             args,
         } => {
+            if name.eq_ignore_ascii_case("typeof") && args.len() == 1 {
+                if let Some(type_name) = static_typeof_expr(&args[0]) {
+                    return Ok(IrExpr::Lit(Lit::String(type_name)));
+                }
+            }
             if aggregate_kind(name).is_some() {
                 return Err(CypherPlanError::Unsupported(
                     "aggregate functions must be lowered through aggregate projection".to_string(),
@@ -4568,6 +4532,123 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             ));
         }
     })
+}
+
+fn static_typeof_expr(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::Null) => Some("NULL".to_string()),
+        Expr::Literal(Literal::Bool(_)) => Some("BOOL".to_string()),
+        Expr::Literal(Literal::Float(_)) => Some("DOUBLE".to_string()),
+        Expr::Literal(Literal::String(_)) => Some("STRING".to_string()),
+        Expr::Literal(Literal::Integer(value)) => Some(integer_literal_type(value).to_string()),
+        Expr::List(items) => {
+            let item_type = items
+                .iter()
+                .filter_map(static_typeof_expr)
+                .reduce(unify_numeric_type)
+                .unwrap_or_else(|| "ANY".to_string());
+            Some(format!("{item_type}[]"))
+        }
+        Expr::Map(items) => {
+            let fields = items
+                .iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{key} {}",
+                        static_typeof_expr(value).unwrap_or_else(|| "ANY".to_string())
+                    )
+                })
+                .collect::<Vec<_>>();
+            Some(format!("STRUCT({})", fields.join(", ")))
+        }
+        Expr::Function { name, args, .. }
+            if name.eq_ignore_ascii_case("cast") && args.len() == 2 =>
+        {
+            match &args[1] {
+                Expr::Literal(Literal::String(type_name)) => Some(type_name.to_ascii_uppercase()),
+                _ => None,
+            }
+        }
+        Expr::Function { name, .. } if name.eq_ignore_ascii_case("date") => {
+            Some("DATE".to_string())
+        }
+        Expr::Function { name, .. } if name.eq_ignore_ascii_case("timestamp") => {
+            Some("TIMESTAMP".to_string())
+        }
+        Expr::Function { name, .. } if name.eq_ignore_ascii_case("interval") => {
+            Some("INTERVAL".to_string())
+        }
+        Expr::Function { name, .. } if name.eq_ignore_ascii_case("blob") => {
+            Some("BLOB".to_string())
+        }
+        Expr::Function { name, .. } if name.eq_ignore_ascii_case("gen_random_uuid") => {
+            Some("UUID".to_string())
+        }
+        Expr::Function { name, args, .. }
+            if name.eq_ignore_ascii_case("map") && args.len() == 2 =>
+        {
+            Some(format!(
+                "MAP({}, {})",
+                static_collection_item_type(&args[0]).unwrap_or_else(|| "ANY".to_string()),
+                static_collection_item_type(&args[1]).unwrap_or_else(|| "ANY".to_string())
+            ))
+        }
+        Expr::Function { name, args, .. } if name.eq_ignore_ascii_case("union_value") => {
+            if let [Expr::Literal(Literal::String(tag)), value] = args.as_slice() {
+                Some(format!(
+                    "UNION({tag} {})",
+                    static_typeof_expr(value).unwrap_or_else(|| "ANY".to_string())
+                ))
+            } else if let [Expr::Map(fields)] = args.as_slice() {
+                fields.first().map(|(tag, value)| {
+                    format!(
+                        "UNION({tag} {})",
+                        static_typeof_expr(value).unwrap_or_else(|| "ANY".to_string())
+                    )
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn static_collection_item_type(expr: &Expr) -> Option<String> {
+    static_typeof_expr(expr).map(|type_name| {
+        type_name
+            .strip_suffix("[]")
+            .unwrap_or(type_name.as_str())
+            .to_string()
+    })
+}
+
+fn integer_literal_type(value: &str) -> &'static str {
+    if value.parse::<i64>().is_ok() {
+        "INT64"
+    } else if value.parse::<i128>().is_ok() {
+        "INT128"
+    } else {
+        "UINT128"
+    }
+}
+
+fn unify_numeric_type(left: String, right: String) -> String {
+    if left == right {
+        return left;
+    }
+    let rank = |value: &str| match value {
+        "UINT128" => 4,
+        "INT128" => 3,
+        "DOUBLE" | "FLOAT" => 2,
+        "INT64" | "INT32" | "INT16" | "INT8" | "UINT64" | "UINT32" | "UINT16" | "UINT8" => 1,
+        _ => 0,
+    };
+    if rank(&right) > rank(&left) {
+        right
+    } else {
+        left
+    }
 }
 
 fn contains_aggregate(expr: &Expr) -> bool {

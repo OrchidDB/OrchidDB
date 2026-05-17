@@ -8,7 +8,7 @@
 //! `format::lines_from_batch`, the expected lines have any TinkerPop
 //! tag prefix stripped so we can match plain scalars cleanly.
 
-use crate::format::strip_expected_tags;
+use crate::format::{ignore_unrepresented_empty_rows, strip_expected_tags};
 
 /// Treat numeric literals as equal regardless of trailing-zero / decimal
 /// formatting (`1049.0` ≡ `1049`, `1.50` ≡ `1.5`). Applied to both sides
@@ -95,6 +95,25 @@ pub fn matches(
         .map(|s| normalize_numbers(&strip_expected_tags(s).trim().to_string()))
         .filter(|s| !s.is_empty() || !expected.is_empty()) // keep empties for empty-expected cases
         .collect();
+    let normalized_actual = if ignore_unrepresented_empty_rows()
+        && !normalized_actual.is_empty()
+        && !normalized_expected.iter().any(|line| line.is_empty())
+    {
+        let compact = normalized_actual
+            .iter()
+            .filter(|line| !line.is_empty())
+            .cloned()
+            .collect::<Vec<_>>();
+        if compact.len() == normalized_expected.len()
+            && rows_match(&compact, &normalized_expected, ordered)
+        {
+            compact
+        } else {
+            normalized_actual
+        }
+    } else {
+        normalized_actual
+    };
 
     if normalized_actual.len() != normalized_expected.len() {
         return Verdict::Mismatch {
@@ -135,4 +154,15 @@ pub fn matches(
             }
         }
     }
+}
+
+fn rows_match(actual: &[String], expected: &[String], ordered: bool) -> bool {
+    if ordered {
+        return actual == expected;
+    }
+    let mut a_sorted = actual.to_vec();
+    let mut e_sorted = expected.to_vec();
+    a_sorted.sort();
+    e_sorted.sort();
+    a_sorted == e_sorted
 }

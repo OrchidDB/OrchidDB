@@ -45,17 +45,12 @@ fn lower_match(
         }
     }
     if let Some(predicate) = &clause.predicate {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-            lowerer.push_traversal(traversal);
-        }
-        input = predicate::lower_where_predicate(lowerer, input, predicate)?;
-        lowerer.record_current_imports(lowerer.visible_fields());
-        lowerer.record_current_correlation(lowerer.visible_fields());
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
+        input = lowerer.with_child_traversal(CypherTraversalKind::WherePredicate, |lowerer| {
+            let input = predicate::lower_where_predicate(lowerer, input, predicate)?;
+            lowerer.record_current_imports(lowerer.visible_fields());
+            lowerer.record_current_correlation(lowerer.visible_fields());
+            Ok(input)
+        })?;
     }
     Ok(input)
 }
@@ -68,66 +63,55 @@ fn lower_optional_match(
     let outer_fields = lowerer.visible_fields();
     let outer_visible = lowerer.visible_set();
     let (right, outputs, output_kinds) = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal =
-                lowerer.child_traversal(parent, CypherTraversalKind::OptionalMatchPattern);
-            lowerer.push_traversal(traversal);
-        }
+        lowerer.with_child_traversal(CypherTraversalKind::OptionalMatchPattern, |lowerer| {
+            let mut right = Node::GraphCorrelate {
+                bindings: outer_fields.clone(),
+            };
+            let history = pattern_history_binding(lowerer, &clause.patterns);
+            let mut history_available = false;
+            for part in &clause.patterns {
+                right = pattern::lower_pattern_part(
+                    lowerer,
+                    right,
+                    part,
+                    false,
+                    history.as_deref(),
+                    history_available,
+                )?;
+                if !part.element.chains.is_empty() {
+                    history_available = true;
+                }
+            }
+            if let Some(predicate) = &clause.predicate {
+                right = lowerer.with_child_traversal(
+                    CypherTraversalKind::WherePredicate,
+                    |lowerer| {
+                        let right = predicate::lower_where_predicate(lowerer, right, predicate)?;
+                        lowerer.record_current_imports(lowerer.visible_fields());
+                        lowerer.record_current_correlation(lowerer.visible_fields());
+                        Ok(right)
+                    },
+                )?;
+            }
 
-        let mut right = Node::GraphCorrelate {
-            bindings: outer_fields.clone(),
-        };
-        let history = pattern_history_binding(lowerer, &clause.patterns);
-        let mut history_available = false;
-        for part in &clause.patterns {
-            right = pattern::lower_pattern_part(
-                lowerer,
-                right,
-                part,
-                false,
-                history.as_deref(),
-                history_available,
-            )?;
-            if !part.element.chains.is_empty() {
-                history_available = true;
-            }
-        }
-        if let Some(predicate) = &clause.predicate {
-            let parent = lowerer.current_traversal().cloned();
-            if let Some(parent) = parent.as_ref() {
-                let traversal =
-                    lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-                lowerer.push_traversal(traversal);
-            }
-            right = predicate::lower_where_predicate(lowerer, right, predicate)?;
-            lowerer.record_current_imports(lowerer.visible_fields());
-            lowerer.record_current_correlation(lowerer.visible_fields());
-            if parent.is_some() {
-                lowerer.pop_traversal();
-            }
-        }
-
-        let outputs = lowerer
-            .visible_fields()
-            .into_iter()
-            .filter(|binding| !outer_visible.contains(binding))
-            .collect::<Vec<_>>();
-        let output_kinds = outputs
-            .iter()
-            .map(|binding| {
-                (
-                    binding.clone(),
-                    lowerer
-                        .binding_kind(binding)
-                        .unwrap_or(BindingKind::Unknown),
-                )
-            })
-            .collect::<Vec<_>>();
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        Ok((right, outputs, output_kinds))
+            let outputs = lowerer
+                .visible_fields()
+                .into_iter()
+                .filter(|binding| !outer_visible.contains(binding))
+                .collect::<Vec<_>>();
+            let output_kinds = outputs
+                .iter()
+                .map(|binding| {
+                    (
+                        binding.clone(),
+                        lowerer
+                            .binding_kind(binding)
+                            .unwrap_or(BindingKind::Unknown),
+                    )
+                })
+                .collect::<Vec<_>>();
+            Ok((right, outputs, output_kinds))
+        })
     })?;
 
     let node = Node::GraphApply {
@@ -158,33 +142,25 @@ fn lower_unwind(
     input: Node,
     clause: &UnwindClause,
 ) -> CypherPlanResult<Node> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::Unwind);
-        lowerer.push_traversal(traversal);
-    }
-    if lowerer.is_visible(&clause.alias) {
-        if parent.is_some() {
-            lowerer.pop_traversal();
+    let node = lowerer.with_child_traversal(CypherTraversalKind::Unwind, |lowerer| {
+        if lowerer.is_visible(&clause.alias) {
+            return Err(CypherPlanError::Invalid(format!(
+                "UNWIND alias `{}` is already in scope",
+                clause.alias
+            )));
         }
-        return Err(CypherPlanError::Invalid(format!(
-            "UNWIND alias `{}` is already in scope",
-            clause.alias
-        )));
-    }
-    project::validate_expression_scope(lowerer, &clause.expr, "UNWIND expression")?;
-    let (input, input_expr) = project::lower_expr_with_input(lowerer, input, &clause.expr)?;
-    let node = Node::GraphUnwind {
-        input_expr,
-        bind: clause.alias.clone(),
-        outer: false,
-        input: input.boxed(),
-    };
-    lowerer.record_current_imports(lowerer.visible_fields());
-    lowerer.record_current_outputs(vec![clause.alias.clone()]);
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
+        project::validate_expression_scope(lowerer, &clause.expr, "UNWIND expression")?;
+        let (input, input_expr) = project::lower_expr_with_input(lowerer, input, &clause.expr)?;
+        let node = Node::GraphUnwind {
+            input_expr,
+            bind: clause.alias.clone(),
+            outer: false,
+            input: input.boxed(),
+        };
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_outputs(vec![clause.alias.clone()]);
+        Ok(node)
+    })?;
     lowerer.add_visible(clause.alias.clone());
     Ok(node)
 }
@@ -219,83 +195,78 @@ fn lower_call(
         )));
     }
 
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ProcedureCall);
-        lowerer.push_traversal(traversal);
-    }
+    let (node, imports) =
+        lowerer.with_child_traversal(CypherTraversalKind::ProcedureCall, |lowerer| {
+            let mut call_input = input;
+            let mut args = Vec::with_capacity(clause.args.len());
+            for arg in &clause.args {
+                project::validate_expression_scope(lowerer, arg, "procedure argument")?;
+                let (next, value) = project::lower_expr_with_input(lowerer, call_input, arg)?;
+                call_input = next;
+                args.push(ProcedureArg { name: None, value });
+            }
+            let call = Node::GraphProcedureCall {
+                name: clause.name.clone(),
+                args,
+                yields: source_yields.clone(),
+                mode: procedure_mode(&clause.name),
+                input: if clause.standalone && clause.args.is_empty() {
+                    None
+                } else {
+                    Some(call_input.boxed())
+                },
+            };
 
-    let mut call_input = input;
-    let mut args = Vec::with_capacity(clause.args.len());
-    for arg in &clause.args {
-        project::validate_expression_scope(lowerer, arg, "procedure argument")?;
-        let (next, value) = project::lower_expr_with_input(lowerer, call_input, arg)?;
-        call_input = next;
-        args.push(ProcedureArg { name: None, value });
-    }
-    let call = Node::GraphProcedureCall {
-        name: clause.name.clone(),
-        args,
-        yields: source_yields.clone(),
-        mode: procedure_mode(&clause.name),
-        input: if clause.standalone && clause.args.is_empty() {
-            None
-        } else {
-            Some(call_input.boxed())
-        },
-    };
+            let mut node = if source_yields != alias_yields {
+                let mut items = lowerer
+                    .visible_fields()
+                    .into_iter()
+                    .map(|field| ProjectionItem {
+                        alias: field.clone(),
+                        expr: crate::ir::expr::IrExpr::Binding(field),
+                    })
+                    .collect::<Vec<_>>();
+                items.extend(source_yields.iter().zip(alias_yields.iter()).map(
+                    |(field, alias)| ProjectionItem {
+                        alias: alias.clone(),
+                        expr: crate::ir::expr::IrExpr::Binding(field.clone()),
+                    },
+                ));
+                Node::GraphProject {
+                    mode: ProjectMode::ReplaceScope,
+                    items,
+                    error_policy: ProjectErrorPolicy::PropagateError,
+                    input: call.boxed(),
+                }
+            } else {
+                call
+            };
 
-    let mut node = if source_yields != alias_yields {
-        let mut items = lowerer
-            .visible_fields()
-            .into_iter()
-            .map(|field| ProjectionItem {
-                alias: field.clone(),
-                expr: crate::ir::expr::IrExpr::Binding(field),
-            })
-            .collect::<Vec<_>>();
-        items.extend(
-            source_yields
-                .iter()
-                .zip(alias_yields.iter())
-                .map(|(field, alias)| ProjectionItem {
-                    alias: alias.clone(),
-                    expr: crate::ir::expr::IrExpr::Binding(field.clone()),
-                }),
-        );
-        Node::GraphProject {
-            mode: ProjectMode::ReplaceScope,
-            items,
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: call.boxed(),
-        }
-    } else {
-        call
-    };
+            let imports = lowerer.visible_fields();
+            for output in &alias_yields {
+                lowerer.add_visible(output.clone());
+            }
+            if let Some(predicate) = &clause.predicate {
+                node = lowerer.with_child_traversal(
+                    CypherTraversalKind::WherePredicate,
+                    |lowerer| {
+                        let node = predicate::lower_where_predicate(lowerer, node, predicate)?;
+                        lowerer.record_current_imports(lowerer.visible_fields());
+                        lowerer.record_current_correlation(lowerer.visible_fields());
+                        Ok(node)
+                    },
+                )?;
+            }
 
-    let imports = lowerer.visible_fields();
+            lowerer.record_current_imports(imports.clone());
+            lowerer.record_current_outputs(alias_yields.clone());
+            Ok((node, imports))
+        })?;
     for output in &alias_yields {
         lowerer.add_visible(output.clone());
     }
-    if let Some(predicate) = &clause.predicate {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-            lowerer.push_traversal(traversal);
-        }
-        node = predicate::lower_where_predicate(lowerer, node, predicate)?;
-        lowerer.record_current_imports(lowerer.visible_fields());
-        lowerer.record_current_correlation(lowerer.visible_fields());
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-    }
-
     lowerer.record_current_imports(imports);
     lowerer.record_current_outputs(alias_yields.clone());
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
     Ok(node)
 }
 

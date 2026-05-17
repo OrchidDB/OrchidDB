@@ -18,7 +18,7 @@ use crate::ir::policy::PropertyMissing;
 use crate::ir::value::Value;
 
 use super::Row;
-use super::runtime::{algorithm_property, eval_call};
+use super::runtime::{algorithm_property, eval_call, runtime_list};
 use super::{InterpretError, IrResult};
 
 pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
@@ -139,10 +139,10 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             map,
         } => {
             let source = eval(collection, row, graph)?;
-            let items = match source {
-                Value::List(items) => items,
-                Value::Null => return Ok(Value::Null),
-                other => vec![other],
+            let items = match runtime_list(&source) {
+                Some(items) => items,
+                None if matches!(source, Value::Null) => return Ok(Value::Null),
+                None => vec![source],
             };
             let mut iter = items.into_iter();
             let Some(mut acc) = iter.next() else {
@@ -160,13 +160,13 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
         }
         IrExpr::ListTransform { list, item, map } => {
             let source = eval(list, row, graph)?;
-            let items = match source {
-                Value::List(items) => items,
-                Value::Null => return Ok(Value::Null),
-                other => {
+            let items = match runtime_list(&source) {
+                Some(items) => items,
+                None if matches!(source, Value::Null) => return Ok(Value::Null),
+                None => {
                     return Err(InterpretError::Type(format!(
                         "list_transform expects a list, got {}",
-                        other.type_name()
+                        source.type_name()
                     )));
                 }
             };
@@ -184,13 +184,13 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             predicate,
         } => {
             let source = eval(list, row, graph)?;
-            let items = match source {
-                Value::List(items) => items,
-                Value::Null => return Ok(Value::Null),
-                other => {
+            let items = match runtime_list(&source) {
+                Some(items) => items,
+                None if matches!(source, Value::Null) => return Ok(Value::Null),
+                None => {
                     return Err(InterpretError::Type(format!(
                         "list_filter expects a list, got {}",
-                        other.type_name()
+                        source.type_name()
                     )));
                 }
             };

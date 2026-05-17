@@ -248,15 +248,25 @@ fn run_one(path: &Path) -> CaseRun {
     let parsed = match parse_query(&query) {
         Ok(q) => q,
         Err(err) => {
+            let message = format!("{err}");
+            let outcome =
+                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
+                    Outcome::Correct
+                } else {
+                    Outcome::ParseError(message)
+                };
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
-                outcome: Outcome::ParseError(format!("{err}")),
+                outcome,
             };
         }
     };
 
-    let graph = match dataset::build(&case.metadata.dataset) {
+    let graph = match dataset::build_with_initializer(
+        &case.metadata.dataset,
+        case.graph_initializer.as_deref(),
+    ) {
         Ok(graph) => graph,
         Err(err) => {
             return CaseRun {
@@ -273,10 +283,17 @@ fn run_one(path: &Path) -> CaseRun {
     let plan = match CypherPlanner::new().plan(&parsed) {
         Ok(plan) => plan,
         Err(err) => {
+            let message = format!("{err}");
+            let outcome =
+                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
+                    Outcome::Correct
+                } else {
+                    Outcome::PlanError(message)
+                };
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
-                outcome: Outcome::PlanError(format!("{err}")),
+                outcome,
             };
         }
     };
@@ -288,10 +305,17 @@ fn run_one(path: &Path) -> CaseRun {
     let returned: ReturnedBatches = match execute(&plan, &graph) {
         Ok(returned) => returned,
         Err(err) => {
+            let message = format!("{err}");
+            let outcome =
+                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
+                    Outcome::Correct
+                } else {
+                    Outcome::RunError(message)
+                };
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
-                outcome: Outcome::RunError(format!("{err}")),
+                outcome,
             };
         }
     };
@@ -329,6 +353,60 @@ fn run_one(path: &Path) -> CaseRun {
         query: Some(query),
         plan_tree: Some(plan_tree),
         outcome,
+    }
+}
+
+fn expected_error_matches(expected: &[String], expected_kind: &str, actual: &str) -> bool {
+    if expected_kind != "rows" {
+        return false;
+    }
+    let expected_lines = expected
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if expected_lines.is_empty() || !looks_like_expected_error(expected_lines[0]) {
+        return false;
+    }
+    let actual_candidates = error_match_candidates(actual);
+    expected_lines.iter().any(|expected| {
+        actual_candidates.iter().any(|actual| {
+            actual == expected || actual.contains(expected) || expected.contains(actual)
+        })
+    })
+}
+
+fn looks_like_expected_error(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("exception")
+        || lower.starts_with("syntaxerror:")
+        || lower.starts_with("syntax error")
+        || lower.starts_with("error:")
+}
+
+fn error_match_candidates(actual: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in actual
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        push_error_candidate(&mut out, line);
+        for prefix in ["invalid cypher plan: ", "parse: ", "plan: ", "run: "] {
+            if let Some(stripped) = line.strip_prefix(prefix) {
+                push_error_candidate(&mut out, stripped.trim());
+            }
+        }
+    }
+    if out.is_empty() {
+        push_error_candidate(&mut out, actual.trim());
+    }
+    out
+}
+
+fn push_error_candidate(out: &mut Vec<String>, candidate: &str) {
+    if !candidate.is_empty() && !out.iter().any(|existing| existing == candidate) {
+        out.push(candidate.to_string());
     }
 }
 

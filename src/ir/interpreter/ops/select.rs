@@ -4,8 +4,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::ir::value::Value;
-
 use super::super::{IrResult, Row};
 
 pub(crate) fn select_op(

@@ -16,7 +16,8 @@ use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult}
 use context::{BindingKind, CypherTraversalContext, CypherTraversalKind, ScopeFrame};
 
 pub fn lower_query(query: &Query) -> CypherPlanResult<GraphPlan> {
-    let (root, _) = lower_query_node(query)?;
+    let analyzed = crate::language::cypher::semantics::analyze_query(query)?;
+    let (root, _) = lower_query_node(analyzed.query)?;
     Ok(GraphPlan::new(GraphPlanPolicy::cypher(), root))
 }
 
@@ -164,12 +165,12 @@ impl Lowerer {
         result
     }
 
-    pub(crate) fn root_traversal(&mut self) -> CypherTraversalContext {
+    fn root_traversal(&mut self) -> CypherTraversalContext {
         let id = self.fresh_scope_id();
         CypherTraversalContext::root(id)
     }
 
-    pub(crate) fn child_traversal(
+    fn child_traversal(
         &mut self,
         parent: &CypherTraversalContext,
         kind: CypherTraversalKind,
@@ -178,26 +179,48 @@ impl Lowerer {
         CypherTraversalContext::child(id, parent, kind)
     }
 
-    pub(crate) fn current_traversal(&self) -> Option<&CypherTraversalContext> {
+    fn current_traversal(&self) -> Option<&CypherTraversalContext> {
         self.traversal_stack.last()
     }
 
-    pub(crate) fn current_traversal_mut(&mut self) -> Option<&mut CypherTraversalContext> {
+    fn current_traversal_mut(&mut self) -> Option<&mut CypherTraversalContext> {
         self.traversal_stack.last_mut()
     }
 
-    pub(crate) fn push_traversal(&mut self, traversal: CypherTraversalContext) {
+    fn push_traversal(&mut self, traversal: CypherTraversalContext) {
         self.traversal_stack.push(traversal);
         let inherited = self.scopes.last().cloned().unwrap_or_default();
         self.scopes.push(inherited);
     }
 
-    pub(crate) fn pop_traversal(&mut self) -> Option<CypherTraversalContext> {
+    fn pop_traversal(&mut self) -> Option<CypherTraversalContext> {
         let traversal = self.traversal_stack.pop();
         if self.scopes.len() > 1 {
             self.scopes.pop();
         }
         traversal
+    }
+
+    pub(crate) fn with_child_traversal<T, F>(
+        &mut self,
+        kind: CypherTraversalKind,
+        f: F,
+    ) -> CypherPlanResult<T>
+    where
+        F: FnOnce(&mut Self) -> CypherPlanResult<T>,
+    {
+        let pushed = if let Some(parent) = self.current_traversal().cloned() {
+            let traversal = self.child_traversal(&parent, kind);
+            self.push_traversal(traversal);
+            true
+        } else {
+            false
+        };
+        let result = f(self);
+        if pushed {
+            self.pop_traversal();
+        }
+        result
     }
 
     pub(crate) fn is_visible(&self, binding: &str) -> bool {

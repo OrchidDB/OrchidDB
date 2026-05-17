@@ -22,22 +22,25 @@
 //! since the case files can still exercise interesting query shapes
 //! against partially-loaded data.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray};
+use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
+use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
+use num_bigint::BigInt;
 
-use new_graph::ir::catalog::{
-    EdgeTable, NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns,
-};
+use new_graph::ir::catalog::{EdgeTable, NodeTable, PropertyGraph};
+use new_graph::ir::value::{STRUCT_ORDER_KEY, Value};
 
 use super::dataset::DatasetError;
 
 const LADYBUG_ROOT: &str = "tests/data/ladybug/dataset";
+const KUZU_MAP_ENTRIES_KEY: &str = "\u{0}kuzu_map_entries";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ColumnType {
     Int64,
     Float64,
@@ -61,6 +64,10 @@ enum ColumnType {
     /// normalises the verbose `H hours M minutes S seconds U us` tail
     /// into Kuzu's compact `HH:MM:SS[.uuuuuu]` representation.
     Interval,
+    /// Values whose Arrow representation is a debug-encoded `Value`
+    /// plus catalog metadata, used for lists, structs/maps/unions, and
+    /// integer widths wider than i64.
+    Value(String),
 }
 
 #[derive(Debug, Clone)]
@@ -385,15 +392,18 @@ fn parse_column(text: &str) -> Option<(String, ColumnType)> {
 fn classify_type(text: &str) -> ColumnType {
     let trimmed = text.trim();
     let upper = trimmed.to_ascii_uppercase();
-    // Anything compound (struct / union / map / list / fixed-width)
-    // collapses to string. List markers can appear after the base
-    // type (`INT64[]`, `INT64[4]`, `INT64[][]`).
+    // Compound values and integer widths wider than i64 ride through
+    // the catalog as debug-encoded `Value`s so the interpreter sees
+    // the same list/struct/numeric shape that Kuzu would.
     if upper.contains('[')
         || upper.starts_with("STRUCT")
-        || upper.starts_with("UNION")
         || upper.starts_with("MAP")
+        || upper.starts_with("UNION")
+        || upper.starts_with("INT128")
+        || upper.starts_with("UINT64")
+        || upper.starts_with("UINT128")
     {
-        return ColumnType::String;
+        return ColumnType::Value(trimmed.to_string());
     }
     let head = upper
         .split(|c: char| c.is_whitespace() || c == '(')
@@ -716,16 +726,13 @@ fn build_node_table(
         }
     }
 
-    let arrays: Vec<(&str, ArrayRef)> = def
+    let columns: Vec<(Field, ArrayRef)> = def
         .columns
         .iter()
         .enumerate()
-        .map(|(idx, column)| {
-            let array = build_array(&columns[idx], column.ty);
-            (column.name.as_str(), array)
-        })
+        .map(|(idx, column)| build_column(&column.name, &columns[idx], &column.ty))
         .collect();
-    Ok(nodes_from_columns(def.label.clone(), arrays))
+    record_node_table(&def.label, columns)
 }
 
 fn build_edge_table(
@@ -781,23 +788,20 @@ fn build_edge_table(
         }
     }
 
-    let arrays: Vec<(&str, ArrayRef)> = def
+    let columns: Vec<(Field, ArrayRef)> = def
         .properties
         .iter()
         .enumerate()
-        .map(|(idx, column)| {
-            let array = build_array(&prop_columns[idx], column.ty);
-            (column.name.as_str(), array)
-        })
+        .map(|(idx, column)| build_column(&column.name, &prop_columns[idx], &column.ty))
         .collect();
-    Ok(edges_from_columns(
-        def.rel_type.clone(),
-        def.src_label.clone(),
-        def.dst_label.clone(),
+    record_edge_table(
+        &def.rel_type,
+        &def.src_label,
+        &def.dst_label,
         src_ids,
         dst_ids,
-        arrays,
-    ))
+        columns,
+    )
 }
 
 /// Header inference for node CSVs. We compare the first row against
@@ -814,7 +818,7 @@ fn infer_header(rows: &[Vec<Option<String>>], def: &NodeDef) -> bool {
         if cell.eq_ignore_ascii_case(pk_name) {
             return true;
         }
-        if matches!(def.columns[def.pk_index].ty, ColumnType::Int64)
+        if matches!(&def.columns[def.pk_index].ty, ColumnType::Int64)
             && cell.trim().parse::<i64>().is_err()
         {
             return true;
@@ -846,32 +850,44 @@ fn infer_edge_header(rows: &[Vec<Option<String>>]) -> bool {
     false
 }
 
-fn build_array(values: &[Option<String>], ty: ColumnType) -> ArrayRef {
+fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Field, ArrayRef) {
     match ty {
         ColumnType::Int64 => {
             let parsed: Vec<Option<i64>> = values
                 .iter()
                 .map(|cell| cell.as_deref().and_then(parse_i64))
                 .collect();
-            Arc::new(Int64Array::from(parsed))
+            (
+                Field::new(name, DataType::Int64, true),
+                Arc::new(Int64Array::from(parsed)) as ArrayRef,
+            )
         }
         ColumnType::Float64 => {
             let parsed: Vec<Option<f64>> = values
                 .iter()
                 .map(|cell| cell.as_deref().and_then(|s| s.trim().parse::<f64>().ok()))
                 .collect();
-            Arc::new(Float64Array::from(parsed))
+            (
+                Field::new(name, DataType::Float64, true),
+                Arc::new(Float64Array::from(parsed)) as ArrayRef,
+            )
         }
         ColumnType::Bool => {
             let parsed: Vec<Option<bool>> = values
                 .iter()
                 .map(|cell| cell.as_deref().and_then(parse_bool))
                 .collect();
-            Arc::new(BooleanArray::from(parsed))
+            (
+                Field::new(name, DataType::Boolean, true),
+                Arc::new(BooleanArray::from(parsed)) as ArrayRef,
+            )
         }
         ColumnType::String => {
             let parsed: Vec<Option<&str>> = values.iter().map(|cell| cell.as_deref()).collect();
-            Arc::new(StringArray::from(parsed))
+            (
+                Field::new(name, DataType::Utf8, true),
+                Arc::new(StringArray::from(parsed)) as ArrayRef,
+            )
         }
         ColumnType::Date => {
             // Canonicalize raw `YYYY-M-D` etc. to the zero-padded
@@ -882,7 +898,10 @@ fn build_array(values: &[Option<String>], ty: ColumnType) -> ArrayRef {
                 .map(|cell| cell.as_deref().map(normalize_date))
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
-            Arc::new(StringArray::from(refs))
+            (
+                Field::new(name, DataType::Utf8, true),
+                Arc::new(StringArray::from(refs)) as ArrayRef,
+            )
         }
         ColumnType::Timestamp => {
             let parsed: Vec<Option<String>> = values
@@ -890,7 +909,11 @@ fn build_array(values: &[Option<String>], ty: ColumnType) -> ArrayRef {
                 .map(|cell| cell.as_deref().map(normalize_timestamp))
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
-            Arc::new(StringArray::from(refs))
+            let field = Field::new(name, DataType::Utf8, true).with_metadata(HashMap::from([(
+                "new_graph.value_type".to_string(),
+                "datetime".to_string(),
+            )]));
+            (field, Arc::new(StringArray::from(refs)) as ArrayRef)
         }
         ColumnType::Uuid => {
             let parsed: Vec<Option<String>> = values
@@ -898,7 +921,10 @@ fn build_array(values: &[Option<String>], ty: ColumnType) -> ArrayRef {
                 .map(|cell| cell.as_deref().map(normalize_uuid))
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
-            Arc::new(StringArray::from(refs))
+            (
+                Field::new(name, DataType::Utf8, true),
+                Arc::new(StringArray::from(refs)) as ArrayRef,
+            )
         }
         ColumnType::Interval => {
             let parsed: Vec<Option<String>> = values
@@ -906,9 +932,412 @@ fn build_array(values: &[Option<String>], ty: ColumnType) -> ArrayRef {
                 .map(|cell| cell.as_deref().map(normalize_interval))
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
-            Arc::new(StringArray::from(refs))
+            (
+                Field::new(name, DataType::Utf8, true),
+                Arc::new(StringArray::from(refs)) as ArrayRef,
+            )
+        }
+        ColumnType::Value(type_text) => {
+            let parsed: Vec<Option<String>> = values
+                .iter()
+                .map(|cell| {
+                    cell.as_deref()
+                        .and_then(|raw| parse_typed_value(raw, type_text))
+                        .map(|value| format!("{value:?}"))
+                })
+                .collect();
+            let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
+            let field = Field::new(name, DataType::Utf8, true).with_metadata(HashMap::from([(
+                "new_graph.value_type".to_string(),
+                "value".to_string(),
+            )]));
+            (field, Arc::new(StringArray::from(refs)) as ArrayRef)
         }
     }
+}
+
+fn record_node_table(
+    label: &str,
+    columns: Vec<(Field, ArrayRef)>,
+) -> Result<NodeTable, DatasetError> {
+    let fields = columns
+        .iter()
+        .map(|(field, _)| field.clone())
+        .collect::<Vec<_>>();
+    let arrays = columns
+        .into_iter()
+        .map(|(_, array)| array)
+        .collect::<Vec<_>>();
+    let schema: SchemaRef = Arc::new(ArrowSchema::new(fields));
+    let batch =
+        RecordBatch::try_new(schema, arrays).map_err(|err| DatasetError(err.to_string()))?;
+    Ok(NodeTable {
+        label: label.to_string(),
+        batch,
+    })
+}
+
+fn record_edge_table(
+    rel_type: &str,
+    src_label: &str,
+    dst_label: &str,
+    src: Vec<i64>,
+    dst: Vec<i64>,
+    columns: Vec<(Field, ArrayRef)>,
+) -> Result<EdgeTable, DatasetError> {
+    let mut fields = vec![
+        Field::new("__src_id", DataType::Int64, false),
+        Field::new("__dst_id", DataType::Int64, false),
+    ];
+    let mut arrays: Vec<ArrayRef> = vec![
+        Arc::new(Int64Array::from(src)) as ArrayRef,
+        Arc::new(Int64Array::from(dst)) as ArrayRef,
+    ];
+    for (field, array) in columns {
+        fields.push(field);
+        arrays.push(array);
+    }
+    let schema: SchemaRef = Arc::new(ArrowSchema::new(fields));
+    let batch =
+        RecordBatch::try_new(schema, arrays).map_err(|err| DatasetError(err.to_string()))?;
+    Ok(EdgeTable {
+        rel_type: rel_type.to_string(),
+        src_label: src_label.to_string(),
+        dst_label: dst_label.to_string(),
+        batch,
+    })
+}
+
+fn parse_typed_value(raw: &str, type_text: &str) -> Option<Value> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let upper = type_text.trim().to_ascii_uppercase();
+    if upper.starts_with("STRUCT") {
+        return parse_struct_value(trimmed, type_text);
+    }
+    if upper.starts_with("MAP") {
+        return parse_map_value(trimmed, type_text);
+    }
+    if upper.starts_with("UNION") {
+        return parse_union_value(trimmed, type_text);
+    }
+    if upper.contains('[') {
+        return parse_list_value(trimmed, type_text);
+    }
+    parse_scalar_value(trimmed, type_text)
+}
+
+fn parse_list_value(raw: &str, type_text: &str) -> Option<Value> {
+    let (base, depth) = list_type_parts(type_text)?;
+    let inner = raw.trim().strip_prefix('[')?.strip_suffix(']')?;
+    if inner.trim().is_empty() {
+        return Some(Value::List(Vec::new()));
+    }
+    let items = split_value_items(inner)
+        .into_iter()
+        .map(|item| {
+            if depth > 1 {
+                let nested_type = format!("{base}{}", "[]".repeat(depth - 1));
+                parse_list_value(item.trim(), &nested_type)
+            } else {
+                parse_list_scalar_value(item.trim(), base)
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Value::List(items))
+}
+
+fn parse_list_scalar_value(raw: &str, type_text: &str) -> Option<Value> {
+    if is_string_type(type_text) {
+        return Some(Value::String(unescape_list_string(raw.trim())));
+    }
+    parse_scalar_value(raw, type_text)
+}
+
+fn unescape_list_string(raw: &str) -> String {
+    let mut out = raw.to_string();
+    while out.contains("\\\"") {
+        out = out.replace("\\\"", "\"");
+    }
+    while out.contains("\\'") {
+        out = out.replace("\\'", "'");
+    }
+    out
+}
+
+fn list_type_parts(type_text: &str) -> Option<(&str, usize)> {
+    let base_end = type_text.find('[')?;
+    let depth = type_text[base_end..].matches('[').count();
+    Some((type_text[..base_end].trim(), depth))
+}
+
+fn parse_struct_value(raw: &str, type_text: &str) -> Option<Value> {
+    let fields = struct_fields(type_text)?;
+    let entries = raw_map_entries(raw)?;
+    let mut out = BTreeMap::new();
+    out.insert(
+        STRUCT_ORDER_KEY.to_string(),
+        Value::List(
+            fields
+                .iter()
+                .map(|(name, _)| Value::String(name.clone()))
+                .collect(),
+        ),
+    );
+    for (name, field_type) in fields {
+        let value = entries
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(&name))
+            .and_then(|(_, value)| parse_typed_value(value, &field_type))
+            .unwrap_or(Value::Null);
+        out.insert(name, value);
+    }
+    Some(Value::Map(out))
+}
+
+fn parse_map_value(raw: &str, type_text: &str) -> Option<Value> {
+    let (key_type, value_type) = map_type_parts(type_text)?;
+    let entries = raw_map_entries(raw)?;
+    let mut out = Vec::new();
+    for (key, raw_value) in entries {
+        let key = parse_list_scalar_value(&key, &key_type)?;
+        let value = parse_typed_value(&raw_value, &value_type).unwrap_or(Value::Null);
+        out.push(Value::List(vec![key, value]));
+    }
+    Some(Value::Map(BTreeMap::from([(
+        KUZU_MAP_ENTRIES_KEY.to_string(),
+        Value::List(out),
+    )])))
+}
+
+fn parse_union_value(raw: &str, type_text: &str) -> Option<Value> {
+    let variants = struct_fields(type_text)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    for (tag, ty) in &variants {
+        if let Some(value) = parse_typed_value(trimmed, ty) {
+            let mut out = BTreeMap::new();
+            out.insert("__tag".to_string(), Value::String(tag.clone()));
+            out.insert("__value".to_string(), value);
+            return Some(Value::Map(out));
+        }
+    }
+    Some(Value::String(unquote(trimmed).to_string()))
+}
+
+fn map_type_parts(type_text: &str) -> Option<(String, String)> {
+    let upper = type_text.trim().to_ascii_uppercase();
+    let open = upper.find("MAP")?;
+    let after = &type_text[open + 3..].trim_start();
+    let inner = after.strip_prefix('(').and_then(balanced_inner)?;
+    let mut parts = split_value_items(&inner).into_iter();
+    let key = parts.next()?.trim().to_string();
+    let value = parts.next()?.trim().to_string();
+    Some((key, value))
+}
+
+fn struct_fields(type_text: &str) -> Option<Vec<(String, String)>> {
+    let open = type_text.find('(')?;
+    let inner = balanced_inner(&type_text[open + 1..])?;
+    split_value_items(&inner)
+        .into_iter()
+        .map(|part| {
+            let (name, after) = parse_identifier(part.trim())?;
+            let ty = after.trim();
+            (!ty.is_empty()).then(|| (name, ty.to_string()))
+        })
+        .collect()
+}
+
+fn raw_map_entries(raw: &str) -> Option<Vec<(String, String)>> {
+    let inner = raw.trim().strip_prefix('{')?.strip_suffix('}')?;
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    split_value_items(inner)
+        .into_iter()
+        .map(|entry| {
+            let (key, value) = split_top_level_assignment(&entry)?;
+            Some((unquote(key.trim()).to_string(), value.trim().to_string()))
+        })
+        .collect()
+}
+
+fn parse_scalar_value(raw: &str, type_text: &str) -> Option<Value> {
+    let upper = type_text.trim().to_ascii_uppercase();
+    let head = upper
+        .split(|c: char| c.is_whitespace() || c == '(')
+        .next()
+        .unwrap_or("");
+    match head {
+        "INT128" | "UINT64" | "UINT128" => BigInt::from_str(raw.trim()).ok().map(Value::BigInt),
+        "INT" | "INT8" | "INT16" | "INT32" | "INT64" | "BIGINT" | "SERIAL" | "UINT8" | "UINT16"
+        | "UINT32" | "BYTE" | "SHORT" | "LONG" => parse_i64(raw).map(Value::Int),
+        "FLOAT" | "FLOAT32" | "FLOAT64" | "DOUBLE" | "DECIMAL" => {
+            raw.trim().parse::<f64>().ok().map(Value::Float)
+        }
+        "BOOL" | "BOOLEAN" => parse_bool(raw).map(Value::Bool),
+        "DATE" => parse_date_value(raw).map(Value::DateTime),
+        "TIMESTAMP" | "DATETIME" | "TIMESTAMP_NS" | "TIMESTAMP_MS" | "TIMESTAMP_SEC"
+        | "TIMESTAMP_TZ" => format_timestamp_for_type(raw, head).map(Value::DateTime),
+        "UUID" => Some(Value::String(normalize_uuid(raw))),
+        "INTERVAL" => Some(Value::String(normalize_interval(raw))),
+        _ => Some(Value::String(unquote(raw.trim()).to_string())),
+    }
+}
+
+fn is_string_type(type_text: &str) -> bool {
+    matches!(
+        type_text
+            .trim()
+            .to_ascii_uppercase()
+            .split(|c: char| c.is_whitespace() || c == '(')
+            .next()
+            .unwrap_or(""),
+        "STRING" | "VARCHAR" | "CHAR" | "TEXT" | "BLOB" | "BYTEA"
+    )
+}
+
+fn split_value_items(body: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_single = false;
+    let mut in_double = false;
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let ch = bytes[i] as char;
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            if ch == '"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            '[' => depth_bracket += 1,
+            ']' => depth_bracket -= 1,
+            '{' => depth_brace += 1,
+            '}' => depth_brace -= 1,
+            ',' if depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 => {
+                out.push(body[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let tail = body[start..].trim();
+    if !tail.is_empty() {
+        out.push(tail);
+    }
+    out
+}
+
+fn split_top_level_assignment(input: &str) -> Option<(&str, &str)> {
+    split_top_level_char(input, ':').or_else(|| split_top_level_char(input, '='))
+}
+
+fn split_top_level_char(input: &str, needle: char) -> Option<(&str, &str)> {
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_single = false;
+    let mut in_double = false;
+    for (idx, ch) in input.char_indices() {
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+            }
+            continue;
+        }
+        if in_double {
+            if ch == '"' {
+                in_double = false;
+            }
+            continue;
+        }
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            '[' => depth_bracket += 1,
+            ']' => depth_bracket -= 1,
+            '{' => depth_brace += 1,
+            '}' => depth_brace -= 1,
+            ch if ch == needle && depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 => {
+                return Some((&input[..idx], &input[idx + ch.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn unquote(text: &str) -> &str {
+    text.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| text.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .unwrap_or(text)
+}
+
+fn format_timestamp_for_type(raw: &str, type_name: &str) -> Option<String> {
+    let normalized = normalize_timestamp(raw);
+    let (body, zone) = normalized
+        .strip_suffix("+00")
+        .map(|body| (body, "+00"))
+        .unwrap_or((normalized.as_str(), ""));
+    let (prefix, fraction) = body
+        .split_once('.')
+        .map(|(prefix, fraction)| (prefix, fraction))
+        .unwrap_or((body, ""));
+    let digits = match type_name {
+        "TIMESTAMP_MS" => 3,
+        "TIMESTAMP_SEC" => 0,
+        _ => 6,
+    };
+    let fraction = if digits == 0 {
+        String::new()
+    } else {
+        let mut value: String = fraction
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .take(digits)
+            .collect();
+        while value.len() < digits && !value.is_empty() {
+            value.push('0');
+        }
+        if value.is_empty() {
+            String::new()
+        } else {
+            format!(".{value}")
+        }
+    };
+    let zone = if type_name == "TIMESTAMP_TZ" {
+        "+00"
+    } else {
+        zone
+    };
+    Some(format!("{prefix}{fraction}{zone}"))
 }
 
 /// Normalise a verbose interval literal to Kuzu's printer form. Kuzu
@@ -929,12 +1358,18 @@ fn normalize_interval(raw: &str) -> String {
     let mut micros: i64 = 0;
     let mut saw_time_component = false;
     let mut i = 0;
-    while i + 1 < parts.len() {
+    while i < parts.len() {
         let value_part = parts[i];
-        let unit = parts[i + 1].trim_end_matches(',').to_ascii_lowercase();
-        let value: i64 = match value_part.parse() {
-            Ok(v) => v,
-            Err(_) => return raw.to_string(),
+        let (value, unit, consumed) = match value_part.parse::<i64>() {
+            Ok(v) if i + 1 < parts.len() => (
+                v,
+                parts[i + 1].trim_end_matches(',').to_ascii_lowercase(),
+                2,
+            ),
+            _ => match split_compact_interval_part(value_part) {
+                Some((value, unit)) => (value, unit, 1),
+                None => return raw.to_string(),
+            },
         };
         match unit.as_str() {
             "year" | "years" | "y" | "yr" | "yrs" => {
@@ -983,13 +1418,20 @@ fn normalize_interval(raw: &str) -> String {
             }
             _ => return raw.to_string(),
         }
-        i += 2;
+        i += consumed;
     }
     if !saw_time_component {
-        return prefix.join(" ");
+        return if prefix.is_empty() {
+            raw.to_string()
+        } else {
+            prefix.join(" ")
+        };
     }
     let time_tail = if micros != 0 {
-        format!("{hours:02}:{minutes:02}:{seconds:02}.{micros:06}")
+        format!(
+            "{hours:02}:{minutes:02}:{seconds:02}.{}",
+            trim_interval_fraction(micros)
+        )
     } else {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
     };
@@ -997,6 +1439,26 @@ fn normalize_interval(raw: &str) -> String {
         time_tail
     } else {
         format!("{} {time_tail}", prefix.join(" "))
+    }
+}
+
+fn split_compact_interval_part(part: &str) -> Option<(i64, String)> {
+    let split = part
+        .char_indices()
+        .find_map(|(idx, ch)| (idx > 0 && !ch.is_ascii_digit() && ch != '-').then_some(idx))?;
+    let (value, unit) = part.split_at(split);
+    Some((value.parse().ok()?, unit.to_ascii_lowercase()))
+}
+
+fn trim_interval_fraction(micros: i64) -> String {
+    let mut fraction = format!("{:06}", micros.abs());
+    while fraction.ends_with('0') {
+        fraction.pop();
+    }
+    if fraction.is_empty() {
+        "0".to_string()
+    } else {
+        fraction
     }
 }
 
@@ -1140,6 +1602,25 @@ fn normalize_date(raw: &str) -> String {
         return raw.to_string();
     }
     format!("{year:0>4}-{month:0>2}-{day:0>2}")
+}
+
+fn parse_date_value(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let parts: Vec<&str> = trimmed.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let (year, month, day) = (parts[0], parts[1], parts[2]);
+    if year.is_empty() || month.is_empty() || day.is_empty() {
+        return None;
+    }
+    if !year.chars().all(|c| c.is_ascii_digit())
+        || !month.chars().all(|c| c.is_ascii_digit())
+        || !day.chars().all(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(normalize_date(raw))
 }
 
 fn parse_i64(text: &str) -> Option<i64> {

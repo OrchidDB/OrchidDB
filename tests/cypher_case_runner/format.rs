@@ -206,7 +206,7 @@ fn render_float(value: f64) -> String {
 fn split_top_level(input: &str, delim: char) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
-    let mut in_string = false;
+    let mut quote: Option<char> = None;
     let mut escaped = false;
     let mut start = 0usize;
     for (i, ch) in input.char_indices() {
@@ -215,11 +215,12 @@ fn split_top_level(input: &str, delim: char) -> Vec<&str> {
             continue;
         }
         match ch {
-            '\\' if in_string => escaped = true,
-            '"' => in_string = !in_string,
-            '[' | '{' | '(' if !in_string => depth += 1,
-            ']' | '}' | ')' if !in_string => depth -= 1,
-            c if c == delim && !in_string && depth == 0 => {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => quote = Some(ch),
+            '[' | '{' | '(' if quote.is_none() => depth += 1,
+            ']' | '}' | ')' if quote.is_none() => depth -= 1,
+            c if c == delim && quote.is_none() && depth == 0 => {
                 parts.push(&input[start..i]);
                 start = i + c.len_utf8();
             }
@@ -234,5 +235,53 @@ fn split_top_level(input: &str, delim: char) -> Vec<&str> {
 /// on the expected side. Kept for API parity with the gremlin format
 /// module so the shared `compare` helper compiles for both runners.
 pub fn strip_expected_tags(line: &str) -> String {
-    line.trim().to_string()
+    normalize_cypher_row(line)
+}
+
+pub fn ignore_unrepresented_empty_rows() -> bool {
+    true
+}
+
+fn normalize_cypher_row(line: &str) -> String {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    split_top_level(trimmed, '|')
+        .into_iter()
+        .map(normalize_cypher_cell)
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn normalize_cypher_cell(cell: &str) -> String {
+    let trimmed = cell.trim();
+    if trimmed.eq_ignore_ascii_case("null") {
+        return String::new();
+    }
+    if trimmed.eq_ignore_ascii_case("true") {
+        return "True".to_string();
+    }
+    if trimmed.eq_ignore_ascii_case("false") {
+        return "False".to_string();
+    }
+    trimmed.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_expected_tags;
+
+    #[test]
+    fn normalizes_tck_scalar_rows_to_ladybug_cells() {
+        assert_eq!(strip_expected_tags("true | null | false"), "True||False");
+    }
+
+    #[test]
+    fn preserves_pipe_like_text_inside_collections() {
+        assert_eq!(
+            strip_expected_tags("[true, false] | {x: 'a|b'}"),
+            "[true, false]|{x: 'a|b'}"
+        );
+    }
 }

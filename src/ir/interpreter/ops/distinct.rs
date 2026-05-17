@@ -58,6 +58,12 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(4);
             buf.extend_from_slice(s.as_bytes());
         }
+        Value::InternalId { table, offset } => {
+            buf.push(17);
+            buf.extend_from_slice(&table.to_be_bytes());
+            buf.push(0);
+            buf.extend_from_slice(&offset.to_be_bytes());
+        }
         Value::Node { label, id } => {
             buf.push(5);
             buf.extend_from_slice(label.as_bytes());

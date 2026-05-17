@@ -112,6 +112,10 @@ const ALIAS_GROUPS: &[AliasGroup] = &[
         canonical: "to_uint128",
         aliases: &["touint128", "uint128"],
     },
+    AliasGroup {
+        canonical: "uuid",
+        aliases: &["to_uuid", "touuid"],
+    },
     // --- string helpers ---
     AliasGroup {
         canonical: "lower",
@@ -120,6 +124,10 @@ const ALIAS_GROUPS: &[AliasGroup] = &[
     AliasGroup {
         canonical: "upper",
         aliases: &["toupper", "ucase"],
+    },
+    AliasGroup {
+        canonical: "contains",
+        aliases: &["contains_fn"],
     },
     // --- list helpers ---
     AliasGroup {

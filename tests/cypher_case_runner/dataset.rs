@@ -72,6 +72,9 @@ pub fn build_with_initializer(
     if trimmed.is_empty() {
         return Ok(PropertyGraph::new());
     }
+    if is_empty_dataset(trimmed) {
+        return Ok(PropertyGraph::new());
+    }
     let Some(dir) = resolve_directory(trimmed) else {
         return Err(DatasetError(format!(
             "no fixture directory matched `{name}`"
@@ -87,6 +90,18 @@ pub fn build_with_initializer(
         Ok(graph) => Ok(graph.clone()),
         Err(err) => Err(DatasetError(err.clone())),
     }
+}
+
+fn is_empty_dataset(name: &str) -> bool {
+    if name.eq_ignore_ascii_case("empty") {
+        return true;
+    }
+    for prefix in ["csv ", "parquet ", "npy ", "json ", "binary ", "tsv "] {
+        if let Some(rest) = strip_prefix_ci(name, prefix) {
+            return rest.eq_ignore_ascii_case("empty");
+        }
+    }
+    false
 }
 
 /// Translate a metadata `dataset` field (e.g. `"CSV tinysnb"`,
@@ -138,5 +153,16 @@ fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
 fn push_unique(out: &mut Vec<String>, value: String) {
     if !out.iter().any(|existing| existing == &value) {
         out.push(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_empty_builds_empty_graph() {
+        let graph = build_with_initializer("CSV empty", None).unwrap();
+        assert!(graph.node_label_order().is_empty());
     }
 }

@@ -76,56 +76,46 @@ pub(crate) fn lower_exists_apply(
     kind: ApplyKind,
 ) -> CypherPlanResult<Node> {
     let right = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::ExistsSubquery);
-            lowerer.push_traversal(traversal);
-        }
-        let right = if let Some(query) = &exists.query {
-            lowerer.lower_query_with_unions(query).map(|(node, _)| node)
-        } else {
-            let mut right = Node::GraphCorrelate {
-                bindings: lowerer.visible_fields(),
-            };
-            let history = exists
-                .patterns
-                .iter()
-                .any(|part| !part.element.chains.is_empty())
-                .then(|| lowerer.synthetic("exists_history"));
-            let mut history_available = false;
-            for part in &exists.patterns {
-                right = pattern::lower_pattern_part(
-                    lowerer,
-                    right,
-                    part,
-                    false,
-                    history.as_deref(),
-                    history_available,
-                )?;
-                if !part.element.chains.is_empty() {
-                    history_available = true;
+        lowerer.with_child_traversal(CypherTraversalKind::ExistsSubquery, |lowerer| {
+            if let Some(query) = &exists.query {
+                lowerer.lower_query_with_unions(query).map(|(node, _)| node)
+            } else {
+                let mut right = Node::GraphCorrelate {
+                    bindings: lowerer.visible_fields(),
+                };
+                let history = exists
+                    .patterns
+                    .iter()
+                    .any(|part| !part.element.chains.is_empty())
+                    .then(|| lowerer.synthetic("exists_history"));
+                let mut history_available = false;
+                for part in &exists.patterns {
+                    right = pattern::lower_pattern_part(
+                        lowerer,
+                        right,
+                        part,
+                        false,
+                        history.as_deref(),
+                        history_available,
+                    )?;
+                    if !part.element.chains.is_empty() {
+                        history_available = true;
+                    }
                 }
+                if let Some(predicate) = &exists.predicate {
+                    right = lowerer.with_child_traversal(
+                        CypherTraversalKind::WherePredicate,
+                        |lowerer| {
+                            let right = lower_where_predicate(lowerer, right, predicate)?;
+                            lowerer.record_current_imports(lowerer.visible_fields());
+                            lowerer.record_current_correlation(lowerer.visible_fields());
+                            Ok(right)
+                        },
+                    )?;
+                }
+                Ok(right)
             }
-            if let Some(predicate) = &exists.predicate {
-                let parent = lowerer.current_traversal().cloned();
-                if let Some(parent) = parent.as_ref() {
-                    let traversal =
-                        lowerer.child_traversal(parent, CypherTraversalKind::WherePredicate);
-                    lowerer.push_traversal(traversal);
-                }
-                right = lower_where_predicate(lowerer, right, predicate)?;
-                lowerer.record_current_imports(lowerer.visible_fields());
-                lowerer.record_current_correlation(lowerer.visible_fields());
-                if parent.is_some() {
-                    lowerer.pop_traversal();
-                }
-            }
-            Ok(right)
-        };
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        right
+        })
     })?;
     Ok(Node::GraphApply {
         kind,
@@ -145,36 +135,30 @@ pub(crate) fn lower_pattern_predicate_apply(
 ) -> CypherPlanResult<Node> {
     validate_pattern_predicate_scope(lowerer, patterns)?;
     let right = lowerer.with_preserved_scope(|lowerer| {
-        let parent = lowerer.current_traversal().cloned();
-        if let Some(parent) = parent.as_ref() {
-            let traversal = lowerer.child_traversal(parent, CypherTraversalKind::PatternPredicate);
-            lowerer.push_traversal(traversal);
-        }
-        let mut right = Node::GraphCorrelate {
-            bindings: lowerer.visible_fields(),
-        };
-        let history = patterns
-            .iter()
-            .any(|part| !part.element.chains.is_empty())
-            .then(|| lowerer.synthetic("pattern_history"));
-        let mut history_available = false;
-        for part in patterns {
-            right = pattern::lower_pattern_part(
-                lowerer,
-                right,
-                part,
-                false,
-                history.as_deref(),
-                history_available,
-            )?;
-            if !part.element.chains.is_empty() {
-                history_available = true;
+        lowerer.with_child_traversal(CypherTraversalKind::PatternPredicate, |lowerer| {
+            let mut right = Node::GraphCorrelate {
+                bindings: lowerer.visible_fields(),
+            };
+            let history = patterns
+                .iter()
+                .any(|part| !part.element.chains.is_empty())
+                .then(|| lowerer.synthetic("pattern_history"));
+            let mut history_available = false;
+            for part in patterns {
+                right = pattern::lower_pattern_part(
+                    lowerer,
+                    right,
+                    part,
+                    false,
+                    history.as_deref(),
+                    history_available,
+                )?;
+                if !part.element.chains.is_empty() {
+                    history_available = true;
+                }
             }
-        }
-        if parent.is_some() {
-            lowerer.pop_traversal();
-        }
-        Ok(right)
+            Ok(right)
+        })
     })?;
     Ok(Node::GraphApply {
         kind,

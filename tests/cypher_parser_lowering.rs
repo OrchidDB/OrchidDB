@@ -1,4 +1,4 @@
-use new_graph::language::cypher::ast::{Clause, Expr, Literal};
+use new_graph::language::cypher::ast::{Clause, Expr, Literal, UnaryOp};
 use new_graph::language::cypher::parser::parse_query;
 
 #[test]
@@ -40,6 +40,39 @@ fn lowers_cast_as_type_to_cast_function() {
     assert_eq!(name, "cast");
     assert_eq!(args[0], Expr::Literal(Literal::Integer("42".to_string())));
     assert_eq!(args[1], Expr::Literal(Literal::String("INT64".to_string())));
+}
+
+#[test]
+fn lowers_postfix_factorial_to_function_call() {
+    let query = parse_query("RETURN (21 % 20)!").unwrap();
+    let Clause::Return(ret) = &query.clauses[0] else {
+        panic!("expected RETURN clause");
+    };
+    let Expr::Function { name, args, .. } = &ret.projection.items[0].expr else {
+        panic!("expected factorial function");
+    };
+    assert_eq!(name, "factorial");
+    assert_eq!(args.len(), 1);
+    assert!(matches!(args[0], Expr::Function { .. }));
+}
+
+#[test]
+fn parses_spaced_unary_chains_and_literal_factorial() {
+    parse_query("RETURN - - 1, ---2.3, --5!").unwrap();
+}
+
+#[test]
+fn lowers_bitwise_projection_operators_to_function_calls() {
+    let query =
+        parse_query("MATCH (o:organisation) RETURN o.orgCode >> 2 | o.score & 2 << 1").unwrap();
+    let Clause::Return(ret) = &query.clauses[1] else {
+        panic!("expected RETURN clause");
+    };
+    let Expr::Function { name, args, .. } = &ret.projection.items[0].expr else {
+        panic!("expected bitwise function");
+    };
+    assert_eq!(name, "bitwise_or");
+    assert_eq!(args.len(), 2);
 }
 
 #[test]
@@ -134,4 +167,24 @@ fn lowers_kuzu_list_reduce_lambda_to_scoped_reduce() {
 #[test]
 fn normalizes_colon_list_slice_without_touching_relationship_type() {
     parse_query("MATCH (a:person)-[:knows]->(b) RETURN a.fName[:], [1,2,3][1:2]").unwrap();
+}
+
+#[test]
+fn preserves_chained_not_count() {
+    let query = parse_query("RETURN NOT NOT NOT FALSE").unwrap();
+    let Clause::Return(ret) = &query.clauses[0] else {
+        panic!("expected RETURN clause");
+    };
+    let mut expr = &ret.projection.items[0].expr;
+    let mut not_count = 0;
+    while let Expr::Unary {
+        op: UnaryOp::Not,
+        expr: inner,
+    } = expr
+    {
+        not_count += 1;
+        expr = inner;
+    }
+    assert_eq!(not_count, 3);
+    assert_eq!(expr, &Expr::Literal(Literal::Bool(false)));
 }

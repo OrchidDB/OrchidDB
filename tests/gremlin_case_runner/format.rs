@@ -221,6 +221,10 @@ pub fn strip_expected_tags(line: &str) -> String {
     normalize_trailing_zero(&stripped)
 }
 
+pub fn ignore_unrepresented_empty_rows() -> bool {
+    false
+}
+
 /// `2.0`/`-3.0` → `2`/`-3`. Anything else returned as-is. Only triggers
 /// when the entire input is a signed integer-valued decimal — protects
 /// us from mangling lists like `2.0,3.0,foo`.

@@ -10,13 +10,15 @@ mod property_object;
 mod reductions;
 mod registry;
 mod strings;
+pub(crate) mod temporal;
 mod type_check;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::plan::Direction;
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 use casts::{
     cast_list_to_string, cast_to_bigdecimal, cast_to_bigint, cast_to_bool, cast_to_byte,
@@ -32,9 +34,21 @@ pub(crate) use strings::{display_for_concat, display_for_group_key};
 use strings::{regex_match_literal, substring};
 use type_check::typeof_matches;
 
+use super::element_id::element_internal_id;
 use super::expr::compare_values;
 
 use super::{InterpretError, IrResult};
+
+const KUZU_MAP_ENTRIES_KEY: &str = "\u{0}kuzu_map_entries";
+const UNION_TAG_KEY: &str = "__tag";
+const UNION_VALUE_KEY: &str = "__value";
+const UNION_VARIANTS_KEY: &str = "__union_variants";
+static NEXT_UUID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn next_deterministic_uuid() -> String {
+    let value = NEXT_UUID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("00000000-0000-0000-0000-{value:012x}")
+}
 
 fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
     let name = match graph.node_property(label, id, "name") {
@@ -498,68 +512,106 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Bool(true)))
         }
         ("cypher_properties_match", [_target, _spec]) => Ok(Some(Value::Bool(false))),
+        ("cypher_eq", [left, right]) => Ok(Some(cypher_compare_value(left, right, "eq"))),
+        ("cypher_neq", [left, right]) => Ok(Some(cypher_compare_value(left, right, "neq"))),
+        ("cypher_lt", [left, right]) => Ok(Some(cypher_compare_value(left, right, "lt"))),
+        ("cypher_lte", [left, right]) => Ok(Some(cypher_compare_value(left, right, "lte"))),
+        ("cypher_gt", [left, right]) => Ok(Some(cypher_compare_value(left, right, "gt"))),
+        ("cypher_gte", [left, right]) => Ok(Some(cypher_compare_value(left, right, "gte"))),
         ("parameter", [Value::String(_)]) => Ok(Some(Value::Null)),
-        ("integer_literal", [Value::String(text)]) => Ok(Some(
-            text.parse::<i64>().map(Value::Long).unwrap_or(Value::Null),
-        )),
+        ("integer_literal", [Value::String(text)]) => Ok(Some(parse_integer_runtime_literal(text))),
         ("pow", [a, b]) => match (value_as_f64(a), value_as_f64(b)) {
             (Some(l), Some(r)) => Ok(Some(Value::Float(l.powf(r)))),
             _ => Ok(Some(Value::Null)),
         },
         ("mod", [a, b]) => match (a.as_i64(), b.as_i64()) {
             (_, Some(0)) => Ok(Some(Value::Null)),
-            (Some(l), Some(r)) => Ok(Some(Value::Long(l % r))),
+            (Some(l), Some(r)) => l
+                .checked_rem(r)
+                .map(Value::Long)
+                .map(Some)
+                .ok_or_else(|| InterpretError::Type("integer overflow during modulo".into())),
             _ if matches!(a, Value::Null) || matches!(b, Value::Null) => Ok(Some(Value::Null)),
             _ => Ok(Some(Value::Null)),
         },
         ("xor", [Value::Bool(a), Value::Bool(b)]) => Ok(Some(Value::Bool(*a ^ *b))),
         ("xor", [Value::Null, _]) | ("xor", [_, Value::Null]) => Ok(Some(Value::Null)),
-        ("in", [needle, Value::List(items)]) => {
+        ("in", [needle, container]) if runtime_list(container).is_some() => {
             if matches!(needle, Value::Null) {
                 return Ok(Some(Value::Null));
             }
-            let mut saw_null = false;
-            for item in items {
+            let items = runtime_list(container).unwrap_or_default();
+            for item in &items {
                 if matches!(item, Value::Null) {
-                    saw_null = true;
                     continue;
                 }
-                if needle.three_valued_eq(item) == Some(true) {
+                ensure_list_comparable(needle, item)?;
+                if list_semantic_eq(needle, item) {
                     return Ok(Some(Value::Bool(true)));
                 }
             }
-            if saw_null {
-                Ok(Some(Value::Null))
-            } else {
-                Ok(Some(Value::Bool(false)))
-            }
+            Ok(Some(Value::Bool(false)))
         }
         ("in", [_, Value::Null]) => Ok(Some(Value::Null)),
         ("cypher_subscript", [target, index]) => Ok(Some(cypher_subscript(target, index, graph))),
         ("list_at", [Value::List(items), Value::Int(idx)]) => Ok(Some(list_index(items, *idx))),
         ("list_at", [Value::String(s), Value::Int(idx)]) => Ok(Some(string_index(s, *idx))),
         ("list_at", [Value::Null, _]) | ("list_at", [_, Value::Null]) => Ok(Some(Value::Null)),
-        ("list_slice", [Value::List(items), start, end]) => {
-            Ok(Some(Value::List(list_slice_range(items, start, end))))
+        ("list_slice", [items, start, end]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(list_slice_range(&items, start, end))))
         }
         ("list_slice", [Value::String(s), start, end]) => {
             Ok(Some(Value::String(string_slice_range(s, start, end))))
         }
         ("list_slice", [Value::Null, _, _]) => Ok(Some(Value::Null)),
+        ("map", [keys, values]) if runtime_list(keys).is_some() && runtime_list(values).is_some() => {
+            Ok(Some(make_kuzu_map(
+                runtime_list(keys).unwrap_or_default(),
+                runtime_list(values).unwrap_or_default(),
+            )?))
+        }
         ("map", entries) if entries.len() % 2 == 0 => {
             let mut map = std::collections::BTreeMap::new();
+            let mut order = Vec::new();
             for chunk in entries.chunks_exact(2) {
                 let key = match &chunk[0] {
                     Value::String(s) => s.clone(),
                     other => display_for_concat(other),
                 };
+                order.push(Value::String(key.clone()));
                 map.insert(key, chunk[1].clone());
             }
+            map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
             Ok(Some(Value::Map(map)))
         }
+        ("cypher_property_star", [Value::Node { label, id }]) => {
+            let mut map = std::collections::BTreeMap::new();
+            let mut order = Vec::new();
+            for key in graph.node_property_keys(label) {
+                order.push(Value::String(key.clone()));
+                map.insert(key.clone(), graph.node_property(label, *id, &key));
+            }
+            map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
+            Ok(Some(Value::Map(map)))
+        }
+        ("cypher_property_star", [Value::Edge { rel_type, id, .. }]) => {
+            let mut map = std::collections::BTreeMap::new();
+            let mut order = Vec::new();
+            for key in graph.edge_property_keys(rel_type) {
+                order.push(Value::String(key.clone()));
+                map.insert(key.clone(), graph.edge_property(rel_type, *id, &key));
+            }
+            map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
+            Ok(Some(Value::Map(map)))
+        }
+        ("cypher_property_star", [Value::Map(map)]) => Ok(Some(Value::Map(map.clone()))),
+        ("cypher_property_star", [Value::Null]) => Ok(Some(Value::Null)),
         // ----- graph-element built-ins -----
         ("id", [value]) => Ok(Some(match value {
-            Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
+            Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
+                element_internal_id(graph, value).unwrap_or(Value::Null)
+            }
             _ => Value::Null,
         })),
         ("labels", [value]) => Ok(Some(match value {
@@ -622,7 +674,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .cloned()
                 .collect(),
         ))),
-        ("nodes" | "relationships", [Value::Null]) => Ok(Some(Value::Null)),
+        ("nodes" | "relationships", [Value::Null]) => Ok(Some(Value::List(Vec::new()))),
         ("length", [Value::Path(items)]) => {
             // Cypher path length = number of relationships = (len-1)/2.
             let edges = items
@@ -633,9 +685,12 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("length", [Value::List(items)]) => Ok(Some(Value::Int(items.len() as i64))),
         ("length", [Value::Null]) => Ok(Some(Value::Null)),
+        ("size", [value]) if runtime_list(value).is_some() => Ok(Some(Value::Int(
+            runtime_list(value).unwrap_or_default().len() as i64,
+        ))),
         ("size", [Value::String(value)]) => Ok(Some(Value::Int(value.chars().count() as i64))),
         ("size", [Value::List(items)]) => Ok(Some(Value::Int(items.len() as i64))),
-        ("size", [Value::Map(map)]) => Ok(Some(Value::Int(map.len() as i64))),
+        ("size", [Value::Map(map)]) => Ok(Some(Value::Int(visible_map_len(map) as i64))),
         ("size", [Value::Path(items)]) => {
             let edges = items
                 .iter()
@@ -661,12 +716,12 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .collect(),
         ))),
         ("keys", [Value::Map(map)]) => Ok(Some(Value::List(
-            map.keys().cloned().map(Value::String).collect(),
+            visible_map_keys(map).into_iter().map(Value::String).collect(),
         ))),
         ("keys", [Value::Null]) => Ok(Some(Value::Null)),
         ("isempty", [Value::String(value)]) => Ok(Some(Value::Bool(value.is_empty()))),
         ("isempty", [Value::List(items)]) => Ok(Some(Value::Bool(items.is_empty()))),
-        ("isempty", [Value::Map(map)]) => Ok(Some(Value::Bool(map.is_empty()))),
+        ("isempty", [Value::Map(map)]) => Ok(Some(Value::Bool(visible_map_len(map) == 0))),
         ("isempty", [Value::Null]) => Ok(Some(Value::Null)),
         ("properties", [Value::Node { label, id }]) => {
             let mut map = std::collections::BTreeMap::new();
@@ -733,8 +788,8 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Path(items.iter().skip(1).cloned().collect())))
         }
         ("head" | "tail" | "last", [Value::Null]) => Ok(Some(Value::Null)),
-        ("range", [start, end]) => Ok(Some(make_range(start, end, &Value::Int(1)))),
-        ("range", [start, end, step]) => Ok(Some(make_range(start, end, step))),
+        ("range", [start, end]) => Ok(Some(make_range(start, end, &Value::Int(1))?)),
+        ("range", [start, end, step]) => Ok(Some(make_range(start, end, step)?)),
         // ----- coalesce(...) — first non-null arg, else null -----
         ("coalesce", values) => Ok(Some(
             values
@@ -757,7 +812,11 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("replace", [Value::String(s), Value::String(from), Value::String(to)]) => {
             Ok(Some(Value::String(s.replace(from.as_str(), to))))
         }
-        ("reverse", [Value::String(s)]) => Ok(Some(Value::String(s.chars().rev().collect()))),
+        ("reverse", [Value::String(s)]) => Ok(Some(Value::String(
+            unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
+                .rev()
+                .collect(),
+        ))),
         ("reverse", [Value::List(items)]) => {
             let mut reversed = items.clone();
             reversed.reverse();
@@ -766,12 +825,13 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("substring", [Value::String(s), start]) => Ok(Some(
             start
                 .as_i64()
-                .map(|start| Value::String(substring(s, start, None)))
+                .map(|start| Value::String(substring(s, start - 1, None)))
                 .unwrap_or(Value::Null),
         )),
         ("substring", [Value::String(s), start, length]) => {
             Ok(Some(match (start.as_i64(), length.as_i64()) {
                 (Some(start), Some(length)) if length >= 0 => {
+                    let start = start - 1;
                     Value::String(substring(s, start, start.checked_add(length)))
                 }
                 _ => Value::Null,
@@ -780,21 +840,32 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("left", [Value::String(s), length]) => Ok(Some(
             length
                 .as_i64()
-                .filter(|length| *length >= 0)
-                .map(|length| Value::String(s.chars().take(length as usize).collect()))
+                .map(|length| {
+                    let chars =
+                        unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
+                            .collect::<Vec<_>>();
+                    let take = if length < 0 {
+                        chars.len().saturating_sub(length.unsigned_abs() as usize)
+                    } else {
+                        length as usize
+                    };
+                    Value::String(chars.into_iter().take(take).collect())
+                })
                 .unwrap_or(Value::Null),
         )),
         ("right", [Value::String(s), length]) => Ok(Some(
             length
                 .as_i64()
-                .filter(|length| *length >= 0)
                 .map(|length| {
-                    let count = s.chars().count();
-                    Value::String(
-                        s.chars()
-                            .skip(count.saturating_sub(length as usize))
-                            .collect(),
-                    )
+                    let chars =
+                        unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
+                            .collect::<Vec<_>>();
+                    let skip = if length < 0 {
+                        (length.unsigned_abs() as usize).min(chars.len())
+                    } else {
+                        chars.len().saturating_sub(length as usize)
+                    };
+                    Value::String(chars.into_iter().skip(skip).collect())
                 })
                 .unwrap_or(Value::Null),
         )),
@@ -833,7 +904,6 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 Value::BigInt(n.abs())
             }
             Value::BigDecimal(n) => {
-                use num_traits::Signed;
                 Value::BigDecimal(n.abs())
             }
             Value::Byte(n) => Value::Int((*n as i64).abs()),
@@ -865,6 +935,11 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .map(|f| Value::Float(f.sqrt()))
                 .unwrap_or(Value::Null),
         )),
+        ("cbrt", [v]) => Ok(Some(
+            value_as_f64(v)
+                .map(|f| Value::Float(f.cbrt()))
+                .unwrap_or(Value::Null),
+        )),
         ("sign", [v]) => Ok(Some(match value_as_f64(v) {
             Some(f) if f > 0.0 => Value::Int(1),
             Some(f) if f < 0.0 => Value::Int(-1),
@@ -876,9 +951,19 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .map(|f| Value::Float(f.exp()))
                 .unwrap_or(Value::Null),
         )),
-        ("log", [v]) => Ok(Some(
+        ("ln", [v]) => Ok(Some(
             value_as_f64(v)
                 .map(|f| Value::Float(f.ln()))
+                .unwrap_or(Value::Null),
+        )),
+        ("log", [v]) => Ok(Some(
+            value_as_f64(v)
+                .map(|f| Value::Float(f.log10()))
+                .unwrap_or(Value::Null),
+        )),
+        ("log2", [v]) => Ok(Some(
+            value_as_f64(v)
+                .map(|f| Value::Float(f.log2()))
                 .unwrap_or(Value::Null),
         )),
         ("log10", [v]) => Ok(Some(
@@ -886,6 +971,23 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .map(|f| Value::Float(f.log10()))
                 .unwrap_or(Value::Null),
         )),
+        ("gamma", [v]) => Ok(Some(
+            value_as_f64(v)
+                .map(|f| Value::Float(log_gamma(f).exp()))
+                .unwrap_or(Value::Null),
+        )),
+        ("lgamma", [v]) => Ok(Some(
+            value_as_f64(v)
+                .map(|f| Value::Float(log_gamma(f)))
+                .unwrap_or(Value::Null),
+        )),
+        ("factorial", [v]) => Ok(Some(factorial_value(v))),
+        ("bitwise_and", [lhs, rhs]) => Ok(Some(bitwise_i64(lhs, rhs, |a, b| a & b))),
+        ("bitwise_or", [lhs, rhs]) => Ok(Some(bitwise_i64(lhs, rhs, |a, b| a | b))),
+        ("bitshift_left", [lhs, rhs]) => Ok(Some(bitshift_i64(lhs, rhs, i64::checked_shl))),
+        ("bitshift_right", [lhs, rhs]) => {
+            Ok(Some(bitshift_i64(lhs, rhs, i64::checked_shr)))
+        }
         ("sin", [v]) => Ok(Some(
             value_as_f64(v)
                 .map(|f| Value::Float(f.sin()))
@@ -1000,7 +1102,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Value::Float32(f) if f.is_finite() => Value::String(format!("{:.6}", *f as f64)),
             other => cast_to_string(other),
         })),
-        ("date", [v]) => Ok(Some(cast_to_date(v))),
+        ("date" | "to_date", [v]) => Ok(Some(cast_to_date(v))),
         ("timestamp", [v]) => Ok(Some(cast_to_date(v))),
         // Alias spellings (`toint8`, `int8`, `serial`, ...) are
         // normalized by `registry::canonical_name` upstream, so the
@@ -1048,12 +1150,19 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .and_then(|idx| list_element_1_based(&runtime_list(items).unwrap_or_default(), idx))
                 .unwrap_or(Value::Null),
         )),
+        ("list_element", [Value::String(s), idx]) => Ok(Some(
+            idx.as_i64()
+                .map(|idx| string_index_1_based(s, idx))
+                .unwrap_or(Value::Null),
+        )),
         ("list_element", [Value::Null, _]) | ("list_element", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
         ("list_position", [items, needle]) if runtime_list(items).is_some() => {
-            for (idx, item) in runtime_list(items).unwrap_or_default().iter().enumerate() {
-                if item.three_valued_eq(needle) == Some(true) {
+            let items = runtime_list(items).unwrap_or_default();
+            for (idx, item) in items.iter().enumerate() {
+                ensure_list_comparable(needle, item)?;
+                if list_semantic_eq(item, needle) {
                     return Ok(Some(Value::Long((idx + 1) as i64)));
                 }
             }
@@ -1063,8 +1172,10 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Null))
         }
         ("list_contains", [items, needle]) if runtime_list(items).is_some() => {
-            for item in runtime_list(items).unwrap_or_default() {
-                if item.three_valued_eq(needle) == Some(true) {
+            let items = runtime_list(items).unwrap_or_default();
+            for item in &items {
+                ensure_list_comparable(needle, item)?;
+                if list_semantic_eq(item, needle) {
                     return Ok(Some(Value::Bool(true)));
                 }
             }
@@ -1076,23 +1187,23 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         // The generic `runtime_list`-based `list_contains` arm above
         // already handles concrete `Value::List` inputs; this duplicate
         // is now unreachable after alias canonicalization.
-        ("list_size" | "list_length" | "list_count" | "len", [Value::List(items)]) => {
-            Ok(Some(Value::Int(items.len() as i64)))
+        ("list_size" | "list_length" | "list_count" | "len", [items])
+            if runtime_list(items).is_some() =>
+        {
+            Ok(Some(Value::Int(
+                runtime_list(items).unwrap_or_default().len() as i64,
+            )))
         }
         ("list_size" | "list_length" | "list_count" | "len", [Value::Null]) => {
             Ok(Some(Value::Null))
         }
-        ("list_distinct", [Value::List(items)]) => {
-            let mut seen: Vec<Value> = Vec::new();
-            for item in items {
-                if !seen.iter().any(|s| s.three_valued_eq(item) == Some(true)) {
-                    seen.push(item.clone());
-                }
-            }
-            Ok(Some(Value::List(seen)))
+        ("list_distinct", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(list_distinct_values(&items, false))))
         }
         ("list_distinct", [Value::Null]) => Ok(Some(Value::Null)),
-        ("list_reverse", [Value::List(items)]) => {
+        ("list_reverse", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
             let mut reversed = items.clone();
             reversed.reverse();
             Ok(Some(Value::List(reversed)))
@@ -1106,41 +1217,48 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(date_part(unit, value)))
         }
         ("date_part", [Value::String(_), Value::Null]) => Ok(Some(Value::Null)),
-        ("date_trunc", [Value::String(_), Value::DateTime(value)]) => {
-            // Approximation: return the original datetime; full unit-aware
-            // truncation requires a calendar lib not in this crate.
-            Ok(Some(Value::DateTime(value.clone())))
-        }
-        ("date_trunc", [Value::String(_), Value::String(value)]) => {
-            Ok(Some(Value::DateTime(value.clone())))
-        }
+        ("date_trunc", [Value::String(unit), Value::DateTime(value)]) => Ok(Some(
+            temporal::trunc_temporal(unit, value)
+                .map(Value::DateTime)
+                .unwrap_or(Value::Null),
+        )),
+        ("date_trunc", [Value::String(unit), Value::String(value)]) => Ok(Some(
+            temporal::trunc_temporal(unit, value)
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
         ("date_trunc", [Value::String(_), Value::Null]) => Ok(Some(Value::Null)),
         // ----- list_extract / list_unique / list_any_value -----
-        ("list_extract", [Value::List(items), idx]) => Ok(Some(
-            idx.as_i64()
-                .map(|i| list_index(items, i))
-                .unwrap_or(Value::Null),
-        )),
-        ("list_extract", [Value::String(s), idx]) => Ok(Some(
-            idx.as_i64()
-                .map(|i| string_index(s, i))
-                .unwrap_or(Value::Null),
-        )),
+        ("list_extract", [items, idx]) if runtime_list(items).is_some() => {
+            let Some(index) = idx.as_i64() else {
+                return Ok(Some(Value::Null));
+            };
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(list_extract_value(&items, index)?))
+        }
+        ("list_extract", [Value::String(s), idx]) => {
+            let Some(index) = idx.as_i64() else {
+                return Ok(Some(Value::Null));
+            };
+            let chars = s
+                .chars()
+                .map(|ch| Value::String(ch.to_string()))
+                .collect::<Vec<_>>();
+            Ok(Some(list_extract_value(&chars, index)?))
+        }
         ("list_extract", [Value::Null, _]) | ("list_extract", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
-        ("list_unique", [Value::List(items)]) => {
-            let mut seen: Vec<Value> = Vec::new();
-            for item in items {
-                if !seen.iter().any(|s| s.three_valued_eq(item) == Some(true)) {
-                    seen.push(item.clone());
-                }
-            }
-            Ok(Some(Value::Int(seen.len() as i64)))
+        ("list_unique", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::Int(
+                list_distinct_values(&items, false).len() as i64,
+            )))
         }
         ("list_unique", [Value::Null]) => Ok(Some(Value::Null)),
-        ("list_any_value", [Value::List(items)]) => {
-            Ok(Some(items.first().cloned().unwrap_or(Value::Null)))
+        ("list_any_value", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(first_non_null_list_value(&items)))
         }
         ("list_any_value", [Value::Null]) => Ok(Some(Value::Null)),
         ("list_sum", [Value::List(items)]) => {
@@ -1201,77 +1319,82 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             }
             Ok(Some(Value::Long(0)))
         }
-        ("list_to_string" | "list_join", [Value::List(items), Value::String(delim)]) => {
+        ("list_to_string" | "list_join", [items, Value::String(delim)])
+            if runtime_list(items).is_some() =>
+        {
+            let items = runtime_list(items).unwrap_or_default();
             let parts: Vec<String> = items
                 .iter()
                 .filter(|item| !matches!(item, Value::Null))
-                .map(display_for_concat)
+                .map(display_for_list_to_string)
                 .collect();
             Ok(Some(Value::String(parts.join(delim))))
         }
-        ("list_to_string" | "list_join", [Value::String(delim), Value::List(items)]) => {
+        ("list_to_string" | "list_join", [Value::String(delim), items])
+            if runtime_list(items).is_some() =>
+        {
             // Kuzu also accepts the `(delimiter, list)` argument order.
+            let items = runtime_list(items).unwrap_or_default();
             let parts: Vec<String> = items
                 .iter()
                 .filter(|item| !matches!(item, Value::Null))
-                .map(display_for_concat)
+                .map(display_for_list_to_string)
                 .collect();
             Ok(Some(Value::String(parts.join(delim))))
         }
         ("list_to_string" | "list_join", [Value::Null, _])
         | ("list_to_string" | "list_join", [_, Value::Null]) => Ok(Some(Value::Null)),
-        ("list_sort", [Value::List(items)]) => {
-            let mut sorted = items.clone();
-            sorted.sort_by(|a, b| compare_values(a, b));
-            Ok(Some(Value::List(sorted)))
+        ("list_sort", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(sort_list_values(&items, false, false))))
         }
-        ("list_sort", [Value::List(items), Value::String(dir)]) => {
-            let mut sorted = items.clone();
-            sorted.sort_by(|a, b| compare_values(a, b));
-            if dir.eq_ignore_ascii_case("DESC") {
-                sorted.reverse();
-            }
-            Ok(Some(Value::List(sorted)))
+        ("list_sort", [items, Value::String(dir)]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(sort_list_values(
+                &items,
+                dir.eq_ignore_ascii_case("DESC"),
+                false,
+            ))))
         }
         (
             "list_sort",
             [
-                Value::List(items),
+                items,
                 Value::String(dir),
-                Value::String(_nulls),
+                Value::String(nulls),
             ],
-        ) => {
-            // Kuzu's `list_sort(list, "ASC"|"DESC", "NULLS FIRST|LAST")`.
-            // Null placement isn't load-bearing for the conformance
-            // dataset's typed lists, so honour the direction and let the
-            // stable sort keep nulls at their natural position.
-            let mut sorted = items.clone();
-            sorted.sort_by(|a, b| compare_values(a, b));
-            if dir.eq_ignore_ascii_case("DESC") {
-                sorted.reverse();
-            }
-            Ok(Some(Value::List(sorted)))
+        ) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(sort_list_values(
+                &items,
+                dir.eq_ignore_ascii_case("DESC"),
+                nulls.eq_ignore_ascii_case("NULLS LAST"),
+            ))))
         }
         ("list_sort", [Value::Null, ..]) => Ok(Some(Value::Null)),
-        ("list_reverse_sort", [Value::List(items)]) => {
-            let mut sorted = items.clone();
-            sorted.sort_by(|a, b| compare_values(a, b));
-            sorted.reverse();
-            Ok(Some(Value::List(sorted)))
+        ("list_reverse_sort", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(sort_list_values(&items, true, false))))
         }
-        ("list_reverse_sort", [Value::List(items), Value::String(_)]) => {
-            let mut sorted = items.clone();
-            sorted.sort_by(|a, b| compare_values(a, b));
-            sorted.reverse();
-            Ok(Some(Value::List(sorted)))
+        ("list_reverse_sort", [items, Value::String(nulls)]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(sort_list_values(
+                &items,
+                true,
+                nulls.eq_ignore_ascii_case("NULLS LAST"),
+            ))))
         }
         ("list_reverse_sort", [Value::Null, ..]) => Ok(Some(Value::Null)),
-        ("list_has_all", [Value::List(haystack), Value::List(needles)]) => {
-            for needle in needles {
-                if !haystack
-                    .iter()
-                    .any(|h| h.three_valued_eq(needle) == Some(true))
-                {
+        ("list_has_all", [haystack, needles])
+            if runtime_list(haystack).is_some() && runtime_list(needles).is_some() =>
+        {
+            let haystack = runtime_list(haystack).unwrap_or_default();
+            let needles = runtime_list(needles).unwrap_or_default();
+            for needle in &needles {
+                if matches!(needle, Value::Null) {
+                    continue;
+                }
+                if !haystack.iter().any(|h| list_semantic_eq(h, needle)) {
                     return Ok(Some(Value::Bool(false)));
                 }
             }
@@ -1280,27 +1403,15 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("list_has_all", [Value::Null, _]) | ("list_has_all", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
-        ("list_product", [Value::List(items)]) => {
-            let mut product: f64 = 1.0;
-            let mut int_only = true;
-            for item in items {
-                if let Some(n) = value_as_f64(item) {
-                    if matches!(item, Value::Float(_) | Value::Float32(_)) {
-                        int_only = false;
-                    }
-                    product *= n;
-                }
-            }
-            Ok(Some(if int_only {
-                Value::Long(product as i64)
-            } else {
-                Value::Float(product)
-            }))
+        ("list_product", [items]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(list_product_value(&items)))
         }
         ("list_product", [Value::Null]) => Ok(Some(Value::Null)),
         ("array_indexof" | "array_position", [Value::List(items), needle]) => {
             for (idx, item) in items.iter().enumerate() {
-                if item.three_valued_eq(needle) == Some(true) {
+                ensure_list_comparable(needle, item)?;
+                if list_semantic_eq(item, needle) {
                     return Ok(Some(Value::Long((idx + 1) as i64)));
                 }
             }
@@ -1311,6 +1422,11 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("label", [Value::Node { label, .. }]) => Ok(Some(Value::String(label.clone()))),
         ("label", [Value::Edge { rel_type, .. }]) => Ok(Some(Value::String(rel_type.clone()))),
         ("label", [Value::Null]) => Ok(Some(Value::Null)),
+        ("map_extract" | "element_at" | "list_element", [Value::Map(map), key])
+            if kuzu_map_entries(map).is_some() =>
+        {
+            Ok(Some(kuzu_map_extract(map, key).unwrap_or_else(|| Value::List(Vec::new()))))
+        }
         ("map_extract", [Value::Map(map), Value::String(key)]) => Ok(Some(Value::List(vec![
             map.get(key).cloned().unwrap_or(Value::Null),
         ]))),
@@ -1319,14 +1435,44 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .cloned()
                 .unwrap_or(Value::Null),
         ]))),
+        ("element_at" | "list_element", [Value::Map(map), Value::String(key)]) => {
+            Ok(Some(map.get(key).cloned().unwrap_or(Value::Null)))
+        }
+        ("element_at" | "list_element", [Value::Map(map), key]) => Ok(Some(
+            map.get(&display_for_concat(key))
+                .cloned()
+                .unwrap_or(Value::Null),
+        )),
         ("map_extract", [Value::Null, _]) => Ok(Some(Value::Null)),
+        ("element_at", [Value::Null, _]) | ("element_at", [_, Value::Null]) => {
+            Ok(Some(Value::Null))
+        }
+        ("cardinality", [Value::Map(map)]) if kuzu_map_entries(map).is_some() => {
+            Ok(Some(kuzu_map_cardinality(map).unwrap_or(Value::Null)))
+        }
+        ("cardinality", [Value::Map(map)]) => Ok(Some(Value::Int(visible_map_len(map) as i64))),
+        ("cardinality", [value]) if runtime_list(value).is_some() => {
+            Ok(Some(Value::Int(runtime_list(value).unwrap_or_default().len() as i64)))
+        }
+        ("cardinality", [Value::Null]) => Ok(Some(Value::Null)),
         ("map_keys", [Value::Map(map)]) => Ok(Some(Value::List(
-            map.keys().cloned().map(Value::String).collect(),
+            kuzu_map_keys(map)
+                .and_then(|value| match value {
+                    Value::List(items) => Some(items),
+                    _ => None,
+                })
+                .unwrap_or_else(|| visible_map_keys(map).into_iter().map(Value::String).collect()),
         ))),
-        ("map_values", [Value::Map(map)]) => Ok(Some(Value::List(map.values().cloned().collect()))),
+        ("map_values", [Value::Map(map)]) => Ok(Some(Value::List(
+            kuzu_map_values(map)
+                .and_then(|value| match value {
+                    Value::List(items) => Some(items),
+                    _ => None,
+                })
+                .unwrap_or_else(|| visible_map_values(map)),
+        ))),
         // ----- broader XOR shapes — non-bool inputs degrade to Null so
         // `[] XOR false` lifts to NULL instead of failing. -----
-        ("xor", [Value::Null, _]) | ("xor", [_, Value::Null]) => Ok(Some(Value::Null)),
         ("xor", [_, _]) => Ok(Some(Value::Null)),
         ("list_creation", items) => Ok(Some(Value::List(items.to_vec()))),
         // ----- typeof / type-check helpers -----
@@ -1335,10 +1481,26 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("to_uint128", [v]) => {
             Ok(Some(strict_cast_to_named_type(v, "UINT128")?))
         }
-        ("blob", [v]) => Ok(Some(cast_to_string(v))),
+        ("blob" | "to_blob", [v]) => Ok(Some(cast_to_blob(v)?)),
+        ("octet_length", [v]) => Ok(Some(Value::Long(blob_bytes_for_value(v)?.len() as i64))),
+        ("encode", [Value::String(text)]) => Ok(Some(Value::String(encode_blob_text(text)))),
+        ("decode", [v]) => {
+            let bytes = blob_bytes_for_value(v)?;
+            match String::from_utf8(bytes) {
+                Ok(text) => Ok(Some(Value::String(text))),
+                Err(_) => Err(InterpretError::Runtime(
+                    "Runtime exception: Failure in decode: could not convert blob to UTF8 string, the blob contained invalid UTF8 characters"
+                        .to_string(),
+                )),
+            }
+        }
         // ----- interval(N, "unit") helpers — best-effort interval parsing -----
-        ("interval", [Value::String(spec)]) => Ok(Some(Value::String(spec.clone()))),
-        ("interval", [Value::Null]) => Ok(Some(Value::Null)),
+        ("interval" | "duration", [Value::String(spec)]) => Ok(Some(Value::String(
+            temporal::parse_interval(spec)
+                .map(temporal::format_interval)
+                .unwrap_or_else(|| normalize_interval_spec(spec)),
+        ))),
+        ("interval" | "duration", [Value::Null]) => Ok(Some(Value::Null)),
         ("to_bool" | "tobool", [v]) => Ok(Some(strict_cast_to_named_type(v, "BOOL")?)),
         ("random", []) => Ok(Some(Value::Float(
             std::time::SystemTime::now()
@@ -1353,14 +1515,10 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Null))
         }
         ("regexp_replace", [Value::String(s), Value::String(pat), Value::String(repl)]) => {
-            // Without a regex engine we degrade to literal substring
-            // replacement when the pattern has no metacharacters.
-            let metas = ['.', '*', '+', '?', '|', '[', ']', '(', ')', '{', '}', '\\'];
-            if !pat.chars().any(|c| metas.contains(&c)) {
-                Ok(Some(Value::String(s.replace(pat.as_str(), repl))))
-            } else {
-                Ok(Some(Value::String(s.clone())))
-            }
+            let regex = compile_regex(pat)?;
+            Ok(Some(Value::String(
+                regex.replace(s.as_str(), repl.as_str()).into_owned(),
+            )))
         }
         (
             "regexp_replace",
@@ -1368,15 +1526,26 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 Value::String(s),
                 Value::String(pat),
                 Value::String(repl),
-                Value::String(_flags),
+                Value::String(flags),
             ],
         ) => {
-            let metas = ['.', '*', '+', '?', '|', '[', ']', '(', ')', '{', '}', '\\'];
-            if !pat.chars().any(|c| metas.contains(&c)) {
-                Ok(Some(Value::String(s.replace(pat.as_str(), repl))))
-            } else {
-                Ok(Some(Value::String(s.clone())))
+            if flags != "g" {
+                return Err(InterpretError::Runtime(
+                    "Binder exception: regex_replace can only support global replace option: g."
+                        .to_string(),
+                ));
             }
+            let regex = compile_regex(pat)?;
+            Ok(Some(Value::String(
+                regex.replace_all(s.as_str(), repl.as_str()).into_owned(),
+            )))
+        }
+        ("regexp_replace", [_, _, _, flag]) if !matches!(flag, Value::String(_) | Value::Null) => {
+            Err(InterpretError::Runtime(format!(
+                "Binder exception: {} has data type {} but STRING was expected.",
+                display_for_concat(flag),
+                value_type_name(flag)
+            )))
         }
         ("regexp_replace", args) if args.iter().any(|a| matches!(a, Value::Null)) => {
             Ok(Some(Value::Null))
@@ -1418,16 +1587,20 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("split_part", [Value::Null, _, _])
         | ("split_part", [_, Value::Null, _])
         | ("split_part", [_, _, Value::Null]) => Ok(Some(Value::Null)),
-        ("regexp_matches" | "regexp_full_match", [Value::String(s), Value::String(pat)]) => {
-            Ok(Some(Value::Bool(regex_match_literal(s, pat))))
+        ("regexp_matches", [Value::String(s), Value::String(pat)]) => {
+            Ok(Some(Value::Bool(compile_regex(pat)?.is_match(s))))
         }
-        ("regexp_extract", [Value::String(s), Value::String(_pat)]) => {
-            Ok(Some(Value::String(s.clone())))
+        ("regexp_full_match", [Value::String(s), Value::String(pat)]) => {
+            Ok(Some(Value::Bool(regex_full_match(s, pat)?)))
+        }
+        ("regexp_extract", [Value::String(s), Value::String(pat)]) => {
+            Ok(Some(regexp_extract(s, pat, 0)?))
         }
         ("regexp_extract", [Value::String(s), Value::String(pat), group]) => Ok(Some(
             group
                 .as_i64()
-                .map(|group| runtime_regexp_extract_simple(s, pat, group))
+                .map(|group| regexp_extract(s, pat, group))
+                .transpose()?
                 .unwrap_or(Value::Null),
         )),
         ("regexp_extract", args) if args.iter().any(|a| matches!(a, Value::Null)) => {
@@ -1438,7 +1611,8 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("array_length", [Value::Null]) => Ok(Some(Value::Null)),
         ("array_contains", [Value::List(items), needle]) => {
             for item in items {
-                if item.three_valued_eq(needle) == Some(true) {
+                ensure_list_comparable(needle, item)?;
+                if list_semantic_eq(item, needle) {
                     return Ok(Some(Value::Bool(true)));
                 }
             }
@@ -1461,7 +1635,13 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .unwrap_or(Value::Null),
         )),
         ("to_epoch_ms", [Value::Null]) => Ok(Some(Value::Null)),
-        ("to_timestamp", [v]) => Ok(Some(cast_to_date(v))),
+        ("to_timestamp", [v]) => match temporal::epoch_seconds_to_timestamp(v) {
+            Ok(Some(timestamp)) => Ok(Some(Value::String(timestamp))),
+            Ok(None) => Ok(Some(Value::Null)),
+            Err(()) => Err(InterpretError::Runtime(
+                "Conversion exception: Could not convert epoch seconds to TIMESTAMP".to_string(),
+            )),
+        },
         ("greatest", values) if !values.is_empty() => {
             let mut best: Option<Value> = None;
             for v in values {
@@ -1479,7 +1659,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                     None => v.clone(),
                 });
             }
-            Ok(Some(best.unwrap_or(Value::Null)))
+            Ok(Some(strip_utc_suffix(best.unwrap_or(Value::Null))))
         }
         ("least", values) if !values.is_empty() => {
             let mut best: Option<Value> = None;
@@ -1498,7 +1678,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                     None => v.clone(),
                 });
             }
-            Ok(Some(best.unwrap_or(Value::Null)))
+            Ok(Some(strip_utc_suffix(best.unwrap_or(Value::Null))))
         }
         ("round", [v, places]) => Ok(Some(match (value_as_f64(v), places.as_i64()) {
             (Some(f), Some(places)) => {
@@ -1511,12 +1691,16 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
             _ => Value::Null,
         })),
-        ("regexp_extract_all", [Value::String(s), Value::String(_pat)]) => {
-            Ok(Some(Value::List(vec![Value::String(s.clone())])))
+        ("regexp_extract_all", [Value::String(s), Value::String(pat)]) => {
+            Ok(Some(regexp_extract_all(s, pat, 0)?))
         }
-        ("regexp_extract_all", [Value::String(s), Value::String(_pat), _idx]) => {
-            Ok(Some(Value::List(vec![Value::String(s.clone())])))
-        }
+        ("regexp_extract_all", [Value::String(s), Value::String(pat), group]) => Ok(Some(
+            group
+                .as_i64()
+                .map(|group| regexp_extract_all(s, pat, group))
+                .transpose()?
+                .unwrap_or(Value::Null),
+        )),
         ("regexp_extract_all", args) if args.iter().any(|a| matches!(a, Value::Null)) => {
             Ok(Some(Value::Null))
         }
@@ -1530,13 +1714,13 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("array_concat", [Value::Null, _]) | ("array_concat", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
+        ("epoch_ms", [Value::Null]) => Ok(Some(Value::Null)),
         ("epoch_ms", [v]) => Ok(Some(
             v.as_i64()
                 .and_then(|ms| epoch_millis_to_datetime_with_offset(ms, 0))
                 .map(|value| Value::String(kuzu_datetime_display(&value)))
                 .unwrap_or(Value::Null),
         )),
-        ("epoch_ms", [Value::Null]) => Ok(Some(Value::Null)),
         ("struct_pack", args) => Ok(Some(struct_pack(args))),
         ("union_value", args) => Ok(Some(union_value(args))),
         ("union_tag", [value]) => Ok(Some(union_tag(value))),
@@ -1574,6 +1758,9 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("struct_extract", [Value::Null, _]) => {
             Ok(Some(Value::Null))
         }
+        ("suffix", [Value::String(s), Value::String(suffix)]) => {
+            Ok(Some(Value::Bool(s.ends_with(suffix))))
+        }
         ("suffix", [Value::String(s), n]) => Ok(Some(
             n.as_i64()
                 .filter(|n| *n >= 0)
@@ -1585,6 +1772,9 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .unwrap_or(Value::Null),
         )),
         ("suffix", [Value::Null, _]) | ("suffix", [_, Value::Null]) => Ok(Some(Value::Null)),
+        ("prefix", [Value::String(s), Value::String(prefix)]) => {
+            Ok(Some(Value::Bool(s.starts_with(prefix))))
+        }
         ("prefix", [Value::String(s), n]) => Ok(Some(
             n.as_i64()
                 .filter(|n| *n >= 0)
@@ -1619,28 +1809,36 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Null))
         }
         // ----- concat_ws(sep, args...) — join non-null args with sep -----
-        ("concat_ws", args) if args.len() >= 1 => {
+        ("concat_ws", args) if args.len() < 2 => Err(InterpretError::Runtime(format!(
+            "Binder exception: concat_ws expects at least two parameters. Got: {}.",
+            args.len()
+        ))),
+        ("concat_ws", args) => {
             let Some(Value::String(sep)) = args.first() else {
-                return Ok(Some(Value::Null));
+                let actual = args.first().unwrap_or(&Value::Null);
+                return Err(InterpretError::Runtime(format!(
+                    "Binder exception: concat_ws expects all string parameters. Got: {}.",
+                    value_type_name(actual)
+                )));
             };
-            let parts: Vec<String> = args
-                .iter()
-                .skip(1)
-                .filter(|v| !matches!(v, Value::Null))
-                .map(display_for_concat)
-                .collect();
-            Ok(Some(Value::String(parts.join(sep))))
-        }
-        // ----- array_cross_product(a, b) — pairwise multiplication -----
-        ("array_cross_product", [Value::List(a), Value::List(b)]) => {
-            let mut out = Vec::with_capacity(a.len().min(b.len()));
-            for (lhs, rhs) in a.iter().zip(b.iter()) {
-                match (value_as_f64(lhs), value_as_f64(rhs)) {
-                    (Some(l), Some(r)) => out.push(Value::Float(l * r)),
-                    _ => out.push(Value::Null),
+            let mut parts = Vec::new();
+            for value in args.iter().skip(1) {
+                match value {
+                    Value::Null => {}
+                    Value::String(text) => parts.push(text.clone()),
+                    other => {
+                        return Err(InterpretError::Runtime(format!(
+                            "Binder exception: concat_ws expects all string parameters. Got: {}.",
+                            value_type_name(other)
+                        )));
+                    }
                 }
             }
-            Ok(Some(Value::List(out)))
+            Ok(Some(Value::String(parts.join(sep))))
+        }
+        // ----- array_cross_product(a, b) — 3D vector cross product -----
+        ("array_cross_product", [Value::List(a), Value::List(b)]) => {
+            Ok(Some(array_cross_product_value(a, b)))
         }
         ("array_extract", [Value::List(items), idx]) => Ok(Some(
             idx.as_i64()
@@ -1649,7 +1847,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         )),
         ("array_extract", [Value::String(s), idx]) => Ok(Some(
             idx.as_i64()
-                .map(|i| string_index(s, i))
+                .map(|i| string_index_1_based_clamped(s, i))
                 .unwrap_or(Value::Null),
         )),
         ("array_extract", [Value::Null, _]) | ("array_extract", [_, Value::Null]) => {
@@ -1662,7 +1860,10 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("starts_with" | "startswith", [Value::String(s), Value::String(prefix)]) => {
             Ok(Some(Value::Bool(s.starts_with(prefix.as_str()))))
         }
-        ("ends_with" | "endswith" | "starts_with" | "startswith", args)
+        ("contains", [Value::String(s), Value::String(needle)]) => {
+            Ok(Some(Value::Bool(s.contains(needle.as_str()))))
+        }
+        ("ends_with" | "endswith" | "starts_with" | "startswith" | "contains", args)
             if args.iter().any(|a| matches!(a, Value::Null)) =>
         {
             Ok(Some(Value::Null))
@@ -1694,65 +1895,110 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 display_for_concat(v)
             ))))
         }
-        ("gen_random_uuid", []) => Ok(Some(Value::String(
-            "00000000-0000-0000-0000-000000000000".to_string(),
-        ))),
-        ("uuid", [v]) => Ok(Some(match v {
-            Value::String(s) => {
-                // Lower-case and re-hyphenate UUID-shaped input so the
-                // round-trip `UUID("A0EEBC99-...")` lifts to Kuzu's
-                // canonical form.
-                let inner = s.trim().trim_start_matches('{').trim_end_matches('}');
-                let hex: String = inner.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-                if hex.len() == 32 {
-                    let lower = hex.to_ascii_lowercase();
-                    Value::String(format!(
-                        "{}-{}-{}-{}-{}",
-                        &lower[..8],
-                        &lower[8..12],
-                        &lower[12..16],
-                        &lower[16..20],
-                        &lower[20..32]
-                    ))
-                } else {
-                    Value::String(s.clone())
-                }
-            }
-            Value::Null => Value::Null,
-            other => cast_to_string(other),
-        })),
+        ("gen_random_uuid", []) => Ok(Some(Value::String(next_deterministic_uuid()))),
+        ("uuid", [v]) => Ok(Some(cast_to_uuid(v))),
         ("internal_id", [v]) => Ok(Some(match v {
-            Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
+            Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
+                element_internal_id(graph, v).unwrap_or(Value::Null)
+            }
             _ => Value::Null,
         })),
-        ("internal_id", [v, _]) => Ok(Some(match v {
-            Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
+        ("internal_id", [table, offset]) => Ok(Some(match (table.as_i64(), offset.as_i64()) {
+            (Some(table), Some(offset)) => Value::InternalId { table, offset },
             _ => Value::Null,
         })),
         ("regexp_split_to_array", [Value::String(s), Value::String(delim)]) => {
-            Ok(Some(Value::List(if delim.is_empty() {
-                s.chars().map(|c| Value::String(c.to_string())).collect()
-            } else {
-                s.split(delim.as_str())
-                    .map(|part| Value::String(part.to_string()))
-                    .collect()
-            })))
+            let regex = compile_regex(delim)?;
+            let mut parts = regex
+                .split(s.as_str())
+                .map(|part| Value::String(part.to_string()))
+                .collect::<Vec<_>>();
+            if matches!(parts.last(), Some(Value::String(last)) if last.is_empty()) {
+                parts.pop();
+            }
+            Ok(Some(Value::List(parts)))
         }
         ("regexp_split_to_array", [Value::Null, _])
         | ("regexp_split_to_array", [_, Value::Null]) => Ok(Some(Value::Null)),
-        ("last_day", [Value::DateTime(value)]) => Ok(Some(Value::DateTime(value.clone()))),
-        ("last_day", [Value::String(value)]) => Ok(Some(Value::String(value.clone()))),
+        ("last_day", [Value::DateTime(value)]) => Ok(Some(
+            temporal::last_day(value)
+                .map(Value::DateTime)
+                .unwrap_or(Value::Null),
+        )),
+        ("last_day", [Value::String(value)]) => Ok(Some(
+            temporal::last_day(value)
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
         ("last_day", [Value::Null]) => Ok(Some(Value::Null)),
-        ("dayname", [Value::DateTime(_)]) | ("dayname", [Value::String(_)]) => {
-            Ok(Some(Value::String("Monday".to_string())))
-        }
+        ("dayname", [Value::DateTime(value)]) | ("dayname", [Value::String(value)]) => Ok(Some(
+            temporal::day_name(value)
+                .map(|name| Value::String(name.to_string()))
+                .unwrap_or(Value::Null),
+        )),
         ("dayname", [Value::Null]) => Ok(Some(Value::Null)),
-        ("monthname", [Value::DateTime(_)]) | ("monthname", [Value::String(_)]) => {
-            Ok(Some(Value::String("January".to_string())))
+        ("monthname", [Value::DateTime(value)]) | ("monthname", [Value::String(value)]) => {
+            Ok(Some(
+                temporal::month_name(value)
+                    .map(|name| Value::String(name.to_string()))
+                    .unwrap_or(Value::Null),
+            ))
         }
         ("monthname", [Value::Null]) => Ok(Some(Value::Null)),
-        ("even", [v]) => Ok(Some(match v.as_i64() {
-            Some(n) => Value::Bool(n % 2 == 0),
+        ("century", [Value::DateTime(value)]) | ("century", [Value::String(value)]) => {
+            Ok(Some(temporal::temporal_part("century", value).unwrap_or(Value::Null)))
+        }
+        ("century", [Value::Null]) => Ok(Some(Value::Null)),
+        ("make_date", [year, month, day]) => Ok(Some(
+            match (year.as_i64(), month.as_i64(), day.as_i64()) {
+                (Some(year), Some(month), Some(day)) => temporal::make_date(year, month, day)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                _ => Value::Null,
+            },
+        )),
+        ("to_years", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "years")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_months", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "months")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_days", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "days")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_hours", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "hours")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_minutes", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "minutes")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_seconds", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "seconds")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_milliseconds", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "milliseconds")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("to_microseconds", [v]) => Ok(Some(
+            temporal::numeric_to_interval(v, "microseconds")
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )),
+        ("even", [v]) => Ok(Some(match value_as_f64(v) {
+            Some(n) => Value::Float(next_even_number(n)),
             None => Value::Null,
         })),
         ("odd", [v]) => Ok(Some(match v.as_i64() {
@@ -1763,8 +2009,9 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         // `list_concat` upstream, so the dedicated arms previously here
         // are unreachable and have been removed.
         // ----- array_slice(list, start, end) -----
-        ("array_slice", [Value::List(items), start, end]) => {
-            Ok(Some(Value::List(list_slice_range(items, start, end))))
+        ("array_slice", [items, start, end]) if runtime_list(items).is_some() => {
+            let items = runtime_list(items).unwrap_or_default();
+            Ok(Some(Value::List(list_slice_range(&items, start, end))))
         }
         ("array_slice", [Value::String(s), start, end]) => {
             Ok(Some(Value::String(string_slice_range(s, start, end))))
@@ -1774,10 +2021,10 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         // ----- array vector functions -----
         ("array_cosine_similarity", [a, b])
-            if numeric_vector(a).is_some() && numeric_vector(b).is_some() =>
+            if float_vector(a).is_some() && float_vector(b).is_some() =>
         {
-            let a = numeric_vector(a).unwrap_or_default();
-            let b = numeric_vector(b).unwrap_or_default();
+            let a = float_vector(a).unwrap_or_default();
+            let b = float_vector(b).unwrap_or_default();
             let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
             let na: f64 = a.iter().map(|x| x * x).sum();
             let nb: f64 = b.iter().map(|x| x * x).sum();
@@ -1786,6 +2033,14 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             } else {
                 Ok(Some(Value::Float(dot / (na.sqrt() * nb.sqrt()))))
             }
+        }
+        ("array_cosine_similarity", [a, b])
+            if runtime_list(a).is_some() && runtime_list(b).is_some() =>
+        {
+            Ok(Some(Value::String(
+                "Binder exception: ARRAY_COSINE_SIMILARITY requires argument type to be FLOAT[] or DOUBLE[]."
+                    .to_string(),
+            )))
         }
         ("array_cosine_similarity", [Value::Null, _])
         | ("array_cosine_similarity", [_, Value::Null]) => Ok(Some(Value::Null)),
@@ -1838,21 +2093,29 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
 
 fn struct_pack(args: &[Value]) -> Value {
     let mut out = BTreeMap::new();
+    let mut order = Vec::new();
     let mut positional = 1usize;
     for arg in args {
         match arg {
             Value::Map(map) => {
                 for (key, value) in map {
+                    if key == STRUCT_ORDER_KEY || key == STRUCT_TYPES_KEY {
+                        continue;
+                    }
+                    order.push(Value::String(key.clone()));
                     out.insert(key.clone(), value.clone());
                 }
             }
             Value::Null => return Value::Null,
             other => {
-                out.insert(positional.to_string(), other.clone());
+                let key = positional.to_string();
+                order.push(Value::String(key.clone()));
+                out.insert(key, other.clone());
                 positional += 1;
             }
         }
     }
+    out.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
     Value::Map(out)
 }
 
@@ -1868,17 +2131,13 @@ fn union_value(args: &[Value]) -> Value {
     let Some((tag, value)) = fields.next() else {
         return Value::Null;
     };
-    let mut out = BTreeMap::new();
-    out.insert("__tag".to_string(), Value::String(tag.clone()));
-    out.insert("__value".to_string(), value.clone());
-    out.insert(tag, value);
-    Value::Map(out)
+    make_union_value(&tag, value, None)
 }
 
 fn union_tag(value: &Value) -> Value {
     match value {
         Value::Map(map) => {
-            if let Some(Value::String(tag)) = map.get("__tag") {
+            if let Some(Value::String(tag)) = map.get(UNION_TAG_KEY) {
                 return Value::String(tag.clone());
             }
             map.keys()
@@ -1895,9 +2154,9 @@ fn union_extract(value: &Value, tag: &str) -> Value {
     let Value::Map(map) = value else {
         return Value::Null;
     };
-    match map.get("__tag") {
+    match map.get(UNION_TAG_KEY) {
         Some(Value::String(actual)) if actual == tag => map
-            .get("__value")
+            .get(UNION_VALUE_KEY)
             .cloned()
             .or_else(|| map.get(tag).cloned())
             .unwrap_or(Value::Null),
@@ -1906,12 +2165,453 @@ fn union_extract(value: &Value, tag: &str) -> Value {
     }
 }
 
-fn runtime_list(value: &Value) -> Option<Vec<Value>> {
+fn make_union_value(tag: &str, value: Value, variants: Option<&[UnionVariant<'_>]>) -> Value {
+    let mut out = BTreeMap::new();
+    out.insert(UNION_TAG_KEY.to_string(), Value::String(tag.to_string()));
+    out.insert(UNION_VALUE_KEY.to_string(), value.clone());
+    out.insert(tag.to_string(), value);
+    if let Some(variants) = variants {
+        out.insert(
+            UNION_VARIANTS_KEY.to_string(),
+            encode_union_variants(variants),
+        );
+    }
+    Value::Map(out)
+}
+
+fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
+    if matches!(left, Value::Null) || matches!(right, Value::Null) {
+        return Value::Null;
+    }
+    match op {
+        "eq" => left
+            .three_valued_eq(right)
+            .map(Value::Bool)
+            .unwrap_or(Value::Null),
+        "neq" => left
+            .three_valued_eq(right)
+            .map(|value| Value::Bool(!value))
+            .unwrap_or(Value::Null),
+        _ => left
+            .three_valued_cmp(right)
+            .map(|ord| {
+                Value::Bool(match op {
+                    "lt" => ord == std::cmp::Ordering::Less,
+                    "lte" => ord != std::cmp::Ordering::Greater,
+                    "gt" => ord == std::cmp::Ordering::Greater,
+                    "gte" => ord != std::cmp::Ordering::Less,
+                    _ => false,
+                })
+            })
+            .unwrap_or(Value::Null),
+    }
+}
+
+pub(crate) fn runtime_list(value: &Value) -> Option<Vec<Value>> {
     match value {
         Value::List(items) => Some(items.clone()),
         Value::Path(items) => Some(items.clone()),
         Value::String(text) => parse_runtime_list_literal(text),
         _ => None,
+    }
+}
+
+fn make_kuzu_map(keys: Vec<Value>, values: Vec<Value>) -> IrResult<Value> {
+    let mut entries = Vec::with_capacity(keys.len().min(values.len()));
+    for (key, value) in keys.into_iter().zip(values.into_iter()) {
+        entries.push(Value::List(vec![key, value]));
+    }
+
+    let mut map = BTreeMap::new();
+    map.insert(KUZU_MAP_ENTRIES_KEY.to_string(), Value::List(entries));
+    Ok(Value::Map(map))
+}
+
+fn visible_map_len(map: &BTreeMap<String, Value>) -> usize {
+    map.keys().filter(|key| is_visible_map_key(key)).count()
+}
+
+fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
+    if let Some(order) = struct_field_order(map) {
+        return order;
+    }
+    map.keys()
+        .filter(|key| is_visible_map_key(key))
+        .cloned()
+        .collect()
+}
+
+fn visible_map_values(map: &BTreeMap<String, Value>) -> Vec<Value> {
+    visible_map_keys(map)
+        .into_iter()
+        .filter_map(|key| map.get(&key).cloned())
+        .collect()
+}
+
+fn union_display_value(map: &BTreeMap<String, Value>) -> Option<&Value> {
+    match (map.get("__tag"), map.get("__value")) {
+        (Some(Value::String(_)), Some(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn struct_field_order(map: &BTreeMap<String, Value>) -> Option<Vec<String>> {
+    let Value::List(items) = map.get(STRUCT_ORDER_KEY)? else {
+        return None;
+    };
+    Some(
+        items
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+fn is_visible_map_key(key: &str) -> bool {
+    key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && key != KUZU_MAP_ENTRIES_KEY
+}
+
+fn normalize_interval_spec(spec: &str) -> String {
+    let trimmed = spec.trim();
+    let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 2 || parts.len() % 2 != 0 {
+        return spec.to_string();
+    }
+
+    let mut prefix: Vec<String> = Vec::new();
+    let mut hours = 0i64;
+    let mut minutes = 0i64;
+    let mut seconds = 0i64;
+    let mut micros = 0i64;
+    let mut saw_time_component = false;
+    for chunk in parts.chunks_exact(2) {
+        let Ok(value) = chunk[0].parse::<i64>() else {
+            return spec.to_string();
+        };
+        match chunk[1].to_ascii_lowercase().as_str() {
+            "year" | "years" | "y" | "yr" | "yrs" => {
+                prefix.push(format!(
+                    "{value} {}",
+                    if value.abs() == 1 { "year" } else { "years" }
+                ));
+            }
+            "month" | "months" | "mon" | "mons" => {
+                prefix.push(format!(
+                    "{value} {}",
+                    if value.abs() == 1 { "month" } else { "months" }
+                ));
+            }
+            "week" | "weeks" => {
+                prefix.push(format!(
+                    "{value} {}",
+                    if value.abs() == 1 { "week" } else { "weeks" }
+                ));
+            }
+            "day" | "days" | "d" => {
+                prefix.push(format!(
+                    "{value} {}",
+                    if value.abs() == 1 { "day" } else { "days" }
+                ));
+            }
+            "hour" | "hours" | "h" | "hr" | "hrs" => {
+                hours += value;
+                saw_time_component = true;
+            }
+            "minute" | "minutes" | "m" | "min" | "mins" => {
+                minutes += value;
+                saw_time_component = true;
+            }
+            "second" | "seconds" | "s" | "sec" | "secs" => {
+                seconds += value;
+                saw_time_component = true;
+            }
+            "millisecond" | "milliseconds" | "ms" => {
+                micros += value * 1_000;
+                saw_time_component = true;
+            }
+            "microsecond" | "microseconds" | "us" | "µs" => {
+                micros += value;
+                saw_time_component = true;
+            }
+            _ => return spec.to_string(),
+        }
+    }
+
+    if !saw_time_component {
+        return if prefix.is_empty() {
+            "0:00:00".to_string()
+        } else {
+            prefix.join(" ")
+        };
+    }
+
+    let time_tail = if micros != 0 {
+        format!(
+            "{hours:02}:{minutes:02}:{seconds:02}.{}",
+            trim_interval_fraction(micros)
+        )
+    } else {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    };
+    if prefix.is_empty() {
+        time_tail
+    } else {
+        format!("{} {time_tail}", prefix.join(" "))
+    }
+}
+
+fn trim_interval_fraction(micros: i64) -> String {
+    let mut fraction = format!("{:06}", micros.abs());
+    while fraction.ends_with('0') {
+        fraction.pop();
+    }
+    if fraction.is_empty() {
+        "0".to_string()
+    } else {
+        fraction
+    }
+}
+
+fn kuzu_map_entries(map: &BTreeMap<String, Value>) -> Option<&[Value]> {
+    let Value::List(entries) = map.get(KUZU_MAP_ENTRIES_KEY)? else {
+        return None;
+    };
+    Some(entries.as_slice())
+}
+
+fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
+    let Value::List(items) = entry else {
+        return None;
+    };
+    let [key, value] = items.as_slice() else {
+        return None;
+    };
+    Some((key, value))
+}
+
+fn kuzu_map_keys(map: &BTreeMap<String, Value>) -> Option<Value> {
+    let entries = kuzu_map_entries(map)?;
+    Some(Value::List(
+        entries
+            .iter()
+            .filter_map(kuzu_map_entry)
+            .map(|(key, _)| key.clone())
+            .collect(),
+    ))
+}
+
+fn kuzu_map_values(map: &BTreeMap<String, Value>) -> Option<Value> {
+    let entries = kuzu_map_entries(map)?;
+    Some(Value::List(
+        entries
+            .iter()
+            .filter_map(kuzu_map_entry)
+            .map(|(_, value)| value.clone())
+            .collect(),
+    ))
+}
+
+fn kuzu_map_extract(map: &BTreeMap<String, Value>, needle: &Value) -> Option<Value> {
+    let entries = kuzu_map_entries(map)?;
+    let values = entries
+        .iter()
+        .filter_map(kuzu_map_entry)
+        .filter(|(key, _)| list_semantic_eq(key, needle))
+        .map(|(_, value)| value.clone())
+        .collect();
+    Some(Value::List(values))
+}
+
+fn kuzu_map_first(map: &BTreeMap<String, Value>, needle: &Value) -> Option<Value> {
+    kuzu_map_entries(map)?
+        .iter()
+        .filter_map(kuzu_map_entry)
+        .find(|(key, _)| list_semantic_eq(key, needle))
+        .map(|(_, value)| value.clone())
+        .or(Some(Value::Null))
+}
+
+fn kuzu_map_cardinality(map: &BTreeMap<String, Value>) -> Option<Value> {
+    Some(Value::Int(kuzu_map_entries(map)?.len() as i64))
+}
+
+fn list_semantic_eq(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Null, Value::Null) => true,
+        (Value::Null, _) | (_, Value::Null) => false,
+        (Value::String(left), Value::String(right)) => {
+            normalize_interval_spec(left) == normalize_interval_spec(right)
+        }
+        (Value::DateTime(left), Value::String(right))
+        | (Value::String(right), Value::DateTime(left)) => {
+            left == right || normalize_interval_spec(left) == normalize_interval_spec(right)
+        }
+        (Value::List(left), Value::List(right)) | (Value::Path(left), Value::Path(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right.iter())
+                    .all(|(left, right)| list_semantic_eq(left, right))
+        }
+        (Value::Map(left), Value::Map(right)) => {
+            visible_map_len(left) == visible_map_len(right)
+                && visible_map_keys(left).into_iter().all(|key| {
+                    let Some(value) = left.get(&key) else {
+                        return false;
+                    };
+                    right
+                        .get(&key)
+                        .is_some_and(|right_value| list_semantic_eq(value, right_value))
+                })
+        }
+        _ => left.three_valued_eq(right) == Some(true),
+    }
+}
+
+fn ensure_list_comparable(left: &Value, right: &Value) -> IrResult<()> {
+    if matches!(left, Value::Null) || matches!(right, Value::Null) {
+        return Ok(());
+    }
+    if list_comparable(left, right) {
+        return Ok(());
+    }
+    if !matches!(left, Value::Map(_)) && !matches!(right, Value::Map(_)) {
+        return Ok(());
+    }
+    Err(InterpretError::Runtime(format!(
+        "Binder exception: Cannot compare {} and {} in list_contains function.",
+        cypher_list_type_name(right),
+        cypher_list_type_name(left)
+    )))
+}
+
+fn list_comparable(left: &Value, right: &Value) -> bool {
+    if numeric_type(left) && numeric_type(right) {
+        return true;
+    }
+    matches!(
+        (left, right),
+        (Value::String(_), Value::String(_))
+            | (Value::String(_), Value::DateTime(_))
+            | (Value::DateTime(_), Value::String(_))
+            | (Value::DateTime(_), Value::DateTime(_))
+            | (Value::Bool(_), Value::Bool(_))
+            | (Value::InternalId { .. }, Value::InternalId { .. })
+            | (Value::List(_), Value::List(_))
+            | (Value::Map(_), Value::Map(_))
+            | (Value::Node { .. }, Value::Node { .. })
+            | (Value::Edge { .. }, Value::Edge { .. })
+            | (Value::Path(_), Value::Path(_))
+    )
+}
+
+fn numeric_type(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Byte(_)
+            | Value::Short(_)
+            | Value::Int(_)
+            | Value::Long(_)
+            | Value::Float32(_)
+            | Value::Float(_)
+            | Value::BigInt(_)
+            | Value::BigDecimal(_)
+    )
+}
+
+fn cypher_list_type_name(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(_) => "BOOL".to_string(),
+        Value::Byte(_) => "INT8".to_string(),
+        Value::Short(_) => "INT16".to_string(),
+        Value::Int(_) | Value::Long(_) => "INT64".to_string(),
+        Value::Float32(_) => "FLOAT".to_string(),
+        Value::Float(_) => "DOUBLE".to_string(),
+        Value::BigInt(_) => "INT128".to_string(),
+        Value::BigDecimal(_) => "DECIMAL".to_string(),
+        Value::DateTime(_) => "DATE".to_string(),
+        Value::InternalId { .. } => "INTERNAL_ID".to_string(),
+        Value::String(_) => "STRING".to_string(),
+        Value::Node { .. } => "NODE".to_string(),
+        Value::Edge { .. } => "REL".to_string(),
+        Value::List(items) => items
+            .first()
+            .map(|item| format!("{}[]", cypher_list_type_name(item)))
+            .unwrap_or_else(|| "ANY[]".to_string()),
+        Value::Map(map) => {
+            let fields = visible_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key} {}", cypher_list_type_name(value)))
+                })
+                .collect::<Vec<_>>();
+            format!("STRUCT({})", fields.join(", "))
+        }
+        Value::Path(_) => "PATH".to_string(),
+    }
+}
+
+fn list_distinct_values(items: &[Value], include_null: bool) -> Vec<Value> {
+    let mut seen = Vec::new();
+    for item in items {
+        if !include_null && matches!(item, Value::Null) {
+            continue;
+        }
+        if !seen.iter().any(|seen| list_semantic_eq(seen, item)) {
+            seen.push(item.clone());
+        }
+    }
+    seen
+}
+
+fn first_non_null_list_value(items: &[Value]) -> Value {
+    items
+        .iter()
+        .find(|item| !matches!(item, Value::Null))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn sort_list_values(items: &[Value], descending: bool, nulls_last: bool) -> Vec<Value> {
+    let null_count = items
+        .iter()
+        .filter(|item| matches!(item, Value::Null))
+        .count();
+    let mut sorted: Vec<Value> = items
+        .iter()
+        .filter(|item| !matches!(item, Value::Null))
+        .cloned()
+        .collect();
+    sorted.sort_by(compare_values);
+    if descending {
+        sorted.reverse();
+    }
+
+    let nulls = std::iter::repeat(Value::Null).take(null_count);
+    if nulls_last {
+        sorted.extend(nulls);
+        sorted
+    } else {
+        nulls.chain(sorted).collect()
+    }
+}
+
+fn parse_integer_runtime_literal(text: &str) -> Value {
+    use num_bigint::BigInt;
+    use std::str::FromStr;
+
+    let cleaned = text.trim().replace('_', "");
+    if let Ok(value) = cleaned.parse::<i64>() {
+        Value::Long(value)
+    } else {
+        BigInt::from_str(&cleaned)
+            .map(Value::BigInt)
+            .unwrap_or(Value::Null)
     }
 }
 
@@ -1978,15 +2678,32 @@ fn parse_runtime_list_item(text: &str) -> Value {
         "null" => Value::Null,
         "true" => Value::Bool(true),
         "false" => Value::Bool(false),
-        _ => {
-            if let Ok(value) = trimmed.parse::<i64>() {
-                Value::Long(value)
-            } else if let Ok(value) = trimmed.parse::<f64>() {
-                Value::Float(value)
-            } else {
-                Value::String(trimmed.to_string())
-            }
-        }
+        _ => parse_runtime_atom(trimmed),
+    }
+}
+
+fn parse_runtime_atom(trimmed: &str) -> Value {
+    use num_bigint::BigInt;
+    use std::str::FromStr;
+
+    let integer = trimmed
+        .strip_prefix('+')
+        .unwrap_or(trimmed)
+        .strip_prefix('-')
+        .unwrap_or_else(|| trimmed.strip_prefix('+').unwrap_or(trimmed));
+    if !integer.is_empty() && integer.chars().all(|ch| ch.is_ascii_digit() || ch == '_') {
+        let cleaned = trimmed.replace('_', "");
+        return cleaned
+            .parse::<i64>()
+            .map(Value::Long)
+            .or_else(|_| BigInt::from_str(&cleaned).map(Value::BigInt))
+            .unwrap_or_else(|_| Value::String(trimmed.to_string()));
+    }
+
+    if let Ok(value) = trimmed.parse::<f64>() {
+        Value::Float(value)
+    } else {
+        Value::String(trimmed.to_string())
     }
 }
 
@@ -1995,6 +2712,118 @@ fn numeric_vector(value: &Value) -> Option<Vec<f64>> {
         .iter()
         .map(value_as_f64)
         .collect::<Option<Vec<_>>>()
+}
+
+fn float_vector(value: &Value) -> Option<Vec<f64>> {
+    let items = runtime_list(value)?;
+    if !items
+        .iter()
+        .any(|item| matches!(item, Value::Float32(_) | Value::Float(_)))
+    {
+        return None;
+    }
+    items.iter().map(value_as_f64).collect::<Option<Vec<_>>>()
+}
+
+fn array_cross_product_value(left: &[Value], right: &[Value]) -> Value {
+    let has_supported_type = signed_integer_vector(left).is_some()
+        && signed_integer_vector(right).is_some()
+        || float_numeric_vector(left).is_some() && float_numeric_vector(right).is_some();
+    if !has_supported_type {
+        return Value::String(
+            "Binder exception: ARRAY_CROSS_PRODUCT can only be applied on array of floating points or signed integers"
+                .to_string(),
+        );
+    }
+    if left.len() != 3 || right.len() != 3 {
+        return Value::String(
+            "Binder exception: ARRAY_CROSS_PRODUCT requires both arrays to have the same element type and size of 3"
+                .to_string(),
+        );
+    }
+    if left.iter().all(|item| matches!(item, Value::Short(_)))
+        && right.iter().all(|item| matches!(item, Value::Short(_)))
+    {
+        return Value::List(cross_product_i16(left, right));
+    }
+    if let (Some(left), Some(right)) = (signed_integer_vector(left), signed_integer_vector(right)) {
+        return Value::List(cross_product_bigint(&left, &right));
+    }
+    if let (Some(left), Some(right)) = (float_numeric_vector(left), float_numeric_vector(right)) {
+        return Value::List(cross_product_f64(&left, &right));
+    }
+    Value::String(
+        "Binder exception: ARRAY_CROSS_PRODUCT can only be applied on array of floating points or signed integers"
+            .to_string(),
+    )
+}
+
+fn cross_product_i16(left: &[Value], right: &[Value]) -> Vec<Value> {
+    let to_i16 = |value: &Value| match value {
+        Value::Short(n) => *n,
+        _ => 0,
+    };
+    let left = [to_i16(&left[0]), to_i16(&left[1]), to_i16(&left[2])];
+    let right = [to_i16(&right[0]), to_i16(&right[1]), to_i16(&right[2])];
+    vec![
+        Value::Short(
+            left[1]
+                .wrapping_mul(right[2])
+                .wrapping_sub(left[2].wrapping_mul(right[1])),
+        ),
+        Value::Short(
+            left[2]
+                .wrapping_mul(right[0])
+                .wrapping_sub(left[0].wrapping_mul(right[2])),
+        ),
+        Value::Short(
+            left[0]
+                .wrapping_mul(right[1])
+                .wrapping_sub(left[1].wrapping_mul(right[0])),
+        ),
+    ]
+}
+
+fn signed_integer_vector(items: &[Value]) -> Option<Vec<num_bigint::BigInt>> {
+    use num_bigint::BigInt;
+    Some(
+        items
+            .iter()
+            .map(|item| match item {
+                Value::Byte(n) => Some(BigInt::from(*n)),
+                Value::Short(n) => Some(BigInt::from(*n)),
+                Value::Int(n) | Value::Long(n) => Some(BigInt::from(*n)),
+                Value::BigInt(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?,
+    )
+}
+
+fn float_numeric_vector(items: &[Value]) -> Option<Vec<f64>> {
+    if !items
+        .iter()
+        .any(|item| matches!(item, Value::Float32(_) | Value::Float(_)))
+    {
+        return None;
+    }
+    items.iter().map(value_as_f64).collect::<Option<Vec<_>>>()
+}
+
+fn cross_product_bigint(left: &[num_bigint::BigInt], right: &[num_bigint::BigInt]) -> Vec<Value> {
+    vec![
+        Value::BigInt(&left[1] * &right[2] - &left[2] * &right[1]),
+        Value::BigInt(&left[2] * &right[0] - &left[0] * &right[2]),
+        Value::BigInt(&left[0] * &right[1] - &left[1] * &right[0]),
+    ]
+}
+
+fn cross_product_f64(left: &[f64], right: &[f64]) -> Vec<Value> {
+    vec![
+        Value::Float(left[1] * right[2] - left[2] * right[1]),
+        Value::Float(left[2] * right[0] - left[0] * right[2]),
+        Value::Float(left[0] * right[1] - left[1] * right[0]),
+    ]
 }
 
 fn kuzu_datetime_display(value: &str) -> String {
@@ -2011,22 +2840,14 @@ fn kuzu_datetime_display(value: &str) -> String {
 }
 
 fn runtime_initcap(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut new_word = true;
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            if new_word {
-                out.extend(ch.to_uppercase());
-                new_word = false;
-            } else {
-                out.extend(ch.to_lowercase());
-            }
-        } else {
-            out.push(ch);
-            new_word = true;
-        }
-    }
-    out
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    first
+        .to_uppercase()
+        .chain(chars.flat_map(char::to_lowercase))
+        .collect()
 }
 
 fn runtime_split_string(text: &str, delimiter: &str) -> Vec<Value> {
@@ -2058,17 +2879,42 @@ fn runtime_split_part(text: &str, delimiter: &str, index: i64) -> Value {
         .unwrap_or_else(|| Value::String(String::new()))
 }
 
-fn runtime_regexp_extract_simple(text: &str, pattern: &str, group: i64) -> Value {
-    if group == 0 {
-        return Value::String(text.to_string());
-    }
-    if group == 1 && pattern.contains("_?") {
-        return Value::String(text.split('_').next().unwrap_or("").to_string());
-    }
-    if group == 1 && pattern.starts_with('(') && pattern.ends_with(')') {
-        return Value::String(text.to_string());
-    }
-    Value::String(String::new())
+fn compile_regex(pattern: &str) -> IrResult<regex::Regex> {
+    regex::Regex::new(pattern)
+        .map_err(|err| InterpretError::Runtime(format!("Invalid Input Error: {err}")))
+}
+
+fn regex_full_match(text: &str, pattern: &str) -> IrResult<bool> {
+    let regex = compile_regex(&format!("^(?:{pattern})$"))?;
+    Ok(regex.is_match(text))
+}
+
+fn regexp_extract(text: &str, pattern: &str, group: i64) -> IrResult<Value> {
+    let regex = compile_regex(pattern)?;
+    let Some(captures) = regex.captures(text) else {
+        return Ok(Value::String(String::new()));
+    };
+    let index = group.max(0) as usize;
+    Ok(captures
+        .get(index)
+        .map(|matched| Value::String(matched.as_str().to_string()))
+        .unwrap_or_else(|| Value::String(String::new())))
+}
+
+fn regexp_extract_all(text: &str, pattern: &str, group: i64) -> IrResult<Value> {
+    let regex = compile_regex(pattern)?;
+    let index = group.max(0) as usize;
+    Ok(Value::List(
+        regex
+            .captures_iter(text)
+            .map(|captures| {
+                captures
+                    .get(index)
+                    .map(|matched| Value::String(matched.as_str().to_string()))
+                    .unwrap_or_else(|| Value::String(String::new()))
+            })
+            .collect(),
+    ))
 }
 
 /// Right-pad (or left-pad with `to_right=false`) `s` to length `len`
@@ -2103,8 +2949,8 @@ fn pad_string(s: &str, len: i64, pad: &str, to_right: bool) -> String {
 /// a cheap stand-in for the Kuzu `levenshtein(left, right)` macro the
 /// conformance corpus invokes.
 fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
+    let a = a.as_bytes();
+    let b = b.as_bytes();
     if a.is_empty() {
         return b.len();
     }
@@ -2127,6 +2973,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 fn value_type_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "NULL",
+        Value::String(s) if is_uuid_text(s) => "UUID",
         Value::String(_) => "STRING",
         Value::Bool(_) => "BOOL",
         Value::Byte(_) => "INT8",
@@ -2137,12 +2984,24 @@ fn value_type_name(value: &Value) -> &'static str {
         Value::BigInt(_) => "INT128",
         Value::BigDecimal(_) => "DECIMAL",
         Value::DateTime(_) => "TIMESTAMP",
+        Value::InternalId { .. } => "INTERNAL_ID",
         Value::Node { .. } => "NODE",
         Value::Edge { .. } => "REL",
         Value::List(_) => "LIST",
         Value::Map(_) => "STRUCT",
         Value::Path(_) => "RECURSIVE_REL",
     }
+}
+
+fn is_uuid_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(idx, byte)| {
+        matches!(idx, 8 | 13 | 18 | 23) && *byte == b'-'
+            || !matches!(idx, 8 | 13 | 18 | 23) && byte.is_ascii_hexdigit()
+    })
 }
 
 /// Dispatch Kuzu-style `cast(value, "type-name")` to the per-target
@@ -2168,6 +3027,279 @@ pub(crate) enum CastMode {
     /// casting a scalar to a list target) still error because that
     /// represents a structural mismatch, not a per-element issue.
     NestedElement,
+}
+
+#[derive(Clone, Debug)]
+struct UnionVariant<'a> {
+    tag: String,
+    ty: &'a str,
+}
+
+fn cast_to_uuid(v: &Value) -> Value {
+    match v {
+        Value::String(s) => {
+            let inner = s.trim().trim_start_matches('{').trim_end_matches('}');
+            let hex: String = inner.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+            if hex.len() == 32 {
+                let lower = hex.to_ascii_lowercase();
+                Value::String(format!(
+                    "{}-{}-{}-{}-{}",
+                    &lower[..8],
+                    &lower[8..12],
+                    &lower[12..16],
+                    &lower[16..20],
+                    &lower[20..32]
+                ))
+            } else {
+                Value::String(s.clone())
+            }
+        }
+        Value::Null => Value::Null,
+        other => cast_to_string(other),
+    }
+}
+
+fn cast_to_blob(v: &Value) -> IrResult<Value> {
+    let text = match v {
+        Value::String(text) => text.clone(),
+        other => match cast_to_string(other) {
+            Value::String(text) => text,
+            _ => return Err(cast_conversion_error()),
+        },
+    };
+    blob_bytes(&text)?;
+    Ok(Value::String(text))
+}
+
+fn blob_bytes_for_value(value: &Value) -> IrResult<Vec<u8>> {
+    let Value::String(text) = cast_to_blob(value)? else {
+        return Err(cast_conversion_error());
+    };
+    blob_bytes(&text)
+}
+
+fn blob_bytes(text: &str) -> IrResult<Vec<u8>> {
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut bytes = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        if !ch.is_ascii() {
+            return Err(InterpretError::Runtime(
+                "Conversion exception: Invalid byte encountered in STRING -> BLOB conversion. All non-ascii characters must be escaped with hex codes (e.g. \\xAA)"
+                    .to_string(),
+            ));
+        }
+        if ch == '\\' && matches!(chars.get(index + 1), Some('x' | 'X')) {
+            let first = chars.get(index + 2).copied();
+            let second = chars.get(index + 3).copied();
+            let (Some(first), Some(second)) = (first, second) else {
+                return Err(InterpretError::Runtime(
+                    "Conversion exception: Invalid hex escape code encountered in string -> blob conversion: unterminated escape code at end of string"
+                        .to_string(),
+                ));
+            };
+            if !first.is_ascii_hexdigit() || !second.is_ascii_hexdigit() {
+                return Err(InterpretError::Runtime(format!(
+                    "Conversion exception: Invalid hex escape code encountered in string -> blob conversion: \\x{first}{second}"
+                )));
+            }
+            let hex = format!("{first}{second}");
+            let byte = u8::from_str_radix(&hex, 16).map_err(|_| cast_conversion_error())?;
+            bytes.push(byte);
+            index += 4;
+            continue;
+        }
+        bytes.push(ch as u8);
+        index += 1;
+    }
+    Ok(bytes)
+}
+
+fn encode_blob_text(text: &str) -> String {
+    let mut out = String::new();
+    for byte in text.as_bytes() {
+        if byte.is_ascii() {
+            out.push(*byte as char);
+        } else {
+            out.push_str(&format!("\\x{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn cast_to_timestamp_type(v: &Value, type_name: &str) -> Value {
+    match v {
+        Value::String(raw) | Value::DateTime(raw) => format_timestamp_for_type(raw, type_name)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
+        _ => {
+            let Value::DateTime(raw) = cast_to_date(v) else {
+                return Value::Null;
+            };
+            format_timestamp_for_type(&raw, type_name)
+                .map(Value::DateTime)
+                .unwrap_or(Value::Null)
+        }
+    }
+}
+
+fn format_timestamp_for_type(raw: &str, type_name: &str) -> Option<String> {
+    let parsed = parse_timestamp_for_cast(raw)?;
+    let max_fraction_digits = match type_name {
+        "TIMESTAMP_MS" => Some(3),
+        "TIMESTAMP_SEC" | "TIMESTAMP_S" => Some(0),
+        _ => Some(6),
+    };
+    let fraction = format_timestamp_fraction(&parsed.fraction, max_fraction_digits);
+    let body = format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}",
+        parsed.year, parsed.month, parsed.day, parsed.hour, parsed.minute, parsed.second, fraction
+    );
+    if type_name == "TIMESTAMP_TZ" {
+        Some(format!("{body}+00"))
+    } else {
+        Some(body)
+    }
+}
+
+struct CastTimestampParts {
+    year: i64,
+    month: u32,
+    day: u32,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    fraction: String,
+}
+
+fn parse_timestamp_for_cast(raw: &str) -> Option<CastTimestampParts> {
+    let inner = raw
+        .trim()
+        .strip_prefix("dt[")
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(raw.trim());
+    let normalized = inner.replace('T', " ");
+    let (date, time_and_zone) = normalized
+        .split_once(' ')
+        .map(|(date, time)| (date, time.trim()))
+        .unwrap_or((normalized.as_str(), "00:00:00"));
+
+    let mut date_parts = date.split('-');
+    let year: i64 = date_parts.next()?.parse().ok()?;
+    let month: u32 = date_parts.next()?.parse().ok()?;
+    let day: u32 = date_parts.next()?.parse().ok()?;
+    if date_parts.next().is_some() {
+        return None;
+    }
+
+    let (time, offset_minutes) = split_timestamp_cast_offset(time_and_zone)?;
+    let mut time_parts = time.split(':');
+    let hour: i64 = time_parts.next()?.parse().ok()?;
+    let minute: i64 = time_parts.next()?.parse().ok()?;
+    let second_raw = time_parts.next().unwrap_or("0");
+    if time_parts.next().is_some() {
+        return None;
+    }
+    let (second_raw, fraction) = second_raw.split_once('.').unwrap_or((second_raw, ""));
+    let second: i64 = second_raw.parse().ok()?;
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+    {
+        return None;
+    }
+
+    let days = timestamp_days_from_civil(year, month, day)?;
+    let local_seconds = days
+        .checked_mul(86_400)?
+        .checked_add(hour.checked_mul(3600)?)?
+        .checked_add(minute.checked_mul(60)?)?
+        .checked_add(second)?;
+    let utc_seconds = local_seconds.checked_sub((offset_minutes as i64).checked_mul(60)?)?;
+    let utc_days = utc_seconds.div_euclid(86_400);
+    let seconds_of_day = utc_seconds.rem_euclid(86_400);
+    let (year, month, day) = timestamp_civil_from_days(utc_days)?;
+    Some(CastTimestampParts {
+        year,
+        month,
+        day,
+        hour: seconds_of_day / 3600,
+        minute: (seconds_of_day % 3600) / 60,
+        second: seconds_of_day % 60,
+        fraction: fraction
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect(),
+    })
+}
+
+fn split_timestamp_cast_offset(raw: &str) -> Option<(&str, i32)> {
+    if let Some(time) = raw.strip_suffix('Z') {
+        return Some((time, 0));
+    }
+    let Some(offset_idx) = raw
+        .char_indices()
+        .rev()
+        .find_map(|(idx, ch)| (idx > 0 && (ch == '+' || ch == '-')).then_some(idx))
+    else {
+        return Some((raw, 0));
+    };
+    let (time, offset) = raw.split_at(offset_idx);
+    let sign = if offset.starts_with('-') { -1 } else { 1 };
+    let offset = &offset[1..];
+    let (hours, minutes) = if let Some((hours, minutes)) = offset.split_once(':') {
+        (hours.parse::<i32>().ok()?, minutes.parse::<i32>().ok()?)
+    } else {
+        (offset.parse::<i32>().ok()?, 0)
+    };
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    Some((time, sign * (hours * 60 + minutes)))
+}
+
+fn format_timestamp_fraction(fraction: &str, max_digits: Option<usize>) -> String {
+    let Some(max_digits) = max_digits else {
+        return String::new();
+    };
+    if max_digits == 0 {
+        return String::new();
+    }
+    let digits: String = fraction.chars().take(max_digits).collect();
+    if digits.is_empty() || digits.chars().all(|ch| ch == '0') {
+        String::new()
+    } else {
+        format!(".{digits}")
+    }
+}
+
+fn timestamp_days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
+    let y = year - if month <= 2 { 1 } else { 0 };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = month as i64 + if month > 2 { -3 } else { 9 };
+    let doy = (153 * mp + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era.checked_mul(146_097)?
+        .checked_add(doe)?
+        .checked_sub(719_468)
+}
+
+fn timestamp_civil_from_days(days_since_epoch: i64) -> Option<(i64, u32, u32)> {
+    let z = days_since_epoch.checked_add(719_468)?;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    Some((year, m as u32, d as u32))
 }
 
 /// Single entry-point for every named-type cast. Routes to the same
@@ -2206,18 +3338,14 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
     if let Some(fields) = type_argument(cleaned, "STRUCT") {
         return cast_to_struct_unified(v, fields, mode);
     }
-    if type_argument(cleaned, "UNION").is_some() {
-        // Union targets are not fully supported by the strict engine
-        // yet; preserve the prior behavior of failing with a
-        // conversion error so cast_error coverage holds.
-        return mode_conversion_error(mode);
+    if let Some(fields) = type_argument(cleaned, "UNION") {
+        return cast_to_union_unified(v, fields, cleaned, mode);
     }
-    if type_argument(cleaned, "MAP").is_some() {
-        // MAP(K, V) is parsed but its strict implementation is the
-        // subject of a follow-up; return a conversion error in strict
-        // mode and null in nested/lenient modes so we do not promote
-        // unrelated cases to errors.
-        return mode_conversion_error(mode);
+    if let Some(args) = type_argument(cleaned, "MAP") {
+        return cast_to_map_unified(v, args, mode);
+    }
+    if let Some((precision, scale)) = decimal_precision_scale(cleaned) {
+        return cast_to_parametric_decimal(v, precision, scale, mode);
     }
     // Strip parametric tails like `DECIMAL(5, 2)` so the scalar match
     // below sees the base type name.
@@ -2228,6 +3356,11 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
     };
     match upper.as_ref() {
         "STRING" | "VARCHAR" | "CHAR" | "TEXT" => Ok(cast_to_string(v)),
+        "BLOB" | "BYTEA" => cast_to_blob(v),
+        "INTERVAL" => Ok(match cast_to_string(v) {
+            Value::String(text) => Value::String(normalize_interval_spec(&text)),
+            other => other,
+        }),
         "INT8" | "TINYINT" => strict_or_lenient_i64(v, i8::MIN as i128, i8::MAX as i128, mode)
             .map(|opt| opt.map(|n| Value::Byte(n as i8)).unwrap_or(Value::Null)),
         "UINT8" => strict_or_lenient_i64(v, 0, u8::MAX as i128, mode)
@@ -2246,8 +3379,7 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
             strict_or_lenient_i64(v, i64::MIN as i128, i64::MAX as i128, mode)
                 .map(|opt| opt.map(Value::Long).unwrap_or(Value::Null))
         }
-        "UINT64" => strict_or_lenient_i64(v, 0, i64::MAX as i128, mode)
-            .map(|opt| opt.map(Value::Long).unwrap_or(Value::Null)),
+        "UINT64" => strict_or_lenient_uint64_bigint(v, mode),
         "INT128" => match strict_cast_int128(v) {
             Ok(value) => Ok(value),
             Err(err) => downgrade_or_err(err, mode),
@@ -2258,7 +3390,7 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
         },
         "FLOAT" | "FLOAT32" | "REAL" => match strict_cast_f64(v).and_then(|f| {
             let narrowed = f as f32;
-            if narrowed.is_finite() {
+            if !narrowed.is_nan() {
                 Ok(Value::Float32(narrowed))
             } else {
                 Err(cast_overflow_error())
@@ -2279,7 +3411,16 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
             Value::Null => mode_conversion_error(mode),
             value => Ok(value),
         },
-        "DATE" | "TIMESTAMP" | "DATETIME" => match cast_to_date(v) {
+        "DATE" => match cast_to_date(v) {
+            Value::Null => mode_conversion_error(mode),
+            value => Ok(value),
+        },
+        "TIMESTAMP" | "DATETIME" | "TIMESTAMP_NS" | "TIMESTAMP_MS" | "TIMESTAMP_SEC"
+        | "TIMESTAMP_S" | "TIMESTAMP_TZ" => match cast_to_timestamp_type(v, upper.as_ref()) {
+            Value::Null => mode_conversion_error(mode),
+            value => Ok(value),
+        },
+        "UUID" => match cast_to_uuid(v) {
             Value::Null => mode_conversion_error(mode),
             value => Ok(value),
         },
@@ -2309,7 +3450,9 @@ fn coerce_to_list(v: &Value, _mode: CastMode) -> IrResult<Vec<Value>> {
 /// `Value::Null`.
 fn parse_list_literal(raw: &str) -> Option<Vec<Value>> {
     let trimmed = raw.trim();
-    let body = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))?;
+    let body = trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))?;
     if body.trim().is_empty() {
         return Some(Vec::new());
     }
@@ -2365,7 +3508,9 @@ fn split_top_level_brackets(text: &str) -> Vec<&str> {
 /// like a brace-delimited map.
 fn parse_struct_literal(raw: &str) -> Option<BTreeMap<String, Value>> {
     let trimmed = raw.trim();
-    let body = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}'))?;
+    let body = trimmed
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))?;
     let mut out = BTreeMap::new();
     if body.trim().is_empty() {
         return Some(out);
@@ -2394,16 +3539,11 @@ fn parse_struct_literal(raw: &str) -> Option<BTreeMap<String, Value>> {
         let sep_idx = sep_idx?;
         let key_raw = entry[..sep_idx].trim();
         let value_raw = entry[sep_idx + 1..].trim();
-        let key = key_raw
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
+        let key = key_raw.trim_matches('"').trim_matches('\'').to_string();
         let value = if value_raw.is_empty() || value_raw.eq_ignore_ascii_case("null") {
             Value::Null
         } else if (value_raw.starts_with('"') && value_raw.ends_with('"') && value_raw.len() >= 2)
-            || (value_raw.starts_with('\'')
-                && value_raw.ends_with('\'')
-                && value_raw.len() >= 2)
+            || (value_raw.starts_with('\'') && value_raw.ends_with('\'') && value_raw.len() >= 2)
         {
             Value::String(value_raw[1..value_raw.len() - 1].to_string())
         } else {
@@ -2446,8 +3586,441 @@ fn strict_or_lenient_i64(
     }
 }
 
+fn strict_or_lenient_uint64_bigint(value: &Value, mode: CastMode) -> IrResult<Value> {
+    match strict_cast_uint64_bigint(value) {
+        Ok(value) => Ok(value),
+        Err(err) => downgrade_or_err(err, mode),
+    }
+}
+
 fn strict_cast_to_named_type(v: &Value, type_name: &str) -> IrResult<Value> {
     cast_value(v, type_name, CastMode::ExplicitStrict)
+}
+
+fn cast_to_union_unified(
+    value: &Value,
+    fields: &str,
+    target_type: &str,
+    mode: CastMode,
+) -> IrResult<Value> {
+    let Some(variants) = parse_union_variants(fields) else {
+        return mode_conversion_error(mode);
+    };
+    if variants.is_empty() {
+        return mode_conversion_error(mode);
+    }
+
+    if let Value::Map(map) = value {
+        if let Some((active_tag, active_value)) = union_payload(map) {
+            if let Some(source_variants) = decode_union_variants(map) {
+                for (source_tag, _) in &source_variants {
+                    if !variants
+                        .iter()
+                        .any(|variant| variant.tag.eq_ignore_ascii_case(source_tag))
+                    {
+                        return Err(union_missing_field_error(
+                            &source_variants,
+                            target_type,
+                            source_tag,
+                        ));
+                    }
+                }
+            }
+
+            let Some(target) = variants
+                .iter()
+                .find(|variant| variant.tag.eq_ignore_ascii_case(active_tag))
+            else {
+                return mode_conversion_error(mode);
+            };
+            let casted = cast_union_payload(active_value, target.ty, true, mode)?;
+            return Ok(make_union_value(&target.tag, casted, Some(&variants)));
+        }
+    }
+
+    let Some(index) = select_union_variant(value, &variants, false) else {
+        return mode_conversion_error(mode);
+    };
+    let variant = &variants[index];
+    let casted = cast_value(value, variant.ty, CastMode::ExplicitStrict)?;
+    Ok(make_union_value(&variant.tag, casted, Some(&variants)))
+}
+
+fn cast_union_payload(
+    value: &Value,
+    target_type: &str,
+    allow_numeric_narrowing: bool,
+    mode: CastMode,
+) -> IrResult<Value> {
+    if union_variant_score(value, target_type, allow_numeric_narrowing).is_none() {
+        return mode_conversion_error(mode);
+    }
+    cast_value(value, target_type, CastMode::ExplicitStrict)
+}
+
+fn select_union_variant(
+    value: &Value,
+    variants: &[UnionVariant<'_>],
+    allow_numeric_narrowing: bool,
+) -> Option<usize> {
+    variants
+        .iter()
+        .enumerate()
+        .filter_map(|(index, variant)| {
+            union_variant_score(value, variant.ty, allow_numeric_narrowing)
+                .map(|score| (index, score))
+        })
+        .min_by_key(|(index, score)| (*score, *index))
+        .map(|(index, _)| index)
+}
+
+fn union_variant_score(
+    value: &Value,
+    target_type: &str,
+    allow_numeric_narrowing: bool,
+) -> Option<u8> {
+    let cleaned = target_type.trim();
+    if matches!(value, Value::Null) {
+        return Some(0);
+    }
+    if array_suffix(cleaned).is_some()
+        || type_argument(cleaned, "LIST").is_some()
+        || type_argument(cleaned, "ARRAY").is_some()
+    {
+        return matches!(value, Value::List(_) | Value::String(_))
+            .then(|| {
+                cast_value(value, cleaned, CastMode::ExplicitStrict)
+                    .ok()
+                    .map(|_| 2)
+            })
+            .flatten();
+    }
+    if type_argument(cleaned, "STRUCT").is_some() {
+        return matches!(value, Value::Map(_) | Value::String(_))
+            .then(|| {
+                cast_value(value, cleaned, CastMode::ExplicitStrict)
+                    .ok()
+                    .map(|_| 2)
+            })
+            .flatten();
+    }
+    if type_argument(cleaned, "MAP").is_some() {
+        return matches!(value, Value::Map(_) | Value::String(_))
+            .then(|| {
+                cast_value(value, cleaned, CastMode::ExplicitStrict)
+                    .ok()
+                    .map(|_| 2)
+            })
+            .flatten();
+    }
+    if type_argument(cleaned, "UNION").is_some() {
+        return cast_value(value, cleaned, CastMode::ExplicitStrict)
+            .ok()
+            .map(|_| 2);
+    }
+
+    let head = type_head(cleaned);
+    if is_string_target(&head) {
+        return union_string_fallback_score(value);
+    }
+    if is_bool_target(&head) {
+        return match value {
+            Value::Bool(_) => Some(0),
+            Value::String(_) => cast_value(value, cleaned, CastMode::ExplicitStrict)
+                .ok()
+                .map(|_| 4),
+            _ => None,
+        };
+    }
+    if is_numeric_target(&head) {
+        return numeric_union_score(value, &head, cleaned, allow_numeric_narrowing);
+    }
+    if is_temporal_target(&head) {
+        return temporal_union_score(value, &head, cleaned);
+    }
+    if head == "UUID" {
+        return match value {
+            Value::String(text) if is_uuid_text(text) => Some(0),
+            Value::String(_) => cast_value(value, cleaned, CastMode::ExplicitStrict)
+                .ok()
+                .map(|_| 4),
+            _ => None,
+        };
+    }
+    if head == "INTERVAL" {
+        return matches!(value, Value::String(_))
+            .then(|| {
+                cast_value(value, cleaned, CastMode::ExplicitStrict)
+                    .ok()
+                    .map(|_| 4)
+            })
+            .flatten();
+    }
+
+    cast_value(value, cleaned, CastMode::ExplicitStrict)
+        .ok()
+        .map(|_| 6)
+}
+
+fn union_string_fallback_score(value: &Value) -> Option<u8> {
+    match value {
+        Value::String(_) => Some(8),
+        Value::Bool(_)
+        | Value::Byte(_)
+        | Value::Short(_)
+        | Value::Int(_)
+        | Value::Long(_)
+        | Value::Float32(_)
+        | Value::Float(_)
+        | Value::BigInt(_)
+        | Value::BigDecimal(_)
+        | Value::DateTime(_)
+        | Value::InternalId { .. } => Some(8),
+        _ => None,
+    }
+}
+
+fn numeric_union_score(
+    value: &Value,
+    target_head: &str,
+    target_type: &str,
+    allow_numeric_narrowing: bool,
+) -> Option<u8> {
+    let source_rank = value_numeric_rank(value)?;
+    let target_rank = numeric_target_rank(target_head)?;
+    if numeric_exact_match(value, target_head) {
+        return cast_value(value, target_type, CastMode::ExplicitStrict)
+            .ok()
+            .map(|_| 0);
+    }
+    if source_rank == 0 || allow_numeric_narrowing || target_rank >= source_rank {
+        return cast_value(value, target_type, CastMode::ExplicitStrict)
+            .ok()
+            .map(|_| 2);
+    }
+    None
+}
+
+fn temporal_union_score(value: &Value, target_head: &str, target_type: &str) -> Option<u8> {
+    match value {
+        Value::DateTime(text) => datetime_union_score(text, target_head),
+        Value::String(_) => cast_value(value, target_type, CastMode::ExplicitStrict)
+            .ok()
+            .map(|_| 4),
+        _ => None,
+    }
+}
+
+fn datetime_union_score(text: &str, target_head: &str) -> Option<u8> {
+    let has_time = text.contains(' ') || text.contains('T');
+    if !has_time {
+        return (target_head == "DATE").then_some(0);
+    }
+    let has_zone = text.ends_with("+00") || text.ends_with('Z');
+    if has_zone {
+        return match target_head {
+            "TIMESTAMP_TZ" => Some(0),
+            "TIMESTAMP" | "DATETIME" => Some(2),
+            _ => None,
+        };
+    }
+    let fraction_digits = text
+        .split_once('.')
+        .map(|(_, fraction)| {
+            fraction
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit())
+                .count()
+        })
+        .unwrap_or(0);
+    match target_head {
+        "TIMESTAMP_SEC" | "TIMESTAMP_S" if fraction_digits == 0 => Some(0),
+        "TIMESTAMP_MS" if (1..=3).contains(&fraction_digits) => Some(0),
+        "TIMESTAMP_NS" if fraction_digits > 3 => Some(0),
+        "TIMESTAMP" | "DATETIME" => Some(2),
+        "TIMESTAMP_MS" | "TIMESTAMP_NS" if fraction_digits == 0 => Some(3),
+        "TIMESTAMP_NS" => Some(3),
+        _ => None,
+    }
+}
+
+fn parse_union_variants(fields: &str) -> Option<Vec<UnionVariant<'_>>> {
+    split_top_level_commas(fields)
+        .into_iter()
+        .map(|field| {
+            let trimmed = field.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if trimmed.contains(':') {
+                return None;
+            }
+            if let Some((name, ty)) = split_struct_field(trimmed) {
+                let tag = name.trim().trim_matches('"').trim_matches('\'').to_string();
+                let ty = ty.trim();
+                if tag.is_empty() || ty.is_empty() {
+                    None
+                } else {
+                    Some(UnionVariant { tag, ty })
+                }
+            } else {
+                Some(UnionVariant {
+                    tag: type_head(trimmed).to_ascii_lowercase(),
+                    ty: trimmed,
+                })
+            }
+        })
+        .collect()
+}
+
+fn encode_union_variants(variants: &[UnionVariant<'_>]) -> Value {
+    Value::List(
+        variants
+            .iter()
+            .map(|variant| {
+                Value::List(vec![
+                    Value::String(variant.tag.clone()),
+                    Value::String(variant.ty.to_string()),
+                ])
+            })
+            .collect(),
+    )
+}
+
+fn decode_union_variants(map: &BTreeMap<String, Value>) -> Option<Vec<(String, String)>> {
+    let Value::List(items) = map.get(UNION_VARIANTS_KEY)? else {
+        return None;
+    };
+    items
+        .iter()
+        .map(|item| {
+            let Value::List(parts) = item else {
+                return None;
+            };
+            let [Value::String(tag), Value::String(ty)] = parts.as_slice() else {
+                return None;
+            };
+            Some((tag.clone(), ty.clone()))
+        })
+        .collect()
+}
+
+fn union_payload(map: &BTreeMap<String, Value>) -> Option<(&str, &Value)> {
+    let Value::String(tag) = map.get(UNION_TAG_KEY)? else {
+        return None;
+    };
+    let value = map.get(UNION_VALUE_KEY).or_else(|| map.get(tag))?;
+    Some((tag.as_str(), value))
+}
+
+fn union_missing_field_error(
+    source_variants: &[(String, String)],
+    target_type: &str,
+    missing_tag: &str,
+) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Conversion exception: Cannot cast from {} to {}, target type is missing field '{}'.",
+        union_type_display(source_variants),
+        target_type,
+        missing_tag
+    ))
+}
+
+fn union_type_display(variants: &[(String, String)]) -> String {
+    let fields = variants
+        .iter()
+        .map(|(tag, ty)| format!("{tag} {ty}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("UNION({fields})")
+}
+
+fn type_head(type_name: &str) -> String {
+    let upper = type_name.trim().to_ascii_uppercase();
+    let head = upper
+        .split(|ch: char| ch.is_whitespace() || ch == '(' || ch == '[')
+        .next()
+        .unwrap_or("")
+        .trim();
+    match head {
+        "INT" | "INTEGER" => "INT32".to_string(),
+        "BIGINT" | "LONG" | "SERIAL" => "INT64".to_string(),
+        "TINYINT" => "INT8".to_string(),
+        "SMALLINT" => "INT16".to_string(),
+        "REAL" | "FLOAT32" => "FLOAT".to_string(),
+        "FLOAT64" => "DOUBLE".to_string(),
+        "NUMERIC" => "DECIMAL".to_string(),
+        "BOOLEAN" => "BOOL".to_string(),
+        "TIMESTAMP_S" => "TIMESTAMP_SEC".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn is_string_target(head: &str) -> bool {
+    matches!(
+        head,
+        "STRING" | "VARCHAR" | "CHAR" | "TEXT" | "BLOB" | "BYTEA"
+    )
+}
+
+fn is_bool_target(head: &str) -> bool {
+    head == "BOOL"
+}
+
+fn is_numeric_target(head: &str) -> bool {
+    numeric_target_rank(head).is_some()
+}
+
+fn is_temporal_target(head: &str) -> bool {
+    matches!(
+        head,
+        "DATE"
+            | "TIMESTAMP"
+            | "DATETIME"
+            | "TIMESTAMP_NS"
+            | "TIMESTAMP_MS"
+            | "TIMESTAMP_SEC"
+            | "TIMESTAMP_TZ"
+    )
+}
+
+fn numeric_target_rank(head: &str) -> Option<u8> {
+    Some(match head {
+        "INT8" => 1,
+        "UINT8" | "INT16" => 2,
+        "UINT16" | "INT32" => 3,
+        "UINT32" | "INT64" => 4,
+        "UINT64" | "FLOAT" => 5,
+        "INT128" | "UINT128" | "DOUBLE" | "DECIMAL" => 6,
+        _ => return None,
+    })
+}
+
+fn numeric_exact_match(value: &Value, target_head: &str) -> bool {
+    matches!(
+        (value, target_head),
+        (Value::Byte(_), "INT8")
+            | (Value::Short(_), "INT16" | "UINT8")
+            | (Value::Int(_), "INT64")
+            | (Value::Long(_), "INT64")
+            | (Value::BigInt(_), "INT128" | "UINT128")
+            | (Value::Float32(_), "FLOAT")
+            | (Value::Float(_), "DOUBLE")
+            | (Value::BigDecimal(_), "DECIMAL")
+    )
+}
+
+fn value_numeric_rank(value: &Value) -> Option<u8> {
+    Some(match value {
+        Value::Byte(_) => 1,
+        Value::Short(_) => 2,
+        Value::Int(_) | Value::Long(_) => 4,
+        Value::BigInt(_) => 6,
+        Value::Float32(_) => 5,
+        Value::Float(_) | Value::BigDecimal(_) => 6,
+        Value::String(_) => return Some(0),
+        _ => return None,
+    })
 }
 
 fn strict_cast_i64(value: &Value, min: i128, max: i128) -> IrResult<i64> {
@@ -2492,6 +4065,16 @@ fn strict_float_to_i128(value: f64) -> IrResult<i128> {
     Ok(value.round() as i128)
 }
 
+fn strict_float_to_bigint(value: f64) -> IrResult<num_bigint::BigInt> {
+    use bigdecimal::{BigDecimal, FromPrimitive, RoundingMode};
+    if !value.is_finite() {
+        return Err(cast_conversion_error());
+    }
+    let decimal = BigDecimal::from_f64(value).ok_or_else(cast_conversion_error)?;
+    let rounded = decimal.with_scale_round(0, RoundingMode::HalfUp);
+    Ok(rounded.as_bigint_and_exponent().0)
+}
+
 fn strict_cast_f64(value: &Value) -> IrResult<f64> {
     use num_traits::ToPrimitive;
     let converted = match value {
@@ -2505,6 +4088,8 @@ fn strict_cast_f64(value: &Value) -> IrResult<f64> {
         Value::Bool(true) => Ok(1.0),
         Value::Bool(false) => Ok(0.0),
         Value::String(s) => s
+            .trim()
+            .replace('_', "")
             .parse::<f64>()
             .map_err(|_| cast_conversion_error())
             .and_then(|f| {
@@ -2516,11 +4101,7 @@ fn strict_cast_f64(value: &Value) -> IrResult<f64> {
             }),
         _ => Err(cast_conversion_error()),
     }?;
-    if converted.is_finite() {
-        Ok(converted)
-    } else {
-        Err(cast_overflow_error())
-    }
+    Ok(converted)
 }
 
 fn strict_cast_int128(value: &Value) -> IrResult<Value> {
@@ -2546,8 +4127,34 @@ fn strict_cast_int128(value: &Value) -> IrResult<Value> {
     }
 }
 
+fn strict_cast_uint64_bigint(value: &Value) -> IrResult<Value> {
+    use num_bigint::BigInt;
+    let string_input = matches!(value, Value::String(_));
+    let max = BigInt::from(u64::MAX);
+    let value = strict_cast_unbounded_bigint(value)?;
+    let Value::BigInt(n) = &value else {
+        return Err(cast_conversion_error());
+    };
+    if n < &BigInt::from(0) {
+        Err(cast_conversion_error())
+    } else if n > &max {
+        if string_input {
+            Err(cast_conversion_error())
+        } else {
+            Err(cast_overflow_error())
+        }
+    } else {
+        Ok(value)
+    }
+}
+
 fn strict_cast_uint128(value: &Value) -> IrResult<Value> {
     use num_bigint::BigInt;
+    if matches!(value, Value::Float32(n) if n.is_infinite())
+        || matches!(value, Value::Float(n) if n.is_infinite())
+    {
+        return Ok(Value::BigInt(BigInt::from(0)));
+    }
     let string_input = matches!(value, Value::String(_));
     let max = (BigInt::from(1u8) << 128) - BigInt::from(1u8);
     let value = strict_cast_unbounded_bigint(value)?;
@@ -2575,8 +4182,8 @@ fn strict_cast_unbounded_bigint(value: &Value) -> IrResult<Value> {
         Value::Byte(n) => Value::BigInt(BigInt::from(*n)),
         Value::Short(n) => Value::BigInt(BigInt::from(*n)),
         Value::Int(n) | Value::Long(n) => Value::BigInt(BigInt::from(*n)),
-        Value::Float32(n) => Value::BigInt(BigInt::from(strict_float_to_i128(*n as f64)?)),
-        Value::Float(n) => Value::BigInt(BigInt::from(strict_float_to_i128(*n)?)),
+        Value::Float32(n) => Value::BigInt(strict_float_to_bigint(*n as f64)?),
+        Value::Float(n) => Value::BigInt(strict_float_to_bigint(*n)?),
         Value::BigDecimal(n) => Value::BigInt(BigInt::from(strict_value_to_i128(
             &Value::BigDecimal(n.clone()),
         )?)),
@@ -2594,10 +4201,15 @@ fn cast_to_struct_unified(value: &Value, fields: &str, mode: CastMode) -> IrResu
     // Allow string-typed struct literals (`"{a: 1, b: 2}"`) since the
     // Ladybug fixtures store map/struct properties as raw CSV text.
     let parsed_map;
+    let allow_missing_fields;
     let map_ref: &BTreeMap<String, Value> = match value {
-        Value::Map(map) => map,
+        Value::Map(map) => {
+            allow_missing_fields = !matches!(mode, CastMode::ExplicitStrict);
+            map
+        }
         Value::String(s) => match parse_struct_literal(s) {
             Some(parsed) => {
+                allow_missing_fields = true;
                 parsed_map = parsed;
                 &parsed_map
             }
@@ -2606,25 +4218,281 @@ fn cast_to_struct_unified(value: &Value, fields: &str, mode: CastMode) -> IrResu
         _ => return mode_conversion_error(mode),
     };
     let map = map_ref;
-    let mut out = BTreeMap::new();
-    for field in split_top_level_commas(fields) {
-        let Some((name, ty)) = split_struct_field(field) else {
-            return mode_conversion_error(mode);
-        };
-        let key = name.trim().trim_matches('"').trim_matches('\'').to_string();
-        match map.get(&key) {
-            Some(value) => {
-                out.insert(key, cast_value(value, ty, CastMode::ExplicitStrict)?);
+    let parsed_fields = split_top_level_commas(fields)
+        .into_iter()
+        .map(|field| {
+            let Some((name, ty)) = split_struct_field(field) else {
+                return None;
+            };
+            let key = name.trim().trim_matches('"').trim_matches('\'').to_string();
+            (!key.is_empty()).then_some((key, ty.trim()))
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(cast_conversion_error)?;
+
+    if !allow_missing_fields {
+        if let Some(source_order) = struct_field_order(map) {
+            let target_order = parsed_fields
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>();
+            if source_order != target_order {
+                return Err(cast_conversion_error());
             }
-            None => match mode {
-                CastMode::ExplicitStrict => return Err(cast_conversion_error()),
-                _ => {
-                    out.insert(key, Value::Null);
-                }
-            },
         }
     }
+
+    let mut out = BTreeMap::new();
+    let mut order = Vec::new();
+    let mut types = BTreeMap::new();
+    for (key, ty) in &parsed_fields {
+        order.push(Value::String(key.clone()));
+        types.insert(key.clone(), Value::String((*ty).to_string()));
+        match map.get(key.as_str()) {
+            Some(value) => {
+                if matches!(value, Value::Null)
+                    && !allow_missing_fields
+                    && !null_field_cast_compatible(map, key, ty)
+                {
+                    return Err(cast_conversion_error());
+                }
+                out.insert(
+                    key.clone(),
+                    cast_value(value, ty, CastMode::ExplicitStrict)?,
+                );
+            }
+            None if allow_missing_fields => {
+                out.insert(key.clone(), Value::Null);
+            }
+            None => return Err(cast_conversion_error()),
+        }
+    }
+    out.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
+    out.insert(STRUCT_TYPES_KEY.to_string(), Value::Map(types));
     Ok(Value::Map(out))
+}
+
+fn null_field_cast_compatible(
+    source: &BTreeMap<String, Value>,
+    field: &str,
+    target_type: &str,
+) -> bool {
+    let Some(source_type) = struct_field_type(source, field) else {
+        return true;
+    };
+    type_shape(&source_type) == type_shape(target_type)
+}
+
+fn struct_field_type(map: &BTreeMap<String, Value>, field: &str) -> Option<String> {
+    let Value::Map(types) = map.get(STRUCT_TYPES_KEY)? else {
+        return None;
+    };
+    let Value::String(ty) = types.get(field)? else {
+        return None;
+    };
+    Some(ty.clone())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypeShape {
+    Scalar,
+    List,
+    Struct,
+    Map,
+    Union,
+}
+
+fn type_shape(type_name: &str) -> TypeShape {
+    let cleaned = type_name.trim();
+    if array_suffix(cleaned).is_some()
+        || type_argument(cleaned, "LIST").is_some()
+        || type_argument(cleaned, "ARRAY").is_some()
+    {
+        TypeShape::List
+    } else if type_argument(cleaned, "STRUCT").is_some() {
+        TypeShape::Struct
+    } else if type_argument(cleaned, "MAP").is_some() {
+        TypeShape::Map
+    } else if type_argument(cleaned, "UNION").is_some() {
+        TypeShape::Union
+    } else {
+        TypeShape::Scalar
+    }
+}
+
+fn cast_to_map_unified(value: &Value, args: &str, mode: CastMode) -> IrResult<Value> {
+    let Some((key_type, value_type)) = split_map_types(args) else {
+        return mode_conversion_error(mode);
+    };
+    let entries = match coerce_to_map_entries(value) {
+        Some(entries) => entries,
+        None => return mode_conversion_error(mode),
+    };
+    let mut keys = Vec::with_capacity(entries.len());
+    let mut values = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        keys.push(cast_value(&key, key_type, CastMode::ExplicitStrict)?);
+        values.push(cast_value(&value, value_type, CastMode::ExplicitStrict)?);
+    }
+    make_kuzu_map(keys, values)
+}
+
+fn cast_to_parametric_decimal(
+    value: &Value,
+    precision: u64,
+    scale: u64,
+    mode: CastMode,
+) -> IrResult<Value> {
+    use bigdecimal::{BigDecimal, RoundingMode};
+    use num_bigint::BigInt;
+
+    if precision == 0 || scale > precision {
+        return mode_conversion_error(mode);
+    }
+    let decimal = match cast_to_bigdecimal(value) {
+        Value::BigDecimal(decimal) => decimal,
+        Value::Null => return mode_conversion_error(mode),
+        _ => return mode_conversion_error(mode),
+    };
+    let rounded = decimal.with_scale_round(scale as i64, RoundingMode::HalfUp);
+    let integer_digits = precision - scale;
+    let limit = BigDecimal::from(BigInt::from(10u8).pow(integer_digits as u32));
+    if rounded.abs() >= limit {
+        return match mode {
+            CastMode::ExplicitStrict => Ok(Value::String(decimal_overflow_message(
+                value, &decimal, precision, scale,
+            ))),
+            CastMode::TryOrLenient | CastMode::NestedElement => Ok(Value::Null),
+        };
+    }
+    Ok(Value::BigDecimal(rounded))
+}
+
+fn decimal_precision_scale(type_name: &str) -> Option<(u64, u64)> {
+    let args =
+        type_argument(type_name, "DECIMAL").or_else(|| type_argument(type_name, "NUMERIC"))?;
+    let parts = split_top_level_commas(args);
+    let [precision, scale] = parts.as_slice() else {
+        return None;
+    };
+    Some((precision.trim().parse().ok()?, scale.trim().parse().ok()?))
+}
+
+fn decimal_overflow_message(
+    value: &Value,
+    decimal: &bigdecimal::BigDecimal,
+    precision: u64,
+    scale: u64,
+) -> String {
+    match value {
+        Value::String(text) => format!(
+            "Conversion exception: Cast failed. {} is not in DECIMAL({}, {}) range.",
+            text.trim(),
+            precision,
+            scale
+        ),
+        Value::BigDecimal(_) => format!(
+            "Overflow exception: Decimal Cast Failed: input {} is not in range of DECIMAL({}, {})",
+            decimal, precision, scale
+        ),
+        other => format!(
+            "Overflow exception: To Decimal Cast Failed: {} is not in DECIMAL({}, {}) range",
+            decimal_input_display(other, decimal),
+            precision,
+            scale
+        ),
+    }
+}
+
+fn decimal_input_display(value: &Value, decimal: &bigdecimal::BigDecimal) -> String {
+    match value {
+        Value::Byte(n) => n.to_string(),
+        Value::Short(n) => n.to_string(),
+        Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::Float32(n) => n.to_string(),
+        Value::Float(n) => n.to_string(),
+        Value::BigInt(n) => n.to_string(),
+        Value::Bool(true) => "1".to_string(),
+        Value::Bool(false) => "0".to_string(),
+        _ => decimal.to_string(),
+    }
+}
+
+fn split_map_types(args: &str) -> Option<(&str, &str)> {
+    let parts = split_top_level_commas(args);
+    let [key, value] = parts.as_slice() else {
+        return None;
+    };
+    Some((key.trim(), value.trim()))
+}
+
+fn coerce_to_map_entries(value: &Value) -> Option<Vec<(Value, Value)>> {
+    match value {
+        Value::Map(map) => {
+            if let Some(entries) = kuzu_map_entries(map) {
+                return Some(
+                    entries
+                        .iter()
+                        .filter_map(kuzu_map_entry)
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                );
+            }
+            if map.contains_key(STRUCT_ORDER_KEY) {
+                return None;
+            }
+            Some(
+                map.iter()
+                    .map(|(key, value)| (Value::String(key.clone()), value.clone()))
+                    .collect(),
+            )
+        }
+        Value::String(text) => parse_map_literal_entries(text),
+        _ => None,
+    }
+}
+
+fn parse_map_literal_entries(raw: &str) -> Option<Vec<(Value, Value)>> {
+    let trimmed = raw.trim();
+    let body = trimmed.strip_prefix('{')?.strip_suffix('}')?;
+    if body.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::new();
+    for part in split_top_level_brackets(body) {
+        let entry = part.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let Some(sep_idx) = find_top_level_map_separator(entry) else {
+            return None;
+        };
+        let key = parse_runtime_atom(entry[..sep_idx].trim());
+        let value = parse_runtime_atom(entry[sep_idx + 1..].trim());
+        out.push((key, value));
+    }
+    Some(out)
+}
+
+fn find_top_level_map_separator(entry: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    for (idx, ch) in entry.char_indices() {
+        if let Some(active) = quote {
+            if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '[' | '(' | '{' => depth += 1,
+            ']' | ')' | '}' => depth -= 1,
+            ':' | '=' if depth == 0 => return Some(idx),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_strict_integerish(raw: &str) -> Option<i128> {
@@ -2728,39 +4596,7 @@ fn split_struct_field(field: &str) -> Option<(&str, &str)> {
 /// pull components out by splitting on `-`/`T`/`:`/`.`. Unknown units
 /// yield `null`.
 fn date_part(unit: &str, value: &str) -> Value {
-    let lower = unit.to_ascii_lowercase();
-    let lower = lower.trim_start_matches("dt.");
-    let cleaned = value
-        .strip_prefix("dt[")
-        .and_then(|s| s.strip_suffix(']'))
-        .unwrap_or(value);
-    let (date, time_zone) = cleaned.split_once('T').unwrap_or((cleaned, ""));
-    let mut date_parts = date.split('-');
-    let year: Option<i64> = date_parts.next().and_then(|s| s.parse().ok());
-    let month: Option<i64> = date_parts.next().and_then(|s| s.parse().ok());
-    let day: Option<i64> = date_parts.next().and_then(|s| s.parse().ok());
-    let time = time_zone
-        .trim_end_matches('Z')
-        .split(|c| c == '+' || c == '-')
-        .next()
-        .unwrap_or("");
-    let mut time_parts = time.split(':');
-    let hour: Option<i64> = time_parts.next().and_then(|s| s.parse().ok());
-    let minute: Option<i64> = time_parts.next().and_then(|s| s.parse().ok());
-    let second_raw = time_parts.next().unwrap_or("0");
-    let (second_str, millis_str) = second_raw.split_once('.').unwrap_or((second_raw, "0"));
-    let second: Option<i64> = second_str.parse().ok();
-    let millis: Option<i64> = millis_str.parse().ok();
-    match lower {
-        "year" => year.map(Value::Long).unwrap_or(Value::Null),
-        "month" => month.map(Value::Long).unwrap_or(Value::Null),
-        "day" => day.map(Value::Long).unwrap_or(Value::Null),
-        "hour" => hour.map(Value::Long).unwrap_or(Value::Null),
-        "minute" => minute.map(Value::Long).unwrap_or(Value::Null),
-        "second" => second.map(Value::Long).unwrap_or(Value::Null),
-        "millisecond" => millis.map(Value::Long).unwrap_or(Value::Null),
-        _ => Value::Null,
-    }
+    temporal::temporal_part(unit, value).unwrap_or(Value::Null)
 }
 
 fn value_as_f64(value: &Value) -> Option<f64> {
@@ -2777,6 +4613,317 @@ fn value_as_f64(value: &Value) -> Option<f64> {
     }
 }
 
+fn value_as_i64_exact(value: &Value) -> Option<i64> {
+    use num_traits::ToPrimitive;
+    match value {
+        Value::Byte(n) => Some(*n as i64),
+        Value::Short(n) => Some(*n as i64),
+        Value::Int(n) | Value::Long(n) => Some(*n),
+        Value::BigInt(n) => n.to_i64(),
+        _ => None,
+    }
+}
+
+fn factorial_value(value: &Value) -> Value {
+    let Some(n) = value_as_i64_exact(value) else {
+        return Value::Null;
+    };
+    if n < 0 {
+        return Value::Null;
+    }
+
+    let mut acc = 1_i64;
+    for factor in 2..=n {
+        let Some(next) = acc.checked_mul(factor) else {
+            return Value::Null;
+        };
+        acc = next;
+    }
+    Value::Long(acc)
+}
+
+fn bitwise_i64(lhs: &Value, rhs: &Value, op: impl FnOnce(i64, i64) -> i64) -> Value {
+    match (value_as_i64_exact(lhs), value_as_i64_exact(rhs)) {
+        (Some(lhs), Some(rhs)) => Value::Long(op(lhs, rhs)),
+        _ => Value::Null,
+    }
+}
+
+fn bitshift_i64(lhs: &Value, rhs: &Value, op: impl FnOnce(i64, u32) -> Option<i64>) -> Value {
+    let (Some(lhs), Some(rhs)) = (value_as_i64_exact(lhs), value_as_i64_exact(rhs)) else {
+        return Value::Null;
+    };
+    let Ok(rhs) = u32::try_from(rhs) else {
+        return Value::Null;
+    };
+    op(lhs, rhs).map(Value::Long).unwrap_or(Value::Null)
+}
+
+fn next_even_number(value: f64) -> f64 {
+    if !value.is_finite() {
+        return f64::NAN;
+    }
+    let candidate = value.ceil();
+    if (candidate as i128) % 2 == 0 {
+        candidate
+    } else {
+        candidate + 1.0
+    }
+}
+
+fn log_gamma(value: f64) -> f64 {
+    if value.is_nan() || value <= 0.0 {
+        return f64::NAN;
+    }
+
+    // Lanczos approximation with g=7, coefficients from Numerical Recipes.
+    // The arithmetic-function cases only exercise positive inputs, which keeps
+    // this compact and avoids pretending to support gamma's poles/reflection.
+    const COEFFICIENTS: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+
+    let z = value - 1.0;
+    let mut x = COEFFICIENTS[0];
+    for (idx, coefficient) in COEFFICIENTS.iter().enumerate().skip(1) {
+        x += coefficient / (z + idx as f64);
+    }
+    let t = z + 7.5;
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (z + 0.5) * t.ln() - t + x.ln()
+}
+
+fn strip_utc_suffix(value: Value) -> Value {
+    match value {
+        Value::DateTime(text) => Value::DateTime(
+            text.strip_suffix("+00")
+                .unwrap_or(text.as_str())
+                .to_string(),
+        ),
+        Value::String(text) => Value::String(
+            text.strip_suffix("+00")
+                .unwrap_or(text.as_str())
+                .to_string(),
+        ),
+        other => other,
+    }
+}
+
+fn value_as_bigint(value: &Value) -> Option<num_bigint::BigInt> {
+    use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
+
+    match value {
+        Value::Byte(n) => Some(BigInt::from(*n)),
+        Value::Short(n) => Some(BigInt::from(*n)),
+        Value::Int(n) | Value::Long(n) => Some(BigInt::from(*n)),
+        Value::BigInt(n) => Some(n.clone()),
+        Value::BigDecimal(n) => n.to_i128().map(BigInt::from),
+        Value::Bool(true) => Some(BigInt::from(1)),
+        Value::Bool(false) => Some(BigInt::from(0)),
+        _ => None,
+    }
+}
+
+fn list_product_value(items: &[Value]) -> Value {
+    use num_traits::ToPrimitive;
+
+    if items
+        .iter()
+        .filter(|item| !matches!(item, Value::Null))
+        .any(|item| value_as_bigint(item).is_none() && value_as_f64(item).is_none())
+    {
+        return Value::String(
+            "Binder exception: Unsupported inner data type for LIST_PRODUCT: STRING".to_string(),
+        );
+    }
+
+    if items.iter().any(|item| matches!(item, Value::Float(_))) {
+        return Value::Float(
+            items
+                .iter()
+                .filter_map(value_as_f64)
+                .fold(1.0, |product, value| product * value),
+        );
+    }
+
+    if items.iter().any(|item| matches!(item, Value::Float32(_))) {
+        let product = items
+            .iter()
+            .filter_map(value_as_f64)
+            .fold(1.0f32, |product, value| product * value as f32);
+        return Value::Float32(product);
+    }
+
+    let product = items
+        .iter()
+        .filter_map(value_as_bigint)
+        .fold(num_bigint::BigInt::from(1), |product, value| {
+            product * value
+        });
+    product
+        .to_i64()
+        .map(Value::Long)
+        .unwrap_or(Value::BigInt(product))
+}
+
+fn display_for_list_to_string(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::Bool(true) => "True".to_string(),
+        Value::Bool(false) => "False".to_string(),
+        Value::Byte(n) => n.to_string(),
+        Value::Short(n) => n.to_string(),
+        Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::Float32(n) => (*n as f64).to_string(),
+        Value::Float(n) => n.to_string(),
+        Value::BigInt(n) => n.to_string(),
+        Value::BigDecimal(n) => n.to_string(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
+        Value::List(items) | Value::Path(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_list_to_string)
+                .collect::<Vec<_>>();
+            format!("[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            if let Some(value) = union_display_value(map) {
+                return display_for_list_to_string(value);
+            }
+            if let Some(entries) = kuzu_map_entries(map) {
+                let parts = entries
+                    .iter()
+                    .filter_map(kuzu_map_entry)
+                    .map(|(key, value)| {
+                        format!(
+                            "{}={}",
+                            display_for_list_to_string(key),
+                            display_for_list_to_string(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", parts.join(", "));
+            }
+            let parts = visible_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key}: {}", display_for_list_to_string(value)))
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", parts.join(", "))
+        }
+        Value::Node { label, id } => format!("{label}#{id}"),
+        Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
+    }
+}
+
+fn normalize_list_to_string_text(text: &str) -> String {
+    let text = unescape_display_quotes(text);
+    let trimmed = text.trim();
+    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
+        return text;
+    }
+    normalize_collection_spacing(&strip_quoted_map_keys(trimmed))
+}
+
+fn unescape_display_quotes(text: &str) -> String {
+    let mut out = text.to_string();
+    while out.contains("\\\"") {
+        out = out.replace("\\\"", "\"");
+    }
+    while out.contains("\\'") {
+        out = out.replace("\\'", "'");
+    }
+    out
+}
+
+fn strip_quoted_map_keys(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let (idx, ch) = chars[i];
+        if ch != '\'' && ch != '"' {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        let quote = ch;
+        let content_start = idx + ch.len_utf8();
+        let mut j = i + 1;
+        while j < chars.len() && chars[j].1 != quote {
+            j += 1;
+        }
+        if j >= chars.len() {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+        let content_end = chars[j].0;
+        let mut k = j + 1;
+        while k < chars.len() && chars[k].1.is_whitespace() {
+            k += 1;
+        }
+        if k < chars.len() && chars[k].1 == ':' {
+            out.push_str(&text[content_start..content_end]);
+            i = j + 1;
+        } else {
+            out.push_str(&text[idx..chars[j].0 + quote.len_utf8()]);
+            i = j + 1;
+        }
+    }
+    out
+}
+
+fn normalize_collection_spacing(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut stack = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if let Some(active) = quote {
+            out.push(ch);
+            if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => {
+                quote = Some(ch);
+                out.push(ch);
+            }
+            '[' | '{' => {
+                stack.push(ch);
+                out.push(ch);
+            }
+            ']' | '}' => {
+                stack.pop();
+                out.push(ch);
+            }
+            ',' if stack.last() == Some(&'[') => {
+                out.push(',');
+                while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
+                    chars.next();
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 fn list_index(items: &[Value], index: i64) -> Value {
     let len = items.len() as i64;
     if len == 0 {
@@ -2788,6 +4935,23 @@ fn list_index(items: &[Value], index: i64) -> Value {
     } else {
         items[i as usize].clone()
     }
+}
+
+fn list_index_1_based(items: &[Value], index: i64) -> Value {
+    list_element_1_based(items, index).unwrap_or(Value::Null)
+}
+
+fn list_extract_value(items: &[Value], index: i64) -> IrResult<Value> {
+    if index == 0 {
+        return Err(InterpretError::Runtime(
+            "Runtime exception: List extract takes 1-based position.".to_string(),
+        ));
+    }
+    list_element_1_based(items, index).ok_or_else(|| {
+        InterpretError::Runtime(format!(
+            "Runtime exception: list_extract(list, index): index={index} is out of range."
+        ))
+    })
 }
 
 fn list_element_1_based(items: &[Value], index: i64) -> Option<Value> {
@@ -2806,6 +4970,44 @@ fn list_element_1_based(items: &[Value], index: i64) -> Option<Value> {
     }
 }
 
+fn string_index_1_based(text: &str, index: i64) -> Value {
+    if index == 0 {
+        return Value::Null;
+    }
+    let chars =
+        unicode_segmentation::UnicodeSegmentation::graphemes(text, true).collect::<Vec<_>>();
+    if chars.is_empty() {
+        return Value::Null;
+    }
+    let zero_based = if index < 0 {
+        (chars.len() as i64 + index).max(0)
+    } else {
+        index - 1
+    };
+    if zero_based < 0 || zero_based >= chars.len() as i64 {
+        Value::Null
+    } else {
+        Value::String(chars[zero_based as usize].to_string())
+    }
+}
+
+fn string_index_1_based_clamped(text: &str, index: i64) -> Value {
+    if index == 0 {
+        return Value::Null;
+    }
+    let chars =
+        unicode_segmentation::UnicodeSegmentation::graphemes(text, true).collect::<Vec<_>>();
+    if chars.is_empty() {
+        return Value::Null;
+    }
+    let zero_based = if index < 0 {
+        (chars.len() as i64 + index).max(0)
+    } else {
+        (index - 1).min(chars.len() as i64 - 1)
+    };
+    Value::String(chars[zero_based as usize].to_string())
+}
+
 fn string_index(text: &str, index: i64) -> Value {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len() as i64;
@@ -2821,15 +5023,20 @@ fn string_index(text: &str, index: i64) -> Value {
 }
 
 fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> Value {
-    match (target, index) {
-        (Value::List(items), index) => index
+    if let Some(items) = runtime_list(target) {
+        return index
             .as_i64()
-            .map(|index| list_index(items, index))
-            .unwrap_or(Value::Null),
+            .map(|index| list_index_1_based(&items, index))
+            .unwrap_or(Value::Null);
+    }
+    match (target, index) {
         (Value::String(text), index) => index
             .as_i64()
-            .map(|index| string_index(text, index))
+            .map(|index| string_index_1_based(text, index))
             .unwrap_or(Value::Null),
+        (Value::Map(map), key) if kuzu_map_entries(map).is_some() => {
+            kuzu_map_first(map, key).unwrap_or(Value::Null)
+        }
         (Value::Map(map), Value::String(key)) => map.get(key).cloned().unwrap_or(Value::Null),
         (Value::Node { label, id }, Value::String(key)) => graph.node_property(label, *id, key),
         (Value::Edge { rel_type, id, .. }, Value::String(key)) => {
@@ -2842,15 +5049,28 @@ fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> Val
 
 fn slice_bounds(len: usize, start: &Value, end: &Value) -> (usize, usize) {
     let len_i = len as i64;
-    let resolve = |value: &Value, default: i64| -> i64 {
-        match value.as_i64() {
-            Some(v) if v < 0 => (len_i + v).max(0),
-            Some(v) => v.clamp(0, len_i),
-            None => default,
+    let resolve_start = |value: &Value| -> i64 {
+        match value {
+            Value::Null => 0,
+            _ => match value.as_i64() {
+                Some(v) if v < 0 => len_i + v,
+                Some(v) => v - 1,
+                None => 0,
+            },
         }
     };
-    let s = resolve(start, 0).clamp(0, len_i) as usize;
-    let e = resolve(end, len_i).clamp(0, len_i) as usize;
+    let resolve_end = |value: &Value| -> i64 {
+        match value {
+            Value::Null => len_i,
+            _ => match value.as_i64() {
+                Some(v) if v < 0 => len_i + v + 1,
+                Some(v) => v,
+                None => len_i,
+            },
+        }
+    };
+    let s = resolve_start(start).clamp(0, len_i) as usize;
+    let e = resolve_end(end).clamp(0, len_i) as usize;
     (s.min(e), e)
 }
 
@@ -2865,13 +5085,23 @@ fn string_slice_range(text: &str, start: &Value, end: &Value) -> String {
     chars[s..e].iter().collect()
 }
 
-fn make_range(start: &Value, end: &Value, step: &Value) -> Value {
-    let (Some(s), Some(e)) = (start.as_i64(), end.as_i64()) else {
-        return Value::Null;
+fn make_range(start: &Value, end: &Value, step: &Value) -> IrResult<Value> {
+    if matches!(start, Value::Null) || matches!(end, Value::Null) || matches!(step, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let (Some(s), Some(e), Some(step)) = (
+        range_integer_arg(start),
+        range_integer_arg(end),
+        range_integer_arg(step),
+    ) else {
+        return Err(InterpretError::Runtime(
+            "Binder exception: Function RANGE did not receive correct arguments:".to_string(),
+        ));
     };
-    let step = step.as_i64().unwrap_or(1);
     if step == 0 {
-        return Value::Null;
+        return Err(InterpretError::Runtime(
+            "Runtime exception: Step of range cannot be 0.".to_string(),
+        ));
     }
     let mut out = Vec::new();
     let mut cursor = s;
@@ -2892,7 +5122,18 @@ fn make_range(start: &Value, end: &Value, step: &Value) -> Value {
             };
         }
     }
-    Value::List(out)
+    Ok(Value::List(out))
+}
+
+fn range_integer_arg(value: &Value) -> Option<i64> {
+    use num_traits::ToPrimitive;
+    match value {
+        Value::Byte(value) => Some(*value as i64),
+        Value::Short(value) => Some(*value as i64),
+        Value::Int(value) | Value::Long(value) => Some(*value),
+        Value::BigInt(value) => value.to_i64(),
+        _ => None,
+    }
 }
 
 pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
@@ -2979,7 +5220,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             let parts: Vec<String> = items
                 .iter()
                 .filter(|item| !matches!(item, Value::Null))
-                .map(display_for_concat)
+                .map(display_for_list_to_string)
                 .collect();
             Ok(Value::String(parts.join(delim)))
         }
@@ -2987,7 +5228,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             let parts: Vec<String> = items
                 .iter()
                 .filter(|item| !matches!(item, Value::Null))
-                .map(display_for_concat)
+                .map(display_for_list_to_string)
                 .collect();
             Ok(Value::String(parts.join(delim)))
         }
@@ -3531,17 +5772,17 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("local_count", [_]) => Ok(Value::Int(1)),
         ("local_sum" | "local_min" | "local_max" | "local_mean", [scalar]) => Ok(scalar.clone()),
         // ----- list / set operators against a folded list traverser -----
-        ("list_combine", [Value::List(a), Value::List(b)]) => {
-            let mut out = a.clone();
-            out.extend(b.iter().cloned());
+        ("list_combine", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
+            let mut out = runtime_list(a).unwrap_or_default();
+            out.extend(runtime_list(b).unwrap_or_default());
             Ok(Value::List(out))
         }
-        ("list_merge", [Value::List(a), Value::List(b)]) => {
+        ("list_merge", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
             // Set union: dedup'd concat preserving left-then-right order.
-            let mut out = a.clone();
-            for item in b {
-                if !out.contains(item) {
-                    out.push(item.clone());
+            let mut out = runtime_list(a).unwrap_or_default();
+            for item in runtime_list(b).unwrap_or_default() {
+                if !out.iter().any(|seen| list_semantic_eq(seen, &item)) {
+                    out.push(item);
                 }
             }
             Ok(Value::List(out))
@@ -3553,25 +5794,47 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             }
             Ok(Value::Map(out))
         }
-        ("list_intersect", [Value::List(a), Value::List(b)]) => Ok(Value::List(
-            a.iter().filter(|x| b.contains(x)).cloned().collect(),
-        )),
-        ("list_difference", [Value::List(a), Value::List(b)]) => Ok(Value::List(
-            a.iter().filter(|x| !b.contains(x)).cloned().collect(),
-        )),
-        ("list_disjunct", [Value::List(a), Value::List(b)]) => {
-            let mut out: Vec<Value> = a.iter().filter(|x| !b.contains(x)).cloned().collect();
-            for item in b {
-                if !a.contains(item) {
+        ("list_intersect", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
+            let rhs = runtime_list(b).unwrap_or_default();
+            Ok(Value::List(
+                runtime_list(a)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|item| rhs.iter().any(|right| list_semantic_eq(item, right)))
+                    .collect(),
+            ))
+        }
+        ("list_difference", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
+            let rhs = runtime_list(b).unwrap_or_default();
+            Ok(Value::List(
+                runtime_list(a)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|item| !rhs.iter().any(|right| list_semantic_eq(item, right)))
+                    .collect(),
+            ))
+        }
+        ("list_disjunct", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
+            let lhs = runtime_list(a).unwrap_or_default();
+            let rhs = runtime_list(b).unwrap_or_default();
+            let mut out: Vec<Value> = lhs
+                .iter()
+                .filter(|item| !rhs.iter().any(|right| list_semantic_eq(item, right)))
+                .cloned()
+                .collect();
+            for item in &rhs {
+                if !lhs.iter().any(|left| list_semantic_eq(left, item)) {
                     out.push(item.clone());
                 }
             }
             Ok(Value::List(out))
         }
-        ("list_product", [Value::List(a), Value::List(b)]) => {
+        ("list_product", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
+            let a = runtime_list(a).unwrap_or_default();
+            let b = runtime_list(b).unwrap_or_default();
             let mut out = Vec::with_capacity(a.len() * b.len());
-            for left in a {
-                for right in b {
+            for left in &a {
+                for right in &b {
                     out.push(Value::List(vec![left.clone(), right.clone()]));
                 }
             }
@@ -3585,6 +5848,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             [a, b],
         ) => {
             let lhs = match a {
+                value if runtime_list(value).is_some() => {
+                    Value::List(runtime_list(value).unwrap_or_default())
+                }
                 Value::List(_) => a.clone(),
                 // A `path()` traverser is a sequence of items; the
                 // list/set operators treat it as the underlying list.
@@ -3604,6 +5870,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
                 other => Value::List(vec![other.clone()]),
             };
             let rhs = match b {
+                value if runtime_list(value).is_some() => {
+                    Value::List(runtime_list(value).unwrap_or_default())
+                }
                 Value::List(_) => b.clone(),
                 Value::Path(items) => Value::List(items.clone()),
                 Value::Map(map) => {
@@ -3769,6 +6038,271 @@ fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &Prope
 }
 
 #[cfg(test)]
+mod list_function_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn call(name: &str, args: &[Value]) -> Value {
+        let graph = PropertyGraph::new();
+        eval_call(name, args.to_vec(), &graph).unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn list_unique_ignores_nulls() {
+        let observed = call(
+            "list_unique",
+            &[Value::List(vec![
+                Value::Null,
+                Value::Int(1),
+                Value::Long(1),
+                Value::Null,
+                Value::Int(2),
+            ])],
+        );
+
+        assert_eq!(observed, Value::Int(2));
+    }
+
+    #[test]
+    fn list_any_value_skips_nulls() {
+        let observed = call(
+            "list_any_value",
+            &[Value::List(vec![
+                Value::Null,
+                Value::Null,
+                Value::String("first".into()),
+                Value::String("second".into()),
+            ])],
+        );
+        let all_null = call(
+            "list_any_value",
+            &[Value::List(vec![Value::Null, Value::Null])],
+        );
+
+        assert_eq!(observed, Value::String("first".into()));
+        assert_eq!(all_null, Value::Null);
+    }
+
+    #[test]
+    fn arithmetic_functions_cover_kuzu_scalar_math() {
+        assert_eq!(
+            call("factorial", &[Value::Int(14)]),
+            Value::Long(87178291200)
+        );
+        assert!(matches!(call("factorial", &[Value::Int(-1)]), Value::Null));
+        assert_eq!(call("even", &[Value::Float(4.1)]), Value::Float(6.0));
+        assert_eq!(
+            call("bitwise_and", &[Value::Int(640), Value::Int(935)]),
+            Value::Long(640)
+        );
+        assert_eq!(
+            call("bitshift_left", &[Value::Int(5), Value::Int(7)]),
+            Value::Long(640)
+        );
+
+        for (name, expected) in [
+            ("cbrt", 1.546680),
+            ("ln", 1.308333),
+            ("log", 0.568202),
+            ("log2", 1.887525),
+            ("gamma", 4.170652),
+            ("lgamma", 1.428072),
+        ] {
+            let Value::Float(observed) = call(name, &[Value::Float(3.7)]) else {
+                panic!("{name} should return a float");
+            };
+            assert!(
+                (observed - expected).abs() < 0.000001,
+                "{name}: observed {observed}, expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn list_distinct_uses_nested_semantic_equality() {
+        let mut int_map = BTreeMap::new();
+        int_map.insert(
+            "grades".into(),
+            Value::List(vec![Value::Int(80), Value::Long(78)]),
+        );
+        let mut long_map = BTreeMap::new();
+        long_map.insert(
+            "grades".into(),
+            Value::List(vec![Value::Long(80), Value::Int(78)]),
+        );
+
+        let observed = call(
+            "list_distinct",
+            &[Value::List(vec![
+                Value::List(vec![Value::Int(1)]),
+                Value::List(vec![Value::Long(1)]),
+                Value::Map(int_map.clone()),
+                Value::Map(long_map),
+                Value::Null,
+                Value::Null,
+            ])],
+        );
+
+        assert_eq!(
+            observed,
+            Value::List(vec![Value::List(vec![Value::Int(1)]), Value::Map(int_map),])
+        );
+    }
+
+    #[test]
+    fn list_sort_keeps_nulls_first_by_default() {
+        let desc = call(
+            "list_sort",
+            &[
+                Value::List(vec![
+                    Value::Int(2),
+                    Value::Int(3),
+                    Value::Int(1),
+                    Value::Null,
+                ]),
+                Value::String("DESC".into()),
+            ],
+        );
+        let nulls_last = call(
+            "list_sort",
+            &[
+                Value::List(vec![
+                    Value::String("sss".into()),
+                    Value::String("abs".into()),
+                    Value::Null,
+                ]),
+                Value::String("ASC".into()),
+                Value::String("NULLS LAST".into()),
+            ],
+        );
+
+        assert_eq!(
+            desc,
+            Value::List(vec![
+                Value::Null,
+                Value::Int(3),
+                Value::Int(2),
+                Value::Int(1),
+            ])
+        );
+        assert_eq!(
+            nulls_last,
+            Value::List(vec![
+                Value::String("abs".into()),
+                Value::String("sss".into()),
+                Value::Null,
+            ])
+        );
+    }
+
+    #[test]
+    fn list_extract_uses_one_based_positions() {
+        let observed = call(
+            "list_extract",
+            &[
+                Value::List(vec![Value::Int(5), Value::Int(2), Value::Int(8)]),
+                Value::Int(1),
+            ],
+        );
+        let from_text = call(
+            "list_extract",
+            &[Value::String("[10,5]".into()), Value::Int(2)],
+        );
+
+        assert_eq!(observed, Value::Int(5));
+        assert_eq!(from_text, Value::Long(5));
+    }
+
+    #[test]
+    fn list_slice_uses_one_based_inclusive_bounds() {
+        let observed = call(
+            "list_slice",
+            &[
+                Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+                Value::Int(1),
+                Value::Int(-1),
+            ],
+        );
+        let string_slice = call(
+            "list_slice",
+            &[Value::String("abcdef".into()), Value::Int(1), Value::Int(4)],
+        );
+
+        assert_eq!(
+            observed,
+            Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+        );
+        assert_eq!(string_slice, Value::String("abcd".into()));
+    }
+
+    #[test]
+    fn list_functions_parse_string_list_literals() {
+        let size = call("size", &[Value::String("[10,5]".into())]);
+        let contains = call("in", &[Value::Int(5), Value::String("[10,5]".into())]);
+        let joined = call(
+            "list_to_string",
+            &[Value::String(",".into()), Value::String("[10,5]".into())],
+        );
+
+        assert_eq!(size, Value::Int(2));
+        assert_eq!(contains, Value::Bool(true));
+        assert_eq!(joined, Value::String("10,5".into()));
+    }
+
+    #[test]
+    fn named_casts_support_list_timestamp_and_uuid_types() {
+        let timestamp_ms = call(
+            "cast",
+            &[
+                Value::String("1993-05-03 11:13:25.43225".into()),
+                Value::String("TIMESTAMP_MS".into()),
+            ],
+        );
+        let timestamp_tz = call(
+            "cast",
+            &[
+                Value::String("1993-05-03 11:13:25.012343".into()),
+                Value::String("TIMESTAMP_TZ".into()),
+            ],
+        );
+        let uuid = call(
+            "cast",
+            &[
+                Value::String("a0ee-bc99-9c0b-4ef8-bb6d-6bb9-bd38-0a14".into()),
+                Value::String("UUID".into()),
+            ],
+        );
+
+        assert_eq!(
+            timestamp_ms,
+            Value::DateTime("1993-05-03 11:13:25.432".into())
+        );
+        assert_eq!(
+            timestamp_tz,
+            Value::DateTime("1993-05-03 11:13:25.012343+00".into())
+        );
+        assert_eq!(
+            uuid,
+            Value::String("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14".into())
+        );
+    }
+
+    #[test]
+    fn list_has_all_ignores_null_needles() {
+        let observed = call(
+            "list_has_all",
+            &[
+                Value::List(vec![Value::Int(5), Value::Int(6)]),
+                Value::List(vec![Value::Null]),
+            ],
+        );
+
+        assert_eq!(observed, Value::Bool(true));
+    }
+}
+
+#[cfg(test)]
 mod alias_dispatch_tests {
     //! Table-driven tests that pin the registry contract:
     //!
@@ -3845,7 +6379,14 @@ mod alias_dispatch_tests {
         // The dispatcher exposes a shared null-propagation arm for
         // canonical string casts. Each alias must reach it.
         for alias in [
-            "tolower", "TOLOWER", "lower", "toupper", "upper", "tostring", "tointeger", "tofloat",
+            "tolower",
+            "TOLOWER",
+            "lower",
+            "toupper",
+            "upper",
+            "tostring",
+            "tointeger",
+            "tofloat",
             "toboolean",
         ] {
             let observed = call(alias, &[Value::Null]);

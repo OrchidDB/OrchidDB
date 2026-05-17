@@ -2383,7 +2383,9 @@ dependencies = [
  "duckdb",
  "num-bigint",
  "num-traits",
+ "regex",
  "thiserror",
+ "unicode-segmentation",
 ]
 
 [[package]]

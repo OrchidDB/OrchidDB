@@ -12,7 +12,9 @@ datafusion = "53.1.0"
 datafusion-sql = "53.1.0"
 num-bigint = "0.4"
 num-traits = "0.2"
+regex = "1"
 thiserror = "2"
+unicode-segmentation = "1"
 
 [dev-dependencies]
 duckdb = { version = "1.10502.0", features = ["bundled"] }

@@ -7,25 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::expr::BindingId;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BindingKind {
-    Unknown,
-    Node,
-    Relationship,
-    RecursiveRelationship,
-}
-
-impl BindingKind {
-    pub(crate) const fn cypher_type_name(self) -> &'static str {
-        match self {
-            BindingKind::Unknown => "ANY",
-            BindingKind::Node => "NODE",
-            BindingKind::Relationship => "REL",
-            BindingKind::RecursiveRelationship => "RECURSIVE_REL",
-        }
-    }
-}
+pub(crate) use crate::language::cypher::semantics::BindingKind;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ScopeFrame {

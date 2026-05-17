@@ -2,7 +2,9 @@
 //!
 //! Extracted from `interpreter.rs` lines 2847..2890.
 
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
+
+use super::super::runtime::temporal;
 
 /// Tag for TinkerPop "orderability" cross-type total order.
 /// Lower tag = sorts earlier. Types not represented in `Value` today
@@ -20,17 +22,21 @@ fn orderability_tag(v: &Value) -> u8 {
         | Value::BigInt(_)
         | Value::BigDecimal(_) => 2,
         Value::DateTime(_) => 3,
-        Value::String(_) => 4,
-        Value::List(_) => 5,
-        Value::Map(_) => 6,
-        Value::Node { .. } => 7,
-        Value::Edge { .. } => 8,
-        Value::Path(_) => 9,
+        Value::InternalId { .. } => 4,
+        Value::String(_) => 5,
+        Value::List(_) => 6,
+        Value::Map(_) => 7,
+        Value::Node { .. } => 8,
+        Value::Edge { .. } => 9,
+        Value::Path(_) => 10,
     }
 }
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
     use std::cmp::Ordering;
+    if let Some(ordering) = temporal_value_ordering(a, b) {
+        return ordering;
+    }
     // Cross-type: fall back to the tag-based total order. Same-tag pairs
     // are handled below; anything that falls through to the catch-all has
     // matching tags but no intra-type comparator (e.g. List vs List with
@@ -43,8 +49,20 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         return compare_numeric_values(a, b);
     }
     match (a, b) {
-        (Value::String(x), Value::String(y)) => x.cmp(y),
+        (Value::String(x), Value::String(y)) => {
+            blob_string_ordering(x, y).unwrap_or_else(|| x.cmp(y))
+        }
         (Value::DateTime(x), Value::DateTime(y)) => x.cmp(y),
+        (
+            Value::InternalId {
+                table: tx,
+                offset: ox,
+            },
+            Value::InternalId {
+                table: ty,
+                offset: oy,
+            },
+        ) => (tx, ox).cmp(&(ty, oy)),
         (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
         (Value::List(x), Value::List(y)) => compare_slices(x, y),
         (Value::Map(x), Value::Map(y)) => compare_maps(x, y),
@@ -74,6 +92,63 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Null, _) => Ordering::Less,
         (_, Value::Null) => Ordering::Greater,
         _ => Ordering::Equal,
+    }
+}
+
+fn blob_string_ordering(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    if !left.contains("\\x") && !right.contains("\\x") {
+        return None;
+    }
+    Some(blob_sort_bytes(left)?.cmp(&blob_sort_bytes(right)?))
+}
+
+fn blob_sort_bytes(text: &str) -> Option<Vec<u8>> {
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut bytes = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        if !ch.is_ascii() {
+            return None;
+        }
+        if ch == '\\' && matches!(chars.get(index + 1), Some('x' | 'X')) {
+            let first = chars.get(index + 2).copied()?;
+            let second = chars.get(index + 3).copied()?;
+            if !first.is_ascii_hexdigit() || !second.is_ascii_hexdigit() {
+                return None;
+            }
+            let hex = format!("{first}{second}");
+            bytes.push(u8::from_str_radix(&hex, 16).ok()?);
+            index += 4;
+            continue;
+        }
+        bytes.push(ch as u8);
+        index += 1;
+    }
+    Some(bytes)
+}
+
+fn temporal_value_ordering(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
+    match (a, b) {
+        (Value::DateTime(left), Value::DateTime(right))
+        | (Value::DateTime(left), Value::String(right))
+        | (Value::String(left), Value::DateTime(right))
+        | (Value::String(left), Value::String(right)) => {
+            if let (Some(left), Some(right)) = (
+                temporal::temporal_sort_key(left),
+                temporal::temporal_sort_key(right),
+            ) {
+                return Some(left.cmp(&right));
+            }
+            if let (Some(left), Some(right)) = (
+                temporal::interval_sort_key(left),
+                temporal::interval_sort_key(right),
+            ) {
+                return Some(left.cmp(&right));
+            }
+            None
+        }
+        _ => None,
     }
 }
 
@@ -151,17 +226,44 @@ fn compare_maps(
     a: &std::collections::BTreeMap<String, Value>,
     b: &std::collections::BTreeMap<String, Value>,
 ) -> std::cmp::Ordering {
-    for ((ak, av), (bk, bv)) in a.iter().zip(b.iter()) {
+    let a_keys = ordered_map_keys(a);
+    let b_keys = ordered_map_keys(b);
+    for (ak, bk) in a_keys.iter().zip(b_keys.iter()) {
         let key_cmp = ak.cmp(bk);
         if key_cmp != std::cmp::Ordering::Equal {
             return key_cmp;
         }
+        let Some(av) = a.get(ak) else {
+            return std::cmp::Ordering::Less;
+        };
+        let Some(bv) = b.get(bk) else {
+            return std::cmp::Ordering::Greater;
+        };
         let value_cmp = compare_values(av, bv);
         if value_cmp != std::cmp::Ordering::Equal {
             return value_cmp;
         }
     }
-    a.len().cmp(&b.len())
+    a_keys.len().cmp(&b_keys.len())
+}
+
+fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<String> {
+    if let Some(Value::List(order)) = map.get(STRUCT_ORDER_KEY) {
+        let keys = order
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !keys.is_empty() {
+            return keys;
+        }
+    }
+    map.keys()
+        .filter(|key| key.as_str() != STRUCT_ORDER_KEY && key.as_str() != STRUCT_TYPES_KEY)
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

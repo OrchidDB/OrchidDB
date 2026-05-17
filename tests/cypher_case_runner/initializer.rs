@@ -144,10 +144,7 @@ pub fn build(scenario: &ScenarioGraph) -> Result<PropertyGraph, DatasetError> {
             ))
         })?;
         let to = alias_row.get(&edge.to_alias).ok_or_else(|| {
-            DatasetError(format!(
-                "edge references unknown alias `{}`",
-                edge.to_alias
-            ))
+            DatasetError(format!("edge references unknown alias `{}`", edge.to_alias))
         })?;
         edge_groups
             .entry((edge.rel_type.clone(), from.0.clone(), to.0.clone()))

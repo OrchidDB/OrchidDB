@@ -8,12 +8,15 @@
 //! interpreter work in plain `Value`s for clarity.
 
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use bigdecimal::BigDecimal;
+use num_bigint::BigInt;
 
 use crate::ir::value::Value;
 
@@ -366,7 +369,7 @@ fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Value {
                 .to_string();
             match field.and_then(|field| field.metadata().get("new_graph.value_type")) {
                 Some(kind) if kind == "datetime" => return Value::DateTime(value),
-                Some(kind) if kind == "map" => {
+                Some(kind) if kind == "map" || kind == "value" => {
                     return parse_debug_value(&value).unwrap_or(Value::Null);
                 }
                 _ => {}
@@ -392,6 +395,18 @@ fn parse_debug_value(input: &str) -> Option<Value> {
         return inner.parse::<i64>().ok().map(Value::Int);
     }
     if let Some(inner) = input
+        .strip_prefix("Byte(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return inner.parse::<i8>().ok().map(Value::Byte);
+    }
+    if let Some(inner) = input
+        .strip_prefix("Short(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return inner.parse::<i16>().ok().map(Value::Short);
+    }
+    if let Some(inner) = input
         .strip_prefix("Long(")
         .and_then(|s| s.strip_suffix(')'))
     {
@@ -410,16 +425,28 @@ fn parse_debug_value(input: &str) -> Option<Value> {
         return inner.parse::<f32>().ok().map(Value::Float32);
     }
     if let Some(inner) = input
+        .strip_prefix("BigInt(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return BigInt::from_str(inner).ok().map(Value::BigInt);
+    }
+    if let Some(inner) = input
+        .strip_prefix("BigDecimal(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        return BigDecimal::from_str(inner).ok().map(Value::BigDecimal);
+    }
+    if let Some(inner) = input
         .strip_prefix("String(\"")
         .and_then(|s| s.strip_suffix("\")"))
     {
-        return Some(Value::String(inner.to_string()));
+        return Some(Value::String(unescape_debug_string(inner)));
     }
     if let Some(inner) = input
         .strip_prefix("DateTime(\"")
         .and_then(|s| s.strip_suffix("\")"))
     {
-        return Some(Value::DateTime(inner.to_string()));
+        return Some(Value::DateTime(unescape_debug_string(inner)));
     }
     if let Some(inner) = input
         .strip_prefix("List([")
@@ -453,8 +480,38 @@ fn parse_debug_value(input: &str) -> Option<Value> {
 
 fn split_debug_map_entry(entry: &str) -> Option<(String, &str)> {
     let (key, value) = split_top_level_once(entry, ':')?;
-    let key = key.trim().strip_prefix('"')?.strip_suffix('"')?.to_string();
+    let key = key
+        .trim()
+        .strip_prefix('"')?
+        .strip_suffix('"')
+        .map(unescape_debug_string)?;
     Some((key, value))
+}
+
+fn unescape_debug_string(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('0') => out.push('\0'),
+            Some('"') => out.push('"'),
+            Some('\'') => out.push('\''),
+            Some('\\') => out.push('\\'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn split_debug_items(input: &str) -> Vec<String> {

@@ -5,6 +5,7 @@
 use crate::ir::expr::BinaryOp;
 use crate::ir::value::Value;
 
+use super::super::runtime::{runtime_list, temporal};
 use super::super::{InterpretError, IrResult};
 
 pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Value> {
@@ -149,8 +150,98 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
                 _ => unreachable!(),
             }))
         }
-        (Value::String(a), Value::String(b)) if matches!(op, BinaryOp::Add) => {
-            Ok(Value::String(format!("{a}{b}")))
+        (left, right)
+            if matches!(op, BinaryOp::Add)
+                && (runtime_list(left).is_some() || runtime_list(right).is_some()) =>
+        {
+            match (runtime_list(left), runtime_list(right)) {
+                (Some(mut out), Some(items)) => {
+                    out.extend(items);
+                    Ok(Value::List(out))
+                }
+                (Some(mut out), None) => {
+                    out.push(right.clone());
+                    Ok(Value::List(out))
+                }
+                (None, Some(items)) => {
+                    let mut out = Vec::with_capacity(items.len() + 1);
+                    out.push(left.clone());
+                    out.extend(items);
+                    Ok(Value::List(out))
+                }
+                (None, None) => Ok(Value::Null),
+            }
+        }
+        (Value::String(a), Value::String(b)) if matches!(op, BinaryOp::Add | BinaryOp::Sub) => {
+            if let (Some(left), Some(right)) =
+                (temporal::parse_interval(a), temporal::parse_interval(b))
+            {
+                let value = if matches!(op, BinaryOp::Add) {
+                    temporal::add_intervals(left, right)
+                } else {
+                    temporal::subtract_intervals(left, right)
+                };
+                return Ok(value
+                    .map(temporal::format_interval)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null));
+            }
+            if temporal::parse_temporal(a).is_some() {
+                if let Some(interval) = temporal::parse_interval(b) {
+                    return Ok(temporal::add_interval_to_temporal(
+                        a,
+                        interval,
+                        matches!(op, BinaryOp::Add),
+                    )
+                    .map(Value::String)
+                    .unwrap_or(Value::Null));
+                }
+            }
+            if matches!(op, BinaryOp::Add) && temporal::parse_interval(a).is_some() {
+                if temporal::parse_temporal(b).is_some() {
+                    return Ok(temporal::add_interval_to_temporal(
+                        b,
+                        temporal::parse_interval(a).unwrap(),
+                        true,
+                    )
+                    .map(Value::String)
+                    .unwrap_or(Value::Null));
+                }
+            }
+            if matches!(op, BinaryOp::Add) {
+                Ok(Value::String(format!("{a}{b}")))
+            } else {
+                Ok(Value::Null)
+            }
+        }
+        (Value::DateTime(a), Value::String(b)) if matches!(op, BinaryOp::Add | BinaryOp::Sub) => {
+            if let Some(interval) = temporal::parse_interval(b) {
+                return Ok(temporal::add_interval_to_temporal(
+                    a,
+                    interval,
+                    matches!(op, BinaryOp::Add),
+                )
+                .map(Value::DateTime)
+                .unwrap_or(Value::Null));
+            }
+            Ok(Value::Null)
+        }
+        (Value::String(a), Value::DateTime(b)) if matches!(op, BinaryOp::Add) => {
+            if let Some(interval) = temporal::parse_interval(a) {
+                return Ok(temporal::add_interval_to_temporal(b, interval, true)
+                    .map(Value::DateTime)
+                    .unwrap_or(Value::Null));
+            }
+            Ok(Value::Null)
+        }
+        (Value::String(a), Value::Int(divisor)) if matches!(op, BinaryOp::Div) => {
+            if let Some(interval) = temporal::parse_interval(a) {
+                return Ok(temporal::divide_interval(interval, *divisor)
+                    .map(temporal::format_interval)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null));
+            }
+            Ok(Value::Null)
         }
         (Value::List(a), Value::List(b)) if matches!(op, BinaryOp::Add) => {
             let mut out = a.clone();
@@ -173,22 +264,18 @@ pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Val
         // adding `N * 86400 * 1000` epoch milliseconds and reformatting.
         // We accept either Value::DateTime or a String column (the
         // loader stores DATE columns as String, see `loader::Date`).
-        (Value::DateTime(s), Value::Int(days)) | (Value::DateTime(s), Value::Long(days))
-            if matches!(op, BinaryOp::Add | BinaryOp::Sub) =>
-        {
+        (Value::DateTime(s), Value::Int(days)) if matches!(op, BinaryOp::Add | BinaryOp::Sub) => {
             Ok(date_shift(s, *days, matches!(op, BinaryOp::Add)))
         }
-        (Value::Int(days), Value::DateTime(s)) | (Value::Long(days), Value::DateTime(s))
-            if matches!(op, BinaryOp::Add) =>
-        {
+        (Value::Int(days), Value::DateTime(s)) if matches!(op, BinaryOp::Add) => {
             Ok(date_shift(s, *days, true))
         }
-        (Value::String(s), Value::Int(days)) | (Value::String(s), Value::Long(days))
+        (Value::String(s), Value::Int(days))
             if matches!(op, BinaryOp::Add | BinaryOp::Sub) && looks_like_date(s) =>
         {
             Ok(date_shift(s, *days, matches!(op, BinaryOp::Add)))
         }
-        (Value::Int(days), Value::String(s)) | (Value::Long(days), Value::String(s))
+        (Value::Int(days), Value::String(s))
             if matches!(op, BinaryOp::Add) && looks_like_date(s) =>
         {
             Ok(date_shift(s, *days, true))

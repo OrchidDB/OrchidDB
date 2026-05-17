@@ -24,233 +24,236 @@ pub fn lower_pattern_part(
     history: Option<&str>,
     history_available: bool,
 ) -> CypherPlanResult<Node> {
-    let parent = lowerer.current_traversal().cloned();
-    if let Some(parent) = parent.as_ref() {
-        let traversal_kind = if optional {
-            CypherTraversalKind::OptionalMatchPattern
-        } else {
-            CypherTraversalKind::MatchPattern
-        };
-        let traversal = lowerer.child_traversal(parent, traversal_kind);
-        lowerer.push_traversal(traversal);
-    }
-
-    let outer_visible: BTreeSet<_> = lowerer.visible_set();
-    let mut property_correlation = pattern_property_correlation(part, &outer_visible);
-    if let Some(history) = history.filter(|_| history_available) {
-        property_correlation.insert(history.to_string());
-    }
-    let mut outputs = Vec::new();
-    let mut output_kinds = BTreeMap::new();
-    let mut pattern_kinds = binding_kinds(lowerer, &outer_visible);
-    validate_path_binding(part, &outer_visible)?;
-    if let Some(path) = &part.variable {
-        if !outer_visible.contains(path) {
-            push_output(
-                &mut outputs,
-                &mut output_kinds,
-                path.clone(),
-                BindingKind::RecursiveRelationship,
-            );
-            pattern_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
-        }
-    }
-    let mut source = node_binding(lowerer, &part.element.start);
-    validate_node_binding(&source, &pattern_kinds)?;
-    let mut traversal = lower_node_start(
-        lowerer,
-        &part.element.start,
-        &source,
-        &outer_visible,
-        &property_correlation,
-        &mut outputs,
-    )?;
-    let mut pattern_visible = outer_visible.clone();
-    if part.element.start.variable.is_some() {
-        if !outer_visible.contains(&source) {
-            output_kinds.insert(source.clone(), BindingKind::Node);
-        }
-        pattern_visible.insert(source.clone());
-        pattern_kinds.insert(source.clone(), BindingKind::Node);
-    }
-    let shared_path_binding = part.variable.clone();
-
-    for chain in &part.element.chains {
-        let target = node_binding(lowerer, &chain.node);
-        let target_exists = pattern_visible.contains(&target);
-        let variable_length = is_variable_length(&chain.relationship.range);
-        let user_rel_binding = chain.relationship.variable.clone();
-        if let Some(rel) = &user_rel_binding {
-            let expected = if variable_length {
-                BindingKind::RecursiveRelationship
-            } else {
-                BindingKind::Relationship
-            };
-            validate_relationship_binding(rel, expected, &pattern_kinds)?;
-        }
-        let mut chain_kinds = pattern_kinds.clone();
-        if let Some(rel) = &user_rel_binding {
-            let kind = if variable_length {
-                BindingKind::RecursiveRelationship
-            } else {
-                BindingKind::Relationship
-            };
-            chain_kinds.insert(rel.clone(), kind);
-        }
-        if chain.node.variable.is_some() {
-            validate_node_binding(&target, &chain_kinds)?;
-        }
-        let path_binding = shared_path_binding
-            .clone()
-            .or_else(|| variable_length.then(|| lowerer.synthetic("path")));
-        let rel_binding = expand_relationship_binding(
-            lowerer,
-            &chain.relationship,
-            &pattern_visible,
-            variable_length,
-        );
-        if let Some(rel) = &user_rel_binding {
-            if !pattern_visible.contains(rel) {
-                let kind = if variable_length {
-                    BindingKind::RecursiveRelationship
-                } else {
-                    BindingKind::Relationship
-                };
-                push_output(&mut outputs, &mut output_kinds, rel.clone(), kind);
-            }
-        }
-        if !target_exists && chain.node.variable.is_some() {
-            push_output(
-                &mut outputs,
-                &mut output_kinds,
-                target.clone(),
-                BindingKind::Node,
-            );
-        }
-        traversal = lower_expand(
-            traversal,
-            &source,
-            &target,
-            target_exists,
-            &chain.relationship,
-            rel_binding.as_deref(),
-            &chain.node,
-            path_binding.clone(),
-            history.map(ToString::to_string),
-        );
-        if let Some(rel) = &user_rel_binding {
-            traversal = apply_relationship_binding_projection(
-                traversal,
-                rel,
-                rel_binding.as_deref(),
-                path_binding.as_deref(),
-                &source,
-                pattern_visible.contains(rel),
-                variable_length,
-            );
-        }
-        if let Some(properties) = &chain.relationship.properties {
-            if variable_length {
-                if let Some(path) = &path_binding {
-                    let mut allowed = pattern_visible.clone();
-                    allowed.insert(source.clone());
-                    allowed.insert(path.clone());
-                    if let Some(rel) = &user_rel_binding {
-                        allowed.insert(rel.clone());
-                    }
-                    traversal = apply_variable_length_property_filters(
-                        lowerer, traversal, path, &source, properties, &allowed,
-                    )?;
-                }
-            } else if let Some(rel) = rel_binding.as_deref().or(user_rel_binding.as_deref()) {
-                let mut allowed = pattern_visible.clone();
-                allowed.insert(rel.to_string());
-                traversal = apply_property_filters(lowerer, traversal, rel, properties, &allowed)?;
-            }
-        }
-        let mut node_allowed = pattern_visible.clone();
-        node_allowed.insert(target.clone());
-        if let Some(rel) = &user_rel_binding {
-            node_allowed.insert(rel.clone());
-        }
-        traversal = apply_node_filters(lowerer, traversal, &target, &chain.node, &node_allowed)?;
-        if let Some(rel) = &user_rel_binding {
-            pattern_visible.insert(rel.clone());
-            let kind = if variable_length {
-                BindingKind::RecursiveRelationship
-            } else {
-                BindingKind::Relationship
-            };
-            pattern_kinds.insert(rel.clone(), kind);
-        }
-        if chain.node.variable.is_some() {
-            pattern_visible.insert(target.clone());
-            pattern_kinds.insert(target.clone(), BindingKind::Node);
-        }
-        source = target;
-    }
-    if let Some(path) = &part.variable {
-        if part.element.chains.is_empty() && !outer_visible.contains(path) {
-            traversal = Node::GraphProject {
-                mode: ProjectMode::PreserveVisible,
-                items: vec![ProjectionItem {
-                    alias: path.clone(),
-                    expr: IrExpr::Call {
-                        name: "path_or_self".to_string(),
-                        args: vec![IrExpr::Lit(Lit::Null), IrExpr::Binding(source.clone())],
-                    },
-                }],
-                error_policy: ProjectErrorPolicy::PropagateError,
-                input: traversal.boxed(),
-            };
-        }
-    }
-
-    outputs.sort();
-    outputs.dedup();
-    let correlation: Vec<String> = outer_visible
-        .iter()
-        .filter(|binding| {
-            pattern_mentions(part, binding) || property_correlation.contains(*binding)
-        })
-        .cloned()
-        .collect();
-    let mut correlation = correlation;
-    if let Some(history) = history.filter(|_| history_available) {
-        if !correlation.iter().any(|binding| binding == history) {
-            correlation.push(history.to_string());
-        }
-    }
-    let kind = if optional {
-        ApplyKind::Optional
+    let traversal_kind = if optional {
+        CypherTraversalKind::OptionalMatchPattern
     } else {
-        ApplyKind::Inner
+        CypherTraversalKind::MatchPattern
     };
-    let mut apply_outputs = outputs.clone();
-    if let Some(history) = history {
-        if !part.element.chains.is_empty()
-            && !apply_outputs.iter().any(|binding| binding == history)
-        {
-            apply_outputs.push(history.to_string());
-        }
-    }
-    let node = Node::GraphApply {
-        kind,
-        correlation: correlation.clone(),
-        outputs: apply_outputs,
-        optional_missing: OptionalMissing::Null,
-        left: input.boxed(),
-        right: traversal.boxed(),
-    };
-    lowerer.record_current_imports(outer_visible.iter().cloned());
-    lowerer.record_current_correlation(correlation.clone());
-    lowerer.record_current_outputs(outputs.clone());
-    if optional {
-        lowerer.record_current_nullable(outputs.clone());
-    }
-    if parent.is_some() {
-        lowerer.pop_traversal();
-    }
+    let (node, outputs, output_kinds) =
+        lowerer.with_child_traversal(traversal_kind, |lowerer| {
+            let outer_visible: BTreeSet<_> = lowerer.visible_set();
+            let mut property_correlation = pattern_property_correlation(part, &outer_visible);
+            if let Some(history) = history.filter(|_| history_available) {
+                property_correlation.insert(history.to_string());
+            }
+            let mut outputs = Vec::new();
+            let mut output_kinds = BTreeMap::new();
+            let mut pattern_kinds = binding_kinds(lowerer, &outer_visible);
+            validate_path_binding(part, &outer_visible)?;
+            if let Some(path) = &part.variable {
+                if !outer_visible.contains(path) {
+                    push_output(
+                        &mut outputs,
+                        &mut output_kinds,
+                        path.clone(),
+                        BindingKind::RecursiveRelationship,
+                    );
+                    pattern_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
+                }
+            }
+            let mut source = node_binding(lowerer, &part.element.start);
+            validate_node_binding(&source, &pattern_kinds)?;
+            let mut traversal = lower_node_start(
+                lowerer,
+                &part.element.start,
+                &source,
+                &outer_visible,
+                &property_correlation,
+                &mut outputs,
+            )?;
+            let mut pattern_visible = outer_visible.clone();
+            if part.element.start.variable.is_some() {
+                if !outer_visible.contains(&source) {
+                    output_kinds.insert(source.clone(), BindingKind::Node);
+                }
+                pattern_visible.insert(source.clone());
+                pattern_kinds.insert(source.clone(), BindingKind::Node);
+            }
+            let shared_path_binding = part.variable.clone();
+
+            for chain in &part.element.chains {
+                let target = node_binding(lowerer, &chain.node);
+                let target_exists = pattern_visible.contains(&target);
+                let variable_length = is_variable_length(&chain.relationship.range);
+                let user_rel_binding = chain.relationship.variable.clone();
+                if chain.node.variable.is_some() {
+                    pattern_kinds
+                        .entry(target.clone())
+                        .or_insert(BindingKind::Node);
+                }
+                if let Some(rel) = &user_rel_binding {
+                    let expected = if variable_length {
+                        BindingKind::RecursiveRelationship
+                    } else {
+                        BindingKind::Relationship
+                    };
+                    validate_relationship_binding(rel, expected, &pattern_kinds)?;
+                }
+                let mut chain_kinds = pattern_kinds.clone();
+                if let Some(rel) = &user_rel_binding {
+                    let kind = if variable_length {
+                        BindingKind::RecursiveRelationship
+                    } else {
+                        BindingKind::Relationship
+                    };
+                    chain_kinds.insert(rel.clone(), kind);
+                }
+                if chain.node.variable.is_some() {
+                    validate_node_binding(&target, &chain_kinds)?;
+                }
+                let path_binding = shared_path_binding
+                    .clone()
+                    .or_else(|| variable_length.then(|| lowerer.synthetic("path")));
+                let rel_binding = expand_relationship_binding(
+                    lowerer,
+                    &chain.relationship,
+                    &pattern_visible,
+                    variable_length,
+                );
+                if let Some(rel) = &user_rel_binding {
+                    if !pattern_visible.contains(rel) {
+                        let kind = if variable_length {
+                            BindingKind::RecursiveRelationship
+                        } else {
+                            BindingKind::Relationship
+                        };
+                        push_output(&mut outputs, &mut output_kinds, rel.clone(), kind);
+                    }
+                }
+                if !target_exists && chain.node.variable.is_some() {
+                    push_output(
+                        &mut outputs,
+                        &mut output_kinds,
+                        target.clone(),
+                        BindingKind::Node,
+                    );
+                }
+                traversal = lower_expand(
+                    traversal,
+                    &source,
+                    &target,
+                    target_exists,
+                    &chain.relationship,
+                    rel_binding.as_deref(),
+                    &chain.node,
+                    path_binding.clone(),
+                    history.map(ToString::to_string),
+                );
+                if let Some(rel) = &user_rel_binding {
+                    traversal = apply_relationship_binding_projection(
+                        traversal,
+                        rel,
+                        rel_binding.as_deref(),
+                        path_binding.as_deref(),
+                        &source,
+                        pattern_visible.contains(rel),
+                        variable_length,
+                    );
+                }
+                if let Some(properties) = &chain.relationship.properties {
+                    if variable_length {
+                        if let Some(path) = &path_binding {
+                            let mut allowed = pattern_visible.clone();
+                            allowed.insert(source.clone());
+                            allowed.insert(path.clone());
+                            if let Some(rel) = &user_rel_binding {
+                                allowed.insert(rel.clone());
+                            }
+                            traversal = apply_variable_length_property_filters(
+                                lowerer, traversal, path, &source, properties, &allowed,
+                            )?;
+                        }
+                    } else if let Some(rel) = rel_binding.as_deref().or(user_rel_binding.as_deref())
+                    {
+                        let mut allowed = pattern_visible.clone();
+                        allowed.insert(rel.to_string());
+                        traversal =
+                            apply_property_filters(lowerer, traversal, rel, properties, &allowed)?;
+                    }
+                }
+                let mut node_allowed = pattern_visible.clone();
+                node_allowed.insert(target.clone());
+                if let Some(rel) = &user_rel_binding {
+                    node_allowed.insert(rel.clone());
+                }
+                traversal =
+                    apply_node_filters(lowerer, traversal, &target, &chain.node, &node_allowed)?;
+                if let Some(rel) = &user_rel_binding {
+                    pattern_visible.insert(rel.clone());
+                    let kind = if variable_length {
+                        BindingKind::RecursiveRelationship
+                    } else {
+                        BindingKind::Relationship
+                    };
+                    pattern_kinds.insert(rel.clone(), kind);
+                }
+                if chain.node.variable.is_some() {
+                    pattern_visible.insert(target.clone());
+                    pattern_kinds.insert(target.clone(), BindingKind::Node);
+                }
+                source = target;
+            }
+            if let Some(path) = &part.variable {
+                if part.element.chains.is_empty() && !outer_visible.contains(path) {
+                    traversal = Node::GraphProject {
+                        mode: ProjectMode::PreserveVisible,
+                        items: vec![ProjectionItem {
+                            alias: path.clone(),
+                            expr: IrExpr::Call {
+                                name: "path_or_self".to_string(),
+                                args: vec![IrExpr::Lit(Lit::Null), IrExpr::Binding(source.clone())],
+                            },
+                        }],
+                        error_policy: ProjectErrorPolicy::PropagateError,
+                        input: traversal.boxed(),
+                    };
+                }
+            }
+
+            outputs.sort();
+            outputs.dedup();
+            let correlation: Vec<String> = outer_visible
+                .iter()
+                .filter(|binding| {
+                    pattern_mentions(part, binding) || property_correlation.contains(*binding)
+                })
+                .cloned()
+                .collect();
+            let mut correlation = correlation;
+            if let Some(history) = history.filter(|_| history_available) {
+                if !correlation.iter().any(|binding| binding == history) {
+                    correlation.push(history.to_string());
+                }
+            }
+            let kind = if optional {
+                ApplyKind::Optional
+            } else {
+                ApplyKind::Inner
+            };
+            let mut apply_outputs = outputs.clone();
+            if let Some(history) = history {
+                if !part.element.chains.is_empty()
+                    && !apply_outputs.iter().any(|binding| binding == history)
+                {
+                    apply_outputs.push(history.to_string());
+                }
+            }
+            let node = Node::GraphApply {
+                kind,
+                correlation: correlation.clone(),
+                outputs: apply_outputs,
+                optional_missing: OptionalMissing::Null,
+                left: input.boxed(),
+                right: traversal.boxed(),
+            };
+            lowerer.record_current_imports(outer_visible.iter().cloned());
+            lowerer.record_current_correlation(correlation.clone());
+            lowerer.record_current_outputs(outputs.clone());
+            if optional {
+                lowerer.record_current_nullable(outputs.clone());
+            }
+            Ok((node, outputs, output_kinds))
+        })?;
     for output in outputs {
         if optional {
             lowerer.add_nullable(output.clone());
@@ -323,10 +326,17 @@ fn validate_path_binding(
 }
 
 fn validate_node_binding(
-    _binding: &str,
-    _kinds: &BTreeMap<String, BindingKind>,
+    binding: &str,
+    kinds: &BTreeMap<String, BindingKind>,
 ) -> CypherPlanResult<()> {
-    Ok(())
+    match kinds.get(binding).copied() {
+        Some(BindingKind::Relationship | BindingKind::RecursiveRelationship) => {
+            Err(CypherPlanError::Invalid(format!(
+                "Binder exception: Cannot bind {binding} as node pattern."
+            )))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn validate_relationship_binding(

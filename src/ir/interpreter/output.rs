@@ -2,7 +2,7 @@
 //!
 //! Extracted from `interpreter.rs` lines 3313..3463.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -12,8 +12,11 @@ use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::policy::{GraphPlanPolicy, Language, ResultForm};
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
+use super::element_id::{edge_table_index, node_table_index};
+
+const KUZU_MAP_ENTRIES_KEY: &str = "\u{0}kuzu_map_entries";
 use super::runtime::display_for_concat;
 use super::{InterpretError, IrResult, ReturnedBatches, Row};
 
@@ -35,44 +38,163 @@ pub(crate) fn finalize_return(
     }
 
     let expand_elements = matches!(policy.language, Language::Cypher);
-    let mut columns: Vec<ColumnBuilder> = fields.iter().map(|_| ColumnBuilder::new()).collect();
+    let return_fields = plan_return_fields(fields, &rows, expand_elements);
+    let output_fields = return_fields
+        .iter()
+        .flat_map(ReturnField::output_names)
+        .collect::<Vec<_>>();
+    let mut columns: Vec<ColumnBuilder> = output_fields
+        .iter()
+        .map(|_| ColumnBuilder::new(expand_elements))
+        .collect();
 
     for row in &rows {
-        for (idx, field) in fields.iter().enumerate() {
-            let mut value = row.bindings.get(field).cloned().unwrap_or(Value::Null);
-            if expand_elements {
-                value = expand_element(value, graph);
+        let mut column_idx = 0;
+        for field in &return_fields {
+            match field {
+                ReturnField::Scalar { source, .. } => {
+                    let mut value = row.bindings.get(source).cloned().unwrap_or(Value::Null);
+                    if expand_elements {
+                        value = expand_element(value, graph);
+                    }
+                    columns[column_idx].push(value);
+                    column_idx += 1;
+                }
+                ReturnField::Star { source, keys, .. } => {
+                    let value = row.bindings.get(source).cloned().unwrap_or(Value::Null);
+                    for key in keys {
+                        let mut value = star_projection_value(&value, key);
+                        if expand_elements {
+                            value = expand_element(value, graph);
+                        }
+                        columns[column_idx].push(value);
+                        column_idx += 1;
+                    }
+                }
             }
-            columns[idx].push(value);
         }
     }
 
-    let mut arrow_fields = Vec::with_capacity(fields.len());
-    let mut arrays: Vec<ArrayRef> = Vec::with_capacity(fields.len());
-    for (name, builder) in fields.iter().zip(columns.into_iter()) {
+    let mut arrow_fields = Vec::with_capacity(output_fields.len());
+    let mut arrays: Vec<ArrayRef> = Vec::with_capacity(output_fields.len());
+    for (name, builder) in output_fields.iter().zip(columns.into_iter()) {
         let (data_type, array) = builder.finish();
-        arrow_fields.push(Field::new(name, data_type, true));
+        arrow_fields.push(Field::new(name.as_str(), data_type, true));
         arrays.push(array);
     }
     let schema: SchemaRef = Arc::new(Schema::new(arrow_fields));
     let batch = RecordBatch::try_new(schema, arrays)
         .map_err(|err| InterpretError::Type(format!("record batch: {err}")))?;
     Ok(ReturnedBatches {
-        fields: fields.to_vec(),
+        fields: output_fields,
         result_form,
         batch,
     })
+}
+
+#[derive(Debug, Clone)]
+enum ReturnField {
+    Scalar {
+        source: String,
+        output: String,
+    },
+    Star {
+        source: String,
+        keys: Vec<String>,
+        outputs: Vec<String>,
+    },
+}
+
+impl ReturnField {
+    fn output_names(&self) -> Vec<String> {
+        match self {
+            ReturnField::Scalar { output, .. } => vec![output.clone()],
+            ReturnField::Star { outputs, .. } => outputs.clone(),
+        }
+    }
+}
+
+fn plan_return_fields(fields: &[String], rows: &[Row], expand_star: bool) -> Vec<ReturnField> {
+    let mut used = BTreeSet::new();
+    let mut planned = Vec::new();
+    for field in fields {
+        if expand_star && is_star_projection_field(field) {
+            let keys = star_projection_keys(field, rows);
+            if !keys.is_empty() {
+                let outputs = keys
+                    .iter()
+                    .map(|key| unique_output_name(&mut used, key))
+                    .collect();
+                planned.push(ReturnField::Star {
+                    source: field.clone(),
+                    keys,
+                    outputs,
+                });
+                continue;
+            }
+        }
+        planned.push(ReturnField::Scalar {
+            source: field.clone(),
+            output: unique_output_name(&mut used, field),
+        });
+    }
+    planned
+}
+
+fn is_star_projection_field(field: &str) -> bool {
+    field.trim_end().ends_with(".*")
+}
+
+fn star_projection_keys(field: &str, rows: &[Row]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut keys = Vec::new();
+    for row in rows {
+        let Some(Value::Map(map)) = row.bindings.get(field) else {
+            continue;
+        };
+        for key in visible_map_keys(map) {
+            if seen.insert(key.clone()) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
+}
+
+fn star_projection_value(value: &Value, key: &str) -> Value {
+    match value {
+        Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
+fn unique_output_name(used: &mut BTreeSet<String>, preferred: &str) -> String {
+    if used.insert(preferred.to_string()) {
+        return preferred.to_string();
+    }
+    let mut index = 1;
+    loop {
+        let candidate = format!("{preferred}_{index}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        index += 1;
+    }
 }
 
 /// Type-promoting column builder: scans values to pick a primitive Arrow
 /// type. Mixed types fall back to Utf8.
 pub(crate) struct ColumnBuilder {
     values: Vec<Value>,
+    cypher_output: bool,
 }
 
 impl ColumnBuilder {
-    fn new() -> Self {
-        Self { values: Vec::new() }
+    fn new(cypher_output: bool) -> Self {
+        Self {
+            values: Vec::new(),
+            cypher_output,
+        }
     }
 
     fn push(&mut self, value: Value) {
@@ -136,17 +258,28 @@ impl ColumnBuilder {
                         Value::Float32(f) => builder.append_value(format!("d[{}].f", f as f64)),
                         Value::Float(f) => builder.append_value(f.to_string()),
                         Value::Bool(b) => builder.append_value(b.to_string()),
-                        // Tag arbitrary-precision values with TinkerPop's
-                        // `d[N].m` / `d[N].i` shape so the harness can
-                        // compare against the expected gherkin lines.
+                        // Gremlin expects tagged arbitrary-precision and
+                        // datetime displays; Cypher/Kuzu prints them plain.
+                        Value::BigDecimal(d) if self.cypher_output => {
+                            builder.append_value(d.to_string())
+                        }
                         Value::BigDecimal(d) => builder.append_value(format!("d[{d}].m")),
+                        Value::BigInt(n) if self.cypher_output => {
+                            builder.append_value(n.to_string())
+                        }
                         Value::BigInt(n) => builder.append_value(format!("d[{n}].n")),
+                        Value::DateTime(s) if self.cypher_output => builder.append_value(s),
                         Value::DateTime(s) => builder.append_value(format!("dt[{s}]")),
                         Value::Node { label, id } => {
                             builder.append_value(format!("{label}#{id}"));
                         }
                         Value::Edge { rel_type, id, .. } => {
                             builder.append_value(format!("{rel_type}#{id}"));
+                        }
+                        other @ (Value::List(_) | Value::Map(_) | Value::Path(_))
+                            if self.cypher_output =>
+                        {
+                            builder.append_value(format_property_value(&other))
                         }
                         other => builder.append_value(display_for_concat(&other)),
                     }
@@ -208,27 +341,6 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
     }
 }
 
-fn node_table_index(graph: &PropertyGraph, label: &str) -> i64 {
-    graph
-        .node_label_order()
-        .iter()
-        .position(|candidate| candidate == label)
-        .map(|idx| idx as i64)
-        .unwrap_or(0)
-}
-
-fn edge_table_index(graph: &PropertyGraph, rel_type: &str) -> i64 {
-    // Kuzu numbers edge tables after node tables in the same shared
-    // namespace, so a graph with N node tables prints edges as `N:row`.
-    let node_count = graph.node_label_order().len() as i64;
-    graph
-        .edge_rel_order()
-        .iter()
-        .position(|candidate| candidate == rel_type)
-        .map(|idx| node_count + idx as i64)
-        .unwrap_or(node_count)
-}
-
 fn format_node(graph: &PropertyGraph, label: &str, id: i64) -> String {
     let table_id = node_table_index(graph, label);
     let mut parts = vec![format!("_ID: {table_id}:{id}"), format!("_LABEL: {label}")];
@@ -281,7 +393,7 @@ fn format_edge(
 fn format_property_value(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
-        Value::String(s) => s.clone(),
+        Value::String(s) => unescape_display_quotes(s),
         Value::Bool(true) => "True".into(),
         Value::Bool(false) => "False".into(),
         Value::Byte(n) => n.to_string(),
@@ -292,14 +404,35 @@ fn format_property_value(value: &Value) -> String {
         Value::BigInt(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::List(items) => {
             let body: Vec<String> = items.iter().map(format_property_value).collect();
             format!("[{}]", body.join(","))
         }
         Value::Map(map) => {
-            let body: Vec<String> = map
-                .iter()
-                .map(|(k, v)| format!("{k}: {}", format_property_value(v)))
+            if let Some(value) = union_display_value(map) {
+                return format_property_value(value);
+            }
+            if let Some(entries) = kuzu_map_entries(map) {
+                let body = entries
+                    .iter()
+                    .filter_map(kuzu_map_entry)
+                    .map(|(key, value)| {
+                        format!(
+                            "{}={}",
+                            format_property_value(key),
+                            format_property_value(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", body.join(", "));
+            }
+            let body: Vec<String> = visible_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key}: {}", format_property_value(value)))
+                })
                 .collect();
             format!("{{{}}}", body.join(", "))
         }
@@ -310,6 +443,70 @@ fn format_property_value(value: &Value) -> String {
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
     }
+}
+
+fn unescape_display_quotes(text: &str) -> String {
+    let mut out = text.to_string();
+    while out.contains("\\\"") {
+        out = out.replace("\\\"", "\"");
+    }
+    while out.contains("\\'") {
+        out = out.replace("\\'", "'");
+    }
+    out
+}
+
+fn kuzu_map_entries(map: &std::collections::BTreeMap<String, Value>) -> Option<&[Value]> {
+    let Value::List(entries) = map.get(KUZU_MAP_ENTRIES_KEY)? else {
+        return None;
+    };
+    Some(entries.as_slice())
+}
+
+fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
+    let Value::List(items) = entry else {
+        return None;
+    };
+    let [key, value] = items.as_slice() else {
+        return None;
+    };
+    Some((key, value))
+}
+
+fn union_display_value(map: &std::collections::BTreeMap<String, Value>) -> Option<&Value> {
+    match (map.get("__tag"), map.get("__value")) {
+        (Some(Value::String(_)), Some(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn visible_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<String> {
+    if let Some(order) = struct_field_order(map) {
+        return order;
+    }
+    map.keys()
+        .filter(|key| is_visible_map_key(key))
+        .cloned()
+        .collect()
+}
+
+fn struct_field_order(map: &std::collections::BTreeMap<String, Value>) -> Option<Vec<String>> {
+    let Value::List(items) = map.get(STRUCT_ORDER_KEY)? else {
+        return None;
+    };
+    Some(
+        items
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+fn is_visible_map_key(key: &str) -> bool {
+    key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && key != KUZU_MAP_ENTRIES_KEY
 }
 
 fn format_float(value: f64) -> String {

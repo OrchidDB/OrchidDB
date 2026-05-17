@@ -86,7 +86,11 @@ pub(crate) fn lower_not_expression(ctx: &OC_NotExpressionContext<'_>) -> Result<
         return context::missing("NOT expression missing comparison");
     };
     let mut expr = lower_comparison_expression(comparison.as_ref())?;
-    for _ in ctx.NOT_all() {
+    let mut not_count = 0;
+    while ctx.NOT(not_count).is_some() {
+        not_count += 1;
+    }
+    for _ in 0..not_count {
         expr = Expr::Unary {
             op: UnaryOp::Not,
             expr: Box::new(expr),
@@ -542,12 +546,7 @@ pub(crate) fn lower_function_invocation(ctx: &OC_FunctionInvocationContext<'_>) 
         });
     }
     if name.eq_ignore_ascii_case("__list_transform") {
-        let [
-            collection,
-            Expr::Literal(Literal::String(variable)),
-            map,
-        ] = args.as_slice()
-        else {
+        let [collection, Expr::Literal(Literal::String(variable)), map] = args.as_slice() else {
             return context::missing(
                 "LIST_TRANSFORM lambda lowering expected list, variable, and body",
             );

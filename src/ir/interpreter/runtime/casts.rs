@@ -2,9 +2,11 @@
 //!
 //! Extracted from `interpreter.rs` lines 2998..3148.
 
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 use super::strings::display_for_concat;
+
+const KUZU_MAP_ENTRIES_KEY: &str = "\u{0}kuzu_map_entries";
 
 pub(crate) fn cast_to_string(v: &Value) -> Value {
     Value::String(display_for_as_string(v))
@@ -20,7 +22,7 @@ pub(crate) fn cast_list_to_string(v: &Value) -> Value {
 fn display_for_as_string(v: &Value) -> String {
     match v {
         Value::Null => "null".to_string(),
-        Value::String(s) => s.clone(),
+        Value::String(s) => normalize_collection_string(s),
         Value::Bool(b) => b.to_string(),
         Value::Byte(n) => n.to_string(),
         Value::Short(n) => n.to_string(),
@@ -31,6 +33,7 @@ fn display_for_as_string(v: &Value) -> String {
         Value::BigInt(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Node { label, id } => format!("str[v[{}]]", tinker_node_id(label, *id)),
         Value::Edge {
             rel_type,
@@ -51,7 +54,7 @@ fn display_for_as_string(v: &Value) -> String {
                 .iter()
                 .map(display_for_as_string_container)
                 .collect::<Vec<_>>();
-            format!("[{}]", parts.join(", "))
+            format!("[{}]", parts.join(","))
         }
         Value::Map(map) => display_map_for_as_string(map),
         Value::Path(_) => display_for_concat(v),
@@ -60,13 +63,14 @@ fn display_for_as_string(v: &Value) -> String {
 
 fn display_for_as_string_container(v: &Value) -> String {
     match v {
+        Value::Null => String::new(),
         Value::String(s) => display_string_for_as_string_container(s),
         Value::List(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)
                 .collect::<Vec<_>>();
-            format!("[{}]", parts.join(", "))
+            format!("[{}]", parts.join(","))
         }
         Value::Map(map) => display_map_for_as_string(map),
         other => display_for_as_string(other),
@@ -74,11 +78,115 @@ fn display_for_as_string_container(v: &Value) -> String {
 }
 
 fn display_string_for_as_string_container(s: &str) -> String {
-    if let Some(inner) = s.strip_prefix("[\"").and_then(|v| v.strip_suffix("\"]")) {
+    let normalized = normalize_collection_string(s);
+    if let Some(inner) = normalized
+        .strip_prefix("[\"")
+        .and_then(|v| v.strip_suffix("\"]"))
+    {
         format!("[{inner}]")
     } else {
-        s.to_string()
+        normalized
     }
+}
+
+fn normalize_collection_string(text: &str) -> String {
+    let trimmed = text.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return text.to_string();
+    }
+    normalize_collection_spacing(&strip_quoted_map_keys(trimmed))
+}
+
+fn strip_quoted_map_keys(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let (idx, ch) = chars[i];
+        if ch != '\'' && ch != '"' {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+
+        let quote = ch;
+        let content_start = idx + ch.len_utf8();
+        let mut j = i + 1;
+        while j < chars.len() && chars[j].1 != quote {
+            j += 1;
+        }
+        if j >= chars.len() {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+        let content_end = chars[j].0;
+        let mut k = j + 1;
+        while k < chars.len() && chars[k].1.is_whitespace() {
+            k += 1;
+        }
+        if k < chars.len() && chars[k].1 == ':' {
+            out.push_str(&text[content_start..content_end]);
+            i = j + 1;
+        } else {
+            out.push_str(&text[idx..chars[j].0 + quote.len_utf8()]);
+            i = j + 1;
+        }
+    }
+    out
+}
+
+fn normalize_collection_spacing(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut stack = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if let Some(active) = quote {
+            out.push(ch);
+            if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => {
+                quote = Some(ch);
+                out.push(ch);
+            }
+            '[' | '{' => {
+                stack.push(ch);
+                out.push(ch);
+            }
+            ']' | '}' => {
+                stack.pop();
+                out.push(ch);
+            }
+            '=' => {
+                out.push('=');
+                while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
+                    chars.next();
+                }
+            }
+            ',' if stack.last() == Some(&'[') => {
+                out.push(',');
+                while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
+                    chars.next();
+                }
+            }
+            ',' if stack.last() == Some(&'{') => {
+                out.push(',');
+                while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
+                    chars.next();
+                }
+                if !matches!(chars.peek(), Some('}') | None) {
+                    out.push(' ');
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 fn display_map_for_as_string(map: &std::collections::BTreeMap<String, Value>) -> String {
@@ -87,11 +195,83 @@ fn display_map_for_as_string(map: &std::collections::BTreeMap<String, Value>) ->
             return format!("str[vp[{key}->{}]]", display_property_value(value));
         }
     }
-    let parts = map
-        .iter()
-        .map(|(key, value)| format!("{key}={}", display_for_as_string_container(value)))
+    if let Some(value) = union_display_value(map) {
+        return display_for_as_string(value);
+    }
+    if let Some(entries) = kuzu_map_entries(map) {
+        let parts = entries
+            .iter()
+            .filter_map(kuzu_map_entry)
+            .map(|(key, value)| {
+                format!(
+                    "{}={}",
+                    display_for_as_string_container(key),
+                    display_for_as_string_container(value)
+                )
+            })
+            .collect::<Vec<_>>();
+        return format!("{{{}}}", parts.join(", "));
+    }
+    let separator = if map.contains_key(STRUCT_ORDER_KEY) {
+        ": "
+    } else {
+        "="
+    };
+    let parts = ordered_map_keys(map)
+        .into_iter()
+        .filter_map(|key| {
+            map.get(&key)
+                .map(|value| format!("{key}{separator}{}", display_for_as_string_container(value)))
+        })
         .collect::<Vec<_>>();
     format!("{{{}}}", parts.join(", "))
+}
+
+fn union_display_value(map: &std::collections::BTreeMap<String, Value>) -> Option<&Value> {
+    match (map.get("__tag"), map.get("__value")) {
+        (Some(Value::String(_)), Some(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn kuzu_map_entries(map: &std::collections::BTreeMap<String, Value>) -> Option<&[Value]> {
+    let Value::List(entries) = map.get(KUZU_MAP_ENTRIES_KEY)? else {
+        return None;
+    };
+    Some(entries.as_slice())
+}
+
+fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
+    let Value::List(items) = entry else {
+        return None;
+    };
+    let [key, value] = items.as_slice() else {
+        return None;
+    };
+    Some((key, value))
+}
+
+fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<String> {
+    if let Some(Value::List(order)) = map.get(STRUCT_ORDER_KEY) {
+        let keys = order
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !keys.is_empty() {
+            return keys;
+        }
+    }
+    map.keys()
+        .filter(|key| {
+            key.as_str() != STRUCT_ORDER_KEY
+                && key.as_str() != STRUCT_TYPES_KEY
+                && key.as_str() != KUZU_MAP_ENTRIES_KEY
+        })
+        .cloned()
+        .collect()
 }
 
 fn display_property_value(v: &Value) -> String {
@@ -107,6 +287,7 @@ fn display_property_value(v: &Value) -> String {
         Value::BigInt(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
         other => display_for_as_string(other),
     }
 }
@@ -279,7 +460,6 @@ pub(crate) fn cast_to_float32(v: &Value) -> Value {
 #[allow(dead_code)]
 pub(crate) fn cast_to_bigdecimal(v: &Value) -> Value {
     use bigdecimal::BigDecimal;
-    use bigdecimal::FromPrimitive;
     use std::str::FromStr;
     match v {
         Value::BigDecimal(_) => v.clone(),
@@ -287,10 +467,10 @@ pub(crate) fn cast_to_bigdecimal(v: &Value) -> Value {
         Value::Short(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Int(n) => Value::BigDecimal(BigDecimal::from(*n)),
         Value::Long(n) => Value::BigDecimal(BigDecimal::from(*n)),
-        Value::Float32(f) => BigDecimal::from_f32(*f)
+        Value::Float32(f) if f.is_finite() => BigDecimal::from_str(&f.to_string())
             .map(Value::BigDecimal)
             .unwrap_or(Value::Null),
-        Value::Float(f) => BigDecimal::from_f64(*f)
+        Value::Float(f) if f.is_finite() => BigDecimal::from_str(&f.to_string())
             .map(Value::BigDecimal)
             .unwrap_or(Value::Null),
         Value::BigInt(n) => Value::BigDecimal(BigDecimal::from(n.clone())),
@@ -317,9 +497,9 @@ pub(crate) fn cast_to_bool(v: &Value) -> Value {
         Value::Float(f) => Value::Bool(!f.is_nan() && *f != 0.0),
         Value::BigInt(n) => Value::Bool(!n.is_zero()),
         Value::BigDecimal(d) => Value::Bool(!d.is_zero()),
-        Value::String(s) => match s.to_ascii_lowercase().as_str() {
-            "true" | "1" | "yes" => Value::Bool(true),
-            "false" | "0" | "no" | "" => Value::Bool(false),
+        Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "t" | "1" | "yes" => Value::Bool(true),
+            "false" | "f" | "0" | "no" | "" => Value::Bool(false),
             _ => Value::Null,
         },
         Value::Null => Value::Null,
@@ -414,8 +594,15 @@ pub(crate) fn parse_datetime_string(raw: &str) -> Option<String> {
         .strip_prefix("dt[")
         .and_then(|s| s.strip_suffix(']'))
         .unwrap_or(trimmed);
-    if parse_datetime_parts(inner).is_some() {
-        Some(inner.to_string())
+    if let Some(parsed) = parse_datetime_parts(inner) {
+        if !inner.contains('T') && !inner.contains(' ') {
+            Some(format!(
+                "{:04}-{:02}-{:02}",
+                parsed.year, parsed.month, parsed.day
+            ))
+        } else {
+            Some(inner.to_string())
+        }
     } else {
         None
     }

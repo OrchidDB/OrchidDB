@@ -28,6 +28,7 @@ use crate::ir::plan::{GraphPlan, Node};
 use crate::ir::policy::ResultForm;
 use crate::ir::value::Value;
 
+mod element_id;
 mod expr;
 mod ops;
 mod output;
