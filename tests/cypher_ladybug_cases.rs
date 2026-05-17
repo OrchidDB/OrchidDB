@@ -26,6 +26,13 @@
 //! cargo test --test cypher_ladybug_cases -- --nocapture
 //! ```
 //!
+//! For a Cypher language-focused signal that excludes storage/session
+//! engine suites, use:
+//!
+//! ```ignore
+//! CYPHER_PROFILE=language cargo test --test cypher_ladybug_cases -- --nocapture
+//! ```
+//!
 //! The test always succeeds when there are zero `Incorrect` cases —
 //! parse/plan/run errors are tracked but expected while the planner is
 //! still under construction. Any `Incorrect` row fails the test
@@ -58,6 +65,109 @@ const CASES_ROOT: &str = "cases/cypher/ladybug";
 /// for "what's still red right now".
 const FAILURES_DIR: &str = "target/cypher_case_failures";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaseProfile {
+    All,
+    Language,
+}
+
+impl CaseProfile {
+    fn from_env() -> Self {
+        match std::env::var("CYPHER_PROFILE") {
+            Ok(value) if value.eq_ignore_ascii_case("all") => Self::All,
+            Ok(value)
+                if value.eq_ignore_ascii_case("language")
+                    || value.eq_ignore_ascii_case("core-language")
+                    || value.eq_ignore_ascii_case("cypher-language") =>
+            {
+                Self::Language
+            }
+            Ok(value) => panic!("unknown CYPHER_PROFILE `{value}`; expected `all` or `language`"),
+            Err(_) => Self::All,
+        }
+    }
+
+    fn includes(self, path: &Path) -> bool {
+        match self {
+            Self::All => true,
+            Self::Language => is_language_profile_case(path),
+        }
+    }
+}
+
+fn is_language_profile_case(path: &Path) -> bool {
+    let parts = ladybug_case_parts(path);
+    let Some(group) = parts.first().map(String::as_str) else {
+        return false;
+    };
+
+    if matches!(
+        group,
+        "acc"
+            | "binary_demo"
+            | "catalog"
+            | "copy"
+            | "csv"
+            | "ddl"
+            | "dml_node"
+            | "dml_rel"
+            | "export_import"
+            | "gds"
+            | "glob"
+            | "graph"
+            | "ldbc"
+            | "lsqb"
+            | "npy_1d"
+            | "parquet"
+            | "read_list"
+            | "rel_group"
+            | "tck"
+            | "tensor_list"
+            | "transaction"
+            | "uint128"
+            | "user_defined_types"
+    ) {
+        return false;
+    }
+
+    if group == "exceptions" && parts.get(1).is_some_and(|part| part == "copy") {
+        return false;
+    }
+
+    if parts.iter().any(|part| {
+        matches!(
+            part.as_str(),
+            "catalog" | "copy" | "csv" | "gds" | "read_list" | "rel_group"
+        )
+    }) {
+        return false;
+    }
+
+    !parts.iter().any(|part| {
+        part.contains("copy")
+            || part.contains("create")
+            || part.contains("delete")
+            || part.contains("parquet")
+            || matches!(
+                part.as_str(),
+                "hash_large" | "hash_leak" | "hash_ldbc" | "large" | "large_list" | "set_copy"
+            )
+    })
+}
+
+fn ladybug_case_parts(path: &Path) -> Vec<String> {
+    let root = Path::new(CASES_ROOT);
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    let mut parts = rel
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    if parts.last().is_some_and(|part| part.ends_with(".case")) {
+        parts.pop();
+    }
+    parts
+}
+
 #[test]
 fn cypher_ladybug_cases() {
     let root = PathBuf::from(CASES_ROOT);
@@ -83,11 +193,15 @@ fn cypher_ladybug_cases() {
     let started = Instant::now();
     let mut summary = Summary::default();
     let suite_filter = std::env::var("CYPHER_SUITE").ok();
+    let profile = CaseProfile::from_env();
     let timeout_ms: u64 = std::env::var("CYPHER_TIMEOUT_MS")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     walk_cases(&root, &mut |path| {
+        if !profile.includes(path) {
+            return;
+        }
         if let Some(filter) = &suite_filter {
             if !path.to_string_lossy().contains(filter.as_str()) {
                 return;
@@ -617,6 +731,47 @@ fn pct(n: usize, total: usize) -> f64 {
         0.0
     } else {
         100.0 * (n as f64) / (total as f64)
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    #[test]
+    fn language_profile_keeps_read_language_suites() {
+        assert!(is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/function/list/0001.case"
+        )));
+        assert!(is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/recursive_join/range_literal/0001.case"
+        )));
+    }
+
+    #[test]
+    fn language_profile_excludes_storage_and_session_suites() {
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/transaction/ddl/0001.case"
+        )));
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/dml_node/create/0001.case"
+        )));
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/copy/copy_node/0001.case"
+        )));
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/function/gds/basic/0001.case"
+        )));
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/demo_db/demo_db_create/0001.case"
+        )));
+    }
+
+    #[test]
+    fn language_profile_excludes_tck_until_scenarios_are_imported() {
+        assert!(!is_language_profile_case(Path::new(
+            "cases/cypher/ladybug/tck/match/match1/0001.case"
+        )));
     }
 }
 
