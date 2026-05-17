@@ -5,6 +5,7 @@
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::{BindKind, Direction, LabelExpr, Length, TargetMode};
+use crate::ir::policy::{MatchMode, PathMode};
 use crate::ir::value::Value;
 
 use super::super::expr::eval;
@@ -42,6 +43,8 @@ pub(crate) fn expand_op(
     length: &Length,
     history_binding: Option<&str>,
     path_binding: Option<&str>,
+    path_mode: PathMode,
+    match_mode: MatchMode,
     upstream: Vec<Row>,
     graph: &PropertyGraph,
     ctx: &mut ExecutionContext,
@@ -169,8 +172,17 @@ pub(crate) fn expand_op(
                         label: other_label.clone(),
                         id: other_id,
                     };
-                    let enforces_trail = history_binding.is_some()
-                        || path_binding.is_some_and(|binding| binding != "__path");
+                    // `match_mode` owns relationship reuse. `path_mode`
+                    // can still request stricter path classes when a
+                    // planner emits TRAIL/SIMPLE/ACYCLIC explicitly.
+                    let enforces_trail = matches!(
+                        (path_mode, match_mode),
+                        (PathMode::Trail | PathMode::Simple | PathMode::Acyclic, _)
+                            | (_, MatchMode::DifferentRelationships)
+                    ) || (history_binding.is_some()
+                        && !matches!(match_mode, MatchMode::RepeatableElements))
+                        || (path_binding.is_some_and(|binding| binding != "__path")
+                            && !matches!(path_mode, PathMode::Walk));
                     let history_contains = history_binding
                         .map(|_| path_contains_edge(&history, &rel_type, edge_row))
                         .unwrap_or_else(|| path_contains_edge(&path, &rel_type, edge_row));

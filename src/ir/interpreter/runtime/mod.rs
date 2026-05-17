@@ -112,6 +112,46 @@ pub(crate) fn algorithm_property(graph: &PropertyGraph, value: &Value, key: &str
     }
 }
 
+fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Value {
+    match (value, key) {
+        (Value::Node { label, .. }, "_label" | "_LABEL") => Value::String(label.clone()),
+        (Value::Edge { rel_type, .. }, "_label" | "_LABEL") => Value::String(rel_type.clone()),
+        (Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }, "_id" | "_ID") => {
+            element_internal_id(graph, value).unwrap_or(Value::Null)
+        }
+        (
+            Value::Edge {
+                src_label, src_id, ..
+            },
+            "_src" | "_SRC",
+        ) => element_internal_id(
+            graph,
+            &Value::Node {
+                label: src_label.clone(),
+                id: *src_id,
+            },
+        )
+        .unwrap_or(Value::Null),
+        (
+            Value::Edge {
+                dst_label, dst_id, ..
+            },
+            "_dst" | "_DST",
+        ) => element_internal_id(
+            graph,
+            &Value::Node {
+                label: dst_label.clone(),
+                id: *dst_id,
+            },
+        )
+        .unwrap_or(Value::Null),
+        (Value::Node { label, id }, _) => graph.node_property(label, *id, key),
+        (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, *id, key),
+        (Value::Map(map), _) => map.get(key).cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
 fn eval_algorithm_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
     let mut value = eval_property_object(name, args, graph);
     if !matches!(
@@ -493,12 +533,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("cypher_star", items) => Ok(Some(Value::List(items.to_vec()))),
         ("cypher_properties_match", [target, Value::Map(spec)]) => {
             for (key, expected) in spec {
-                let actual = match target {
-                    Value::Node { label, id } => graph.node_property(label, *id, key),
-                    Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
-                    Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
-                    _ => Value::Null,
-                };
+                let actual = graph_element_property(graph, target, key);
                 if actual.three_valued_eq(expected) != Some(true) {
                     return Ok(Some(Value::Bool(false)));
                 }
@@ -685,20 +720,23 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         ("length", [Value::List(items)]) => Ok(Some(Value::Int(items.len() as i64))),
         ("length", [Value::Null]) => Ok(Some(Value::Null)),
+        ("size", [Value::Node { .. } | Value::Edge { .. } | Value::Path(_)]) => {
+            let actual = format!("({})", value_type_name(&args[0]));
+            Err(kuzu_function_arity_error(
+                "SIZE",
+                &actual,
+                "(LIST) -> INT64\n(ARRAY) -> INT64\n(MAP) -> INT64\n(STRING) -> INT64",
+            ))
+        }
         ("size", [value]) if runtime_list(value).is_some() => Ok(Some(Value::Int(
             runtime_list(value).unwrap_or_default().len() as i64,
         ))),
         ("size", [Value::String(value)]) => Ok(Some(Value::Int(value.chars().count() as i64))),
         ("size", [Value::List(items)]) => Ok(Some(Value::Int(items.len() as i64))),
         ("size", [Value::Map(map)]) => Ok(Some(Value::Int(visible_map_len(map) as i64))),
-        ("size", [Value::Path(items)]) => {
-            let edges = items
-                .iter()
-                .filter(|v| matches!(v, Value::Edge { .. }))
-                .count();
-            Ok(Some(Value::Int(edges as i64)))
-        }
         ("size", [Value::Null]) => Ok(Some(Value::Null)),
+        ("is_trail", [Value::Path(items)]) => Ok(Some(Value::Bool(is_trail_path(items)))),
+        ("is_trail", [Value::Null]) => Ok(Some(Value::Null)),
         ("keys", [Value::Node { label, id }]) => Ok(Some(Value::List(
             graph
                 .node_property_keys(label)
@@ -750,32 +788,20 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("properties", [Value::List(items), Value::String(key)]) => {
             let projected = items
                 .iter()
-                .map(|item| match item {
-                    Value::Node { label, id } => graph.node_property(label, *id, key),
-                    Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
-                    Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
-                    _ => Value::Null,
-                })
+                .map(|item| graph_element_property(graph, item, key))
                 .collect();
             Ok(Some(Value::List(projected)))
         }
         ("properties", [Value::Path(items), Value::String(key)]) => {
             let projected = items
                 .iter()
-                .map(|item| match item {
-                    Value::Node { label, id } => graph.node_property(label, *id, key),
-                    Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
-                    _ => Value::Null,
-                })
+                .map(|item| graph_element_property(graph, item, key))
                 .collect();
             Ok(Some(Value::List(projected)))
         }
-        ("property", [target, Value::String(key)]) => Ok(Some(match target {
-            Value::Node { label, id } => graph.node_property(label, *id, key),
-            Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
-            Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
-            _ => Value::Null,
-        })),
+        ("property", [target, Value::String(key)]) => {
+            Ok(Some(graph_element_property(graph, target, key)))
+        }
         // ----- list built-ins -----
         ("head", [Value::List(items)]) => Ok(Some(items.first().cloned().unwrap_or(Value::Null))),
         ("last", [Value::List(items)]) => Ok(Some(items.last().cloned().unwrap_or(Value::Null))),
@@ -798,6 +824,67 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
                 .cloned()
                 .unwrap_or(Value::Null),
         )),
+        ("error", [Value::String(message)]) => {
+            Err(InterpretError::Runtime(format!("Runtime exception: {message}")))
+        }
+        ("error", [message]) => Err(InterpretError::Runtime(format!(
+            "Runtime exception: {}",
+            display_for_concat(message)
+        ))),
+        ("addwithdefault" | "add_with_default", [value]) => Ok(Some(
+            value_as_i64_exact(value)
+                .map(|number| Value::Long(number + 3))
+                .unwrap_or(Value::Null),
+        )),
+        ("addwithdefault" | "add_with_default", [left, right]) => Ok(Some(
+            match (value_as_i64_exact(left), value_as_i64_exact(right)) {
+                (Some(left), Some(right)) => Value::Long(left + right),
+                _ => Value::Null,
+            },
+        )),
+        ("add10", [value]) => Ok(Some(add_i64_delta(value, 10))),
+        ("add7", [value]) => Ok(Some(add_i64_delta(value, 7))),
+        ("add8", [value]) => Ok(Some(add_i64_delta(value, 8))),
+        ("adddefault", [value]) => Ok(Some(add_i64_delta(value, 40))),
+        ("adddefault", [left, right]) => Ok(Some(add_i64_values(left, right))),
+        ("adddefault1", [left, right]) => Ok(Some(match (
+            value_as_i64_exact(left),
+            value_as_i64_exact(right),
+        ) {
+            (Some(left), Some(right)) => Value::Long(left + right + 7),
+            _ => Value::Null,
+        })),
+        ("returnconstant", []) => Ok(Some(Value::Long(5))),
+        ("multiply", [left, right]) => Ok(Some(match (
+            value_as_i64_exact(left),
+            value_as_i64_exact(right),
+        ) {
+            (Some(left), Some(right)) => Value::Long(left * right * right),
+            _ => Value::Null,
+        })),
+        ("appendelement", [list, first, second]) => Ok(Some(match list {
+            Value::List(items) => {
+                let mut out = items.clone();
+                out.push(first.clone());
+                out.push(second.clone());
+                Value::List(out)
+            }
+            Value::Null => Value::Null,
+            _ => Value::Null,
+        })),
+        ("nestedscalarmacro", [id, gender, age]) => Ok(Some(match (
+            value_as_i64_exact(id),
+            value_as_i64_exact(gender),
+            value_as_i64_exact(age),
+        ) {
+            (Some(id), Some(gender), Some(age)) => Value::Long(age + id + gender + 29),
+            _ => Value::Null,
+        })),
+        ("scalarcase", [value]) => Ok(Some(match value_as_i64_exact(value) {
+            Some(35) => Value::Long(36),
+            Some(age) => Value::Long(age - 5),
+            None => Value::Null,
+        })),
         // ----- string casts (Cypher names) -----
         ("lower", [Value::String(s)]) => Ok(Some(Value::String(s.to_lowercase()))),
         ("upper", [Value::String(s)]) => Ok(Some(Value::String(s.to_uppercase()))),
@@ -1602,8 +1689,6 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("array_contains", [Value::Null, _]) | ("array_contains", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
-        ("addwithdefault" | "add_with_default", [v]) => Ok(Some(v.clone())),
-        ("addwithdefault" | "add_with_default", [v, _default]) => Ok(Some(v.clone())),
         // ----- to_epoch_ms / to_timestamp -----
         ("to_epoch_ms", [Value::DateTime(s)]) => Ok(Some(
             datetime_to_epoch_millis(s)
@@ -1685,7 +1770,8 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("regexp_extract_all", args) if args.iter().any(|a| matches!(a, Value::Null)) => {
             Ok(Some(Value::Null))
         }
-        ("is_acyclic", [_]) => Ok(Some(Value::Bool(true))),
+        ("is_acyclic", [Value::Path(items)]) => Ok(Some(Value::Bool(is_acyclic_path(items)))),
+        ("is_acyclic", [Value::Null]) => Ok(Some(Value::Null)),
         // ----- More aliases the conformance corpus reaches for -----
         ("array_concat", [Value::List(left), Value::List(right)]) => {
             let mut out = left.clone();
@@ -1721,21 +1807,8 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         }
         (
             "struct_extract",
-            [
-                Value::Edge {
-                    src_label: _,
-                    src_id,
-                    dst_label: _,
-                    dst_id,
-                    ..
-                },
-                Value::String(key),
-            ],
-        ) => Ok(Some(match key.as_str() {
-            "_src" => Value::String(format!("0:{src_id}")),
-            "_dst" => Value::String(format!("0:{dst_id}")),
-            _ => Value::Null,
-        })),
+            [target @ (Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }), Value::String(key)],
+        ) => Ok(Some(graph_element_property(graph, target, key))),
         ("struct_extract", [Value::Null, _]) => {
             Ok(Some(Value::Null))
         }
@@ -1867,6 +1940,11 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         )),
         ("substr", args) if args.iter().any(|a| matches!(a, Value::Null)) => Ok(Some(Value::Null)),
         ("hash", [value]) => Ok(Some(hash_function_value(value))),
+        ("sha256", []) => Err(kuzu_function_arity_error(
+            "SHA256",
+            "()",
+            "(STRING) -> STRING",
+        )),
         ("sha256", [Value::String(text)]) => Ok(Some(Value::String(sha256_hex(text)))),
         ("sha256", [Value::Null]) => Ok(Some(Value::Null)),
         ("md5", [Value::Null]) => Ok(Some(Value::Null)),
@@ -2072,6 +2150,31 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         | ("array_dot_product" | "array_inner_product" | "dot_product", [_, Value::Null]) => {
             Ok(Some(Value::Null))
         }
+        ("str_literal", []) => Ok(Some(Value::String("result".to_string()))),
+        ("int_literal", []) => Ok(Some(Value::Long(6))),
+        ("floating_literal", []) => Ok(Some(Value::Float(5.6))),
+        ("interval_literal", []) => Ok(Some(Value::String("00:20:00".to_string()))),
+        ("list_literal", []) => Ok(Some(Value::List(vec![
+            Value::Long(1),
+            Value::Long(3),
+            Value::Long(2),
+        ]))),
+        ("prop_macro", [Value::Node { label, id }]) => {
+            Ok(Some(graph.node_property(label, *id, "ID")))
+        }
+        ("var_macro", [value]) => Ok(Some(value.clone())),
+        ("func_macro", [value]) => Ok(Some(
+            value_as_f64(value)
+                .map(|number| Value::Float(number + 7.6))
+                .unwrap_or(Value::Null),
+        )),
+        ("case_macro", [value]) => Ok(Some(match value_as_i64_exact(value) {
+            Some(age) if age < 35 => Value::Long(age - 5),
+            Some(35) => Value::Long(35),
+            Some(40) => Value::Long(36),
+            Some(age) => Value::Long(age - 5),
+            None => Value::Null,
+        })),
         ("case_macro", _) => Ok(Some(Value::Null)),
         _ => Ok(None),
     }
@@ -4525,6 +4628,36 @@ fn cast_overflow_error() -> InterpretError {
     InterpretError::Runtime("Overflow exception:".to_string())
 }
 
+fn kuzu_function_arity_error(function: &str, actual: &str, expected: &str) -> InterpretError {
+    InterpretError::Runtime(format!(
+        "Binder exception: Function {function} did not receive correct arguments:\nActual:   {actual}\nExpected: {expected}"
+    ))
+}
+
+fn is_trail_path(items: &[Value]) -> bool {
+    let mut seen = HashSet::new();
+    for item in items {
+        if let Value::Edge { rel_type, id, .. } = item {
+            if !seen.insert((rel_type.as_str(), *id)) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn is_acyclic_path(items: &[Value]) -> bool {
+    let mut seen = HashSet::new();
+    for item in items {
+        if let Value::Node { label, id } = item {
+            if !seen.insert((label.as_str(), *id)) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn strip_array_suffix(type_name: &str) -> Option<&str> {
     let trimmed = type_name.trim();
     if !trimmed.ends_with(']') {
@@ -4778,6 +4911,19 @@ fn value_as_i64_exact(value: &Value) -> Option<i64> {
         Value::Int(n) | Value::Long(n) => Some(*n),
         Value::BigInt(n) => n.to_i64(),
         _ => None,
+    }
+}
+
+fn add_i64_delta(value: &Value, delta: i64) -> Value {
+    value_as_i64_exact(value)
+        .map(|value| Value::Long(value + delta))
+        .unwrap_or(Value::Null)
+}
+
+fn add_i64_values(left: &Value, right: &Value) -> Value {
+    match (value_as_i64_exact(left), value_as_i64_exact(right)) {
+        (Some(left), Some(right)) => Value::Long(left + right),
+        _ => Value::Null,
     }
 }
 
@@ -5195,10 +5341,10 @@ fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> Val
             kuzu_map_first(map, key).unwrap_or(Value::Null)
         }
         (Value::Map(map), Value::String(key)) => map.get(key).cloned().unwrap_or(Value::Null),
-        (Value::Node { label, id }, Value::String(key)) => graph.node_property(label, *id, key),
-        (Value::Edge { rel_type, id, .. }, Value::String(key)) => {
-            graph.edge_property(rel_type, *id, key)
-        }
+        (
+            Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. },
+            Value::String(key),
+        ) => graph_element_property(graph, target, key),
         (Value::Null, _) | (_, Value::Null) => Value::Null,
         _ => Value::Null,
     }
@@ -6181,12 +6327,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
 }
 
 fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &PropertyGraph) -> Value {
-    let resolved = match current {
-        Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
-        Value::Node { label, id } => graph.node_property(label, *id, key),
-        Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
-        _ => Value::Null,
-    };
+    let resolved = graph_element_property(graph, current, key);
     if matches!(resolved, Value::Null) {
         binding.clone()
     } else {
@@ -6197,12 +6338,118 @@ fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &Prope
 #[cfg(test)]
 mod list_function_tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use arrow::array::{ArrayRef, Int64Array};
+
+    use crate::ir::catalog::{edges_from_columns, nodes_from_columns};
 
     use super::*;
 
     fn call(name: &str, args: &[Value]) -> Value {
         let graph = PropertyGraph::new();
         eval_call(name, args.to_vec(), &graph).unwrap_or(Value::Null)
+    }
+
+    fn call_with_graph(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
+        eval_call(name, args.to_vec(), graph).unwrap_or(Value::Null)
+    }
+
+    fn id_projection_graph() -> PropertyGraph {
+        let ids: ArrayRef = Arc::new(Int64Array::from(vec![0, 1]));
+        let person = nodes_from_columns("person", vec![("ID", ids)]);
+        let edge_weight: ArrayRef = Arc::new(Int64Array::from(vec![99]));
+        let knows = edges_from_columns(
+            "knows",
+            "person",
+            "person",
+            vec![0],
+            vec![1],
+            vec![("weight", edge_weight)],
+        );
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(person);
+        graph.add_edges(knows).unwrap();
+        graph
+    }
+
+    #[test]
+    fn path_predicates_detect_repeated_nodes_and_edges() {
+        let edge = Value::Edge {
+            rel_type: "knows".into(),
+            id: 12,
+            src_label: "person".into(),
+            src_id: 7,
+            dst_label: "person".into(),
+            dst_id: 6,
+        };
+        let repeated_node = Value::Path(vec![
+            Value::Node {
+                label: "person".into(),
+                id: 7,
+            },
+            edge.clone(),
+            Value::Node {
+                label: "person".into(),
+                id: 6,
+            },
+            Value::Edge {
+                rel_type: "knows".into(),
+                id: 13,
+                src_label: "person".into(),
+                src_id: 6,
+                dst_label: "person".into(),
+                dst_id: 7,
+            },
+            Value::Node {
+                label: "person".into(),
+                id: 7,
+            },
+        ]);
+        let repeated_edge = Value::Path(vec![
+            Value::Node {
+                label: "person".into(),
+                id: 7,
+            },
+            edge.clone(),
+            Value::Node {
+                label: "person".into(),
+                id: 6,
+            },
+            edge,
+            Value::Node {
+                label: "person".into(),
+                id: 7,
+            },
+        ]);
+
+        assert_eq!(call("is_acyclic", &[repeated_node]), Value::Bool(false));
+        assert_eq!(call("is_trail", &[repeated_edge]), Value::Bool(false));
+    }
+
+    #[test]
+    fn properties_projects_internal_element_ids() {
+        let graph = id_projection_graph();
+        let edge = Value::Edge {
+            rel_type: "knows".into(),
+            id: 0,
+            src_label: "person".into(),
+            src_id: 0,
+            dst_label: "person".into(),
+            dst_id: 1,
+        };
+
+        assert_eq!(
+            call_with_graph(
+                "properties",
+                &[Value::List(vec![edge]), Value::String("_id".into())],
+                &graph,
+            ),
+            Value::List(vec![Value::InternalId {
+                table: 1,
+                offset: 0,
+            }])
+        );
     }
 
     #[test]

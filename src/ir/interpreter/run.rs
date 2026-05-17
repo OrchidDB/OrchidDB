@@ -162,6 +162,8 @@ pub(crate) fn run_with_context(
             length,
             history,
             path,
+            path_mode,
+            match_mode,
             input,
             ..
         } => {
@@ -177,6 +179,8 @@ pub(crate) fn run_with_context(
                 length,
                 history.as_deref(),
                 path.as_deref(),
+                *path_mode,
+                *match_mode,
                 upstream,
                 graph,
                 ctx,

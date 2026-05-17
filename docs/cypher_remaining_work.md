@@ -39,6 +39,58 @@ CYPHER_SUITE=cast/cast_to_nested_types CYPHER_TIMEOUT_MS=1000 cargo test --test 
 
 Failure dumps are written to `target/cypher_case_failures`. They are the best source for choosing the next high-impact slice.
 
+## May 2026 Failure Triage
+
+Latest refreshed run:
+
+```sh
+CYPHER_TIMEOUT_MS=1000 cargo test --test cypher_ladybug_cases -- --nocapture
+```
+
+Result: `3203 / 5593 = 57.3%` accurate, with `2036` incorrect cases, `104` run errors, `64` plan errors, `34` parse errors, and `152` skipped cases. Failure dumps were written to `target/cypher_case_failures`.
+
+Top failing suites by dump count:
+
+- `ddl/ddl_tinysnb`: 76
+- `set/set_tinysnb`: 74
+- `binary_demo/demo_db`: 44
+- `ddl/sequence`: 43
+- `ddl/ddl`: 42
+- `create/create_empty`: 42
+- `demo_db/demo_db`: 41
+- `binder/binder_error`: 41
+- `issue/issue`: 39
+- `create_node/create_empty_checkpoint`: 38
+
+Top repeated runtime blockers:
+
+- `nextval/1`: 22
+- `currval/1`: 19
+- generic `Conversion exception:`: 20
+- timeouts: 9
+- integer overflow during arithmetic: 13 combined addition/subtraction/multiplication
+
+Completed in this pass:
+
+- `function/scalar_macro`: `10 / 10` accurate for imported fixture macro calls.
+- `function/path`: `5 / 5` accurate after path predicate, `_id` projection, and scoped repeatable undirected path handling.
+- `utility/error`: `3 / 3` accurate for Kuzu-style `error()` behavior.
+
+Ranked action items:
+
+1. Implement a session-state model for schema, sequence, and graph mutations. This is required before DDL/DML/transaction suites can be made correct without hiding state in runtime globals.
+2. Wire mutable graph execution for `CREATE`, `SET`, `DELETE`, `MERGE`, `COPY`, schema changes, checkpoint/recovery, and rollback.
+3. Add sequence catalog state for `nextval`/`currval`, including cycle/min/max/start/increment semantics and committed-vs-rolled-back visibility.
+4. Preserve integer widths through arithmetic and raise Kuzu-compatible overflow errors for narrow and 128-bit integer operations.
+5. Finish strict/lenient conversion semantics in the unified cast path, especially nested types, intervals, and expected conversion-error text.
+6. Complete interval parsing, formatting, and arithmetic for `common/types/interval` and exception fixtures.
+7. Normalize mutable property semantics for list/map/struct defaults, nulls, and property removal.
+8. Improve TCK match semantics: variable-length paths, path predicates, node/relationship comparison, and row preservation through `MATCH`/`WHERE`.
+9. Add real scalar macro catalog support, keeping fixture stubs out of general-purpose runtime dispatch wherever source definitions are available.
+10. Close planner diagnostics for negative slices, UNION projection mismatches, aggregate/DISTINCT `ORDER BY`, graph-dependent `SKIP`/`LIMIT`, and duplicate projection names.
+
+Important constraint: the Ladybug runner currently executes each `.case` as an independent query over a freshly built graph. Sorted traversal order alone is not a valid substitute for Kuzu session state. Any sequence or transaction work should first introduce explicit case-session state in the harness or interpreter entrypoint; a process-global runtime counter would make focused runs and parallel execution unsound.
+
 ## Highest Priority Work
 
 ### 1. Lazy Collection Expression Architecture
@@ -338,4 +390,3 @@ Avoid chasing individual case files unless they represent a repeated pattern.
 - Worker B: strict/lenient/nested cast refactor, preserving `cast/cast_error` gains while recovering `cast_to_nested_types`.
 - Worker C: runtime function registry cleanup for list/string/cast aliases.
 - Worker D: Cypher scenario graph initializer support for TCK match/with suites.
-

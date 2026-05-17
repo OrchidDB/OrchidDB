@@ -138,6 +138,13 @@ pub fn lower_pattern_part(
                     &chain.node,
                     path_binding.clone(),
                     history.map(ToString::to_string),
+                    // Kuzu's path-function fixtures materialize undirected
+                    // recursive paths as walks, then classify them with
+                    // `is_trail` / `is_acyclic`. Keep ordinary recursive
+                    // joins on different-relationship semantics.
+                    variable_length
+                        && shared_path_binding.is_some()
+                        && matches!(chain.relationship.direction, Direction::Both),
                 );
                 if let Some(rel) = &user_rel_binding {
                     traversal = apply_relationship_binding_projection(
@@ -428,7 +435,9 @@ fn lower_expand(
     target_node: &NodePattern,
     path: Option<String>,
     history: Option<String>,
+    repeatable_elements: bool,
 ) -> Node {
+    let variable_length = is_variable_length(&rel.range);
     Node::GraphExpand {
         graph: DEFAULT_GRAPH.to_string(),
         source: source.to_string(),
@@ -448,8 +457,12 @@ fn lower_expand(
         },
         history,
         path: path.clone(),
-        path_mode: PathMode::Trail,
-        match_mode: MatchMode::DifferentRelationships,
+        path_mode: PathMode::Walk,
+        match_mode: if repeatable_elements && variable_length {
+            MatchMode::RepeatableElements
+        } else {
+            MatchMode::DifferentRelationships
+        },
         path_materialization: if path.is_some() {
             PathMaterialization::NodesAndRelationships
         } else {
