@@ -5,6 +5,9 @@ pub enum Clause {
     Match(MatchClause),
     Unwind(UnwindClause),
     Call(ProcedureCallClause),
+    Create(CreateClause),
+    Set(SetClause),
+    Delete(DeleteClause),
     With(WithClause),
     Return(ReturnClause),
 }
@@ -36,6 +39,43 @@ pub struct ProcedureCallClause {
 pub struct ProcedureYieldItem {
     pub field: String,
     pub alias: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateClause {
+    pub patterns: Vec<PatternPart>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetClause {
+    pub items: Vec<SetItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetItem {
+    Property {
+        target: Expr,
+        key: String,
+        value: Expr,
+    },
+    Replace {
+        variable: String,
+        value: Expr,
+    },
+    Merge {
+        variable: String,
+        value: Expr,
+    },
+    Labels {
+        variable: String,
+        labels: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteClause {
+    pub detach: bool,
+    pub expressions: Vec<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

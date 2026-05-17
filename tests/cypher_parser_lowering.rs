@@ -1,4 +1,4 @@
-use new_graph::language::cypher::ast::{Clause, Expr, Literal, UnaryOp};
+use new_graph::language::cypher::ast::{Clause, Expr, Literal, SetItem, UnaryOp};
 use new_graph::language::cypher::parser::parse_query;
 
 #[test]
@@ -187,4 +187,33 @@ fn preserves_chained_not_count() {
     }
     assert_eq!(not_count, 3);
     assert_eq!(expr, &Expr::Literal(Literal::Bool(false)));
+}
+
+#[test]
+fn parses_create_set_delete_clauses() {
+    let query =
+        parse_query("CREATE (n:Person {name: 'dave'}) SET n.age = 42 DELETE n RETURN n.name")
+            .unwrap();
+    let Clause::Create(create) = &query.clauses[0] else {
+        panic!("expected CREATE clause");
+    };
+    assert_eq!(
+        create.patterns[0].element.start.variable.as_deref(),
+        Some("n")
+    );
+    assert_eq!(create.patterns[0].element.start.labels, vec!["Person"]);
+
+    let Clause::Set(set) = &query.clauses[1] else {
+        panic!("expected SET clause");
+    };
+    let SetItem::Property { key, .. } = &set.items[0] else {
+        panic!("expected property SET item");
+    };
+    assert_eq!(key, "age");
+
+    let Clause::Delete(delete) = &query.clauses[2] else {
+        panic!("expected DELETE clause");
+    };
+    assert!(!delete.detach);
+    assert_eq!(delete.expressions.len(), 1);
 }

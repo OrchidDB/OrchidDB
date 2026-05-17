@@ -19,6 +19,7 @@ use super::ops::distinct::{distinct_op, row_signature};
 use super::ops::expand::{bind_op, expand_op};
 use super::ops::join::join_op;
 use super::ops::list_comprehension::list_comprehension_op;
+use super::ops::mutation::{create_op, delete_op, set_property_op};
 use super::ops::path_pattern::path_pattern_op;
 use super::ops::project::{current_project_op, project_op};
 use super::ops::quantifier::quantifier_op;
@@ -228,6 +229,22 @@ pub(crate) fn run_with_context(
                     _ => false,
                 })
                 .collect())
+        }
+        Node::GraphCreate { nodes, input, .. } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            create_op(nodes, rows, graph)
+        }
+        Node::GraphSetProperty { items, input } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            set_property_op(items, rows, graph)
+        }
+        Node::GraphDelete {
+            targets,
+            detach,
+            input,
+        } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            delete_op(targets, *detach, rows, graph)
         }
         Node::GraphFilter { condition, input } => {
             let rows = run_with_context(input, graph, ctx)?;

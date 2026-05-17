@@ -43,8 +43,7 @@ pub(crate) fn node_scan(
 ) -> IrResult<Vec<Row>> {
     let mut out = Vec::new();
     for label in matching_labels(labels, graph) {
-        let table = graph.node_table(&label)?;
-        for row_id in 0..table.batch.num_rows() {
+        for row_id in graph.node_ids(&label)? {
             // Multi-label `AllOf` filter — stored as a single label in this
             // simple model, so we accept exact label matches for now.
             let mut row = Row::new();
@@ -52,7 +51,7 @@ pub(crate) fn node_scan(
                 binding.to_string(),
                 Value::Node {
                     label: label.clone(),
-                    id: row_id as i64,
+                    id: row_id,
                 },
             );
             out.push(row);

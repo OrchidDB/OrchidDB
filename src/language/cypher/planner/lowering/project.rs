@@ -1884,6 +1884,56 @@ fn add_candidate_bindings_from_query_body(
                     add_candidate_refs_from_expr_scoped(predicate, candidates, locals, refs);
                 }
             }
+            Clause::Create(clause) => {
+                for part in &clause.patterns {
+                    if let Some(properties) = &part.element.start.properties {
+                        add_candidate_refs_from_expr_scoped(properties, candidates, locals, refs);
+                    }
+                    if let Some(variable) = &part.element.start.variable {
+                        locals.insert(variable.clone());
+                    }
+                    for chain in &part.element.chains {
+                        if let Some(properties) = &chain.relationship.properties {
+                            add_candidate_refs_from_expr_scoped(
+                                properties, candidates, locals, refs,
+                            );
+                        }
+                        if let Some(variable) = &chain.relationship.variable {
+                            locals.insert(variable.clone());
+                        }
+                        if let Some(properties) = &chain.node.properties {
+                            add_candidate_refs_from_expr_scoped(
+                                properties, candidates, locals, refs,
+                            );
+                        }
+                        if let Some(variable) = &chain.node.variable {
+                            locals.insert(variable.clone());
+                        }
+                    }
+                }
+            }
+            Clause::Set(clause) => {
+                for item in &clause.items {
+                    match item {
+                        crate::language::cypher::ast::SetItem::Property {
+                            target, value, ..
+                        } => {
+                            add_candidate_refs_from_expr_scoped(target, candidates, locals, refs);
+                            add_candidate_refs_from_expr_scoped(value, candidates, locals, refs);
+                        }
+                        crate::language::cypher::ast::SetItem::Replace { value, .. }
+                        | crate::language::cypher::ast::SetItem::Merge { value, .. } => {
+                            add_candidate_refs_from_expr_scoped(value, candidates, locals, refs);
+                        }
+                        crate::language::cypher::ast::SetItem::Labels { .. } => {}
+                    }
+                }
+            }
+            Clause::Delete(clause) => {
+                for expr in &clause.expressions {
+                    add_candidate_refs_from_expr_scoped(expr, candidates, locals, refs);
+                }
+            }
             Clause::With(clause) => {
                 let outputs = add_candidate_bindings_from_projection_scoped(
                     &clause.projection,
@@ -2290,6 +2340,52 @@ fn remove_local_query_body_bindings(
                 }
                 if let Some(predicate) = &clause.predicate {
                     remove_local_exists_bindings(predicate, candidates, refs);
+                }
+            }
+            Clause::Create(clause) => {
+                for part in &clause.patterns {
+                    if let Some(properties) = &part.element.start.properties {
+                        remove_local_exists_bindings(properties, candidates, refs);
+                    }
+                    if let Some(variable) = &part.element.start.variable {
+                        remove_query_local_name(variable, candidates, refs);
+                    }
+                    for chain in &part.element.chains {
+                        if let Some(properties) = &chain.relationship.properties {
+                            remove_local_exists_bindings(properties, candidates, refs);
+                        }
+                        if let Some(variable) = &chain.relationship.variable {
+                            remove_query_local_name(variable, candidates, refs);
+                        }
+                        if let Some(properties) = &chain.node.properties {
+                            remove_local_exists_bindings(properties, candidates, refs);
+                        }
+                        if let Some(variable) = &chain.node.variable {
+                            remove_query_local_name(variable, candidates, refs);
+                        }
+                    }
+                }
+            }
+            Clause::Set(clause) => {
+                for item in &clause.items {
+                    match item {
+                        crate::language::cypher::ast::SetItem::Property {
+                            target, value, ..
+                        } => {
+                            remove_local_exists_bindings(target, candidates, refs);
+                            remove_local_exists_bindings(value, candidates, refs);
+                        }
+                        crate::language::cypher::ast::SetItem::Replace { value, .. }
+                        | crate::language::cypher::ast::SetItem::Merge { value, .. } => {
+                            remove_local_exists_bindings(value, candidates, refs);
+                        }
+                        crate::language::cypher::ast::SetItem::Labels { .. } => {}
+                    }
+                }
+            }
+            Clause::Delete(clause) => {
+                for expr in &clause.expressions {
+                    remove_local_exists_bindings(expr, candidates, refs);
                 }
             }
             Clause::With(clause) => {
@@ -3086,6 +3182,52 @@ fn collect_query_body_variable_references(
                 }
                 if let Some(predicate) = &clause.predicate {
                     collect_free_variables(predicate, bound, out);
+                }
+            }
+            Clause::Create(clause) => {
+                for part in &clause.patterns {
+                    if let Some(properties) = &part.element.start.properties {
+                        collect_free_variables(properties, bound, out);
+                    }
+                    if let Some(variable) = &part.element.start.variable {
+                        bound.insert(variable.clone());
+                    }
+                    for chain in &part.element.chains {
+                        if let Some(properties) = &chain.relationship.properties {
+                            collect_free_variables(properties, bound, out);
+                        }
+                        if let Some(variable) = &chain.relationship.variable {
+                            bound.insert(variable.clone());
+                        }
+                        if let Some(properties) = &chain.node.properties {
+                            collect_free_variables(properties, bound, out);
+                        }
+                        if let Some(variable) = &chain.node.variable {
+                            bound.insert(variable.clone());
+                        }
+                    }
+                }
+            }
+            Clause::Set(clause) => {
+                for item in &clause.items {
+                    match item {
+                        crate::language::cypher::ast::SetItem::Property {
+                            target, value, ..
+                        } => {
+                            collect_free_variables(target, bound, out);
+                            collect_free_variables(value, bound, out);
+                        }
+                        crate::language::cypher::ast::SetItem::Replace { value, .. }
+                        | crate::language::cypher::ast::SetItem::Merge { value, .. } => {
+                            collect_free_variables(value, bound, out);
+                        }
+                        crate::language::cypher::ast::SetItem::Labels { .. } => {}
+                    }
+                }
+            }
+            Clause::Delete(clause) => {
+                for expr in &clause.expressions {
+                    collect_free_variables(expr, bound, out);
                 }
             }
             Clause::With(clause) => {

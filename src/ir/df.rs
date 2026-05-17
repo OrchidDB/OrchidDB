@@ -39,11 +39,12 @@ use datafusion::logical_expr::{
 use crate::ir::expr::{AggCall, IrExpr};
 use crate::ir::plan::{
     ApplyKind, BarrierBulkPolicy, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched,
-    CoalesceArmOutput, CoalesceSuccess, ConstructTriple, Direction, DistinctBulk, DistinctMode,
-    EmitMode, GraphPlan, GroupValue, JoinKind, LabelExpr, Length, MinusCompatibility, Node,
-    PathFilterScope, PathMaterialization, PathObjects, PathPart, PathSelector, PathUpdate,
+    CoalesceArmOutput, CoalesceSuccess, ConstructTriple, CreateNode, Direction, DistinctBulk,
+    DistinctMode, EmitMode, GraphPlan, GroupValue, JoinKind, LabelExpr, Length, MinusCompatibility,
+    Node, PathFilterScope, PathMaterialization, PathObjects, PathPart, PathSelector, PathUpdate,
     ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode, ProjectionItem, QuantifierKind,
-    RdfGraphScope, RdfPathExpr, RdfTerm, Slice, SortKey, TargetMode, UnionAlign, ZeroLengthPolicy,
+    RdfGraphScope, RdfPathExpr, RdfTerm, SetPropertyItem, Slice, SortKey, TargetMode, UnionAlign,
+    ZeroLengthPolicy,
 };
 use crate::ir::policy::{GraphPlanPolicy, MatchMode, OptionalMissing, PathMode, ResultForm};
 use crate::ir::value::Value;
@@ -393,6 +394,49 @@ ir_extension! {
         Node::GraphPathFilter {
             condition: s.condition.clone(),
             scope: s.scope,
+            input: Box::new(c.remove(0)),
+        }
+    },
+}
+
+ir_extension! {
+    GraphCreate {
+        graph: String,
+        nodes: Vec<CreateNode>,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphCreate {
+            graph: s.graph.clone(),
+            nodes: s.nodes.clone(),
+            input: Box::new(c.remove(0)),
+        }
+    },
+}
+
+ir_extension! {
+    GraphSetProperty {
+        items: Vec<SetPropertyItem>,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphSetProperty {
+            items: s.items.clone(),
+            input: Box::new(c.remove(0)),
+        }
+    },
+}
+
+ir_extension! {
+    GraphDelete {
+        targets: Vec<IrExpr>,
+        detach: bool,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphDelete {
+            targets: s.targets.clone(),
+            detach: s.detach,
             input: Box::new(c.remove(0)),
         }
     },
@@ -1186,6 +1230,31 @@ fn node_to_plan_with_policy(
             schema,
             inputs: vec![node_to_plan(input)?],
         }),
+        Node::GraphCreate {
+            graph,
+            nodes,
+            input,
+        } => extension(GraphCreate {
+            graph: graph.clone(),
+            nodes: nodes.clone(),
+            schema,
+            inputs: vec![node_to_plan(input)?],
+        }),
+        Node::GraphSetProperty { items, input } => extension(GraphSetProperty {
+            items: items.clone(),
+            schema,
+            inputs: vec![node_to_plan(input)?],
+        }),
+        Node::GraphDelete {
+            targets,
+            detach,
+            input,
+        } => extension(GraphDelete {
+            targets: targets.clone(),
+            detach: *detach,
+            schema,
+            inputs: vec![node_to_plan(input)?],
+        }),
         Node::GraphFilter { condition, input } => extension(GraphFilter {
             condition: condition.clone(),
             schema,
@@ -1683,6 +1752,9 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphPathPattern,
         GraphRepeat,
         GraphPathFilter,
+        GraphCreate,
+        GraphSetProperty,
+        GraphDelete,
         GraphFilter,
         GraphProject,
         GraphCurrentProject,
@@ -1912,7 +1984,21 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         | Node::GraphSlice { input, .. }
         | Node::GraphSliceExpr { input, .. }
         | Node::GraphBarrier { input, .. }
-        | Node::GraphPathFilter { input, .. } => schema_fields_for_node(input),
+        | Node::GraphPathFilter { input, .. }
+        | Node::GraphSetProperty { input, .. }
+        | Node::GraphDelete { input, .. } => schema_fields_for_node(input),
+        Node::GraphCreate { nodes, input, .. } => {
+            let mut fields = schema_fields_for_node(input);
+            for node in nodes {
+                if let Some(bind) = &node.bind {
+                    upsert_field(
+                        &mut fields,
+                        semantic_field(bind, DataType::Utf8, true, "node"),
+                    );
+                }
+            }
+            fields
+        }
         Node::GraphProject {
             mode, items, input, ..
         } => match mode {

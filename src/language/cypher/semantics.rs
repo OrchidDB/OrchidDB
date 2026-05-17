@@ -167,6 +167,84 @@ impl SemanticAnalyzer {
                         self.validate_expr_scope(predicate, scope, "WHERE predicate")?;
                     }
                 }
+                Clause::Create(clause) => {
+                    for part in &clause.patterns {
+                        if let Some(properties) = &part.element.start.properties {
+                            self.validate_expr_scope(properties, scope, "CREATE properties")?;
+                        }
+                        if let Some(variable) = &part.element.start.variable {
+                            if scope.contains(variable) {
+                                return Err(CypherPlanError::Invalid(format!(
+                                    "CREATE variable `{variable}` is already in scope"
+                                )));
+                            }
+                            scope.insert(variable.clone(), BindingKind::Node);
+                        }
+                        for chain in &part.element.chains {
+                            if let Some(properties) = &chain.relationship.properties {
+                                self.validate_expr_scope(
+                                    properties,
+                                    scope,
+                                    "CREATE relationship properties",
+                                )?;
+                            }
+                            if let Some(variable) = &chain.relationship.variable {
+                                if scope.contains(variable) {
+                                    return Err(CypherPlanError::Invalid(format!(
+                                        "CREATE variable `{variable}` is already in scope"
+                                    )));
+                                }
+                                scope.insert(variable.clone(), BindingKind::Relationship);
+                            }
+                            if let Some(properties) = &chain.node.properties {
+                                self.validate_expr_scope(properties, scope, "CREATE properties")?;
+                            }
+                            if let Some(variable) = &chain.node.variable {
+                                if scope.contains(variable) {
+                                    return Err(CypherPlanError::Invalid(format!(
+                                        "CREATE variable `{variable}` is already in scope"
+                                    )));
+                                }
+                                scope.insert(variable.clone(), BindingKind::Node);
+                            }
+                        }
+                    }
+                }
+                Clause::Set(clause) => {
+                    for item in &clause.items {
+                        match item {
+                            crate::language::cypher::ast::SetItem::Property {
+                                target,
+                                value,
+                                ..
+                            } => {
+                                self.validate_expr_scope(target, scope, "SET property target")?;
+                                self.validate_expr_scope(value, scope, "SET property value")?;
+                            }
+                            crate::language::cypher::ast::SetItem::Replace { variable, value }
+                            | crate::language::cypher::ast::SetItem::Merge { variable, value } => {
+                                if !scope.contains(variable) {
+                                    return Err(CypherPlanError::Invalid(format!(
+                                        "SET references variables that are not in scope: {variable}"
+                                    )));
+                                }
+                                self.validate_expr_scope(value, scope, "SET value")?;
+                            }
+                            crate::language::cypher::ast::SetItem::Labels { variable, .. } => {
+                                if !scope.contains(variable) {
+                                    return Err(CypherPlanError::Invalid(format!(
+                                        "SET references variables that are not in scope: {variable}"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+                Clause::Delete(clause) => {
+                    for expr in &clause.expressions {
+                        self.validate_expr_scope(expr, scope, "DELETE expression")?;
+                    }
+                }
                 Clause::With(clause) => {
                     validate_with_projection_aliases(&clause.projection)?;
                     let outputs = self.analyze_projection_body(&clause.projection, scope)?;
@@ -644,6 +722,44 @@ fn validate_clause_static_expression_types(clause: &Clause) -> CypherPlanResult<
             }
             if let Some(predicate) = &clause.predicate {
                 validate_static_expression_types(predicate)?;
+            }
+            Ok(())
+        }
+        Clause::Create(clause) => {
+            for part in &clause.patterns {
+                if let Some(properties) = &part.element.start.properties {
+                    validate_static_expression_types(properties)?;
+                }
+                for chain in &part.element.chains {
+                    if let Some(properties) = &chain.relationship.properties {
+                        validate_static_expression_types(properties)?;
+                    }
+                    if let Some(properties) = &chain.node.properties {
+                        validate_static_expression_types(properties)?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        Clause::Set(clause) => {
+            for item in &clause.items {
+                match item {
+                    crate::language::cypher::ast::SetItem::Property { target, value, .. } => {
+                        validate_static_expression_types(target)?;
+                        validate_static_expression_types(value)?;
+                    }
+                    crate::language::cypher::ast::SetItem::Replace { value, .. }
+                    | crate::language::cypher::ast::SetItem::Merge { value, .. } => {
+                        validate_static_expression_types(value)?;
+                    }
+                    crate::language::cypher::ast::SetItem::Labels { .. } => {}
+                }
+            }
+            Ok(())
+        }
+        Clause::Delete(clause) => {
+            for expr in &clause.expressions {
+                validate_static_expression_types(expr)?;
             }
             Ok(())
         }
@@ -1280,6 +1396,59 @@ fn collect_query_references(
                     collect_free_variables(predicate, &mut query_bound, out);
                 }
             }
+            Clause::Create(clause) => {
+                for part in &clause.patterns {
+                    if let Some(properties) = &part.element.start.properties {
+                        collect_free_variables(properties, &mut query_bound, out);
+                    }
+                    if let Some(variable) = &part.element.start.variable {
+                        query_bound.insert(variable.clone());
+                    }
+                    for chain in &part.element.chains {
+                        if let Some(properties) = &chain.relationship.properties {
+                            collect_free_variables(properties, &mut query_bound, out);
+                        }
+                        if let Some(variable) = &chain.relationship.variable {
+                            query_bound.insert(variable.clone());
+                        }
+                        if let Some(properties) = &chain.node.properties {
+                            collect_free_variables(properties, &mut query_bound, out);
+                        }
+                        if let Some(variable) = &chain.node.variable {
+                            query_bound.insert(variable.clone());
+                        }
+                    }
+                }
+            }
+            Clause::Set(clause) => {
+                for item in &clause.items {
+                    match item {
+                        crate::language::cypher::ast::SetItem::Property {
+                            target, value, ..
+                        } => {
+                            collect_free_variables(target, &mut query_bound, out);
+                            collect_free_variables(value, &mut query_bound, out);
+                        }
+                        crate::language::cypher::ast::SetItem::Replace { variable, value }
+                        | crate::language::cypher::ast::SetItem::Merge { variable, value } => {
+                            if !query_bound.contains(variable) {
+                                out.insert(variable.clone());
+                            }
+                            collect_free_variables(value, &mut query_bound, out);
+                        }
+                        crate::language::cypher::ast::SetItem::Labels { variable, .. } => {
+                            if !query_bound.contains(variable) {
+                                out.insert(variable.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            Clause::Delete(clause) => {
+                for expr in &clause.expressions {
+                    collect_free_variables(expr, &mut query_bound, out);
+                }
+            }
             Clause::With(clause) => {
                 collect_projection_references(&clause.projection, &mut query_bound, out);
                 query_bound = projection_output_names(&clause.projection, &query_bound);
@@ -1415,6 +1584,22 @@ fn remove_query_outputs(query: &Query, refs: &mut BTreeSet<String>) {
                     }
                 }
             }
+            Clause::Create(clause) => {
+                for part in &clause.patterns {
+                    if let Some(variable) = &part.element.start.variable {
+                        refs.remove(variable);
+                    }
+                    for chain in &part.element.chains {
+                        if let Some(variable) = &chain.relationship.variable {
+                            refs.remove(variable);
+                        }
+                        if let Some(variable) = &chain.node.variable {
+                            refs.remove(variable);
+                        }
+                    }
+                }
+            }
+            Clause::Set(_) | Clause::Delete(_) => {}
             Clause::With(clause) => {
                 for name in projection_output_names(&clause.projection, &BTreeSet::new()) {
                     refs.remove(&name);
@@ -1514,6 +1699,36 @@ fn query_contains_aggregate(query: &Query) -> bool {
             clause.args.iter().any(contains_aggregate)
                 || clause.predicate.as_ref().is_some_and(contains_aggregate)
         }
+        Clause::Create(clause) => clause.patterns.iter().any(|part| {
+            part.element
+                .start
+                .properties
+                .as_ref()
+                .is_some_and(contains_aggregate)
+                || part.element.chains.iter().any(|chain| {
+                    chain
+                        .relationship
+                        .properties
+                        .as_ref()
+                        .is_some_and(contains_aggregate)
+                        || chain
+                            .node
+                            .properties
+                            .as_ref()
+                            .is_some_and(contains_aggregate)
+                })
+        }),
+        Clause::Set(clause) => clause.items.iter().any(|item| match item {
+            crate::language::cypher::ast::SetItem::Property { target, value, .. } => {
+                contains_aggregate(target) || contains_aggregate(value)
+            }
+            crate::language::cypher::ast::SetItem::Replace { value, .. }
+            | crate::language::cypher::ast::SetItem::Merge { value, .. } => {
+                contains_aggregate(value)
+            }
+            crate::language::cypher::ast::SetItem::Labels { .. } => false,
+        }),
+        Clause::Delete(clause) => clause.expressions.iter().any(contains_aggregate),
     })
 }
 

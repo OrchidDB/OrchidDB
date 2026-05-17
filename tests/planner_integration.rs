@@ -163,6 +163,47 @@ fn cypher_left_uses_kuzu_string_coercion() {
 }
 
 #[test]
+fn cypher_create_set_and_delete_use_graph_ir_mutations() {
+    let parsed =
+        parse_query("CREATE (n:Person {name: 'dave'}) SET n.age = 42 RETURN n.name, n.age")
+            .expect("parse");
+    let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
+    let plan_text = new_graph::ir::plan::explain(&plan);
+    assert!(plan_text.contains("GraphCreate"));
+    assert!(plan_text.contains("GraphSetProperty"));
+
+    let result = execute(&plan, &PropertyGraph::new()).expect("execute");
+    let name = result
+        .batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let age = result
+        .batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(name.value(0), "dave");
+    assert_eq!(age.value(0), 42);
+
+    let parsed = parse_query(
+        "CREATE (n:Person {name: 'dave'}) DELETE n WITH 1 AS one MATCH (p:Person) RETURN count(p)",
+    )
+    .expect("parse");
+    let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
+    let result = execute(&plan, &PropertyGraph::new()).expect("execute");
+    let count = result
+        .batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(count.value(0), 0);
+}
+
+#[test]
 fn gremlin_planner_filters_then_traverses() {
     let traversal = gb::GremlinTraversal {
         steps: vec![

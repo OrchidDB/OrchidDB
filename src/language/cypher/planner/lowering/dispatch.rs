@@ -1,8 +1,12 @@
 use crate::ir::plan::{
-    ApplyKind, Node, ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode, ProjectionItem,
+    ApplyKind, CreateNode, Node, ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode,
+    ProjectionItem, SetPropertyItem,
 };
 use crate::ir::policy::OptionalMissing;
-use crate::language::cypher::ast::{Clause, MatchClause, ProcedureCallClause, UnwindClause};
+use crate::language::cypher::ast::{
+    Clause, CreateClause, DeleteClause, MatchClause, ProcedureCallClause, SetClause, SetItem,
+    UnwindClause,
+};
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
     Lowerer,
@@ -15,6 +19,9 @@ pub fn lower_clause(lowerer: &mut Lowerer, input: Node, clause: &Clause) -> Cyph
         Clause::Match(clause) => lower_match(lowerer, input, clause),
         Clause::Unwind(clause) => lower_unwind(lowerer, input, clause),
         Clause::Call(clause) => lower_call(lowerer, input, clause),
+        Clause::Create(clause) => lower_create(lowerer, input, clause),
+        Clause::Set(clause) => lower_set(lowerer, input, clause),
+        Clause::Delete(clause) => lower_delete(lowerer, input, clause),
         Clause::With(clause) => project::lower_with(lowerer, input, clause),
         Clause::Return(clause) => project::lower_return(lowerer, input, clause),
     }
@@ -163,6 +170,140 @@ fn lower_unwind(
     })?;
     lowerer.add_visible(clause.alias.clone());
     Ok(node)
+}
+
+fn lower_create(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &CreateClause,
+) -> CypherPlanResult<Node> {
+    let (node, outputs) = lowerer.with_child_traversal(CypherTraversalKind::Create, |lowerer| {
+        let mut input = input;
+        let mut nodes = Vec::new();
+        let mut outputs = Vec::new();
+        for part in &clause.patterns {
+            if part.variable.is_some() {
+                return Err(CypherPlanError::Unsupported(
+                    "CREATE path-variable binding is not implemented yet".into(),
+                ));
+            }
+            if !part.element.chains.is_empty() {
+                return Err(CypherPlanError::Unsupported(
+                    "CREATE relationship patterns are not implemented yet".into(),
+                ));
+            }
+            let node = &part.element.start;
+            if node.labels.len() != 1 {
+                return Err(CypherPlanError::Unsupported(
+                    "CREATE currently requires exactly one node label".into(),
+                ));
+            }
+            if let Some(bind) = &node.variable {
+                if lowerer.is_visible(bind) {
+                    return Err(CypherPlanError::Invalid(format!(
+                        "CREATE variable `{bind}` is already in scope"
+                    )));
+                }
+                outputs.push(bind.clone());
+            }
+            let properties = if let Some(properties) = &node.properties {
+                project::validate_expression_scope(lowerer, properties, "CREATE properties")?;
+                let (next, lowered) = project::lower_expr_with_input(lowerer, input, properties)?;
+                input = next;
+                Some(lowered)
+            } else {
+                None
+            };
+            nodes.push(CreateNode {
+                bind: node.variable.clone(),
+                label: node.labels[0].clone(),
+                properties,
+            });
+        }
+        let node = Node::GraphCreate {
+            graph: "default".to_string(),
+            nodes,
+            input: input.boxed(),
+        };
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_outputs(outputs.clone());
+        Ok((node, outputs))
+    })?;
+    for output in outputs {
+        lowerer.add_visible_kind(output, BindingKind::Node);
+    }
+    Ok(node)
+}
+
+fn lower_set(lowerer: &mut Lowerer, input: Node, clause: &SetClause) -> CypherPlanResult<Node> {
+    lowerer.with_child_traversal(CypherTraversalKind::Set, |lowerer| {
+        let mut input = input;
+        let mut items = Vec::new();
+        for item in &clause.items {
+            match item {
+                SetItem::Property { target, key, value } => {
+                    project::validate_expression_scope(lowerer, target, "SET property target")?;
+                    project::validate_expression_scope(lowerer, value, "SET property value")?;
+                    let (next, target) = project::lower_expr_with_input(lowerer, input, target)?;
+                    input = next;
+                    let (next, value) = project::lower_expr_with_input(lowerer, input, value)?;
+                    input = next;
+                    items.push(SetPropertyItem {
+                        target,
+                        key: key.clone(),
+                        value,
+                    });
+                }
+                SetItem::Replace { variable, .. } => {
+                    return Err(CypherPlanError::Unsupported(format!(
+                        "SET {variable} = <map> is not implemented yet"
+                    )));
+                }
+                SetItem::Merge { variable, .. } => {
+                    return Err(CypherPlanError::Unsupported(format!(
+                        "SET {variable} += <map> is not implemented yet"
+                    )));
+                }
+                SetItem::Labels { variable, .. } => {
+                    return Err(CypherPlanError::Unsupported(format!(
+                        "SET {variable}:Label is not implemented yet"
+                    )));
+                }
+            }
+        }
+        let node = Node::GraphSetProperty {
+            items,
+            input: input.boxed(),
+        };
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_outputs(Vec::new());
+        Ok(node)
+    })
+}
+
+fn lower_delete(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &DeleteClause,
+) -> CypherPlanResult<Node> {
+    lowerer.with_child_traversal(CypherTraversalKind::Delete, |lowerer| {
+        let mut input = input;
+        let mut targets = Vec::new();
+        for expr in &clause.expressions {
+            project::validate_expression_scope(lowerer, expr, "DELETE expression")?;
+            let (next, target) = project::lower_expr_with_input(lowerer, input, expr)?;
+            input = next;
+            targets.push(target);
+        }
+        let node = Node::GraphDelete {
+            targets,
+            detach: clause.detach,
+            input: input.boxed(),
+        };
+        lowerer.record_current_imports(lowerer.visible_fields());
+        lowerer.record_current_outputs(Vec::new());
+        Ok(node)
+    })
 }
 
 fn lower_call(

@@ -7,7 +7,8 @@
 //! tables). This keeps the on-disk story Arrow-native while letting the
 //! interpreter work in plain `Value`s for clarity.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -68,12 +69,23 @@ pub struct PropertyGraph {
     out_adj: HashMap<(String, i64, String), Vec<EdgeRef>>,
     /// Incoming adjacency cache.
     in_adj: HashMap<(String, i64, String), Vec<EdgeRef>>,
+    /// Session-local graph mutations layered above immutable Arrow
+    /// fixture tables. This keeps Graph IR mutation semantics visible to
+    /// normal scans/property reads without rebuilding Arrow batches per row.
+    overlay: RefCell<GraphOverlay>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct EdgeRef {
     edge_row: i64,
     other_id: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct GraphOverlay {
+    inserted_nodes: HashMap<(String, i64), BTreeMap<String, Value>>,
+    node_property_overrides: HashMap<(String, i64), BTreeMap<String, Value>>,
+    deleted_nodes: HashSet<(String, i64)>,
 }
 
 impl PropertyGraph {
@@ -164,6 +176,11 @@ impl PropertyGraph {
     /// All node labels.
     pub fn labels(&self) -> Vec<String> {
         let mut out = self.nodes.keys().cloned().collect::<Vec<_>>();
+        for (label, _) in self.overlay.borrow().inserted_nodes.keys() {
+            if !out.iter().any(|existing| existing == label) {
+                out.push(label.clone());
+            }
+        }
         out.sort();
         out
     }
@@ -184,6 +201,13 @@ impl PropertyGraph {
         rel_filter: &[String],
     ) -> Vec<(String, i64, String, i64)> {
         let mut out = Vec::new();
+        let overlay = self.overlay.borrow();
+        if overlay
+            .deleted_nodes
+            .contains(&(src_label.to_string(), src_id))
+        {
+            return out;
+        }
         let rels: Vec<&String> = if rel_filter.is_empty() {
             self.edges.keys().collect()
         } else {
@@ -199,6 +223,12 @@ impl PropertyGraph {
                     None => continue,
                 };
                 for r in refs {
+                    if overlay
+                        .deleted_nodes
+                        .contains(&(edge.dst_label.clone(), r.other_id))
+                    {
+                        continue;
+                    }
                     out.push((rel.clone(), r.edge_row, edge.dst_label.clone(), r.other_id));
                 }
             }
@@ -213,6 +243,13 @@ impl PropertyGraph {
         rel_filter: &[String],
     ) -> Vec<(String, i64, String, i64)> {
         let mut out = Vec::new();
+        let overlay = self.overlay.borrow();
+        if overlay
+            .deleted_nodes
+            .contains(&(dst_label.to_string(), dst_id))
+        {
+            return out;
+        }
         let rels: Vec<&String> = if rel_filter.is_empty() {
             self.edges.keys().collect()
         } else {
@@ -228,6 +265,12 @@ impl PropertyGraph {
                     None => continue,
                 };
                 for r in refs {
+                    if overlay
+                        .deleted_nodes
+                        .contains(&(edge.src_label.clone(), r.other_id))
+                    {
+                        continue;
+                    }
                     out.push((rel.clone(), r.edge_row, edge.src_label.clone(), r.other_id));
                 }
             }
@@ -238,10 +281,25 @@ impl PropertyGraph {
     /// Property-key columns exposed for a node label. Excludes the
     /// id/source/destination columns that the catalog reserves.
     pub fn node_property_keys(&self, label: &str) -> Vec<String> {
-        match self.nodes.get(label) {
+        let mut out = match self.nodes.get(label) {
             Some(table) => table_property_keys(&table.batch, &["id"]),
             None => Vec::new(),
+        };
+        let overlay = self.overlay.borrow();
+        for ((node_label, _), props) in overlay
+            .inserted_nodes
+            .iter()
+            .chain(overlay.node_property_overrides.iter())
+        {
+            if node_label == label {
+                for key in props.keys() {
+                    if !out.iter().any(|existing| existing == key) {
+                        out.push(key.clone());
+                    }
+                }
+            }
         }
+        out
     }
 
     /// Property-key columns exposed for an edge rel-type.
@@ -257,6 +315,20 @@ impl PropertyGraph {
     /// Read a property of a node by id. Returns `Value::Null` when the
     /// property column is missing or the value is null.
     pub fn node_property(&self, label: &str, id: i64, key: &str) -> Value {
+        let node_key = (label.to_string(), id);
+        let overlay = self.overlay.borrow();
+        if overlay.deleted_nodes.contains(&node_key) {
+            return Value::Null;
+        }
+        if let Some(props) = overlay.inserted_nodes.get(&node_key) {
+            return props.get(key).cloned().unwrap_or(Value::Null);
+        }
+        if let Some(props) = overlay.node_property_overrides.get(&node_key) {
+            if let Some(value) = props.get(key) {
+                return value.clone();
+            }
+        }
+        drop(overlay);
         let Some(table) = self.nodes.get(label) else {
             return Value::Null;
         };
@@ -274,8 +346,98 @@ impl PropertyGraph {
     /// Iterate node ids of a given label, optionally filtered by a label
     /// expression that the caller can evaluate (`AnyOf` / `AllOf`).
     pub fn node_ids(&self, label: &str) -> CatalogResult<Vec<i64>> {
-        let table = self.node_table(label)?;
-        Ok((0..table.batch.num_rows()).map(|i| i as i64).collect())
+        let mut out = match self.nodes.get(label) {
+            Some(table) => (0..table.batch.num_rows())
+                .map(|i| i as i64)
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+        let overlay = self.overlay.borrow();
+        out.retain(|id| !overlay.deleted_nodes.contains(&(label.to_string(), *id)));
+        out.extend(
+            overlay
+                .inserted_nodes
+                .keys()
+                .filter_map(|(node_label, id)| (node_label == label).then_some(*id))
+                .filter(|id| !overlay.deleted_nodes.contains(&(label.to_string(), *id))),
+        );
+        let known_overlay_label = overlay
+            .inserted_nodes
+            .keys()
+            .any(|(node_label, _)| node_label == label);
+        out.sort();
+        if out.is_empty() && !self.nodes.contains_key(label) && !known_overlay_label {
+            return Err(CatalogError::UnknownLabel(label.to_string()));
+        }
+        Ok(out)
+    }
+
+    pub fn insert_node(
+        &self,
+        label: impl Into<String>,
+        properties: BTreeMap<String, Value>,
+    ) -> Value {
+        let label = label.into();
+        let base_rows = self
+            .nodes
+            .get(&label)
+            .map(|table| table.batch.num_rows() as i64)
+            .unwrap_or(0);
+        let mut overlay = self.overlay.borrow_mut();
+        let inserted = overlay
+            .inserted_nodes
+            .keys()
+            .filter(|(node_label, _)| node_label == &label)
+            .count() as i64;
+        let id = base_rows + inserted;
+        overlay
+            .inserted_nodes
+            .insert((label.clone(), id), properties);
+        Value::Node { label, id }
+    }
+
+    pub fn set_property(
+        &self,
+        target: &Value,
+        key: impl Into<String>,
+        value: Value,
+    ) -> CatalogResult<()> {
+        let key = key.into();
+        match target {
+            Value::Node { label, id } => {
+                let node_key = (label.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_nodes.contains(&node_key) {
+                    return Ok(());
+                }
+                if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
+                    props.insert(key, value);
+                } else {
+                    overlay
+                        .node_property_overrides
+                        .entry(node_key)
+                        .or_default()
+                        .insert(key, value);
+                }
+                Ok(())
+            }
+            Value::Edge { .. } => Ok(()),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn delete_value(&self, target: &Value, _detach: bool) -> CatalogResult<()> {
+        match target {
+            Value::Node { label, id } => {
+                self.overlay
+                    .borrow_mut()
+                    .deleted_nodes
+                    .insert((label.clone(), *id));
+                Ok(())
+            }
+            Value::Edge { .. } => Ok(()),
+            _ => Ok(()),
+        }
     }
 
     /// Edge endpoint by edge row.

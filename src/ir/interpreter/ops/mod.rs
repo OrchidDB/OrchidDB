@@ -14,6 +14,7 @@ pub(super) mod distinct;
 pub(super) mod expand;
 pub(super) mod join;
 pub(super) mod list_comprehension;
+pub(super) mod mutation;
 pub(super) mod path_pattern;
 pub(super) mod project;
 pub(super) mod quantifier;

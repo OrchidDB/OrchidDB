@@ -9,7 +9,7 @@ use crate::language::cypher::parser::Result;
 use antlr4rust::parser_rule_context::ParserRuleContext;
 use antlr4rust::token::Token;
 
-use super::{context, dispatch, procedures};
+use super::{context, dispatch, procedures, updating};
 
 pub(crate) fn lower_query(ctx: &OC_QueryContext<'_>) -> Result<Query> {
     if let Some(regular) = ctx.oC_RegularQuery() {
@@ -67,10 +67,8 @@ pub(crate) fn lower_single_part_query(ctx: &OC_SinglePartQueryContext<'_>) -> Re
     for reading in ctx.oC_ReadingClause_all() {
         clauses.push(dispatch::lower_reading_clause(reading.as_ref())?);
     }
-    if !ctx.oC_UpdatingClause_all().is_empty() {
-        return context::unsupported(
-            "updating Cypher clauses are outside read and side-effect query lowering",
-        );
+    for updating_clause in ctx.oC_UpdatingClause_all() {
+        clauses.push(updating::lower_updating_clause(updating_clause.as_ref())?);
     }
     if let Some(ret) = ctx.oC_Return() {
         clauses.push(Clause::Return(ReturnClause {
@@ -82,16 +80,15 @@ pub(crate) fn lower_single_part_query(ctx: &OC_SinglePartQueryContext<'_>) -> Re
 
 pub(crate) fn lower_multi_part_query(ctx: &OC_MultiPartQueryContext<'_>) -> Result<Query> {
     let mut clauses = Vec::new();
-    if !ctx.oC_UpdatingClause_all().is_empty() {
-        return context::unsupported(
-            "updating Cypher clauses are outside read and side-effect query lowering",
-        );
-    }
 
     let mut ordered = Vec::new();
     for reading in ctx.oC_ReadingClause_all() {
         let index = reading.start().get_token_index();
         ordered.push((index, MultiPartClause::Reading(reading)));
+    }
+    for updating_clause in ctx.oC_UpdatingClause_all() {
+        let index = updating_clause.start().get_token_index();
+        ordered.push((index, MultiPartClause::Updating(updating_clause)));
     }
     for with in ctx.oC_With_all() {
         let index = with.start().get_token_index();
@@ -103,6 +100,9 @@ pub(crate) fn lower_multi_part_query(ctx: &OC_MultiPartQueryContext<'_>) -> Resu
         match clause {
             MultiPartClause::Reading(reading) => {
                 clauses.push(dispatch::lower_reading_clause(reading.as_ref())?);
+            }
+            MultiPartClause::Updating(updating_clause) => {
+                clauses.push(updating::lower_updating_clause(updating_clause.as_ref())?);
             }
             MultiPartClause::With(with) => {
                 clauses.push(Clause::With(dispatch::lower_with_clause(with.as_ref())?));
@@ -120,6 +120,11 @@ enum MultiPartClause<'input> {
     Reading(
         std::rc::Rc<
             crate::grammar::generated::cypher::cypherparser::OC_ReadingClauseContextAll<'input>,
+        >,
+    ),
+    Updating(
+        std::rc::Rc<
+            crate::grammar::generated::cypher::cypherparser::OC_UpdatingClauseContextAll<'input>,
         >,
     ),
     With(std::rc::Rc<crate::grammar::generated::cypher::cypherparser::OC_WithContextAll<'input>>),

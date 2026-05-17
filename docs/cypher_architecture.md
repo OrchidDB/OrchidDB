@@ -82,6 +82,22 @@ Runtime function behavior belongs under `src/ir/interpreter/runtime/` and should
 
 Function aliases should normalize before dispatch. Null propagation, strict conversion, lenient conversion, and overflow behavior should be explicit policy decisions rather than incidental match-arm order.
 
+## Mutations And Sessions
+
+Cypher mutation work must still lower through Graph IR. `CREATE`, `SET`, `DELETE`, `MERGE`, schema operations, sequences, transactions, and fixture replay should not bypass the planner by mutating the test harness or parser output directly.
+
+Use this ownership split:
+
+- Parser/AST: represent mutation clauses as typed Cypher AST nodes.
+- Semantics: validate update-clause scope, rebinding rules, and binding kinds before planning.
+- Planner: lower update clauses into explicit mutation-shaped Graph IR nodes, using the `CypherTraversalKind::{Create, Set, Delete, Merge, Remove}` contracts.
+- IR/runtime: execute mutation nodes against a session graph state. Read operators must observe the same session state through normal scans, expansions, and property reads.
+- Harness: provide session replay or structured initializers for source tests that depend on prior statements. Do not infer graph state from expected output.
+
+The in-memory interpreter may use an overlay above the Arrow fixture graph for development velocity, but the logical boundary should remain Graph IR. That keeps the eventual DuckDB execution layer straightforward: DuckDB should consume the same mutation/read IR and choose a physical plan, not receive a separate Cypher-specific shortcut.
+
+Do not start a DuckDB-specific lowering path until the Graph IR has the necessary logical mutation operators and tests prove the interpreter semantics. DuckDB work should be an execution backend choice, not a new language frontend.
+
 ## Casts
 
 Cast behavior should be centralized behind a small set of modes:

@@ -8,8 +8,9 @@
 //! Every operator family from §11 is present so that plans for every
 //! supported language (Cypher, GQL, Gremlin, SPARQL) can be represented
 //! faithfully — including operators the runtime does not yet execute.
-//! Mutation-shaped Cypher/GQL operators (CREATE, MERGE, DELETE, SET,
-//! REMOVE) are out of scope for the read IR.
+//! Mutation-shaped Cypher/GQL operators are logical Graph IR nodes as
+//! well; physical execution backends can decide whether to use an
+//! in-memory overlay, SQL/DuckDB statements, or another store.
 
 use crate::ir::expr::{AggCall, BindingId, IrExpr, Lit};
 use crate::ir::policy::{GraphPlanPolicy, MatchMode, OptionalMissing, PathMode, ResultForm};
@@ -503,6 +504,22 @@ pub struct ConstructTriple {
     pub object: RdfTerm,
 }
 
+/// One node element created by `GraphCreate`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateNode {
+    pub bind: Option<BindingId>,
+    pub label: String,
+    pub properties: Option<IrExpr>,
+}
+
+/// One mutation target for `GraphSetProperty`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetPropertyItem {
+    pub target: IrExpr,
+    pub key: String,
+    pub value: IrExpr,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphPlan {
     pub policy: GraphPlanPolicy,
@@ -672,6 +689,25 @@ pub enum Node {
     GraphPathFilter {
         condition: IrExpr,
         scope: PathFilterScope,
+        input: Box<Node>,
+    },
+
+    // -------- mutations --------
+    /// `GraphCreate(nodes)` — create graph elements once per input row.
+    GraphCreate {
+        graph: String,
+        nodes: Vec<CreateNode>,
+        input: Box<Node>,
+    },
+    /// `GraphSetProperty(items)` — mutate properties and pass rows through.
+    GraphSetProperty {
+        items: Vec<SetPropertyItem>,
+        input: Box<Node>,
+    },
+    /// `GraphDelete(targets, detach)` — delete graph elements and pass rows through.
+    GraphDelete {
+        targets: Vec<IrExpr>,
+        detach: bool,
         input: Box<Node>,
     },
 
@@ -1102,6 +1138,44 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
         }
         Node::GraphPathFilter { input, scope, .. } => {
             writeln!(buf, "GraphPathFilter(scope=[{scope:?}])").ok();
+            write_node(buf, input, depth + 1);
+        }
+        Node::GraphCreate {
+            graph,
+            nodes,
+            input,
+        } => {
+            let specs = nodes
+                .iter()
+                .map(|node| match &node.bind {
+                    Some(bind) => format!("{bind}:{}", node.label),
+                    None => format!(":{}", node.label),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(buf, "GraphCreate(graph=[{graph}], nodes=[{specs}])").ok();
+            write_node(buf, input, depth + 1);
+        }
+        Node::GraphSetProperty { items, input } => {
+            let specs = items
+                .iter()
+                .map(|item| item.key.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(buf, "GraphSetProperty(keys=[{specs}])").ok();
+            write_node(buf, input, depth + 1);
+        }
+        Node::GraphDelete {
+            targets,
+            detach,
+            input,
+        } => {
+            writeln!(
+                buf,
+                "GraphDelete(targets=[{}], detach=[{detach}])",
+                targets.len()
+            )
+            .ok();
             write_node(buf, input, depth + 1);
         }
         Node::GraphFilter { input, .. } => {
