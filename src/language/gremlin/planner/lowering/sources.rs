@@ -10,8 +10,8 @@ use super::sub_traversal::lower_child_traversal;
 use super::subgraph_strategy::{apply_edge_subgraph, apply_vertex_subgraph};
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::{
-    BindKind, Direction, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem,
-    UnionAlign,
+    BindKind, Direction, LabelExpr, Node, NullsOrder, ProjectErrorPolicy, ProjectMode,
+    ProjectionItem, SortDir, SortKey, UnionAlign,
 };
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
@@ -77,7 +77,7 @@ fn with_initial_sack(
 }
 
 fn vertex_scan() -> Node {
-    Node::GraphBind {
+    gremlin_scan_sort(Node::GraphBind {
         bind: CURRENT.into(),
         kind: BindKind::Node,
         expr: None,
@@ -87,11 +87,11 @@ fn vertex_scan() -> Node {
             labels: LabelExpr::Any,
         }
         .boxed(),
-    }
+    })
 }
 
 fn edge_scan() -> Node {
-    Node::GraphBind {
+    gremlin_scan_sort(Node::GraphBind {
         bind: CURRENT.into(),
         kind: BindKind::Edge,
         expr: None,
@@ -102,6 +102,20 @@ fn edge_scan() -> Node {
             dir: Direction::Out,
         }
         .boxed(),
+    })
+}
+
+fn gremlin_scan_sort(input: Node) -> Node {
+    Node::GraphSort {
+        keys: vec![SortKey {
+            expr: IrExpr::Call {
+                name: "gremlin_scan_order".into(),
+                args: vec![IrExpr::Binding(CURRENT.into())],
+            },
+            dir: SortDir::Asc,
+            nulls: NullsOrder::Last,
+        }],
+        input: input.boxed(),
     }
 }
 

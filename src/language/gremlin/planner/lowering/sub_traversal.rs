@@ -6,7 +6,9 @@
 //! `GraphCorrelate`. The parent must name the child contract so the lowerer
 //! does not infer semantics from a raw `Vec<Step>`.
 
-use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext, TraversalStart};
+use super::context::{
+    CURRENT, ChildTraversalKind, Lowerer, PATH, TraversalContext, TraversalStart,
+};
 use super::dispatch::lower_step_with_context;
 use super::sources::source_node;
 use crate::ir::expr::IrExpr;
@@ -79,6 +81,7 @@ fn lower_remaining_steps(
 
 fn correlated_bindings(current: &str, steps: &[Step]) -> Vec<String> {
     let mut bindings = vec![current.to_string()];
+    push_binding(&mut bindings, PATH);
     collect_label_refs(steps, &mut bindings);
     bindings
 }
@@ -97,11 +100,18 @@ fn collect_label_refs(steps: &[Step], bindings: &mut Vec<String>) {
 
 fn collect_step_refs(step: &Step, bindings: &mut Vec<String>) {
     match step {
-        Step::As(label) => push_binding(bindings, label),
-        Step::Select(label, _) => push_binding(bindings, label),
+        Step::As(label) => {
+            push_binding(bindings, label);
+            push_select_history_binding(bindings, label);
+        }
+        Step::Select(label, _) => {
+            push_binding(bindings, label);
+            push_select_history_binding(bindings, label);
+        }
         Step::SelectMulti(labels, _) => {
             for label in labels {
                 push_binding(bindings, label);
+                push_select_history_binding(bindings, label);
             }
         }
         Step::DedupLabels(labels) => {
@@ -178,6 +188,12 @@ fn collect_step_refs(step: &Step, bindings: &mut Vec<String>) {
             }
         }
         _ => {}
+    }
+}
+
+fn push_select_history_binding(bindings: &mut Vec<String>, label: &str) {
+    if !label.is_empty() && label != "_" {
+        push_binding(bindings, &format!("__gremlin_select_history_{label}"));
     }
 }
 

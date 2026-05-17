@@ -117,6 +117,19 @@ pub enum MathExpr {
     SelfLhsName(MathOp, String),
     /// `name1 OP name2` — both operands are named bindings.
     BothNamed(MathOp, String, String),
+    /// `name OP literal`.
+    NameRhsLit(MathOp, String, f64),
+    /// `literal OP name`.
+    LitRhsName(MathOp, f64, String),
+    /// `fn _` — unary math function over the current scalar / by modulator.
+    UnaryFn(String),
+    /// `fn(_ OP literal)` — common composed form such as
+    /// `ceil(_ * 100)`.
+    UnaryCurrentOpLit {
+        func: String,
+        op: MathOp,
+        value: f64,
+    },
     /// `name` — bare reference to a named binding (no operator).
     Var(String),
     /// Unparseable expression — treated as identity at the planner.

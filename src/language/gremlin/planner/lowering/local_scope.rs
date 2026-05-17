@@ -20,7 +20,7 @@ use super::reduce::agg_kind;
 use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::Node;
 use crate::language::gremlin::ast::{
-    AggKind as AstAggKind, CastTarget, NumericCast, Step, StringOp as AstStringOp,
+    AggKind as AstAggKind, BySpec, CastTarget, NumericCast, SortDir, Step, StringOp as AstStringOp,
 };
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
 
@@ -103,6 +103,28 @@ pub(super) fn lower_local_scoped(input: Node, inner: &Step) -> GremlinPlanResult
                 "LocalScoped({other:?}) is not yet lowered"
             )));
         }
+    };
+    Ok(Node::GraphCurrentProject {
+        expr: helper_call,
+        fields: vec![CURRENT.to_string()],
+        input: input.boxed(),
+    })
+}
+
+pub(super) fn lower_local_order(input: Node, by: Option<BySpec>) -> GremlinPlanResult<Node> {
+    let helper_call = match by {
+        Some(spec) if spec.traversal.is_none() => {
+            let key = spec.key.unwrap_or_else(|| "value".to_string());
+            let dir = match spec.direction {
+                SortDir::Desc => "desc",
+                SortDir::Asc => "asc",
+            };
+            call(
+                "local_order_by_key",
+                vec![cur(), IrExpr::lit_str(key), IrExpr::lit_str(dir)],
+            )
+        }
+        _ => call("local_order", vec![cur()]),
     };
     Ok(Node::GraphCurrentProject {
         expr: helper_call,

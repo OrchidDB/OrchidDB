@@ -15,6 +15,7 @@ use super::super::{InterpretError, IrResult, Row};
 use super::distinct::{encode_key, encode_value};
 
 const GROUP_FLATTEN_VALUE_ALIAS: &str = "__group_flatten_value";
+const GROUP_UNWRAP_VALUE_ALIAS: &str = "__group_unwrap_value";
 
 pub(crate) fn aggregate_op(
     group: &[ProjectionItem],
@@ -107,6 +108,10 @@ pub(crate) fn group_map_op(
                     && agg.alias == GROUP_FLATTEN_VALUE_ALIAS
                 {
                     flatten_group_lists(value)
+                } else if matches!(agg.kind, AggKind::CollectTraversers)
+                    && agg.alias == GROUP_UNWRAP_VALUE_ALIAS
+                {
+                    unwrap_single_group_value(value)
                 } else {
                     value
                 }
@@ -119,6 +124,13 @@ pub(crate) fn group_map_op(
 
 pub(crate) fn map_key(value: &Value) -> String {
     display_for_group_key(value)
+}
+
+fn unwrap_single_group_value(value: Value) -> Value {
+    match value {
+        Value::List(items) if items.len() == 1 => items.into_iter().next().unwrap_or(Value::Null),
+        other => other,
+    }
 }
 
 pub(crate) fn agg_identity(kind: AggKind) -> Value {

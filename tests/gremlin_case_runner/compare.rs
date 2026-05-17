@@ -86,15 +86,48 @@ pub fn matches(
         };
     }
 
+    let set_shaped_expected = expected
+        .iter()
+        .any(|line| line.trim_start().starts_with("s["));
     let normalized_actual: Vec<String> = actual
         .iter()
-        .map(|s| normalize_numbers(&strip_expected_tags(s).trim().to_string()))
+        .map(|s| {
+            let line = normalize_numbers(&strip_expected_tags(s).trim().to_string());
+            if set_shaped_expected {
+                canonicalize_set_items(&line)
+            } else {
+                line
+            }
+        })
         .collect();
     let normalized_expected: Vec<String> = expected
         .iter()
-        .map(|s| normalize_numbers(&strip_expected_tags(s).trim().to_string()))
+        .map(|s| {
+            let line = normalize_numbers(&strip_expected_tags(s).trim().to_string());
+            if set_shaped_expected {
+                canonicalize_set_items(&line)
+            } else {
+                line
+            }
+        })
         .filter(|s| !s.is_empty() || !expected.is_empty()) // keep empties for empty-expected cases
         .collect();
+    let normalized_actual = if normalized_actual.len() == 1 && normalized_expected.len() > 1 {
+        let expanded = split_top_level_items(&normalized_actual[0])
+            .into_iter()
+            .map(|s| normalize_numbers(&strip_expected_tags(s.trim()).trim().to_string()))
+            .collect::<Vec<_>>();
+        if expanded.len() == normalized_expected.len()
+            && rows_match(&expanded, &normalized_expected, ordered)
+        {
+            expanded
+        } else {
+            normalized_actual
+        }
+    } else {
+        normalized_actual
+    };
+
     let normalized_actual = if ignore_unrepresented_empty_rows()
         && !normalized_actual.is_empty()
         && !normalized_expected.iter().any(|line| line.is_empty())
@@ -156,6 +189,36 @@ pub fn matches(
     }
 }
 
+fn split_top_level_items(input: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '[' | '{' | '(' if !in_string => depth += 1,
+            ']' | '}' | ')' if !in_string => depth -= 1,
+            ',' if !in_string && depth == 0 => {
+                out.push(input[start..idx].trim());
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if start == 0 {
+        return Vec::new();
+    }
+    out.push(input[start..].trim());
+    out
+}
+
 fn rows_match(actual: &[String], expected: &[String], ordered: bool) -> bool {
     if ordered {
         return actual == expected;
@@ -165,4 +228,19 @@ fn rows_match(actual: &[String], expected: &[String], ordered: bool) -> bool {
     a_sorted.sort();
     e_sorted.sort();
     a_sorted == e_sorted
+}
+
+fn canonicalize_set_items(line: &str) -> String {
+    if line.starts_with("m[") || line.starts_with("p[") || !line.contains(',') {
+        return line.to_string();
+    }
+    let mut items = split_top_level_items(line)
+        .into_iter()
+        .map(|item| item.trim().to_string())
+        .collect::<Vec<_>>();
+    if items.len() <= 1 {
+        return line.to_string();
+    }
+    items.sort();
+    items.join(",")
 }

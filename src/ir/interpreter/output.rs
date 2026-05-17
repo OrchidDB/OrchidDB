@@ -38,6 +38,7 @@ pub(crate) fn finalize_return(
     }
 
     let expand_elements = matches!(policy.language, Language::Cypher);
+    let gremlin_elements = matches!(policy.language, Language::Gremlin);
     let return_fields = plan_return_fields(fields, &rows, expand_elements);
     let output_fields = return_fields
         .iter()
@@ -56,6 +57,8 @@ pub(crate) fn finalize_return(
                     let mut value = row.bindings.get(source).cloned().unwrap_or(Value::Null);
                     if expand_elements {
                         value = expand_element(value, graph);
+                    } else if gremlin_elements {
+                        value = gremlin_display_element(value, graph);
                     }
                     columns[column_idx].push(value);
                     column_idx += 1;
@@ -66,6 +69,8 @@ pub(crate) fn finalize_return(
                         let mut value = star_projection_value(&value, key);
                         if expand_elements {
                             value = expand_element(value, graph);
+                        } else if gremlin_elements {
+                            value = gremlin_display_element(value, graph);
                         }
                         columns[column_idx].push(value);
                         column_idx += 1;
@@ -389,6 +394,52 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
                 .collect(),
         ),
         other => other,
+    }
+}
+
+fn gremlin_display_element(value: Value, graph: &PropertyGraph) -> Value {
+    match value {
+        Value::Node { label, id } => {
+            Value::String(format!("v[{}]", gremlin_node_name(graph, &label, id)))
+        }
+        Value::Edge {
+            rel_type,
+            src_label,
+            src_id,
+            dst_label,
+            dst_id,
+            ..
+        } => Value::String(format!(
+            "e[{}-{}->{}]",
+            gremlin_node_name(graph, &src_label, src_id),
+            rel_type,
+            gremlin_node_name(graph, &dst_label, dst_id)
+        )),
+        Value::List(items) => Value::List(
+            items
+                .into_iter()
+                .map(|item| gremlin_display_element(item, graph))
+                .collect(),
+        ),
+        Value::Map(map) => Value::Map(
+            map.into_iter()
+                .map(|(key, value)| (key, gremlin_display_element(value, graph)))
+                .collect(),
+        ),
+        Value::Path(items) => Value::Path(
+            items
+                .into_iter()
+                .map(|item| gremlin_display_element(item, graph))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn gremlin_node_name(graph: &PropertyGraph, label: &str, id: i64) -> String {
+    match graph.node_property(label, id, "name") {
+        Value::String(name) => name,
+        _ => format!("{label}#{id}"),
     }
 }
 

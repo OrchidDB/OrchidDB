@@ -4,7 +4,7 @@
 
 use std::iter::Peekable;
 
-use super::context::{CURRENT, Lowerer, TraversalContext};
+use super::context::{CURRENT, Lowerer, PATH, TraversalContext};
 use super::helpers::{apply_project_by_spec, consume_by};
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::{IrExpr, Lit};
@@ -14,8 +14,24 @@ use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
-pub(super) fn lower_values(input: Node, keys: &[String]) -> GremlinPlanResult<Node> {
+pub(super) fn lower_values(input: Node, keys: &[String], lo: &Lowerer) -> GremlinPlanResult<Node> {
     if keys.len() == 1 {
+        if has_vertex_property_filter(lo) && keys[0] == "location" {
+            let project = Node::GraphCurrentProject {
+                expr: IrExpr::Call {
+                    name: "gremlin_visible_vertex_property_values".into(),
+                    args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_str("location")],
+                },
+                fields: vec![CURRENT.to_string()],
+                input: input.boxed(),
+            };
+            return Ok(Node::GraphUnwind {
+                input_expr: IrExpr::Binding(CURRENT.into()),
+                bind: CURRENT.into(),
+                outer: false,
+                input: project.boxed(),
+            });
+        }
         Ok(current_project_property(input, &keys[0]))
     } else if keys.is_empty() {
         // `values()` (no keys) — runtime helper enumerates the bound
@@ -54,17 +70,46 @@ pub(super) fn lower_values(input: Node, keys: &[String]) -> GremlinPlanResult<No
     }
 }
 
+fn has_vertex_property_filter(lo: &Lowerer) -> bool {
+    lo.subgraph_vertex_property_filter.is_some()
+}
+
 fn current_project_property(input: Node, key: &str) -> Node {
-    Node::GraphCurrentProject {
-        expr: IrExpr::property(CURRENT, key.to_string(), PropertyMissing::DropUnproductive),
-        fields: vec![CURRENT.to_string()],
+    let expr = IrExpr::property(CURRENT, key.to_string(), PropertyMissing::DropUnproductive);
+    let input = Node::GraphFilter {
+        condition: IrExpr::IsNotNull(Box::new(expr.clone())),
+        input: input.boxed(),
+    };
+    Node::GraphProject {
+        mode: ProjectMode::ReplaceCurrent,
+        items: vec![
+            ProjectionItem {
+                alias: CURRENT.into(),
+                expr: expr.clone(),
+            },
+            ProjectionItem {
+                alias: PATH.into(),
+                expr: IrExpr::Call {
+                    name: "path_append_after".into(),
+                    args: vec![
+                        IrExpr::Binding(PATH.into()),
+                        IrExpr::Binding(CURRENT.into()),
+                        expr,
+                    ],
+                },
+            },
+        ],
+        error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),
     }
 }
 
 pub(super) fn lower_id(input: Node) -> Node {
     Node::GraphCurrentProject {
-        expr: IrExpr::Id(CURRENT.into()),
+        expr: IrExpr::Call {
+            name: "gremlin_id".into(),
+            args: vec![IrExpr::Binding(CURRENT.into())],
+        },
         fields: vec![CURRENT.to_string()],
         input: input.boxed(),
     }

@@ -13,6 +13,7 @@ use crate::language::gremlin::ast::{BySpec, Step};
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 
 const GROUP_FLATTEN_VALUE_ALIAS: &str = "__group_flatten_value";
+const GROUP_UNWRAP_VALUE_ALIAS: &str = "__group_unwrap_value";
 
 pub(super) fn lower_group_step<'a, I>(
     input: Node,
@@ -52,7 +53,8 @@ pub(super) fn lower_group(
         match grouped_agg {
             Some(agg) => (input, GroupValue::Aggregate(agg)),
             None => {
-                let (kind, flatten_lists) = value_by_applied_aggregate(value_by.as_ref())?;
+                let (kind, flatten_lists, unwrap_single) =
+                    value_by_applied_aggregate(value_by.as_ref())?;
                 let (input, arg) = match value_by {
                     Some(spec) if flatten_lists => apply_project_by_spec(input, &spec, lo, ctx)?,
                     Some(spec) => apply_by_spec(input, &spec, lo, ctx)?,
@@ -64,6 +66,8 @@ pub(super) fn lower_group(
                         kind,
                         alias: if flatten_lists {
                             GROUP_FLATTEN_VALUE_ALIAS.to_string()
+                        } else if unwrap_single {
+                            GROUP_UNWRAP_VALUE_ALIAS.to_string()
                         } else {
                             value_alias.clone()
                         },
@@ -152,17 +156,17 @@ fn group_value_aggregate(spec: &BySpec) -> GremlinPlanResult<Option<AggCall>> {
     Ok(Some(agg))
 }
 
-fn value_by_applied_aggregate(spec: Option<&BySpec>) -> GremlinPlanResult<(AggKind, bool)> {
+fn value_by_applied_aggregate(spec: Option<&BySpec>) -> GremlinPlanResult<(AggKind, bool, bool)> {
     let Some(steps) = spec.and_then(|spec| spec.traversal.as_deref()) else {
-        return Ok((AggKind::CollectTraversers, false));
+        return Ok((AggKind::CollectTraversers, false, false));
     };
     let Some(last) = steps.last() else {
-        return Ok((AggKind::CollectTraversers, false));
+        return Ok((AggKind::CollectTraversers, false, false));
     };
     match last {
-        Step::Count => Ok((AggKind::Sum, false)),
-        Step::Aggregate(kind) => Ok((agg_kind(*kind)?, false)),
-        Step::Fold => Ok((AggKind::CollectTraversers, true)),
-        _ => Ok((AggKind::CollectTraversers, false)),
+        Step::Count => Ok((AggKind::Sum, false, false)),
+        Step::Aggregate(kind) => Ok((agg_kind(*kind)?, false, false)),
+        Step::Fold => Ok((AggKind::CollectTraversers, true, false)),
+        _ => Ok((AggKind::CollectTraversers, false, true)),
     }
 }

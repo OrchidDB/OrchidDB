@@ -1027,9 +1027,17 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if let Some(c) = ctx.traversalMethod_to() {
-            match extract_first_string_arg(&c.get_text()) {
-                Some(label) => self.steps.push(Step::PathTo(label)),
-                None => self.steps.push(Step::Identity),
+            let raw = c.get_text();
+            if let Some(direction) = direction_from_to_arg(&raw) {
+                self.steps.push(Step::ExpandVertex {
+                    direction,
+                    edge_labels: extract_top_level_string_args(&raw),
+                });
+            } else {
+                match extract_first_string_arg(&raw) {
+                    Some(label) => self.steps.push(Step::PathTo(label)),
+                    None => self.steps.push(Step::Identity),
+                }
             }
             return;
         }
@@ -2032,7 +2040,9 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             for inner in set.genericLiteral_all() {
                 self.visit_genericLiteral(&inner);
                 if let Some(v) = self.pop_value() {
-                    elements.push(v);
+                    if !elements.contains(&v) {
+                        elements.push(v);
+                    }
                 }
             }
             self.value_stack.push(GValue::List(elements));
@@ -2280,6 +2290,7 @@ impl LoweringVisitor {
                         self.steps.push(Step::WithStrategy {
                             vertex_filter: Some(filter.clone()),
                             edge_filter: Some(filter),
+                            vertex_property_filter: None,
                             check_adjacent_vertices: true,
                         });
                     }
@@ -2290,6 +2301,7 @@ impl LoweringVisitor {
                 }
                 let mut vertex_filter: Option<Vec<Step>> = None;
                 let mut edge_filter: Option<Vec<Step>> = None;
+                let mut vertex_property_filter: Option<Vec<Step>> = None;
                 let mut check_adjacent_vertices = true;
                 for cfg in strat.configuration_all() {
                     let key_text = cfg
@@ -2318,15 +2330,18 @@ impl LoweringVisitor {
                     match key_text.as_str() {
                         "vertices" => vertex_filter = Some(steps),
                         "edges" => edge_filter = Some(steps),
-                        // vertexProperties is a third option in TinkerPop
-                        // but we don't model property-level visibility.
+                        "vertexProperties" => vertex_property_filter = Some(steps),
                         _ => {}
                     }
                 }
-                if vertex_filter.is_some() || edge_filter.is_some() {
+                if vertex_filter.is_some()
+                    || edge_filter.is_some()
+                    || vertex_property_filter.is_some()
+                {
                     self.steps.push(Step::WithStrategy {
                         vertex_filter,
                         edge_filter,
+                        vertex_property_filter,
                         check_adjacent_vertices,
                     });
                 }
@@ -3738,36 +3753,42 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalMethod_withContextAll<'input>,
     ) {
-        let (Some(key), value) = self.lower_with_option(ctx) else {
+        let (Some(key), value, traversal) = self.lower_with_option(ctx) else {
             self.steps.push(Step::Identity);
             return;
         };
         if self.apply_value_map_with_option(&key, value.as_ref()) {
             return;
         }
-        self.steps.push(Step::WithOption { key, value });
+        self.steps.push(Step::WithOption {
+            key,
+            value,
+            traversal,
+        });
     }
 
     fn lower_with_option<'input>(
         &mut self,
         ctx: &TraversalMethod_withContextAll<'input>,
-    ) -> (Option<String>, Option<GValue>) {
+    ) -> (Option<String>, Option<GValue>, Option<Vec<Step>>) {
         match ctx {
             TraversalMethod_withContextAll::TraversalMethod_with_StringContext(c) => {
                 let key = c
                     .withOptionKeys()
                     .map(|k| k.get_text())
                     .or_else(|| self.lower_with_string_key(c.stringLiteral()));
-                (key, None)
+                (key, None, None)
             }
             TraversalMethod_withContextAll::TraversalMethod_with_String_ObjectContext(c) => {
                 let key = c
                     .withOptionKeys()
                     .map(|k| k.get_text())
                     .or_else(|| self.lower_with_string_key(c.stringLiteral()));
+                let mut traversal = None;
                 let value = if let Some(lit) = c.genericLiteral() {
                     if let Some(nested) = lit.nestedTraversal() {
                         let steps = self.lower_nested_traversal(&nested);
+                        traversal = Some(steps.clone());
                         constant_value_from_steps(&steps)
                             .or_else(|| Some(GValue::String(format!("{steps:?}"))))
                     } else {
@@ -3783,9 +3804,9 @@ impl LoweringVisitor {
                         .or_else(|| c.ioOptionsValues().map(|v| GValue::String(v.get_text())))
                 }
                 .or_else(|| Some(GValue::String(c.get_text())));
-                (key, value)
+                (key, value, traversal)
             }
-            TraversalMethod_withContextAll::Error(_) => (None, None),
+            TraversalMethod_withContextAll::Error(_) => (None, None, None),
         }
     }
 
@@ -4121,7 +4142,7 @@ impl LoweringVisitor {
                     BySpec::key(key)
                 }
             }
-            _ => BySpec::default(),
+            _ => by_spec_from_raw_text(&ctx.get_text()),
         };
         // Treat shuffle/unknown directions as ascending — we don't have a
         // randomised sort.
@@ -4619,6 +4640,36 @@ fn order_token_direction(raw: &Option<String>) -> SortDir {
     }
 }
 
+fn by_spec_from_raw_text(raw: &str) -> BySpec {
+    let mut spec = if raw.contains("T.key") || raw.contains("Column.keys") || raw.contains("keys") {
+        BySpec::key("key")
+    } else if raw.contains("T.value") || raw.contains("Column.values") || raw.contains("values") {
+        BySpec::key("value")
+    } else if raw.contains("T.id") || raw.contains("id()") {
+        BySpec::key("id")
+    } else if raw.contains("T.label") || raw.contains("label()") {
+        BySpec::key("label")
+    } else {
+        BySpec::default()
+    };
+    if raw.to_ascii_lowercase().contains("desc") {
+        spec.direction = SortDir::Desc;
+    }
+    spec
+}
+
+fn direction_from_to_arg(raw: &str) -> Option<Direction> {
+    if raw.contains("Direction.OUT") || raw.contains("OUT") {
+        Some(Direction::Out)
+    } else if raw.contains("Direction.IN") || raw.contains("IN") {
+        Some(Direction::In)
+    } else if raw.contains("Direction.BOTH") || raw.contains("BOTH") {
+        Some(Direction::Both)
+    } else {
+        None
+    }
+}
+
 /// Parses a Gremlin `format()` template into a sequence of literal
 /// segments and placeholders. Recognises `{N}`-indexed Gremlin
 /// placeholders and the `%s` printf shorthand. Other `%` escapes are
@@ -4735,6 +4786,45 @@ fn parse_math_expr(raw: &str) -> MathExpr {
     if trimmed == "_" {
         return MathExpr::Identity;
     }
+    if let Some((func, operand)) = parse_unary_math_call(trimmed) {
+        if is_supported_unary_math_func(func) {
+            let func = func.to_ascii_lowercase();
+            if operand == "_" {
+                return MathExpr::UnaryFn(func);
+            }
+            match parse_math_expr(operand) {
+                MathExpr::Add(value) => {
+                    return MathExpr::UnaryCurrentOpLit {
+                        func,
+                        op: MathOp::Add,
+                        value,
+                    };
+                }
+                MathExpr::Sub(value) => {
+                    return MathExpr::UnaryCurrentOpLit {
+                        func,
+                        op: MathOp::Sub,
+                        value,
+                    };
+                }
+                MathExpr::Mul(value) => {
+                    return MathExpr::UnaryCurrentOpLit {
+                        func,
+                        op: MathOp::Mul,
+                        value,
+                    };
+                }
+                MathExpr::Div(value) => {
+                    return MathExpr::UnaryCurrentOpLit {
+                        func,
+                        op: MathOp::Div,
+                        value,
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
     if is_simple_math_name(trimmed) {
         return MathExpr::Var(trimmed.to_string());
     }
@@ -4804,11 +4894,55 @@ fn parse_math_expr(raw: &str) -> MathExpr {
             }
             MathExpr::Identity
         }
-        (false, false) => match (lhs_name, rhs_name) {
-            (Some(a), Some(b)) => MathExpr::BothNamed(op, a, b),
+        (false, false) => match (lhs_name, rhs_name, lhs_lit, rhs_lit) {
+            (Some(a), Some(b), _, _) => MathExpr::BothNamed(op, a, b),
+            (Some(a), _, _, Some(b)) => MathExpr::NameRhsLit(op, a, b),
+            (_, Some(b), Some(a), _) => MathExpr::LitRhsName(op, a, b),
             _ => MathExpr::Identity,
         },
     }
+}
+
+fn parse_unary_math_call(s: &str) -> Option<(&str, &str)> {
+    if let Some((func, operand)) = s.split_once(' ') {
+        let func = func.trim();
+        let operand = operand.trim();
+        if !func.is_empty() && !operand.is_empty() {
+            return Some((func, operand));
+        }
+    }
+    let open = s.find('(')?;
+    let func = s[..open].trim();
+    let operand = s[open + 1..].strip_suffix(')')?.trim();
+    if func.is_empty() || operand.is_empty() {
+        None
+    } else {
+        Some((func, operand))
+    }
+}
+
+fn is_supported_unary_math_func(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "abs"
+            | "ceil"
+            | "floor"
+            | "round"
+            | "sqrt"
+            | "cbrt"
+            | "sign"
+            | "exp"
+            | "ln"
+            | "log"
+            | "log2"
+            | "log10"
+            | "sin"
+            | "cos"
+            | "tan"
+            | "asin"
+            | "acos"
+            | "atan"
+    )
 }
 
 /// Returns true if `s` is a simple identifier suitable for a `math()`
@@ -5343,6 +5477,7 @@ mod tests {
             Step::WithStrategy {
                 vertex_filter,
                 edge_filter,
+                vertex_property_filter: _,
                 check_adjacent_vertices,
             } => {
                 assert!(*check_adjacent_vertices);
@@ -5368,7 +5503,7 @@ mod tests {
         assert!(matches!(traversal.steps.as_slice(), [
             Step::V { .. },
             Step::ShortestPath,
-            Step::WithOption { key, value: Some(GValue::String(value)) },
+            Step::WithOption { key, value: Some(GValue::String(value)), .. },
         ] if key.ends_with("edges") && value.contains("Direction.IN")));
     }
 

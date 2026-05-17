@@ -175,30 +175,39 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
     let id_target = IrExpr::Id(CURRENT.into());
     let parts = ids
         .iter()
-        .filter_map(|v| match v {
-            GValue::Int(n) => Some(IrExpr::Binary {
-                op: BinaryOp::Eq,
-                lhs: Box::new(id_target.clone()),
-                rhs: Box::new(IrExpr::lit_int(*n)),
-            }),
-            GValue::String(s) => {
-                Some(
-                    element_token_filter(CURRENT, s).unwrap_or_else(|| IrExpr::Binary {
-                        op: BinaryOp::Eq,
-                        lhs: Box::new(id_target.clone()),
-                        rhs: Box::new(IrExpr::lit_str(s.clone())),
-                    }),
-                )
-            }
-            _ => None,
-        })
+        .flat_map(|v| id_filter_parts(v, &id_target))
         .collect::<Vec<_>>();
-    if parts.is_empty() {
-        return input;
-    }
     Node::GraphFilter {
-        condition: or_chain(parts),
+        condition: if parts.is_empty() {
+            IrExpr::lit_bool(false)
+        } else {
+            or_chain(parts)
+        },
         input: input.boxed(),
+    }
+}
+
+fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
+    match value {
+        GValue::Int(n) => vec![IrExpr::Binary {
+            op: BinaryOp::Eq,
+            lhs: Box::new(id_target.clone()),
+            rhs: Box::new(IrExpr::lit_int(*n)),
+        }],
+        GValue::String(s) => {
+            vec![
+                element_token_filter(CURRENT, s).unwrap_or_else(|| IrExpr::Binary {
+                    op: BinaryOp::Eq,
+                    lhs: Box::new(id_target.clone()),
+                    rhs: Box::new(IrExpr::lit_str(s.clone())),
+                }),
+            ]
+        }
+        GValue::List(items) => items
+            .iter()
+            .flat_map(|item| id_filter_parts(item, id_target))
+            .collect(),
+        _ => Vec::new(),
     }
 }
 

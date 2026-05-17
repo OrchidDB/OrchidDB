@@ -39,6 +39,10 @@ pub(crate) fn apply_op(
                         }
                         if binding != "current" {
                             if row.bindings.contains_key(binding) {
+                                if binding == "__path" {
+                                    row.bindings.insert(binding.clone(), value.clone());
+                                    continue;
+                                }
                                 if is_cypher_history_binding(binding) {
                                     row.bindings.insert(binding.clone(), value.clone());
                                     continue;

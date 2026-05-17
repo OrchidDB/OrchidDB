@@ -6,6 +6,7 @@ use super::context::{CURRENT, ChildTraversalKind, Lowerer, PATH, TraversalContex
 use std::iter::Peekable;
 
 use super::helpers::{any_label, consume_by, element_token_filter, filter_by_ids, or_chain};
+use super::literals::gvalue_to_expr;
 use super::predicates::{predicate_to_expr, predicate_to_expr_with_bindings};
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::IrExpr;
@@ -169,19 +170,22 @@ pub(super) fn lower_is<'a, I>(
     input: Node,
     predicate: &Predicate,
     steps: &mut Peekable<I>,
+    lo: &Lowerer,
 ) -> GremlinPlanResult<Node>
 where
     I: Iterator<Item = &'a Step>,
 {
     let by = consume_by(steps);
     let target = binding_by_expr(CURRENT, by.as_ref());
-    let condition = if let Some(by) = by.as_ref() {
-        predicate_to_expr_with_bindings(target, predicate, &|label| {
-            Some(binding_by_expr(label, Some(by)))
-        })?
-    } else {
-        predicate_to_expr(target, predicate)?
-    };
+    let condition = predicate_to_expr_with_bindings(target, predicate, &|label| {
+        if let Some(by) = by.as_ref() {
+            return Some(binding_by_expr(label, Some(by)));
+        }
+        if let Some(seed) = lo.side_effect_seeds.get(label) {
+            return gvalue_to_expr(seed).ok();
+        }
+        None
+    })?;
     Ok(Node::GraphFilter {
         condition,
         input: input.boxed(),

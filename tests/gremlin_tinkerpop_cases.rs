@@ -314,16 +314,17 @@ impl Summary {
     }
 
     fn print(&self, elapsed: std::time::Duration) {
+        let runnable = self.total.saturating_sub(self.skipped);
         println!(
             "Accurate:   {:>6}  ({:.1}%)",
             self.correct,
-            pct(self.correct, self.total)
+            pct(self.correct, runnable)
         );
         let inaccurate = self.inaccurate();
         println!(
             "Inaccurate: {:>6}  ({:.1}%)  [incorrect={} parse={} plan={} run={}]",
             inaccurate,
-            pct(inaccurate, self.total),
+            pct(inaccurate, runnable),
             self.incorrect,
             self.parse_errors,
             self.plan_errors,

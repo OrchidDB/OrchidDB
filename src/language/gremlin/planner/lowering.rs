@@ -115,6 +115,7 @@ where
             Step::WithStrategy {
                 vertex_filter,
                 edge_filter,
+                vertex_property_filter,
                 check_adjacent_vertices,
             } => {
                 if let Some(vf) = vertex_filter {
@@ -122,6 +123,9 @@ where
                 }
                 if let Some(ef) = edge_filter {
                     lo.subgraph_edge_filter = Some(ef.clone());
+                }
+                if let Some(vpf) = vertex_property_filter {
+                    lo.subgraph_vertex_property_filter = Some(vpf.clone());
                 }
                 lo.subgraph_check_adjacent_vertices = *check_adjacent_vertices;
                 steps.next();

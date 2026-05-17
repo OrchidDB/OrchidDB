@@ -36,7 +36,7 @@ use std::iter::Peekable;
 use super::context::{CURRENT, Lowerer, TraversalContext};
 use super::group::lower_group;
 use super::helpers::{apply_by_spec, consume_by};
-use super::literals::gvalue_to_expr;
+use super::literals::{gvalue_to_expr, gvalue_to_value};
 use super::reduce::lower_fold;
 use crate::ir::expr::{AggCall, AggKind, IrExpr};
 use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, UnionAlign};
@@ -94,36 +94,10 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
         } else {
             writers
         };
-        // Reducer-style cap (`withSideEffect(label, seed, op)`) folds the
-        // bag into a single seeded value. Plain cap fans the bag out as
-        // one row per element — matches BulkSet traverser-stream
-        // semantics expected by the TinkerPop test corpus.
-        if let Some((seed, op)) = lo.side_effect_reducers.get(label) {
-            if let Ok(seed) = gvalue_to_expr(seed) {
-                let unioned = union_all(writer_inputs);
-                let folded = fold_expr(unioned, IrExpr::Binding(alias.clone()));
-                return Node::GraphProject {
-                    mode: ProjectMode::ReplaceCurrent,
-                    items: vec![ProjectionItem {
-                        alias: CURRENT.into(),
-                        expr: IrExpr::Call {
-                            name: "fold_reduce".into(),
-                            args: vec![
-                                IrExpr::Binding(CURRENT.into()),
-                                seed,
-                                IrExpr::lit_str(sack_op_name(*op)),
-                            ],
-                        },
-                    }],
-                    error_policy: ProjectErrorPolicy::PropagateError,
-                    input: folded.boxed(),
-                };
-            }
-        }
         // One row per element: project the bag-binding as `current` over
         // each writer subtree, then union. Multiple `aggregate("a")`
         // writers in the same chain accumulate into the bag.
-        let projected: Vec<Node> = writer_inputs
+        let mut projected: Vec<Node> = writer_inputs
             .into_iter()
             .map(|writer| Node::GraphProject {
                 mode: ProjectMode::ReplaceCurrent,
@@ -135,10 +109,60 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                 input: writer.boxed(),
             })
             .collect();
+        // `withSideEffect(label, seed, Operator.addAll)` seeds the bag but
+        // still exposes bag entries as traversers at cap time. `assign`
+        // replaces the seed with the aggregate stream, so it fans out the
+        // projected writers without reducing to the final scalar.
+        if let Some((seed, op)) = lo.side_effect_reducers.get(label) {
+            match op {
+                SackOp::AddAll => {
+                    projected.insert(0, seed_values(seed));
+                    return union_all(projected);
+                }
+                SackOp::Assign => return union_all(projected),
+                _ => {
+                    if let Ok(seed) = gvalue_to_expr(seed) {
+                        let unioned = union_all(projected);
+                        let folded = fold_expr(unioned, IrExpr::Binding(CURRENT.into()));
+                        return Node::GraphProject {
+                            mode: ProjectMode::ReplaceCurrent,
+                            items: vec![ProjectionItem {
+                                alias: CURRENT.into(),
+                                expr: IrExpr::Call {
+                                    name: "fold_reduce".into(),
+                                    args: vec![
+                                        IrExpr::Binding(CURRENT.into()),
+                                        seed,
+                                        IrExpr::lit_str(sack_op_name(*op)),
+                                    ],
+                                },
+                            }],
+                            error_policy: ProjectErrorPolicy::PropagateError,
+                            input: folded.boxed(),
+                        };
+                    }
+                }
+            }
+        }
         return union_all(projected);
     }
     // Approximate as `fold()` — collect the current stream into one row.
     lower_fold(input)
+}
+
+fn seed_values(seed: &crate::language::gremlin::semantics::GValue) -> Node {
+    let rows = match seed {
+        crate::language::gremlin::semantics::GValue::List(items) => items
+            .iter()
+            .map(|value| vec![gvalue_to_value(value)])
+            .collect(),
+        other => vec![vec![gvalue_to_value(other)]],
+    };
+    Node::GraphValues {
+        bindings: vec![CURRENT.into()],
+        rows,
+        bulk: None,
+    }
 }
 
 pub(super) fn lower_side_effect_bag_as_list(
@@ -218,7 +242,14 @@ pub(super) fn lower_subgraph(input: Node, _label: &str) -> Node {
 }
 
 pub(super) fn lower_tree(input: Node, _label: Option<&str>) -> Node {
-    input
+    Node::GraphCurrentProject {
+        expr: IrExpr::Call {
+            name: "tree_value".into(),
+            args: vec![IrExpr::Binding(CURRENT.into())],
+        },
+        fields: vec![CURRENT.to_string()],
+        input: lower_fold(input).boxed(),
+    }
 }
 
 pub(super) fn lower_group_as<'a, I>(

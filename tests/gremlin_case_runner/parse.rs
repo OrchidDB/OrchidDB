@@ -163,6 +163,7 @@ pub const MODERN_VID3: &str = "software#0"; // lop
 pub const MODERN_VID4: &str = "person#2"; // josh
 pub const MODERN_VID5: &str = "software#1"; // ripple
 pub const MODERN_VID6: &str = "person#3"; // peter
+pub const CREW_VID7: &str = "person#1"; // stephen in the crew graph
 
 pub const MODERN_EID7: &str = "knows#0"; // marko KNOWS vadas
 pub const MODERN_EID8: &str = "knows#1"; // marko KNOWS josh
@@ -176,12 +177,26 @@ fn modern_bindings() -> &'static HashMap<String, GValue> {
     BINDINGS.get_or_init(|| {
         let mut map = HashMap::new();
         for (name, id) in [
+            ("v1", MODERN_VID1),
+            ("v2", MODERN_VID2),
+            ("v3", MODERN_VID3),
+            ("v4", MODERN_VID4),
+            ("v5", MODERN_VID5),
+            ("v6", MODERN_VID6),
             ("vid1", MODERN_VID1),
             ("vid2", MODERN_VID2),
             ("vid3", MODERN_VID3),
             ("vid4", MODERN_VID4),
             ("vid5", MODERN_VID5),
             ("vid6", MODERN_VID6),
+            ("v7", CREW_VID7),
+            ("vid7", CREW_VID7),
+            ("e7", MODERN_EID7),
+            ("e8", MODERN_EID8),
+            ("e9", MODERN_EID9),
+            ("e10", MODERN_EID10),
+            ("e11", MODERN_EID11),
+            ("e12", MODERN_EID12),
             ("eid7", MODERN_EID7),
             ("eid8", MODERN_EID8),
             ("eid9", MODERN_EID9),
@@ -456,7 +471,10 @@ fn trim_numeric_literal_suffix(token: &str) -> &str {
         .next()
         .is_some_and(|ch| ch == '-' || ch == '+' || ch.is_ascii_digit());
     if starts_numeric {
-        token.trim_end_matches(['L', 'l', 'i'])
+        token
+            .trim_end_matches("vaar")
+            .trim_end_matches("var")
+            .trim_end_matches(['L', 'l', 'i'])
     } else {
         token
     }

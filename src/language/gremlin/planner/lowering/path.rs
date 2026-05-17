@@ -13,12 +13,12 @@
 
 use std::iter::Peekable;
 
-use super::context::{CURRENT, PATH};
+use super::context::{CURRENT, Lowerer, PATH};
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::Node;
 use crate::language::gremlin::ast::{Step, StringOp};
 
-pub(super) fn lower_path<'a, I>(input: Node, steps: &mut Peekable<I>) -> Node
+pub(super) fn lower_path<'a, I>(input: Node, steps: &mut Peekable<I>, lo: &Lowerer) -> Node
 where
     I: Iterator<Item = &'a Step>,
 {
@@ -62,7 +62,11 @@ where
     } else {
         Node::GraphCurrentProject {
             expr: IrExpr::Call {
-                name: "path_by_keys".into(),
+                name: if lo.productive_by {
+                    "path_by_keys_keep_nulls".into()
+                } else {
+                    "path_by_keys".into()
+                },
                 args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::List(keys)],
             },
             fields: vec![CURRENT.to_string()],

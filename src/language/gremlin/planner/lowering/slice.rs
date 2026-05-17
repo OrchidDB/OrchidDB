@@ -92,7 +92,10 @@ where
     }
     if keys.is_empty() {
         keys.push(SortKey {
-            expr: IrExpr::Binding(CURRENT.into()),
+            expr: IrExpr::Call {
+                name: "gremlin_order_key".into(),
+                args: vec![IrExpr::Binding(CURRENT.into())],
+            },
             dir: SortDir::Asc,
             nulls: NullsOrder::ProviderDefined,
         });
@@ -174,6 +177,8 @@ fn simple_by_key_expr(
     let expr = match key.as_str() {
         "id" => IrExpr::Id(CURRENT.into()),
         "label" => IrExpr::Label(CURRENT.into()),
+        "keys" => IrExpr::property(CURRENT, "key".to_string(), missing),
+        "values" => IrExpr::property(CURRENT, "value".to_string(), missing),
         _ => IrExpr::property(CURRENT, key.clone(), missing),
     };
     Some(expr)

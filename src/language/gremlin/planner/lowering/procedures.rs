@@ -16,15 +16,24 @@ use crate::ir::plan::{
     Direction, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem,
 };
 use crate::ir::value::Value;
-use crate::language::gremlin::ast::CallArg;
+use crate::language::gremlin::ast::{CallArg, Step};
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
-use crate::language::gremlin::semantics::GValue;
+use crate::language::gremlin::semantics::{
+    CompareOp, Direction as GremlinDirection, GValue, Predicate,
+};
+
+#[derive(Debug, Clone)]
+pub(super) struct CallOption {
+    pub key: String,
+    pub value: Option<GValue>,
+    pub traversal: Option<Vec<Step>>,
+}
 
 pub(super) fn lower_call(
     input: Node,
     name: &str,
     args: &[CallArg],
-    options: &[(String, Option<GValue>)],
+    options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
     if is_degree_centrality(name) {
         return Ok(Node::GraphProject {
@@ -115,6 +124,7 @@ pub(super) fn lower_call_with_option(
     input: Node,
     key: &str,
     value: Option<&GValue>,
+    _traversal: Option<&[Step]>,
 ) -> GremlinPlanResult<Option<Node>> {
     if key
         .rsplit('.')
@@ -202,9 +212,10 @@ fn is_degree_centrality(name: &str) -> bool {
     name == "tinker.degree.centrality"
 }
 
-fn direction_option(args: &[CallArg], options: &[(String, Option<GValue>)]) -> &'static str {
-    if options.iter().any(|(key, value)| {
-        key == "direction" && !matches!(value, Some(GValue::String(value)) if value != "OUT")
+fn direction_option(args: &[CallArg], options: &[CallOption]) -> &'static str {
+    if options.iter().any(|option| {
+        option.key == "direction"
+            && !matches!(option.value.as_ref(), Some(GValue::String(value)) if value != "OUT")
     }) || args.iter().any(call_arg_mentions_out)
     {
         "OUT"
@@ -248,28 +259,40 @@ fn display_gvalue(value: &GValue) -> String {
 pub(super) fn lower_graph_algorithm(
     input: Node,
     name: &'static str,
-    options: &[(String, Option<GValue>)],
-) -> Node {
+    options: &[CallOption],
+) -> GremlinPlanResult<Node> {
     if name == "shortestPath" {
         let mut direction = Direction::Both;
         let mut rel_types = LabelExpr::Any;
         let mut max_distance = None;
         let mut include_edges = false;
         let mut weighted_distance = false;
-        for (key, value) in options {
-            let suffix = key.rsplit('.').next().unwrap_or(key);
+        let mut target_condition = None;
+        for option in options {
+            let suffix = option.key.rsplit('.').next().unwrap_or(&option.key);
             match suffix {
                 "edges" => {
-                    if let Some(next_direction) = shortest_path_edges_direction(value.as_ref()) {
+                    if let Some(steps) = option.traversal.as_deref() {
+                        if let Some((next_direction, next_rel_types)) =
+                            shortest_path_edges_traversal(steps)
+                        {
+                            direction = next_direction;
+                            rel_types = next_rel_types;
+                            continue;
+                        }
+                    }
+                    if let Some(next_direction) =
+                        shortest_path_edges_direction(option.value.as_ref())
+                    {
                         direction = next_direction;
                     }
-                    if let Some(next_rel_types) = shortest_path_edge_labels(value.as_ref()) {
+                    if let Some(next_rel_types) = shortest_path_edge_labels(option.value.as_ref()) {
                         rel_types = next_rel_types;
                     }
                 }
                 "maxDistance" => {
                     if !weighted_distance {
-                        max_distance = shortest_path_distance(value.as_ref());
+                        max_distance = shortest_path_distance(option.value.as_ref());
                     }
                 }
                 "includeEdges" => include_edges = true,
@@ -277,10 +300,18 @@ pub(super) fn lower_graph_algorithm(
                     weighted_distance = true;
                     max_distance = None;
                 }
+                "target" => {
+                    if target_condition.is_none() {
+                        target_condition = option
+                            .traversal
+                            .as_deref()
+                            .and_then(shortest_path_target_condition);
+                    }
+                }
                 _ => {}
             }
         }
-        return Node::GraphShortestPath {
+        let shortest = Node::GraphShortestPath {
             source: CURRENT.into(),
             target: None,
             direction,
@@ -291,9 +322,84 @@ pub(super) fn lower_graph_algorithm(
             all_paths: true,
             input: input.boxed(),
         };
+        return Ok(match target_condition {
+            Some(condition) => Node::GraphFilter {
+                condition,
+                input: shortest.boxed(),
+            },
+            None => shortest,
+        });
     }
 
-    input
+    Ok(input)
+}
+
+fn shortest_path_edges_traversal(steps: &[Step]) -> Option<(Direction, LabelExpr)> {
+    let [
+        Step::ExpandEdge {
+            direction,
+            edge_labels,
+        },
+    ] = steps
+    else {
+        return None;
+    };
+    let direction = match direction {
+        GremlinDirection::Out => Direction::Out,
+        GremlinDirection::In => Direction::In,
+        GremlinDirection::Both => Direction::Both,
+    };
+    let labels = if edge_labels.is_empty() {
+        LabelExpr::Any
+    } else {
+        LabelExpr::AnyOf(edge_labels.to_vec())
+    };
+    Some((direction, labels))
+}
+
+fn shortest_path_target_condition(steps: &[Step]) -> Option<IrExpr> {
+    match steps {
+        [Step::Has { key, predicate }] => {
+            let value = predicate_eq_value(predicate)?;
+            Some(IrExpr::Call {
+                name: "path_last_property_eq".into(),
+                args: vec![
+                    IrExpr::Binding(CURRENT.into()),
+                    IrExpr::lit_str(key.clone()),
+                    gvalue_to_expr(value).ok()?,
+                ],
+            })
+        }
+        [Step::HasLabel(labels)] if labels.len() == 1 => Some(IrExpr::Call {
+            name: "path_last_label_eq".into(),
+            args: vec![
+                IrExpr::Binding(CURRENT.into()),
+                IrExpr::lit_str(labels[0].clone()),
+            ],
+        }),
+        [Step::Values(keys), Step::Is { predicate }] if keys.len() == 1 => {
+            let value = predicate_eq_value(predicate)?;
+            Some(IrExpr::Call {
+                name: "path_last_property_eq".into(),
+                args: vec![
+                    IrExpr::Binding(CURRENT.into()),
+                    IrExpr::lit_str(keys[0].clone()),
+                    gvalue_to_expr(value).ok()?,
+                ],
+            })
+        }
+        _ => None,
+    }
+}
+
+fn predicate_eq_value(predicate: &Predicate) -> Option<&GValue> {
+    match predicate {
+        Predicate::Compare {
+            op: CompareOp::Eq,
+            value,
+        } => Some(value),
+        _ => None,
+    }
 }
 
 fn shortest_path_distance(value: Option<&GValue>) -> Option<f64> {

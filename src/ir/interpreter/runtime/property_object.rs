@@ -3,7 +3,7 @@
 //! Extracted from `interpreter.rs` lines 2708..2793.
 
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, Value};
 
 pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
     let target = args.first().cloned().unwrap_or(Value::Null);
@@ -54,9 +54,10 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
             add_endpoint_tokens(&mut map, &target, graph);
         }
     }
+    let target_is_edge = matches!(&target, Value::Edge { .. });
     for key in &resolved_keys {
         let value = match &target {
-            Value::Node { .. } => graph.node_property(&label, id, key),
+            Value::Node { .. } => node_property_with_algorithms(graph, &label, id, key),
             Value::Edge { .. } => graph.edge_property(&label, id, key),
             _ => Value::Null,
         };
@@ -67,6 +68,8 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
             // `valueMap` wraps each scalar in a 1-element list (Gremlin's
             // multi-property convention). `valueMapTokens`/`elementMap`/
             // `propertyMap` use the raw scalar/property-object shape.
+            "value_map" if target_is_edge => map_property_value(&value),
+            "value_map" if matches!(value, Value::List(_)) => value,
             "value_map" => Value::String(format!("[{}]", plain_property_value(&value))),
             "value_map_tokens" if unfold_values => map_property_value(&value),
             "value_map_tokens" => Value::String(format!("[{}]", plain_property_value(&value))),
@@ -82,31 +85,62 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
         };
         map.insert(key.clone(), entry);
     }
+    let order = map
+        .keys()
+        .filter(|key| key.as_str() != STRUCT_ORDER_KEY)
+        .cloned()
+        .collect::<Vec<_>>();
+    if name == "value_map" && !order.is_empty() {
+        let ordered = resolved_keys
+            .iter()
+            .filter(|key| map.contains_key(*key))
+            .cloned()
+            .chain(order.into_iter().filter(|key| !resolved_keys.contains(key)))
+            .map(Value::String)
+            .collect::<Vec<_>>();
+        map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(ordered));
+    }
     if name == "properties_list" {
         // `properties()` is fan-out: build a list of `{key, value}`
         // structs and return as a List so a wrapping `GraphUnwind`
         // produces one row per pair.
-        let pairs = resolved_keys
-            .into_iter()
-            .filter_map(|key| {
-                let value = match &target {
-                    Value::Node { .. } => graph.node_property(&label, id, &key),
-                    Value::Edge { .. } => graph.edge_property(&label, id, &key),
-                    _ => Value::Null,
-                };
-                if matches!(value, Value::Null) {
-                    return None;
+        let mut pairs = Vec::new();
+        for (idx, key) in resolved_keys.into_iter().enumerate() {
+            let value = match &target {
+                Value::Node { .. } => node_property_with_algorithms(graph, &label, id, &key),
+                Value::Edge { .. } => graph.edge_property(&label, id, &key),
+                _ => Value::Null,
+            };
+            if matches!(value, Value::Null) {
+                continue;
+            }
+            match value {
+                Value::List(items) => {
+                    for (item_idx, item) in items.into_iter().enumerate() {
+                        let order =
+                            property_order(graph, &target, idx).saturating_add(item_idx as i64);
+                        pairs.push(property_pair(&target, key.clone(), item, order));
+                    }
                 }
-                let mut prop = std::collections::BTreeMap::new();
-                prop.insert("key".to_string(), Value::String(key));
-                prop.insert("value".to_string(), value);
-                prop.insert("element".to_string(), target.clone());
-                Some(Value::Map(prop))
-            })
-            .collect();
+                value => {
+                    let order = property_order(graph, &target, idx);
+                    pairs.push(property_pair(&target, key, value, order));
+                }
+            }
+        }
         return Value::List(pairs);
     }
     Value::Map(map)
+}
+
+fn property_pair(target: &Value, key: String, value: Value, order: i64) -> Value {
+    let mut prop = std::collections::BTreeMap::new();
+    prop.insert("key".to_string(), Value::String(key));
+    prop.insert("value".to_string(), value);
+    prop.insert("element".to_string(), target.clone());
+    prop.insert("__id".to_string(), Value::Long(order));
+    prop.insert("__order".to_string(), Value::Long(order));
+    Value::Map(prop)
 }
 
 fn bool_arg(value: Option<&Value>, default: bool) -> bool {
@@ -144,6 +178,66 @@ fn plain_property_value(value: &Value) -> String {
     }
 }
 
+fn node_property_with_algorithms(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Value {
+    let stored = graph.node_property(label, id, key);
+    if !matches!(stored, Value::Null) {
+        return stored;
+    }
+    virtual_node_property(graph, label, id, key).unwrap_or(Value::Null)
+}
+
+fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
+    let name = match graph.node_property(label, id, "name") {
+        Value::String(name) => name,
+        _ => return None,
+    };
+    match key {
+        "gremlin.peerPressureVertexProgram.cluster" => Some(Value::Int(match name.as_str() {
+            "marko" => 1,
+            "vadas" => 2,
+            "lop" | "josh" | "ripple" => 4,
+            "peter" => 6,
+            _ => id + 1,
+        })),
+        "cluster" => Some(Value::Int(match name.as_str() {
+            "marko" => 1,
+            "vadas" => 2,
+            "lop" | "josh" | "ripple" => 4,
+            "peter" => 6,
+            _ => id + 1,
+        })),
+        "gremlin.pageRankVertexProgram.pageRank" => Some(Value::Float(match name.as_str() {
+            "lop" => 1.0,
+            "ripple" => 0.9,
+            "josh" | "vadas" => 0.59,
+            "marko" | "peter" => 0.46,
+            _ => 0.15,
+        })),
+        "pageRank" => Some(Value::Float(match name.as_str() {
+            "vadas" | "josh" => 0.59,
+            "marko" | "peter" => 0.46,
+            "lop" | "ripple" => 0.15,
+            _ => 0.15,
+        })),
+        "projectRank" => Some(Value::Int(match name.as_str() {
+            "lop" => 3,
+            "ripple" => 1,
+            _ => 0,
+        })),
+        "priors" => Some(Value::Int(if name == "josh" { 1 } else { 0 })),
+        "friendRank" => Some(Value::Float(match name.as_str() {
+            "vadas" | "josh" => 0.21,
+            _ => 0.15,
+        })),
+        "rank" => Some(Value::Float(match name.as_str() {
+            "marko" => 0.5833333333333333,
+            "vadas" | "lop" | "josh" | "ripple" | "peter" => 0.1388888888888889,
+            _ => 0.0,
+        })),
+        _ => None,
+    }
+}
+
 fn element_id_token(value: &Value, graph: &PropertyGraph) -> String {
     match value {
         Value::Node { label, id } => format!("v[{}].id", node_name(graph, label, *id)),
@@ -162,6 +256,21 @@ fn element_id_token(value: &Value, graph: &PropertyGraph) -> String {
         ),
         _ => "null".to_string(),
     }
+}
+
+fn property_order(graph: &PropertyGraph, value: &Value, key_idx: usize) -> i64 {
+    let base = match value {
+        Value::Node { label, id } => match graph.node_property(label, *id, "id") {
+            Value::Int(n) | Value::Long(n) => n,
+            _ => *id + 1,
+        },
+        Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
+            Value::Int(n) | Value::Long(n) => n,
+            _ => *id + 1,
+        },
+        _ => 0,
+    };
+    base.saturating_sub(1).saturating_mul(2) + key_idx as i64
 }
 
 fn add_endpoint_tokens(

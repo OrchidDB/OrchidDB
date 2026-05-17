@@ -195,6 +195,10 @@ pub(super) struct Lowerer {
     /// SubgraphStrategy `edges: __.<sub>` filter, applied to edge-producing
     /// steps (E scan, ExpandEdge).
     pub(super) subgraph_edge_filter: Option<Vec<Step>>,
+    /// SubgraphStrategy `vertexProperties: __.<sub>` filter. The current
+    /// row model does not expose vertex properties as first-class elements,
+    /// so projectors use this as a focused value/properties visibility hook.
+    pub(super) subgraph_vertex_property_filter: Option<Vec<Step>>,
     /// SubgraphStrategy `checkAdjacentVertices`; when false, visible edges
     /// are not rejected just because one endpoint fails the vertex filter.
     pub(super) subgraph_check_adjacent_vertices: bool,
@@ -233,6 +237,7 @@ impl Lowerer {
             scope_stack: Vec::new(),
             subgraph_vertex_filter: None,
             subgraph_edge_filter: None,
+            subgraph_vertex_property_filter: None,
             subgraph_check_adjacent_vertices: true,
             productive_by: false,
             sack_initial: None,

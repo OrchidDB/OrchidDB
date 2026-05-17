@@ -127,7 +127,13 @@ fn render_debug_map(value: &str) -> Option<String> {
     for entry in split_quoted(inner, ", ") {
         let (key, value) = entry.split_once(": ")?;
         let key = key.trim_matches('"');
+        if key.starts_with("__") || key == "\u{0}struct_order" || key == "\u{0}struct_types" {
+            continue;
+        }
         entries.push((key.to_string(), render_debug_map_value(value)));
+    }
+    if let Some(rendered) = render_property_entry(&entries) {
+        return Some(rendered);
     }
     Some(render_map_entries(entries))
 }
@@ -227,6 +233,13 @@ pub fn strip_expected_tags(line: &str) -> String {
         trimmed[2..trimmed.len() - 1].to_string()
     } else if trimmed.starts_with("l[") && trimmed.ends_with(']') {
         trimmed[2..trimmed.len() - 1].to_string()
+    } else if trimmed.starts_with("p[") && trimmed.ends_with(']') {
+        let inner = &trimmed[2..trimmed.len() - 1];
+        if inner.contains(',') {
+            inner.to_string()
+        } else {
+            strip_expected_tags(inner)
+        }
     } else if let Some(rendered) = normalize_expected_map(trimmed) {
         rendered
     } else {
@@ -258,8 +271,8 @@ fn normalize_expected_map(line: &str) -> Option<String> {
         return Some("m[{}]".to_string());
     }
     let mut entries = Vec::new();
-    for entry in split_quoted(inner, ",") {
-        let (key, value) = entry.split_once(':')?;
+    for entry in split_top_level_delimited(inner, ',') {
+        let (key, value) = split_top_level_once(entry, ':')?;
         entries.push((
             key.trim().trim_matches('"').to_string(),
             normalize_embedded_map_value(value.trim().trim_matches('"')),
@@ -269,9 +282,25 @@ fn normalize_expected_map(line: &str) -> Option<String> {
 }
 
 fn normalize_embedded_map_value(value: &str) -> String {
-    let value = normalize_embedded_string_value(value);
+    let value = normalize_embedded_string_value(value.trim());
     if value == "l[]" {
         return "[]".to_string();
+    }
+    if let Some(inner) = value.strip_prefix("l[").and_then(|v| v.strip_suffix(']')) {
+        return normalize_embedded_list(inner);
+    }
+    if let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return normalize_embedded_list(inner);
+    }
+    if value.starts_with("m[{") && value.ends_with("}]") {
+        if let Some(map) = normalize_expected_map(&value) {
+            return map;
+        }
+    }
+    if value.starts_with('{') && value.ends_with('}') {
+        if let Some(map) = normalize_expected_map(&format!("m[{value}]")) {
+            return map;
+        }
     }
     if let Some(stripped) = strip_double(&value) {
         return stripped.to_string();
@@ -286,7 +315,27 @@ fn normalize_embedded_string_value(value: &str) -> String {
     value.replace("\\\\\"", "\"").replace("\\\"", "\"")
 }
 
+fn normalize_embedded_list(inner: &str) -> String {
+    if inner.trim().is_empty() {
+        return "[]".to_string();
+    }
+    let items = split_top_level_delimited(inner, ',')
+        .into_iter()
+        .map(|item| {
+            let item = item.trim().trim_matches('"');
+            normalize_embedded_map_value(item)
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", items.join(","))
+}
+
 fn render_map_entries(mut entries: Vec<(String, String)>) -> String {
+    entries.retain(|(key, _)| {
+        !key.starts_with("__") && key != "\u{0}struct_order" && key != "\u{0}struct_types"
+    });
+    if let Some(rendered) = render_unfolded_map_entry(&entries) {
+        return rendered;
+    }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let body = entries
         .into_iter()
@@ -294,6 +343,26 @@ fn render_map_entries(mut entries: Vec<(String, String)>) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!("m[{{{body}}}]")
+}
+
+fn render_property_entry(entries: &[(String, String)]) -> Option<String> {
+    let element = entries.iter().find(|(key, _)| key == "element")?.1.clone();
+    let key = entries.iter().find(|(key, _)| key == "key")?.1.clone();
+    let value = entries.iter().find(|(key, _)| key == "value")?.1.clone();
+    let owner = element
+        .strip_prefix("v[")
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(element.as_str());
+    Some(format!("vp[{owner}-{key}->{value}]"))
+}
+
+fn render_unfolded_map_entry(entries: &[(String, String)]) -> Option<String> {
+    if entries.len() != 2 {
+        return None;
+    }
+    let key = entries.iter().find(|(key, _)| key == "key")?.1.clone();
+    let value = entries.iter().find(|(key, _)| key == "value")?.1.clone();
+    Some(format!("m[{{\"{key}\":\"{value}\"}}]"))
 }
 
 fn split_quoted<'a>(input: &'a str, delimiter: &str) -> Vec<&'a str> {
@@ -327,6 +396,56 @@ fn split_quoted<'a>(input: &'a str, delimiter: &str) -> Vec<&'a str> {
     }
     parts.push(input[start..].trim());
     parts
+}
+
+fn split_top_level_delimited(input: &str, delimiter: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '[' | '{' | '(' if !in_string => depth += 1,
+            ']' | '}' | ')' if !in_string => depth -= 1,
+            c if c == delimiter && !in_string && depth == 0 => {
+                parts.push(input[start..idx].trim());
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(input[start..].trim());
+    parts
+}
+
+fn split_top_level_once(input: &str, delimiter: char) -> Option<(&str, &str)> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '[' | '{' | '(' if !in_string => depth += 1,
+            ']' | '}' | ')' if !in_string => depth -= 1,
+            c if c == delimiter && !in_string && depth == 0 => {
+                return Some((&input[..idx], &input[idx + ch.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn strip_double(line: &str) -> Option<&str> {

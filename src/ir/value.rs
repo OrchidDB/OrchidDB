@@ -648,5 +648,5 @@ fn visible_map_len(map: &std::collections::BTreeMap<String, Value>) -> usize {
 }
 
 fn is_visible_map_key(key: &str) -> bool {
-    key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY
+    key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !key.starts_with("__")
 }

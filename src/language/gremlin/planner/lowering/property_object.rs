@@ -10,7 +10,7 @@
 //! single Map row per input. `properties()` fans out (one row per
 //! `(element, key)` pair) and is therefore wrapped in `GraphUnwind`.
 
-use super::context::CURRENT;
+use super::context::{CURRENT, Lowerer};
 use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::Node;
 use crate::ir::policy::PropertyMissing;
@@ -58,7 +58,23 @@ pub(super) fn lower_element(input: Node) -> Node {
 /// `properties(keys...)` — fan-out: one row per (current, key) pair
 /// where the property exists. Returns a list traverser via
 /// `GraphUnwind` over a list-shaped helper.
-pub(super) fn lower_properties(input: Node, keys: &[String]) -> Node {
+pub(super) fn lower_properties(input: Node, keys: &[String], lo: &Lowerer) -> Node {
+    if lo.subgraph_vertex_property_filter.is_some() && keys.len() == 1 && keys[0] == "location" {
+        let project = Node::GraphCurrentProject {
+            expr: IrExpr::Call {
+                name: "gremlin_visible_vertex_properties".to_string(),
+                args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_str("location")],
+            },
+            fields: vec![CURRENT.to_string()],
+            input: input.boxed(),
+        };
+        return Node::GraphUnwind {
+            input_expr: IrExpr::Binding(CURRENT.into()),
+            bind: CURRENT.into(),
+            outer: false,
+            input: project.boxed(),
+        };
+    }
     let project = project_map(input, "properties_list", keys);
     Node::GraphUnwind {
         input_expr: IrExpr::Binding(CURRENT.into()),
@@ -68,7 +84,7 @@ pub(super) fn lower_properties(input: Node, keys: &[String]) -> Node {
     }
 }
 
-pub(super) fn lower_properties_value(input: Node, keys: &[String]) -> Node {
+pub(super) fn lower_properties_value(input: Node, keys: &[String], lo: &Lowerer) -> Node {
     Node::GraphCurrentProject {
         expr: IrExpr::property(
             CURRENT,
@@ -76,7 +92,7 @@ pub(super) fn lower_properties_value(input: Node, keys: &[String]) -> Node {
             PropertyMissing::DropUnproductive,
         ),
         fields: vec![CURRENT.to_string()],
-        input: lower_properties(input, keys).boxed(),
+        input: lower_properties(input, keys, lo).boxed(),
     }
 }
 

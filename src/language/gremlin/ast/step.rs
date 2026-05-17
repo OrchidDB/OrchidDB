@@ -295,6 +295,7 @@ pub enum Step {
     WithStrategy {
         vertex_filter: Option<Vec<Step>>,
         edge_filter: Option<Vec<Step>>,
+        vertex_property_filter: Option<Vec<Step>>,
         check_adjacent_vertices: bool,
     },
     /// `g.withStrategies(ProductiveByStrategy)` keeps rows whose `by(...)`
@@ -388,5 +389,6 @@ pub enum Step {
     WithOption {
         key: String,
         value: Option<GValue>,
+        traversal: Option<Vec<Step>>,
     },
 }

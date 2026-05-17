@@ -44,6 +44,23 @@ pub(crate) fn apply_path_by_keys(
     keys: &[Value],
     graph: &PropertyGraph,
 ) -> Option<Vec<Value>> {
+    apply_path_by_keys_impl(items, keys, graph, true)
+}
+
+pub(crate) fn apply_path_by_keys_keep_nulls(
+    items: &[Value],
+    keys: &[Value],
+    graph: &PropertyGraph,
+) -> Vec<Value> {
+    apply_path_by_keys_impl(items, keys, graph, false).unwrap_or_default()
+}
+
+fn apply_path_by_keys_impl(
+    items: &[Value],
+    keys: &[Value],
+    graph: &PropertyGraph,
+    drop_nulls: bool,
+) -> Option<Vec<Value>> {
     if keys.is_empty() {
         return Some(items.to_vec());
     }
@@ -54,7 +71,7 @@ pub(crate) fn apply_path_by_keys(
             Value::Null => item.clone(),
             _ => item.clone(),
         };
-        if matches!(projected, Value::Null) {
+        if drop_nulls && matches!(projected, Value::Null) {
             return None;
         }
         out.push(projected);

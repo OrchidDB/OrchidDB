@@ -20,7 +20,7 @@ use super::filter::{
 use super::format::lower_format;
 use super::group::lower_group_step;
 use super::list_ops::{lower_fold_reduce, lower_list_op, lower_list_op_traversal};
-use super::local_scope::lower_local_scoped;
+use super::local_scope::{lower_local_order, lower_local_scoped};
 use super::match_step::lower_match;
 use super::math::lower_math;
 use super::path::{lower_path, lower_path_from, lower_path_to};
@@ -35,17 +35,16 @@ use super::repeat::lower_repeat;
 use super::select::{lower_as, lower_select_column, lower_select_label, lower_select_multi};
 use super::side_effects::{
     lower_aggregate_as, lower_cap, lower_cap_multi, lower_group_as, lower_group_count_as,
-    lower_sack_op, lower_sack_read, lower_subgraph, lower_tree,
+    lower_sack_op, lower_sack_read, lower_side_effect_bag_as_list, lower_subgraph, lower_tree,
 };
 use super::slice::{
-    consume_local_order_by, lower_dedup, lower_dedup_labels, lower_limit_or_sample, lower_order,
-    lower_range, lower_sample, lower_skip, lower_tail,
+    lower_dedup, lower_dedup_labels, lower_limit_or_sample, lower_order, lower_range, lower_sample,
+    lower_skip, lower_tail,
 };
 use super::strings::lower_string_op;
 use crate::ir::plan::{Node, QuantifierKind};
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
-use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn loop_binding_name(name: &Option<String>) -> String {
     match name {
@@ -74,7 +73,7 @@ where
         Step::HasId { ids } => Ok(lower_has_id(input, ids)),
         Step::HasIdPredicate { predicate } => lower_has_id_predicate(input, predicate),
         Step::HasValue(predicate) => lower_has_value(input, predicate),
-        Step::Is { predicate } => lower_is(input, predicate, steps),
+        Step::Is { predicate } => lower_is(input, predicate, steps, lo),
         Step::All { predicate } => {
             lower_quantifier_filter(input, QuantifierKind::All, predicate, lo)
         }
@@ -98,7 +97,7 @@ where
         Step::OtherVertex => lower_other_vertex(input, lo, ctx),
 
         // ----- value projection -----
-        Step::Values(keys) => lower_values(input, keys),
+        Step::Values(keys) => lower_values(input, keys, lo),
         Step::Id => Ok(lower_id(input)),
         Step::Label => Ok(lower_label(input)),
         Step::Identity => Ok(input),
@@ -297,7 +296,7 @@ where
         Step::Math(expr) => lower_math(input, expr, steps, lo, ctx),
 
         // ----- unsupported families (clean error) -----
-        Step::Path => Ok(lower_path(input, steps)),
+        Step::Path => Ok(lower_path(input, steps, lo)),
         Step::Match(patterns) => lower_match(input, patterns, lo, ctx),
         Step::Project(labels) => lower_project(input, labels, steps, lo, ctx),
         Step::Loops(name) => Ok(Node::GraphCurrentProject {
@@ -307,9 +306,9 @@ where
         }),
         Step::Properties(keys) if matches!(steps.peek(), Some(Step::Identity)) => {
             steps.next();
-            Ok(lower_properties_value(input, keys))
+            Ok(lower_properties_value(input, keys, lo))
         }
-        Step::Properties(keys) => Ok(lower_properties(input, keys)),
+        Step::Properties(keys) => Ok(lower_properties(input, keys, lo)),
         Step::ValueMap(keys) => Ok(lower_value_map(input, keys)),
         Step::ElementMap(keys) => Ok(lower_element_map(input, keys)),
         Step::PropertyMap(keys) => Ok(lower_property_map(input, keys)),
@@ -328,6 +327,10 @@ where
             ))
         }
         Step::AggregateAs(label) => lower_aggregate_as(input, label, steps, lo, ctx),
+        Step::Cap(label) if cap_feeds_local_collection_step(steps.peek().copied()) => {
+            Ok(lower_side_effect_bag_as_list(input.clone(), label, lo)
+                .unwrap_or_else(|| lower_cap(input, label, lo)))
+        }
         Step::Cap(label) => Ok(lower_cap(input, label, lo)),
         Step::CapMulti(labels) => Ok(lower_cap_multi(input, labels, lo)),
         Step::Sack => Ok(lower_sack_read(input)),
@@ -367,14 +370,14 @@ where
         }
         Step::ShortestPath => {
             let options = consume_call_options(steps);
-            Ok(lower_graph_algorithm(input, "shortestPath", &options))
+            lower_graph_algorithm(input, "shortestPath", &options)
         }
-        Step::PageRank => Ok(lower_graph_algorithm(input, "pageRank", &[])),
-        Step::PeerPressure => Ok(lower_graph_algorithm(input, "peerPressure", &[])),
-        Step::ConnectedComponent => Ok(lower_graph_algorithm(input, "connectedComponent", &[])),
+        Step::PageRank => lower_graph_algorithm(input, "pageRank", &[]),
+        Step::PeerPressure => lower_graph_algorithm(input, "peerPressure", &[]),
+        Step::ConnectedComponent => lower_graph_algorithm(input, "connectedComponent", &[]),
         Step::LocalScoped(inner) if matches!(inner.as_ref(), Step::Order) => {
-            consume_local_order_by(steps);
-            lower_local_scoped(input, inner)
+            let by = super::helpers::consume_by(steps);
+            lower_local_order(input, by)
         }
         Step::LocalScoped(inner) => lower_local_scoped(input, inner),
         Step::PathFrom(label) => Ok(lower_path_from(input, label)),
@@ -399,10 +402,12 @@ where
         // Mid-traversal `with(...)` is a planner option carrier; ignore it
         // so the rest of the chain still lowers. Likewise `withSack` /
         // `withSideEffect` if they show up after the source position.
-        Step::WithOption { key, value } => {
-            lower_call_with_option(input.clone(), key, value.as_ref())
-                .map(|node| node.unwrap_or(input))
-        }
+        Step::WithOption {
+            key,
+            value,
+            traversal,
+        } => lower_call_with_option(input.clone(), key, value.as_ref(), traversal.as_deref())
+            .map(|node| node.unwrap_or(input)),
         Step::WithSack { .. }
         | Step::WithSideEffect { .. }
         | Step::WithStrategy { .. }
@@ -429,6 +434,14 @@ fn is_side_effect_only(sub: &[Step]) -> bool {
         .all(|s| matches!(s, Step::AggregateAs(_) | Step::By(_)))
 }
 
+fn cap_feeds_local_collection_step(step: Option<&Step>) -> bool {
+    matches!(
+        step,
+        Some(Step::LocalScoped(inner))
+            if matches!(inner.as_ref(), Step::Aggregate(_) | Step::Count | Step::Order | Step::Dedup)
+    )
+}
+
 fn consume_unfold_by<'a, I>(steps: &mut Peekable<I>) -> bool
 where
     I: Iterator<Item = &'a Step>,
@@ -443,13 +456,22 @@ where
     is_unfold
 }
 
-fn consume_call_options<'a, I>(steps: &mut Peekable<I>) -> Vec<(String, Option<GValue>)>
+fn consume_call_options<'a, I>(steps: &mut Peekable<I>) -> Vec<super::procedures::CallOption>
 where
     I: Iterator<Item = &'a Step>,
 {
     let mut options = Vec::new();
-    while let Some(Step::WithOption { key, value }) = steps.peek() {
-        options.push((key.clone(), value.clone()));
+    while let Some(Step::WithOption {
+        key,
+        value,
+        traversal,
+    }) = steps.peek()
+    {
+        options.push(super::procedures::CallOption {
+            key: key.clone(),
+            value: value.clone(),
+            traversal: traversal.clone(),
+        });
         steps.next();
     }
     options

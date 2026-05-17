@@ -57,7 +57,11 @@ where
     let mut input = replace_current(input, select_expr(CURRENT, label, pop));
     if let Some(spec) = consume_by(steps) {
         if let Some(value_expr) = direct_by_expr(&spec) {
-            input = replace_current(input, value_expr);
+            input = if lo.productive_by {
+                replace_current(input, value_expr)
+            } else {
+                current_project(input, value_expr)
+            };
         } else {
             let (next_input, value_expr) = apply_by_spec(input, &spec, lo, ctx)?;
             input = replace_current(next_input, value_expr);
@@ -188,6 +192,14 @@ fn replace_current(input: Node, expr: IrExpr) -> Node {
             expr,
         }],
         error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    }
+}
+
+fn current_project(input: Node, expr: IrExpr) -> Node {
+    Node::GraphCurrentProject {
+        expr,
+        fields: vec![CURRENT.to_string()],
         input: input.boxed(),
     }
 }

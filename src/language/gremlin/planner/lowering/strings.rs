@@ -2,7 +2,7 @@
 //! projection. Each variant maps to an IR `Call` against a runtime
 //! UDF (see `ir::interpreter::eval_call`).
 
-use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
+use super::context::{CURRENT, ChildTraversalKind, Lowerer, PATH, TraversalContext};
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::{ApplyKind, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice};
@@ -92,10 +92,23 @@ fn project_call(input: Node, name: &str, args: Vec<IrExpr>) -> Node {
 fn project_expr(input: Node, expr: IrExpr) -> Node {
     Node::GraphProject {
         mode: ProjectMode::ReplaceCurrent,
-        items: vec![ProjectionItem {
-            alias: CURRENT.to_string(),
-            expr,
-        }],
+        items: vec![
+            ProjectionItem {
+                alias: CURRENT.to_string(),
+                expr: expr.clone(),
+            },
+            ProjectionItem {
+                alias: PATH.to_string(),
+                expr: IrExpr::Call {
+                    name: "path_append_after".into(),
+                    args: vec![
+                        IrExpr::Binding(PATH.into()),
+                        IrExpr::Binding(CURRENT.into()),
+                        expr,
+                    ],
+                },
+            },
+        ],
         error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),
     }

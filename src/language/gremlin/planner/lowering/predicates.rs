@@ -17,8 +17,10 @@ fn predicate_value_expr_with(
 ) -> GremlinPlanResult<IrExpr> {
     match value {
         GValue::String(label) => {
-            let binding_expr =
-                resolve_binding(label).unwrap_or_else(|| IrExpr::Binding(label.clone()));
+            if let Some(binding_expr) = resolve_binding(label) {
+                return Ok(binding_expr);
+            }
+            let binding_expr = IrExpr::Binding(label.clone());
             Ok(IrExpr::Case {
                 arms: vec![(IrExpr::IsBound(label.clone()), binding_expr)],
                 otherwise: Some(Box::new(gvalue_to_expr(value)?)),
@@ -91,6 +93,19 @@ pub(super) fn predicate_to_expr_with_bindings(
             for v in &flattened {
                 if matches!(v, GValue::Null) {
                     parts.push(IrExpr::IsNull(Box::new(target.clone())));
+                } else if let GValue::String(label) = v {
+                    if let Some(candidates) = resolve_binding(label) {
+                        parts.push(IrExpr::Call {
+                            name: "gremlin_within".into(),
+                            args: vec![target.clone(), candidates],
+                        });
+                    } else {
+                        parts.push(IrExpr::Binary {
+                            op: BinaryOp::Eq,
+                            lhs: Box::new(target.clone()),
+                            rhs: Box::new(predicate_value_expr_with(v, resolve_binding)?),
+                        });
+                    }
                 } else {
                     parts.push(IrExpr::Binary {
                         op: BinaryOp::Eq,
@@ -111,6 +126,19 @@ pub(super) fn predicate_to_expr_with_bindings(
             for v in &flattened {
                 if matches!(v, GValue::Null) {
                     parts.push(IrExpr::IsNotNull(Box::new(target.clone())));
+                } else if let GValue::String(label) = v {
+                    if let Some(candidates) = resolve_binding(label) {
+                        parts.push(IrExpr::Not(Box::new(IrExpr::Call {
+                            name: "gremlin_within".into(),
+                            args: vec![target.clone(), candidates],
+                        })));
+                    } else {
+                        parts.push(IrExpr::Binary {
+                            op: BinaryOp::Neq,
+                            lhs: Box::new(target.clone()),
+                            rhs: Box::new(predicate_value_expr_with(v, resolve_binding)?),
+                        });
+                    }
                 } else {
                     parts.push(IrExpr::Binary {
                         op: BinaryOp::Neq,

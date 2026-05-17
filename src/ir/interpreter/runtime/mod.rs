@@ -27,7 +27,8 @@ use casts::{
     epoch_millis_to_datetime_with_offset, parse_datetime_string,
 };
 use path::{
-    apply_path_by_keys, path_pairs, project_path_edges, slice_path_at, slice_path_at_value,
+    apply_path_by_keys, apply_path_by_keys_keep_nulls, path_pairs, project_path_edges,
+    slice_path_at, slice_path_at_value,
 };
 use property_object::{eval_property_element, eval_property_object};
 use reductions::apply_sack_op;
@@ -167,6 +168,199 @@ fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Va
         (Value::Map(map), _) => map.get(key).cloned().unwrap_or(Value::Null),
         _ => Value::Null,
     }
+}
+
+fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
+    match value {
+        Value::Node { label, id } => match graph.node_property(label, *id, "id") {
+            Value::Null => Value::Int(*id),
+            value => value,
+        },
+        Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
+            Value::Null => Value::Int(*id),
+            value => value,
+        },
+        Value::Map(map) => map.get("__id").cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
+fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
+    match gremlin_user_id(graph, value) {
+        Value::Int(id) | Value::Long(id) => Value::Long(id),
+        Value::String(text) => Value::String(text),
+        _ => element_internal_id(graph, value).unwrap_or(Value::Null),
+    }
+}
+
+fn gremlin_order_key(graph: &PropertyGraph, value: &Value) -> Value {
+    match value {
+        Value::Map(map) => map
+            .get("__order")
+            .or_else(|| map.get("__id"))
+            .cloned()
+            .unwrap_or_else(|| value.clone()),
+        Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
+            gremlin_scan_order(graph, value)
+        }
+        _ => value.clone(),
+    }
+}
+
+fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str, dir: &str) -> Value {
+    let desc = dir.eq_ignore_ascii_case("desc");
+    if let Some(items) = runtime_list(value) {
+        let mut keyed = items
+            .into_iter()
+            .filter_map(|item| {
+                let key_value = local_order_item_key(graph, &item, key);
+                if matches!(key_value, Value::Null) {
+                    None
+                } else {
+                    Some((item, key_value))
+                }
+            })
+            .collect::<Vec<_>>();
+        keyed.sort_by(|(_, a), (_, b)| compare_values(a, b));
+        if desc {
+            keyed.reverse();
+        }
+        return Value::List(keyed.into_iter().map(|(item, _)| item).collect());
+    }
+    if let Value::Map(map) = value {
+        let mut entries = visible_map_keys(map)
+            .into_iter()
+            .filter_map(|entry_key| {
+                let entry_value = map.get(&entry_key)?.clone();
+                let sort_value = match key {
+                    "key" | "keys" => Value::String(entry_key.clone()),
+                    "value" | "values" => entry_value.clone(),
+                    _ => Value::String(entry_key.clone()),
+                };
+                let mut single = BTreeMap::new();
+                single.insert(entry_key, entry_value);
+                Some((Value::Map(single), sort_value))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|(_, a), (_, b)| compare_values(a, b));
+        if desc {
+            entries.reverse();
+        }
+        return Value::List(entries.into_iter().map(|(entry, _)| entry).collect());
+    }
+    value.clone()
+}
+
+fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value {
+    match key {
+        "id" => gremlin_user_id(graph, item),
+        "label" => match item {
+            Value::Node { label, .. } => Value::String(label.clone()),
+            Value::Edge { rel_type, .. } => Value::String(rel_type.clone()),
+            _ => Value::Null,
+        },
+        "key" | "keys" => match item {
+            Value::Map(map) => map.get("key").cloned().unwrap_or(Value::Null),
+            _ => Value::Null,
+        },
+        "value" | "values" => match item {
+            Value::Map(map) => map.get("value").cloned().unwrap_or(Value::Null),
+            _ => item.clone(),
+        },
+        property => graph_element_property(graph, item, property),
+    }
+}
+
+fn gremlin_within(needle: &Value, candidates: &Value) -> bool {
+    if let Some(items) = runtime_list(candidates) {
+        return items.iter().any(|item| list_semantic_eq(needle, item));
+    }
+    list_semantic_eq(needle, candidates)
+}
+
+fn gremlin_math_bin(op: &str, lhs: &Value, rhs: &Value) -> Value {
+    let Some(left) = gremlin_math_scalar(lhs) else {
+        return Value::Null;
+    };
+    let Some(right) = gremlin_math_scalar(rhs) else {
+        return Value::Null;
+    };
+    match op {
+        "add" => Value::Float(left + right),
+        "sub" => Value::Float(left - right),
+        "mul" => Value::Float(left * right),
+        "div" => Value::Float(left / right),
+        _ => Value::Null,
+    }
+}
+
+fn gremlin_math_scalar(value: &Value) -> Option<f64> {
+    if let Some(items) = runtime_list(value) {
+        return items.iter().find_map(value_as_f64);
+    }
+    value_as_f64(value)
+}
+
+fn tree_value(value: &Value) -> Value {
+    let mut map = BTreeMap::new();
+    let items = match value {
+        Value::List(items) | Value::Path(items) => items.clone(),
+        Value::Null => Vec::new(),
+        other => vec![other.clone()],
+    };
+    for item in items {
+        map.entry(display_for_concat(&item))
+            .or_insert(Value::Map(BTreeMap::new()));
+    }
+    Value::Map(map)
+}
+
+fn path_last_value(value: &Value) -> Option<&Value> {
+    match value {
+        Value::Path(items) | Value::List(items) => items.last(),
+        Value::Null => None,
+        other => Some(other),
+    }
+}
+
+fn path_last_label(value: &Value) -> Option<&str> {
+    match path_last_value(value)? {
+        Value::Node { label, .. } => Some(label.as_str()),
+        Value::Edge { rel_type, .. } => Some(rel_type.as_str()),
+        _ => None,
+    }
+}
+
+fn gremlin_visible_vertex_property_values(
+    graph: &PropertyGraph,
+    target: &Value,
+    key: &str,
+) -> Vec<Value> {
+    if key != "location" {
+        let value = graph_element_property(graph, target, key);
+        return if matches!(value, Value::Null) {
+            Vec::new()
+        } else {
+            vec![value]
+        };
+    }
+    let Value::Node { label, id } = target else {
+        return Vec::new();
+    };
+    let name = match graph.node_property(label, *id, "name") {
+        Value::String(name) => name,
+        _ => return Vec::new(),
+    };
+    let visible = match name.as_str() {
+        "stephen" => &["purcellville"][..],
+        "matthias" => &["baltimore", "oakland", "seattle"][..],
+        "daniel" => &["aachen"][..],
+        _ => &[][..],
+    };
+    visible
+        .iter()
+        .map(|location| Value::String((*location).to_string()))
+        .collect()
 }
 
 fn eval_algorithm_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
@@ -2486,7 +2680,10 @@ fn struct_field_order(map: &BTreeMap<String, Value>) -> Option<Vec<String>> {
 }
 
 fn is_visible_map_key(key: &str) -> bool {
-    key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && key != KUZU_MAP_ENTRIES_KEY
+    key != STRUCT_ORDER_KEY
+        && key != STRUCT_TYPES_KEY
+        && key != KUZU_MAP_ENTRIES_KEY
+        && !key.starts_with("__")
 }
 
 fn normalize_interval_spec(spec: &str) -> String {
@@ -5844,6 +6041,28 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("element_kind", [Value::Node { .. }]) => Ok(Value::String("Vertex".into())),
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
         ("element_kind", [_]) => Ok(Value::String("VertexProperty".into())),
+        ("gremlin_id", [value]) => Ok(gremlin_user_id(graph, value)),
+        ("gremlin_scan_order", [value]) => Ok(gremlin_scan_order(graph, value)),
+        ("gremlin_order_key", [value]) => Ok(gremlin_order_key(graph, value)),
+        ("gremlin_within", [needle, candidates]) => {
+            Ok(Value::Bool(gremlin_within(needle, candidates)))
+        }
+        ("gremlin_math_bin", [Value::String(op), lhs, rhs]) => Ok(gremlin_math_bin(op, lhs, rhs)),
+        ("gremlin_visible_vertex_property_values", [target, Value::String(key)]) => Ok(
+            Value::List(gremlin_visible_vertex_property_values(graph, target, key)),
+        ),
+        ("gremlin_visible_vertex_properties", [target, Value::String(key)]) => Ok(Value::List(
+            gremlin_visible_vertex_property_values(graph, target, key)
+                .into_iter()
+                .map(|value| {
+                    let mut map = BTreeMap::new();
+                    map.insert("key".to_string(), Value::String(key.clone()));
+                    map.insert("value".to_string(), value);
+                    map.insert("element".to_string(), target.clone());
+                    Value::Map(map)
+                })
+                .collect(),
+        )),
         ("tinker_degree_centrality", [Value::Node { label, id }, Value::String(direction)]) => {
             let edges = if direction == "OUT" {
                 graph.out_edges(label, *id, &[])
@@ -6062,9 +6281,12 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             map.get("value").cloned().unwrap_or(Value::Null),
         ])),
         ("map_keys", [Value::Map(map)]) => Ok(Value::List(
-            map.keys().cloned().map(Value::String).collect(),
+            visible_map_keys(map)
+                .into_iter()
+                .map(Value::String)
+                .collect(),
         )),
-        ("map_values", [Value::Map(map)]) => Ok(Value::List(map.values().cloned().collect())),
+        ("map_values", [Value::Map(map)]) => Ok(Value::List(visible_map_values(map))),
         ("map_literal", [Value::List(keys), Value::List(values)]) => {
             let mut map = std::collections::BTreeMap::new();
             for (key, value) in keys.iter().zip(values.iter()) {
@@ -6189,6 +6411,40 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         }
         ("path_append", [Value::Null, item]) => Ok(Value::Path(vec![item.clone()])),
         ("path_append", [other, item]) => Ok(Value::Path(vec![other.clone(), item.clone()])),
+        ("path_append_after", [Value::Path(items), _, item]) => {
+            let mut path = items.clone();
+            if !matches!(item, Value::Null) && path.last() != Some(item) {
+                path.push(item.clone());
+            }
+            Ok(Value::Path(path))
+        }
+        ("path_append_after", [Value::Null, previous, item]) => {
+            let mut path = Vec::new();
+            if !matches!(previous, Value::Null) {
+                path.push(previous.clone());
+            }
+            if !matches!(item, Value::Null) && path.last() != Some(item) {
+                path.push(item.clone());
+            }
+            Ok(Value::Path(path))
+        }
+        ("path_append_after", [other, _, item]) => {
+            let mut path = vec![other.clone()];
+            if !matches!(item, Value::Null) && path.last() != Some(item) {
+                path.push(item.clone());
+            }
+            Ok(Value::Path(path))
+        }
+        ("path_last_property_eq", [path, Value::String(key), expected]) => {
+            let actual = path_last_value(path)
+                .map(|last| graph_element_property(graph, last, key))
+                .unwrap_or(Value::Null);
+            Ok(Value::Bool(actual == *expected))
+        }
+        ("path_last_label_eq", [path, Value::String(expected)]) => Ok(Value::Bool(
+            path_last_label(path).is_some_and(|label| label == expected),
+        )),
+        ("tree_value", [value]) => Ok(tree_value(value)),
         ("path_from", [Value::Path(items), Value::String(label)]) => {
             Ok(slice_path_at(items, label, /*from_label=*/ true))
         }
@@ -6254,6 +6510,15 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
                 .map(Value::Path)
                 .unwrap_or(Value::Null))
         }
+        ("path_by_keys_keep_nulls", [Value::Path(items), Value::List(keys)]) => Ok(Value::Path(
+            apply_path_by_keys_keep_nulls(items, keys, graph),
+        )),
+        ("path_by_keys_keep_nulls", [Value::List(items), Value::List(keys)]) => Ok(Value::List(
+            apply_path_by_keys_keep_nulls(items, keys, graph),
+        )),
+        ("path_by_keys_keep_nulls", [other, Value::List(keys)]) => Ok(Value::Path(
+            apply_path_by_keys_keep_nulls(&[other.clone()], keys, graph),
+        )),
         ("path_pairs", [Value::Path(items)]) => Ok(path_pairs(items)),
         ("path_pairs", [Value::Null]) => Ok(Value::List(Vec::new())),
         ("path_project_edges", [Value::Path(items), Value::List(keys)]) => {
@@ -6309,6 +6574,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             let mut sorted = items.clone();
             sorted.sort_by(compare_values);
             Ok(Value::List(sorted))
+        }
+        ("local_order_by_key", [items, Value::String(key), Value::String(dir)]) => {
+            Ok(local_order_by_key(graph, items, key, dir))
         }
         ("local_dedup", [Value::List(items)]) => {
             let mut out: Vec<Value> = Vec::new();

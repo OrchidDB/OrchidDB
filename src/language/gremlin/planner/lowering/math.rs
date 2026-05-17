@@ -8,6 +8,7 @@ use std::iter::Peekable;
 
 use super::context::{CURRENT, Lowerer, TraversalContext};
 use super::helpers::{apply_by_spec, consume_by};
+use super::literals::gvalue_to_expr;
 use crate::ir::expr::{BinaryOp, IrExpr, Lit};
 use crate::ir::plan::Node;
 use crate::ir::policy::PropertyMissing;
@@ -36,25 +37,33 @@ where
     {
         return Ok(project_expr(
             input,
-            IrExpr::Binary {
-                op: bin_op(*op),
-                lhs: Box::new(IrExpr::property(
-                    lhs.clone(),
-                    key.clone(),
-                    PropertyMissing::DropUnproductive,
-                )),
-                rhs: Box::new(IrExpr::property(
-                    rhs.clone(),
-                    key.clone(),
-                    PropertyMissing::DropUnproductive,
-                )),
-            },
+            math_bin_expr(
+                *op,
+                IrExpr::property(lhs.clone(), key.clone(), PropertyMissing::DropUnproductive),
+                IrExpr::property(rhs.clone(), key.clone(), PropertyMissing::DropUnproductive),
+            ),
         ));
+    }
+    if let (MathExpr::BothNamed(op, _lhs, rhs), Some(first_by)) = (expr, by.as_ref()) {
+        let second_by = consume_by(steps);
+        let (input, lhs_expr) = apply_by_spec(input, first_by, lo, ctx)?;
+        let rhs_expr = match second_by.as_ref().and_then(|spec| spec.key.as_ref()) {
+            Some(key) if key == "id" => IrExpr::Call {
+                name: "gremlin_id".into(),
+                args: vec![IrExpr::Binding(rhs.clone())],
+            },
+            Some(key) if key == "label" => IrExpr::Label(rhs.clone()),
+            Some(key) => {
+                IrExpr::property(rhs.clone(), key.clone(), PropertyMissing::DropUnproductive)
+            }
+            _ => named_operand_expr(rhs, lo),
+        };
+        return Ok(project_expr(input, math_bin_expr(*op, lhs_expr, rhs_expr)));
     }
     let input = match by.as_ref() {
         Some(spec) if !matches!(expr, MathExpr::BothNamed(..)) => {
             let (input, by_expr) = apply_by_spec(input, spec, lo, ctx)?;
-            return Ok(lower_math_expr(input, expr, by_expr));
+            return Ok(lower_math_expr(input, expr, by_expr, lo, true));
         }
         _ => input,
     };
@@ -62,6 +71,8 @@ where
         input,
         expr,
         IrExpr::Binding(CURRENT.into()),
+        lo,
+        false,
     ))
 }
 
@@ -82,7 +93,29 @@ fn bin_op(op: MathOp) -> BinaryOp {
     }
 }
 
-fn lower_math_expr(input: Node, expr: &MathExpr, current: IrExpr) -> Node {
+fn math_bin_expr(op: MathOp, lhs: IrExpr, rhs: IrExpr) -> IrExpr {
+    IrExpr::Call {
+        name: "gremlin_math_bin".into(),
+        args: vec![
+            IrExpr::lit_str(match op {
+                MathOp::Add => "add",
+                MathOp::Sub => "sub",
+                MathOp::Mul => "mul",
+                MathOp::Div => "div",
+            }),
+            lhs,
+            rhs,
+        ],
+    }
+}
+
+fn lower_math_expr(
+    input: Node,
+    expr: &MathExpr,
+    current: IrExpr,
+    lo: &Lowerer,
+    prefer_current_for_named: bool,
+) -> Node {
     let projected = |body: IrExpr| -> Node {
         Node::GraphCurrentProject {
             expr: body,
@@ -91,6 +124,12 @@ fn lower_math_expr(input: Node, expr: &MathExpr, current: IrExpr) -> Node {
         }
     };
     let cur = || current.clone();
+    let named = |name: &String| -> IrExpr {
+        if prefer_current_for_named {
+            return cur();
+        }
+        named_operand_expr(name, lo)
+    };
     let lit = |x: f64| IrExpr::Lit(Lit::Float(x));
     let bin = |op: BinaryOp, lhs: IrExpr, rhs: IrExpr| -> IrExpr {
         IrExpr::Binary {
@@ -106,19 +145,45 @@ fn lower_math_expr(input: Node, expr: &MathExpr, current: IrExpr) -> Node {
         MathExpr::Div(x) => projected(bin(BinaryOp::Div, cur(), lit(*x))),
         MathExpr::SubFromLit(x) => projected(bin(BinaryOp::Sub, lit(*x), cur())),
         MathExpr::DivByLit(x) => projected(bin(BinaryOp::Div, lit(*x), cur())),
-        MathExpr::BinSelf(op) => projected(bin(bin_op(*op), cur(), cur())),
-        MathExpr::SelfRhsName(op, name) => {
-            projected(bin(bin_op(*op), cur(), IrExpr::Binding(name.clone())))
-        }
-        MathExpr::SelfLhsName(op, name) => {
-            projected(bin(bin_op(*op), IrExpr::Binding(name.clone()), cur()))
-        }
-        MathExpr::BothNamed(op, lhs, rhs) => projected(bin(
-            bin_op(*op),
-            IrExpr::Binding(lhs.clone()),
-            IrExpr::Binding(rhs.clone()),
+        MathExpr::BinSelf(op) => projected(math_bin_expr(*op, cur(), cur())),
+        MathExpr::SelfRhsName(op, name) => projected(math_bin_expr(*op, cur(), named(name))),
+        MathExpr::SelfLhsName(op, name) => projected(math_bin_expr(*op, named(name), cur())),
+        MathExpr::BothNamed(op, lhs, rhs) => projected(math_bin_expr(
+            *op,
+            named_operand_expr(lhs, lo),
+            named_operand_expr(rhs, lo),
         )),
-        MathExpr::Var(name) => projected(IrExpr::Binding(name.clone())),
+        MathExpr::NameRhsLit(op, name, value) => {
+            projected(math_bin_expr(*op, named(name), lit(*value)))
+        }
+        MathExpr::LitRhsName(op, value, name) => {
+            projected(math_bin_expr(*op, lit(*value), named(name)))
+        }
+        MathExpr::UnaryFn(name) => projected(IrExpr::Call {
+            name: name.clone(),
+            args: vec![cur()],
+        }),
+        MathExpr::UnaryCurrentOpLit { func, op, value } => projected(IrExpr::Call {
+            name: func.clone(),
+            args: vec![math_bin_expr(*op, cur(), lit(*value))],
+        }),
+        MathExpr::Var(name) => projected(named_operand_expr(name, lo)),
         MathExpr::Identity => input,
+    }
+}
+
+fn named_operand_expr(name: &str, lo: &Lowerer) -> IrExpr {
+    if let Some(seed) = lo.side_effect_seeds.get(name) {
+        if let Ok(expr) = gvalue_to_expr(seed) {
+            return expr;
+        }
+    }
+    IrExpr::Call {
+        name: "select_key_or_binding".into(),
+        args: vec![
+            IrExpr::Binding(CURRENT.into()),
+            IrExpr::Binding(name.to_string()),
+            IrExpr::lit_str(name.to_string()),
+        ],
     }
 }

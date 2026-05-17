@@ -306,7 +306,13 @@ fn parse_value_arg(arg: &str) -> Result<Value, DatasetError> {
         return parse_list_entries(inner).map(Value::List);
     }
     if token.starts_with('{') && token.ends_with('}') {
-        return parse_list_entries(&token[1..token.len() - 1]).map(Value::List);
+        let mut values = Vec::new();
+        for value in parse_list_entries(&token[1..token.len() - 1])? {
+            if !values.contains(&value) {
+                values.push(value);
+            }
+        }
+        return Ok(Value::List(values));
     }
     // Numeric type suffixes (case-insensitive): L=long, I=int, S=short,
     // B=byte, F=float, D=double, BI=bigint, BD=bigdecimal.
@@ -797,6 +803,10 @@ pub fn modern_graph() -> PropertyGraph {
         "person",
         vec![
             (
+                "id",
+                Arc::new(Int64Array::from(vec![1, 2, 4, 6])) as ArrayRef,
+            ),
+            (
                 "name",
                 Arc::new(StringArray::from(vec!["marko", "vadas", "josh", "peter"])) as ArrayRef,
             ),
@@ -811,6 +821,7 @@ pub fn modern_graph() -> PropertyGraph {
     let software = nodes_from_columns(
         "software",
         vec![
+            ("id", Arc::new(Int64Array::from(vec![3, 5])) as ArrayRef),
             (
                 "name",
                 Arc::new(StringArray::from(vec!["lop", "ripple"])) as ArrayRef,
@@ -829,10 +840,13 @@ pub fn modern_graph() -> PropertyGraph {
         "person",
         vec![0, 0],
         vec![1, 2],
-        vec![(
-            "weight",
-            Arc::new(Float64Array::from(vec![0.5, 1.0])) as ArrayRef,
-        )],
+        vec![
+            ("id", Arc::new(Int64Array::from(vec![7, 8])) as ArrayRef),
+            (
+                "weight",
+                Arc::new(Float64Array::from(vec![0.5, 1.0])) as ArrayRef,
+            ),
+        ],
     );
     graph.add_edges(knows).expect("KNOWS edges");
 
@@ -842,10 +856,16 @@ pub fn modern_graph() -> PropertyGraph {
         "software",
         vec![0, 2, 2, 3],
         vec![0, 1, 0, 0],
-        vec![(
-            "weight",
-            Arc::new(Float64Array::from(vec![0.4, 1.0, 0.4, 0.2])) as ArrayRef,
-        )],
+        vec![
+            (
+                "id",
+                Arc::new(Int64Array::from(vec![9, 10, 11, 12])) as ArrayRef,
+            ),
+            (
+                "weight",
+                Arc::new(Float64Array::from(vec![0.4, 1.0, 0.4, 0.2])) as ArrayRef,
+            ),
+        ],
     );
     graph.add_edges(created).expect("CREATED edges");
 
@@ -867,26 +887,45 @@ pub fn crew_graph() -> PropertyGraph {
     let mut graph = PropertyGraph::new();
 
     // Persons: marko, stephen, matthias, daniel.
-    let person = nodes_from_columns(
+    let crew_locations = vec![
+        Value::List(vec![
+            Value::String("san diego".into()),
+            Value::String("santa cruz".into()),
+            Value::String("brussels".into()),
+            Value::String("santa fe".into()),
+        ]),
+        Value::List(vec![
+            Value::String("centreville".into()),
+            Value::String("dulles".into()),
+            Value::String("purcellville".into()),
+        ]),
+        Value::List(vec![
+            Value::String("bremen".into()),
+            Value::String("baltimore".into()),
+            Value::String("oakland".into()),
+            Value::String("seattle".into()),
+        ]),
+        Value::List(vec![
+            Value::String("spremberg".into()),
+            Value::String("kaiserslautern".into()),
+            Value::String("aachen".into()),
+        ]),
+    ];
+    let location_refs = crew_locations.iter().map(Some).collect::<Vec<_>>();
+    let person = record_node_table(
         "person",
         vec![
             (
-                "name",
+                Field::new("name", DataType::Utf8, true),
                 Arc::new(StringArray::from(vec![
                     "marko", "stephen", "matthias", "daniel",
                 ])) as ArrayRef,
             ),
-            (
-                "location",
-                Arc::new(StringArray::from(vec![
-                    "san diego",
-                    "centreville",
-                    "bremen",
-                    "spremberg",
-                ])) as ArrayRef,
-            ),
+            value_column("location", ValueKind::Value, &location_refs)
+                .expect("crew location column"),
         ],
-    );
+    )
+    .expect("crew person table");
     graph.add_nodes(person);
 
     let software = nodes_from_columns(
@@ -915,11 +954,11 @@ pub fn crew_graph() -> PropertyGraph {
         "uses",
         "person",
         "software",
-        vec![0, 1, 2],
-        vec![0, 0, 0],
+        vec![0, 0, 1, 1, 2, 2, 3, 3],
+        vec![0, 1, 0, 1, 0, 1, 0, 1],
         vec![(
             "skill",
-            Arc::new(Int64Array::from(vec![5, 4, 3])) as ArrayRef,
+            Arc::new(Int64Array::from(vec![5, 4, 5, 4, 3, 3, 5, 4])) as ArrayRef,
         )],
     );
     graph.add_edges(uses).expect("uses edges");
