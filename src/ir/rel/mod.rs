@@ -39,17 +39,18 @@ use datafusion::logical_expr::{
 };
 use datafusion::prelude::{SessionConfig, SessionContext, lit};
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggKind, BinaryOp, IrExpr, Lit, StringOp};
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::interpreter::{ReturnedBatches, compare_values};
 use crate::ir::plan::{
     ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
     GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, Slice, SortDir,
     TargetMode, UnionAlign,
 };
 use crate::ir::policy::{Language, ResultForm};
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 const ID_SUFFIX: &str = "__id";
 const LABEL_SUFFIX: &str = "__label";
@@ -632,7 +633,11 @@ impl<'a> LoweringContext<'a> {
         let schema = node_schema(binding, &prop_defs);
         let mut batches = Vec::new();
         for label in labels {
-            let table = self.graph.node_table(&label)?;
+            let table = match self.graph.node_table(&label) {
+                Ok(table) => table,
+                Err(CatalogError::UnknownLabel(_)) => continue,
+                Err(err) => return Err(err.into()),
+            };
             batches.push(normalize_node_table(
                 binding,
                 table,
@@ -653,7 +658,12 @@ impl<'a> LoweringContext<'a> {
         let mut batches = Vec::new();
         for rel_type in rel_types {
             let mut base_id = 0_i64;
-            for table in self.graph.edge_tables(&rel_type)? {
+            let tables = match self.graph.edge_tables(&rel_type) {
+                Ok(tables) => tables,
+                Err(CatalogError::UnknownRelType(_)) => continue,
+                Err(err) => return Err(err.into()),
+            };
+            for table in tables {
                 batches.push(normalize_edge_table(
                     binding,
                     table,
@@ -1592,8 +1602,11 @@ impl<'a> LoweringContext<'a> {
                 Ok(lit(rel_display_value(
                     &Value::List(values),
                     self.language,
-                    DisplayContext::Tagged,
+                    literal_collection_context(self.language),
                 )))
+            }
+            IrExpr::Call { name, args } if is_constant_collection_function(name) => {
+                self.lower_constant_collection_function(plan, name, args)
             }
             IrExpr::Call { name, args } if name == "integer_literal" && args.len() == 1 => {
                 self.lower_integer_literal(&args[0])
@@ -1757,8 +1770,54 @@ impl<'a> LoweringContext<'a> {
         Ok(lit(rel_display_value(
             &value,
             self.language,
-            DisplayContext::Tagged,
+            literal_collection_context(self.language),
         )))
+    }
+
+    fn lower_constant_collection_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<Expr> {
+        if let Some(value) = constant_collection_function_value(name, args)? {
+            return Ok(constant_result_expr(
+                &value,
+                self.language,
+                literal_collection_context(self.language),
+            ));
+        }
+        if let Some(expr) = self.lower_dynamic_collection_function(plan, name, args)? {
+            return Ok(expr);
+        }
+        Err(RelError::Unsupported(format!(
+            "function `{name}` is not relationally lowered yet"
+        )))
+    }
+
+    fn lower_dynamic_collection_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<Option<Expr>> {
+        let normalized = normalize_function_name(name);
+        if !matches!(
+            normalized.as_str(),
+            "list_element" | "list_extract" | "element_at"
+        ) {
+            return Ok(None);
+        }
+        let [IrExpr::List(items), index] = args else {
+            return Ok(None);
+        };
+        let Some(index) = literal_i64(index) else {
+            return Ok(None);
+        };
+        let Some(item) = list_element_1_based_expr(items, index) else {
+            return Ok(Some(lit(ScalarValue::Utf8(None))));
+        };
+        Ok(Some(self.lower_expr(plan, item)?))
     }
 
     fn lower_integer_literal(&self, arg: &IrExpr) -> RelResult<Expr> {
@@ -2297,7 +2356,11 @@ impl<'a> LoweringContext<'a> {
     fn node_property_defs(&self, labels: &[String]) -> RelResult<Vec<PropertyDef>> {
         let mut defs = BTreeMap::<String, DataType>::new();
         for label in labels {
-            let table = self.graph.node_table(label)?;
+            let table = match self.graph.node_table(label) {
+                Ok(table) => table,
+                Err(CatalogError::UnknownLabel(_)) => continue,
+                Err(err) => return Err(err.into()),
+            };
             merge_property_defs(&mut defs, table.batch.schema().as_ref(), &["id"])?;
         }
         Ok(defs
@@ -2309,7 +2372,12 @@ impl<'a> LoweringContext<'a> {
     fn edge_property_defs(&self, rel_types: &[String]) -> RelResult<Vec<PropertyDef>> {
         let mut defs = BTreeMap::<String, DataType>::new();
         for rel_type in rel_types {
-            for table in self.graph.edge_tables(rel_type)? {
+            let tables = match self.graph.edge_tables(rel_type) {
+                Ok(tables) => tables,
+                Err(CatalogError::UnknownRelType(_)) => continue,
+                Err(err) => return Err(err.into()),
+            };
+            for table in tables {
                 merge_property_defs(
                     &mut defs,
                     table.batch.schema().as_ref(),
@@ -2751,13 +2819,488 @@ fn constant_value_expr(expr: &IrExpr) -> RelResult<Option<Value>> {
                 Ok(Some(Value::BigInt(value)))
             }
         }
-        IrExpr::Call { name, args } if is_cast_function(name, args) => constant_value_expr(
-            args.first()
-                .ok_or_else(|| RelError::Unsupported(format!("{name} arity")))?,
-        ),
+        IrExpr::Call { name, args } if is_date_constructor(name) => {
+            constant_temporal_value(name, args)
+        }
+        IrExpr::Call { name, args } if is_cast_function(name, args) => {
+            let Some(value) = constant_value_expr(
+                args.first()
+                    .ok_or_else(|| RelError::Unsupported(format!("{name} arity")))?,
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(target) = constant_cast_target(name, args)? else {
+                return Ok(None);
+            };
+            constant_cast_value(&value, &target)
+        }
         IrExpr::Call { name, args } if name == "map" => constant_cypher_map(args),
         _ => Ok(None),
     }
+}
+
+fn constant_values(args: &[IrExpr]) -> RelResult<Option<Vec<Value>>> {
+    let mut values = Vec::with_capacity(args.len());
+    for arg in args {
+        let Some(value) = constant_value_expr(arg)? else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
+}
+
+fn constant_temporal_value(name: &str, args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [arg] = args else {
+        return Ok(None);
+    };
+    let Some(value) = constant_value_expr(arg)? else {
+        return Ok(None);
+    };
+    let normalized = normalize_function_name(name);
+    match (normalized.as_str(), value) {
+        ("date" | "to_date" | "timestamp", Value::String(value) | Value::DateTime(value)) => {
+            Ok(Some(Value::DateTime(value)))
+        }
+        ("interval" | "duration", Value::String(value)) => Ok(Some(Value::String(value))),
+        (_, Value::Null) => Ok(Some(Value::Null)),
+        _ => Ok(None),
+    }
+}
+
+fn constant_collection_function_value(name: &str, args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let normalized = normalize_function_name(name);
+    match normalized.as_str() {
+        "array_slice" | "list_slice" => constant_array_slice(args),
+        "array_append" | "array_push_back" => constant_list_append(args, false),
+        "array_prepend" | "array_push_front" => constant_list_append(args, true),
+        "array_indexof" | "array_position" | "list_indexof" | "list_position" => {
+            constant_list_position(args)
+        }
+        "array_contains" | "array_has" | "list_contains" | "list_has" => {
+            constant_list_contains(args)
+        }
+        "element_at" | "list_element" | "list_extract" => constant_list_extract(args),
+        "list_any_value" => constant_list_any_value(args),
+        "list_distinct" => constant_list_distinct(args),
+        "list_has_all" => constant_list_has_all(args),
+        "list_product" => constant_list_product(args),
+        "list_reverse" => constant_list_reverse(args),
+        "list_sort" => constant_list_sort(args, false),
+        "list_reverse_sort" => constant_list_sort(args, true),
+        "list_sum" => constant_list_sum(args),
+        "list_to_string" | "list_join" => constant_list_to_string(args),
+        "list_unique" => constant_list_unique(args),
+        "list_append" => constant_list_append(args, false),
+        "list_prepend" => constant_list_append(args, true),
+        "list_cat" | "list_concat" | "array_cat" | "array_concat" => constant_list_concat(args),
+        "map_keys" => constant_map_keys(args),
+        _ => Ok(None),
+    }
+}
+
+fn constant_array_slice(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [target, start, end] = args else {
+        return Ok(None);
+    };
+    let Some(target) = constant_value_expr(target)? else {
+        return Ok(None);
+    };
+    let Some(start) = constant_value_expr(start)? else {
+        return Ok(None);
+    };
+    let Some(end) = constant_value_expr(end)? else {
+        return Ok(None);
+    };
+    Ok(Some(match target {
+        Value::List(items) | Value::Path(items) => {
+            Value::List(list_slice_range(&items, &start, &end))
+        }
+        Value::String(value) => Value::String(string_slice_range(&value, &start, &end)),
+        Value::Null => Value::Null,
+        _ => return Ok(None),
+    }))
+}
+
+fn constant_list_extract(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [target, index] = args else {
+        return Ok(None);
+    };
+    let Some(target) = constant_value_expr(target)? else {
+        return Ok(None);
+    };
+    let Some(index) = constant_value_expr(index)? else {
+        return Ok(None);
+    };
+    let Some(index) = index.as_i64() else {
+        return Ok(Some(Value::Null));
+    };
+    Ok(Some(match target {
+        Value::List(items) | Value::Path(items) => list_element_1_based(&items, index),
+        Value::String(value) => string_index_1_based(&value, index),
+        Value::Null => Value::Null,
+        _ => return Ok(None),
+    }))
+}
+
+fn constant_list_position(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items, needle] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    let Some(needle) = constant_value_expr(needle)? else {
+        return Ok(None);
+    };
+    let items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    if matches!(needle, Value::Null) {
+        return Ok(Some(Value::Null));
+    }
+    for (idx, item) in items.iter().enumerate() {
+        if list_semantic_eq(item, &needle) {
+            return Ok(Some(Value::Long((idx + 1) as i64)));
+        }
+    }
+    Ok(Some(Value::Long(0)))
+}
+
+fn constant_list_contains(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items, needle] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    let Some(needle) = constant_value_expr(needle)? else {
+        return Ok(None);
+    };
+    let items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    if matches!(needle, Value::Null) {
+        return Ok(Some(Value::Null));
+    }
+    Ok(Some(Value::Bool(
+        items.iter().any(|item| list_semantic_eq(item, &needle)),
+    )))
+}
+
+fn constant_list_distinct(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    match items {
+        Value::List(items) | Value::Path(items) => {
+            Ok(Some(Value::List(list_distinct_values(&items, false))))
+        }
+        Value::Null => Ok(Some(Value::Null)),
+        _ => Ok(None),
+    }
+}
+
+fn constant_list_unique(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    match items {
+        Value::List(items) | Value::Path(items) => Ok(Some(Value::Int(
+            list_distinct_values(&items, false).len() as i64,
+        ))),
+        Value::Null => Ok(Some(Value::Null)),
+        _ => Ok(None),
+    }
+}
+
+fn constant_list_any_value(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    match items {
+        Value::List(items) | Value::Path(items) => Ok(Some(
+            items
+                .into_iter()
+                .find(|item| !matches!(item, Value::Null))
+                .unwrap_or(Value::Null),
+        )),
+        Value::Null => Ok(Some(Value::Null)),
+        _ => Ok(None),
+    }
+}
+
+fn constant_list_has_all(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [haystack, needles] = args else {
+        return Ok(None);
+    };
+    let Some(haystack) = constant_value_expr(haystack)? else {
+        return Ok(None);
+    };
+    let Some(needles) = constant_value_expr(needles)? else {
+        return Ok(None);
+    };
+    let haystack = match haystack {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    let needles = match needles {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    for needle in &needles {
+        if matches!(needle, Value::Null) {
+            continue;
+        }
+        if !haystack.iter().any(|item| list_semantic_eq(item, needle)) {
+            return Ok(Some(Value::Bool(false)));
+        }
+    }
+    Ok(Some(Value::Bool(true)))
+}
+
+fn constant_list_reverse(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    match items {
+        Value::List(mut items) | Value::Path(mut items) => {
+            items.reverse();
+            Ok(Some(Value::List(items)))
+        }
+        Value::Null => Ok(Some(Value::Null)),
+        _ => Ok(None),
+    }
+}
+
+fn constant_list_sum(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    let items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    let mut sum = 0.0;
+    let mut int_only = true;
+    for item in &items {
+        if matches!(item, Value::Null) {
+            continue;
+        }
+        let Some(value) = value_to_f64(item) else {
+            return Ok(Some(Value::String(format!(
+                "Binder exception: Unsupported inner data type for LIST_SUM: {}",
+                item.type_name().to_ascii_uppercase()
+            ))));
+        };
+        if matches!(item, Value::Float(_) | Value::Float32(_)) {
+            int_only = false;
+        }
+        sum += value;
+    }
+    Ok(Some(if int_only {
+        Value::Long(sum as i64)
+    } else {
+        Value::Float(sum)
+    }))
+}
+
+fn constant_list_product(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [items] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    let items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    if items
+        .iter()
+        .filter(|item| !matches!(item, Value::Null))
+        .any(|item| value_to_bigint(item).is_none() && value_to_f64(item).is_none())
+    {
+        return Ok(Some(Value::String(
+            "Binder exception: Unsupported inner data type for LIST_PRODUCT: STRING".to_string(),
+        )));
+    }
+    if items.iter().any(|item| matches!(item, Value::Float(_))) {
+        return Ok(Some(Value::Float(
+            items
+                .iter()
+                .filter_map(value_to_f64)
+                .fold(1.0, |product, value| product * value),
+        )));
+    }
+    if items.iter().any(|item| matches!(item, Value::Float32(_))) {
+        let product = items
+            .iter()
+            .filter_map(value_to_f64)
+            .fold(1.0_f32, |product, value| product * value as f32);
+        return Ok(Some(Value::Float32(product)));
+    }
+    let product = items
+        .iter()
+        .filter_map(value_to_bigint)
+        .fold(BigInt::from(1), |product, value| product * value);
+    Ok(Some(
+        product
+            .to_i64()
+            .map(Value::Long)
+            .unwrap_or(Value::BigInt(product)),
+    ))
+}
+
+fn constant_list_to_string(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [first, second] = args else {
+        return Ok(None);
+    };
+    let Some(first) = constant_value_expr(first)? else {
+        return Ok(None);
+    };
+    let Some(second) = constant_value_expr(second)? else {
+        return Ok(None);
+    };
+    let (items, delimiter) = match (&first, &second) {
+        (Value::List(items) | Value::Path(items), Value::String(delimiter)) => {
+            (items.clone(), delimiter.clone())
+        }
+        (Value::String(delimiter), Value::List(items) | Value::Path(items)) => {
+            (items.clone(), delimiter.clone())
+        }
+        (Value::Null, _) | (_, Value::Null) => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    let parts = items
+        .iter()
+        .filter(|item| !matches!(item, Value::Null))
+        .map(display_for_list_to_string)
+        .collect::<Vec<_>>();
+    Ok(Some(Value::String(parts.join(&delimiter))))
+}
+
+fn constant_list_sort(args: &[IrExpr], reverse_default: bool) -> RelResult<Option<Value>> {
+    let Some(values) = constant_values(args)? else {
+        return Ok(None);
+    };
+    let [items, rest @ ..] = values.as_slice() else {
+        return Ok(None);
+    };
+    let items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    let (descending, nulls_last) = if reverse_default {
+        match rest {
+            [] => (true, false),
+            [Value::String(nulls)] => (true, nulls.eq_ignore_ascii_case("NULLS LAST")),
+            _ => return Ok(None),
+        }
+    } else {
+        match rest {
+            [] => (false, false),
+            [Value::String(dir)] => (dir.eq_ignore_ascii_case("DESC"), false),
+            [Value::String(dir), Value::String(nulls)] => (
+                dir.eq_ignore_ascii_case("DESC"),
+                nulls.eq_ignore_ascii_case("NULLS LAST"),
+            ),
+            _ => return Ok(None),
+        }
+    };
+    Ok(Some(Value::List(sort_list_values(
+        items, descending, nulls_last,
+    ))))
+}
+
+fn constant_list_append(args: &[IrExpr], prepend: bool) -> RelResult<Option<Value>> {
+    let [items, item] = args else {
+        return Ok(None);
+    };
+    let Some(items) = constant_value_expr(items)? else {
+        return Ok(None);
+    };
+    let Some(item) = constant_value_expr(item)? else {
+        return Ok(None);
+    };
+    let mut items = match items {
+        Value::List(items) | Value::Path(items) => items,
+        Value::Null => return Ok(Some(Value::Null)),
+        _ => return Ok(None),
+    };
+    if prepend {
+        items.insert(0, item);
+    } else {
+        items.push(item);
+    }
+    Ok(Some(Value::List(items)))
+}
+
+fn constant_list_concat(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [left, right] = args else {
+        return Ok(None);
+    };
+    let Some(left) = constant_value_expr(left)? else {
+        return Ok(None);
+    };
+    let Some(right) = constant_value_expr(right)? else {
+        return Ok(None);
+    };
+    match (left, right) {
+        (Value::Null, _) | (_, Value::Null) => Ok(Some(Value::Null)),
+        (Value::List(mut left), Value::List(right))
+        | (Value::List(mut left), Value::Path(right))
+        | (Value::Path(mut left), Value::List(right))
+        | (Value::Path(mut left), Value::Path(right)) => {
+            left.extend(right);
+            Ok(Some(Value::List(left)))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn constant_map_keys(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let [target] = args else {
+        return Ok(None);
+    };
+    let Some(target) = constant_value_expr(target)? else {
+        return Ok(None);
+    };
+    Ok(Some(match target {
+        Value::Map(map) => Value::List(
+            visible_map_keys(&map)
+                .into_iter()
+                .map(Value::String)
+                .collect(),
+        ),
+        Value::Null => Value::Null,
+        _ => Value::List(Vec::new()),
+    }))
 }
 
 fn constant_unwind_values(expr: &IrExpr, outer: bool) -> RelResult<Option<Vec<Value>>> {
@@ -2817,6 +3360,319 @@ fn constant_range_values(args: &[IrExpr]) -> RelResult<Vec<Value>> {
         }
     }
     Ok(values)
+}
+
+fn constant_cast_target(name: &str, args: &[IrExpr]) -> RelResult<Option<String>> {
+    let normalized = normalize_function_name(name);
+    if normalized == "cast" {
+        let Some(target) = args.get(1) else {
+            return Err(RelError::Unsupported("cast arity".into()));
+        };
+        let Some(Value::String(target)) = constant_value_expr(target)? else {
+            return Ok(None);
+        };
+        return Ok(Some(target));
+    }
+    Ok(Some(
+        cast_target_from_function_name(&normalized)?.to_string(),
+    ))
+}
+
+fn constant_cast_value(value: &Value, target: &str) -> RelResult<Option<Value>> {
+    if matches!(value, Value::Null) {
+        return Ok(Some(Value::Null));
+    }
+    let normalized = target
+        .trim()
+        .trim_matches('"')
+        .to_ascii_uppercase()
+        .replace(' ', "");
+    if normalized.contains('[') {
+        return Ok(Some(value.clone()));
+    }
+    let out = match normalized.as_str() {
+        "BOOL" | "BOOLEAN" => match value {
+            Value::Bool(value) => Value::Bool(*value),
+            Value::String(value) if value.eq_ignore_ascii_case("true") => Value::Bool(true),
+            Value::String(value) if value.eq_ignore_ascii_case("false") => Value::Bool(false),
+            _ => return Ok(None),
+        },
+        "INT8" => Value::Byte(
+            cast_bigint_range(value, -128_i128, 127_i128)?
+                .to_i64()
+                .unwrap() as i8,
+        ),
+        "INT16" => Value::Short(
+            cast_bigint_range(value, -32768_i128, 32767_i128)?
+                .to_i64()
+                .unwrap() as i16,
+        ),
+        "INT32" => Value::Int(
+            cast_bigint_range(value, i32::MIN as i128, i32::MAX as i128)?
+                .to_i64()
+                .unwrap(),
+        ),
+        "INT64" | "SERIAL" => Value::Long(
+            cast_bigint_range(value, i64::MIN as i128, i64::MAX as i128)?
+                .to_i64()
+                .unwrap(),
+        ),
+        "INT128" => Value::BigInt(
+            value_to_bigint(value)
+                .ok_or_else(|| RelError::Unsupported("constant INT128 cast".into()))?,
+        ),
+        "UINT8" => Value::UInt8(
+            cast_bigint_range(value, 0_i128, u8::MAX as i128)?
+                .to_u8()
+                .unwrap(),
+        ),
+        "UINT16" => Value::UInt16(
+            cast_bigint_range(value, 0_i128, u16::MAX as i128)?
+                .to_u16()
+                .unwrap(),
+        ),
+        "UINT32" => Value::UInt32(
+            cast_bigint_range(value, 0_i128, u32::MAX as i128)?
+                .to_u32()
+                .unwrap(),
+        ),
+        "UINT64" => Value::UInt64(
+            cast_bigint_range_big_max(value, BigInt::from(0), BigInt::from(u64::MAX))?
+                .to_u64()
+                .unwrap(),
+        ),
+        "UINT128" => {
+            let value = value_to_bigint(value)
+                .ok_or_else(|| RelError::Unsupported("constant UINT128 cast".into()))?;
+            if value < BigInt::from(0) {
+                return Ok(None);
+            }
+            Value::UInt128(value)
+        }
+        "FLOAT" => Value::Float32(
+            value_to_f64(value)
+                .ok_or_else(|| RelError::Unsupported("constant FLOAT cast".into()))?
+                as f32,
+        ),
+        "DOUBLE" | "FLOAT64" => Value::Float(
+            value_to_f64(value)
+                .ok_or_else(|| RelError::Unsupported("constant DOUBLE cast".into()))?,
+        ),
+        "STRING" | "VARCHAR" => Value::String(cypher_plain_value(value)),
+        "DATE" | "TIMESTAMP" | "TIMESTAMP_NS" | "TIMESTAMP_MS" | "TIMESTAMP_SEC"
+        | "TIMESTAMP_S" | "TIMESTAMP_TZ" => match value {
+            Value::String(value) | Value::DateTime(value) => Value::DateTime(value.clone()),
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(out))
+}
+
+fn cast_bigint_range(value: &Value, min: i128, max: i128) -> RelResult<BigInt> {
+    cast_bigint_range_big_max(value, BigInt::from(min), BigInt::from(max))
+}
+
+fn cast_bigint_range_big_max(value: &Value, min: BigInt, max: BigInt) -> RelResult<BigInt> {
+    let value = value_to_bigint(value)
+        .ok_or_else(|| RelError::Unsupported("constant integer cast".into()))?;
+    if value < min || value > max {
+        return Err(RelError::Unsupported(
+            "constant integer cast out of range".into(),
+        ));
+    }
+    Ok(value)
+}
+
+fn value_to_bigint(value: &Value) -> Option<BigInt> {
+    match value {
+        Value::Byte(value) => Some(BigInt::from(*value)),
+        Value::UInt8(value) => Some(BigInt::from(*value)),
+        Value::Short(value) => Some(BigInt::from(*value)),
+        Value::UInt16(value) => Some(BigInt::from(*value)),
+        Value::Int(value) | Value::Long(value) => Some(BigInt::from(*value)),
+        Value::UInt32(value) => Some(BigInt::from(*value)),
+        Value::UInt64(value) => Some(BigInt::from(*value)),
+        Value::BigInt(value) | Value::UInt128(value) => Some(value.clone()),
+        Value::BigDecimal(value) => value.to_i128().map(BigInt::from),
+        Value::Bool(true) => Some(BigInt::from(1)),
+        Value::Bool(false) => Some(BigInt::from(0)),
+        Value::Float32(value) => Some(BigInt::from((*value as f64).round() as i64)),
+        Value::Float(value) => Some(BigInt::from(value.round() as i64)),
+        Value::String(value) => BigInt::from_str(value).ok(),
+        _ => None,
+    }
+}
+
+fn value_to_f64(value: &Value) -> Option<f64> {
+    match value {
+        Value::Byte(value) => Some(*value as f64),
+        Value::UInt8(value) => Some(*value as f64),
+        Value::Short(value) => Some(*value as f64),
+        Value::UInt16(value) => Some(*value as f64),
+        Value::Int(value) | Value::Long(value) => Some(*value as f64),
+        Value::UInt32(value) => Some(*value as f64),
+        Value::UInt64(value) => Some(*value as f64),
+        Value::Float32(value) => Some(*value as f64),
+        Value::Float(value) => Some(*value),
+        Value::BigInt(value) | Value::UInt128(value) => value.to_f64(),
+        Value::BigDecimal(value) => value.to_f64(),
+        Value::String(value) => value.parse().ok(),
+        _ => None,
+    }
+}
+
+fn sort_list_values(items: &[Value], descending: bool, nulls_last: bool) -> Vec<Value> {
+    let null_count = items
+        .iter()
+        .filter(|item| matches!(item, Value::Null))
+        .count();
+    let mut sorted = items
+        .iter()
+        .filter(|item| !matches!(item, Value::Null))
+        .cloned()
+        .collect::<Vec<_>>();
+    sorted.sort_by(compare_values);
+    if descending {
+        sorted.reverse();
+    }
+
+    let nulls = std::iter::repeat(Value::Null).take(null_count);
+    if nulls_last {
+        sorted.extend(nulls);
+        sorted
+    } else {
+        nulls.chain(sorted).collect()
+    }
+}
+
+fn slice_bounds(len: usize, start: &Value, end: &Value) -> (usize, usize) {
+    let len_i = len as i64;
+    let resolve_start = |value: &Value| -> i64 {
+        match value {
+            Value::Null => 0,
+            _ => match value.as_i64() {
+                Some(value) if value < 0 => len_i + value,
+                Some(value) => value - 1,
+                None => 0,
+            },
+        }
+    };
+    let resolve_end = |value: &Value| -> i64 {
+        match value {
+            Value::Null => len_i,
+            _ => match value.as_i64() {
+                Some(value) if value < 0 => len_i + value + 1,
+                Some(value) => value,
+                None => len_i,
+            },
+        }
+    };
+    let start = resolve_start(start).clamp(0, len_i) as usize;
+    let end = resolve_end(end).clamp(0, len_i) as usize;
+    (start.min(end), end)
+}
+
+fn list_slice_range(items: &[Value], start: &Value, end: &Value) -> Vec<Value> {
+    let (start, end) = slice_bounds(items.len(), start, end);
+    items[start..end].to_vec()
+}
+
+fn list_element_1_based(items: &[Value], index: i64) -> Value {
+    if index == 0 {
+        return Value::Null;
+    }
+    let zero_based = if index < 0 {
+        items.len() as i64 + index
+    } else {
+        index - 1
+    };
+    if zero_based < 0 || zero_based >= items.len() as i64 {
+        Value::Null
+    } else {
+        items[zero_based as usize].clone()
+    }
+}
+
+fn list_element_1_based_expr(items: &[IrExpr], index: i64) -> Option<&IrExpr> {
+    if index == 0 {
+        return None;
+    }
+    let zero_based = if index < 0 {
+        items.len() as i64 + index
+    } else {
+        index - 1
+    };
+    if zero_based < 0 || zero_based >= items.len() as i64 {
+        None
+    } else {
+        items.get(zero_based as usize)
+    }
+}
+
+fn string_index_1_based(text: &str, index: i64) -> Value {
+    if index == 0 {
+        return Value::Null;
+    }
+    let chars = text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return Value::Null;
+    }
+    let zero_based = if index < 0 {
+        chars.len() as i64 + index
+    } else {
+        index - 1
+    };
+    if zero_based < 0 || zero_based >= chars.len() as i64 {
+        Value::Null
+    } else {
+        Value::String(chars[zero_based as usize].to_string())
+    }
+}
+
+fn string_slice_range(text: &str, start: &Value, end: &Value) -> String {
+    let chars = text.chars().collect::<Vec<_>>();
+    let (start, end) = slice_bounds(chars.len(), start, end);
+    chars[start..end].iter().collect()
+}
+
+fn list_distinct_values(items: &[Value], include_null: bool) -> Vec<Value> {
+    let mut seen = Vec::new();
+    for item in items {
+        if !include_null && matches!(item, Value::Null) {
+            continue;
+        }
+        if !seen.iter().any(|seen| list_semantic_eq(seen, item)) {
+            seen.push(item.clone());
+        }
+    }
+    seen
+}
+
+fn list_semantic_eq(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Null, Value::Null) => true,
+        (Value::Null, _) | (_, Value::Null) => false,
+        (Value::List(left), Value::List(right)) | (Value::Path(left), Value::Path(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right.iter())
+                    .all(|(left, right)| list_semantic_eq(left, right))
+        }
+        (Value::Map(left), Value::Map(right)) => {
+            visible_map_keys(left).len() == visible_map_keys(right).len()
+                && visible_map_keys(left).into_iter().all(|key| {
+                    let Some(value) = left.get(&key) else {
+                        return false;
+                    };
+                    right
+                        .get(&key)
+                        .is_some_and(|right_value| list_semantic_eq(value, right_value))
+                })
+        }
+        _ => left.three_valued_eq(right) == Some(true),
+    }
 }
 
 fn constant_cypher_map(args: &[IrExpr]) -> RelResult<Option<Value>> {
@@ -2972,6 +3828,20 @@ fn rel_display_value(value: &Value, language: Language, context: DisplayContext)
     }
 }
 
+fn literal_collection_context(language: Language) -> DisplayContext {
+    match language {
+        Language::Cypher | Language::Gql => DisplayContext::Scalar,
+        Language::Gremlin | Language::Sparql => DisplayContext::Tagged,
+    }
+}
+
+fn constant_result_expr(value: &Value, language: Language, context: DisplayContext) -> Expr {
+    match value {
+        Value::Null => lit(ScalarValue::Utf8(None)),
+        _ => lit(rel_display_value(value, language, context)),
+    }
+}
+
 fn tagged_value(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
@@ -3071,6 +3941,57 @@ fn escape_debug_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
+    map.keys()
+        .filter(|key| {
+            key.as_str() != STRUCT_ORDER_KEY
+                && key.as_str() != STRUCT_TYPES_KEY
+                && !key.starts_with("__")
+        })
+        .cloned()
+        .collect()
+}
+
+fn display_for_list_to_string(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::Bool(true) => "True".to_string(),
+        Value::Bool(false) => "False".to_string(),
+        Value::Byte(value) => value.to_string(),
+        Value::UInt8(value) => value.to_string(),
+        Value::Short(value) => value.to_string(),
+        Value::UInt16(value) => value.to_string(),
+        Value::Int(value) | Value::Long(value) => value.to_string(),
+        Value::UInt32(value) => value.to_string(),
+        Value::UInt64(value) => value.to_string(),
+        Value::Float32(value) => (*value as f64).to_string(),
+        Value::Float(value) => value.to_string(),
+        Value::BigInt(value) | Value::UInt128(value) => value.to_string(),
+        Value::BigDecimal(value) => value.to_string(),
+        Value::DateTime(value) | Value::String(value) => value.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::Node { label, id } => format!("{label}#{id}"),
+        Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
+        Value::List(items) | Value::Path(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_list_to_string)
+                .collect::<Vec<_>>();
+            format!("[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            let parts = visible_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key}: {}", display_for_list_to_string(value)))
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", parts.join(", "))
+        }
+    }
+}
+
 fn is_label_function(name: &str) -> bool {
     name.eq_ignore_ascii_case("label")
 }
@@ -3141,6 +4062,54 @@ fn is_binary_math_function(name: &str) -> bool {
 
 fn is_date_function(name: &str) -> bool {
     name.eq_ignore_ascii_case("date") || name.eq_ignore_ascii_case("to_date")
+}
+
+fn is_date_constructor(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "date" | "to_date" | "timestamp" | "interval" | "duration"
+    )
+}
+
+fn is_constant_collection_function(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "array_slice"
+            | "array_append"
+            | "array_cat"
+            | "array_concat"
+            | "array_contains"
+            | "array_has"
+            | "array_indexof"
+            | "array_position"
+            | "array_prepend"
+            | "array_push_back"
+            | "array_push_front"
+            | "element_at"
+            | "list_append"
+            | "list_any_value"
+            | "list_cat"
+            | "list_concat"
+            | "list_contains"
+            | "list_distinct"
+            | "list_element"
+            | "list_extract"
+            | "list_has_all"
+            | "list_has"
+            | "list_indexof"
+            | "list_join"
+            | "list_prepend"
+            | "list_position"
+            | "list_product"
+            | "list_reverse"
+            | "list_reverse_sort"
+            | "list_slice"
+            | "list_sort"
+            | "list_sum"
+            | "list_to_string"
+            | "list_unique"
+            | "map_keys"
+    )
 }
 
 fn is_string_function(name: &str) -> bool {
@@ -3223,10 +4192,12 @@ fn cast_target_from_function_name(name: &str) -> RelResult<&'static str> {
         "to_int16" => Ok("INT16"),
         "to_int32" | "cast_int" => Ok("INT32"),
         "to_int64" | "to_serial" | "cast_long" => Ok("INT64"),
+        "to_int128" => Ok("INT128"),
         "to_uint8" => Ok("UINT8"),
         "to_uint16" => Ok("UINT16"),
         "to_uint32" => Ok("UINT32"),
         "to_uint64" => Ok("UINT64"),
+        "to_uint128" => Ok("UINT128"),
         "to_float" | "cast_float" => Ok("FLOAT"),
         "to_double" | "cast_double" => Ok("DOUBLE"),
         "cast_bool" | "cast_boolean" => Ok("BOOL"),

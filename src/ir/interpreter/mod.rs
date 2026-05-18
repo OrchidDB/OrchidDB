@@ -38,6 +38,7 @@ mod runtime;
 use crate::ir::interpreter::output::finalize_return;
 use crate::ir::interpreter::run::run;
 
+pub(crate) use crate::ir::interpreter::expr::compare_values;
 pub use crate::ir::interpreter::expr::eval;
 
 #[derive(Debug, thiserror::Error)]
