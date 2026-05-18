@@ -12,6 +12,7 @@ pub mod expr;
 pub mod interpreter;
 pub mod plan;
 pub mod policy;
+pub mod rel;
 pub mod value;
 
 #[cfg(test)]

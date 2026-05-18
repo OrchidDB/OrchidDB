@@ -1,0 +1,642 @@
+//! DataFusion relational-backend progress harness.
+//!
+//! This intentionally reuses the existing Cypher and Gremlin conformance case
+//! loaders, but executes planned Graph IR through `ir::rel::RelBackend`
+//! instead of the interpreter. It is ignored by default because it is a
+//! progress gauge, not yet a correctness gate.
+//!
+//! Run examples:
+//!
+//! ```ignore
+//! cargo test --test graph_rel_backend_cases -- --ignored --nocapture
+//! GRAPH_REL_LANG=cypher GRAPH_REL_LIMIT=100 cargo test --test graph_rel_backend_cases -- --ignored --nocapture
+//! GRAPH_REL_SUITE=filter cargo test --test graph_rel_backend_cases -- --ignored --nocapture
+//! ```
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use new_graph::ir::plan::explain;
+use new_graph::ir::rel::RelBackend;
+use new_graph::language::cypher::parser::parse_query;
+use new_graph::language::cypher::planner::CypherPlanner;
+use new_graph::language::gremlin::planner::GremlinPlanner;
+
+mod cypher_case_runner;
+mod gremlin_case_runner;
+
+use gremlin_case_runner::{case_file, format, parse as gremlin_parse};
+
+const CYPHER_ROOT: &str = "cases/cypher/ladybug";
+const GREMLIN_ROOT: &str = "cases/gremlin/tinkerpop";
+const OUTPUT_DIR: &str = "target/graph_rel_backend_cases";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Language {
+    Cypher,
+    Gremlin,
+}
+
+impl Language {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cypher => "cypher",
+            Self::Gremlin => "gremlin",
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn graph_rel_backend_cases() {
+    let started = Instant::now();
+    let out_dir = PathBuf::from(OUTPUT_DIR);
+    prepare_output_dir(&out_dir).expect("prepare output dir");
+
+    let config = HarnessConfig::from_env();
+    let backend = RelBackend::new();
+    let mut summary = Summary::default();
+
+    if config.includes(Language::Cypher) {
+        run_language(
+            Language::Cypher,
+            Path::new(CYPHER_ROOT),
+            &config,
+            &backend,
+            &out_dir,
+            &mut summary,
+        )
+        .await;
+    }
+    if config.includes(Language::Gremlin) {
+        run_language(
+            Language::Gremlin,
+            Path::new(GREMLIN_ROOT),
+            &config,
+            &backend,
+            &out_dir,
+            &mut summary,
+        )
+        .await;
+    }
+
+    let report = summary.render(started.elapsed().as_secs_f64());
+    print!("{report}");
+    fs::write(out_dir.join("summary.txt"), report).expect("write summary");
+
+    if config.strict && summary.failed_cases() > 0 {
+        panic!(
+            "rel backend strict mode saw {} failed cases",
+            summary.failed_cases()
+        );
+    }
+}
+
+#[derive(Debug)]
+struct HarnessConfig {
+    lang: String,
+    suite_filter: Option<String>,
+    limit: Option<usize>,
+    strict: bool,
+}
+
+impl HarnessConfig {
+    fn from_env() -> Self {
+        Self {
+            lang: std::env::var("GRAPH_REL_LANG").unwrap_or_else(|_| "all".into()),
+            suite_filter: std::env::var("GRAPH_REL_SUITE").ok(),
+            limit: std::env::var("GRAPH_REL_LIMIT")
+                .ok()
+                .and_then(|value| value.parse().ok()),
+            strict: std::env::var("GRAPH_REL_STRICT").is_ok_and(|value| value == "1"),
+        }
+    }
+
+    fn includes(&self, lang: Language) -> bool {
+        self.lang.eq_ignore_ascii_case("all") || self.lang.eq_ignore_ascii_case(lang.as_str())
+    }
+}
+
+async fn run_language(
+    lang: Language,
+    root: &Path,
+    config: &HarnessConfig,
+    backend: &RelBackend,
+    out_dir: &Path,
+    summary: &mut Summary,
+) {
+    if !root.exists() {
+        summary.record(
+            lang,
+            root,
+            Outcome::Skipped(format!("case root `{}` is not present", root.display())),
+        );
+        return;
+    }
+
+    let mut paths = Vec::new();
+    walk_cases(root, &mut |path| paths.push(path.to_path_buf()));
+    paths.sort();
+
+    let mut seen = 0usize;
+    for path in paths {
+        if let Some(filter) = &config.suite_filter {
+            if !path.to_string_lossy().contains(filter.as_str()) {
+                continue;
+            }
+        }
+        if config.limit.is_some_and(|limit| seen >= limit) {
+            break;
+        }
+        seen += 1;
+        let run = match lang {
+            Language::Cypher => run_cypher_case(&path, backend).await,
+            Language::Gremlin => run_gremlin_case(&path, backend).await,
+        };
+        if !matches!(run.outcome, Outcome::Matched) {
+            let _ = dump_case(out_dir, lang, &path, &run);
+        }
+        summary.record(lang, &path, run.outcome);
+    }
+}
+
+struct CaseRun {
+    query: Option<String>,
+    plan_tree: Option<String>,
+    outcome: Outcome,
+}
+
+impl CaseRun {
+    fn skipped(message: impl Into<String>) -> Self {
+        Self {
+            query: None,
+            plan_tree: None,
+            outcome: Outcome::Skipped(message.into()),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Outcome {
+    Matched,
+    Mismatch {
+        reason: String,
+        actual: Vec<String>,
+        expected: Vec<String>,
+    },
+    ParseError(String),
+    PlanError(String),
+    LowerError(String),
+    ExecutionError(String),
+    Skipped(String),
+}
+
+async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
+    let case = match read_case(path) {
+        Ok(case) => case,
+        Err(run) => return run,
+    };
+    if case.metadata.language != "cypher" {
+        return CaseRun::skipped(format!("non-cypher language: {}", case.metadata.language));
+    }
+
+    let query = case.query.clone();
+    let parsed = match parse_query(&query) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::ParseError(format!("{err}")),
+            };
+        }
+    };
+    let graph = match cypher_case_runner::dataset::build_with_initializer(
+        &case.metadata.dataset,
+        case.graph_initializer.as_deref(),
+    ) {
+        Ok(graph) => graph,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::Skipped(format!(
+                    "unsupported dataset `{}`: {err}",
+                    case.metadata.dataset
+                )),
+            };
+        }
+    };
+    let plan = match CypherPlanner::new().plan(&parsed) {
+        Ok(plan) => plan,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::PlanError(format!("{err}")),
+            };
+        }
+    };
+    let plan_tree = explain(&plan);
+    if let Err(err) = backend.lower(&plan, &graph) {
+        return CaseRun {
+            query: Some(query),
+            plan_tree: Some(plan_tree),
+            outcome: Outcome::LowerError(format!("{err}")),
+        };
+    }
+    let returned = match backend.execute(&plan, &graph).await {
+        Ok(returned) => returned,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: Some(plan_tree),
+                outcome: Outcome::ExecutionError(format!("{err}")),
+            };
+        }
+    };
+    let actual = cypher_case_runner::format::lines_from_batch(&returned);
+    let ordered = case.metadata.ordered && query_has_order_by(&query);
+    finish_compare(
+        Language::Cypher,
+        query,
+        plan_tree,
+        actual,
+        case.expected,
+        ordered,
+        &case.metadata.expected_kind,
+    )
+}
+
+async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
+    let case = match read_case(path) {
+        Ok(case) => case,
+        Err(run) => return run,
+    };
+    if case.metadata.language != "gremlin" {
+        return CaseRun::skipped(format!("non-gremlin language: {}", case.metadata.language));
+    }
+
+    let query = case.query.clone();
+    let traversal = match gremlin_parse::gremlin_with_case(&query, &case.metadata.source_case) {
+        Ok(traversal) => traversal,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::ParseError(err),
+            };
+        }
+    };
+    let graph = match gremlin_case_runner::dataset::build_with_initializer(
+        &case.metadata.dataset,
+        case.graph_initializer.as_deref(),
+    ) {
+        Ok(graph) => graph,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::Skipped(format!(
+                    "unsupported dataset `{}`: {err}",
+                    case.metadata.dataset
+                )),
+            };
+        }
+    };
+    let plan = match GremlinPlanner::new().plan(&traversal) {
+        Ok(plan) => plan,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: Outcome::PlanError(format!("{err}")),
+            };
+        }
+    };
+    let plan_tree = explain(&plan);
+    if let Err(err) = backend.lower(&plan, &graph) {
+        return CaseRun {
+            query: Some(query),
+            plan_tree: Some(plan_tree),
+            outcome: Outcome::LowerError(format!("{err}")),
+        };
+    }
+    let returned = match backend.execute(&plan, &graph).await {
+        Ok(returned) => returned,
+        Err(err) => {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: Some(plan_tree),
+                outcome: Outcome::ExecutionError(format!("{err}")),
+            };
+        }
+    };
+    let actual = gremlin_case_runner::format::lines_from_batch(&returned);
+    finish_compare(
+        Language::Gremlin,
+        query,
+        plan_tree,
+        actual,
+        case.expected,
+        case.metadata.ordered,
+        &case.metadata.expected_kind,
+    )
+}
+
+fn read_case(path: &Path) -> Result<case_file::Case, CaseRun> {
+    let raw = fs::read_to_string(path)
+        .map_err(|err| CaseRun::skipped(format!("read `{}`: {err}", path.display())))?;
+    case_file::parse(&raw).map_err(|err| CaseRun::skipped(format!("case parse: {err}")))
+}
+
+fn finish_compare(
+    lang: Language,
+    query: String,
+    plan_tree: String,
+    actual: Vec<String>,
+    expected: Vec<String>,
+    ordered: bool,
+    expected_kind: &str,
+) -> CaseRun {
+    let outcome = match compare_lines(lang, &actual, &expected, ordered, expected_kind) {
+        Ok(()) => Outcome::Matched,
+        Err(reason) => Outcome::Mismatch {
+            reason,
+            actual,
+            expected,
+        },
+    };
+    CaseRun {
+        query: Some(query),
+        plan_tree: Some(plan_tree),
+        outcome,
+    }
+}
+
+fn compare_lines(
+    lang: Language,
+    actual: &[String],
+    expected: &[String],
+    ordered: bool,
+    expected_kind: &str,
+) -> Result<(), String> {
+    if expected_kind == "count" {
+        let expected_count = expected
+            .iter()
+            .find_map(|line| line.trim().parse::<usize>().ok())
+            .ok_or_else(|| "count expectation had no numeric count".to_string())?;
+        return if actual.len() == expected_count {
+            Ok(())
+        } else {
+            Err(format!(
+                "row count: actual {}, expected {expected_count}",
+                actual.len()
+            ))
+        };
+    }
+
+    let mut actual = actual
+        .iter()
+        .map(|line| normalize_line(lang, line))
+        .collect::<Vec<_>>();
+    let mut expected = expected
+        .iter()
+        .map(|line| normalize_line(lang, line))
+        .collect::<Vec<_>>();
+
+    if actual.len() != expected.len() {
+        return Err(format!(
+            "row count: actual {}, expected {}",
+            actual.len(),
+            expected.len()
+        ));
+    }
+    if !ordered {
+        actual.sort();
+        expected.sort();
+    }
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!("actual={actual:?}, expected={expected:?}"))
+    }
+}
+
+fn normalize_line(lang: Language, line: &str) -> String {
+    let stripped = match lang {
+        Language::Cypher => cypher_case_runner::format::strip_expected_tags(line),
+        Language::Gremlin => gremlin_case_runner::format::strip_expected_tags(line),
+    };
+    normalize_numbers(stripped.trim())
+}
+
+fn normalize_numbers(input: &str) -> String {
+    let mut out = input.to_string();
+    while out.contains(".0") {
+        out = out.replace(".0", "");
+    }
+    out
+}
+
+#[derive(Default)]
+struct Summary {
+    by_language: BTreeMap<&'static str, Counts>,
+    reasons: BTreeMap<String, usize>,
+}
+
+#[derive(Default)]
+struct Counts {
+    total: usize,
+    matched: usize,
+    mismatch: usize,
+    parse: usize,
+    plan: usize,
+    lower: usize,
+    execution: usize,
+    skipped: usize,
+}
+
+impl Summary {
+    fn record(&mut self, lang: Language, _path: &Path, outcome: Outcome) {
+        let counts = self.by_language.entry(lang.as_str()).or_default();
+        counts.total += 1;
+        match &outcome {
+            Outcome::Matched => counts.matched += 1,
+            Outcome::Mismatch { reason, .. } => {
+                counts.mismatch += 1;
+                self.bump_reason("mismatch", reason);
+            }
+            Outcome::ParseError(err) => {
+                counts.parse += 1;
+                self.bump_reason("parse", err);
+            }
+            Outcome::PlanError(err) => {
+                counts.plan += 1;
+                self.bump_reason("plan", err);
+            }
+            Outcome::LowerError(err) => {
+                counts.lower += 1;
+                self.bump_reason("lower", err);
+            }
+            Outcome::ExecutionError(err) => {
+                counts.execution += 1;
+                self.bump_reason("execute", err);
+            }
+            Outcome::Skipped(err) => {
+                counts.skipped += 1;
+                self.bump_reason("skip", err);
+            }
+        }
+    }
+
+    fn bump_reason(&mut self, stage: &str, reason: &str) {
+        let reason = first_line(reason);
+        *self
+            .reasons
+            .entry(format!("{stage}: {reason}"))
+            .or_default() += 1;
+    }
+
+    fn failed_cases(&self) -> usize {
+        self.by_language
+            .values()
+            .map(|counts| counts.mismatch + counts.execution)
+            .sum()
+    }
+
+    fn render(&self, elapsed_secs: f64) -> String {
+        let mut out = String::new();
+        out.push_str(&format!(
+            "\nGraph relational backend harness finished in {elapsed_secs:.2}s\n"
+        ));
+        for (lang, counts) in &self.by_language {
+            if counts.total == 0 {
+                continue;
+            }
+            let runnable = counts.total.saturating_sub(counts.skipped);
+            let matched_pct = percent(counts.matched, counts.total);
+            let executed = counts.matched + counts.mismatch;
+            out.push_str(&format!(
+                "{lang}: total={} runnable={} matched={} ({matched_pct:.1}%) parsed={} planned={} lowered={} executed={} mismatches={} skipped={}\n",
+                counts.total,
+                runnable,
+                counts.matched,
+                counts.total - counts.parse - counts.skipped,
+                counts.total - counts.parse - counts.plan - counts.skipped,
+                counts.total - counts.parse - counts.plan - counts.lower - counts.skipped,
+                executed,
+                counts.mismatch,
+                counts.skipped,
+            ));
+        }
+        out.push_str("\nTop blockers:\n");
+        let mut reasons = self
+            .reasons
+            .iter()
+            .map(|(reason, count)| (reason, *count))
+            .collect::<Vec<_>>();
+        reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        for (idx, (reason, count)) in reasons.into_iter().take(20).enumerate() {
+            out.push_str(&format!("{:>2}. {:>5} {reason}\n", idx + 1, count));
+        }
+        out.push_str(&format!("\nFailure files: `{OUTPUT_DIR}`\n"));
+        out
+    }
+}
+
+fn percent(part: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        (part as f64 / total as f64) * 100.0
+    }
+}
+
+fn first_line(input: &str) -> String {
+    input
+        .lines()
+        .next()
+        .unwrap_or(input)
+        .chars()
+        .take(240)
+        .collect()
+}
+
+fn dump_case(out_dir: &Path, lang: Language, path: &Path, run: &CaseRun) -> std::io::Result<()> {
+    let rel = path
+        .file_stem()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "case".into());
+    let file = out_dir.join(format!("{}_{}.txt", lang.as_str(), sanitize_filename(&rel)));
+    let mut text = String::new();
+    text.push_str(&format!("case: {}\n", path.display()));
+    text.push_str(&format!("outcome: {:?}\n\n", run.outcome));
+    if let Some(query) = &run.query {
+        text.push_str("--- query\n");
+        text.push_str(query);
+        text.push_str("\n\n");
+    }
+    if let Some(plan) = &run.plan_tree {
+        text.push_str("--- plan\n");
+        text.push_str(plan);
+        text.push('\n');
+    }
+    if let Outcome::Mismatch {
+        reason,
+        actual,
+        expected,
+    } = &run.outcome
+    {
+        text.push_str("\n--- mismatch\n");
+        text.push_str(reason);
+        text.push_str("\n\nactual:\n");
+        text.push_str(&actual.join("\n"));
+        text.push_str("\n\nexpected:\n");
+        text.push_str(&expected.join("\n"));
+        text.push('\n');
+    }
+    fs::write(file, text)
+}
+
+fn sanitize_filename(input: &str) -> String {
+    input
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn prepare_output_dir(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)?;
+    }
+    fs::create_dir_all(path)
+}
+
+fn walk_cases(root: &Path, f: &mut impl FnMut(&Path)) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.path());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_cases(&path, f);
+        } else if path.extension().is_some_and(|ext| ext == "case") {
+            f(&path);
+        }
+    }
+}
+
+fn query_has_order_by(query: &str) -> bool {
+    query.to_ascii_lowercase().contains("order by")
+}

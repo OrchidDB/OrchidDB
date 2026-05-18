@@ -208,6 +208,20 @@ impl PropertyGraph {
             .ok_or_else(|| CatalogError::UnknownRelType(rel_type.to_string()))
     }
 
+    /// All physical edge tables for a relationship type, in insertion order.
+    ///
+    /// Older callers use [`Self::edge_table`] and see the representative
+    /// table stored in `edges`. Relational lowerers need every endpoint group
+    /// so a single relationship type can span multiple source/destination
+    /// label pairs without losing rows.
+    pub fn edge_tables(&self, rel_type: &str) -> CatalogResult<&[EdgeTable]> {
+        self.edge_tables
+            .get(rel_type)
+            .map(Vec::as_slice)
+            .or_else(|| self.edges.get(rel_type).map(std::slice::from_ref))
+            .ok_or_else(|| CatalogError::UnknownRelType(rel_type.to_string()))
+    }
+
     /// All node labels.
     pub fn labels(&self) -> Vec<String> {
         let mut out = self.nodes.keys().cloned().collect::<Vec<_>>();

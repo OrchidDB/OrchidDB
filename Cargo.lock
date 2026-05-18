@@ -2377,6 +2377,7 @@ version = "0.1.0"
 dependencies = [
  "antlr4rust",
  "arrow",
+ "arrow-select",
  "bigdecimal",
  "datafusion",
  "datafusion-sql",
@@ -2387,6 +2388,7 @@ dependencies = [
  "regex",
  "sha2",
  "thiserror",
+ "tokio",
  "unicode-segmentation",
 ]
 
