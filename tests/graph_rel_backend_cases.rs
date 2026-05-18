@@ -206,6 +206,17 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let parsed = match parse_query(&query) {
         Ok(parsed) => parsed,
         Err(err) => {
+            if let Some(outcome) = expected_error_outcome(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &format!("{err}"),
+            ) {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
@@ -232,6 +243,17 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let plan = match CypherPlanner::new().plan(&parsed) {
         Ok(plan) => plan,
         Err(err) => {
+            if let Some(outcome) = expected_error_outcome(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &format!("{err}"),
+            ) {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
@@ -241,6 +263,17 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
     };
     let plan_tree = explain(&plan);
     if let Err(err) = backend.lower(&plan, &graph) {
+        if let Some(outcome) = expected_error_outcome(
+            &case.expected,
+            &case.metadata.expected_kind,
+            &format!("{err}"),
+        ) {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: Some(plan_tree),
+                outcome,
+            };
+        }
         return CaseRun {
             query: Some(query),
             plan_tree: Some(plan_tree),
@@ -250,6 +283,17 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let returned = match backend.execute(&plan, &graph).await {
         Ok(returned) => returned,
         Err(err) => {
+            if let Some(outcome) = expected_error_outcome(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &format!("{err}"),
+            ) {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: Some(plan_tree),
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
@@ -283,6 +327,15 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let traversal = match gremlin_parse::gremlin_with_case(&query, &case.metadata.source_case) {
         Ok(traversal) => traversal,
         Err(err) => {
+            if let Some(outcome) =
+                expected_error_outcome(&case.expected, &case.metadata.expected_kind, &err)
+            {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
@@ -309,6 +362,17 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let plan = match GremlinPlanner::new().plan(&traversal) {
         Ok(plan) => plan,
         Err(err) => {
+            if let Some(outcome) = expected_error_outcome(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &format!("{err}"),
+            ) {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
@@ -318,6 +382,17 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
     };
     let plan_tree = explain(&plan);
     if let Err(err) = backend.lower(&plan, &graph) {
+        if let Some(outcome) = expected_error_outcome(
+            &case.expected,
+            &case.metadata.expected_kind,
+            &format!("{err}"),
+        ) {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: Some(plan_tree),
+                outcome,
+            };
+        }
         return CaseRun {
             query: Some(query),
             plan_tree: Some(plan_tree),
@@ -327,6 +402,17 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
     let returned = match backend.execute(&plan, &graph).await {
         Ok(returned) => returned,
         Err(err) => {
+            if let Some(outcome) = expected_error_outcome(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &format!("{err}"),
+            ) {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: Some(plan_tree),
+                    outcome,
+                };
+            }
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
@@ -374,6 +460,58 @@ fn finish_compare(
         plan_tree: Some(plan_tree),
         outcome,
     }
+}
+
+fn expected_error_outcome(
+    expected: &[String],
+    expected_kind: &str,
+    actual: &str,
+) -> Option<Outcome> {
+    expected_error_matches(expected, expected_kind, actual).then_some(Outcome::Matched)
+}
+
+fn expected_error_matches(expected: &[String], expected_kind: &str, actual: &str) -> bool {
+    if expected_kind != "rows" {
+        return false;
+    }
+    let expected_lines = expected
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if expected_lines.is_empty() || !looks_like_expected_error(expected_lines[0]) {
+        return false;
+    }
+    let actual_candidates = error_match_candidates(actual);
+    expected_lines.iter().any(|expected| {
+        actual_candidates.iter().any(|actual| {
+            actual == expected || actual.contains(expected) || expected.contains(actual)
+        })
+    })
+}
+
+fn looks_like_expected_error(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("exception")
+        || lower.starts_with("syntaxerror:")
+        || lower.starts_with("syntax error")
+        || lower.starts_with("error:")
+}
+
+fn error_match_candidates(actual: &str) -> Vec<String> {
+    let mut out = vec![actual.trim().to_string()];
+    for needle in [
+        "Runtime exception:",
+        "Binder exception:",
+        "Parser exception:",
+        "SyntaxError:",
+        "Error:",
+    ] {
+        if let Some(idx) = actual.find(needle) {
+            out.push(actual[idx..].trim().trim_matches('"').to_string());
+        }
+    }
+    out
 }
 
 fn compare_lines(

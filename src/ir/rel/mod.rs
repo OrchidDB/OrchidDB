@@ -8,6 +8,7 @@
 //! DataFusion can execute directly.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -19,7 +20,11 @@ use arrow_select::concat::concat_batches;
 use datafusion::common::{Column, ScalarValue};
 use datafusion::datasource::{MemTable, provider_as_source};
 use datafusion::error::DataFusionError;
+use datafusion::functions::core::expr_fn as df_core;
 use datafusion::functions::math::expr_fn as df_math;
+use datafusion::functions::regex::expr_fn as df_regex;
+use datafusion::functions::string::expr_fn as df_string;
+use datafusion::functions::unicode::expr_fn as df_unicode;
 use datafusion::functions_aggregate::count::count_all;
 use datafusion::functions_aggregate::expr_fn::{
     array_agg as df_array_agg, avg as df_avg, count as df_count, max as df_max, min as df_min,
@@ -33,6 +38,7 @@ use datafusion::logical_expr::{
     TryCast,
 };
 use datafusion::prelude::{SessionConfig, SessionContext, lit};
+use num_bigint::BigInt;
 
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggKind, BinaryOp, IrExpr, Lit, StringOp};
@@ -665,7 +671,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_values(&mut self, bindings: &[String], rows: &[Vec<Value>]) -> RelResult<LoweredNode> {
-        let batch = values_batch(bindings, rows)?;
+        let batch = values_batch(self.language, bindings, rows)?;
         self.scan_batches("values", vec![batch])
     }
 
@@ -1464,6 +1470,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         match expr {
             IrExpr::Lit(lit_value) => Ok(lit_to_expr(lit_value)),
+            IrExpr::List(items) => self.lower_constant_collection(items),
             IrExpr::Binding(binding) => {
                 if has_exact_col(plan, binding) {
                     Ok(col_exact(binding))
@@ -1580,6 +1587,17 @@ impl<'a> LoweringContext<'a> {
                 };
                 self.lower_expr(plan, fallback)
             }
+            IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+                let values = constant_range_values(args)?;
+                Ok(lit(rel_display_value(
+                    &Value::List(values),
+                    self.language,
+                    DisplayContext::Tagged,
+                )))
+            }
+            IrExpr::Call { name, args } if name == "integer_literal" && args.len() == 1 => {
+                self.lower_integer_literal(&args[0])
+            }
             IrExpr::Call { name, args } if is_label_function(name) && args.len() == 1 => {
                 match &args[0] {
                     IrExpr::Binding(binding) => {
@@ -1618,8 +1636,28 @@ impl<'a> LoweringContext<'a> {
                     self.lower_expr(plan, &args[1])?,
                 ))
             }
+            IrExpr::Call { name, args } if is_unary_math_function(name) && args.len() == 1 => {
+                self.lower_unary_math_function(plan, name, &args[0])
+            }
+            IrExpr::Call { name, args } if is_binary_math_function(name) && args.len() == 2 => {
+                self.lower_binary_math_function(plan, name, &args[0], &args[1])
+            }
             IrExpr::Call { name, args } if is_date_function(name) && args.len() == 1 => {
                 Ok(cast_utf8(self.lower_expr(plan, &args[0])?))
+            }
+            IrExpr::Call { name, args } if is_string_function(name) => {
+                self.lower_string_function(plan, name, args)
+            }
+            IrExpr::Call { name, args } if is_core_variadic_function(name) => {
+                self.lower_core_variadic_function(plan, name, args)
+            }
+            IrExpr::Call { name, args } if name.eq_ignore_ascii_case("xor") && args.len() == 2 => {
+                let lhs = self.lower_expr(plan, &args[0])?;
+                let rhs = self.lower_expr(plan, &args[1])?;
+                Ok(Expr::or(
+                    Expr::and(lhs.clone(), Expr::IsNotTrue(Box::new(rhs.clone()))),
+                    Expr::and(Expr::IsNotTrue(Box::new(lhs)), rhs),
+                ))
             }
             IrExpr::Call { name, args } if is_exists_function(name) && args.len() == 1 => {
                 Ok(self.lower_expr(plan, &args[0])?.is_not_null())
@@ -1649,6 +1687,7 @@ impl<'a> LoweringContext<'a> {
             {
                 self.lower_select_key_or_binding(plan, &args[1])
             }
+            IrExpr::Call { name, args } if name == "map" => self.lower_cypher_map(plan, args),
             IrExpr::Call { name, args } if name == "make_map" => self.lower_make_map(plan, args),
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {
                 let op = match name.as_str() {
@@ -1709,6 +1748,378 @@ impl<'a> LoweringContext<'a> {
         Ok((value, data_type, lenient))
     }
 
+    fn lower_constant_collection(&self, items: &[IrExpr]) -> RelResult<Expr> {
+        let Some(value) = constant_value_expr(&IrExpr::List(items.to_vec()))? else {
+            return Err(RelError::Unsupported(
+                "dynamic list expression is not relationally lowered yet".into(),
+            ));
+        };
+        Ok(lit(rel_display_value(
+            &value,
+            self.language,
+            DisplayContext::Tagged,
+        )))
+    }
+
+    fn lower_integer_literal(&self, arg: &IrExpr) -> RelResult<Expr> {
+        let Some(text) = integer_literal_text(arg) else {
+            return Err(RelError::Unsupported(
+                "integer_literal argument must be a literal string".into(),
+            ));
+        };
+        if let Ok(value) = text.parse::<i64>() {
+            return Ok(lit(value));
+        }
+        Ok(lit(rel_display_value(
+            &Value::BigInt(
+                BigInt::from_str(&text.replace('_', "")).map_err(|_| {
+                    RelError::Unsupported(format!("invalid integer literal `{text}`"))
+                })?,
+            ),
+            self.language,
+            DisplayContext::Scalar,
+        )))
+    }
+
+    fn lower_unary_math_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        arg: &IrExpr,
+    ) -> RelResult<Expr> {
+        let arg = self.lower_expr(plan, arg)?;
+        let normalized = normalize_function_name(name);
+        match normalized.as_str() {
+            "acos" => Ok(df_math::acos(arg)),
+            "acosh" => Ok(df_math::acosh(arg)),
+            "asin" => Ok(df_math::asin(arg)),
+            "asinh" => Ok(df_math::asinh(arg)),
+            "atan" => Ok(df_math::atan(arg)),
+            "atanh" => Ok(df_math::atanh(arg)),
+            "cbrt" => Ok(df_math::cbrt(arg)),
+            "ceil" | "ceiling" => Ok(df_math::ceil(arg)),
+            "cos" => Ok(df_math::cos(arg)),
+            "cosh" => Ok(df_math::cosh(arg)),
+            "cot" => Ok(df_math::cot(arg)),
+            "degrees" => Ok(df_math::degrees(arg)),
+            "exp" => Ok(df_math::exp(arg)),
+            "factorial" => Ok(df_math::factorial(arg)),
+            "floor" => Ok(df_math::floor(arg)),
+            "ln" | "log" => Ok(df_math::ln(arg)),
+            "log2" => Ok(df_math::log2(arg)),
+            "log10" => Ok(df_math::log10(arg)),
+            "radians" => Ok(df_math::radians(arg)),
+            "round" => Ok(df_math::round(vec![arg])),
+            "sign" | "signum" => Ok(df_math::signum(arg)),
+            "sin" => Ok(df_math::sin(arg)),
+            "sinh" => Ok(df_math::sinh(arg)),
+            "sqrt" => Ok(df_math::sqrt(arg)),
+            "tan" => Ok(df_math::tan(arg)),
+            "tanh" => Ok(df_math::tanh(arg)),
+            "trunc" | "truncate" => Ok(df_math::trunc(vec![arg])),
+            _ => Err(RelError::Unsupported(format!(
+                "function `{name}` is not relationally lowered yet"
+            ))),
+        }
+    }
+
+    fn lower_binary_math_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        lhs: &IrExpr,
+        rhs: &IrExpr,
+    ) -> RelResult<Expr> {
+        let lhs = self.lower_expr(plan, lhs)?;
+        let rhs = self.lower_expr(plan, rhs)?;
+        let normalized = normalize_function_name(name);
+        match normalized.as_str() {
+            "atan2" => Ok(df_math::atan2(lhs, rhs)),
+            "gcd" => Ok(df_math::gcd(lhs, rhs)),
+            "lcm" => Ok(df_math::lcm(lhs, rhs)),
+            "log" => Ok(df_math::log(lhs, rhs)),
+            "nanvl" => Ok(df_math::nanvl(lhs, rhs)),
+            "round" => Ok(df_math::round(vec![lhs, rhs])),
+            "trunc" | "truncate" => Ok(df_math::trunc(vec![lhs, rhs])),
+            _ => Err(RelError::Unsupported(format!(
+                "function `{name}` is not relationally lowered yet"
+            ))),
+        }
+    }
+
+    fn lower_string_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<Expr> {
+        let normalized = normalize_function_name(name);
+        match normalized.as_str() {
+            "concat" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_string::concat(args))
+            }
+            "concat_ws" => {
+                let [delimiter, rest @ ..] = args else {
+                    return Err(RelError::Unsupported("concat_ws arity".into()));
+                };
+                let delimiter = self.lower_expr(plan, delimiter)?;
+                let rest = rest
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_string::concat_ws(delimiter, rest))
+            }
+            "contains" | "strcontains" => {
+                let [value, needle] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_string::contains(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    cast_utf8(self.lower_expr(plan, needle)?),
+                ))
+            }
+            "prefix" | "starts_with" | "startswith" => {
+                let [value, prefix] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_string::starts_with(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    cast_utf8(self.lower_expr(plan, prefix)?),
+                ))
+            }
+            "suffix" | "ends_with" | "endswith" => {
+                let [value, suffix] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_string::ends_with(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    cast_utf8(self.lower_expr(plan, suffix)?),
+                ))
+            }
+            "lcase" | "lower" | "tolower" | "gremlin_lcase" | "local_lcase" => {
+                let [value] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_string::lower(cast_utf8(self.lower_expr(plan, value)?)))
+            }
+            "ucase" | "upper" | "toupper" | "gremlin_ucase" | "local_ucase" => {
+                let [value] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_string::upper(cast_utf8(self.lower_expr(plan, value)?)))
+            }
+            "trim" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_string::trim(args))
+            }
+            "ltrim" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_string::ltrim(args))
+            }
+            "rtrim" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_string::rtrim(args))
+            }
+            "replace" => {
+                let [value, from, to] = args else {
+                    return Err(RelError::Unsupported("replace arity".into()));
+                };
+                Ok(df_string::replace(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    cast_utf8(self.lower_expr(plan, from)?),
+                    cast_utf8(self.lower_expr(plan, to)?),
+                ))
+            }
+            "reverse" => {
+                let [value] = args else {
+                    return Err(RelError::Unsupported("reverse arity".into()));
+                };
+                Ok(df_unicode::reverse(cast_utf8(
+                    self.lower_expr(plan, value)?,
+                )))
+            }
+            "left" => {
+                let [value, count] = args else {
+                    return Err(RelError::Unsupported("left arity".into()));
+                };
+                Ok(df_unicode::left(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    self.lower_expr(plan, count)?,
+                ))
+            }
+            "right" => {
+                let [value, count] = args else {
+                    return Err(RelError::Unsupported("right arity".into()));
+                };
+                Ok(df_unicode::right(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    self.lower_expr(plan, count)?,
+                ))
+            }
+            "substring" | "substr" => {
+                let [value, start, rest @ ..] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                let start = binary(self.lower_expr(plan, start)?, BinaryOp::Add, lit(1_i64));
+                let value = cast_utf8(self.lower_expr(plan, value)?);
+                match rest {
+                    [] => Ok(df_unicode::substr(value, start)),
+                    [len] => Ok(df_unicode::substring(
+                        value,
+                        start,
+                        self.lower_expr(plan, len)?,
+                    )),
+                    _ => Err(RelError::Unsupported(format!("{name} arity"))),
+                }
+            }
+            "gremlin_substring" => {
+                let [value, start, rest @ ..] = args else {
+                    return Err(RelError::Unsupported("gremlin_substring arity".into()));
+                };
+                let value = cast_utf8(self.lower_expr(plan, value)?);
+                let start_expr = self.lower_expr(plan, start)?;
+                let pos = binary(start_expr.clone(), BinaryOp::Add, lit(1_i64));
+                match rest {
+                    [] => Ok(df_unicode::substr(value, pos)),
+                    [end] => {
+                        let end = self.lower_expr(plan, end)?;
+                        let len = binary(end, BinaryOp::Sub, start_expr);
+                        Ok(df_unicode::substring(value, pos, len))
+                    }
+                    _ => Err(RelError::Unsupported("gremlin_substring arity".into())),
+                }
+            }
+            "length" | "char_length" | "character_length" => {
+                let [value] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                Ok(df_unicode::length(cast_utf8(self.lower_expr(plan, value)?)))
+            }
+            "size" => {
+                let [value] = args else {
+                    return Err(RelError::Unsupported("size arity".into()));
+                };
+                if let Some(Value::List(items)) = constant_value_expr(value)? {
+                    return Ok(lit(items.len() as i64));
+                }
+                Ok(df_unicode::length(cast_utf8(self.lower_expr(plan, value)?)))
+            }
+            "lpad" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_unicode::lpad(args))
+            }
+            "rpad" => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(df_unicode::rpad(args))
+            }
+            "regexp_replace" => {
+                let [value, pattern, replacement, rest @ ..] = args else {
+                    return Err(RelError::Unsupported("regexp_replace arity".into()));
+                };
+                let flags = match rest {
+                    [] => None,
+                    [flags] => Some(cast_utf8(self.lower_expr(plan, flags)?)),
+                    _ => return Err(RelError::Unsupported("regexp_replace arity".into())),
+                };
+                Ok(df_regex::regexp_replace(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    cast_utf8(self.lower_expr(plan, pattern)?),
+                    cast_utf8(self.lower_expr(plan, replacement)?),
+                    flags,
+                ))
+            }
+            "regexp_full_match" | "regexp_matches" | "regexp_like" => {
+                let [value, pattern, rest @ ..] = args else {
+                    return Err(RelError::Unsupported(format!("{name} arity")));
+                };
+                let pattern = if normalized == "regexp_full_match" {
+                    match constant_value_expr(pattern)? {
+                        Some(Value::String(pattern)) => lit(format!("^({pattern})$")),
+                        _ => cast_utf8(self.lower_expr(plan, pattern)?),
+                    }
+                } else {
+                    cast_utf8(self.lower_expr(plan, pattern)?)
+                };
+                let flags = match rest {
+                    [] => None,
+                    [flags] => Some(cast_utf8(self.lower_expr(plan, flags)?)),
+                    _ => return Err(RelError::Unsupported(format!("{name} arity"))),
+                };
+                Ok(df_regex::regexp_like(
+                    cast_utf8(self.lower_expr(plan, value)?),
+                    pattern,
+                    flags,
+                ))
+            }
+            _ => Err(RelError::Unsupported(format!(
+                "function `{name}` is not relationally lowered yet"
+            ))),
+        }
+    }
+
+    fn lower_core_variadic_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<Expr> {
+        let lowered = args
+            .iter()
+            .map(|arg| self.lower_expr(plan, arg))
+            .collect::<RelResult<Vec<_>>>()?;
+        match normalize_function_name(name).as_str() {
+            "coalesce" | "ifnull" => Ok(df_core::coalesce(lowered)),
+            "greatest" => Ok(df_core::greatest(lowered)),
+            "least" => Ok(df_core::least(lowered)),
+            "nullif" if lowered.len() == 2 => {
+                let value = lowered[0].clone();
+                let sentinel = lowered[1].clone();
+                Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(binary(value.clone(), BinaryOp::Eq, sentinel)),
+                        Box::new(lit(ScalarValue::Null)),
+                    )],
+                    Some(Box::new(value)),
+                )))
+            }
+            "constant_or_null" if lowered.len() == 2 => {
+                let value = lowered[0].clone();
+                let nullable = lowered[1].clone();
+                Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(nullable.is_null()),
+                        Box::new(lit(ScalarValue::Null)),
+                    )],
+                    Some(Box::new(value)),
+                )))
+            }
+            _ => Err(RelError::Unsupported(format!(
+                "function `{name}` is not relationally lowered yet"
+            ))),
+        }
+    }
+
     fn lower_typeof_matches(
         &self,
         plan: &LogicalPlan,
@@ -1761,6 +2172,34 @@ impl<'a> LoweringContext<'a> {
                 "Gremlin select binding `{binding}` is not available relationally"
             )))
         }
+    }
+
+    fn lower_cypher_map(&self, plan: &LogicalPlan, args: &[IrExpr]) -> RelResult<Expr> {
+        if let Some(value) = constant_cypher_map(args)? {
+            return Ok(lit(rel_display_value(
+                &value,
+                self.language,
+                DisplayContext::Tagged,
+            )));
+        }
+        if args.len() % 2 != 0 {
+            return Err(RelError::Unsupported("map arity".into()));
+        }
+        let mut pieces = Vec::new();
+        pieces.push(lit("m[{"));
+        for (idx, pair) in args.chunks(2).enumerate() {
+            let IrExpr::Lit(Lit::String(key)) = &pair[0] else {
+                return Err(RelError::Unsupported("dynamic map key".into()));
+            };
+            if idx > 0 {
+                pieces.push(lit(","));
+            }
+            pieces.push(lit(format!("\"{}\":\"", escape_debug_string(key))));
+            pieces.push(cast_utf8(self.lower_expr(plan, &pair[1])?));
+            pieces.push(lit("\""));
+        }
+        pieces.push(lit("}]"));
+        Ok(concat_exprs(pieces))
     }
 
     fn lower_make_map(&self, plan: &LogicalPlan, args: &[IrExpr]) -> RelResult<Expr> {
@@ -2086,7 +2525,11 @@ fn schema_index(schema: &Schema, name: &str) -> Option<usize> {
     })
 }
 
-fn values_batch(bindings: &[String], rows: &[Vec<Value>]) -> RelResult<RecordBatch> {
+fn values_batch(
+    language: Language,
+    bindings: &[String],
+    rows: &[Vec<Value>],
+) -> RelResult<RecordBatch> {
     if rows.iter().any(|row| row.len() != bindings.len()) {
         return Err(RelError::Unsupported(
             "GraphValues row width does not match bindings".into(),
@@ -2104,7 +2547,7 @@ fn values_batch(bindings: &[String], rows: &[Vec<Value>]) -> RelResult<RecordBat
     let arrays = types
         .iter()
         .enumerate()
-        .map(|(idx, data_type)| values_array(rows.iter().map(|row| &row[idx]), data_type))
+        .map(|(idx, data_type)| values_array(language, rows.iter().map(|row| &row[idx]), data_type))
         .collect::<RelResult<Vec<_>>>()?;
     Ok(RecordBatch::try_new(schema, arrays)?)
 }
@@ -2129,11 +2572,17 @@ fn infer_value_type<'a>(values: impl Iterator<Item = &'a Value>) -> RelResult<Da
             Value::String(_) | Value::DateTime(_) => {
                 data_type = promote_type(data_type, DataType::Utf8)?
             }
-            other => {
-                return Err(RelError::Unsupported(format!(
-                    "GraphValues value type `{}`",
-                    other.type_name()
-                )));
+            Value::BigInt(_)
+            | Value::UInt128(_)
+            | Value::BigDecimal(_)
+            | Value::InternalId { .. }
+            | Value::Node { .. }
+            | Value::Edge { .. }
+            | Value::List(_)
+            | Value::Map(_)
+            | Value::Path(_) => {
+                data_type = DataType::Utf8;
+                break;
             }
         }
     }
@@ -2154,6 +2603,7 @@ fn promote_type(current: DataType, next: DataType) -> RelResult<DataType> {
 }
 
 fn values_array<'a>(
+    language: Language,
     values: impl Iterator<Item = &'a Value>,
     data_type: &DataType,
 ) -> RelResult<ArrayRef> {
@@ -2218,12 +2668,7 @@ fn values_array<'a>(
                 match value {
                     Value::Null => builder.append_null(),
                     Value::String(value) | Value::DateTime(value) => builder.append_value(value),
-                    other => {
-                        return Err(RelError::Unsupported(format!(
-                            "cannot put `{}` in Utf8 GraphValues column",
-                            other.type_name()
-                        )));
-                    }
+                    other => builder.append_value(graph_values_display(other, language)),
                 }
             }
             Ok(Arc::new(builder.finish()))
@@ -2277,6 +2722,44 @@ fn lit_to_value(value: &Lit) -> Value {
     }
 }
 
+fn constant_value_expr(expr: &IrExpr) -> RelResult<Option<Value>> {
+    match expr {
+        IrExpr::Lit(value) => Ok(Some(lit_to_value(value))),
+        IrExpr::List(items) => {
+            let mut values = Vec::with_capacity(items.len());
+            for item in items {
+                let Some(value) = constant_value_expr(item)? else {
+                    return Ok(None);
+                };
+                values.push(value);
+            }
+            Ok(Some(Value::List(values)))
+        }
+        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+            Ok(Some(Value::List(constant_range_values(args)?)))
+        }
+        IrExpr::Call { name, args } if name == "integer_literal" && args.len() == 1 => {
+            let Some(text) = integer_literal_text(&args[0]) else {
+                return Ok(None);
+            };
+            if let Ok(value) = text.replace('_', "").parse::<i64>() {
+                Ok(Some(Value::Int(value)))
+            } else {
+                let value = BigInt::from_str(&text.replace('_', "")).map_err(|_| {
+                    RelError::Unsupported(format!("invalid integer literal `{text}`"))
+                })?;
+                Ok(Some(Value::BigInt(value)))
+            }
+        }
+        IrExpr::Call { name, args } if is_cast_function(name, args) => constant_value_expr(
+            args.first()
+                .ok_or_else(|| RelError::Unsupported(format!("{name} arity")))?,
+        ),
+        IrExpr::Call { name, args } if name == "map" => constant_cypher_map(args),
+        _ => Ok(None),
+    }
+}
+
 fn constant_unwind_values(expr: &IrExpr, outer: bool) -> RelResult<Option<Vec<Value>>> {
     let mut values = match expr {
         IrExpr::Lit(Lit::Null) => Vec::new(),
@@ -2284,10 +2767,10 @@ fn constant_unwind_values(expr: &IrExpr, outer: bool) -> RelResult<Option<Vec<Va
         IrExpr::List(items) => {
             let mut values = Vec::with_capacity(items.len());
             for item in items {
-                let IrExpr::Lit(value) = item else {
+                let Some(value) = constant_value_expr(item)? else {
                     return Ok(None);
                 };
-                values.push(lit_to_value(value));
+                values.push(value);
             }
             values
         }
@@ -2313,10 +2796,8 @@ fn constant_range_values(args: &[IrExpr]) -> RelResult<Vec<Value>> {
     let step = if let Some(step) = args.get(2) {
         literal_i64(step)
             .ok_or_else(|| RelError::Unsupported("range step must be a literal integer".into()))?
-    } else if start <= stop {
-        1
     } else {
-        -1
+        1
     };
     if step == 0 {
         return Err(RelError::Unsupported("range step cannot be zero".into()));
@@ -2338,9 +2819,64 @@ fn constant_range_values(args: &[IrExpr]) -> RelResult<Vec<Value>> {
     Ok(values)
 }
 
+fn constant_cypher_map(args: &[IrExpr]) -> RelResult<Option<Value>> {
+    let mut map = BTreeMap::new();
+    if args.len() == 2
+        && let (IrExpr::List(keys), IrExpr::List(values)) = (&args[0], &args[1])
+    {
+        if keys.len() != values.len() {
+            return Err(RelError::Unsupported(
+                "map key/value length mismatch".into(),
+            ));
+        }
+        for (key, value) in keys.iter().zip(values.iter()) {
+            let Some(key) = constant_value_expr(key)? else {
+                return Ok(None);
+            };
+            let Some(value) = constant_value_expr(value)? else {
+                return Ok(None);
+            };
+            let key = cypher_plain_value(&key);
+            if map.insert(key.clone(), value).is_some() {
+                return Err(RelError::Unsupported(format!(
+                    "Runtime exception: Found duplicate key: {key} in map."
+                )));
+            }
+        }
+        return Ok(Some(Value::Map(map)));
+    }
+    if args.len() % 2 != 0 {
+        return Ok(None);
+    }
+    for pair in args.chunks(2) {
+        let IrExpr::Lit(Lit::String(key)) = &pair[0] else {
+            return Ok(None);
+        };
+        let Some(value) = constant_value_expr(&pair[1])? else {
+            return Ok(None);
+        };
+        map.insert(key.clone(), value);
+    }
+    Ok(Some(Value::Map(map)))
+}
+
+fn integer_literal_text(expr: &IrExpr) -> Option<String> {
+    match expr {
+        IrExpr::Lit(Lit::String(value)) => Some(value.clone()),
+        IrExpr::Lit(Lit::Int(value)) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn literal_i64(expr: &IrExpr) -> Option<i64> {
     match expr {
         IrExpr::Lit(Lit::Int(value)) => Some(*value),
+        IrExpr::Call { name, args } if name == "integer_literal" && args.len() == 1 => {
+            integer_literal_text(&args[0]).and_then(|value| value.replace('_', "").parse().ok())
+        }
+        IrExpr::Call { name, args } if is_cast_function(name, args) => {
+            args.first().and_then(literal_i64)
+        }
         _ => None,
     }
 }
@@ -2407,6 +2943,130 @@ fn gremlin_element_display_expr(plan: &LogicalPlan, binding: &str) -> RelResult<
     ))
 }
 
+#[derive(Clone, Copy)]
+enum DisplayContext {
+    Scalar,
+    Tagged,
+}
+
+fn graph_values_display(value: &Value, language: Language) -> String {
+    match language {
+        Language::Cypher | Language::Gql => {
+            rel_display_value(value, language, DisplayContext::Tagged)
+        }
+        Language::Gremlin => match value {
+            Value::List(_) | Value::Map(_) | Value::Path(_) => format!("{value:?}"),
+            _ => rel_display_value(value, language, DisplayContext::Tagged),
+        },
+        Language::Sparql => rel_display_value(value, language, DisplayContext::Tagged),
+    }
+}
+
+fn rel_display_value(value: &Value, language: Language, context: DisplayContext) -> String {
+    match language {
+        Language::Cypher | Language::Gql => match context {
+            DisplayContext::Scalar => cypher_plain_value(value),
+            DisplayContext::Tagged => tagged_value(value),
+        },
+        Language::Gremlin | Language::Sparql => tagged_value(value),
+    }
+}
+
+fn tagged_value(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Byte(value) => format!("d[{value}].b"),
+        Value::UInt8(value) => format!("d[{value}].u8"),
+        Value::Short(value) => format!("d[{value}].s"),
+        Value::UInt16(value) => format!("d[{value}].u16"),
+        Value::Int(value) => format!("d[{value}].i"),
+        Value::UInt32(value) => format!("d[{value}].u32"),
+        Value::Long(value) => format!("d[{value}].l"),
+        Value::UInt64(value) => format!("d[{value}].u64"),
+        Value::Float32(value) => format!("d[{value}].f"),
+        Value::Float(value) => format!("d[{value}].d"),
+        Value::BigInt(value) => format!("d[{value}].n"),
+        Value::UInt128(value) => format!("d[{value}].u128"),
+        Value::BigDecimal(value) => format!("d[{value}].m"),
+        Value::DateTime(value) => format!("dt[{value}]"),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::String(value) => value.clone(),
+        Value::Node { label, id } => format!("v[{label}#{id}]"),
+        Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
+        Value::List(items) | Value::Path(items) => {
+            let prefix = if matches!(value, Value::Path(_)) {
+                "p"
+            } else {
+                "l"
+            };
+            let parts = items.iter().map(tagged_value).collect::<Vec<_>>();
+            format!("{prefix}[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            let parts = map
+                .iter()
+                .filter(|(key, _)| !key.starts_with("__"))
+                .map(|(key, value)| {
+                    format!(
+                        "\"{}\":\"{}\"",
+                        escape_debug_string(key),
+                        tagged_value(value)
+                    )
+                })
+                .collect::<Vec<_>>();
+            format!("m[{{{}}}]", parts.join(","))
+        }
+    }
+}
+
+fn cypher_plain_value(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::Bool(true) => "True".to_string(),
+        Value::Bool(false) => "False".to_string(),
+        Value::Byte(value) => value.to_string(),
+        Value::UInt8(value) => value.to_string(),
+        Value::Short(value) => value.to_string(),
+        Value::UInt16(value) => value.to_string(),
+        Value::Int(value) | Value::Long(value) => value.to_string(),
+        Value::UInt32(value) => value.to_string(),
+        Value::UInt64(value) => value.to_string(),
+        Value::Float32(value) => cypher_float_text(*value as f64),
+        Value::Float(value) => cypher_float_text(*value),
+        Value::BigInt(value) | Value::UInt128(value) => value.to_string(),
+        Value::BigDecimal(value) => value.to_string(),
+        Value::DateTime(value) | Value::String(value) => value.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::Node { label, id } => format!("{label}#{id}"),
+        Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
+        Value::List(items) => {
+            let body = items.iter().map(cypher_plain_value).collect::<Vec<_>>();
+            format!("[{}]", body.join(","))
+        }
+        Value::Path(items) => {
+            let body = items.iter().map(cypher_plain_value).collect::<Vec<_>>();
+            format!("[{}]", body.join(","))
+        }
+        Value::Map(map) => {
+            let body = map
+                .iter()
+                .filter(|(key, _)| !key.starts_with("__"))
+                .map(|(key, value)| format!("{key}: {}", cypher_plain_value(value)))
+                .collect::<Vec<_>>();
+            format!("{{{}}}", body.join(", "))
+        }
+    }
+}
+
+fn cypher_float_text(value: f64) -> String {
+    if value.is_finite() {
+        format!("{value:.6}")
+    } else {
+        value.to_string()
+    }
+}
+
 fn escape_debug_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -2431,8 +3091,109 @@ fn is_pow_function(name: &str) -> bool {
     name.eq_ignore_ascii_case("pow") || name.eq_ignore_ascii_case("power")
 }
 
+fn normalize_function_name(name: &str) -> String {
+    name.to_ascii_lowercase().replace('-', "_")
+}
+
+fn is_unary_math_function(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "acos"
+            | "acosh"
+            | "asin"
+            | "asinh"
+            | "atan"
+            | "atanh"
+            | "cbrt"
+            | "ceil"
+            | "ceiling"
+            | "cos"
+            | "cosh"
+            | "cot"
+            | "degrees"
+            | "exp"
+            | "factorial"
+            | "floor"
+            | "ln"
+            | "log"
+            | "log2"
+            | "log10"
+            | "radians"
+            | "round"
+            | "sign"
+            | "signum"
+            | "sin"
+            | "sinh"
+            | "sqrt"
+            | "tan"
+            | "tanh"
+            | "trunc"
+            | "truncate"
+    )
+}
+
+fn is_binary_math_function(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "atan2" | "gcd" | "lcm" | "log" | "nanvl" | "round" | "trunc" | "truncate"
+    )
+}
+
 fn is_date_function(name: &str) -> bool {
     name.eq_ignore_ascii_case("date") || name.eq_ignore_ascii_case("to_date")
+}
+
+fn is_string_function(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "char_length"
+            | "character_length"
+            | "concat"
+            | "concat_ws"
+            | "contains"
+            | "ends_with"
+            | "endswith"
+            | "gremlin_lcase"
+            | "gremlin_substring"
+            | "gremlin_ucase"
+            | "lcase"
+            | "left"
+            | "length"
+            | "local_lcase"
+            | "local_ucase"
+            | "lower"
+            | "lpad"
+            | "ltrim"
+            | "prefix"
+            | "regexp_full_match"
+            | "regexp_like"
+            | "regexp_matches"
+            | "regexp_replace"
+            | "replace"
+            | "reverse"
+            | "right"
+            | "rpad"
+            | "rtrim"
+            | "size"
+            | "starts_with"
+            | "startswith"
+            | "strcontains"
+            | "substr"
+            | "substring"
+            | "suffix"
+            | "tolower"
+            | "toupper"
+            | "trim"
+            | "ucase"
+            | "upper"
+    )
+}
+
+fn is_core_variadic_function(name: &str) -> bool {
+    matches!(
+        normalize_function_name(name).as_str(),
+        "coalesce" | "constant_or_null" | "greatest" | "ifnull" | "least" | "nullif"
+    )
 }
 
 fn is_exists_function(name: &str) -> bool {
