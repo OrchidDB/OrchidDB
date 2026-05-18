@@ -19,23 +19,30 @@ use arrow_select::concat::concat_batches;
 use datafusion::common::{Column, ScalarValue};
 use datafusion::datasource::{MemTable, provider_as_source};
 use datafusion::error::DataFusionError;
+use datafusion::functions::math::expr_fn as df_math;
 use datafusion::functions_aggregate::count::count_all;
 use datafusion::functions_aggregate::expr_fn::{
-    avg as df_avg, count as df_count, max as df_max, min as df_min, sum as df_sum,
+    array_agg as df_array_agg, avg as df_avg, count as df_count, max as df_max, min as df_min,
+    sum as df_sum,
 };
+use datafusion::functions_window::expr_fn as df_window;
+use datafusion::logical_expr::ExprFunctionExt;
+use datafusion::logical_expr::expr::{Case, InList};
 use datafusion::logical_expr::{
-    BinaryExpr, Expr, JoinType, LogicalPlan, LogicalPlanBuilder, Operator,
+    BinaryExpr, Cast, Expr, ExprSchemable, JoinType, LogicalPlan, LogicalPlanBuilder, Operator,
+    TryCast,
 };
-use datafusion::prelude::{SessionContext, lit};
+use datafusion::prelude::{SessionConfig, SessionContext, lit};
 
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggKind, BinaryOp, IrExpr, Lit, StringOp};
 use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::plan::{
-    ApplyKind, BindKind, Direction, GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode,
-    ProjectionItem, Slice, SortDir, TargetMode, UnionAlign,
+    ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
+    GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, Slice, SortDir,
+    TargetMode, UnionAlign,
 };
-use crate::ir::policy::ResultForm;
+use crate::ir::policy::{Language, ResultForm};
 use crate::ir::value::Value;
 
 const ID_SUFFIX: &str = "__id";
@@ -45,6 +52,8 @@ const SRC_ID_SUFFIX: &str = "__src_id";
 const SRC_LABEL_SUFFIX: &str = "__src_label";
 const DST_ID_SUFFIX: &str = "__dst_id";
 const DST_LABEL_SUFFIX: &str = "__dst_label";
+const MAX_EXECUTABLE_PLAN_NODES: usize = 80;
+const MAX_EXECUTABLE_PLAN_DEPTH: usize = 48;
 
 #[derive(Debug, Clone, Default)]
 pub struct RelBackend {
@@ -94,6 +103,20 @@ impl IslandReport {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct LogicalPlanStats {
+    nodes: usize,
+    depth: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct GraphPlanStats {
+    nodes: usize,
+    depth: usize,
+    bidirectional_expands: usize,
+    select_history_projects: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct LoweredPlan {
     pub plan: LogicalPlan,
@@ -120,6 +143,7 @@ enum BindingShape {
 struct LoweringContext<'a> {
     graph: &'a PropertyGraph,
     options: RelBackendOptions,
+    language: Language,
     scan_counter: usize,
     correlate_plan: Option<LogicalPlan>,
 }
@@ -134,9 +158,24 @@ impl RelBackend {
     }
 
     pub fn lower(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
+        let graph_stats = graph_plan_stats(&plan.root);
+        if plan.policy.language == Language::Gremlin
+            && graph_stats.bidirectional_expands >= 2
+            && graph_stats.select_history_projects > 0
+            && graph_stats.depth > 28
+        {
+            return Err(RelError::Unsupported(format!(
+                "Gremlin plan is not a safe SQL island yet: nodes={} depth={} both_expands={} select_history_projects={}",
+                graph_stats.nodes,
+                graph_stats.depth,
+                graph_stats.bidirectional_expands,
+                graph_stats.select_history_projects
+            )));
+        }
         let mut ctx = LoweringContext {
             graph,
             options: self.options.clone(),
+            language: plan.policy.language,
             scan_counter: 0,
             correlate_plan: None,
         };
@@ -164,8 +203,18 @@ impl RelBackend {
 }
 
 async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
+    let stats = logical_plan_stats(&lowered.plan);
+    if stats.nodes > MAX_EXECUTABLE_PLAN_NODES || stats.depth > MAX_EXECUTABLE_PLAN_DEPTH {
+        return Err(RelError::Unsupported(format!(
+            "relational island too complex to execute safely yet: nodes={} depth={}",
+            stats.nodes, stats.depth
+        )));
+    }
     let output_schema = Arc::new(lowered.plan.schema().as_arrow().clone());
-    let ctx = SessionContext::new();
+    let config = SessionConfig::new()
+        .set_usize("datafusion.optimizer.max_passes", 1)
+        .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
+    let ctx = SessionContext::new_with_config(config);
     let df = ctx.execute_logical_plan(lowered.plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {
@@ -180,6 +229,135 @@ async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
         result_form: lowered.result_form,
         batch,
     })
+}
+
+fn logical_plan_stats(plan: &LogicalPlan) -> LogicalPlanStats {
+    let mut stats = LogicalPlanStats::default();
+    let mut stack = vec![(plan, 1usize)];
+    while let Some((node, depth)) = stack.pop() {
+        stats.nodes += 1;
+        stats.depth = stats.depth.max(depth);
+        for input in node.inputs() {
+            stack.push((input, depth + 1));
+        }
+    }
+    stats
+}
+
+fn graph_plan_stats(root: &Node) -> GraphPlanStats {
+    let mut stats = GraphPlanStats::default();
+    let mut stack = vec![(root, 1usize)];
+    while let Some((node, depth)) = stack.pop() {
+        stats.nodes += 1;
+        stats.depth = stats.depth.max(depth);
+        match node {
+            Node::GraphExpand { dir, input, .. } => {
+                if *dir == Direction::Both {
+                    stats.bidirectional_expands += 1;
+                }
+                stack.push((input, depth + 1));
+            }
+            Node::GraphProject { items, input, .. } => {
+                stats.select_history_projects += items
+                    .iter()
+                    .filter(|item| item.alias.starts_with("__gremlin_select_history_"))
+                    .count();
+                stack.push((input, depth + 1));
+            }
+            Node::GraphReturn { input, .. }
+            | Node::GraphConstructTriples { input, .. }
+            | Node::GraphDescribe { input, .. }
+            | Node::GraphAsk { input, .. }
+            | Node::GraphBind { input, .. }
+            | Node::GraphPathPattern { input, .. }
+            | Node::GraphPathFilter { input, .. }
+            | Node::GraphCreate { input, .. }
+            | Node::GraphSetProperty { input, .. }
+            | Node::GraphDelete { input, .. }
+            | Node::GraphFilter { input, .. }
+            | Node::GraphCurrentProject { input, .. }
+            | Node::GraphAggregate { input, .. }
+            | Node::GraphGroupMap { input, .. }
+            | Node::GraphGroupCountSideEffect { input, .. }
+            | Node::GraphCap { input, .. }
+            | Node::GraphShortestPath { input, .. }
+            | Node::GraphDistinct { input, .. }
+            | Node::GraphSort { input, .. }
+            | Node::GraphSlice { input, .. }
+            | Node::GraphSliceExpr { input, .. }
+            | Node::GraphBarrier { input, .. }
+            | Node::GraphUnwind { input, .. }
+            | Node::GraphQuantifier { input, .. }
+            | Node::GraphCollect { input, .. }
+            | Node::GraphListComprehension { input, .. }
+            | Node::GraphSelect { input, .. }
+            | Node::GraphService { input, .. } => {
+                stack.push((input, depth + 1));
+            }
+            Node::GraphJoin { left, right, .. }
+            | Node::GraphApply { left, right, .. }
+            | Node::GraphUnion { left, right, .. }
+            | Node::GraphSparqlMinus { left, right, .. } => {
+                stack.push((left, depth + 1));
+                stack.push((right, depth + 1));
+            }
+            Node::GraphRepeat {
+                seed,
+                body,
+                until_traversal,
+                prefix_traversal,
+                ..
+            } => {
+                stack.push((seed, depth + 1));
+                stack.push((body, depth + 1));
+                if let Some(input) = until_traversal {
+                    stack.push((input, depth + 1));
+                }
+                if let Some(input) = prefix_traversal {
+                    stack.push((input, depth + 1));
+                }
+            }
+            Node::GraphCoalesce { input, arms, .. } => {
+                stack.push((input, depth + 1));
+                for arm in arms {
+                    stack.push((arm, depth + 1));
+                }
+            }
+            Node::GraphChoose {
+                input,
+                arms,
+                default,
+                ..
+            } => {
+                stack.push((input, depth + 1));
+                for arm in arms {
+                    stack.push((&arm.body, depth + 1));
+                }
+                if let Some(default) = default {
+                    stack.push((default, depth + 1));
+                }
+            }
+            Node::GraphProcedureCall { input, .. } => {
+                if let Some(input) = input {
+                    stack.push((input, depth + 1));
+                }
+            }
+            Node::GraphExtension { inputs, .. } => {
+                for input in inputs {
+                    stack.push((input, depth + 1));
+                }
+            }
+            Node::GraphNodeScan { .. }
+            | Node::GraphRelScan { .. }
+            | Node::GraphValues { .. }
+            | Node::GraphOneRow
+            | Node::GraphEmpty
+            | Node::GraphCorrelate { .. }
+            | Node::GraphRdfQuadScan { .. }
+            | Node::GraphRdfPropertyPath { .. } => {}
+        }
+    }
+    stats
 }
 
 impl<'a> LoweringContext<'a> {
@@ -276,13 +454,19 @@ impl<'a> LoweringContext<'a> {
                 group, aggs, input, ..
             } => {
                 let input = self.lower_node(input)?;
-                let group_exprs = group
+                let mut group_exprs = apply_correlation_key_columns(&input.plan)
                     .iter()
-                    .map(|item| {
-                        self.lower_expr(&input.plan, &item.expr)
-                            .map(|expr| expr.alias(item.alias.clone()))
-                    })
-                    .collect::<RelResult<Vec<_>>>()?;
+                    .map(|key| col_exact(key).alias(key))
+                    .collect::<Vec<_>>();
+                group_exprs.extend(
+                    group
+                        .iter()
+                        .map(|item| {
+                            self.lower_expr(&input.plan, &item.expr)
+                                .map(|expr| expr.alias(item.alias.clone()))
+                        })
+                        .collect::<RelResult<Vec<_>>>()?,
+                );
                 let aggs = aggs
                     .iter()
                     .map(|agg| {
@@ -312,6 +496,16 @@ impl<'a> LoweringContext<'a> {
                             }
                             AggKind::Max | AggKind::MaxOrNull => {
                                 df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                            }
+                            AggKind::CollectRows | AggKind::CollectTraversers => {
+                                let expr = df_array_agg(
+                                    self.lower_required_agg_arg(&input.plan, &agg.arg)?,
+                                );
+                                if agg.distinct {
+                                    expr.distinct().build()?
+                                } else {
+                                    expr
+                                }
                             }
                             other => {
                                 return Err(RelError::Unsupported(format!(
@@ -355,9 +549,14 @@ impl<'a> LoweringContext<'a> {
                 if tail.is_some() {
                     return Err(RelError::Unsupported("tail slice".into()));
                 }
-                let plan = LogicalPlanBuilder::from(input.plan.clone())
-                    .limit(*offset as usize, fetch.map(|n| n as usize))?
-                    .build()?;
+                let correlation_keys = apply_correlation_key_columns(&input.plan);
+                let plan = if correlation_keys.is_empty() {
+                    LogicalPlanBuilder::from(input.plan.clone())
+                        .limit(*offset as usize, fetch.map(|n| n as usize))?
+                        .build()?
+                } else {
+                    partitioned_limit(input.plan.clone(), &correlation_keys, *offset, *fetch)?
+                };
                 input.with_plan(plan)
             }
             GraphJoin {
@@ -369,16 +568,39 @@ impl<'a> LoweringContext<'a> {
             GraphApply {
                 kind,
                 correlation,
+                outputs,
                 left,
                 right,
                 ..
-            } => self.lower_apply(*kind, correlation, left, right)?,
+            } => self.lower_apply(*kind, correlation, outputs, left, right)?,
             GraphUnion {
                 all,
                 align,
                 left,
                 right,
             } => self.lower_union(*all, *align, left, right)?,
+            GraphChoose {
+                selector,
+                arms,
+                default,
+                unmatched,
+                input,
+                ..
+            } => self.lower_choose(selector, arms, default.as_deref(), *unmatched, input)?,
+            GraphCoalesce {
+                success,
+                output,
+                correlation,
+                input,
+                arms,
+                ..
+            } => self.lower_coalesce(*success, output, correlation, input, arms)?,
+            GraphUnwind {
+                input_expr,
+                bind,
+                outer,
+                input,
+            } => self.lower_unwind(input_expr, bind, *outer, input)?,
             other => {
                 return Err(RelError::Unsupported(format!(
                     "{}",
@@ -512,40 +734,105 @@ impl<'a> LoweringContext<'a> {
                 rel_types,
                 dir,
             ),
-            Direction::Both => {
-                let out = self.lower_expand_direction(
-                    input.clone(),
-                    source,
-                    target,
-                    target_mode,
-                    target_labels,
-                    rel_binding,
-                    rel_types,
-                    Direction::Out,
-                )?;
-                let inn = self.lower_expand_direction(
-                    input,
-                    source,
-                    target,
-                    target_mode,
-                    target_labels,
-                    rel_binding,
-                    rel_types,
-                    Direction::In,
-                )?;
-                let plan = LogicalPlanBuilder::from(out.plan.clone())
-                    .union_by_name(inn.plan.clone())?
+            Direction::Both => self.lower_expand_both(
+                input,
+                source,
+                target,
+                target_mode,
+                target_labels,
+                rel_binding,
+                rel_types,
+            ),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lower_expand_both(
+        &mut self,
+        input: LoweredNode,
+        source: &str,
+        target: &str,
+        target_mode: TargetMode,
+        target_labels: &LabelExpr,
+        rel_binding: Option<&String>,
+        rel_types: &LabelExpr,
+    ) -> RelResult<LoweredNode> {
+        let rel = rel_binding
+            .cloned()
+            .unwrap_or_else(|| format!("__rel_{}", self.scan_counter));
+        let edge_scan = self.lower_rel_scan(&rel, rel_types)?;
+
+        let source_is_src = binding_pair_eq(source, &src_id_col(&rel), &src_label_col(&rel));
+        let source_is_dst = binding_pair_eq(source, &dst_id_col(&rel), &dst_label_col(&rel));
+        let source_join = vec![Expr::or(source_is_src.clone(), source_is_dst.clone())];
+        let mut joined = LogicalPlanBuilder::from(input.plan.clone())
+            .join_on(edge_scan.plan.clone(), JoinType::Inner, source_join)?
+            .build()?;
+
+        match target_mode {
+            TargetMode::Existing => {
+                let target_is_dst =
+                    binding_pair_eq(target, &dst_id_col(&rel), &dst_label_col(&rel));
+                let target_is_src =
+                    binding_pair_eq(target, &src_id_col(&rel), &src_label_col(&rel));
+                let opposite = Expr::or(
+                    Expr::and(source_is_src, target_is_dst),
+                    Expr::and(source_is_dst, target_is_src),
+                );
+                joined = LogicalPlanBuilder::from(joined).filter(opposite)?.build()?;
+            }
+            TargetMode::BindNew
+            | TargetMode::ReplaceCurrent
+            | TargetMode::ReplaceCurrentAndBindLabel
+            | TargetMode::BindNewOrReplaceCurrent => {
+                let target_scan_binding = if has_binding_shape(&joined, target).is_some() {
+                    format!("__target_{}", self.scan_counter)
+                } else {
+                    target.to_string()
+                };
+                let target_scan = self.lower_node_scan(&target_scan_binding, target_labels)?;
+                let target_is_dst = binding_pair_eq(
+                    &target_scan_binding,
+                    &dst_id_col(&rel),
+                    &dst_label_col(&rel),
+                );
+                let target_is_src = binding_pair_eq(
+                    &target_scan_binding,
+                    &src_id_col(&rel),
+                    &src_label_col(&rel),
+                );
+                let target_join = vec![Expr::or(
+                    Expr::and(source_is_src, target_is_dst),
+                    Expr::and(source_is_dst, target_is_src),
+                )];
+                joined = LogicalPlanBuilder::from(joined)
+                    .join_on(target_scan.plan, JoinType::Inner, target_join)?
                     .build()?;
-                let mut islands = out.islands;
-                islands.merge(inn.islands);
-                Ok(LoweredNode {
-                    plan,
-                    islands,
-                    fields: out.fields,
-                    result_form: out.result_form,
-                })
+                if target_scan_binding != target {
+                    let mut projections = existing_columns_excluding_bindings(
+                        &joined,
+                        &[target, target_scan_binding.as_str()],
+                    );
+                    projections.extend(duplicate_binding_projection_only(
+                        &joined,
+                        &target_scan_binding,
+                        target,
+                    )?);
+                    joined = LogicalPlanBuilder::from(joined)
+                        .project(projections)?
+                        .build()?;
+                }
             }
         }
+
+        let mut islands = input.islands;
+        islands.merge(edge_scan.islands);
+        Ok(LoweredNode {
+            plan: joined,
+            islands,
+            fields: input.fields,
+            result_form: input.result_form,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -674,6 +961,17 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
         let aliases = projection_aliases(items);
+        if mode == ProjectMode::PreserveVisible
+            && aliases
+                .iter()
+                .all(|alias| !has_exact_col(&input.plan, alias))
+            && items.iter().all(|item| {
+                self.project_item_exprs(&input.plan, &item.alias, &item.expr)
+                    .is_ok_and(|exprs| exprs.is_empty())
+            })
+        {
+            return Ok(input);
+        }
         let mut projections = match mode {
             ProjectMode::PreserveVisible => existing_columns(&input.plan, &aliases),
             ProjectMode::ReplaceScope => Vec::new(),
@@ -700,12 +998,17 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
         let alias = fields.first().map(String::as_str).unwrap_or("current");
-        let mut projections = self.project_item_exprs(&input.plan, alias, expr)?;
-        if projections.is_empty() {
+        let mut projections = apply_correlation_key_columns(&input.plan)
+            .iter()
+            .map(col_exact)
+            .collect::<Vec<_>>();
+        let item_projections = self.project_item_exprs(&input.plan, alias, expr)?;
+        if item_projections.is_empty() {
             return Err(RelError::Unsupported(
                 "current projection produced no relational columns".into(),
             ));
         }
+        projections.extend(item_projections);
         let plan = LogicalPlanBuilder::from(input.plan.clone())
             .project(projections.split_off(0))?
             .filter(col_exact(alias).is_not_null())?
@@ -757,23 +1060,135 @@ impl<'a> LoweringContext<'a> {
     fn lower_apply(
         &mut self,
         kind: ApplyKind,
-        _correlation: &[String],
+        correlation: &[String],
+        outputs: &[String],
         left: &Node,
         right: &Node,
     ) -> RelResult<LoweredNode> {
-        if kind != ApplyKind::Inner {
-            return Err(RelError::Unsupported(format!(
-                "GraphApply kind `{kind:?}` is not relationally lowered yet"
-            )));
-        }
-
         let left = self.lower_node(left)?;
+        let (left_plan, key_cols, cleanup) =
+            with_apply_correlation_keys(left.plan.clone(), correlation)?;
+        let left = left.with_plan(left_plan);
         let previous = self.correlate_plan.replace(left.plan.clone());
         let right = self.lower_node(right);
         self.correlate_plan = previous;
-        let mut right = right?;
-        right.islands.merge(left.islands);
-        Ok(right)
+        let right = right?;
+        match kind {
+            ApplyKind::Inner => {
+                let mut right = right;
+                right.islands.merge(left.islands);
+                if !cleanup.is_empty() {
+                    let projections = existing_columns_by_name(&right.plan, &cleanup);
+                    right.plan = LogicalPlanBuilder::from(right.plan)
+                        .project(projections)?
+                        .build()?;
+                }
+                Ok(right)
+            }
+            ApplyKind::Semi | ApplyKind::Anti => {
+                self.lower_existence_apply(kind, &key_cols, cleanup, left, right)
+            }
+            ApplyKind::Optional | ApplyKind::Scalar => {
+                self.lower_left_apply(&key_cols, outputs, cleanup, left, right)
+            }
+        }
+    }
+
+    fn lower_existence_apply(
+        &mut self,
+        kind: ApplyKind,
+        key_cols: &[String],
+        mut cleanup: BTreeSet<String>,
+        left: LoweredNode,
+        right: LoweredNode,
+    ) -> RelResult<LoweredNode> {
+        let (left_plan, right_plan, join_exprs, right_cleanup) =
+            prepare_apply_join_inputs(left.plan.clone(), right.plan.clone(), key_cols, &[])?;
+        cleanup.extend(right_cleanup);
+        let join_type = match kind {
+            ApplyKind::Semi => JoinType::LeftSemi,
+            ApplyKind::Anti => JoinType::LeftAnti,
+            _ => unreachable!("existence apply only handles semi/anti"),
+        };
+        let mut plan = LogicalPlanBuilder::from(left_plan)
+            .join_on(right_plan, join_type, join_exprs)?
+            .build()?;
+        if !cleanup.is_empty() {
+            let projections = existing_columns_by_name(&plan, &cleanup);
+            plan = LogicalPlanBuilder::from(plan)
+                .project(projections)?
+                .build()?;
+        }
+        let mut islands = left.islands;
+        islands.merge(right.islands);
+        Ok(LoweredNode {
+            plan,
+            islands,
+            fields: left.fields,
+            result_form: left.result_form,
+        })
+    }
+
+    fn lower_left_apply(
+        &mut self,
+        key_cols: &[String],
+        outputs: &[String],
+        mut cleanup: BTreeSet<String>,
+        left: LoweredNode,
+        right: LoweredNode,
+    ) -> RelResult<LoweredNode> {
+        let outputs = right_apply_output_columns(&right.plan, outputs)?;
+        let (left_plan, right_plan, join_exprs, right_cleanup) =
+            prepare_apply_join_inputs(left.plan.clone(), right.plan.clone(), key_cols, &outputs)?;
+        cleanup.extend(right_cleanup);
+        let mut plan = LogicalPlanBuilder::from(left_plan)
+            .join_on(right_plan, JoinType::Left, join_exprs)?
+            .build()?;
+        if !cleanup.is_empty() {
+            let projections = existing_columns_by_name(&plan, &cleanup);
+            plan = LogicalPlanBuilder::from(plan)
+                .project(projections)?
+                .build()?;
+        }
+        let mut islands = left.islands;
+        islands.merge(right.islands);
+        Ok(LoweredNode {
+            plan,
+            islands,
+            fields: left.fields,
+            result_form: left.result_form,
+        })
+    }
+
+    fn lower_unwind(
+        &mut self,
+        input_expr: &IrExpr,
+        bind: &str,
+        outer: bool,
+        input: &Node,
+    ) -> RelResult<LoweredNode> {
+        let input = self.lower_node(input)?;
+        let Some(values) = constant_unwind_values(input_expr, outer)? else {
+            return Err(RelError::Unsupported(
+                "GraphUnwind over non-constant list expression".into(),
+            ));
+        };
+        let value_rows = values
+            .into_iter()
+            .map(|value| vec![value])
+            .collect::<Vec<_>>();
+        let values_plan = self.lower_values(&[bind.to_string()], &value_rows)?;
+        let plan = LogicalPlanBuilder::from(input.plan.clone())
+            .cross_join(values_plan.plan.clone())?
+            .build()?;
+        let mut islands = input.islands;
+        islands.merge(values_plan.islands);
+        Ok(LoweredNode {
+            plan,
+            islands,
+            fields: input.fields,
+            result_form: input.result_form,
+        })
     }
 
     fn lower_union(
@@ -787,6 +1202,12 @@ impl<'a> LoweringContext<'a> {
         let right = self.lower_node(right)?;
         let builder = LogicalPlanBuilder::from(left.plan.clone());
         let plan = match (all, align) {
+            (true, UnionAlign::ByPosition) if self.language == Language::Gremlin => {
+                builder.union_by_name(right.plan.clone())?.build()?
+            }
+            (false, UnionAlign::ByPosition) if self.language == Language::Gremlin => builder
+                .union_by_name_distinct(right.plan.clone())?
+                .build()?,
             (true, UnionAlign::ByPosition) => builder.union(right.plan.clone())?.build()?,
             (false, UnionAlign::ByPosition) => {
                 builder.union_distinct(right.plan.clone())?.build()?
@@ -808,12 +1229,194 @@ impl<'a> LoweringContext<'a> {
         })
     }
 
+    fn lower_coalesce(
+        &mut self,
+        success: CoalesceSuccess,
+        _output: &str,
+        correlation: &[String],
+        input: &Node,
+        arms: &[Node],
+    ) -> RelResult<LoweredNode> {
+        if success != CoalesceSuccess::FirstNonEmpty || arms.len() != 2 {
+            return Err(RelError::Unsupported("GraphCoalesce".into()));
+        }
+        if !matches!(arms.get(1), Some(Node::GraphCorrelate { .. })) {
+            return Err(RelError::Unsupported(
+                "GraphCoalesce with non-pass-through fallback".into(),
+            ));
+        }
+
+        let input = self.lower_node(input)?;
+        let (left_plan, key_cols, cleanup) =
+            with_apply_correlation_keys(input.plan.clone(), correlation)?;
+        let left = input.with_plan(left_plan);
+
+        let previous = self.correlate_plan.replace(left.plan.clone());
+        let first = self.lower_node(&arms[0]);
+        self.correlate_plan = previous;
+        let first = first?;
+
+        let mut matched_plan = first.plan.clone();
+        if !cleanup.is_empty() {
+            let projections = existing_columns_by_name(&matched_plan, &cleanup);
+            matched_plan = LogicalPlanBuilder::from(matched_plan)
+                .project(projections)?
+                .build()?;
+        }
+
+        let (left_plan, right_plan, join_exprs, right_cleanup) =
+            prepare_apply_join_inputs(left.plan.clone(), first.plan.clone(), &key_cols, &[])?;
+        let mut fallback_cleanup = cleanup;
+        fallback_cleanup.extend(right_cleanup);
+        let mut fallback_plan = LogicalPlanBuilder::from(left_plan)
+            .join_on(right_plan, JoinType::LeftAnti, join_exprs)?
+            .build()?;
+        if !fallback_cleanup.is_empty() {
+            let projections = existing_columns_by_name(&fallback_plan, &fallback_cleanup);
+            fallback_plan = LogicalPlanBuilder::from(fallback_plan)
+                .project(projections)?
+                .build()?;
+        }
+
+        let plan = LogicalPlanBuilder::from(matched_plan)
+            .union_by_name(fallback_plan)?
+            .build()?;
+        let mut islands = left.islands;
+        islands.merge(first.islands);
+        Ok(LoweredNode {
+            plan,
+            islands,
+            fields: left.fields,
+            result_form: left.result_form,
+        })
+    }
+
+    fn lower_choose(
+        &mut self,
+        selector: &ChooseSelector,
+        arms: &[ChooseArm],
+        default: Option<&Node>,
+        unmatched: ChooseUnmatched,
+        input: &Node,
+    ) -> RelResult<LoweredNode> {
+        let input = self.lower_node(input)?;
+        let arm_conditions = self.choose_arm_conditions(&input.plan, selector, arms)?;
+        let mut branches = Vec::<LoweredNode>::new();
+        let mut unmatched_condition: Option<Expr> = None;
+
+        for (arm, condition) in arms.iter().zip(arm_conditions.iter()) {
+            let filtered = LogicalPlanBuilder::from(input.plan.clone())
+                .filter(condition.clone())?
+                .build()?;
+            branches.push(self.lower_with_correlate(filtered, &arm.body)?);
+            unmatched_condition = Some(match unmatched_condition {
+                Some(acc) => Expr::or(acc, condition.clone()),
+                None => condition.clone(),
+            });
+        }
+
+        let unmatched_filter =
+            unmatched_condition.map(|condition| Expr::IsNotTrue(Box::new(condition)));
+        if let Some(default) = default {
+            let default_input = match unmatched_filter {
+                Some(condition) => LogicalPlanBuilder::from(input.plan.clone())
+                    .filter(condition)?
+                    .build()?,
+                None => input.plan.clone(),
+            };
+            branches.push(self.lower_with_correlate(default_input, default)?);
+        } else if unmatched == ChooseUnmatched::PassThrough {
+            let pass_input = match unmatched_filter {
+                Some(condition) => LogicalPlanBuilder::from(input.plan.clone())
+                    .filter(condition)?
+                    .build()?,
+                None => input.plan.clone(),
+            };
+            branches.push(LoweredNode {
+                plan: pass_input,
+                islands: IslandReport::default(),
+                fields: input.fields.clone(),
+                result_form: input.result_form,
+            });
+        } else if unmatched == ChooseUnmatched::Error {
+            return Err(RelError::Unsupported(
+                "GraphChoose unmatched=Error is not relationally lowered yet".into(),
+            ));
+        }
+
+        let Some(first) = branches.first().cloned() else {
+            return Ok(input);
+        };
+        let mut plan = first.plan;
+        let mut islands = input.islands;
+        islands.merge(first.islands);
+        for branch in branches.into_iter().skip(1) {
+            plan = LogicalPlanBuilder::from(plan)
+                .union_by_name(branch.plan)?
+                .build()?;
+            islands.merge(branch.islands);
+        }
+        Ok(LoweredNode {
+            plan,
+            islands,
+            fields: input.fields,
+            result_form: input.result_form,
+        })
+    }
+
+    fn choose_arm_conditions(
+        &self,
+        plan: &LogicalPlan,
+        selector: &ChooseSelector,
+        arms: &[ChooseArm],
+    ) -> RelResult<Vec<Expr>> {
+        match selector {
+            ChooseSelector::Boolean(condition) => {
+                let condition = self.lower_expr(plan, condition)?;
+                let mut out = Vec::with_capacity(arms.len());
+                if !arms.is_empty() {
+                    out.push(condition.clone());
+                }
+                if arms.len() >= 2 {
+                    out.push(Expr::IsNotTrue(Box::new(condition)));
+                }
+                for _ in 2..arms.len() {
+                    out.push(lit(false));
+                }
+                Ok(out)
+            }
+            ChooseSelector::Value(expr) => {
+                let selector = self.lower_expr(plan, expr)?;
+                arms.iter()
+                    .map(|arm| {
+                        let Some(key) = &arm.key else {
+                            return Ok(lit(false));
+                        };
+                        let key = value_literal_expr(key)?;
+                        Ok(binary(selector.clone(), BinaryOp::Eq, key))
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    fn lower_with_correlate(&mut self, plan: LogicalPlan, node: &Node) -> RelResult<LoweredNode> {
+        let previous = self.correlate_plan.replace(plan);
+        let lowered = self.lower_node(node);
+        self.correlate_plan = previous;
+        lowered
+    }
+
     fn return_projection(&self, plan: &LogicalPlan, fields: &[String]) -> RelResult<Vec<Expr>> {
         let mut projections = Vec::new();
         for field in fields {
             if has_exact_col(plan, field) {
                 projections.push(col_exact(field));
             } else if has_binding_shape(plan, field).is_some() {
+                if self.language == Language::Gremlin {
+                    projections.push(gremlin_element_display_expr(plan, field)?.alias(field));
+                    continue;
+                }
                 return Err(RelError::Unsupported(format!(
                     "returning graph element binding `{field}` as a value"
                 )));
@@ -832,6 +1435,18 @@ impl<'a> LoweringContext<'a> {
         alias: &str,
         expr: &IrExpr,
     ) -> RelResult<Vec<Expr>> {
+        if self.options.tolerate_internal_path_state
+            && alias.starts_with("__gremlin_select_history_")
+            && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
+        {
+            return Ok(Vec::new());
+        }
+        if self.language == Language::Gremlin
+            && alias.starts_with("select_source_")
+            && matches!(expr, IrExpr::Binding(binding) if binding == "current")
+        {
+            return Ok(Vec::new());
+        }
         if let IrExpr::Binding(binding) = expr {
             if has_binding_shape(plan, binding).is_some() {
                 return duplicate_binding_projection_only(plan, binding, alias);
@@ -853,9 +1468,13 @@ impl<'a> LoweringContext<'a> {
                 if has_exact_col(plan, binding) {
                     Ok(col_exact(binding))
                 } else if has_binding_shape(plan, binding).is_some() {
-                    Err(RelError::Unsupported(format!(
-                        "element binding `{binding}` needs scalar context"
-                    )))
+                    if self.language == Language::Gremlin {
+                        gremlin_element_display_expr(plan, binding)
+                    } else {
+                        Err(RelError::Unsupported(format!(
+                            "element binding `{binding}` needs scalar context"
+                        )))
+                    }
                 } else {
                     Err(RelError::Unsupported(format!(
                         "unavailable binding `{binding}`"
@@ -939,12 +1558,98 @@ impl<'a> LoweringContext<'a> {
                     Ok(lit(false))
                 }
             }
+            IrExpr::Case { arms, otherwise } => {
+                let when_then_expr = arms
+                    .iter()
+                    .map(|(when, then)| {
+                        Ok((
+                            Box::new(self.lower_expr(plan, when)?),
+                            Box::new(self.lower_expr(plan, then)?),
+                        ))
+                    })
+                    .collect::<RelResult<Vec<_>>>()?;
+                let else_expr = otherwise
+                    .as_ref()
+                    .map(|expr| self.lower_expr(plan, expr).map(Box::new))
+                    .transpose()?;
+                Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
+            }
             IrExpr::Call { name, args } if name == "path_or_self" => {
                 let Some(fallback) = args.get(1) else {
                     return Err(RelError::Unsupported("path_or_self arity".into()));
                 };
                 self.lower_expr(plan, fallback)
             }
+            IrExpr::Call { name, args } if is_label_function(name) && args.len() == 1 => {
+                match &args[0] {
+                    IrExpr::Binding(binding) => {
+                        self.lower_expr(plan, &IrExpr::Label(binding.clone()))
+                    }
+                    arg => self.lower_expr(plan, arg),
+                }
+            }
+            IrExpr::Call { name, args } if is_id_function(name) && args.len() == 1 => {
+                match &args[0] {
+                    IrExpr::Binding(binding) => self.lower_expr(plan, &IrExpr::Id(binding.clone())),
+                    arg => self.lower_expr(plan, arg),
+                }
+            }
+            IrExpr::Call { name, args } if is_cast_function(name, args) => {
+                let (value, data_type, lenient) = self.cast_parts(plan, name, args)?;
+                if lenient {
+                    Ok(Expr::TryCast(TryCast::new(Box::new(value), data_type)))
+                } else {
+                    Ok(Expr::Cast(Cast::new(Box::new(value), data_type)))
+                }
+            }
+            IrExpr::Call { name, args } if is_mod_function(name) && args.len() == 2 => {
+                Ok(Expr::BinaryExpr(BinaryExpr::new(
+                    Box::new(self.lower_expr(plan, &args[0])?),
+                    Operator::Modulo,
+                    Box::new(self.lower_expr(plan, &args[1])?),
+                )))
+            }
+            IrExpr::Call { name, args } if is_abs_function(name) && args.len() == 1 => {
+                Ok(df_math::abs(self.lower_expr(plan, &args[0])?))
+            }
+            IrExpr::Call { name, args } if is_pow_function(name) && args.len() == 2 => {
+                Ok(df_math::power(
+                    self.lower_expr(plan, &args[0])?,
+                    self.lower_expr(plan, &args[1])?,
+                ))
+            }
+            IrExpr::Call { name, args } if is_date_function(name) && args.len() == 1 => {
+                Ok(cast_utf8(self.lower_expr(plan, &args[0])?))
+            }
+            IrExpr::Call { name, args } if is_exists_function(name) && args.len() == 1 => {
+                Ok(self.lower_expr(plan, &args[0])?.is_not_null())
+            }
+            IrExpr::Call { name, args } if is_in_function(name) && args.len() == 2 => {
+                let expr = self.lower_expr(plan, &args[0])?;
+                let IrExpr::List(values) = &args[1] else {
+                    return Err(RelError::Unsupported("dynamic IN list".into()));
+                };
+                let list = values
+                    .iter()
+                    .map(|value| self.lower_expr(plan, value))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(Expr::InList(InList::new(Box::new(expr), list, false)))
+            }
+            IrExpr::Call { name, args } if name == "typeof_matches" && args.len() == 2 => {
+                let IrExpr::Lit(Lit::String(type_name)) = &args[1] else {
+                    return Err(RelError::Unsupported("dynamic typeOf target".into()));
+                };
+                self.lower_typeof_matches(plan, &args[0], type_name)
+            }
+            IrExpr::Call { name, args } if name == "map_has_key" && args.len() == 2 => {
+                Ok(lit(false))
+            }
+            IrExpr::Call { name, args }
+                if name == "select_key_or_binding_pop" && args.len() == 5 =>
+            {
+                self.lower_select_key_or_binding(plan, &args[1])
+            }
+            IrExpr::Call { name, args } if name == "make_map" => self.lower_make_map(plan, args),
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {
                 let op = match name.as_str() {
                     "cypher_eq" => BinaryOp::Eq,
@@ -974,6 +1679,57 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
+    fn cast_parts(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<(Expr, DataType, bool)> {
+        let normalized = name.to_ascii_lowercase();
+        let (value_arg, target_name, lenient) = if normalized == "cast" {
+            let [value, target] = args else {
+                return Err(RelError::Unsupported("cast arity".into()));
+            };
+            let IrExpr::Lit(Lit::String(target_name)) = target else {
+                return Err(RelError::Unsupported("dynamic cast target".into()));
+            };
+            (value, target_name.as_str(), false)
+        } else {
+            let [value] = args else {
+                return Err(RelError::Unsupported(format!("{name} arity")));
+            };
+            let lenient = matches!(
+                normalized.as_str(),
+                "tointeger" | "tofloat" | "toboolean" | "tostring"
+            );
+            (value, cast_target_from_function_name(&normalized)?, lenient)
+        };
+        let value = self.lower_expr(plan, value_arg)?;
+        let data_type = data_type_for_cast_target(target_name)?;
+        Ok((value, data_type, lenient))
+    }
+
+    fn lower_typeof_matches(
+        &self,
+        plan: &LogicalPlan,
+        target: &IrExpr,
+        type_name: &str,
+    ) -> RelResult<Expr> {
+        let normalized = normalize_type_name(type_name);
+        if let IrExpr::Binding(binding) = target
+            && let Some(shape) = has_binding_shape(plan, binding)
+        {
+            let matched = match shape {
+                BindingShape::Node => matches!(normalized.as_str(), "vertex" | "node"),
+                BindingShape::Edge => matches!(normalized.as_str(), "edge" | "relationship"),
+            };
+            return Ok(lit(matched));
+        }
+        let expr = self.lower_expr(plan, target)?;
+        let data_type = expr.get_type(plan.schema())?;
+        Ok(lit(data_type_matches_gremlin_type(&data_type, &normalized)))
+    }
+
     fn lower_expr_for_join(
         &self,
         left: &LogicalPlan,
@@ -984,6 +1740,48 @@ impl<'a> LoweringContext<'a> {
             .cross_join(right.clone())?
             .build()?;
         self.lower_expr(&joined, expr)
+    }
+
+    fn lower_select_key_or_binding(
+        &self,
+        plan: &LogicalPlan,
+        binding_arg: &IrExpr,
+    ) -> RelResult<Expr> {
+        let IrExpr::Binding(binding) = binding_arg else {
+            return Err(RelError::Unsupported(
+                "dynamic Gremlin select binding".into(),
+            ));
+        };
+        if has_exact_col(plan, binding) {
+            Ok(col_exact(binding))
+        } else if has_binding_shape(plan, binding).is_some() {
+            gremlin_element_display_expr(plan, binding)
+        } else {
+            Err(RelError::Unsupported(format!(
+                "Gremlin select binding `{binding}` is not available relationally"
+            )))
+        }
+    }
+
+    fn lower_make_map(&self, plan: &LogicalPlan, args: &[IrExpr]) -> RelResult<Expr> {
+        if args.len() % 2 != 0 {
+            return Err(RelError::Unsupported("make_map arity".into()));
+        }
+        let mut pieces = Vec::new();
+        pieces.push(lit("Map({"));
+        for (idx, pair) in args.chunks(2).enumerate() {
+            let IrExpr::Lit(Lit::String(key)) = &pair[0] else {
+                return Err(RelError::Unsupported("dynamic make_map key".into()));
+            };
+            if idx > 0 {
+                pieces.push(lit(", "));
+            }
+            pieces.push(lit(format!("\"{}\": String(\"", escape_debug_string(key))));
+            pieces.push(cast_utf8(self.lower_expr(plan, &pair[1])?));
+            pieces.push(lit("\")"));
+        }
+        pieces.push(lit("})"));
+        Ok(concat_exprs(pieces))
     }
 
     fn sort_exprs(
@@ -1446,6 +2244,107 @@ fn lit_to_expr(value: &Lit) -> Expr {
     }
 }
 
+fn value_literal_expr(value: &Value) -> RelResult<Expr> {
+    match value {
+        Value::Null => Ok(lit(ScalarValue::Utf8(None))),
+        Value::Bool(value) => Ok(lit(*value)),
+        Value::Byte(value) => Ok(lit(*value as i64)),
+        Value::UInt8(value) => Ok(lit(*value as i64)),
+        Value::Short(value) => Ok(lit(*value as i64)),
+        Value::UInt16(value) => Ok(lit(*value as i64)),
+        Value::Int(value) | Value::Long(value) => Ok(lit(*value)),
+        Value::UInt32(value) => Ok(lit(*value as i64)),
+        Value::UInt64(value) => i64::try_from(*value)
+            .map(lit)
+            .map_err(|_| RelError::Unsupported("UINT64 choose key overflows INT64".into())),
+        Value::Float32(value) => Ok(lit(*value as f64)),
+        Value::Float(value) => Ok(lit(*value)),
+        Value::String(value) | Value::DateTime(value) => Ok(lit(value.clone())),
+        other => Err(RelError::Unsupported(format!(
+            "GraphChoose key type `{}` is not relationally lowered yet",
+            other.type_name()
+        ))),
+    }
+}
+
+fn lit_to_value(value: &Lit) -> Value {
+    match value {
+        Lit::Null => Value::Null,
+        Lit::Bool(value) => Value::Bool(*value),
+        Lit::Int(value) => Value::Int(*value),
+        Lit::Float(value) => Value::Float(*value),
+        Lit::String(value) => Value::String(value.clone()),
+    }
+}
+
+fn constant_unwind_values(expr: &IrExpr, outer: bool) -> RelResult<Option<Vec<Value>>> {
+    let mut values = match expr {
+        IrExpr::Lit(Lit::Null) => Vec::new(),
+        IrExpr::Lit(value) => vec![lit_to_value(value)],
+        IrExpr::List(items) => {
+            let mut values = Vec::with_capacity(items.len());
+            for item in items {
+                let IrExpr::Lit(value) = item else {
+                    return Ok(None);
+                };
+                values.push(lit_to_value(value));
+            }
+            values
+        }
+        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+            constant_range_values(args)?
+        }
+        _ => return Ok(None),
+    };
+    if values.is_empty() && outer {
+        values.push(Value::Null);
+    }
+    Ok(Some(values))
+}
+
+fn constant_range_values(args: &[IrExpr]) -> RelResult<Vec<Value>> {
+    let ([start, stop] | [start, stop, _]) = args else {
+        return Err(RelError::Unsupported("range arity".into()));
+    };
+    let start = literal_i64(start)
+        .ok_or_else(|| RelError::Unsupported("range start must be a literal integer".into()))?;
+    let stop = literal_i64(stop)
+        .ok_or_else(|| RelError::Unsupported("range stop must be a literal integer".into()))?;
+    let step = if let Some(step) = args.get(2) {
+        literal_i64(step)
+            .ok_or_else(|| RelError::Unsupported("range step must be a literal integer".into()))?
+    } else if start <= stop {
+        1
+    } else {
+        -1
+    };
+    if step == 0 {
+        return Err(RelError::Unsupported("range step cannot be zero".into()));
+    }
+    let mut values = Vec::new();
+    let mut current = start;
+    while (step > 0 && current <= stop) || (step < 0 && current >= stop) {
+        if values.len() > 100_000 {
+            return Err(RelError::Unsupported(
+                "range literal is too large for eager relational expansion".into(),
+            ));
+        }
+        values.push(Value::Int(current));
+        current = current.saturating_add(step);
+        if (step > 0 && current == i64::MAX) || (step < 0 && current == i64::MIN) {
+            break;
+        }
+    }
+    Ok(values)
+}
+
+fn literal_i64(expr: &IrExpr) -> Option<i64> {
+    match expr {
+        IrExpr::Lit(Lit::Int(value)) => Some(*value),
+        _ => None,
+    }
+}
+
 fn binary(lhs: Expr, op: BinaryOp, rhs: Expr) -> Expr {
     let op = match op {
         BinaryOp::Eq => Operator::Eq,
@@ -1462,6 +2361,176 @@ fn binary(lhs: Expr, op: BinaryOp, rhs: Expr) -> Expr {
         BinaryOp::Or => Operator::Or,
     };
     Expr::BinaryExpr(BinaryExpr::new(Box::new(lhs), op, Box::new(rhs)))
+}
+
+fn string_concat(lhs: Expr, rhs: Expr) -> Expr {
+    Expr::BinaryExpr(BinaryExpr::new(
+        Box::new(lhs),
+        Operator::StringConcat,
+        Box::new(rhs),
+    ))
+}
+
+fn concat_exprs(mut exprs: Vec<Expr>) -> Expr {
+    let first = exprs.remove(0);
+    exprs.into_iter().fold(first, string_concat)
+}
+
+fn cast_utf8(expr: Expr) -> Expr {
+    Expr::Cast(Cast::new(Box::new(expr), DataType::Utf8))
+}
+
+fn binding_pair_eq(binding: &str, id_column: &str, label_column: &str) -> Expr {
+    Expr::and(
+        binary(
+            col_exact(id_col(binding)),
+            BinaryOp::Eq,
+            col_exact(id_column),
+        ),
+        binary(
+            col_exact(label_col(binding)),
+            BinaryOp::Eq,
+            col_exact(label_column),
+        ),
+    )
+}
+
+fn gremlin_element_display_expr(plan: &LogicalPlan, binding: &str) -> RelResult<Expr> {
+    let Some(_) = has_binding_shape(plan, binding) else {
+        return Err(RelError::Unsupported(format!(
+            "binding `{binding}` is not an element binding"
+        )));
+    };
+    Ok(string_concat(
+        string_concat(col_exact(label_col(binding)), lit("#")),
+        cast_utf8(col_exact(id_col(binding))),
+    ))
+}
+
+fn escape_debug_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn is_label_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("label")
+}
+
+fn is_id_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("id") || name.eq_ignore_ascii_case("ID")
+}
+
+fn is_mod_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("mod")
+}
+
+fn is_abs_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("abs")
+}
+
+fn is_pow_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("pow") || name.eq_ignore_ascii_case("power")
+}
+
+fn is_date_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("date") || name.eq_ignore_ascii_case("to_date")
+}
+
+fn is_exists_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("exists")
+}
+
+fn is_in_function(name: &str) -> bool {
+    name.eq_ignore_ascii_case("in")
+}
+
+fn is_cast_function(name: &str, args: &[IrExpr]) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    (normalized == "cast" && args.len() == 2) || cast_target_from_function_name(&normalized).is_ok()
+}
+
+fn cast_target_from_function_name(name: &str) -> RelResult<&'static str> {
+    match name {
+        "tointeger" => Ok("INT64"),
+        "tofloat" => Ok("DOUBLE"),
+        "toboolean" => Ok("BOOL"),
+        "tostring" => Ok("STRING"),
+        "to_bool" | "to_boolean" => Ok("BOOL"),
+        "to_string" | "string" | "cast_string" => Ok("STRING"),
+        "cast_byte" => Ok("INT8"),
+        "cast_short" => Ok("INT16"),
+        "to_int8" => Ok("INT8"),
+        "to_int16" => Ok("INT16"),
+        "to_int32" | "cast_int" => Ok("INT32"),
+        "to_int64" | "to_serial" | "cast_long" => Ok("INT64"),
+        "to_uint8" => Ok("UINT8"),
+        "to_uint16" => Ok("UINT16"),
+        "to_uint32" => Ok("UINT32"),
+        "to_uint64" => Ok("UINT64"),
+        "to_float" | "cast_float" => Ok("FLOAT"),
+        "to_double" | "cast_double" => Ok("DOUBLE"),
+        "cast_bool" | "cast_boolean" => Ok("BOOL"),
+        _ => Err(RelError::Unsupported(format!(
+            "function `{name}` is not relationally lowered yet"
+        ))),
+    }
+}
+
+fn data_type_for_cast_target(type_name: &str) -> RelResult<DataType> {
+    let normalized = type_name
+        .trim()
+        .trim_matches('"')
+        .to_ascii_uppercase()
+        .replace(' ', "");
+    match normalized.as_str() {
+        "BOOL" | "BOOLEAN" => Ok(DataType::Boolean),
+        "INT8" => Ok(DataType::Int8),
+        "INT16" => Ok(DataType::Int16),
+        "INT32" => Ok(DataType::Int32),
+        "INT64" | "SERIAL" => Ok(DataType::Int64),
+        "UINT8" => Ok(DataType::UInt8),
+        "UINT16" => Ok(DataType::UInt16),
+        "UINT32" => Ok(DataType::UInt32),
+        "UINT64" => Ok(DataType::UInt64),
+        "FLOAT" => Ok(DataType::Float32),
+        "DOUBLE" | "FLOAT64" => Ok(DataType::Float64),
+        "STRING" | "VARCHAR" => Ok(DataType::Utf8),
+        other => Err(RelError::Unsupported(format!(
+            "cast target `{other}` is not relationally lowered yet"
+        ))),
+    }
+}
+
+fn normalize_type_name(type_name: &str) -> String {
+    type_name
+        .trim()
+        .trim_start_matches("GType.")
+        .trim_start_matches("java.lang.")
+        .trim_start_matches("java.math.")
+        .to_ascii_lowercase()
+}
+
+fn data_type_matches_gremlin_type(data_type: &DataType, type_name: &str) -> bool {
+    match data_type {
+        DataType::Null => type_name == "null",
+        DataType::Boolean => matches!(type_name, "boolean" | "bool"),
+        DataType::Int8 => type_name == "byte",
+        DataType::UInt8 => matches!(type_name, "uint8" | "byte"),
+        DataType::Int16 => type_name == "short",
+        DataType::UInt16 => type_name == "uint16",
+        DataType::Int32 => matches!(type_name, "int" | "integer"),
+        DataType::UInt32 => type_name == "uint32",
+        DataType::Int64 => matches!(type_name, "long" | "int" | "integer"),
+        DataType::UInt64 => type_name == "uint64",
+        DataType::Float32 => type_name == "float",
+        DataType::Float64 => type_name == "double",
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
+            matches!(type_name, "string" | "char" | "character")
+        }
+        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+            matches!(type_name, "list" | "set" | "graph")
+        }
+        _ => false,
+    }
 }
 
 fn col_exact(name: impl Into<String>) -> Expr {
@@ -1544,6 +2613,228 @@ fn existing_columns(plan: &LogicalPlan, excluded: &BTreeSet<String>) -> Vec<Expr
         .filter(|field| !excluded.contains(field.name()))
         .map(|field| col_exact(field.name()))
         .collect()
+}
+
+fn existing_columns_by_name(plan: &LogicalPlan, excluded: &BTreeSet<String>) -> Vec<Expr> {
+    plan.schema()
+        .fields()
+        .iter()
+        .filter(|field| !excluded.contains(field.name()))
+        .map(|field| col_exact(field.name()))
+        .collect()
+}
+
+fn apply_correlation_key_columns(plan: &LogicalPlan) -> Vec<String> {
+    plan.schema()
+        .fields()
+        .iter()
+        .map(|field| field.name().clone())
+        .filter(|name| name.starts_with("__apply_corr_key_"))
+        .collect()
+}
+
+fn partitioned_limit(
+    plan: LogicalPlan,
+    partition_cols: &[String],
+    offset: u64,
+    fetch: Option<u64>,
+) -> RelResult<LogicalPlan> {
+    if partition_cols.is_empty() {
+        return LogicalPlanBuilder::from(plan)
+            .limit(offset as usize, fetch.map(|n| n as usize))?
+            .build()
+            .map_err(RelError::from);
+    }
+    let row_number = unique_internal_alias(&plan, &BTreeSet::new(), "__apply_row_number");
+    let partition_by = partition_cols.iter().map(col_exact).collect::<Vec<_>>();
+    let mut predicate = binary(col_exact(&row_number), BinaryOp::Gt, lit(offset));
+    if let Some(fetch) = fetch {
+        predicate = Expr::and(
+            predicate,
+            binary(col_exact(&row_number), BinaryOp::Lte, lit(offset + fetch)),
+        );
+    }
+    let window = df_window::row_number()
+        .partition_by(partition_by)
+        .build()?
+        .alias(row_number.clone());
+    let mut cleanup = BTreeSet::new();
+    cleanup.insert(row_number);
+    let windowed = LogicalPlanBuilder::from(plan)
+        .window(vec![window])?
+        .filter(predicate)?
+        .build()?;
+    let projections = existing_columns_by_name(&windowed, &cleanup);
+    LogicalPlanBuilder::from(windowed)
+        .project(projections)?
+        .build()
+        .map_err(RelError::from)
+}
+
+fn correlation_key_columns(plan: &LogicalPlan, bindings: &[String]) -> RelResult<Vec<String>> {
+    let mut out = Vec::new();
+    for binding in bindings {
+        if has_exact_col(plan, binding) {
+            out.push(binding.clone());
+        } else if binding.starts_with("__") {
+            continue;
+        } else if has_binding_shape(plan, binding).is_some() {
+            out.push(id_col(binding));
+            out.push(label_col(binding));
+        } else {
+            return Err(RelError::Unsupported(format!(
+                "apply correlation `{binding}` is not available relationally"
+            )));
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+fn unique_internal_alias(
+    plan: &LogicalPlan,
+    reserved: &BTreeSet<String>,
+    base: impl AsRef<str>,
+) -> String {
+    let base = base.as_ref();
+    if !has_exact_col(plan, base) && !reserved.contains(base) {
+        return base.to_string();
+    }
+    for suffix in 1.. {
+        let candidate = format!("{base}_{suffix}");
+        if !has_exact_col(plan, &candidate) && !reserved.contains(&candidate) {
+            return candidate;
+        }
+    }
+    unreachable!("unbounded alias search")
+}
+
+fn with_apply_correlation_keys(
+    plan: LogicalPlan,
+    correlation: &[String],
+) -> RelResult<(LogicalPlan, Vec<String>, BTreeSet<String>)> {
+    let key_cols = correlation_key_columns(&plan, correlation)?;
+    if key_cols.is_empty() {
+        return Ok((plan, Vec::new(), BTreeSet::new()));
+    }
+    let mut cleanup = BTreeSet::new();
+    let mut projections = existing_columns(&plan, &BTreeSet::new());
+    let mut aliases = Vec::with_capacity(key_cols.len());
+    for (idx, key) in key_cols.iter().enumerate() {
+        let alias = unique_internal_alias(&plan, &cleanup, format!("__apply_corr_key_{idx}"));
+        cleanup.insert(alias.clone());
+        projections.push(col_exact(key).alias(alias.clone()));
+        aliases.push(alias);
+    }
+    let plan = LogicalPlanBuilder::from(plan)
+        .project(projections)?
+        .build()?;
+    Ok((plan, aliases, cleanup))
+}
+
+fn right_apply_output_columns(right: &LogicalPlan, outputs: &[String]) -> RelResult<Vec<String>> {
+    let mut out = Vec::new();
+    for output in outputs {
+        if output.starts_with("__") {
+            continue;
+        }
+        if has_exact_col(right, output) {
+            out.push(output.clone());
+        } else if has_binding_shape(right, output).is_some() {
+            out.extend(binding_column_names(right, output)?);
+        } else {
+            return Err(RelError::Unsupported(format!(
+                "apply output `{output}` is not available relationally"
+            )));
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+fn binding_column_names(plan: &LogicalPlan, binding: &str) -> RelResult<Vec<String>> {
+    let Some(_) = has_binding_shape(plan, binding) else {
+        return Err(RelError::Unsupported(format!(
+            "binding `{binding}` is not an element binding"
+        )));
+    };
+    Ok(plan
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.name().clone())
+        .filter(|name| is_binding_column(name, binding))
+        .collect())
+}
+
+fn prepare_apply_join_inputs(
+    left: LogicalPlan,
+    right: LogicalPlan,
+    key_cols: &[String],
+    output_cols: &[String],
+) -> RelResult<(LogicalPlan, LogicalPlan, Vec<Expr>, BTreeSet<String>)> {
+    let mut cleanup = BTreeSet::new();
+    let (left, key_pairs) = if key_cols.is_empty() {
+        let left_key = unique_internal_alias(&left, &cleanup, "__apply_left_key_0");
+        cleanup.insert(left_key.clone());
+        let right_key = unique_internal_alias(&right, &cleanup, "__apply_right_key_0");
+        cleanup.insert(right_key.clone());
+        let mut projections = existing_columns(&left, &BTreeSet::new());
+        projections.push(lit(1_i64).alias(left_key.clone()));
+        let left = LogicalPlanBuilder::from(left)
+            .project(projections)?
+            .build()?;
+        (left, vec![(left_key, right_key)])
+    } else {
+        (
+            left,
+            key_cols
+                .iter()
+                .enumerate()
+                .map(|(idx, key)| {
+                    let alias =
+                        unique_internal_alias(&right, &cleanup, format!("__apply_right_key_{idx}"));
+                    cleanup.insert(alias.clone());
+                    (key.clone(), alias)
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+
+    let mut right_projections = Vec::new();
+    if key_cols.is_empty() {
+        let right_key = &key_pairs[0].1;
+        right_projections.push(lit(1_i64).alias(right_key.clone()));
+    } else {
+        for (key, alias) in key_cols
+            .iter()
+            .zip(key_pairs.iter().map(|(_, alias)| alias))
+        {
+            if !has_exact_col(&right, key) {
+                return Err(RelError::Unsupported(format!(
+                    "apply right side dropped correlation key `{key}`"
+                )));
+            }
+            right_projections.push(col_exact(key).alias(alias));
+        }
+    }
+    for col in output_cols {
+        if has_exact_col(&right, col) {
+            right_projections.push(col_exact(col));
+        }
+    }
+    let right = LogicalPlanBuilder::from(right)
+        .project(right_projections)?
+        .build()?;
+    let join_exprs = key_pairs
+        .into_iter()
+        .map(|(left_key, right_key)| {
+            binary(col_exact(left_key), BinaryOp::Eq, col_exact(right_key))
+        })
+        .collect::<Vec<_>>();
+    Ok((left, right, join_exprs, cleanup))
 }
 
 fn existing_columns_excluding_binding(

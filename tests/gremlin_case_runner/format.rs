@@ -11,7 +11,10 @@
 //! The harness compares ordered or unordered as a multiset of these
 //! formatted strings.
 
-use arrow::array::{Array, BooleanArray, Float64Array, Int64Array, StringArray};
+use arrow::array::{
+    Array, BooleanArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+    ListArray, StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+};
 use arrow::datatypes::DataType;
 
 use new_graph::ir::interpreter::ReturnedBatches;
@@ -67,12 +70,61 @@ fn render_cell(array: &dyn Array, row: usize) -> String {
             .unwrap()
             .value(row)
             .to_string(),
+        DataType::Int8 => array
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::Int16 => array
+            .as_any()
+            .downcast_ref::<Int16Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::Int32 => array
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt8 => array
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt16 => array
+            .as_any()
+            .downcast_ref::<UInt16Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt32 => array
+            .as_any()
+            .downcast_ref::<UInt32Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt64 => array
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
         DataType::Float64 => render_float(
             array
                 .as_any()
                 .downcast_ref::<Float64Array>()
                 .unwrap()
                 .value(row),
+        ),
+        DataType::Float32 => render_float(
+            array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row) as f64,
         ),
         DataType::Boolean => array
             .as_any()
@@ -87,6 +139,17 @@ fn render_cell(array: &dyn Array, row: usize) -> String {
                 .unwrap()
                 .value(row),
         ),
+        DataType::List(_) => {
+            let values = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap()
+                .value(row);
+            (0..values.len())
+                .map(|idx| render_cell(values.as_ref(), idx))
+                .collect::<Vec<_>>()
+                .join(",")
+        }
         _ => format!("?({:?})", array.data_type()),
     }
 }
@@ -152,7 +215,7 @@ fn render_debug_map_value(value: &str) -> String {
         .strip_prefix("String(\"")
         .and_then(|v| v.strip_suffix("\")"))
     {
-        return normalize_embedded_string_value(inner);
+        return render_string_cell(&normalize_embedded_string_value(inner));
     }
     value.to_string()
 }
@@ -283,6 +346,9 @@ fn normalize_expected_map(line: &str) -> Option<String> {
 
 fn normalize_embedded_map_value(value: &str) -> String {
     let value = normalize_embedded_string_value(value.trim());
+    if value.starts_with("v[") && value.ends_with(']') {
+        return value[2..value.len() - 1].to_string();
+    }
     if value == "l[]" {
         return "[]".to_string();
     }

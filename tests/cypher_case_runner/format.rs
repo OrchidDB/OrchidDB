@@ -12,7 +12,10 @@
 //! which still surfaces real correctness issues rather than swallowing
 //! them.
 
-use arrow::array::{Array, BooleanArray, Float64Array, Int64Array, StringArray};
+use arrow::array::{
+    Array, BooleanArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+    ListArray, StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+};
 use arrow::datatypes::DataType;
 
 use new_graph::ir::interpreter::ReturnedBatches;
@@ -50,12 +53,61 @@ fn render_cell(array: &dyn Array, row: usize) -> String {
             .unwrap()
             .value(row)
             .to_string(),
+        DataType::Int8 => array
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::Int16 => array
+            .as_any()
+            .downcast_ref::<Int16Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::Int32 => array
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt8 => array
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt16 => array
+            .as_any()
+            .downcast_ref::<UInt16Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt32 => array
+            .as_any()
+            .downcast_ref::<UInt32Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
+        DataType::UInt64 => array
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
         DataType::Float64 => render_float(
             array
                 .as_any()
                 .downcast_ref::<Float64Array>()
                 .unwrap()
                 .value(row),
+        ),
+        DataType::Float32 => render_float(
+            array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row) as f64,
         ),
         DataType::Boolean => render_bool(
             array
@@ -71,6 +123,17 @@ fn render_cell(array: &dyn Array, row: usize) -> String {
                 .unwrap()
                 .value(row),
         ),
+        DataType::List(_) => {
+            let values = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap()
+                .value(row);
+            let items = (0..values.len())
+                .map(|idx| render_cell(values.as_ref(), idx))
+                .collect::<Vec<_>>();
+            format!("[{}]", items.join(","))
+        }
         _ => format!("?({:?})", array.data_type()),
     }
 }
