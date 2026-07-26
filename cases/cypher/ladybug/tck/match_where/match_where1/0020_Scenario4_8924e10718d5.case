@@ -2,5 +2,12 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario4.8924e10718d5","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:Person)-->() WHERE n.name = 'Bob' RETURN n
+--- graph_initializer
+node a:Person {name: "Alice"}
+node b:Person {name: "Bob"}
+node c:N
+node d:N
+edge a -[:T]-> c
+edge b -[:T]-> d
 --- expected
 {_ID: 0:1, _LABEL: Person, ID: 1, name: Bob}

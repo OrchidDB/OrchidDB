@@ -55,6 +55,10 @@ pub(crate) fn eval_binary(
             None => Value::Null,
         }),
         BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
+            // Gremlin display markers (`d[3].l` from groupCount maps) are
+            // strings carrying a numeric payload — decode before comparing.
+            let lhs = decode_display_number(&lhs).unwrap_or(lhs);
+            let rhs = decode_display_number(&rhs).unwrap_or(rhs);
             match temporal_cmp(&lhs, &rhs).or_else(|| lhs.three_valued_cmp(&rhs)) {
                 Some(ord) => Ok(Value::Bool(match op {
                     BinaryOp::Lt => ord == std::cmp::Ordering::Less,
@@ -69,6 +73,25 @@ pub(crate) fn eval_binary(
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => arithmetic(op, &lhs, &rhs),
         BinaryOp::And | BinaryOp::Or => unreachable!(),
     }
+}
+
+/// `d[3].l` / `d[0.5].d` marker strings → numeric values. Returns None
+/// for anything that isn't a marker.
+fn decode_display_number(value: &Value) -> Option<Value> {
+    let Value::String(s) = value else {
+        return None;
+    };
+    let body = s.strip_prefix("d[")?;
+    let close = body.find(']')?;
+    let digits = &body[..close];
+    let suffix = &body[close + 1..];
+    if !matches!(suffix, ".i" | ".l" | ".s" | ".b" | ".n" | ".d" | ".f" | ".m" | "") {
+        return None;
+    }
+    if let Ok(n) = digits.parse::<i64>() {
+        return Some(Value::Long(n));
+    }
+    digits.parse::<f64>().ok().map(Value::Float)
 }
 
 fn temporal_cmp(lhs: &Value, rhs: &Value) -> Option<std::cmp::Ordering> {

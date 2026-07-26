@@ -2,5 +2,13 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.comparison.Comparison2.Scenario1.3d90e6722402","language":"cypher","ordered":true,"source":"tck/expressions/comparison/Comparison2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:Root)-->(i:Child) WHERE i.var IS NOT NULL AND i.var > 'x' RETURN i.var
+--- graph_initializer
+node root:Root
+node _n1:Child {var: 0}
+edge root -[:T]-> _n1
+node _n2:Child {var: "xx"}
+edge root -[:T]-> _n2
+node _n3:Child
+edge root -[:T]-> _n3
 --- expected
 xx

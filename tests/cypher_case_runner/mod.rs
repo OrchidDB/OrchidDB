@@ -9,3 +9,4 @@ pub mod dataset;
 pub mod format;
 pub mod initializer;
 pub mod loader;
+pub mod tiers;

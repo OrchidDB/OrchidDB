@@ -2,6 +2,16 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario7.7cce4537fd46","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (x:X) OPTIONAL MATCH (x)-[:E1]->(y:Y)-[:E2]->(z:Z) WHERE x.val < z.val RETURN x, y, z
+--- graph_initializer
+node _n1:X {val: 1}
+node _n2:Y {val: 2}
+edge _n1 -[:E1]-> _n2
+node _n3:Z {val: 3}
+edge _n2 -[:E2]-> _n3
+node _n4:X {val: 4}
+node _n5:Y {val: 5}
+edge _n4 -[:E1]-> _n5
+node _n6:X {val: 6}
 --- expected
 {_ID: 0:0, _LABEL: X, ID: 0, val: 1}|{_ID: 1:0, _LABEL: Y, ID: 0, val: 2}|{_ID: 2:0, _LABEL: Z, ID: 0, val: 3}
 {_ID: 0:1, _LABEL: X, ID: 1, val: 4}||

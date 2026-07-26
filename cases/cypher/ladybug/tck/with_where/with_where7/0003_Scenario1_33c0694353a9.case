@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where7.Scenario1.33c0694353a9","language":"cypher","ordered":true,"source":"tck/with_where/with_where7.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a) WITH a.name2 AS name WHERE a.name2 = 'B' RETURN *
+--- graph_initializer
+node _n1:N {name2: "A"}
+node _n2:N {name2: "B"}
+node _n3:N {name2: "C"}
 --- expected
 B

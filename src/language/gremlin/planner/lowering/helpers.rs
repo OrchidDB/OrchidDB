@@ -122,7 +122,12 @@ fn apply_by_spec_impl(
     let sub = if let Some(sub) = &spec.traversal {
         Some(sub.as_slice())
     } else if let Some(key) = &spec.key {
-        sub_steps = vec![Step::Values(vec![key.clone()])];
+        let key = key.strip_prefix("T.").unwrap_or(key);
+        sub_steps = match key {
+            "label" => vec![Step::Label],
+            "id" => vec![Step::Id],
+            _ => vec![Step::Values(vec![key.to_string()])],
+        };
         Some(sub_steps.as_slice())
     } else {
         None

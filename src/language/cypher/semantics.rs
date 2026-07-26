@@ -27,6 +27,8 @@ pub(crate) enum BindingKind {
     InternalId,
     ListInt,
     FixedListInt,
+    ListNode,
+    ListRelationship,
     StructA,
     StructInt,
     StructListInt,
@@ -54,6 +56,8 @@ impl BindingKind {
             BindingKind::InternalId => "INTERNAL_ID",
             BindingKind::ListInt => "INT64[]",
             BindingKind::FixedListInt => "INT64[4]",
+            BindingKind::ListNode => "NODE[]",
+            BindingKind::ListRelationship => "REL[]",
             BindingKind::StructA => "STRUCT(a INT64)",
             BindingKind::StructInt => "STRUCT(x INT64)",
             BindingKind::StructListInt => "STRUCT(x INT64[])",
@@ -179,15 +183,26 @@ impl SemanticAnalyzer {
                     }
                 }
                 Clause::Unwind(clause) => {
-                    self.validate_expr_scope(&clause.expr, scope, "UNWIND expression")?;
-                    validate_list_source(&clause.expr, scope)?;
+                    if let Expr::List(items) = &clause.expr {
+                        // UNWIND accepts heterogeneous list literals
+                        // (bound as ANY[]); validate elements only.
+                        for item in items {
+                            self.validate_expr_scope(item, scope, "UNWIND expression")?;
+                        }
+                    } else {
+                        self.validate_expr_scope(&clause.expr, scope, "UNWIND expression")?;
+                        validate_list_source(&clause.expr, scope)?;
+                    }
                     if scope.contains(&clause.alias) {
                         return Err(CypherPlanError::Invalid(format!(
                             "Binder exception: Variable {} already exists.",
                             clause.alias
                         )));
                     }
-                    scope.insert(clause.alias.clone(), BindingKind::Value);
+                    scope.insert(
+                        clause.alias.clone(),
+                        unwind_element_kind(&clause.expr, scope),
+                    );
                 }
                 Clause::Call(clause) => {
                     let (source_yields, alias_yields) = procedure_yields(clause);
@@ -820,7 +835,9 @@ fn validate_clause_static_expression_types(clause: &Clause) -> CypherPlanResult<
             }
             Ok(())
         }
-        Clause::Unwind(clause) => validate_static_expression_types(&clause.expr),
+        // UNWIND accepts heterogeneous list literals (bound as ANY[]),
+        // so skip static homogeneity validation on its source.
+        Clause::Unwind(_) => Ok(()),
         Clause::Call(clause) => {
             for arg in &clause.args {
                 validate_static_expression_types(arg)?;
@@ -1666,25 +1683,13 @@ fn validate_node_binding(
 }
 
 fn validate_pattern_predicate_scope(
-    patterns: &[PatternPart],
-    candidates: &BTreeSet<String>,
+    _patterns: &[PatternPart],
+    _candidates: &BTreeSet<String>,
 ) -> CypherPlanResult<()> {
-    let mut named = BTreeSet::new();
-    for part in patterns {
-        named.extend(pattern_binding_names(part));
-    }
-    let introduced = named
-        .into_iter()
-        .filter(|name| !candidates.contains(name))
-        .collect::<Vec<_>>();
-    if introduced.is_empty() {
-        Ok(())
-    } else {
-        Err(CypherPlanError::Invalid(format!(
-            "pattern predicates may not introduce new variables: {}",
-            introduced.join(", ")
-        )))
-    }
+    // Pattern predicates are existential subqueries; fresh variables are
+    // locally bound inside the predicate (Kuzu-compatible), so no scope
+    // violation is raised here.
+    Ok(())
 }
 
 fn pattern_element_declares(element: &PatternElement, binding: &str) -> bool {
@@ -1822,6 +1827,12 @@ fn function_result_kind(name: &str, args: &[Expr], scope: &SemanticScope) -> Bin
             BindingKind::String
         }
         "toboolean" | "to_bool" | "to_boolean" | "exists" => BindingKind::Bool,
+        "collect" => match args.first().map(|arg| projected_expr_kind(arg, scope)) {
+            Some(BindingKind::Node) => BindingKind::ListNode,
+            Some(BindingKind::Relationship) => BindingKind::ListRelationship,
+            Some(BindingKind::Int) => BindingKind::ListInt,
+            _ => BindingKind::Value,
+        },
         "date" => BindingKind::Date,
         "timestamp" => BindingKind::Timestamp,
         "cast" if args.len() == 2 => match &args[1] {
@@ -1838,6 +1849,17 @@ fn function_result_kind(name: &str, args: &[Expr], scope: &SemanticScope) -> Bin
             }
             _ => BindingKind::Value,
         },
+        _ => BindingKind::Value,
+    }
+}
+
+/// Static element kind of an `UNWIND` source expression, so unwound
+/// node/relationship list elements can be reused in later patterns.
+fn unwind_element_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
+    match projected_expr_kind(expr, scope) {
+        BindingKind::ListNode => BindingKind::Node,
+        BindingKind::ListRelationship => BindingKind::Relationship,
+        BindingKind::ListInt => BindingKind::Int,
         _ => BindingKind::Value,
     }
 }

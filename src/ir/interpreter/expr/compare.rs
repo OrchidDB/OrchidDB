@@ -70,7 +70,12 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         ) => (tx, ox).cmp(&(ty, oy)),
         (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
         (Value::List(x), Value::List(y)) => compare_slices(x, y),
-        (Value::Map(x), Value::Map(y)) => compare_maps(x, y),
+        (Value::Map(x), Value::Map(y)) => {
+            if let Some(ordering) = property_object_ordering(x, y) {
+                return ordering;
+            }
+            compare_maps(x, y)
+        }
         (Value::Node { label: lx, id: ix }, Value::Node { label: ly, id: iy }) => {
             (lx, ix).cmp(&(ly, iy))
         }
@@ -100,6 +105,44 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         (_, Value::Null) => Ordering::Greater,
         _ => Ordering::Equal,
     }
+}
+
+/// TinkerPop property orderability: `Property` (edge / meta property)
+/// orders by (key, value); `VertexProperty` orders by id. Property-object
+/// traversers are `{element, key, value, __id, __order}` maps built by the
+/// gremlin `properties()` projection.
+fn property_object_ordering(
+    x: &std::collections::BTreeMap<String, Value>,
+    y: &std::collections::BTreeMap<String, Value>,
+) -> Option<std::cmp::Ordering> {
+    let is_prop = |m: &std::collections::BTreeMap<String, Value>| {
+        m.contains_key("element") && m.contains_key("key") && m.contains_key("value")
+    };
+    if !is_prop(x) || !is_prop(y) {
+        return None;
+    }
+    let vertex_owned = |m: &std::collections::BTreeMap<String, Value>| {
+        matches!(m.get("element"), Some(Value::Node { .. }))
+            || matches!(m.get("element"), Some(Value::String(s)) if !s.contains("->"))
+    };
+    if vertex_owned(x) && vertex_owned(y) {
+        let idx = x.get("__order").or_else(|| x.get("__id"));
+        let idy = y.get("__order").or_else(|| y.get("__id"));
+        if let (Some(a), Some(b)) = (idx, idy) {
+            return Some(compare_values(a, b));
+        }
+    }
+    let key_ord = compare_values(
+        x.get("key").unwrap_or(&Value::Null),
+        y.get("key").unwrap_or(&Value::Null),
+    );
+    if key_ord != std::cmp::Ordering::Equal {
+        return Some(key_ord);
+    }
+    Some(compare_values(
+        x.get("value").unwrap_or(&Value::Null),
+        y.get("value").unwrap_or(&Value::Null),
+    ))
 }
 
 fn blob_string_ordering(left: &str, right: &str) -> Option<std::cmp::Ordering> {

@@ -2,6 +2,12 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario19.8806c3f41266","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario19","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = ({name: 'A'})-[:KNOWS*..2]->() RETURN p
+--- graph_initializer
+node a:N {name: "A"}
+node b:N {name: "B"}
+node c:N {name: "C"}
+edge a -[:KNOWS]-> b
+edge b -[:KNOWS]-> c
 --- expected
 {_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 0:1, _LABEL: A, ID: 1, name: B},{_ID: 0:2, _LABEL: A, ID: 2, name: C}], _RELS: [(0:0)-{_LABEL: KNOWS, _ID: 1:1}->(0:1),(0:1)-{_LABEL: KNOWS, _ID: 1:0}->(0:2)]}
 {_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 0:1, _LABEL: A, ID: 1, name: B}], _RELS: [(0:0)-{_LABEL: KNOWS, _ID: 1:1}->(0:1)]}

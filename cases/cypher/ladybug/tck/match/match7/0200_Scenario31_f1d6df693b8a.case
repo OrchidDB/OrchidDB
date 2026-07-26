@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario31.f1d6df693b8a","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario31","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:Player)-[:PLAYS_FOR]->(team:Team) OPTIONAL MATCH (p)-[s:SUPPORTS]->(team) RETURN count(*) AS matches, s IS NULL AS optMatch
+--- graph_initializer
+node a:Player
+node b:Team
+node c:Team
+edge a -[:PLAYS_FOR]-> b
+edge a -[:SUPPORTS]-> c
 --- expected
 1|True

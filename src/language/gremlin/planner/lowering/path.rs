@@ -77,10 +77,14 @@ where
 
 fn path_by_token(spec: &crate::language::gremlin::ast::BySpec) -> Option<String> {
     if let Some(key) = &spec.key {
+        let key = key.strip_prefix("T.").unwrap_or(key);
         if key == "label" {
             return Some("__label".to_string());
         }
-        return Some(key.clone());
+        if key == "id" {
+            return Some("__id".to_string());
+        }
+        return Some(key.to_string());
     }
     match spec.traversal.as_deref()? {
         [Step::Values(keys)] if keys.len() == 1 => Some(keys[0].clone()),

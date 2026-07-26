@@ -3355,6 +3355,15 @@ fn materialize_expr(
 ) -> CypherPlanResult<(Node, Expr)> {
     match expr {
         Expr::Exists(exists) => materialize_exists(lowerer, input, exists),
+        Expr::Function { name, args, .. }
+            if name.eq_ignore_ascii_case("count_subquery")
+                && matches!(args.as_slice(), [Expr::Exists(_)]) =>
+        {
+            let Some(Expr::Exists(exists)) = args.first() else {
+                unreachable!("guard matched count_subquery(EXISTS ...)");
+            };
+            materialize_count_exists(lowerer, input, exists)
+        }
         Expr::PatternPredicate(patterns) => materialize_pattern_predicate(lowerer, input, patterns),
         Expr::ListComprehension {
             variable,
@@ -3938,6 +3947,51 @@ fn materialize_exists(
                     lhs: Box::new(IrExpr::Binding(count.clone())),
                     rhs: Box::new(IrExpr::Lit(Lit::Int(0))),
                 },
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: Node::GraphAggregate {
+                group: Vec::new(),
+                aggs: vec![AggCall {
+                    kind: AggKind::CountRows,
+                    alias: count.clone(),
+                    arg: None,
+                    distinct: false,
+                }],
+                fields: vec![count],
+                input: right.boxed(),
+            }
+            .boxed(),
+        })
+    })?;
+    Ok((
+        Node::GraphApply {
+            kind: ApplyKind::Scalar,
+            correlation: lowerer.visible_fields(),
+            outputs: vec![alias.clone()],
+            optional_missing: OptionalMissing::Null,
+            left: input.boxed(),
+            right: right.boxed(),
+        },
+        Expr::Variable(alias),
+    ))
+}
+
+/// `COUNT { MATCH ... }` — like `materialize_exists`, but projects the
+/// subquery's row count instead of a boolean.
+fn materialize_count_exists(
+    lowerer: &mut Lowerer,
+    input: Node,
+    exists: &ExistsSubquery,
+) -> CypherPlanResult<(Node, Expr)> {
+    let alias = lowerer.synthetic("count_subquery");
+    let count = lowerer.synthetic("count_subquery_value");
+    let right = lowerer.with_preserved_scope(|lowerer| {
+        let right = lower_exists_right_plan(lowerer, exists)?;
+        Ok(Node::GraphProject {
+            mode: ProjectMode::ReplaceScope,
+            items: vec![ProjectionItem {
+                alias: alias.clone(),
+                expr: IrExpr::Binding(count.clone()),
             }],
             error_policy: ProjectErrorPolicy::PropagateError,
             input: Node::GraphAggregate {
@@ -4610,6 +4664,16 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 if let Some(type_name) = static_typeof_expr(&args[0]) {
                     return Ok(IrExpr::Lit(Lit::String(type_name)));
                 }
+            }
+            // Kuzu `label()`/`labels()` return the label as a STRING for
+            // both nodes and relationships (not a list).
+            if (name.eq_ignore_ascii_case("label") || name.eq_ignore_ascii_case("labels"))
+                && args.len() == 1
+            {
+                return Ok(IrExpr::Call {
+                    name: "cypher_label".to_string(),
+                    args: vec![lower_expr(lowerer, &args[0])?],
+                });
             }
             if aggregate_kind(name).is_some() {
                 return Err(CypherPlanError::Unsupported(

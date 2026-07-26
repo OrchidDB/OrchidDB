@@ -2,6 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_orderby.return_orderby2.Scenario6.5ff239d22020","language":"cypher","ordered":true,"source":"tck/return_orderby/return_orderby2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a) RETURN a, count(*) ORDER BY count(*)
+--- graph_initializer
+node _n1:L1
+node _n2:L2
+node _n3:L3
 --- expected
 {_ID: 0:0, _LABEL: L1, ID: 0}|1
 {_ID: 1:0, _LABEL: L2, ID: 0}|1

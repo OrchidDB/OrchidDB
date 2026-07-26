@@ -2,5 +2,7 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with1.Scenario4.072abaa1e82e","language":"cypher","ordered":true,"source":"tck/with/with1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (a) WITH p RETURN p
+--- graph_initializer
+node _n1:N
 --- expected
 ...

@@ -2,5 +2,14 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with1.Scenario6.249195eabd4f","language":"cypher","ordered":true,"source":"tck/with/with1.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 OPTIONAL MATCH (a:A) WITH a AS a MATCH (b:B) RETURN a, b
+--- graph_initializer
+node s:Single
+node a:A {num: 42}
+node b:B {num: 46}
+node c:C
+edge s -[:REL]-> a
+edge s -[:REL]-> b
+edge a -[:REL]-> c
+edge b -[:LOOP]-> b
 --- expected
 {_ID: 1:0, _LABEL: A, ID: 0, num: 42}|{_ID: 2:0, _LABEL: B, ID: 0, num: 46}

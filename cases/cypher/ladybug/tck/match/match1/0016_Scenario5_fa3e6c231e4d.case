@@ -2,6 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match1.Scenario5.fa3e6c231e4d","language":"cypher","ordered":true,"source":"tck/match/match1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n), (m) RETURN n.num AS n, m.num AS m
+--- graph_initializer
+node _n1:N {num: 1}
+node _n2:N {num: 2}
+node _n3:N {num: 3}
 --- expected
 1|1
 1|2

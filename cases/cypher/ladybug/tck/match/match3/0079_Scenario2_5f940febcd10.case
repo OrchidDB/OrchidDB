@@ -2,6 +2,33 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.5f940febcd10","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario21","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a {name: 'a'}), (b {name: 'b'}), (c {name: 'c'}) MATCH (a)-->(x), (b)-->(x), (c)-->(x) RETURN x
+--- graph_initializer
+node a:N {name: "a"}
+node b:N {name: "b"}
+node c:N {name: "c"}
+node d:N {name: "d"}
+node e:N {name: "e"}
+node f:N {name: "f"}
+node g:N {name: "g"}
+node h:N {name: "h"}
+node i:N {name: "i"}
+node j:N {name: "j"}
+node k:N {name: "k"}
+edge a -[:KNOWS]-> d
+edge a -[:KNOWS]-> e
+edge a -[:KNOWS]-> f
+edge a -[:KNOWS]-> g
+edge a -[:KNOWS]-> i
+edge b -[:KNOWS]-> d
+edge b -[:KNOWS]-> e
+edge b -[:KNOWS]-> f
+edge b -[:KNOWS]-> h
+edge b -[:KNOWS]-> k
+edge c -[:KNOWS]-> d
+edge c -[:KNOWS]-> e
+edge c -[:KNOWS]-> h
+edge c -[:KNOWS]-> g
+edge c -[:KNOWS]-> j
 --- expected
 {_ID: 0:3, _LABEL: A, ID: 3, name: d}
 {_ID: 0:4, _LABEL: A, ID: 4, name: e}

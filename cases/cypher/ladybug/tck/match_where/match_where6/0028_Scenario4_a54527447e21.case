@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario4.a54527447e21","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n)-->(x0) OPTIONAL MATCH (x0)-->(x1) WHERE x1.name = 'bar' RETURN x0.name
+--- graph_initializer
+node a:N
+node b:N {name: "Mark"}
+edge a -[:T]-> b
 --- expected
 Mark

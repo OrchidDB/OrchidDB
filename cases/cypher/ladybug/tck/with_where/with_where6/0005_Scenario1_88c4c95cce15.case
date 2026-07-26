@@ -2,5 +2,16 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where6.Scenario1.88c4c95cce15","language":"cypher","ordered":true,"source":"tck/with_where/with_where6.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-->() WITH a, count(*) AS relCount WHERE relCount > 1 RETURN a
+--- graph_initializer
+node a:N {name: "A"}
+node b:N {name: "B"}
+node _n1:N
+edge a -[:REL]-> _n1
+node _n2:N
+edge a -[:REL]-> _n2
+node _n3:N
+edge a -[:REL]-> _n3
+node _n4:N
+edge b -[:REL]-> _n4
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0, name: A}

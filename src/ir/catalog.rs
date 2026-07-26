@@ -897,6 +897,20 @@ fn split_top_level_once(input: &str, needle: char) -> Option<(&str, &str)> {
 /// Build a node table from columnar Rust data.
 pub fn nodes_from_columns(label: impl Into<String>, columns: Vec<(&str, ArrayRef)>) -> NodeTable {
     let label = label.into();
+    if columns.is_empty() {
+        // Arrow cannot build a batch with zero columns and an unknown
+        // row count. Callers with property-less nodes should pass a
+        // hidden column carrying the row count; degrade to an empty
+        // table instead of panicking when they don't.
+        let schema: SchemaRef = Arc::new(Schema::empty());
+        let batch = RecordBatch::try_new_with_options(
+            schema,
+            Vec::new(),
+            &arrow::array::RecordBatchOptions::new().with_row_count(Some(0)),
+        )
+        .expect("empty node batch");
+        return NodeTable { label, batch };
+    }
     let fields: Vec<Field> = columns
         .iter()
         .map(|(name, array)| Field::new(*name, array.data_type().clone(), true))

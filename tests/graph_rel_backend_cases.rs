@@ -12,14 +12,26 @@
 //! GRAPH_REL_LANG=cypher GRAPH_REL_LIMIT=100 cargo test --test graph_rel_backend_cases -- --ignored --nocapture
 //! GRAPH_REL_SUITE=filter cargo test --test graph_rel_backend_cases -- --ignored --nocapture
 //! ```
+//!
+//! With `GRAPH_REL_EXEC=duckdb` the lowered plan is additionally unparsed to
+//! DuckDB SQL and executed against a real in-memory DuckDB database (instead
+//! of in-process DataFusion), scoring conformance of the generated SQL:
+//!
+//! ```ignore
+//! GRAPH_REL_EXEC=duckdb cargo test --release --test graph_rel_backend_cases -- --ignored --nocapture
+//! ```
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use new_graph::ir::plan::explain;
+use new_graph::ir::catalog::PropertyGraph;
+use new_graph::ir::interpreter::ReturnedBatches;
+use new_graph::ir::plan::{GraphPlan, explain};
 use new_graph::ir::rel::RelBackend;
+#[cfg(feature = "duckdb")]
+use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
 use new_graph::language::cypher::parser::parse_query;
 use new_graph::language::cypher::planner::CypherPlanner;
 use new_graph::language::gremlin::planner::GremlinPlanner;
@@ -82,7 +94,11 @@ async fn graph_rel_backend_cases() {
         .await;
     }
 
-    let report = summary.render(started.elapsed().as_secs_f64());
+    let report = format!(
+        "exec mode: {}\n{}",
+        config.exec.as_str(),
+        summary.render(started.elapsed().as_secs_f64())
+    );
     print!("{report}");
     fs::write(out_dir.join("summary.txt"), report).expect("write summary");
 
@@ -94,16 +110,36 @@ async fn graph_rel_backend_cases() {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecMode {
+    DataFusion,
+    DuckDb,
+}
+
+impl ExecMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DataFusion => "datafusion",
+            Self::DuckDb => "duckdb",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct HarnessConfig {
     lang: String,
     suite_filter: Option<String>,
     limit: Option<usize>,
     strict: bool,
+    exec: ExecMode,
 }
 
 impl HarnessConfig {
     fn from_env() -> Self {
+        let exec = match std::env::var("GRAPH_REL_EXEC").as_deref() {
+            Ok("duckdb") => ExecMode::DuckDb,
+            _ => ExecMode::DataFusion,
+        };
         Self {
             lang: std::env::var("GRAPH_REL_LANG").unwrap_or_else(|_| "all".into()),
             suite_filter: std::env::var("GRAPH_REL_SUITE").ok(),
@@ -111,6 +147,7 @@ impl HarnessConfig {
                 .ok()
                 .and_then(|value| value.parse().ok()),
             strict: std::env::var("GRAPH_REL_STRICT").is_ok_and(|value| value == "1"),
+            exec,
         }
     }
 
@@ -151,9 +188,35 @@ async fn run_language(
             break;
         }
         seen += 1;
-        let run = match lang {
-            Language::Cypher => run_cypher_case(&path, backend).await,
-            Language::Gremlin => run_gremlin_case(&path, backend).await,
+        // Each case runs on its own thread (with its own runtime) so a
+        // panicking case (e.g. from a fixture initializer) records a failure
+        // instead of aborting the whole run.
+        let run = {
+            let path = path.clone();
+            let backend = backend.clone();
+            let exec = config.exec;
+            std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("case runtime");
+                runtime.block_on(async {
+                    match lang {
+                        Language::Cypher => run_cypher_case(&path, &backend, exec).await,
+                        Language::Gremlin => run_gremlin_case(&path, &backend, exec).await,
+                    }
+                })
+            })
+            .join()
+            .unwrap_or_else(|panic| CaseRun {
+                query: None,
+                plan_tree: None,
+                sql: None,
+                outcome: Outcome::ExecutionError(format!(
+                    "case panicked: {}",
+                    panic_message(panic.as_ref())
+                )),
+            })
         };
         if !matches!(run.outcome, Outcome::Matched) {
             let _ = dump_case(out_dir, lang, &path, &run);
@@ -162,9 +225,20 @@ async fn run_language(
     }
 }
 
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
 struct CaseRun {
     query: Option<String>,
     plan_tree: Option<String>,
+    sql: Option<String>,
     outcome: Outcome,
 }
 
@@ -173,8 +247,78 @@ impl CaseRun {
         Self {
             query: None,
             plan_tree: None,
+            sql: None,
             outcome: Outcome::Skipped(message.into()),
         }
+    }
+}
+
+/// Result of running a case's plan through the configured execution engine.
+struct ExecRun {
+    result: Result<ReturnedBatches, String>,
+    /// Generated SQL text when running through a real database.
+    sql: Option<String>,
+}
+
+async fn execute_case(
+    backend: &RelBackend,
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+    mode: ExecMode,
+) -> ExecRun {
+    match mode {
+        ExecMode::DataFusion => ExecRun {
+            result: backend
+                .execute(plan, graph)
+                .await
+                .map_err(|err| format!("{err}")),
+            sql: None,
+        },
+        ExecMode::DuckDb => execute_case_duckdb(backend, plan, graph).await,
+    }
+}
+
+#[cfg(feature = "duckdb")]
+async fn execute_case_duckdb(
+    backend: &RelBackend,
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+) -> ExecRun {
+    let lowered = match backend.lower(plan, graph) {
+        Ok(lowered) => lowered,
+        Err(err) => {
+            return ExecRun {
+                result: Err(format!("{err}")),
+                sql: None,
+            };
+        }
+    };
+    let prepared = match sql::prepare(&lowered, SqlDialect::DuckDb).await {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            return ExecRun {
+                result: Err(format!("{err}")),
+                sql: None,
+            };
+        }
+    };
+    let mut executor = DuckDbExecutor::new();
+    let result = sql::execute_prepared(&mut executor, &prepared).map_err(|err| format!("{err}"));
+    ExecRun {
+        result,
+        sql: Some(prepared.query),
+    }
+}
+
+#[cfg(not(feature = "duckdb"))]
+async fn execute_case_duckdb(
+    _backend: &RelBackend,
+    _plan: &GraphPlan,
+    _graph: &PropertyGraph,
+) -> ExecRun {
+    ExecRun {
+        result: Err("GRAPH_REL_EXEC=duckdb requires the `duckdb` feature".into()),
+        sql: None,
     }
 }
 
@@ -193,7 +337,7 @@ enum Outcome {
     Skipped(String),
 }
 
-async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
+async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode) -> CaseRun {
     let case = match read_case(path) {
         Ok(case) => case,
         Err(run) => return run,
@@ -214,12 +358,14 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: None,
+                    sql: None,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::ParseError(format!("{err}")),
             };
         }
@@ -233,6 +379,7 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::Skipped(format!(
                     "unsupported dataset `{}`: {err}",
                     case.metadata.dataset
@@ -251,12 +398,14 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: None,
+                    sql: None,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::PlanError(format!("{err}")),
             };
         }
@@ -271,33 +420,36 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
+                sql: None,
                 outcome,
             };
         }
         return CaseRun {
             query: Some(query),
             plan_tree: Some(plan_tree),
+            sql: None,
             outcome: Outcome::LowerError(format!("{err}")),
         };
     }
-    let returned = match backend.execute(&plan, &graph).await {
+    let exec = execute_case(backend, &plan, &graph, exec_mode).await;
+    let returned = match exec.result {
         Ok(returned) => returned,
         Err(err) => {
-            if let Some(outcome) = expected_error_outcome(
-                &case.expected,
-                &case.metadata.expected_kind,
-                &format!("{err}"),
-            ) {
+            if let Some(outcome) =
+                expected_error_outcome(&case.expected, &case.metadata.expected_kind, &err)
+            {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: Some(plan_tree),
+                    sql: exec.sql,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
-                outcome: Outcome::ExecutionError(format!("{err}")),
+                sql: exec.sql,
+                outcome: Outcome::ExecutionError(err),
             };
         }
     };
@@ -307,6 +459,7 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
         Language::Cypher,
         query,
         plan_tree,
+        exec.sql,
         actual,
         case.expected,
         ordered,
@@ -314,7 +467,7 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend) -> CaseRun {
     )
 }
 
-async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
+async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode) -> CaseRun {
     let case = match read_case(path) {
         Ok(case) => case,
         Err(run) => return run,
@@ -333,12 +486,14 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: None,
+                    sql: None,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::ParseError(err),
             };
         }
@@ -352,6 +507,7 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::Skipped(format!(
                     "unsupported dataset `{}`: {err}",
                     case.metadata.dataset
@@ -370,12 +526,14 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: None,
+                    sql: None,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
+                sql: None,
                 outcome: Outcome::PlanError(format!("{err}")),
             };
         }
@@ -390,33 +548,36 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
+                sql: None,
                 outcome,
             };
         }
         return CaseRun {
             query: Some(query),
             plan_tree: Some(plan_tree),
+            sql: None,
             outcome: Outcome::LowerError(format!("{err}")),
         };
     }
-    let returned = match backend.execute(&plan, &graph).await {
+    let exec = execute_case(backend, &plan, &graph, exec_mode).await;
+    let returned = match exec.result {
         Ok(returned) => returned,
         Err(err) => {
-            if let Some(outcome) = expected_error_outcome(
-                &case.expected,
-                &case.metadata.expected_kind,
-                &format!("{err}"),
-            ) {
+            if let Some(outcome) =
+                expected_error_outcome(&case.expected, &case.metadata.expected_kind, &err)
+            {
                 return CaseRun {
                     query: Some(query),
                     plan_tree: Some(plan_tree),
+                    sql: exec.sql,
                     outcome,
                 };
             }
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
-                outcome: Outcome::ExecutionError(format!("{err}")),
+                sql: exec.sql,
+                outcome: Outcome::ExecutionError(err),
             };
         }
     };
@@ -425,6 +586,7 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend) -> CaseRun {
         Language::Gremlin,
         query,
         plan_tree,
+        exec.sql,
         actual,
         case.expected,
         case.metadata.ordered,
@@ -442,6 +604,7 @@ fn finish_compare(
     lang: Language,
     query: String,
     plan_tree: String,
+    sql: Option<String>,
     actual: Vec<String>,
     expected: Vec<String>,
     ordered: bool,
@@ -458,6 +621,7 @@ fn finish_compare(
     CaseRun {
         query: Some(query),
         plan_tree: Some(plan_tree),
+        sql,
         outcome,
     }
 }
@@ -720,6 +884,11 @@ fn dump_case(out_dir: &Path, lang: Language, path: &Path, run: &CaseRun) -> std:
     if let Some(plan) = &run.plan_tree {
         text.push_str("--- plan\n");
         text.push_str(plan);
+        text.push('\n');
+    }
+    if let Some(sql) = &run.sql {
+        text.push_str("\n--- sql\n");
+        text.push_str(sql);
         text.push('\n');
     }
     if let Outcome::Mismatch {

@@ -2,5 +2,8 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return8.Scenario1.2342aa2e0f65","language":"cypher","ordered":true,"source":"tck/return/return8.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) WITH n WHERE n.num = 42 RETURN count(*)
+--- graph_initializer
+node _n1:N {num: 43}
+node _n2:N {num: 42}
 --- expected
 1

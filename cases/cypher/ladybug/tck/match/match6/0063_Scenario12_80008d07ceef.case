@@ -2,6 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario12.80008d07ceef","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario12","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p=(n)--(k)--(n) RETURN p
+--- graph_initializer
+node a:A
+node b:B
+edge a -[:T1]-> b
+edge b -[:T2]-> a
 --- expected
 {...}
 {...}

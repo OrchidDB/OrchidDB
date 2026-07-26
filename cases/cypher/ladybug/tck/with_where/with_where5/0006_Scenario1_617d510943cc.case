@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where5.Scenario1.617d510943cc","language":"cypher","ordered":true,"source":"tck/with_where/with_where5.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:Root {name: 'x'})-->(i:TextNode) WITH i WHERE i.var > 'te' RETURN i
+--- graph_initializer
+node root:Root {name: "x"}
+node child1:TextNode {var: "text"}
+node child2:IntNode {var: 0}
+edge root -[:T]-> child1
+edge root -[:T]-> child2
 --- expected
 {_ID: 1:0, _LABEL: TextNode, ID: 0, var: text}

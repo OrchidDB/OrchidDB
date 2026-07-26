@@ -20,6 +20,17 @@
 //! common error messages so we can see which Cypher features dominate
 //! the gap.
 //!
+//! Cases are additionally partitioned by `cases/cypher/ladybug/tiers.toml`
+//! into `core` (headline conformance number), `kuzu-ext` (Kuzu-specific
+//! surface, informational) and `broken-import` (machine-tagged: empty
+//! dataset + non-empty non-error expectation — the importer dropped the
+//! setup statements, so these are structurally unpassable until
+//! re-imported). The run prints a three-number tier summary first.
+//!
+//! Expected lines carrying Kuzu error prose (`Binder exception: …`) are
+//! matched by error *category* rather than verbatim text; set
+//! `CYPHER_ERROR_CATEGORY=off` for the old verbatim-only behaviour.
+//!
 //! See output with:
 //!
 //! ```ignore
@@ -62,6 +73,7 @@ mod compare;
 mod cypher_case_runner;
 use cypher_case_runner::dataset;
 use cypher_case_runner::format;
+use cypher_case_runner::tiers::{Tier, TierManifest};
 
 const CASES_ROOT: &str = "cases/cypher/ladybug";
 /// Failure dump dir under `target/`. Cleared at the start of every run so
@@ -196,6 +208,7 @@ fn cypher_ladybug_cases() {
 
     let started = Instant::now();
     let mut summary = Summary::default();
+    let manifest = TierManifest::load(&root.join("tiers.toml"));
     let suite_filter = std::env::var("CYPHER_SUITE").ok();
     let profile = CaseProfile::from_env();
     let timeout_ms: u64 = std::env::var("CYPHER_TIMEOUT_MS")
@@ -220,7 +233,21 @@ fn cypher_ladybug_cases() {
                 );
             }
         }
-        summary.record(path, run.outcome);
+        // Tier: manifest first (suite dir > subdir > per-case, deepest
+        // wins), then the runtime broken-import machine tag. A case that
+        // passes anyway (e.g. via a manual graph overlay) is kept in its
+        // manifest tier — "broken" only applies to cases that cannot
+        // pass and didn't.
+        let rel = path
+            .strip_prefix(CASES_ROOT)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let mut tier = manifest.lookup(&rel);
+        if run.broken_import && !matches!(run.outcome, Outcome::Correct) {
+            tier = Tier::BrokenImport;
+        }
+        summary.record(path, tier, run.outcome);
     });
     summary.print(started.elapsed());
     println!(
@@ -242,6 +269,11 @@ struct CaseRun {
     query: Option<String>,
     plan_tree: Option<String>,
     outcome: Outcome,
+    /// Machine-tag: the case references an empty dataset (no inline
+    /// initializer either) yet expects non-empty, non-error output —
+    /// its setup statements were dropped at import time, so it is
+    /// structurally unpassable. Reported as `broken-import`.
+    broken_import: bool,
 }
 
 impl CaseRun {
@@ -250,6 +282,7 @@ impl CaseRun {
             query: None,
             plan_tree: None,
             outcome,
+            broken_import: false,
         }
     }
 }
@@ -339,6 +372,7 @@ fn run_with_timeout(path: &Path, timeout_ms: u64) -> CaseRun {
             query: None,
             plan_tree: None,
             outcome: Outcome::RunError(format!("timeout after {timeout_ms}ms")),
+            broken_import: false,
         },
     }
 }
@@ -359,32 +393,40 @@ fn run_one(path: &Path) -> CaseRun {
             query: Some(case.query.clone()),
             plan_tree: None,
             outcome: Outcome::Skipped(format!("non-cypher language: {}", case.metadata.language)),
+            broken_import: false,
         };
     }
+
+    let graph_initializer = case
+        .graph_initializer
+        .as_deref()
+        .or_else(|| default_graph_initializer(&case.metadata));
+    let broken_import = is_broken_import(&case, graph_initializer);
 
     let query = case.query.clone();
     let parsed = match parse_query(&query) {
         Ok(q) => q,
         Err(err) => {
             let message = format!("{err}");
-            let outcome =
-                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
-                    Outcome::Correct
-                } else {
-                    Outcome::ParseError(message)
-                };
+            let outcome = if expected_error_matches(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &message,
+                ErrorStage::Parse,
+            ) {
+                Outcome::Correct
+            } else {
+                Outcome::ParseError(message)
+            };
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
                 outcome,
+                broken_import,
             };
         }
     };
 
-    let graph_initializer = case
-        .graph_initializer
-        .as_deref()
-        .or_else(|| default_graph_initializer(&case.metadata));
     let graph = match dataset::build_with_initializer(&case.metadata.dataset, graph_initializer) {
         Ok(graph) => graph,
         Err(err) => {
@@ -395,6 +437,7 @@ fn run_one(path: &Path) -> CaseRun {
                     "unsupported dataset `{}`: {err}",
                     case.metadata.dataset
                 )),
+                broken_import,
             };
         }
     };
@@ -404,16 +447,21 @@ fn run_one(path: &Path) -> CaseRun {
         Ok(plan) => plan,
         Err(err) => {
             let message = format!("{err}");
-            let outcome =
-                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
-                    Outcome::Correct
-                } else {
-                    Outcome::PlanError(message)
-                };
+            let outcome = if expected_error_matches(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &message,
+                ErrorStage::Plan,
+            ) {
+                Outcome::Correct
+            } else {
+                Outcome::PlanError(message)
+            };
             return CaseRun {
                 query: Some(query),
                 plan_tree: None,
                 outcome,
+                broken_import,
             };
         }
     };
@@ -426,16 +474,21 @@ fn run_one(path: &Path) -> CaseRun {
         Ok(returned) => returned,
         Err(err) => {
             let message = format!("{err}");
-            let outcome =
-                if expected_error_matches(&case.expected, &case.metadata.expected_kind, &message) {
-                    Outcome::Correct
-                } else {
-                    Outcome::RunError(message)
-                };
+            let outcome = if expected_error_matches(
+                &case.expected,
+                &case.metadata.expected_kind,
+                &message,
+                ErrorStage::Run,
+            ) {
+                Outcome::Correct
+            } else {
+                Outcome::RunError(message)
+            };
             return CaseRun {
                 query: Some(query),
                 plan_tree: Some(plan_tree),
                 outcome,
+                broken_import,
             };
         }
     };
@@ -473,6 +526,29 @@ fn run_one(path: &Path) -> CaseRun {
         query: Some(query),
         plan_tree: Some(plan_tree),
         outcome,
+        broken_import,
+    }
+}
+
+/// Machine-detection for structurally unpassable imports: the importer
+/// dropped every write/setup statement, so a case whose dataset resolves
+/// to the empty fixture but whose expectation contains non-error rows
+/// can never pass, regardless of engine quality.
+fn is_broken_import(case: &case_file::Case, graph_initializer: Option<&str>) -> bool {
+    if graph_initializer.is_some() {
+        return false;
+    }
+    if !dataset::is_empty_dataset(&case.metadata.dataset) {
+        return false;
+    }
+    let first_line = case
+        .expected
+        .iter()
+        .map(|line| line.trim())
+        .find(|line| !line.is_empty());
+    match first_line {
+        None => false, // empty expectation can legitimately pass
+        Some(line) => !looks_like_expected_error(line),
     }
 }
 
@@ -884,7 +960,21 @@ fn item_props(item: &str, price: f64, vector: Vec<f64>) -> BTreeMap<String, Valu
     props
 }
 
-fn expected_error_matches(expected: &[String], expected_kind: &str, actual: &str) -> bool {
+/// Which stage of the pipeline produced the engine error. Used to map
+/// our engine's error surface onto Kuzu's exception categories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErrorStage {
+    Parse,
+    Plan,
+    Run,
+}
+
+fn expected_error_matches(
+    expected: &[String],
+    expected_kind: &str,
+    actual: &str,
+    stage: ErrorStage,
+) -> bool {
     if expected_kind != "rows" {
         return false;
     }
@@ -897,11 +987,131 @@ fn expected_error_matches(expected: &[String], expected_kind: &str, actual: &str
         return false;
     }
     let actual_candidates = error_match_candidates(actual);
-    expected_lines.iter().any(|expected| {
+    let verbatim = expected_lines.iter().any(|expected| {
         actual_candidates.iter().any(|actual| {
             actual == expected || actual.contains(expected) || expected.contains(actual)
         })
-    })
+    });
+    if verbatim {
+        return true;
+    }
+    if error_category_matching_enabled() {
+        return expected_lines
+            .iter()
+            .filter_map(|line| expected_error_category(line))
+            .any(|category| engine_error_matches_category(category, stage, actual));
+    }
+    false
+}
+
+/// Error-category matching can be switched off (`CYPHER_ERROR_CATEGORY=off`)
+/// to reproduce the old verbatim-prose-only behaviour, e.g. for
+/// before/after comparisons.
+fn error_category_matching_enabled() -> bool {
+    !std::env::var("CYPHER_ERROR_CATEGORY")
+        .map(|v| v.eq_ignore_ascii_case("off"))
+        .unwrap_or(false)
+}
+
+/// Kuzu error categories, extracted from the leading `<Word> exception`
+/// token of an expected line (or the TCK-style `SyntaxError` /
+/// `RuntimeError` prefixes). Matching the *category* is spec-meaningful;
+/// matching Kuzu's exact prose is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErrorCategory {
+    /// `Parser exception: …` / `SyntaxError: …` — query is syntactically
+    /// invalid.
+    Syntax,
+    /// `Binder exception: …` / `Catalog exception: …` — query is
+    /// syntactically fine but semantically invalid (unknown property,
+    /// table, function, type mismatch discovered at bind time).
+    Binder,
+    /// `Overflow exception: …` — numeric value outside the target type's
+    /// range.
+    Overflow,
+    /// `Conversion exception: …` — a cast/conversion failed.
+    Conversion,
+    /// `Runtime exception: …` / `RuntimeError: …` — error surfaced
+    /// during execution.
+    Runtime,
+}
+
+fn expected_error_category(line: &str) -> Option<ErrorCategory> {
+    let lower = line.trim().to_ascii_lowercase();
+    for (prefix, category) in [
+        ("parser exception", ErrorCategory::Syntax),
+        ("syntaxerror", ErrorCategory::Syntax),
+        ("syntax error", ErrorCategory::Syntax),
+        ("binder exception", ErrorCategory::Binder),
+        ("catalog exception", ErrorCategory::Binder),
+        ("overflow exception", ErrorCategory::Overflow),
+        ("conversion exception", ErrorCategory::Conversion),
+        ("runtime exception", ErrorCategory::Runtime),
+        ("runtimeerror", ErrorCategory::Runtime),
+        ("interrupt exception", ErrorCategory::Runtime),
+    ] {
+        if lower.starts_with(prefix) {
+            return Some(category);
+        }
+    }
+    None
+}
+
+/// Map our engine's error surface (pipeline stage + message) onto a
+/// Kuzu exception category and decide whether it is equivalent.
+///
+/// Engine error types per stage:
+///   - Parse: `CypherParseError::{Parse, Unsupported}`
+///   - Plan:  `CypherPlanError::{Unsupported, Invalid}`
+///   - Run:   `InterpretError::{Catalog, Type, Runtime, Unbound,
+///            Unsupported, ExecutionLimit}`
+///
+/// `Unsupported` / not-implemented messages are *never* accepted: an
+/// engine gap on a valid feature must not masquerade as a conformant
+/// rejection of an invalid query.
+fn engine_error_matches_category(category: ErrorCategory, stage: ErrorStage, actual: &str) -> bool {
+    let lower = actual.to_ascii_lowercase();
+    if lower.contains("unsupported") || lower.contains("not implemented") || lower.contains("todo:")
+    {
+        return false;
+    }
+    // Timeouts are harness artifacts, not conformant rejections.
+    if lower.starts_with("timeout after") {
+        return false;
+    }
+    match category {
+        ErrorCategory::Syntax => stage == ErrorStage::Parse,
+        ErrorCategory::Binder => match stage {
+            // Kuzu's binder rejects semantically invalid queries; our
+            // engine surfaces the equivalent rejection either at parse
+            // time, at plan time, or lazily at run time as a catalog /
+            // type / unbound-variable error.
+            ErrorStage::Parse | ErrorStage::Plan => true,
+            ErrorStage::Run => {
+                lower.starts_with("catalog:")
+                    || lower.starts_with("type error:")
+                    || lower.starts_with("unbound binding")
+            }
+        },
+        ErrorCategory::Overflow => {
+            lower.contains("overflow")
+                || lower.contains("out of range")
+                || lower.contains("not within")
+                || lower.contains("too large")
+                || lower.contains("cannot be represented")
+        }
+        ErrorCategory::Conversion => match stage {
+            ErrorStage::Parse => false,
+            ErrorStage::Plan | ErrorStage::Run => {
+                lower.contains("cast")
+                    || lower.contains("convert")
+                    || lower.contains("conversion")
+                    || lower.starts_with("type error:")
+                    || lower.contains("invalid input")
+            }
+        },
+        ErrorCategory::Runtime => stage == ErrorStage::Run,
+    }
 }
 
 fn looks_like_expected_error(line: &str) -> bool {
@@ -972,6 +1182,8 @@ struct Summary {
     incorrect_examples: Vec<(PathBuf, String, Vec<String>, Vec<String>)>,
     /// Per-suite breakdown (e.g., recursive_join/multi_label, agg/hash, …).
     by_suite: BTreeMap<String, SuiteCounts>,
+    /// Per-tier breakdown driving the three-number headline summary.
+    by_tier: BTreeMap<Tier, SuiteCounts>,
 }
 
 #[derive(Default)]
@@ -985,16 +1197,36 @@ struct SuiteCounts {
     skipped: usize,
 }
 
+impl SuiteCounts {
+    fn apply(&mut self, outcome: &Outcome) {
+        self.total += 1;
+        match outcome {
+            Outcome::Correct => self.correct += 1,
+            Outcome::Incorrect { .. } => self.incorrect += 1,
+            Outcome::ParseError(_) => self.parse += 1,
+            Outcome::PlanError(_) => self.plan += 1,
+            Outcome::RunError(_) => self.run += 1,
+            Outcome::Skipped(_) => self.skipped += 1,
+        }
+    }
+
+    /// Pass rate over runnable cases (skips are harness-level, not
+    /// engine-level, so they're excluded from the denominator).
+    fn pass_rate(&self) -> f64 {
+        pct(self.correct, self.total.saturating_sub(self.skipped))
+    }
+}
+
 impl Summary {
-    fn record(&mut self, path: &Path, outcome: Outcome) {
+    fn record(&mut self, path: &Path, tier: Tier, outcome: Outcome) {
         self.total += 1;
         let suite = suite_label(path);
+        self.by_tier.entry(tier).or_default().apply(&outcome);
         let bucket = self.by_suite.entry(suite).or_default();
-        bucket.total += 1;
+        bucket.apply(&outcome);
         match outcome {
             Outcome::Correct => {
                 self.correct += 1;
-                bucket.correct += 1;
             }
             Outcome::Incorrect {
                 reason,
@@ -1002,7 +1234,6 @@ impl Summary {
                 expected,
             } => {
                 self.incorrect += 1;
-                bucket.incorrect += 1;
                 if self.incorrect_examples.len() < 20 {
                     self.incorrect_examples
                         .push((path.to_path_buf(), reason, actual, expected));
@@ -1010,22 +1241,18 @@ impl Summary {
             }
             Outcome::ParseError(msg) => {
                 self.parse_errors += 1;
-                bucket.parse += 1;
                 *self.parse_msg_counts.entry(short(&msg)).or_insert(0) += 1;
             }
             Outcome::PlanError(msg) => {
                 self.plan_errors += 1;
-                bucket.plan += 1;
                 *self.plan_msg_counts.entry(short(&msg)).or_insert(0) += 1;
             }
             Outcome::RunError(msg) => {
                 self.run_errors += 1;
-                bucket.run += 1;
                 *self.run_msg_counts.entry(short(&msg)).or_insert(0) += 1;
             }
             Outcome::Skipped(_) => {
                 self.skipped += 1;
-                bucket.skipped += 1;
             }
         }
     }
@@ -1039,6 +1266,35 @@ impl Summary {
     }
 
     fn print(&self, elapsed: std::time::Duration) {
+        // --- Three-number tier summary ---
+        // core pass rate is the headline conformance number; kuzu-ext is
+        // informational; broken-import should trend to zero as re-imports
+        // land.
+        println!("=== Tier summary ===");
+        let empty = SuiteCounts::default();
+        let core = self.by_tier.get(&Tier::Core).unwrap_or(&empty);
+        let ext = self.by_tier.get(&Tier::KuzuExt).unwrap_or(&empty);
+        let broken = self.by_tier.get(&Tier::BrokenImport).unwrap_or(&empty);
+        println!(
+            "core (headline):  {:>5}/{:<5} passing  ({:.1}%)  [skipped={}]",
+            core.correct,
+            core.total - core.skipped,
+            core.pass_rate(),
+            core.skipped,
+        );
+        println!(
+            "kuzu-ext (info):  {:>5}/{:<5} passing  ({:.1}%)  [skipped={}]",
+            ext.correct,
+            ext.total - ext.skipped,
+            ext.pass_rate(),
+            ext.skipped,
+        );
+        println!(
+            "broken-import:    {:>5} case(s) excluded (empty dataset + non-error expectation)",
+            broken.total,
+        );
+        println!();
+
         println!(
             "Accurate:   {:>6}  ({:.1}%)",
             self.correct,

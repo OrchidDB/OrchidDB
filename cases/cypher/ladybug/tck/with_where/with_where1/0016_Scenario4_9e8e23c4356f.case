@@ -2,5 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where1.Scenario4.9e8e23c4356f","language":"cypher","ordered":true,"source":"tck/with_where/with_where1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (other:B) OPTIONAL MATCH (a)-[r]->(other) WITH other WHERE a IS NULL RETURN other
+--- graph_initializer
+node a:A
+node b:B {id: 1}
+node _n1:B {id: 2}
+edge a -[:T]-> b
 --- expected
 {_ID: 1:1, _LABEL: B, id: 2}

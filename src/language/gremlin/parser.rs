@@ -83,7 +83,22 @@ pub fn parse_traversal_with_bindings(
 
     let mut visitor = LoweringVisitor::new(bindings.clone());
     visitor.visit_queryList(&root);
-    visitor.finish()
+    let mut traversal = visitor.finish()?;
+    // `withoutStrategies(ConnectiveStrategy)` disables the infix
+    // `.and()` / `.or()` rewrite; TinkerPop then fails the traversal, so
+    // it yields no results. Model that as a drop-everything filter.
+    if input.contains("withoutStrategies(ConnectiveStrategy")
+        && traversal
+            .steps
+            .iter()
+            .any(|s| matches!(s, Step::InfixAnd | Step::InfixOr))
+    {
+        traversal
+            .steps
+            .retain(|s| !matches!(s, Step::InfixAnd | Step::InfixOr));
+        traversal.steps.push(Step::None);
+    }
+    Ok(traversal)
 }
 
 pub fn parse_query_list(input: &str) -> Result<GremlinSyntax> {
@@ -1625,7 +1640,14 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     fn visit_traversalMethod_and(&mut self, ctx: &TraversalMethod_andContext<'input>) {
         // and(t1, t2, ...) keeps inputs where every sub-traversal yields a
         // result. Approximate as a chain of WhereTraversal filters.
+        // The empty-argument form is the *infix* connective
+        // (`a().and().b()`), handled by a ConnectiveStrategy-style rewrite
+        // in the planner.
         let traversals = self.collect_nested_traversal_list(ctx.nestedTraversalList());
+        if traversals.is_empty() {
+            self.steps.push(Step::InfixAnd);
+            return;
+        }
         for sub in traversals {
             self.steps.push(Step::WhereTraversal(sub));
         }
@@ -1636,7 +1658,14 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         // yields a result. Wrap the alternatives in `Union` and feed that to
         // `WhereTraversal` so the semi-join's id-set is the union of every
         // sub-traversal's reachable inputs.
+        // The empty-argument form is the *infix* connective
+        // (`a().or().b()`), handled by a ConnectiveStrategy-style rewrite
+        // in the planner.
         let traversals = self.collect_nested_traversal_list(ctx.nestedTraversalList());
+        if traversals.is_empty() {
+            self.steps.push(Step::InfixOr);
+            return;
+        }
         self.steps
             .push(Step::WhereTraversal(vec![Step::Union(traversals)]));
     }
@@ -3858,6 +3887,11 @@ impl LoweringVisitor {
         let (delim, scope_local) = match ctx {
             TraversalMethod_splitContextAll::TraversalMethod_split_StringContext(c) => {
                 let delim = c.stringNullableLiteral().and_then(|s| {
+                    // `split(null)` means "split on whitespace" — keep the
+                    // null distinct from an empty-string delimiter.
+                    if s.K_NULL().is_some() {
+                        return None;
+                    }
                     self.visit_stringNullableLiteral(&s);
                     self.pop_string()
                 });
@@ -3865,6 +3899,9 @@ impl LoweringVisitor {
             }
             TraversalMethod_splitContextAll::TraversalMethod_split_Scope_StringContext(c) => {
                 let delim = c.stringNullableLiteral().and_then(|s| {
+                    if s.K_NULL().is_some() {
+                        return None;
+                    }
                     self.visit_stringNullableLiteral(&s);
                     self.pop_string()
                 });

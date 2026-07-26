@@ -2,6 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.e183e53a8d70","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario5","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[r {name: 'r'}]-(b) RETURN a, b
+--- graph_initializer
+node a:A {num: 1}
+node b:B {num: 2}
+edge a -[:REL {name: "r"}]-> b
 --- expected
 {_ID: 0:0, _LABEL: A, num: 1}|{_ID: 1:0, _LABEL: B, num: 2}
 {_ID: 1:0, _LABEL: B, num: 2}|{_ID: 0:0, _LABEL: A, num: 1}

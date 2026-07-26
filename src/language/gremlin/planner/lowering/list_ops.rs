@@ -96,17 +96,21 @@ fn starts_from_source(sub: &[Step]) -> bool {
 }
 
 pub(super) fn lower_fold_reduce(input: Node, seed: &GValue, op: SackOp) -> GremlinPlanResult<Node> {
+    // `fold(seed, op)` is a reducing barrier over the whole traverser
+    // stream: collect first, then left-fold the collected list onto the
+    // seed with the operator.
+    let collected = super::reduce::lower_fold(input);
     Ok(Node::GraphCurrentProject {
         expr: IrExpr::Call {
             name: "fold_reduce".into(),
             args: vec![
                 IrExpr::Binding(CURRENT.into()),
-                IrExpr::Lit(gvalue_to_lit(seed)?),
+                super::literals::gvalue_to_expr(seed)?,
                 IrExpr::Lit(Lit::String(sack_op_name(op).into())),
             ],
         },
         fields: vec![CURRENT.to_string()],
-        input: input.boxed(),
+        input: collected.boxed(),
     })
 }
 

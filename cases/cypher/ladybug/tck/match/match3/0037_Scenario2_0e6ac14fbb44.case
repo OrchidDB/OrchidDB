@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.0e6ac14fbb44","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario9","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n)-->(a)-->(b) RETURN b
+--- graph_initializer
+node a:A {num: 1}
+node b:B {num: 2}
+edge a -[:KNOWS]-> b
+node c:C {num: 3}
+edge b -[:FRIEND]-> c
 --- expected
 {_ID: 2:0, _LABEL: C, num: 3}

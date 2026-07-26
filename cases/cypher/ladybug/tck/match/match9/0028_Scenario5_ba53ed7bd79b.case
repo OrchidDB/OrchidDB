@@ -2,5 +2,13 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario5.ba53ed7bd79b","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:Blue)-[r*]->(b:Green) RETURN count(r)
+--- graph_initializer
+node a:Blue
+node b:Red
+node c:Green
+node d:Yellow
+edge a -[:T]-> b
+edge b -[:T]-> c
+edge b -[:T]-> d
 --- expected
 1

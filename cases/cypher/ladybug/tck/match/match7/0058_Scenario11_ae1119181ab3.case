@@ -2,6 +2,12 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario11.ae1119181ab3","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario11","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[r {name: 'r1'}]-(b) OPTIONAL MATCH (b)-[r2]-(c) WHERE r <> r2 RETURN a, b, c
+--- graph_initializer
+node a:A {num: 1}
+node b:B {num: 2}
+edge a -[:REL {name: "r1"}]-> b
+node c:C {num: 3}
+edge b -[:REL {name: "r2"}]-> c
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0, num: 1}|{_ID: 1:0, _LABEL: B, ID: 0, num: 2}|{_ID: 2:0, _LABEL: C, ID: 0, num: 3}
 {_ID: 1:0, _LABEL: B, ID: 0, num: 2}|{_ID: 0:0, _LABEL: A, ID: 0, num: 1}|

@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.b05449e61ad1","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario24","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a1)-[r:T]->() WITH r, a1 MATCH (a1)-[r:T]->(b2) RETURN a1, r, b2
+--- graph_initializer
+node _n1:A
+node _n2:B
+edge _n1 -[:T]-> _n2
 --- expected
 Binder exception: Bind relationship r to relationship with same name is not supported.

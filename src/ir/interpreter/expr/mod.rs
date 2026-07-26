@@ -38,6 +38,14 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
         } => {
             let value = row.bindings.get(binding).cloned().unwrap_or(Value::Null);
             let resolved = match value {
+                Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }
+                    if matches!(
+                        name.as_str(),
+                        "_id" | "_ID" | "_label" | "_LABEL" | "_src" | "_SRC" | "_dst" | "_DST"
+                    ) =>
+                {
+                    super::runtime::graph_element_property(graph, &value, name)
+                }
                 Value::Node { label, id } => {
                     let stored = graph.node_property(&label, id, name);
                     if matches!(stored, Value::Null) {
@@ -105,11 +113,9 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     StringOp::Contains => t.contains(&p),
                 })),
                 (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
-                (a, b) => Err(InterpretError::Type(format!(
-                    "string predicate on {} / {}",
-                    a.type_name(),
-                    b.type_name()
-                ))),
+                // Cypher string predicates on non-string operands yield
+                // null (three-valued logic) rather than raising.
+                (_, _) => Ok(Value::Null),
             }
         }
         IrExpr::IsNull(inner) => Ok(Value::Bool(matches!(eval(inner, row, graph)?, Value::Null))),

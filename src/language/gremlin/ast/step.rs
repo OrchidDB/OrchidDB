@@ -194,6 +194,17 @@ pub enum Step {
     /// `where(t)` and `filter(t)` (sub-traversal forms): keep input rows
     /// where the sub-traversal yields at least one row.
     WhereTraversal(Vec<Step>),
+    /// Infix `.and()` connective (the empty-argument form, as rewritten by
+    /// TinkerPop's ConnectiveStrategy). The planner splits the surrounding
+    /// step chain at these markers before lowering.
+    InfixAnd,
+    /// Infix `.or()` connective (empty-argument form). See `InfixAnd`.
+    InfixOr,
+    /// Internal marker: `as(label)` appearing mid where()-style
+    /// sub-traversal. TinkerPop treats it as an equality anchor against the
+    /// outer binding rather than a rebinding; the planner rewrites
+    /// non-leading `As` inside where/not sub-traversals to this.
+    WhereAnchor(String),
     /// `not(t)`: keep input rows where the sub-traversal yields nothing.
     NotTraversal(Vec<Step>),
     /// `repeat(t)` — body of a repeat loop. Modulators (`Times`, `Emit`,

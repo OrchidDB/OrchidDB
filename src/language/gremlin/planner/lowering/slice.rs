@@ -33,7 +33,16 @@ where
                 apply_by_spec(input, &spec, lo, ctx)?
             }
         }
-        None => (input, IrExpr::Binding(CURRENT.into())),
+        None => (
+            input,
+            // Property-object traversers dedup by (key, value) — the
+            // owning element does not participate (TinkerPop Property
+            // equality). Other values dedup by themselves.
+            IrExpr::Call {
+                name: "gremlin_dedup_key".into(),
+                args: vec![IrExpr::Binding(CURRENT.into())],
+            },
+        ),
     };
     let dedup_binding = lo.fresh("dedup_key");
     let projected = Node::GraphProject {
@@ -173,6 +182,7 @@ fn simple_by_key_expr(
         return None;
     }
     let key = spec.key.as_ref()?;
+    let key = key.strip_prefix("T.").unwrap_or(key).to_string();
     let missing = lo.by_property_missing();
     let expr = match key.as_str() {
         "id" => IrExpr::Id(CURRENT.into()),

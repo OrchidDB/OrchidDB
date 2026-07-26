@@ -2,6 +2,12 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario3.5f98ce72230c","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[r:REL*2..2]-(b:End) RETURN r
+--- graph_initializer
+node a:End
+node b:B
+edge a -[:REL {num: 1}]-> b
+node c:End
+edge b -[:REL {num: 2}]-> c
 --- expected
 [...]
 [...]

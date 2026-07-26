@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return7.Scenario1.a976b1c87e83","language":"cypher","ordered":true,"source":"tck/return/return7.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (a:Start)-->(b) RETURN *
+--- graph_initializer
+node _n1:Start
+node _n2:N
+edge _n1 -[:T]-> _n2
 --- expected
 {_ID: 0:0, _LABEL: Start, ID: 0}|{_ID: 1:0, _LABEL: A, ID: 0}|{_NODES: [{_ID: 0:0, _LABEL: Start, ID: 0},{_ID: 1:0, _LABEL: A, ID: 0}], _RELS: [(0:0)-{_LABEL: T, _ID: 2:0}->(1:0)]}

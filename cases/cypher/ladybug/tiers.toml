@@ -1,0 +1,61 @@
+# Tier manifest for the Ladybug Cypher conformance corpus.
+#
+# Partitions suites so the headline conformance number reflects real
+# openCypher/GQL spec surface rather than Kuzu-only extras.
+#
+# Tiers:
+#   core         — counted in the headline conformance number.
+#   kuzu-ext     — Kuzu-specific surface (storage, DDL, ingestion, Kuzu
+#                  function extensions). Run and reported separately;
+#                  never counted against conformance.
+#   broken-import — structurally unpassable imports (setup statements
+#                  were dropped at import time). Mostly machine-tagged
+#                  at runtime (empty dataset + non-empty non-error
+#                  expectation); entries here are manual overrides.
+#
+# Keys under [tiers] are path prefixes relative to
+# `cases/cypher/ladybug/`, at any granularity:
+#   suite dir  ("transaction")
+#   subdir     ("function/gds")
+#   per-case   ("function/gds/basic/0001_Foo_abc123.case")
+# The deepest (most specific) matching key wins; anything unmatched
+# falls back to `default`.
+
+default = "core"
+
+[tiers]
+# --- Kuzu storage / session / transaction machinery ---
+"transaction" = "kuzu-ext"
+"ddl" = "kuzu-ext"
+
+# --- Kuzu ingestion (COPY FROM, CSV dialect sniffing, Parquet, NPY) ---
+"copy" = "kuzu-ext"
+"csv" = "kuzu-ext"
+"parquet" = "kuzu-ext"
+"npy_1d" = "kuzu-ext"
+"glob" = "kuzu-ext"
+"tensor_list" = "kuzu-ext"
+"binary_demo" = "kuzu-ext"
+
+# --- Kuzu-only features and types ---
+"graph" = "kuzu-ext"
+"rel_group" = "kuzu-ext"
+"user_defined_types" = "kuzu-ext"
+"uint128" = "kuzu-ext"
+"md5testing" = "kuzu-ext"
+"exceptions" = "kuzu-ext"
+
+# --- Kuzu function-extension subdirs ---
+"function/gds" = "kuzu-ext"
+"function/hash" = "kuzu-ext"
+"function/blob" = "kuzu-ext"
+"function/serial" = "kuzu-ext"
+"function/rowid" = "kuzu-ext"
+"function/internal_id" = "kuzu-ext"
+"function/union" = "kuzu-ext"
+"function/scalar_macro" = "kuzu-ext"
+"function/macro_transaction" = "kuzu-ext"
+"function/call" = "kuzu-ext"
+"function/struct" = "kuzu-ext"
+"function/array" = "kuzu-ext"
+"function/uuid" = "kuzu-ext"

@@ -2,5 +2,8 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.d287c8f2282d","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario11&12","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n)-[r]-(n) RETURN n, r
+--- graph_initializer
+node a:A
+edge a -[:LOOP]-> a
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0}|(0:0)-{_LABEL: LOOP, _ID: 1:0}->(0:0)

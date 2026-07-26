@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.typeConversion.TypeConversion1.Scenario5.3c866969ab64","language":"cypher","ordered":true,"source":"tck/expressions/typeConversion/TypeConversion1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (n)-[r:T]->() RETURN [x IN [true, []] | toBoolean(x) ] AS list
+--- graph_initializer
+node _n1:N
+node _n2:N
+edge _n1 -[:T]-> _n2
 --- expected
 123

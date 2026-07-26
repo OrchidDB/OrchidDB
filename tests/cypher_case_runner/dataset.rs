@@ -92,7 +92,12 @@ pub fn build_with_initializer(
     }
 }
 
-fn is_empty_dataset(name: &str) -> bool {
+/// True when a metadata `dataset` field names the empty fixture
+/// (`empty`, `CSV empty`, `PARQUET empty`, …). Public so the runner can
+/// machine-tag broken imports: a case whose dataset is empty but whose
+/// expectation is non-empty (and not an error) can never pass — its
+/// setup statements were dropped at import time.
+pub fn is_empty_dataset(name: &str) -> bool {
     if name.eq_ignore_ascii_case("empty") {
         return true;
     }

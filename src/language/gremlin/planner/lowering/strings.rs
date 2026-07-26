@@ -64,17 +64,17 @@ pub(super) fn lower_string_op(
             "conjoin",
             vec![arg(), IrExpr::lit_str(delim.clone())],
         )),
-        AstStringOp::Split(delim) => Ok(project_call(
-            input,
-            "split",
-            vec![
-                arg(),
-                delim
-                    .clone()
-                    .map(IrExpr::lit_str)
-                    .unwrap_or(IrExpr::Lit(Lit::Null)),
-            ],
-        )),
+        AstStringOp::Split(delim) => Ok(match delim {
+            // `split(null)` = split on whitespace. Uses a gremlin-specific
+            // runtime name so Cypher's null-propagating `split` doesn't
+            // swallow the call.
+            None => project_call(input, "gremlin_split_ws", vec![arg()]),
+            Some(delim) => project_call(
+                input,
+                "split",
+                vec![arg(), IrExpr::lit_str(delim.clone())],
+            ),
+        }),
         AstStringOp::ConcatTraversal(sub) => lower_concat_traversal(input, sub, lo, ctx),
     }
 }

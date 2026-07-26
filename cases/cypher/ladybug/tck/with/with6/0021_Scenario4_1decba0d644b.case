@@ -2,6 +2,13 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario4.1decba0d644b","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = ()-[*]->() WITH count(*) AS count, p AS p RETURN nodes(p) AS nodes
+--- graph_initializer
+node n1:N {num: 1}
+node n2:N {num: 2}
+node n3:N {num: 3}
+node n4:N {num: 4}
+edge n1 -[:T]-> n2
+edge n3 -[:T]-> n4
 --- expected
 [...]
 [...]

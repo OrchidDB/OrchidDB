@@ -82,6 +82,14 @@ pub fn lower_pattern_part(
                 let target = node_binding(lowerer, &chain.node);
                 let target_exists = pattern_visible.contains(&target);
                 let variable_length = is_variable_length(&chain.relationship.range);
+                if let Some(max) = chain.relationship.range.max {
+                    if chain.relationship.range.min > max {
+                        return Err(CypherPlanError::Invalid(format!(
+                            "Binder exception: Lower bound of rel {} is greater than upperBound.",
+                            chain.relationship.variable.as_deref().unwrap_or("")
+                        )));
+                    }
+                }
                 let user_rel_binding = chain.relationship.variable.clone();
                 if chain.node.variable.is_some() {
                     pattern_kinds
@@ -562,25 +570,62 @@ fn apply_recursive_relationship_predicate(
     let Some(predicate) = &recursive.predicate else {
         return Ok(input);
     };
-    let pair = lowerer.synthetic("recursive_pair");
-    let predicate = rewrite_recursive_filter_vars(
-        predicate,
-        &recursive.rel_variable,
-        &recursive.node_variable,
-        &pair,
-    );
-    let quantifier = Expr::Quantifier {
-        kind: QuantifierKind::All,
-        variable: pair,
-        collection: Box::new(path_pair_collection_expr(path_binding, source_binding)),
-        predicate: Box::new(predicate),
-    };
-    let (input, condition) =
-        lower_property_expr_with_allowed(lowerer, input, &quantifier, allowed_bindings)?;
-    Ok(Node::GraphFilter {
-        condition,
-        input: input.boxed(),
-    })
+    // The node variable in a recursive-relationship filter only ranges
+    // over intermediate nodes — the source and destination endpoints are
+    // exempt. Split top-level conjuncts so node-referencing conjuncts
+    // quantify over intermediate (rel, node) pairs while rel-only
+    // conjuncts still see every relationship on the path.
+    let filter_vars: BTreeSet<String> = [
+        recursive.rel_variable.clone(),
+        recursive.node_variable.clone(),
+    ]
+    .into_iter()
+    .collect();
+    let mut result = input;
+    for conjunct in split_and_conjuncts(predicate) {
+        let refs = project::expression_candidate_refs(&conjunct, &filter_vars);
+        let uses_node = refs.contains(&recursive.node_variable);
+        let pair = lowerer.synthetic("recursive_pair");
+        let rewritten = rewrite_recursive_filter_vars(
+            &conjunct,
+            &recursive.rel_variable,
+            &recursive.node_variable,
+            &pair,
+        );
+        let collection = if uses_node {
+            path_intermediate_pair_collection_expr(path_binding, source_binding)
+        } else {
+            path_pair_collection_expr(path_binding, source_binding)
+        };
+        let quantifier = Expr::Quantifier {
+            kind: QuantifierKind::All,
+            variable: pair,
+            collection: Box::new(collection),
+            predicate: Box::new(rewritten),
+        };
+        let (next, condition) =
+            lower_property_expr_with_allowed(lowerer, result, &quantifier, allowed_bindings)?;
+        result = Node::GraphFilter {
+            condition,
+            input: next.boxed(),
+        };
+    }
+    Ok(result)
+}
+
+fn split_and_conjuncts(expr: &Expr) -> Vec<Expr> {
+    match expr {
+        Expr::Binary {
+            op: crate::language::cypher::ast::BinaryOp::And,
+            lhs,
+            rhs,
+        } => {
+            let mut out = split_and_conjuncts(lhs);
+            out.extend(split_and_conjuncts(rhs));
+            out
+        }
+        other => vec![other.clone()],
+    }
 }
 
 fn apply_recursive_relationship_projection(
@@ -734,6 +779,14 @@ fn relationship_quantifier(
 fn relationship_collection_expr(path_binding: &str, source_binding: &str) -> Expr {
     Expr::Function {
         name: "relationships".to_string(),
+        distinct: false,
+        args: vec![path_segment_ast_expr(path_binding, source_binding)],
+    }
+}
+
+fn path_intermediate_pair_collection_expr(path_binding: &str, source_binding: &str) -> Expr {
+    Expr::Function {
+        name: "path_intermediate_pairs".to_string(),
         distinct: false,
         args: vec![path_segment_ast_expr(path_binding, source_binding)],
     }

@@ -2,6 +2,16 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario14.813cf225862a","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario14","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH topRoute = (:Start)<-[:CONNECTED_TO]-()-[:CONNECTED_TO*3..3]-(:End) RETURN topRoute
+--- graph_initializer
+node db1:Start
+node db2:End
+node mid:N
+node other:N
+edge mid -[:CONNECTED_TO]-> db1
+edge mid -[:CONNECTED_TO]-> db2
+edge mid -[:CONNECTED_TO]-> db2
+edge mid -[:CONNECTED_TO]-> other
+edge mid -[:CONNECTED_TO]-> other
 --- expected
 {...}
 {...}

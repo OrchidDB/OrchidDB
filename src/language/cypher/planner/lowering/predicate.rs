@@ -166,23 +166,11 @@ pub(crate) fn validate_pattern_predicate_scope(
     lowerer: &Lowerer,
     patterns: &[PatternPart],
 ) -> CypherPlanResult<()> {
-    let visible = lowerer.visible_set();
-    let mut named = BTreeSet::new();
-    for part in patterns {
-        collect_pattern_names(part, &mut named);
-    }
-    let introduced = named
-        .into_iter()
-        .filter(|name| !visible.contains(name))
-        .collect::<Vec<_>>();
-    if introduced.is_empty() {
-        Ok(())
-    } else {
-        Err(CypherPlanError::Invalid(format!(
-            "pattern predicates may not introduce new variables: {}",
-            introduced.join(", ")
-        )))
-    }
+    // Pattern predicates are existential subqueries; fresh variables are
+    // locally bound inside the predicate (Kuzu-compatible), so no scope
+    // violation is raised here.
+    let _ = (lowerer, patterns);
+    Ok(())
 }
 
 fn collect_pattern_names(part: &PatternPart, out: &mut BTreeSet<String>) {

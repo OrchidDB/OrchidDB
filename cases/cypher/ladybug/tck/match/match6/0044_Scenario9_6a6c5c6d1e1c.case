@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario9.6a6c5c6d1e1c","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario9","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (a:Label1)<--(:Label2)--() RETURN p
+--- graph_initializer
+node _n1:Label1
+node _n2:Label2
+edge _n2 -[:T1]-> _n1
+node _n3:Label3
+edge _n2 -[:T2]-> _n3
 --- expected
 {_NODES: [{_ID: 0:0, _LABEL: Label1, ID: 0},{_ID: 1:0, _LABEL: Label2, ID: 0},{_ID: 2:0, _LABEL: Label3, ID: 0}], _RELS: [(1:0)-{_LABEL: T1, _ID: 3:0}->(0:0),(1:0)-{_LABEL: T2, _ID: 4:0}->(2:0)]}

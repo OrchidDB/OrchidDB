@@ -119,7 +119,18 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                     projected.insert(0, seed_values(seed));
                     return union_all(projected);
                 }
-                SackOp::Assign => return union_all(projected),
+                SackOp::Assign => {
+                    // `assign` keeps only the most recent write: the bag is
+                    // a scalar register, so cap() yields the last value.
+                    return Node::GraphSlice {
+                        slice: crate::ir::plan::Slice {
+                            offset: 0,
+                            fetch: None,
+                            tail: Some(1),
+                        },
+                        input: union_all(projected).boxed(),
+                    };
+                }
                 _ => {
                     if let Ok(seed) = gvalue_to_expr(seed) {
                         let unioned = union_all(projected);
@@ -177,19 +188,45 @@ pub(super) fn lower_side_effect_bag_as_list(
     } else {
         writers
     };
+    // The fold's collect skips nulls; under ProductiveByStrategy the bag
+    // legitimately contains nulls (`aggregate("a").by("foo")`), so route
+    // them through a sentinel that survives the collect and restore after.
+    let keep_nulls = lo.productive_by;
     let projected: Vec<Node> = writer_inputs
         .into_iter()
-        .map(|writer| Node::GraphProject {
-            mode: ProjectMode::ReplaceCurrent,
-            items: vec![ProjectionItem {
-                alias: CURRENT.into(),
-                expr: IrExpr::Binding(alias.clone()),
-            }],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: writer.boxed(),
+        .map(|writer| {
+            let expr = if keep_nulls {
+                IrExpr::Call {
+                    name: "null_to_sentinel".into(),
+                    args: vec![IrExpr::Binding(alias.clone())],
+                }
+            } else {
+                IrExpr::Binding(alias.clone())
+            };
+            Node::GraphProject {
+                mode: ProjectMode::ReplaceCurrent,
+                items: vec![ProjectionItem {
+                    alias: CURRENT.into(),
+                    expr,
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: writer.boxed(),
+            }
         })
         .collect();
-    Some(lower_fold(union_all(projected)))
+    let folded = lower_fold(union_all(projected));
+    if keep_nulls {
+        Some(Node::GraphCurrentProject {
+            expr: IrExpr::Call {
+                name: "list_restore_null_sentinels".into(),
+                args: vec![IrExpr::Binding(CURRENT.into())],
+            },
+            fields: vec![CURRENT.to_string()],
+            input: folded.boxed(),
+        })
+    } else {
+        Some(folded)
+    }
 }
 
 pub(super) fn lower_side_effect_value(input: Node, label: &str, lo: &Lowerer) -> Option<Node> {
@@ -270,6 +307,11 @@ where
             .insert(label.to_string(), CURRENT.to_string());
         return lower_group(input, key_by, value_by, false, lo, ctx);
     }
+    // `group(label)` not immediately capped: keep the main stream untouched
+    // and remember a plan that computes the full group map, so a later
+    // `select(label)` can attach it per traverser.
+    let map_node = lower_group(input.clone(), key_by, value_by, false, lo, ctx)?;
+    lo.group_side_effect_maps.insert(label.to_string(), map_node);
     Ok(input)
 }
 

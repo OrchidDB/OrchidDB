@@ -2,5 +2,23 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with7.Scenario2.86080bf51677","language":"cypher","ordered":true,"source":"tck/with/with7.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (david {name: 'David'})--(otherPerson)-->() WITH otherPerson, count(*) AS foaf WHERE foaf > 1 WITH otherPerson WHERE otherPerson.name <> 'NotOther' RETURN count(*)
+--- graph_initializer
+node a:N {name: "David"}
+node b:N {name: "Other"}
+node c:N {name: "NotOther"}
+node d:N {name: "NotOther2"}
+edge a -[:REL]-> b
+edge a -[:REL]-> c
+edge a -[:REL]-> d
+node _n1:N
+edge b -[:REL]-> _n1
+node _n2:N
+edge b -[:REL]-> _n2
+node _n3:N
+edge c -[:REL]-> _n3
+node _n4:N
+edge c -[:REL]-> _n4
+node _n5:N
+edge d -[:REL]-> _n5
 --- expected
 1

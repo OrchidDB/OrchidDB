@@ -99,6 +99,19 @@ pub(crate) fn path_pairs(items: &[Value]) -> Value {
     Value::List(pairs)
 }
 
+/// Pairs of (rel, node) restricted to intermediate nodes: the final
+/// pair — whose node is the destination endpoint — is dropped, matching
+/// recursive-relationship node predicates that only see interior nodes.
+pub(crate) fn path_intermediate_pairs(items: &[Value]) -> Value {
+    match path_pairs(items) {
+        Value::List(mut pairs) => {
+            pairs.pop();
+            Value::List(pairs)
+        }
+        other => other,
+    }
+}
+
 pub(crate) fn project_path_edges(items: &[Value], rel_keys: &[Value]) -> Value {
     let keys = rel_keys
         .iter()

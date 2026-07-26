@@ -2,6 +2,36 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario9_10.ba53386a01fc","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario9&10","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A) MATCH (a)-[:LIKES..]->(c) RETURN c.name
+--- graph_initializer
+node n0:A {name: "n0"}
+node n00:B {name: "n00"}
+node n01:B {name: "n01"}
+node n000:C {name: "n000"}
+node n001:C {name: "n001"}
+node n010:C {name: "n010"}
+node n011:C {name: "n011"}
+node n0000:D {name: "n0000"}
+node n0001:D {name: "n0001"}
+node n0010:D {name: "n0010"}
+node n0011:D {name: "n0011"}
+node n0100:D {name: "n0100"}
+node n0101:D {name: "n0101"}
+node n0110:D {name: "n0110"}
+node n0111:D {name: "n0111"}
+edge n0 -[:LIKES]-> n00
+edge n0 -[:LIKES]-> n01
+edge n00 -[:LIKES]-> n000
+edge n00 -[:LIKES]-> n001
+edge n01 -[:LIKES]-> n010
+edge n01 -[:LIKES]-> n011
+edge n000 -[:LIKES]-> n0000
+edge n000 -[:LIKES]-> n0001
+edge n001 -[:LIKES]-> n0010
+edge n001 -[:LIKES]-> n0011
+edge n010 -[:LIKES]-> n0100
+edge n010 -[:LIKES]-> n0101
+edge n011 -[:LIKES]-> n0110
+edge n011 -[:LIKES]-> n0111
 --- expected
 Parser exception: Invalid input <MATCH (a:A)            MATCH (a)-[:LIKES..>: expected rule oC_SingleQuery (line: 1, offset: 40)
 "MATCH (a:A)            MATCH (a)-[:LIKES..]->(c)             RETURN c.name;"

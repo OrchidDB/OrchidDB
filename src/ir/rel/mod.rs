@@ -7,6 +7,8 @@
 //! base relational scans, joins, projections, filters, and aggregates that
 //! DataFusion can execute directly.
 
+pub mod sql;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -209,7 +211,7 @@ impl RelBackend {
     }
 }
 
-async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
+pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches> {
     let stats = logical_plan_stats(&lowered.plan);
     if stats.nodes > MAX_EXECUTABLE_PLAN_NODES || stats.depth > MAX_EXECUTABLE_PLAN_DEPTH {
         return Err(RelError::Unsupported(format!(

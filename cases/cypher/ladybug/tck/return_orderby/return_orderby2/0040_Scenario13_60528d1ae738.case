@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return_orderby.return_orderby2.Scenario13.60528d1ae738","language":"cypher","ordered":true,"source":"tck/return_orderby/return_orderby2.test","source_case":"Scenario13","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a) RETURN DISTINCT a.name ORDER BY a.age
+--- graph_initializer
+node _n1:N {name: "A", age: 13}
+node _n2:N {name: "B", age: 12}
+node _n3:N {name: "C", age: 11}
 --- expected
 UndefinedVariable

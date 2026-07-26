@@ -2,5 +2,12 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.0cb5b0afb27e","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario17&18","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[:A]->()-[:B]->(a) RETURN a.name
+--- graph_initializer
+node a:N {name: "a"}
+node b:N {name: "b"}
+node c:N {name: "c"}
+edge a -[:A]-> b
+edge b -[:B]-> a
+edge b -[:B]-> c
 --- expected
 a

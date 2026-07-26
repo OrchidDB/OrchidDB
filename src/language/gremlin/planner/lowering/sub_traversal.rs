@@ -25,11 +25,88 @@ pub(super) fn lower_source_traversal_with_context(
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
     debug_assert_eq!(ctx.contract().start, TraversalStart::Source);
+    let rewritten = rewrite_infix_connectives(steps);
+    let steps = rewritten.as_deref().unwrap_or(steps);
     let (first, rest) = steps
         .split_first()
         .ok_or_else(|| GremlinPlanError::Parse("empty traversal".to_string()))?;
     let node = source_node(first, lo, ctx)?;
     lower_remaining_steps(node, rest, lo, ctx)
+}
+
+/// ConnectiveStrategy-style rewrite: fold infix `.and()` / `.or()` markers
+/// into explicit filter combinators.
+///
+/// `prefix a1 .and() a2 .or() b` becomes
+/// `prefix where(union(and-branch(a1, a2), b))` where the and-branch is a
+/// chain of `WhereTraversal` semi-joins. The retained prefix is the leading
+/// run of spawn / labelling steps (`V`/`E`/`inject`/`as`/`identity`) that
+/// produce the stream the connective filters.
+///
+/// Returns `None` when the step list contains no infix markers.
+pub(super) fn rewrite_infix_connectives(steps: &[Step]) -> Option<Vec<Step>> {
+    if !steps
+        .iter()
+        .any(|s| matches!(s, Step::InfixAnd | Step::InfixOr))
+    {
+        return None;
+    }
+    let prefix_len = steps
+        .iter()
+        .take_while(|s| {
+            matches!(
+                s,
+                Step::V { .. } | Step::E { .. } | Step::Inject(_) | Step::As(_) | Step::Identity
+            )
+        })
+        .count();
+    let (prefix, rest) = steps.split_at(prefix_len);
+
+    // Split at top-level `InfixOr` first (lowest precedence), then each
+    // or-branch at `InfixAnd`.
+    let or_segments: Vec<Vec<Step>> = split_at_marker(rest, |s| matches!(s, Step::InfixOr));
+    let mut or_branches: Vec<Vec<Step>> = Vec::with_capacity(or_segments.len());
+    for or_seg in &or_segments {
+        let and_segments: Vec<Vec<Step>> = split_at_marker(or_seg, |s| matches!(s, Step::InfixAnd));
+        if and_segments.len() == 1 {
+            or_branches.push(and_segments.into_iter().next().unwrap_or_default());
+        } else {
+            or_branches.push(
+                and_segments
+                    .into_iter()
+                    .map(Step::WhereTraversal)
+                    .collect(),
+            );
+        }
+    }
+
+    let mut out: Vec<Step> = prefix.to_vec();
+    if or_branches.len() == 1 {
+        // Pure and-chain: keep the filters inline on the main stream.
+        out.extend(or_branches.into_iter().next().unwrap_or_default());
+    } else {
+        out.push(Step::WhereTraversal(vec![Step::Union(or_branches)]));
+    }
+    Some(out)
+}
+
+fn split_at_marker(steps: &[Step], is_marker: impl Fn(&Step) -> bool) -> Vec<Vec<Step>> {
+    let mut segments = vec![Vec::new()];
+    for step in steps {
+        if is_marker(step) {
+            segments.push(Vec::new());
+        } else {
+            segments
+                .last_mut()
+                .expect("segments is never empty")
+                .push(step.clone());
+        }
+    }
+    segments.retain(|seg| !seg.is_empty());
+    if segments.is_empty() {
+        segments.push(Vec::new());
+    }
+    segments
 }
 
 pub(super) fn lower_child_traversal(
@@ -57,6 +134,8 @@ fn lower_correlated_traversal_with_context(
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
     debug_assert_eq!(ctx.contract().start, TraversalStart::CorrelatedCurrent);
+    let rewritten = rewrite_infix_connectives(steps);
+    let steps = rewritten.as_deref().unwrap_or(steps);
     let mut node = Node::GraphCorrelate {
         bindings: correlated_bindings(ctx.current_binding(), steps),
     };
@@ -100,7 +179,7 @@ fn collect_label_refs(steps: &[Step], bindings: &mut Vec<String>) {
 
 fn collect_step_refs(step: &Step, bindings: &mut Vec<String>) {
     match step {
-        Step::As(label) => {
+        Step::As(label) | Step::WhereAnchor(label) => {
             push_binding(bindings, label);
             push_select_history_binding(bindings, label);
         }

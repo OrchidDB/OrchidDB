@@ -222,6 +222,11 @@ pub(super) struct Lowerer {
     /// Labels written by real map-valued `groupCount(label)` side effects.
     /// These are read by `cap(label)` through the interpreter side channel.
     pub(super) group_count_side_effects: BTreeSet<String>,
+    /// Map-valued `group(label)` side effects that were *not* immediately
+    /// consumed by `cap(label)`. Keyed by label; the stored plan computes
+    /// the full group map from the source so a later `select(label)` can
+    /// attach it per traverser via a scalar apply.
+    pub(super) group_side_effect_maps: BTreeMap<String, crate::ir::plan::Node>,
     /// Recursion guard: when we are *evaluating* a subgraph filter
     /// sub-traversal we must not re-apply the strategy — otherwise the
     /// filter's own scans would each spawn another copy of the filter,
@@ -245,6 +250,7 @@ impl Lowerer {
             side_effect_seeds: BTreeMap::new(),
             side_effect_reducers: BTreeMap::new(),
             group_count_side_effects: BTreeSet::new(),
+            group_side_effect_maps: BTreeMap::new(),
             in_subgraph_filter_eval: false,
         }
     }

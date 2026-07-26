@@ -24,7 +24,11 @@ use crate::language::gremlin::ast::{
 };
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
 
-pub(super) fn lower_local_scoped(input: Node, inner: &Step) -> GremlinPlanResult<Node> {
+pub(super) fn lower_local_scoped(
+    input: Node,
+    inner: &Step,
+    lo: &super::context::Lowerer,
+) -> GremlinPlanResult<Node> {
     let helper_call: IrExpr = match inner {
         Step::Tail(n) => call("local_tail", vec![cur(), int(*n as i64)]),
         Step::Limit(n) | Step::Sample(n) => call("local_limit", vec![cur(), int(*n as i64)]),
@@ -49,6 +53,22 @@ pub(super) fn lower_local_scoped(input: Node, inner: &Step) -> GremlinPlanResult
                     )));
                 }
             };
+            // Under ProductiveByStrategy, local reductions of empty /
+            // all-null lists produce a null traverser (e.g.
+            // `cap("a").max(local)`); the default strategy stack filters
+            // it. Use a ReplaceCurrent projection (which keeps null rows)
+            // only in the productive case.
+            if lo.productive_by {
+                return Ok(Node::GraphProject {
+                    mode: crate::ir::plan::ProjectMode::ReplaceCurrent,
+                    items: vec![crate::ir::plan::ProjectionItem {
+                        alias: CURRENT.into(),
+                        expr: call(helper, vec![cur()]),
+                    }],
+                    error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+                    input: input.boxed(),
+                });
+            }
             call(helper, vec![cur()])
         }
         Step::StringOp(op) => match op {

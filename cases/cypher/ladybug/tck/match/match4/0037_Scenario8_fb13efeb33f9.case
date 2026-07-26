@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario8.fb13efeb33f9","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH ()-[r1]->()-[r2]->() WITH [r1, r2] AS rs LIMIT 1 MATCH (first)-[rs*]->(second) RETURN first, second
+--- graph_initializer
+node a:A
+node b:B
+node c:C
+edge a -[:Y]-> b
+edge b -[:Y]-> c
 --- expected
 Binder exception: rs has data type REL[] but RECURSIVE_REL was expected.

@@ -2,5 +2,7 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.boolean.Boolean4.Scenario3.9d12bf2fe232","language":"cypher","ordered":true,"source":"tck/expressions/boolean/Boolean4.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) WHERE NOT(n.name = 'apa' AND false) RETURN n
+--- graph_initializer
+node _n1:N {name: "a"}
 --- expected
 {name: 'a'}

@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.expressions.aggregation.Aggregation5.Scenario2.cc51b3831cdb","language":"cypher","ordered":true,"source":"tck/expressions/aggregation/Aggregation5.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 OPTIONAL MATCH (f:DoesExist) OPTIONAL MATCH (n:DoesNotExist) RETURN collect(DISTINCT n.num) AS a, collect(DISTINCT f.num) AS b
+--- graph_initializer
+node _n1:DoesExist {num: 42}
+node _n2:DoesExist {num: 43}
+node _n3:DoesExist {num: 44}
 --- expected
 []|[42,43,44]

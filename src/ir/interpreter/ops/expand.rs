@@ -54,7 +54,7 @@ pub(crate) fn expand_op(
     // `DifferentRelationships` keeps each edge from being reused. Cap
     // the loop at a conservative depth so the interpreter still has a
     // hard exit if the data picks up unexpected cycles.
-    const UNBOUNDED_MAX: u32 = 64;
+    const UNBOUNDED_MAX: u32 = 30;
     let max_hops = length.max.unwrap_or(UNBOUNDED_MAX);
     if length.min > max_hops {
         return Err(InterpretError::Unsupported(format!(
@@ -188,18 +188,25 @@ pub(crate) fn expand_op(
                     // `match_mode` owns relationship reuse. `path_mode`
                     // can still request stricter path classes when a
                     // planner emits TRAIL/SIMPLE/ACYCLIC explicitly.
-                    let enforces_trail = matches!(
-                        (path_mode, match_mode),
-                        (PathMode::Trail | PathMode::Simple | PathMode::Acyclic, _)
-                            | (_, MatchMode::DifferentRelationships)
-                    ) || (history_binding.is_some()
-                        && !matches!(match_mode, MatchMode::RepeatableElements))
-                        || (path_binding.is_some_and(|binding| binding != "__path")
-                            && !matches!(path_mode, PathMode::Walk));
-                    let history_contains = history_binding
-                        .map(|_| path_contains_edge(&history, &rel_type, edge_row))
-                        .unwrap_or_else(|| path_contains_edge(&path, &rel_type, edge_row));
-                    if enforces_trail && history_contains {
+                    //
+                    // Relationship uniqueness is scoped to a single
+                    // variable-length expansion (trail within one
+                    // recursive relationship); separate single-hop
+                    // relationship patterns may bind the same edge, so a
+                    // 1..1 expansion never prunes on reuse.
+                    let multi_hop = max_hops > 1;
+                    let enforces_trail = multi_hop
+                        && (matches!(
+                            (path_mode, match_mode),
+                            (PathMode::Trail | PathMode::Simple | PathMode::Acyclic, _)
+                                | (_, MatchMode::DifferentRelationships)
+                        ) || (history_binding.is_some()
+                            && !matches!(match_mode, MatchMode::RepeatableElements))
+                            || (path_binding.is_some_and(|binding| binding != "__path")
+                                && !matches!(path_mode, PathMode::Walk)));
+                    let history_contains =
+                        enforces_trail && path_contains_edge(&path, &rel_type, edge_row);
+                    if history_contains {
                         continue;
                     }
                     if history_binding.is_some() {

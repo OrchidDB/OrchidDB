@@ -2,6 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario10.5b0395144065","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) WHERE n.p1 = 12 OR n.p2 = 13 RETURN n
+--- graph_initializer
+node a:A {p1: 12}
+node b:B {p2: 13}
+node c:C
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0, p1: 12}
 {_ID: 1:0, _LABEL: B, ID: 0, p2: 13}

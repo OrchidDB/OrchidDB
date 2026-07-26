@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario8.23505fe1dfc3","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (node)-[r:KNOWS]->(a) WHERE r.name = 'monkey' RETURN a
+--- graph_initializer
+node _n1:A
+node _n2:N
+edge _n2 -[:KNOWS {name: "monkey"}]-> _n1
+node _n3:B
+edge _n2 -[:KNOWS {name: "woot"}]-> _n3
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0}

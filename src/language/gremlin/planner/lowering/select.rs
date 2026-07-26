@@ -46,6 +46,34 @@ pub(super) fn lower_select_label<'a, I>(
 where
     I: Iterator<Item = &'a Step>,
 {
+    // Side-effect labels: `select(label)` of a groupCount/group/aggregate
+    // side effect keeps stream cardinality and attaches the side-effect
+    // value (map or bag list) to every traverser.
+    if lo.group_count_side_effects.contains(label) {
+        let cap = Node::GraphCap {
+            labels: vec![label.to_string()],
+            input: Node::GraphCorrelate {
+                bindings: vec![CURRENT.to_string()],
+            }
+            .boxed(),
+        };
+        return Ok(attach_scalar_current(input, cap));
+    }
+    // Consume-once: after the map is attached the traverser IS the map, and
+    // a repeated `select(label)` picks the map key instead (TinkerPop
+    // resolves map keys before side effects on map-shaped traversers).
+    if let Some(map_node) = lo.group_side_effect_maps.remove(label) {
+        return Ok(attach_scalar_current(input, map_node));
+    }
+    if lo.side_effect_bags.contains_key(label) {
+        if let Some(bag_list) = super::side_effects::lower_side_effect_bag_as_list(
+            input.clone(),
+            label,
+            lo,
+        ) {
+            return Ok(attach_scalar_current(input, bag_list));
+        }
+    }
     if let Some(input) = lower_side_effect_value(input.clone(), label, lo) {
         return Ok(input);
     }
@@ -181,6 +209,19 @@ fn filter_label_present(input: Node, label: &str) -> Node {
             rhs: Box::new(map_has),
         },
         input: input.boxed(),
+    }
+}
+
+/// Attach the (single-row) result of `right` to every row of `input` as
+/// the new `current`, preserving stream cardinality and other bindings.
+fn attach_scalar_current(input: Node, right: Node) -> Node {
+    Node::GraphApply {
+        kind: crate::ir::plan::ApplyKind::Scalar,
+        correlation: vec![CURRENT.to_string()],
+        outputs: vec![CURRENT.to_string()],
+        optional_missing: crate::ir::policy::OptionalMissing::Null,
+        left: input.boxed(),
+        right: right.boxed(),
     }
 }
 

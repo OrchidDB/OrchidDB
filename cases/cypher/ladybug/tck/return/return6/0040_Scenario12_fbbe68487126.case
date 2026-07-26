@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario12.fbbe68487126","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario12","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:L)-[rel]->(b) RETURN a, count(*)
+--- graph_initializer
+node a:L
+node b1:N
+node b2:N
+edge a -[:A]-> b1
+edge a -[:A]-> b2
 --- expected
 {_ID: 0:0, _LABEL: L, ID: 0}|2

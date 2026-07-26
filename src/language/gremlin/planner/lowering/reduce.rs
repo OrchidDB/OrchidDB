@@ -66,8 +66,14 @@ pub(super) fn lower_fold(input: Node) -> Node {
 }
 
 pub(super) fn lower_unfold(input: Node) -> Node {
+    // Route through `gremlin_unfold_items` so null traversers unfold to
+    // themselves (TinkerPop semantics) instead of Cypher's UNWIND-null →
+    // nothing.
     Node::GraphUnwind {
-        input_expr: IrExpr::Binding(CURRENT.into()),
+        input_expr: IrExpr::Call {
+            name: "gremlin_unfold_items".into(),
+            args: vec![IrExpr::Binding(CURRENT.into())],
+        },
         bind: CURRENT.into(),
         outer: false,
         input: input.boxed(),

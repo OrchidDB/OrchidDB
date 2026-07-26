@@ -244,14 +244,30 @@ pub(super) fn lower_where_traversal(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    let sub = anchor_where_labels(sub);
     Ok(Node::GraphApply {
         kind: ApplyKind::Semi,
         correlation: vec![CURRENT.into()],
         outputs: Vec::new(),
         optional_missing: OptionalMissing::Null,
         left: input.boxed(),
-        right: lower_child_traversal(sub, lo, ctx, ChildTraversalKind::WherePredicate)?.boxed(),
+        right: lower_child_traversal(&sub, lo, ctx, ChildTraversalKind::WherePredicate)?.boxed(),
     })
+}
+
+/// TinkerPop `where(t)` semantics treat non-leading `as(label)` steps as
+/// equality anchors against the outer binding (end-step labels), not as
+/// rebindings. Rewrite them to `WhereAnchor` so the lowering emits the
+/// equality filter; the leading `as` (start anchor) is handled by
+/// `prefer_existing_label_as_current`.
+fn anchor_where_labels(sub: &[Step]) -> Vec<Step> {
+    sub.iter()
+        .enumerate()
+        .map(|(idx, step)| match step {
+            Step::As(label) if idx > 0 => Step::WhereAnchor(label.clone()),
+            other => other.clone(),
+        })
+        .collect()
 }
 
 /// `where("a", P.eq("b"))` / `where("a", P.gt("b"))` — the predicate's
@@ -290,10 +306,24 @@ where
         op: CompareOp,
         other: &str,
     ) -> IrExpr {
-        IrExpr::Binary {
+        let lhs = binding_by_expr(label, lhs_by);
+        let rhs = binding_by_expr(other, lhs_by);
+        let cmp = IrExpr::Binary {
             op: compare_op(op),
-            lhs: Box::new(binding_by_expr(label, lhs_by)),
-            rhs: Box::new(binding_by_expr(other, lhs_by)),
+            lhs: Box::new(lhs.clone()),
+            rhs: Box::new(rhs.clone()),
+        };
+        if lhs_by.is_some() {
+            // `by(key)` modulators are productive filters: a missing
+            // property on either side drops the traverser rather than
+            // comparing null == null.
+            IrExpr::and(vec![
+                IrExpr::IsNotNull(Box::new(lhs)),
+                IrExpr::IsNotNull(Box::new(rhs)),
+                cmp,
+            ])
+        } else {
+            cmp
         }
     }
     fn rhs_by<'a>(bys: &'a [BySpec], rhs_idx: &mut usize) -> Option<&'a BySpec> {
@@ -381,12 +411,13 @@ pub(super) fn lower_not_traversal(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    let sub = anchor_where_labels(sub);
     Ok(Node::GraphApply {
         kind: ApplyKind::Anti,
         correlation: vec![CURRENT.into()],
         outputs: Vec::new(),
         optional_missing: OptionalMissing::Null,
         left: input.boxed(),
-        right: lower_child_traversal(sub, lo, ctx, ChildTraversalKind::NotPredicate)?.boxed(),
+        right: lower_child_traversal(&sub, lo, ctx, ChildTraversalKind::NotPredicate)?.boxed(),
     })
 }

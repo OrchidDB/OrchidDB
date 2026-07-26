@@ -2,6 +2,16 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with6.Scenario2.8c41b0379208","language":"cypher","ordered":true,"source":"tck/with/with6.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH ()-[r1]->(:X) WITH r1 AS r2, count(*) AS c MATCH ()-[r2]->() RETURN r2 AS rel
+--- graph_initializer
+node _n1:N
+node _n2:X
+edge _n1 -[:T1]-> _n2
+node _n3:N
+node _n4:X
+edge _n3 -[:T2]-> _n4
+node _n5:N
+node _n6:N
+edge _n5 -[:T3]-> _n6
 --- expected
 ...
 ...

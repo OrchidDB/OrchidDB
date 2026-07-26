@@ -4,6 +4,47 @@
 
 use crate::ir::value::Value;
 
+/// `min(local)` / `max(local)` over any Comparable values (TinkerPop
+/// orderability): numbers reduce numerically; anything else (strings,
+/// dates, ...) reduces via the cross-type total order. Nulls are ignored;
+/// an empty / all-null list yields Null.
+pub(crate) fn reduce_list_orderable(items: &[Value], op: &str) -> Value {
+    let non_null: Vec<&Value> = items
+        .iter()
+        .filter(|v| !matches!(v, Value::Null))
+        .collect();
+    if non_null.is_empty() {
+        return Value::Null;
+    }
+    let all_numeric = non_null.iter().all(|v| {
+        matches!(
+            v,
+            Value::Byte(_)
+                | Value::Short(_)
+                | Value::Int(_)
+                | Value::Long(_)
+                | Value::Float32(_)
+                | Value::Float(_)
+        )
+    });
+    if all_numeric {
+        return reduce_list_numeric(items, op);
+    }
+    use crate::ir::interpreter::expr::compare_values;
+    let mut best = non_null[0];
+    for candidate in &non_null[1..] {
+        let ord = compare_values(candidate, best);
+        let better = match op {
+            "min" => ord == std::cmp::Ordering::Less,
+            _ => ord == std::cmp::Ordering::Greater,
+        };
+        if better {
+            best = candidate;
+        }
+    }
+    best.clone()
+}
+
 pub(crate) fn reduce_list_numeric(items: &[Value], op: &str) -> Value {
     if items.is_empty() {
         return Value::Null;
@@ -155,6 +196,31 @@ pub(crate) fn apply_sack_op(lhs: &Value, rhs: &Value, op: &str) -> Value {
         ("addAll", List(a), List(b)) => {
             let mut out = a.clone();
             out.extend(b.iter().cloned());
+            List(out)
+        }
+        ("addAll", Map(a), Map(b)) => {
+            let mut out = a.clone();
+            for (k, v) in b {
+                out.insert(k.clone(), v.clone());
+            }
+            Map(out)
+        }
+        ("addAll", Map(a), List(b)) => {
+            // Folding a stream of maps into a map seed: each list item is
+            // itself a map to merge in.
+            let mut out = a.clone();
+            for item in b {
+                if let Map(m) = item {
+                    for (k, v) in m {
+                        out.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            Map(out)
+        }
+        ("addAll", List(a), item) => {
+            let mut out = a.clone();
+            out.push(item.clone());
             List(out)
         }
         _ => Null,

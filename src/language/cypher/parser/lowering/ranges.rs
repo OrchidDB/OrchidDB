@@ -47,13 +47,8 @@ pub(crate) fn lower_range_literal<'input>(
         .find(|bound| bound.start().get_token_index() > dot_index)
         .map(|bound| parse_bound(bound.as_ref()))
         .transpose()?;
-    if let Some(max_bound) = max {
-        if min > max_bound {
-            return Err(crate::language::cypher::parser::CypherParseError::Parse(
-                "Binder exception: Lower bound of rel  is greater than upperBound.".to_string(),
-            ));
-        }
-    }
+    // Lower-bound > upper-bound is validated in the planner, where the
+    // relationship binding name is known for the error message.
     Ok(RangeLiteral {
         min,
         max,

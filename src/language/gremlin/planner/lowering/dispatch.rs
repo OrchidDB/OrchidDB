@@ -108,6 +108,32 @@ where
 
         // ----- labelled bindings -----
         Step::As(label) => Ok(lower_as(input, label)),
+        // Mid where()-sub-traversal `as(label)`: when the label is already
+        // bound in the outer scope this is an equality anchor (the current
+        // element must equal the labelled binding); when unbound it degrades
+        // to a plain rebinding, matching TinkerPop's where semantics.
+        Step::WhereAnchor(label) => {
+            let anchored = Node::GraphFilter {
+                condition: crate::ir::expr::IrExpr::Binary {
+                    op: crate::ir::expr::BinaryOp::Or,
+                    lhs: Box::new(crate::ir::expr::IrExpr::Not(Box::new(
+                        crate::ir::expr::IrExpr::IsBound(label.clone()),
+                    ))),
+                    rhs: Box::new(crate::ir::expr::IrExpr::Binary {
+                        op: crate::ir::expr::BinaryOp::Eq,
+                        lhs: Box::new(crate::ir::expr::IrExpr::Binding("current".into())),
+                        rhs: Box::new(crate::ir::expr::IrExpr::Binding(label.clone())),
+                    }),
+                },
+                input: input.boxed(),
+            };
+            Ok(lower_as(anchored, label))
+        }
+        // Stray infix connectives (`.and()` / `.or()`): these are folded by
+        // `rewrite_infix_connectives` before lowering; if one slips through
+        // (e.g. inside a step list lowered without the rewrite) treat it as
+        // identity so the surrounding chain still runs.
+        Step::InfixAnd | Step::InfixOr => Ok(input),
         Step::Select(label, pop) => lower_select_label(input, label, *pop, steps, lo, ctx),
         Step::SelectMulti(labels, pop) => lower_select_multi(input, labels, *pop, steps, lo, ctx),
         Step::SelectColumn(column) => Ok(lower_select_column(input, *column)),
@@ -379,7 +405,7 @@ where
             let by = super::helpers::consume_by(steps);
             lower_local_order(input, by)
         }
-        Step::LocalScoped(inner) => lower_local_scoped(input, inner),
+        Step::LocalScoped(inner) => lower_local_scoped(input, inner, lo),
         Step::PathFrom(label) => Ok(lower_path_from(input, label)),
         Step::PathTo(label) => Ok(lower_path_to(input, label)),
         // `where("a", P.eq("b"))` / `where("a", P.gt("b"))` — cross-binding
@@ -430,8 +456,16 @@ fn is_side_effect_only(sub: &[Step]) -> bool {
     if sub.is_empty() {
         return false;
     }
-    sub.iter()
-        .all(|s| matches!(s, Step::AggregateAs(_) | Step::By(_)))
+    sub.iter().all(|s| {
+        matches!(
+            s,
+            Step::AggregateAs(_)
+                | Step::By(_)
+                | Step::SackOp(_)
+                | Step::GroupCountAs(_)
+                | Step::GroupAs(_)
+        )
+    })
 }
 
 fn cap_feeds_local_collection_step(step: Option<&Step>) -> bool {

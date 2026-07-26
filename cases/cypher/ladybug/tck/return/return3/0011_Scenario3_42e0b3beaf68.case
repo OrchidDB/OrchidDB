@@ -2,5 +2,9 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return3.Scenario3.42e0b3beaf68","language":"cypher","ordered":true,"source":"tck/return/return3.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[r]->() RETURN a AS foo, r AS bar
+--- graph_initializer
+node a:A
+node b:B
+edge a -[:T]-> b
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0}|(0:0)-{_LABEL: T, _ID: 2:0}->(1:0)

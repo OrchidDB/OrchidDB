@@ -2,5 +2,10 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where3.Scenario2.f4751c77df91","language":"cypher","ordered":true,"source":"tck/with_where/with_where3.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A), (b:B) WITH a, b WHERE a.id = b.id RETURN a, b
+--- graph_initializer
+node _n1:A {id: 1}
+node _n2:A {id: 2}
+node _n3:B {id: 2}
+node _n4:B {id: 3}
 --- expected
 {_ID: 0:1, _LABEL: A, id: 2}|{_ID: 1:0, _LABEL: B, id: 2}

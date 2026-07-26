@@ -2,5 +2,11 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where4.Scenario2.95f628ab9066","language":"cypher","ordered":true,"source":"tck/with_where/with_where4.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a), (b) WITH a, b WHERE a.id = 0 AND (a)-[:T]->(b:TheLabel) OR (a)-[:T*]->(b:MissingLabel) RETURN DISTINCT b
+--- graph_initializer
+node a:TheLabel {id: 0}
+node b:TheLabel {id: 1}
+node c:TheLabel {id: 2}
+edge a -[:T]-> b
+edge b -[:T]-> c
 --- expected
 {_ID: 0:1, _LABEL: TheLabel, id: 1}

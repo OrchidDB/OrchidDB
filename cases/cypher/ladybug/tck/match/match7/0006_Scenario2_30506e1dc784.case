@@ -2,5 +2,7 @@
 {"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario2.30506e1dc784","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) OPTIONAL MATCH (n)-[:NOT_EXIST]->(x) RETURN n, x
+--- graph_initializer
+node _n1:N
 --- expected
 {_ID: 0:0, _LABEL: A, ID: 0}|
