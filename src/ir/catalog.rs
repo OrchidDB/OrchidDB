@@ -1007,7 +1007,7 @@ fn map_property_value_if_present<'a>(
     matches.next().is_none().then_some(first)
 }
 
-fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Value {
+pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Value {
     if row >= array.len() || array.is_null(row) {
         return Value::Null;
     }
