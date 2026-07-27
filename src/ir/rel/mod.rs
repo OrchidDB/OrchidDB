@@ -5079,14 +5079,39 @@ fn cypher_plain_value(value: &Value) -> String {
             format!("[{}]", body.join(","))
         }
         Value::Map(map) => {
-            let body = map
+            // A union is carried as a tagged map but prints as its payload
+            // alone: `CAST(127 AS UNION(a STRING, b INT64))` is `127`, not
+            // `{b: 127}`. Mirrors `output::union_display_value`.
+            if let (Some(Value::String(_)), Some(payload)) = (map.get("__tag"), map.get("__value"))
+            {
+                return cypher_plain_value(payload);
+            }
+            // Structs print in declaration order. The map is sorted, so
+            // without the recorded order the fields come out alphabetized.
+            let ordered_keys: Vec<String> = match map.get(STRUCT_ORDER_KEY) {
+                Some(Value::List(items)) => items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => map
+                    .keys()
+                    .filter(|key| {
+                        !key.starts_with("__")
+                            && key.as_str() != STRUCT_ORDER_KEY
+                            && key.as_str() != STRUCT_TYPES_KEY
+                    })
+                    .cloned()
+                    .collect(),
+            };
+            let body = ordered_keys
                 .iter()
-                .filter(|(key, _)| {
-                    !key.starts_with("__")
-                        && key.as_str() != STRUCT_ORDER_KEY
-                        && key.as_str() != STRUCT_TYPES_KEY
+                .filter_map(|key| {
+                    map.get(key)
+                        .map(|value| format!("{key}: {}", cypher_plain_value(value)))
                 })
-                .map(|(key, value)| format!("{key}: {}", cypher_plain_value(value)))
                 .collect::<Vec<_>>();
             format!("{{{}}}", body.join(", "))
         }
