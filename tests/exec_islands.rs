@@ -172,6 +172,30 @@ fn undecodable_columns_decline_rather_than_null_out() {
     }
 }
 
+/// A `x.*` projection fans one field into one column per property in the
+/// relational plan, but the residual still refers to the single field `x.*`.
+/// The island has to collapse those columns back into one map binding, in
+/// projection order, or the row comes back blank.
+#[test]
+fn island_results_carry_star_projections() {
+    let graph = fixture();
+    for query in [
+        "MATCH (p:person) RETURN p.*",
+        "MATCH (a:person)-[:knows]->(b:person) RETURN a.name, b.*",
+    ] {
+        let (stats, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
+        assert_eq!(rows, rows_of(&graph, query), "mismatch for `{query}`");
+        assert!(
+            rows.iter().all(|row| !row.trim().is_empty()),
+            "star projection came back blank for `{query}`: {rows:?}"
+        );
+        assert!(
+            stats.islands >= 1,
+            "expected `{query}` to still island, got {stats:?}"
+        );
+    }
+}
+
 /// The engine is a swappable target, not a hardcoded dependency: the same
 /// plan must produce the same rows on DuckDB and on in-process DataFusion.
 #[test]

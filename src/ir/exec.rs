@@ -351,21 +351,15 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         .map(|field| field.name().to_string())
         .collect();
 
-    // A `x.*` projection fans one field out into one column per property.
-    // Those columns are not bindings, and the residual `GraphReturn` above
-    // still asks for the single field `x.*` — which no longer exists, so the
-    // row comes back blank. Decline instead, and the partitioner islands the
-    // subtree below the projection, leaving the star expansion where it can
-    // still be evaluated.
-    if names.iter().any(|name| name.contains(STAR_SEP)) {
-        return None;
-    }
+
 
     enum Source {
         /// `(id column, label column)`
         NodeCols(usize, usize),
         /// `(src id, src label, dst id, dst label, edge id, edge label)`
         EdgeCols(usize, usize, usize, usize, Option<usize>, Option<usize>),
+        /// A `x.*` projection: `(property name, column)` in projection order.
+        StarCols(Vec<(String, usize)>),
         Scalar(usize),
     }
 
@@ -377,8 +371,28 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
     let mut sources: Vec<Source> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
 
+    // A `x.*` projection fans one field out into one column per property,
+    // but the residual still refers to the single field `x.*`. Direct
+    // evaluation represents that field as one binding holding a map of
+    // property to value, which `finalize_return` expands into columns — so
+    // collapse the columns back into exactly that shape.
+    let mut star_groups: Vec<(String, Vec<(String, usize)>)> = Vec::new();
     for (index, name) in names.iter().enumerate() {
-        if name.contains(PROP_MARKER) {
+        let Some((field, key)) = name.split_once(STAR_SEP) else {
+            continue;
+        };
+        match star_groups.iter_mut().find(|(existing, _)| existing == field) {
+            Some((_, columns)) => columns.push((key.to_string(), index)),
+            None => star_groups.push((field.to_string(), vec![(key.to_string(), index)])),
+        }
+    }
+    for (field, columns) in star_groups {
+        bindings.push(field);
+        sources.push(Source::StarCols(columns));
+    }
+
+    for (index, name) in names.iter().enumerate() {
+        if name.contains(PROP_MARKER) || name.contains(STAR_SEP) {
             continue;
         }
         // Derive the binding name from whichever structural suffix matched.
@@ -454,6 +468,22 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         for source in &sources {
             let value = match source {
                 Source::Scalar(index) => column_value(*index, row)?,
+                Source::StarCols(columns) => {
+                    let mut map = std::collections::BTreeMap::new();
+                    // The map is sorted, so the projection order has to be
+                    // recorded separately or the columns come out
+                    // alphabetized instead of as written.
+                    let mut order = Vec::with_capacity(columns.len());
+                    for (key, index) in columns {
+                        map.insert(key.clone(), column_value(*index, row)?);
+                        order.push(Value::String(key.clone()));
+                    }
+                    map.insert(
+                        crate::ir::value::STRUCT_ORDER_KEY.to_string(),
+                        Value::List(order),
+                    );
+                    Value::Map(map)
+                }
                 Source::NodeCols(id, label) => {
                     let id_value = column_value(*id, row)?;
                     let label_value = column_value(*label, row)?;
