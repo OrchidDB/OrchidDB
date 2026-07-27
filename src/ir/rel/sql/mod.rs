@@ -23,6 +23,7 @@
 mod duckdb_exec;
 #[cfg(feature = "postgres")]
 mod postgres_exec;
+mod recursive;
 
 #[cfg(feature = "duckdb")]
 pub use duckdb_exec::DuckDbExecutor;
@@ -33,17 +34,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder, ListArray,
-    RecordBatch, StringBuilder, new_null_array,
+    Array, ArrayRef, BooleanBuilder, Decimal128Builder, Float64Builder, Int32Builder, Int64Builder,
+    ListArray, RecordBatch, StringBuilder, new_null_array,
 };
 use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::common::{Column, ScalarValue};
-use datafusion::logical_expr::Expr;
 use datafusion::error::DataFusionError;
+use datafusion::functions::string::expr_fn as df_string;
+use datafusion::logical_expr::Expr;
 use datafusion::logical_expr::{LogicalPlan, TableScan};
 use datafusion::prelude::SessionContext;
+use datafusion::prelude::lit;
 use datafusion::sql::unparser::Unparser;
 use datafusion::sql::unparser::dialect::{
     Dialect as UnparserDialect, DuckDBDialect, PostgreSqlDialect,
@@ -125,8 +128,9 @@ impl SqlDialect {
     fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
         // List-valued properties are ordinary graph data (a `tags` array on a
         // node), so they have to survive the round trip through the engine.
-        if let DataType::List(inner) | DataType::LargeList(inner) | DataType::FixedSizeList(inner, _) =
-            data_type
+        if let DataType::List(inner)
+        | DataType::LargeList(inner)
+        | DataType::FixedSizeList(inner, _) = data_type
         {
             return Ok(format!("{}[]", self.ddl_type(inner.data_type())?));
         }
@@ -210,9 +214,9 @@ pub struct PreparedSql {
     schema: SchemaRef,
 }
 
-/// A SQL engine that can run a setup script and a query in one isolated
-/// session, returning plain row values. Implementations should not leak state
-/// between `run` calls.
+/// A SQL engine that can apply setup statements and run a query, returning
+/// plain row values. Implementations may retain their session between calls;
+/// setup statements must therefore be safe to present repeatedly.
 pub trait SqlExecutor {
     fn dialect(&self) -> SqlDialect;
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>>;
@@ -224,6 +228,9 @@ pub enum SqlValue {
     Null,
     Bool(bool),
     Int(i64),
+    /// An exact integral or fixed-point value that cannot safely pass through
+    /// either i64 or f64.
+    ExactNumber(String),
     Float(f64),
     Text(String),
     List(Vec<SqlValue>),
@@ -252,13 +259,18 @@ fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
         ScalarValue::UInt16(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
         ScalarValue::UInt32(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
         ScalarValue::UInt64(v) => match v {
-            Some(value) => SqlValue::Int(i64::try_from(*value).map_err(|_| {
-                SqlError::Conversion(format!("unsigned {value} overflows i64"))
-            })?),
+            Some(value) => SqlValue::Int(
+                i64::try_from(*value)
+                    .map_err(|_| SqlError::Conversion(format!("unsigned {value} overflows i64")))?,
+            ),
             None => SqlValue::Null,
         },
         ScalarValue::Float32(v) => opt(v, |f| SqlValue::Float(f64::from(*f))),
         ScalarValue::Float64(v) => opt(v, |f| SqlValue::Float(*f)),
+        ScalarValue::Decimal128(v, _precision, scale) => match v {
+            Some(value) => SqlValue::ExactNumber(render_scaled_i128(*value, *scale)),
+            None => SqlValue::Null,
+        },
         ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => {
             opt(v, |s| SqlValue::Text(s.clone()))
         }
@@ -285,19 +297,62 @@ fn nested_sql_values(outer: &dyn Array, items: ArrayRef) -> SqlResult<SqlValue> 
     Ok(SqlValue::List(out))
 }
 
+fn render_scaled_i128(value: i128, scale: i8) -> String {
+    if scale <= 0 {
+        return format!("{value}{}", "0".repeat((-scale) as usize));
+    }
+    let negative = value.is_negative();
+    let mut digits = value.unsigned_abs().to_string();
+    let scale = scale as usize;
+    if digits.len() <= scale {
+        digits.insert_str(0, &"0".repeat(scale + 1 - digits.len()));
+    }
+    let split = digits.len() - scale;
+    digits.insert(split, '.');
+    if negative {
+        digits.insert(0, '-');
+    }
+    digits
+}
+
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = strip_identity_projections(lowered.plan.clone())?;
+    let plan = encode_nul_literals(plan, dialect)?;
     let plan = strip_column_qualifiers(plan)
         .map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?;
-    let unparser_dialect = dialect.unparser_dialect();
-    let unparser = Unparser::new(unparser_dialect.as_ref());
-    let statement = unparser.plan_to_sql(&plan).map_err(|err| {
-        SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name()))
+    recursive::unparse_plan(plan, dialect)
+}
+
+fn encode_nul_literals(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    if dialect != SqlDialect::DuckDb {
+        return Ok(plan);
+    }
+    let transformed = plan.transform_up(|node| {
+        node.map_expressions(|expr| {
+            expr.transform_up(|inner| {
+                let Expr::Literal(ScalarValue::Utf8(Some(value)), metadata) = &inner else {
+                    return Ok(Transformed::no(inner));
+                };
+                if !value.contains('\0') {
+                    return Ok(Transformed::no(inner));
+                }
+                let mut parts = Vec::new();
+                for (index, part) in value.split('\0').enumerate() {
+                    if index > 0 {
+                        parts.push(df_string::chr(lit(0_i64)));
+                    }
+                    parts.push(Expr::Literal(
+                        ScalarValue::Utf8(Some(part.to_string())),
+                        metadata.clone(),
+                    ));
+                }
+                Ok(Transformed::yes(df_string::concat(parts)))
+            })
+        })
     })?;
-    let sql = restore_aggregate_ordering(&plan, &unparser, statement.to_string())?;
-    Ok(dialect.fixup_query(sql))
+    Ok(transformed.data)
 }
 
 /// Re-attach aggregate `ORDER BY` clauses the unparser drops.
@@ -359,15 +414,40 @@ fn restore_aggregate_ordering(
                 if sort.nulls_first { "FIRST" } else { "LAST" }
             ));
         }
-        let Some(open) = call.rfind(')') else {
+        let Some(close) = matching_call_close(&call) else {
             return Err(SqlError::Unsupported(format!(
                 "unrecognized aggregate call text `{call}`"
             )));
         };
-        let ordered_call = format!("{} ORDER BY {})", &call[..open], keys.join(", "));
+        let ordered_call = format!(
+            "{} ORDER BY {}{}",
+            &call[..close],
+            keys.join(", "),
+            &call[close..]
+        );
         sql = sql.replace(call.as_str(), &ordered_call);
     }
     Ok(sql)
+}
+
+fn matching_call_close(call: &str) -> Option<usize> {
+    let open = call.find('(')?;
+    let mut depth = 0_u32;
+    let mut quoted = false;
+    for (offset, ch) in call[open..].char_indices() {
+        match ch {
+            '\'' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Remove projections that select every input column unchanged. The unparser
@@ -444,27 +524,23 @@ fn is_identity_projection(projection: &datafusion::logical_expr::Projection) -> 
     {
         return false;
     }
-    let columns_only = projection
-        .expr
-        .iter()
-        .zip(input_schema.iter())
-        .all(|(expr, (qualifier, field))| match expr {
+    let columns_only = projection.expr.iter().zip(input_schema.iter()).all(
+        |(expr, (qualifier, field))| match expr {
             Expr::Column(column) => {
                 column.name == *field.name()
                     && (column.relation.is_none() || column.relation.as_ref() == qualifier)
             }
             _ => false,
-        });
+        },
+    );
     // Removing the projection must not change the observable schema
     // (names and qualifiers) the parent plan sees.
     columns_only
-        && projection
-            .schema
-            .iter()
-            .zip(input_schema.iter())
-            .all(|((out_qualifier, out_field), (in_qualifier, in_field))| {
+        && projection.schema.iter().zip(input_schema.iter()).all(
+            |((out_qualifier, out_field), (in_qualifier, in_field))| {
                 out_qualifier == in_qualifier && out_field.name() == in_field.name()
-            })
+            },
+        )
 }
 
 /// Collect the leaf tables a lowered plan scans (including scans inside
@@ -481,12 +557,27 @@ pub async fn plan_tables_excluding(
     plan: &LogicalPlan,
     external: &BTreeSet<String>,
 ) -> SqlResult<Vec<TableData>> {
+    let mut cte_names = BTreeSet::new();
+    plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::RecursiveQuery(recursive) = node {
+            cte_names.insert(recursive.name.clone());
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+
     let mut sources = BTreeMap::new();
     plan.apply_with_subqueries(|node| {
         if let LogicalPlan::TableScan(scan) = node {
             let name = scan.table_name.to_string();
-            if !external.contains(&name) && !external.contains(scan.table_name.table()) {
-                sources.entry(name).or_insert_with(|| Arc::clone(&scan.source));
+            let bare_name = scan.table_name.table();
+            if !cte_names.contains(&name)
+                && !cte_names.contains(bare_name)
+                && !external.contains(&name)
+                && !external.contains(bare_name)
+            {
+                sources
+                    .entry(name)
+                    .or_insert_with(|| Arc::clone(&scan.source));
             }
         }
         Ok(TreeNodeRecursion::Continue)
@@ -667,7 +758,17 @@ fn result_schema(plan: &LogicalPlan) -> SchemaRef {
         .as_arrow()
         .fields()
         .iter()
-        .map(|field| Field::new(field.name(), field.data_type().clone(), true))
+        .map(|field| {
+            // DuckDB exposes concatenated strings as Utf8View. The SQL
+            // boundary owns the returned buffers, so normalize every string
+            // representation to ordinary Utf8 rather than requiring callers
+            // to understand an engine-specific Arrow layout.
+            let data_type = match field.data_type() {
+                DataType::LargeUtf8 | DataType::Utf8View => DataType::Utf8,
+                other => other.clone(),
+            };
+            Field::new(field.name(), data_type, true)
+        })
         .collect::<Vec<_>>();
     Arc::new(Schema::new(fields))
 }
@@ -705,12 +806,10 @@ fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
         ScalarValue::UInt64(v) => opt(v, |i| i.to_string()),
         ScalarValue::Float32(v) => opt(v, |f| float_literal(dialect, f64::from(*f))),
         ScalarValue::Float64(v) => opt(v, |f| float_literal(dialect, *f)),
-        ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => {
-            match v {
-                Some(text) => string_literal(dialect, text)?,
-                None => "NULL".to_string(),
-            }
-        }
+        ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => match v {
+            Some(text) => string_literal(dialect, text)?,
+            None => "NULL".to_string(),
+        },
         ScalarValue::List(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
         ScalarValue::LargeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
         ScalarValue::FixedSizeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
@@ -826,9 +925,10 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
             for row in rows {
                 match &row[index] {
                     SqlValue::Null => builder.append_null(),
-                    SqlValue::Int(value) => builder.append_value(
-                        i32::try_from(*value).map_err(|_| mismatch(&row[index]))?,
-                    ),
+                    SqlValue::Int(value) => builder
+                        .append_value(i32::try_from(*value).map_err(|_| mismatch(&row[index]))?),
+                    SqlValue::ExactNumber(value) => builder
+                        .append_value(value.parse::<i32>().map_err(|_| mismatch(&row[index]))?),
                     other => return Err(mismatch(other)),
                 }
             }
@@ -840,6 +940,8 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
                 match &row[index] {
                     SqlValue::Null => builder.append_null(),
                     SqlValue::Int(value) => builder.append_value(*value),
+                    SqlValue::ExactNumber(value) => builder
+                        .append_value(value.parse::<i64>().map_err(|_| mismatch(&row[index]))?),
                     // Engines widen some integer aggregates to floating point;
                     // accept exact integral values back.
                     SqlValue::Float(value)
@@ -858,6 +960,8 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
                 match &row[index] {
                     SqlValue::Null => builder.append_null(),
                     SqlValue::Int(value) => builder.append_value(*value as f64),
+                    SqlValue::ExactNumber(value) => builder
+                        .append_value(value.parse::<f64>().map_err(|_| mismatch(&row[index]))?),
                     SqlValue::Float(value) => builder.append_value(*value),
                     other => return Err(mismatch(other)),
                 }
@@ -870,6 +974,28 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
                 match &row[index] {
                     SqlValue::Null => builder.append_null(),
                     SqlValue::Text(value) => builder.append_value(value),
+                    other => return Err(mismatch(other)),
+                }
+            }
+            Arc::new(builder.finish())
+        }
+        DataType::Decimal128(precision, scale) => {
+            let mut builder = Decimal128Builder::with_capacity(rows.len())
+                .with_precision_and_scale(*precision, *scale)?;
+            for row in rows {
+                match &row[index] {
+                    SqlValue::Null => builder.append_null(),
+                    SqlValue::Int(value) => {
+                        let scaled = i128::from(*value)
+                            .checked_mul(10_i128.pow((*scale).max(0) as u32))
+                            .ok_or_else(|| mismatch(&row[index]))?;
+                        builder.append_value(scaled);
+                    }
+                    SqlValue::ExactNumber(value) => {
+                        builder.append_value(
+                            parse_decimal_i128(value, *scale).map_err(|_| mismatch(&row[index]))?,
+                        );
+                    }
                     other => return Err(mismatch(other)),
                 }
             }
@@ -913,6 +1039,30 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
     })
 }
 
+fn parse_decimal_i128(value: &str, scale: i8) -> Result<i128, ()> {
+    if scale < 0 {
+        return Err(());
+    }
+    let (negative, unsigned) = value
+        .strip_prefix('-')
+        .map_or((false, value), |rest| (true, rest));
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let scale = scale as usize;
+    if fraction.len() > scale && fraction[scale..].bytes().any(|byte| byte != b'0') {
+        return Err(());
+    }
+    let mut digits = String::with_capacity(whole.len() + scale);
+    digits.push_str(if whole.is_empty() { "0" } else { whole });
+    digits.push_str(&fraction[..fraction.len().min(scale)]);
+    digits.push_str(&"0".repeat(scale.saturating_sub(fraction.len())));
+    let magnitude = digits.parse::<i128>().map_err(|_| ())?;
+    if negative {
+        magnitude.checked_neg().ok_or(())
+    } else {
+        Ok(magnitude)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,7 +1075,11 @@ mod tests {
     #[test]
     fn renders_literals() {
         assert_eq!(
-            sql_literal(SqlDialect::DuckDb, &ScalarValue::Utf8(Some("o'hare".into()))).unwrap(),
+            sql_literal(
+                SqlDialect::DuckDb,
+                &ScalarValue::Utf8(Some("o'hare".into()))
+            )
+            .unwrap(),
             "'o''hare'"
         );
         assert_eq!(
@@ -940,6 +1094,9 @@ mod tests {
             sql_literal(SqlDialect::DuckDb, &ScalarValue::Int64(None)).unwrap(),
             "NULL"
         );
+        let nul = sql_literal(SqlDialect::DuckDb, &ScalarValue::Utf8(Some("a\0b".into()))).unwrap();
+        assert_eq!(nul, "'a' || chr(0) || 'b'");
+        assert!(!nul.contains('\0'));
     }
 
     #[test]

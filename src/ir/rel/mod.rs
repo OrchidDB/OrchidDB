@@ -9,6 +9,7 @@
 
 pub mod mapping;
 pub mod sql;
+mod varlen;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
@@ -45,8 +46,10 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
-use crate::ir::expr::{AggKind, BinaryOp, IrExpr, Lit, StringOp};
-use crate::ir::interpreter::{ReturnedBatches, Row as InterpreterRow, compare_values, eval as interpreter_eval};
+use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
+use crate::ir::interpreter::{
+    ReturnedBatches, Row as InterpreterRow, compare_values, eval as interpreter_eval,
+};
 use crate::ir::plan::{
     ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
     GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, Slice, SortDir,
@@ -87,6 +90,10 @@ pub struct RelBackendOptions {
     /// through this mapping (user tables, views, or SQL queries) instead of
     /// the `PropertyGraph` catalog. See [`mapping::GraphMapping`].
     pub mapping: Option<Arc<mapping::GraphMapping>>,
+    /// Optional, explicitly requested guard on recursive variable-length
+    /// expansion depth. `None` preserves complete trail semantics and is the
+    /// default; setting a value trades completeness for a workload ceiling.
+    pub varlen_recursive_ceiling: Option<u32>,
 }
 
 impl Default for RelBackendOptions {
@@ -94,6 +101,7 @@ impl Default for RelBackendOptions {
         Self {
             tolerate_internal_path_state: true,
             mapping: None,
+            varlen_recursive_ceiling: None,
         }
     }
 }
@@ -421,7 +429,21 @@ impl<'a> LoweringContext<'a> {
                 rows,
                 bulk: _,
             } => self.lower_values(bindings, rows)?,
-            GraphOneRow => LoweredNode::new(LogicalPlanBuilder::empty(true).build()?),
+            // A zero-column EmptyRelation executes correctly in DataFusion,
+            // but its SQL unparser emits an empty SELECT list when it is one
+            // side of a cross join. A private, non-null dummy column gives
+            // the SQL representation a concrete one-row relation.
+            GraphOneRow => self.scan_batches(
+                "one_row",
+                vec![RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![Field::new(
+                        "__w_one_row",
+                        DataType::Int64,
+                        false,
+                    )])),
+                    vec![Arc::new(Int64Array::from(vec![0_i64])) as ArrayRef],
+                )?],
+            )?,
             GraphEmpty => LoweredNode::new(LogicalPlanBuilder::empty(false).build()?),
             GraphCorrelate { .. } => {
                 let Some(plan) = &self.correlate_plan else {
@@ -446,17 +468,23 @@ impl<'a> LoweringContext<'a> {
                 rel_types,
                 dir,
                 length,
+                path,
                 input,
                 ..
             } => {
                 if length.is_variable_length() {
+                    // Cypher represents a variable relationship through its
+                    // synthetic path binding, then projects the user-visible
+                    // relationship variable from that path. Fixed expands use
+                    // `rel_binding` directly.
+                    let path_binding = path.as_ref().or(rel_binding.as_ref());
                     self.lower_expand_varlen(
                         input,
                         source,
                         target,
                         *target_mode,
                         target_labels,
-                        rel_binding.as_ref(),
+                        path_binding,
                         rel_types,
                         *dir,
                         length,
@@ -471,6 +499,7 @@ impl<'a> LoweringContext<'a> {
                         rel_binding.as_ref(),
                         rel_types,
                         *dir,
+                        path.as_deref(),
                     )?
                 }
             }
@@ -494,6 +523,15 @@ impl<'a> LoweringContext<'a> {
                 group, aggs, input, ..
             } => {
                 let input = self.lower_node(input)?;
+                if aggs.len() == 1
+                    && aggs[0].distinct
+                    && matches!(
+                        aggs[0].kind,
+                        AggKind::CollectRows | AggKind::CollectTraversers
+                    )
+                {
+                    return self.lower_first_distinct_collect(input, group, &aggs[0]);
+                }
                 let mut group_exprs = apply_correlation_key_columns(&input.plan)
                     .iter()
                     .map(|key| col_exact(key).alias(key))
@@ -507,13 +545,16 @@ impl<'a> LoweringContext<'a> {
                         })
                         .collect::<RelResult<Vec<_>>>()?,
                 );
+                let needs_row_count_barrier = aggs.iter().any(|agg| {
+                    matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none()
+                });
                 let aggs = aggs
                     .iter()
                     .map(|agg| {
                         let expr = match agg.kind {
                             AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
                                 Some(arg) => df_count(self.lower_expr(&input.plan, arg)?),
-                                None => count_all(),
+                                None => count_input_rows(&input.plan),
                             },
                             AggKind::CountDistinct => {
                                 let Some(arg) = &agg.arg else {
@@ -550,18 +591,41 @@ impl<'a> LoweringContext<'a> {
                                 agg.distinct,
                             )?,
                             AggKind::Min | AggKind::MinOrNull => {
-                                df_min(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                if agg
+                                    .arg
+                                    .as_ref()
+                                    .is_some_and(|expr| self.is_blob_property_expr(expr))
+                                {
+                                    blob_extreme(arg, false)
+                                } else {
+                                    df_min(arg)
+                                }
                             }
                             AggKind::Max | AggKind::MaxOrNull => {
-                                df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                if agg
+                                    .arg
+                                    .as_ref()
+                                    .is_some_and(|expr| self.is_blob_property_expr(expr))
+                                {
+                                    blob_extreme(arg, true)
+                                } else {
+                                    df_max(arg)
+                                }
                             }
                             AggKind::CollectRows | AggKind::CollectTraversers => {
                                 let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                // Kuzu's COLLECT ignores null inputs and
+                                // returns NULL when every input is null.
+                                // DuckDB's array_agg retains nulls unless the
+                                // aggregate carries an explicit filter.
+                                let collect = df_array_agg(arg.clone()).filter(arg.is_not_null());
                                 if agg.distinct {
                                     // `DISTINCT` collects in first-appearance
                                     // order, which no SQL ordering expresses,
                                     // so leave it to the engine.
-                                    distinct_if(df_array_agg(arg), true)?
+                                    distinct_if(collect.build()?, true)?
                                 } else {
                                     // Direct evaluation collects in scan
                                     // order; SQL aggregates have no inherent
@@ -569,9 +633,9 @@ impl<'a> LoweringContext<'a> {
                                     // so both sides agree.
                                     let keys = scan_order_keys(&input.plan);
                                     if keys.is_empty() {
-                                        df_array_agg(arg)
+                                        collect.build()?
                                     } else {
-                                        df_array_agg(arg).order_by(keys).build()?
+                                        collect.order_by(keys).build()?
                                     }
                                 }
                             }
@@ -584,7 +648,32 @@ impl<'a> LoweringContext<'a> {
                         Ok(expr.alias(agg.alias.clone()))
                     })
                     .collect::<RelResult<Vec<_>>>()?;
-                let plan = LogicalPlanBuilder::from(input.plan.clone())
+                // The DataFusion unparser can incorrectly discard the FROM
+                // side of COUNT(*) when it contains an UNWIND/cross join.
+                // Give that input a real SQL CTE boundary; the SQL wrapper
+                // extracts this internal alias before unparsing.
+                let aggregate_input = if needs_row_count_barrier {
+                    let barrier_id = self.scan_counter;
+                    let name = format!("__w_sql_cte_aggregate_{barrier_id}");
+                    self.scan_counter += 1;
+                    let mut columns = input
+                        .plan
+                        .schema()
+                        .fields()
+                        .iter()
+                        .map(|field| col_exact(field.name()))
+                        .collect::<Vec<_>>();
+                    // Keep this projection from being removed as an identity:
+                    // a standalone join needs a SELECT list when unparsed.
+                    columns.push(lit(1_i64).alias(format!("__w_cte_guard_{barrier_id}")));
+                    LogicalPlanBuilder::from(input.plan.clone())
+                        .project(columns)?
+                        .alias(name)?
+                        .build()?
+                } else {
+                    input.plan.clone()
+                };
+                let plan = LogicalPlanBuilder::from(aggregate_input)
                     .aggregate(group_exprs, aggs)?
                     .build()?;
                 input.with_plan(plan)
@@ -716,6 +805,117 @@ impl<'a> LoweringContext<'a> {
         self.lower_expr(plan, arg)
     }
 
+    fn is_blob_property_expr(&self, expr: &IrExpr) -> bool {
+        let IrExpr::Property { name, .. } = expr else {
+            return false;
+        };
+        let is_blob = |schema: &Schema| {
+            schema
+                .fields()
+                .iter()
+                .find(|field| field.name().eq_ignore_ascii_case(name))
+                .and_then(|field| field.metadata().get("new_graph.value_type"))
+                .is_some_and(|kind| kind == "blob")
+        };
+        self.graph.labels().into_iter().any(|label| {
+            self.graph
+                .node_table(&label)
+                .is_ok_and(|table| is_blob(table.batch.schema().as_ref()))
+        }) || self.graph.rel_types().into_iter().any(|rel_type| {
+            self.graph.edge_tables(&rel_type).is_ok_and(|tables| {
+                tables
+                    .iter()
+                    .any(|table| is_blob(table.batch.schema().as_ref()))
+            })
+        })
+    }
+
+    /// Lower `collect(DISTINCT x)` as two aggregates. The first keeps the
+    /// earliest scan position for each `(group, x)` pair; the second orders
+    /// those unique values by that position. A plain SQL
+    /// `array_agg(DISTINCT x)` is allowed to return hash order and therefore
+    /// does not implement Cypher's first-appearance rule.
+    fn lower_first_distinct_collect(
+        &self,
+        input: LoweredNode,
+        group: &[ProjectionItem],
+        agg: &AggCall,
+    ) -> RelResult<LoweredNode> {
+        let value_name = "__w_collect_value";
+        let value = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+
+        let mut group_projection = apply_correlation_key_columns(&input.plan)
+            .iter()
+            .map(|key| (key.clone(), col_exact(key)))
+            .collect::<Vec<_>>();
+        group_projection.extend(
+            group
+                .iter()
+                .map(|item| {
+                    Ok((
+                        item.alias.clone(),
+                        self.lower_expr(&input.plan, &item.expr)?,
+                    ))
+                })
+                .collect::<RelResult<Vec<_>>>()?,
+        );
+
+        let order = scan_order_keys(&input.plan);
+        if order.is_empty() {
+            return Err(RelError::Unsupported(
+                "collect(DISTINCT) without a stable scan-order key".into(),
+            ));
+        }
+        let mut projection = group_projection
+            .iter()
+            .map(|(name, expr)| expr.clone().alias(name))
+            .collect::<Vec<_>>();
+        projection.push(value.alias(value_name));
+        for (index, sort) in order.iter().enumerate() {
+            projection.push(
+                sort.expr
+                    .clone()
+                    .alias(format!("__w_collect_order_{index}")),
+            );
+        }
+        let projected = LogicalPlanBuilder::from(input.plan.clone())
+            .project(projection)?
+            .filter(col_exact(value_name).is_not_null())?
+            .build()?;
+
+        let mut unique_groups = group_projection
+            .iter()
+            .map(|(name, _)| col_exact(name))
+            .collect::<Vec<_>>();
+        unique_groups.push(col_exact(value_name));
+        let earliest = (0..order.len())
+            .map(|index| {
+                df_min(col_exact(format!("__w_collect_order_{index}")))
+                    .alias(format!("__w_collect_first_{index}"))
+            })
+            .collect::<Vec<_>>();
+        let unique = LogicalPlanBuilder::from(projected)
+            .aggregate(unique_groups, earliest)?
+            .alias("__w_collect_unique")?
+            .build()?;
+
+        let final_groups = group_projection
+            .iter()
+            .map(|(name, _)| col_exact(name))
+            .collect::<Vec<_>>();
+        let order = (0..order.len())
+            .map(|index| col_exact(format!("__w_collect_first_{index}")).sort(true, false))
+            .collect::<Vec<_>>();
+        let collected = df_array_agg(col_exact(value_name))
+            .order_by(order)
+            .build()?
+            .alias(agg.alias.clone());
+        let plan = LogicalPlanBuilder::from(unique)
+            .aggregate(final_groups, vec![collected])?
+            .build()?;
+        Ok(input.with_plan(plan))
+    }
+
     fn lower_node_scan(&mut self, binding: &str, labels: &LabelExpr) -> RelResult<LoweredNode> {
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
@@ -828,6 +1028,7 @@ impl<'a> LoweringContext<'a> {
         rel_binding: Option<&String>,
         rel_types: &LabelExpr,
         dir: Direction,
+        path: Option<&str>,
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
         if has_binding_shape(&input.plan, source).is_none() {
@@ -836,14 +1037,17 @@ impl<'a> LoweringContext<'a> {
             )));
         }
 
-        match dir {
+        let rel = rel_binding
+            .cloned()
+            .unwrap_or_else(|| format!("__rel_{}", self.scan_counter));
+        let mut expanded = match dir {
             Direction::Out | Direction::In => self.lower_expand_direction(
                 input,
                 source,
                 target,
                 target_mode,
                 target_labels,
-                rel_binding,
+                Some(&rel),
                 rel_types,
                 dir,
             ),
@@ -853,281 +1057,101 @@ impl<'a> LoweringContext<'a> {
                 target,
                 target_mode,
                 target_labels,
-                rel_binding,
+                Some(&rel),
                 rel_types,
             ),
+        }?;
+        if let Some(path) = path {
+            expanded = self.materialize_fixed_path(expanded, path, source, target, &rel)?;
+        } else if rel_binding.is_none() {
+            let excluded = binding_column_names(&expanded.plan, &rel)?
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let projections = existing_columns(&expanded.plan, &excluded);
+            let plan = LogicalPlanBuilder::from(expanded.plan.clone())
+                .project(projections)?
+                .build()?;
+            expanded = expanded.with_plan(plan);
         }
+        Ok(expanded)
     }
 
-    /// Variable-length expand via bounded unrolling: the union of k-hop
-    /// join chains for every k in the length range, with pairwise
-    /// relationship-distinctness filters (Cypher trail semantics).
-    #[allow(clippy::too_many_arguments)]
-    fn lower_expand_varlen(
-        &mut self,
-        input: &Node,
+    fn materialize_fixed_path(
+        &self,
+        expanded: LoweredNode,
+        path: &str,
         source: &str,
         target: &str,
-        target_mode: TargetMode,
-        target_labels: &LabelExpr,
-        rel_binding: Option<&String>,
-        rel_types: &LabelExpr,
-        dir: Direction,
-        length: &crate::ir::plan::Length,
+        rel: &str,
     ) -> RelResult<LoweredNode> {
-        const VARLEN_CAP: u32 = 6;
-        let lo = length.min;
-        let hi = match length.max {
-            Some(hi) if hi <= VARLEN_CAP => hi,
-            Some(hi) => {
-                return Err(RelError::Unsupported(format!(
-                    "variable-length expand upper bound {hi} exceeds unroll cap {VARLEN_CAP}"
-                )));
-            }
-            // Unbounded expands are approximated by the unroll cap. The
-            // conformance datasets are small enough that trail semantics
-            // exhaust real paths well below this depth.
-            None => VARLEN_CAP,
+        let source_display =
+            self.cypher_element_display_expr(&expanded.plan, source, BindingShape::Node)?;
+        let target_display =
+            self.cypher_element_display_expr(&expanded.plan, target, BindingShape::Node)?;
+        let rel_display =
+            self.cypher_element_display_expr(&expanded.plan, rel, BindingShape::Edge)?;
+        let (expanded, rendered) = if has_exact_col(&expanded.plan, path) {
+            let with_target = df_string::replace(
+                col_exact(path),
+                lit("], _RELS: ["),
+                concat_exprs(vec![lit(","), target_display, lit("], _RELS: [")]),
+            );
+            let path_stage = "__w_path_with_target";
+            let rel_stage = "__w_path_next_rel";
+            let excluded = BTreeSet::from([path_stage.to_string(), rel_stage.to_string()]);
+            let mut stage_projection = existing_columns(&expanded.plan, &excluded);
+            stage_projection.push(with_target.alias(path_stage));
+            stage_projection.push(rel_display.alias(rel_stage));
+            let stage_plan = LogicalPlanBuilder::from(expanded.plan.clone())
+                .project(stage_projection)?
+                .build()?;
+            let expanded = expanded.with_plan(stage_plan);
+            let prefix = df_unicode::substring(
+                col_exact(path_stage),
+                lit(1_i64),
+                binary(
+                    df_unicode::length(col_exact(path_stage)),
+                    BinaryOp::Sub,
+                    lit(2_i64),
+                ),
+            );
+            (
+                expanded,
+                concat_exprs(vec![prefix, lit(","), col_exact(rel_stage), lit("]}")]),
+            )
+        } else {
+            (
+                expanded,
+                concat_exprs(vec![
+                    lit("{_NODES: ["),
+                    source_display,
+                    lit(","),
+                    target_display,
+                    lit("], _RELS: ["),
+                    rel_display,
+                    lit("]}"),
+                ]),
+            )
         };
-
-        let input = self.lower_node(input)?;
-        if has_binding_shape(&input.plan, source).is_none() {
-            return Err(RelError::Unsupported(format!(
-                "expand source `{source}` is not an element binding"
-            )));
-        }
-        self.scan_counter += 1;
-        let uniq = self.scan_counter;
-
-        let input_columns = output_fields(&input.plan);
-        let mut branches: Vec<LogicalPlan> = Vec::new();
-        let mut islands = input.islands.clone();
-
-        if lo == 0 {
-            // Zero hops: the target *is* the source.
-            let plan = match target_mode {
-                TargetMode::Existing => {
-                    let same = Expr::and(
-                        binary(
-                            col_exact(id_col(target)),
-                            BinaryOp::Eq,
-                            col_exact(id_col(source)),
-                        ),
-                        binary(
-                            col_exact(label_col(target)),
-                            BinaryOp::Eq,
-                            col_exact(label_col(source)),
-                        ),
-                    );
-                    LogicalPlanBuilder::from(input.plan.clone())
-                        .filter(same)?
-                        .build()?
-                }
-                _ => {
-                    let mut projections =
-                        existing_columns(&input.plan, &BTreeSet::from([target.to_string()]));
-                    projections.extend(duplicate_binding_projection_only(
-                        &input.plan,
-                        source,
-                        target,
-                    )?);
-                    LogicalPlanBuilder::from(input.plan.clone())
-                        .project(projections)?
-                        .build()?
-                }
-            };
-            let plan = match rel_binding {
-                Some(rel) => self.project_varlen_path(plan, rel, &[], &[])?,
-                None => plan,
-            };
-            branches.push(self.varlen_branch_projection(
-                plan,
-                &input_columns,
-                target,
-                rel_binding,
-            )?);
-        }
-
-        for k in lo.max(1)..=hi {
-            let mut chain = LoweredNode {
-                plan: input.plan.clone(),
-                islands: IslandReport::default(),
-                fields: None,
-                result_form: None,
-            };
-            let mut hop_rels = Vec::new();
-            let mut hop_source = source.to_string();
-            for hop in 1..=k {
-                let hop_rel = format!("__vlr_{uniq}_{k}_{hop}");
-                let (hop_target, hop_mode, hop_labels) = if hop == k {
-                    (target.to_string(), target_mode, target_labels.clone())
-                } else {
-                    (
-                        format!("__vln_{uniq}_{k}_{hop}"),
-                        TargetMode::BindNew,
-                        LabelExpr::Any,
-                    )
-                };
-                chain = match dir {
-                    Direction::Out | Direction::In => self.lower_expand_direction(
-                        chain,
-                        &hop_source,
-                        &hop_target,
-                        hop_mode,
-                        &hop_labels,
-                        Some(&hop_rel),
-                        rel_types,
-                        dir,
-                    )?,
-                    Direction::Both => self.lower_expand_both(
-                        chain,
-                        &hop_source,
-                        &hop_target,
-                        hop_mode,
-                        &hop_labels,
-                        Some(&hop_rel),
-                        rel_types,
-                    )?,
-                };
-                hop_rels.push(hop_rel);
-                hop_source = hop_target;
-            }
-            // Trail semantics: no relationship may repeat along the path.
-            let mut distinct_filters = Vec::new();
-            for i in 0..hop_rels.len() {
-                for j in (i + 1)..hop_rels.len() {
-                    let same = Expr::and(
-                        binary(
-                            col_exact(id_col(&hop_rels[i])),
-                            BinaryOp::Eq,
-                            col_exact(id_col(&hop_rels[j])),
-                        ),
-                        binary(
-                            col_exact(label_col(&hop_rels[i])),
-                            BinaryOp::Eq,
-                            col_exact(label_col(&hop_rels[j])),
-                        ),
-                    );
-                    distinct_filters.push(Expr::Not(Box::new(same)));
-                }
-            }
-            let mut plan = chain.plan;
-            if let Some(filter) = distinct_filters.into_iter().reduce(Expr::and) {
-                plan = LogicalPlanBuilder::from(plan).filter(filter)?.build()?;
-            }
-            islands.merge(chain.islands);
-            if let Some(rel) = rel_binding {
-                // Intermediate nodes only — the endpoints are already bound
-                // as `source` and `target`, and that is what direct
-                // evaluation puts in `_NODES`.
-                let hop_nodes: Vec<String> = (1..k)
-                    .map(|hop| format!("__vln_{uniq}_{k}_{hop}"))
-                    .collect();
-                plan = self.project_varlen_path(plan, rel, &hop_nodes, &hop_rels)?;
-            }
-            branches.push(self.varlen_branch_projection(
-                plan,
-                &input_columns,
-                target,
-                rel_binding,
-            )?);
-        }
-
-        let mut union_plan: Option<LogicalPlan> = None;
-        for branch in branches {
-            union_plan = Some(match union_plan {
-                None => branch,
-                Some(current) => LogicalPlanBuilder::from(current)
-                    .union_by_name(branch)?
-                    .build()?,
-            });
-        }
-        let plan = union_plan
-            .ok_or_else(|| RelError::Unsupported("variable-length expand had no branches".into()))?;
-        Ok(LoweredNode {
-            plan,
-            islands,
-            fields: input.fields,
-            result_form: input.result_form,
-        })
-    }
-
-    /// Materialize a variable-length relationship binding for one unrolled
-    /// branch: the path value itself, plus its hop count.
-    ///
-    /// Every branch has a fixed number of hops, so both are concrete here
-    /// even though neither is expressible once the branches are unioned.
-    /// The rendering matches direct evaluation's path form,
-    /// `{_NODES: [...], _RELS: [...]}`, where `_NODES` holds only the
-    /// intermediate nodes — the endpoints are already bound separately.
-    fn project_varlen_path(
-        &self,
-        plan: LogicalPlan,
-        rel_binding: &str,
-        hop_nodes: &[String],
-        hop_rels: &[String],
-    ) -> RelResult<LogicalPlan> {
-        let render = |binding: &str, shape: BindingShape| -> RelResult<Expr> {
-            if self.language == Language::Gremlin {
-                gremlin_element_display_expr(&plan, binding)
-            } else {
-                self.cypher_element_display_expr(&plan, binding, shape)
-            }
+        let previous_len = path_len_col(path);
+        let path_len = if has_exact_col(&expanded.plan, &previous_len) {
+            binary(col_exact(&previous_len), BinaryOp::Add, lit(1_i64))
+        } else {
+            lit(1_i64)
         };
-        let mut parts = vec![lit("{_NODES: [")];
-        for (index, node) in hop_nodes.iter().enumerate() {
-            if index > 0 {
-                parts.push(lit(","));
-            }
-            parts.push(render(node, BindingShape::Node)?);
-        }
-        parts.push(lit("], _RELS: ["));
-        for (index, rel) in hop_rels.iter().enumerate() {
-            if index > 0 {
-                parts.push(lit(","));
-            }
-            parts.push(render(rel, BindingShape::Edge)?);
-        }
-        parts.push(lit("]}"));
-
-        let mut projections = existing_columns(
-            &plan,
-            &BTreeSet::from([rel_binding.to_string(), path_len_col(rel_binding)]),
-        );
-        projections.push(concat_exprs(parts).alias(rel_binding));
-        projections.push(lit(hop_rels.len() as i64).alias(path_len_col(rel_binding)));
-        Ok(LogicalPlanBuilder::from(plan).project(projections)?.build()?)
-    }
-
-    /// Project a var-length branch down to the shared schema: the original
-    /// input columns plus the target binding's columns.
-    fn varlen_branch_projection(
-        &self,
-        plan: LogicalPlan,
-        input_columns: &[String],
-        target: &str,
-        rel_binding: Option<&String>,
-    ) -> RelResult<LogicalPlan> {
-        let mut names = Vec::new();
-        for name in input_columns {
-            if !names.contains(name) {
-                names.push(name.clone());
-            }
-        }
-        for field in plan.schema().fields() {
-            let name = field.name();
-            let keep = is_binding_column(name, target)
-                || rel_binding.is_some_and(|rel| is_binding_column(name, rel));
-            if keep && !names.iter().any(|existing| existing == name) {
-                names.push(name.clone());
-            }
-        }
-        let projections = names
-            .into_iter()
-            .filter(|name| has_exact_col(&plan, name))
-            .map(|name| col_exact(&name).alias(name))
-            .collect::<Vec<_>>();
-        Ok(LogicalPlanBuilder::from(plan).project(projections)?.build()?)
+        let excluded = BTreeSet::from([
+            path.to_string(),
+            previous_len.clone(),
+            "__w_path_with_target".to_string(),
+            "__w_path_next_rel".to_string(),
+        ]);
+        let mut projections = existing_columns(&expanded.plan, &excluded);
+        projections.push(rendered.alias(path));
+        projections.push(path_len.alias(previous_len));
+        let plan = LogicalPlanBuilder::from(expanded.plan.clone())
+            .project(projections)?
+            .build()?;
+        Ok(expanded.with_plan(plan))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1486,8 +1510,27 @@ impl<'a> LoweringContext<'a> {
                 // the left is a genuine cross-product factor, and dropping it
                 // loses both its multiplicity and its bindings.
                 if !absorbed_correlation(&left.plan, &right.plan) {
+                    // Keep a joined MATCH subtree on the right side of the
+                    // Cartesian product. Without this boundary SQL join
+                    // precedence can bind its first INNER JOIN to the UNWIND
+                    // input on the left, changing both names and row counts.
+                    let barrier_id = self.scan_counter;
+                    let name = format!("__w_sql_cte_apply_{barrier_id}");
+                    self.scan_counter += 1;
+                    let mut columns = right
+                        .plan
+                        .schema()
+                        .fields()
+                        .iter()
+                        .map(|field| col_exact(field.name()))
+                        .collect::<Vec<_>>();
+                    columns.push(lit(1_i64).alias(format!("__w_cte_guard_{barrier_id}")));
+                    let right_input = LogicalPlanBuilder::from(right.plan.clone())
+                        .project(columns)?
+                        .alias(name)?
+                        .build()?;
                     right.plan = LogicalPlanBuilder::from(left.plan.clone())
-                        .cross_join(right.plan.clone())?
+                        .cross_join(right_input)?
                         .build()?;
                 }
                 if !cleanup.is_empty() {
@@ -1580,7 +1623,9 @@ impl<'a> LoweringContext<'a> {
         outer: bool,
         input: &Node,
     ) -> RelResult<LoweredNode> {
-        let input = self.lower_node(input)?;
+        let input = self
+            .lower_node(input)
+            .map_err(|err| RelError::Unsupported(format!("GraphUnwind input: {err}")))?;
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
             return self.lower_unwind_dynamic(input, input_expr, bind, outer);
         };
@@ -1588,10 +1633,14 @@ impl<'a> LoweringContext<'a> {
             .into_iter()
             .map(|value| vec![value])
             .collect::<Vec<_>>();
-        let values_plan = self.lower_values(&[bind.to_string()], &value_rows)?;
+        let values_plan = self
+            .lower_values(&[bind.to_string()], &value_rows)
+            .map_err(|err| RelError::Unsupported(format!("GraphUnwind values: {err}")))?;
         let plan = LogicalPlanBuilder::from(input.plan.clone())
-            .cross_join(values_plan.plan.clone())?
-            .build()?;
+            .cross_join(values_plan.plan.clone())
+            .map_err(|err| RelError::Unsupported(format!("GraphUnwind cross join: {err}")))?
+            .build()
+            .map_err(|err| RelError::Unsupported(format!("GraphUnwind build: {err}")))?;
         let mut islands = input.islands;
         islands.merge(values_plan.islands);
         Ok(LoweredNode {
@@ -1753,9 +1802,9 @@ impl<'a> LoweringContext<'a> {
                         if bindings
                             .iter()
                             .any(|binding| field == *binding || is_binding_column(&field, binding))
-                            && !projections.iter().any(|expr| {
-                                matches!(expr, Expr::Column(col) if col.name == field)
-                            })
+                            && !projections
+                                .iter()
+                                .any(|expr| matches!(expr, Expr::Column(col) if col.name == field))
                         {
                             projections.push(col_exact(&field));
                         }
@@ -1809,7 +1858,16 @@ impl<'a> LoweringContext<'a> {
         bind: &str,
         outer: bool,
     ) -> RelResult<LoweredNode> {
-        let list_expr = self.lower_expr(&input.plan, input_expr)?;
+        let list_expr = if let IrExpr::List(items) = input_expr {
+            datafusion::functions_nested::expr_fn::make_array(
+                items
+                    .iter()
+                    .map(|item| self.lower_expr(&input.plan, item))
+                    .collect::<RelResult<Vec<_>>>()?,
+            )
+        } else {
+            self.lower_expr(&input.plan, input_expr)?
+        };
         let data_type = list_expr
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("unwind expression type: {err}")))?;
@@ -1827,7 +1885,7 @@ impl<'a> LoweringContext<'a> {
         options.preserve_nulls = outer;
         let plan = LogicalPlanBuilder::from(input.plan.clone())
             .project(projections)?
-            .unnest_column_with_options(bind, options)?
+            .unnest_column_with_options(Column::new_unqualified(bind), options)?
             .build()?;
         Ok(input.with_plan(plan))
     }
@@ -2096,6 +2154,37 @@ impl<'a> LoweringContext<'a> {
                 return duplicate_binding_projection_only(plan, binding, alias);
             }
         }
+        if let IrExpr::Call { name, args } = expr
+            && matches!(name.as_str(), "make_map" | "map")
+            && args.len() % 2 == 0
+            && args
+                .chunks(2)
+                .all(|pair| matches!(pair[0], IrExpr::Lit(Lit::String(_))))
+        {
+            let rendered = if name == "make_map" {
+                self.lower_make_map(plan, args)?
+            } else {
+                self.lower_cypher_map(plan, args)?
+            };
+            let mut projections = vec![rendered.alias(alias)];
+            for pair in args.chunks(2) {
+                let IrExpr::Lit(Lit::String(key)) = &pair[0] else {
+                    return Err(RelError::Unsupported("dynamic make_map key".into()));
+                };
+                let value = if let IrExpr::List(items) = &pair[1] {
+                    datafusion::functions_nested::expr_fn::make_array(
+                        items
+                            .iter()
+                            .map(|item| self.lower_expr(plan, item))
+                            .collect::<RelResult<Vec<_>>>()?,
+                    )
+                } else {
+                    self.lower_expr(plan, &pair[1])?
+                };
+                projections.push(value.alias(prop_col(alias, key)));
+            }
+            return Ok(projections);
+        }
         // `RETURN a.*` expands into one column per known property, in the
         // catalog's schema order, so the row formatter renders each value
         // with its native type (floats keep six decimals, booleans print
@@ -2121,6 +2210,32 @@ impl<'a> LoweringContext<'a> {
                 })
                 .collect());
         }
+        if let IrExpr::Call { name, args } = expr
+            && name == "cypher_property_star"
+            && let [IrExpr::Property {
+                binding,
+                name: property,
+                ..
+            }] = args.as_slice()
+        {
+            let prefix = format!("{}__w_struct__", prop_col(binding, property));
+            let fields = output_fields(plan)
+                .into_iter()
+                .filter_map(|column| {
+                    column
+                        .strip_prefix(&prefix)
+                        .map(|field| (column.clone(), field.to_string()))
+                })
+                .collect::<Vec<_>>();
+            if !fields.is_empty() {
+                return Ok(fields
+                    .into_iter()
+                    .map(|(column, field)| {
+                        col_exact(column).alias(format!("{alias}{STAR_SEP}{field}"))
+                    })
+                    .collect());
+            }
+        }
         if self.options.tolerate_internal_path_state
             && alias == "__path"
             && matches!(expr, IrExpr::Call { name, .. } if name.starts_with("path_"))
@@ -2135,7 +2250,12 @@ impl<'a> LoweringContext<'a> {
             if let Some(IrExpr::Binding(binding)) = args.first()
                 && has_exact_col(plan, binding)
             {
-                return Ok(vec![col_exact(binding).alias(alias)]);
+                let mut projections = vec![col_exact(binding).alias(alias)];
+                let hops = path_len_col(binding);
+                if has_exact_col(plan, &hops) {
+                    projections.push(col_exact(hops).alias(path_len_col(alias)));
+                }
+                return Ok(projections);
             }
             // Otherwise the path was not materialized. A null placeholder
             // keeps count/exists-style queries over paths working, while
@@ -2150,7 +2270,13 @@ impl<'a> LoweringContext<'a> {
     fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         if matches!(
             expr,
-            IrExpr::Call { .. }
+            IrExpr::Binary { .. }
+                | IrExpr::Not(_)
+                | IrExpr::IsNull(_)
+                | IrExpr::IsNotNull(_)
+                | IrExpr::StringPredicate { .. }
+                | IrExpr::Case { .. }
+                | IrExpr::Call { .. }
                 | IrExpr::ListTransform { .. }
                 | IrExpr::ListFilter { .. }
                 | IrExpr::ListReduce { .. }
@@ -2162,10 +2288,10 @@ impl<'a> LoweringContext<'a> {
         }
         match expr {
             IrExpr::Lit(lit_value) => Ok(lit_to_expr(lit_value)),
-            IrExpr::List(items) => self.lower_constant_collection(items),
+            IrExpr::List(items) => self.lower_collection_expr(plan, items),
             IrExpr::Binding(binding) => {
-                if has_exact_col(plan, binding) {
-                    Ok(col_exact(binding))
+                if let Some(column) = resolve_column_name(plan, binding) {
+                    Ok(col_exact(column))
                 } else if let Some(shape) = has_binding_shape(plan, binding) {
                     if self.language == Language::Gremlin {
                         gremlin_element_display_expr(plan, binding)
@@ -2252,17 +2378,12 @@ impl<'a> LoweringContext<'a> {
                 pattern,
             } => {
                 let target = self.lower_expr(plan, target)?;
-                let IrExpr::Lit(Lit::String(pattern)) = pattern.as_ref() else {
-                    return Err(RelError::Unsupported(
-                        "dynamic string predicate pattern".into(),
-                    ));
-                };
-                let like_pattern = match op {
-                    StringOp::StartsWith => format!("{pattern}%"),
-                    StringOp::EndsWith => format!("%{pattern}"),
-                    StringOp::Contains => format!("%{pattern}%"),
-                };
-                Ok(target.like(lit(ScalarValue::Utf8(Some(like_pattern)))))
+                let pattern = self.lower_expr(plan, pattern)?;
+                Ok(match op {
+                    StringOp::StartsWith => df_string::starts_with(target, pattern),
+                    StringOp::EndsWith => df_string::ends_with(target, pattern),
+                    StringOp::Contains => df_string::contains(target, pattern),
+                })
             }
             IrExpr::IsNull(inner) => Ok(self.lower_expr(plan, inner)?.is_null()),
             IrExpr::IsNotNull(inner) => Ok(self.lower_expr(plan, inner)?.is_not_null()),
@@ -2305,6 +2426,14 @@ impl<'a> LoweringContext<'a> {
                     literal_collection_context(self.language),
                 )))
             }
+            IrExpr::Call { name, args } if name == "list_slice" && args.len() == 3 => {
+                let array = self.lower_expr(plan, &args[0])?;
+                let start = self.lower_expr(plan, &args[1])?;
+                let end = self.lower_expr(plan, &args[2])?;
+                Ok(datafusion::functions_nested::expr_fn::array_slice(
+                    array, start, end, None,
+                ))
+            }
             IrExpr::Call { name, args } if is_constant_collection_function(name) => {
                 self.lower_constant_collection_function(plan, name, args)
             }
@@ -2325,21 +2454,30 @@ impl<'a> LoweringContext<'a> {
                     arg => self.lower_expr(plan, arg),
                 }
             }
+            IrExpr::Call { name, args } if name.eq_ignore_ascii_case("uuid") && args.len() == 1 => {
+                Ok(df_string::lower(self.lower_expr(plan, &args[0])?))
+            }
+            IrExpr::Call { name, args }
+                if name.eq_ignore_ascii_case("gen_random_uuid") && args.is_empty() =>
+            {
+                Ok(df_string::uuid())
+            }
             IrExpr::Call { name, args } if is_cast_function(name, args) => {
+                if cast_target_text(name, args).is_some_and(|target| target.trim().ends_with("[]"))
+                {
+                    // Catalog list properties are already normalized to
+                    // canonical display strings at the relational boundary.
+                    // Casting only changes their element type; every supported
+                    // list element here has the same Cypher display text.
+                    return self.lower_expr(plan, &args[0]);
+                }
                 let (value, data_type, lenient) = self.cast_parts(plan, name, args)?;
-                let is_decimal = matches!(data_type, DataType::Decimal128(_, _));
                 let cast = if lenient {
                     Expr::TryCast(TryCast::new(Box::new(value), data_type))
                 } else {
                     Expr::Cast(Cast::new(Box::new(value), data_type))
                 };
-                // Decimal-backed INT128/UINT128 results render as plain
-                // digit strings, matching the interpreter's output.
-                if is_decimal {
-                    Ok(cast_utf8(cast))
-                } else {
-                    Ok(cast)
-                }
+                Ok(cast)
             }
             IrExpr::Call { name, args } if is_mod_function(name) && args.len() == 2 => {
                 Ok(Expr::BinaryExpr(BinaryExpr::new(
@@ -2402,6 +2540,61 @@ impl<'a> LoweringContext<'a> {
             }
             IrExpr::Call { name, args } if name == "map_has_key" && args.len() == 2 => {
                 Ok(lit(false))
+            }
+            IrExpr::Call { name, args } if name == "union_value" => {
+                let (_, value) = union_constructor_field(args)?;
+                self.lower_expr(plan, value)
+            }
+            IrExpr::Call { name, args } if name == "union_tag" && args.len() == 1 => {
+                if let IrExpr::Call {
+                    name: constructor,
+                    args,
+                } = &args[0]
+                    && constructor == "union_value"
+                {
+                    let (tag, _) = union_constructor_field(args)?;
+                    Ok(lit(tag.to_string()))
+                } else if let IrExpr::Property { binding, name, .. } = &args[0] {
+                    let column = union_tag_col(binding, name);
+                    if has_exact_col(plan, &column) {
+                        Ok(col_exact(column))
+                    } else {
+                        Err(RelError::Unsupported(format!(
+                            "union_tag metadata is unavailable for `{binding}.{name}`"
+                        )))
+                    }
+                } else {
+                    Err(RelError::Unsupported(
+                        "union_tag over a stored/dynamic union".into(),
+                    ))
+                }
+            }
+            IrExpr::Call { name, args } if name == "union_extract" && args.len() == 2 => {
+                let IrExpr::Call {
+                    name: constructor,
+                    args: constructor_args,
+                } = &args[0]
+                else {
+                    return Err(RelError::Unsupported(
+                        "union_extract over a stored/dynamic union".into(),
+                    ));
+                };
+                if constructor != "union_value" {
+                    return Err(RelError::Unsupported(
+                        "union_extract over a stored/dynamic union".into(),
+                    ));
+                }
+                let (tag, value) = union_constructor_field(constructor_args)?;
+                let IrExpr::Lit(Lit::String(requested)) = &args[1] else {
+                    return Err(RelError::Unsupported(
+                        "union_extract with a dynamic tag".into(),
+                    ));
+                };
+                if tag.eq_ignore_ascii_case(requested) {
+                    self.lower_expr(plan, value)
+                } else {
+                    Ok(lit(ScalarValue::Utf8(None)))
+                }
             }
             IrExpr::Call { name, args }
                 if name == "select_key_or_binding_pop" && args.len() == 5 =>
@@ -2493,17 +2686,39 @@ impl<'a> LoweringContext<'a> {
         Ok((value, data_type, lenient))
     }
 
-    fn lower_constant_collection(&self, items: &[IrExpr]) -> RelResult<Expr> {
-        let Some(value) = constant_value_expr(&IrExpr::List(items.to_vec()))? else {
-            return Err(RelError::Unsupported(
-                "dynamic list expression is not relationally lowered yet".into(),
-            ));
-        };
-        Ok(lit(rel_display_value(
-            &value,
-            self.language,
-            literal_collection_context(self.language),
-        )))
+    fn lower_collection_expr(&self, plan: &LogicalPlan, items: &[IrExpr]) -> RelResult<Expr> {
+        if let Some(value) = constant_value_expr(&IrExpr::List(items.to_vec()))? {
+            return Ok(lit(rel_display_value(
+                &value,
+                self.language,
+                literal_collection_context(self.language),
+            )));
+        }
+        let mut pieces = vec![lit("[")];
+        for (index, item) in items.iter().enumerate() {
+            if index > 0 {
+                pieces.push(lit(","));
+            }
+            let value = self.lower_expr(plan, item)?;
+            let data_type = value.get_type(plan.schema())?;
+            pieces.push(match data_type {
+                DataType::Boolean => Expr::Case(Case::new(
+                    None,
+                    vec![(Box::new(value.clone()), Box::new(lit("True")))],
+                    Some(Box::new(Expr::Case(Case::new(
+                        None,
+                        vec![(
+                            Box::new(value.is_null()),
+                            Box::new(lit(ScalarValue::Utf8(None))),
+                        )],
+                        Some(Box::new(lit("False"))),
+                    )))),
+                )),
+                _ => cast_utf8(value),
+            });
+        }
+        pieces.push(lit("]"));
+        Ok(concat_exprs(pieces))
     }
 
     fn lower_constant_collection_function(
@@ -2814,7 +3029,26 @@ impl<'a> LoweringContext<'a> {
                 if let Some(Value::List(items)) = constant_value_expr(value)? {
                     return Ok(lit(items.len() as i64));
                 }
-                Ok(df_unicode::length(cast_utf8(self.lower_expr(plan, value)?)))
+                let lowered = self.lower_expr(plan, value)?;
+                let data_type = lowered.get_type(plan.schema())?;
+                match data_type {
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+                        Ok(Expr::Cast(Cast::new(
+                            Box::new(datafusion::functions_nested::expr_fn::array_length(lowered)),
+                            DataType::Int64,
+                        )))
+                    }
+                    DataType::Map(_, _) => Ok(Expr::Cast(Cast::new(
+                        Box::new(datafusion::functions_nested::expr_fn::cardinality(lowered)),
+                        DataType::Int64,
+                    ))),
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
+                        Ok(df_unicode::length(cast_utf8(lowered)))
+                    }
+                    other => Err(RelError::Unsupported(format!(
+                        "size over non-collection type {other}"
+                    ))),
+                }
             }
             "lpad" => {
                 let args = args
@@ -3055,11 +3289,7 @@ impl<'a> LoweringContext<'a> {
                 DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => column.clone(),
                 _ => cast_utf8(column.clone()),
             };
-            let entry = concat_exprs(vec![
-                lit(format!(",\"{key}\":\"[")),
-                rendered,
-                lit("]\""),
-            ]);
+            let entry = concat_exprs(vec![lit(format!(",\"{key}\":\"[")), rendered, lit("]\"")]);
             body.push(Expr::Case(Case::new(
                 None,
                 vec![(Box::new(column.is_null()), Box::new(lit("")))],
@@ -3080,6 +3310,34 @@ impl<'a> LoweringContext<'a> {
                 self.language,
                 DisplayContext::Tagged,
             )));
+        }
+        if let [IrExpr::List(keys), IrExpr::List(values)] = args {
+            if keys.len() != values.len() {
+                return Err(RelError::Unsupported(
+                    "map key/value length mismatch".into(),
+                ));
+            }
+            if keys
+                .iter()
+                .enumerate()
+                .any(|(index, key)| keys[..index].contains(key))
+            {
+                // The duplicate-key error includes the row-dependent key.
+                // Let the interpreter produce that exact public error until
+                // SQL error expressions are part of the result boundary.
+                return Err(RelError::Unsupported("dynamic duplicate map key".into()));
+            }
+            let mut pieces = vec![lit("{")];
+            for (index, (key, value)) in keys.iter().zip(values).enumerate() {
+                if index > 0 {
+                    pieces.push(lit(", "));
+                }
+                pieces.push(cast_utf8(self.lower_expr(plan, key)?));
+                pieces.push(lit("="));
+                pieces.push(cast_utf8(self.lower_expr(plan, value)?));
+            }
+            pieces.push(lit("}"));
+            return Ok(concat_exprs(pieces));
         }
         if args.len() % 2 != 0 {
             return Err(RelError::Unsupported("map arity".into()));
@@ -3194,7 +3452,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn node_property_defs(&self, labels: &[String]) -> RelResult<Vec<PropertyDef>> {
-        let mut defs = BTreeMap::<String, DataType>::new();
+        let mut defs = BTreeMap::<String, PropertyDef>::new();
         for label in labels {
             let table = match self.graph.node_table(label) {
                 Ok(table) => table,
@@ -3212,11 +3470,9 @@ impl<'a> LoweringContext<'a> {
                 _ => &[],
             };
             merge_property_defs(&mut defs, table.batch.schema().as_ref(), excluded)?;
+            merge_struct_field_defs(&mut defs, &table.batch)?;
         }
-        Ok(defs
-            .into_iter()
-            .map(|(name, data_type)| PropertyDef { name, data_type })
-            .collect())
+        Ok(defs.into_values().collect())
     }
 
     /// Ordered property keys for an element binding: catalog schema order
@@ -3262,9 +3518,8 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         shape: BindingShape,
     ) -> RelResult<Expr> {
-        let node_index = |label_expr: Expr| {
-            label_index_case(label_expr, self.graph.node_label_order(), 0, 1)
-        };
+        let node_index =
+            |label_expr: Expr| label_index_case(label_expr, self.graph.node_label_order(), 0, 1);
         let property_segments = |parts: &mut Vec<Expr>| {
             for key in self.element_property_keys(plan, binding, shape) {
                 let name = prop_col(binding, &key);
@@ -3322,7 +3577,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn edge_property_defs(&self, rel_types: &[String]) -> RelResult<Vec<PropertyDef>> {
-        let mut defs = BTreeMap::<String, DataType>::new();
+        let mut defs = BTreeMap::<String, PropertyDef>::new();
         for rel_type in rel_types {
             let tables = match self.graph.edge_tables(rel_type) {
                 Ok(tables) => tables,
@@ -3335,12 +3590,10 @@ impl<'a> LoweringContext<'a> {
                     table.batch.schema().as_ref(),
                     &["src", "dst", "id", "__src_id", "__dst_id"],
                 )?;
+                merge_struct_field_defs(&mut defs, &table.batch)?;
             }
         }
-        Ok(defs
-            .into_iter()
-            .map(|(name, data_type)| PropertyDef { name, data_type })
-            .collect())
+        Ok(defs.into_values().collect())
     }
 }
 
@@ -3378,10 +3631,12 @@ impl IslandReport {
 struct PropertyDef {
     name: String,
     data_type: DataType,
+    carries_union_tag: bool,
+    struct_fields: Vec<String>,
 }
 
 fn merge_property_defs(
-    defs: &mut BTreeMap<String, DataType>,
+    defs: &mut BTreeMap<String, PropertyDef>,
     schema: &Schema,
     excluded: &[&str],
 ) -> RelResult<()> {
@@ -3389,18 +3644,92 @@ fn merge_property_defs(
         if excluded.contains(&field.name().as_str()) {
             continue;
         }
-        match defs.get(field.name()) {
-            Some(existing) if existing != field.data_type() => {
+        let carries_union_tag = field
+            .metadata()
+            .get("new_graph.value_type")
+            .is_some_and(|kind| kind == "value");
+        match defs.get_mut(field.name()) {
+            Some(existing) if existing.data_type != *field.data_type() => {
                 return Err(RelError::Unsupported(format!(
-                    "property `{}` has mixed types `{existing:?}` and `{:?}`",
+                    "property `{}` has mixed types `{:?}` and `{:?}`",
                     field.name(),
+                    existing.data_type,
                     field.data_type()
                 )));
             }
-            Some(_) => {}
+            Some(existing) => existing.carries_union_tag |= carries_union_tag,
             None => {
-                defs.insert(field.name().clone(), field.data_type().clone());
+                defs.insert(
+                    field.name().clone(),
+                    PropertyDef {
+                        name: field.name().clone(),
+                        data_type: field.data_type().clone(),
+                        carries_union_tag,
+                        struct_fields: Vec::new(),
+                    },
+                );
             }
+        }
+    }
+    Ok(())
+}
+
+fn merge_struct_field_defs(
+    defs: &mut BTreeMap<String, PropertyDef>,
+    batch: &RecordBatch,
+) -> RelResult<()> {
+    use arrow::array::Array as _;
+    for (name, def) in defs.iter_mut() {
+        let Some(index) = schema_index(batch.schema().as_ref(), name) else {
+            continue;
+        };
+        let field = batch.schema().field(index).clone();
+        if !field
+            .metadata()
+            .get("new_graph.value_type")
+            .is_some_and(|kind| kind == "value")
+        {
+            continue;
+        }
+        let source = batch
+            .column(index)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or_else(|| {
+                RelError::Unsupported(format!("structured property `{name}` is not text"))
+            })?;
+        for row in 0..source.len() {
+            if source.is_null(row) {
+                continue;
+            }
+            let Some(Value::Map(map)) =
+                crate::ir::catalog::parse_debug_value(source.value(row))
+            else {
+                continue;
+            };
+            if map.contains_key("__tag") || map.keys().any(|key| key.starts_with('\0')) {
+                continue;
+            }
+            let keys = match map.get(STRUCT_ORDER_KEY) {
+                Some(Value::List(order)) => order
+                    .iter()
+                    .filter_map(|value| match value {
+                        Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => map
+                    .keys()
+                    .filter(|key| !key.starts_with("__"))
+                    .cloned()
+                    .collect(),
+            };
+            for key in keys {
+                if !def.struct_fields.contains(&key) {
+                    def.struct_fields.push(key);
+                }
+            }
+            break;
         }
     }
     Ok(())
@@ -3417,6 +3746,20 @@ fn node_schema(binding: &str, props: &[PropertyDef]) -> SchemaRef {
             prop.data_type.clone(),
             true,
         ));
+        if prop.carries_union_tag {
+            fields.push(Field::new(
+                union_tag_col(binding, &prop.name),
+                DataType::Utf8,
+                true,
+            ));
+        }
+        for field in &prop.struct_fields {
+            fields.push(Field::new(
+                struct_field_col(binding, &prop.name, field),
+                DataType::Utf8,
+                true,
+            ));
+        }
     }
     Arc::new(Schema::new(fields))
 }
@@ -3436,6 +3779,20 @@ fn edge_schema(binding: &str, props: &[PropertyDef]) -> SchemaRef {
             prop.data_type.clone(),
             true,
         ));
+        if prop.carries_union_tag {
+            fields.push(Field::new(
+                union_tag_col(binding, &prop.name),
+                DataType::Utf8,
+                true,
+            ));
+        }
+        for field in &prop.struct_fields {
+            fields.push(Field::new(
+                struct_field_col(binding, &prop.name, field),
+                DataType::Utf8,
+                true,
+            ));
+        }
     }
     Arc::new(Schema::new(fields))
 }
@@ -3464,6 +3821,18 @@ fn normalize_node_table(
             rows,
             language,
         )?);
+        if prop.carries_union_tag {
+            arrays.push(property_union_tag_array(&table.batch, &prop.name, rows)?);
+        }
+        for field in &prop.struct_fields {
+            arrays.push(property_struct_field_array(
+                &table.batch,
+                &prop.name,
+                field,
+                rows,
+                language,
+            )?);
+        }
     }
     debug_assert_eq!(schema.field(0).name(), &id_col(binding));
     Ok(RecordBatch::try_new(schema, arrays)?)
@@ -3510,6 +3879,18 @@ fn normalize_edge_table(
             rows,
             language,
         )?);
+        if prop.carries_union_tag {
+            arrays.push(property_union_tag_array(&table.batch, &prop.name, rows)?);
+        }
+        for field in &prop.struct_fields {
+            arrays.push(property_struct_field_array(
+                &table.batch,
+                &prop.name,
+                field,
+                rows,
+                language,
+            )?);
+        }
     }
     debug_assert_eq!(schema.field(0).name(), &id_col(binding));
     Ok(RecordBatch::try_new(schema, arrays)?)
@@ -3573,6 +3954,83 @@ fn property_array(
         }
         None => Ok(new_null_array(expected, rows)),
     }
+}
+
+fn property_union_tag_array(batch: &RecordBatch, name: &str, rows: usize) -> RelResult<ArrayRef> {
+    let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
+        return Ok(new_null_array(&DataType::Utf8, rows));
+    };
+    let source = batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| {
+            RelError::Unsupported(format!(
+                "union-valued property `{name}` is not a string column"
+            ))
+        })?;
+    use arrow::array::Array as _;
+    let mut builder = StringBuilder::new();
+    for row in 0..source.len() {
+        if source.is_null(row) {
+            builder.append_null();
+            continue;
+        }
+        let tag = crate::ir::catalog::parse_debug_value(source.value(row)).and_then(|value| {
+            let Value::Map(map) = value else {
+                return None;
+            };
+            match map.get("__tag") {
+                Some(Value::String(tag)) => Some(tag.clone()),
+                _ => None,
+            }
+        });
+        match tag {
+            Some(tag) => builder.append_value(tag),
+            None => builder.append_null(),
+        }
+    }
+    Ok(Arc::new(builder.finish()) as ArrayRef)
+}
+
+fn property_struct_field_array(
+    batch: &RecordBatch,
+    name: &str,
+    struct_field: &str,
+    rows: usize,
+    language: Language,
+) -> RelResult<ArrayRef> {
+    let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
+        return Ok(new_null_array(&DataType::Utf8, rows));
+    };
+    let source = batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| RelError::Unsupported(format!("structured property `{name}` is not text")))?;
+    use arrow::array::Array as _;
+    let mut builder = StringBuilder::new();
+    for row in 0..source.len() {
+        if source.is_null(row) {
+            builder.append_null();
+            continue;
+        }
+        let value = crate::ir::catalog::parse_debug_value(source.value(row)).and_then(|value| {
+            let Value::Map(map) = value else {
+                return None;
+            };
+            map.get(struct_field).cloned()
+        });
+        match value {
+            Some(Value::Null) | None => builder.append_null(),
+            Some(value) => builder.append_value(rel_display_value(
+                &value,
+                language,
+                literal_collection_context(language),
+            )),
+        }
+    }
+    Ok(Arc::new(builder.finish()) as ArrayRef)
 }
 
 fn schema_index(schema: &Schema, name: &str) -> Option<usize> {
@@ -3743,7 +4201,7 @@ fn values_array<'a>(
 
 fn lit_to_expr(value: &Lit) -> Expr {
     match value {
-        Lit::Null => lit(ScalarValue::Utf8(None)),
+        Lit::Null => lit(ScalarValue::Null),
         Lit::Bool(value) => lit(*value),
         Lit::Int(value) => lit(*value),
         Lit::Float(value) => lit(*value),
@@ -3753,7 +4211,7 @@ fn lit_to_expr(value: &Lit) -> Expr {
 
 fn value_literal_expr(value: &Value) -> RelResult<Expr> {
     match value {
-        Value::Null => Ok(lit(ScalarValue::Utf8(None))),
+        Value::Null => Ok(lit(ScalarValue::Null)),
         Value::Bool(value) => Ok(lit(*value)),
         Value::Byte(value) => Ok(lit(*value as i64)),
         Value::UInt8(value) => Ok(lit(*value as i64)),
@@ -3839,8 +4297,7 @@ fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
             }
         }
         IrExpr::Call { name, args } => {
-            constant_foldable_function(name)
-                && args.iter().all(|arg| expr_is_constant(arg, bound))
+            constant_foldable_function(name) && args.iter().all(|arg| expr_is_constant(arg, bound))
         }
         _ => false,
     }
@@ -3854,12 +4311,24 @@ fn constant_foldable_function(name: &str) -> bool {
         return false;
     }
     const DENY: &[&str] = &[
-        "rand", "random", "uuid", "gen_random_uuid", "now", "nextval", "currval",
+        "rand",
+        "random",
+        "uuid",
+        "gen_random_uuid",
+        "now",
+        "nextval",
+        "currval",
     ];
     if DENY.contains(&normalized.as_str()) {
         return false;
     }
-    const DENY_PREFIX: &[&str] = &["current_", "select_", "path_", "history_", "cypher_property"];
+    const DENY_PREFIX: &[&str] = &[
+        "current_",
+        "select_",
+        "path_",
+        "history_",
+        "cypher_property",
+    ];
     !DENY_PREFIX
         .iter()
         .any(|prefix| normalized.starts_with(prefix))
@@ -3879,8 +4348,7 @@ fn looks_like_engine_error(message: &str) -> bool {
         "RuntimeError",
         "SyntaxError",
     ];
-    PREFIXES.iter().any(|prefix| message.starts_with(prefix))
-        || message.contains(" exception:")
+    PREFIXES.iter().any(|prefix| message.starts_with(prefix)) || message.contains(" exception:")
 }
 
 fn constant_fold_result_expr(value: &Value, language: Language) -> Expr {
@@ -3921,6 +4389,22 @@ fn constant_value_expr(expr: &IrExpr) -> RelResult<Option<Value>> {
             }
             Ok(Some(Value::List(values)))
         }
+        IrExpr::Binary {
+            op: BinaryOp::Sub,
+            lhs,
+            rhs,
+        } if matches!(lhs.as_ref(), IrExpr::Lit(Lit::Int(0))) => Ok(constant_value_expr(rhs)?
+            .and_then(|value| match value {
+                Value::Byte(value) => value.checked_neg().map(Value::Byte),
+                Value::Short(value) => value.checked_neg().map(Value::Short),
+                Value::Int(value) => value.checked_neg().map(Value::Int),
+                Value::Long(value) => value.checked_neg().map(Value::Long),
+                Value::Float32(value) => Some(Value::Float32(-value)),
+                Value::Float(value) => Some(Value::Float(-value)),
+                Value::BigInt(value) => Some(Value::BigInt(-value)),
+                Value::BigDecimal(value) => Some(Value::BigDecimal(-value)),
+                _ => None,
+            })),
         IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
             Ok(Some(Value::List(constant_range_values(args)?)))
         }
@@ -3956,6 +4440,25 @@ fn constant_value_expr(expr: &IrExpr) -> RelResult<Option<Value>> {
         IrExpr::Call { name, args } if name == "map" => constant_cypher_map(args),
         _ => Ok(None),
     }
+}
+
+fn union_constructor_field(args: &[IrExpr]) -> RelResult<(&str, &IrExpr)> {
+    let [IrExpr::Call { name, args }] = args else {
+        return Err(RelError::Unsupported(
+            "union_value expects one named argument".into(),
+        ));
+    };
+    if name != "map" {
+        return Err(RelError::Unsupported(
+            "union_value expects one named argument".into(),
+        ));
+    }
+    let [IrExpr::Lit(Lit::String(tag)), value] = args.as_slice() else {
+        return Err(RelError::Unsupported(
+            "union_value expects one named argument".into(),
+        ));
+    };
+    Ok((tag, value))
 }
 
 fn constant_values(args: &[IrExpr]) -> RelResult<Option<Vec<Value>>> {
@@ -4364,11 +4867,35 @@ fn scan_order_keys(plan: &LogicalPlan) -> Vec<datafusion::logical_expr::SortExpr
     plan.schema()
         .fields()
         .iter()
-        .filter(|field| {
-            field.name().ends_with(ID_SUFFIX) && !field.name().contains(PROP_MARKER)
-        })
+        .filter(|field| field.name().ends_with(ID_SUFFIX) && !field.name().contains(PROP_MARKER))
         .map(|field| col_exact(field.name()).sort(true, false))
         .collect()
+}
+
+fn count_input_rows(plan: &LogicalPlan) -> Expr {
+    let Some(field) = plan.schema().fields().first() else {
+        return count_all();
+    };
+    // Referencing an input column is intentional. DataFusion's SQL unparser
+    // otherwise emits `SELECT count(1)` without a FROM clause for some
+    // cross-join plans. Coalescing preserves COUNT(*) semantics for nulls.
+    df_count(df_core::coalesce(vec![
+        cast_utf8(col_exact(field.name())),
+        lit(""),
+    ]))
+}
+
+/// Preserve the original blob display text while ordering its `\\xNN`
+/// escapes as non-ASCII bytes rather than as a leading backslash.
+fn blob_extreme(value: Expr, maximum: bool) -> Expr {
+    let key = df_string::replace(value.clone(), lit("\\x"), lit("\u{00ff}"));
+    let packed = concat_exprs(vec![key, lit("\u{1}"), value]);
+    let extreme = if maximum {
+        df_max(packed)
+    } else {
+        df_min(packed)
+    };
+    df_string::split_part(extreme, lit("\u{1}"), lit(2_i64))
 }
 
 /// Did lowering the right side of an `Apply` pull the left side in?
@@ -4386,6 +4913,7 @@ fn absorbed_correlation(left: &LogicalPlan, right: &LogicalPlan) -> bool {
     left.schema()
         .fields()
         .iter()
+        .filter(|field| field.name() != "__w_one_row")
         .all(|field| right_names.contains(field.name().as_str()))
 }
 
@@ -4924,8 +5452,22 @@ fn string_concat(lhs: Expr, rhs: Expr) -> Expr {
 }
 
 fn concat_exprs(mut exprs: Vec<Expr>) -> Expr {
-    let first = exprs.remove(0);
-    exprs.into_iter().fold(first, string_concat)
+    assert!(!exprs.is_empty(), "concat_exprs requires an expression");
+    // Keep concatenations balanced. Element/path rendering can contain dozens
+    // of segments, and a left-deep expression makes DataFusion's recursive
+    // unparser consume enough stack to abort an otherwise ordinary query.
+    while exprs.len() > 1 {
+        let mut next = Vec::with_capacity(exprs.len().div_ceil(2));
+        let mut pairs = exprs.into_iter();
+        while let Some(left) = pairs.next() {
+            next.push(match pairs.next() {
+                Some(right) => string_concat(left, right),
+                None => left,
+            });
+        }
+        exprs = next;
+    }
+    exprs.pop().expect("non-empty concatenation")
 }
 
 fn cast_utf8(expr: Expr) -> Expr {
@@ -5183,6 +5725,25 @@ fn cypher_plain_value(value: &Value) -> String {
             format!("[{}]", body.join(","))
         }
         Value::Map(map) => {
+            if let Some(Value::List(entries)) = map.get("\u{0}kuzu_map_entries") {
+                let body = entries
+                    .iter()
+                    .filter_map(|entry| {
+                        let Value::List(pair) = entry else {
+                            return None;
+                        };
+                        let [key, value] = pair.as_slice() else {
+                            return None;
+                        };
+                        Some(format!(
+                            "{}={}",
+                            cypher_plain_value(key),
+                            cypher_plain_value(value)
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", body.join(", "));
+            }
             // A union is carried as a tagged map but prints as its payload
             // alone: `CAST(127 AS UNION(a STRING, b INT64))` is `127`, not
             // `{b: 127}`. Mirrors `output::union_display_value`.
@@ -5286,7 +5847,7 @@ fn display_for_list_to_string(value: &Value) -> String {
 }
 
 fn is_label_function(name: &str) -> bool {
-    name.eq_ignore_ascii_case("label")
+    name.eq_ignore_ascii_case("label") || name.eq_ignore_ascii_case("cypher_label")
 }
 
 fn is_id_function(name: &str) -> bool {
@@ -5471,6 +6032,18 @@ fn is_cast_function(name: &str, args: &[IrExpr]) -> bool {
     (normalized == "cast" && args.len() == 2) || cast_target_from_function_name(&normalized).is_ok()
 }
 
+fn cast_target_text<'a>(name: &'a str, args: &'a [IrExpr]) -> Option<&'a str> {
+    let normalized = name.to_ascii_lowercase();
+    if normalized == "cast" {
+        let IrExpr::Lit(Lit::String(target)) = args.get(1)? else {
+            return None;
+        };
+        Some(target)
+    } else {
+        cast_target_from_function_name(&normalized).ok()
+    }
+}
+
 fn cast_target_from_function_name(name: &str) -> RelResult<&'static str> {
     match name {
         "tointeger" => Ok("INT64"),
@@ -5506,6 +6079,30 @@ fn data_type_for_cast_target(type_name: &str) -> RelResult<DataType> {
         .trim_matches('"')
         .to_ascii_uppercase()
         .replace(' ', "");
+    if let Some(decimal) = normalized
+        .strip_prefix("DECIMAL(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        let mut parts = decimal.split(',');
+        let precision = parts
+            .next()
+            .and_then(|value| value.parse::<u8>().ok())
+            .ok_or_else(|| {
+                RelError::Unsupported(format!("invalid decimal target `{type_name}`"))
+            })?;
+        let scale = parts
+            .next()
+            .and_then(|value| value.parse::<i8>().ok())
+            .ok_or_else(|| {
+                RelError::Unsupported(format!("invalid decimal target `{type_name}`"))
+            })?;
+        if parts.next().is_some() {
+            return Err(RelError::Unsupported(format!(
+                "invalid decimal target `{type_name}`"
+            )));
+        }
+        return Ok(DataType::Decimal128(precision, scale));
+    }
     match normalized.as_str() {
         "BOOL" | "BOOLEAN" => Ok(DataType::Boolean),
         "INT8" => Ok(DataType::Int8),
@@ -5518,6 +6115,7 @@ fn data_type_for_cast_target(type_name: &str) -> RelResult<DataType> {
         "UINT64" => Ok(DataType::UInt64),
         "FLOAT" => Ok(DataType::Float32),
         "DOUBLE" | "FLOAT64" => Ok(DataType::Float64),
+        "DECIMAL" => Ok(DataType::Decimal128(18, 3)),
         "STRING" | "VARCHAR" => Ok(DataType::Utf8),
         // 128-bit integers have no native Arrow representation; a
         // zero-scale decimal covers the numeric range these cases use and
@@ -5595,6 +6193,14 @@ fn prop_col(binding: &str, property: &str) -> String {
     format!("{binding}{PROP_MARKER}{property}")
 }
 
+fn union_tag_col(binding: &str, property: &str) -> String {
+    format!("{}__w_union_tag", prop_col(binding, property))
+}
+
+fn struct_field_col(binding: &str, property: &str, field: &str) -> String {
+    format!("{}__w_struct__{field}", prop_col(binding, property))
+}
+
 fn output_fields(plan: &LogicalPlan) -> Vec<String> {
     plan.schema()
         .fields()
@@ -5608,6 +6214,20 @@ fn has_exact_col(plan: &LogicalPlan, name: &str) -> bool {
         .fields()
         .iter()
         .any(|field| field.name() == name)
+}
+
+fn resolve_column_name(plan: &LogicalPlan, name: &str) -> Option<String> {
+    if has_exact_col(plan, name) {
+        return Some(name.to_string());
+    }
+    let mut matches = plan
+        .schema()
+        .fields()
+        .iter()
+        .filter(|field| field.name().eq_ignore_ascii_case(name))
+        .map(|field| field.name().to_string());
+    let column = matches.next()?;
+    matches.next().is_none().then_some(column)
 }
 
 fn has_binding_shape(plan: &LogicalPlan, binding: &str) -> Option<BindingShape> {

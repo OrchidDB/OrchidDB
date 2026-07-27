@@ -542,6 +542,9 @@ async fn execute_case_duckdb(
     // over large fixtures) up front so one query cannot pin a core for the
     // rest of the run.
     let nodes = count_plan_nodes(&lowered.plan);
+    if std::env::var("GRAPH_REL_SHOW_PLAN").is_ok_and(|value| value == "1") {
+        eprintln!("{}", lowered.plan.display_indent());
+    }
     if nodes > 200 {
         return ExecRun {
             result: Err(format!(

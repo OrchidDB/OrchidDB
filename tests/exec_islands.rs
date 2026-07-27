@@ -11,7 +11,9 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
 use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::exec::{DataFusionTarget, ExecStats, IslandTarget, SqlTarget, plan_with_islands};
+use new_graph::ir::exec::{
+    DataFusionTarget, ExecStats, IslandTarget, SqlTarget, execute_with_islands, plan_with_islands,
+};
 use new_graph::ir::interpreter::execute;
 use new_graph::ir::rel::RelBackend;
 use new_graph::language::cypher::parser::parse_query;
@@ -91,6 +93,28 @@ fn a_fully_lowerable_plan_becomes_a_single_island() {
     let (islands, rows) = islanded(&graph, query);
     assert_eq!(islands, 1, "expected the whole plan to island");
     assert_eq!(rows, rows_of(&graph, query));
+}
+
+#[test]
+fn complete_reads_return_target_batches_without_a_residual_plan() {
+    let graph = fixture();
+    let query = "MATCH (p:person) WHERE p.age > 35 RETURN p.name";
+    let parsed = parse_query(query).expect("parse");
+    let plan = CypherPlanner::new().plan(&parsed).expect("plan");
+    let (returned, stats) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(execute_with_islands(
+            &plan,
+            &graph,
+            &RelBackend::new(),
+            &SqlTarget::duckdb(),
+        ))
+        .expect("direct SQL read");
+    assert!(stats.fully_pushed_down());
+    assert_eq!(stats.residual_ops, 0);
+    assert_eq!(render(returned), rows_of(&graph, query));
 }
 
 #[test]

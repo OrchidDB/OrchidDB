@@ -34,7 +34,7 @@ use arrow::array::Array;
 use arrow::datatypes::{DataType, Field};
 
 use crate::ir::catalog::{PropertyGraph, array_value};
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::interpreter::{ReturnedBatches, execute as interpreter_execute};
 use crate::ir::plan::{GraphPlan, Node};
 use crate::ir::rel::sql;
 use crate::ir::rel::{LoweredPlan, RelBackend, execute_lowered};
@@ -81,16 +81,13 @@ impl IslandTarget for DataFusionTarget {
 /// Generic over the executor so any [`SqlExecutor`](crate::ir::rel::sql::SqlExecutor)
 /// implementation — DuckDB, Postgres, or one added later — can back an island
 /// without touching the partitioner.
-pub struct SqlTarget<F> {
+pub struct SqlTarget<F, E> {
     dialect: sql::SqlDialect,
-    /// Executors take `&mut self` and some (Postgres) own a connection, so
-    /// the target builds a fresh one per island rather than holding shared
-    /// mutable state. That keeps island futures `Send` and keeps targets
-    /// usable from any runtime.
     make_executor: F,
+    executor: std::sync::Mutex<Option<E>>,
 }
 
-impl<F, E> SqlTarget<F>
+impl<F, E> SqlTarget<F, E>
 where
     F: Fn() -> sql::SqlResult<E>,
     E: sql::SqlExecutor,
@@ -99,12 +96,13 @@ where
         Self {
             dialect,
             make_executor,
+            executor: std::sync::Mutex::new(None),
         }
     }
 }
 
-impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>> {
-    /// The default target: an in-process DuckDB database per island.
+impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>, sql::DuckDbExecutor> {
+    /// The default target: a reusable in-process DuckDB session.
     #[cfg(feature = "duckdb")]
     pub fn duckdb() -> Self {
         Self::new(sql::SqlDialect::DuckDb, || Ok(sql::DuckDbExecutor::new()))
@@ -112,23 +110,20 @@ impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>> {
 }
 
 #[cfg(feature = "postgres")]
-impl SqlTarget<fn() -> sql::SqlResult<sql::PostgresExecutor>> {
+impl SqlTarget<fn() -> sql::SqlResult<sql::PostgresExecutor>, sql::PostgresExecutor> {
     /// Postgres, connecting per island through
     /// [`PostgresExecutor::ENV_URL`](sql::PostgresExecutor::ENV_URL).
     pub fn postgres() -> Self {
         Self::new(sql::SqlDialect::Postgres, || {
             let url = std::env::var(sql::PostgresExecutor::ENV_URL).map_err(|_| {
-                sql::SqlError::Setup(format!(
-                    "{} is not set",
-                    sql::PostgresExecutor::ENV_URL
-                ))
+                sql::SqlError::Setup(format!("{} is not set", sql::PostgresExecutor::ENV_URL))
             })?;
             sql::PostgresExecutor::connect(&url)
         })
     }
 }
 
-impl<F, E> IslandTarget for SqlTarget<F>
+impl<F, E> IslandTarget for SqlTarget<F, E>
 where
     F: Fn() -> sql::SqlResult<E>,
     E: sql::SqlExecutor,
@@ -152,8 +147,15 @@ where
             let prepared = sql::prepare(&lowered, self.dialect)
                 .await
                 .map_err(|err| format!("{err}"))?;
-            let mut executor = (self.make_executor)().map_err(|err| format!("{err}"))?;
-            sql::execute_prepared(&mut executor, &prepared).map_err(|err| format!("{err}"))
+            let mut executor = self
+                .executor
+                .lock()
+                .map_err(|_| "SQL executor lock was poisoned".to_string())?;
+            if executor.is_none() {
+                *executor = Some((self.make_executor)().map_err(|err| format!("{err}"))?);
+            }
+            sql::execute_prepared(executor.as_mut().expect("initialized"), &prepared)
+                .map_err(|err| format!("{err}"))
         })
     }
 }
@@ -256,6 +258,43 @@ pub async fn plan_with_islands(
     )
 }
 
+/// Execute a read plan directly on the relational target when the complete
+/// plan lowers. Only if whole-plan lowering or execution declines do we
+/// partition it into hybrid islands and invoke the interpreter for the
+/// residual.
+///
+/// This is the direct-read boundary: fully supported reads return the
+/// target's [`ReturnedBatches`] without a `GraphValues` round trip. Callers
+/// should keep the hybrid path as their default until SQL result shaping
+/// reaches parity for every advertised result form.
+pub async fn execute_with_islands(
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+    backend: &RelBackend,
+    target: &dyn IslandTarget,
+) -> Result<(ReturnedBatches, ExecStats), String> {
+    if !contains_mutation(&plan.root)
+        && let Ok(lowered) = backend.lower(plan, graph)
+        && let Ok(returned) = target.execute(lowered).await
+    {
+        let rows = returned.batch.num_rows();
+        return Ok((
+            returned,
+            ExecStats {
+                islands: 1,
+                island_rows: rows,
+                residual_ops: 0,
+                interpreted_ops: 0,
+                declined: Vec::new(),
+            },
+        ));
+    }
+
+    let (hybrid, stats) = plan_with_islands(plan, graph, backend, target).await;
+    let returned = interpreter_execute(&hybrid, graph).map_err(|err| err.to_string())?;
+    Ok((returned, stats))
+}
+
 /// Try to island `node`; if it declines, recurse into its children.
 ///
 /// Boxed because the recursion is async — `islandize` awaits itself.
@@ -351,8 +390,6 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         .map(|field| field.name().to_string())
         .collect();
 
-
-
     enum Source {
         /// `(id column, label column)`
         NodeCols(usize, usize),
@@ -364,7 +401,9 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
     }
 
     let find = |suffix: &str, binding: &str| -> Option<usize> {
-        names.iter().position(|n| n == &format!("{binding}{suffix}"))
+        names
+            .iter()
+            .position(|n| n == &format!("{binding}{suffix}"))
     };
 
     let mut bindings: Vec<String> = Vec::new();
@@ -381,7 +420,10 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         let Some((field, key)) = name.split_once(STAR_SEP) else {
             continue;
         };
-        match star_groups.iter_mut().find(|(existing, _)| existing == field) {
+        match star_groups
+            .iter_mut()
+            .find(|(existing, _)| existing == field)
+        {
             Some((_, columns)) => columns.push((key.to_string(), index)),
             None => star_groups.push((field.to_string(), vec![(key.to_string(), index)])),
         }
@@ -443,11 +485,7 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
     }
 
     let column_value = |index: usize, row: usize| -> Option<Value> {
-        decode_value(
-            batch.column(index).as_ref(),
-            row,
-            Some(schema.field(index)),
-        )
+        decode_value(batch.column(index).as_ref(), row, Some(schema.field(index)))
     };
     let as_i64 = |value: &Value| -> Option<i64> {
         match value {

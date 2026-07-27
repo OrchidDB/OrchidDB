@@ -961,6 +961,15 @@ fn parse_inline_value(raw: &str) -> Value {
     if let Ok(value) = trimmed.parse::<i64>() {
         return Value::Int(value);
     }
+    if trimmed
+        .strip_prefix(['-', '+'])
+        .unwrap_or(trimmed)
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        && let Ok(value) = BigInt::from_str(trimmed)
+    {
+        return Value::BigInt(value);
+    }
     if let Ok(value) = trimmed.parse::<f64>() {
         return Value::Float(value);
     }
@@ -998,10 +1007,7 @@ fn load_entry_rows(root: &Path, entry: &CopyEntry) -> Option<FileRows> {
     let raw = fs::read_to_string(&path).ok()?;
     let delim = detect_delimiter(&raw);
     let mut rows = parse_csv_delim(&raw, delim);
-    if rows
-        .first()
-        .is_some_and(|first| is_typed_header_row(first))
-    {
+    if rows.first().is_some_and(|first| is_typed_header_row(first)) {
         let header = rows
             .remove(0)
             .into_iter()
@@ -1219,11 +1225,7 @@ fn build_edge_table(
             let find_endpoint = |type_prefix: &str, names: &[&str]| {
                 header
                     .iter()
-                    .position(|h| {
-                        header_type(h)
-                            .to_ascii_uppercase()
-                            .starts_with(type_prefix)
-                    })
+                    .position(|h| header_type(h).to_ascii_uppercase().starts_with(type_prefix))
                     .or_else(|| {
                         header.iter().position(|h| {
                             names
@@ -1396,10 +1398,18 @@ fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Fiel
         }
         ColumnType::String => {
             let parsed: Vec<Option<&str>> = values.iter().map(|cell| cell.as_deref()).collect();
-            (
-                Field::new(name, DataType::Utf8, true),
-                Arc::new(StringArray::from(parsed)) as ArrayRef,
-            )
+            let mut field = Field::new(name, DataType::Utf8, true);
+            if values
+                .iter()
+                .flatten()
+                .any(|value| value.contains("\\x") || value.contains("\\X"))
+            {
+                field = field.with_metadata(HashMap::from([(
+                    "new_graph.value_type".to_string(),
+                    "blob".to_string(),
+                )]));
+            }
+            (field, Arc::new(StringArray::from(parsed)) as ArrayRef)
         }
         ColumnType::Date => {
             // Canonicalize raw `YYYY-M-D` etc. to the zero-padded

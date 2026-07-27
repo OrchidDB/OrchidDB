@@ -8,19 +8,20 @@
 //! A Postgres variant of the round-trip is `#[ignore]`d and only runs when
 //! the `postgres` feature is enabled and `GRAPH_PG_URL` points at a server.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray,
 };
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, Field, Schema};
 
 use new_graph::ir::bridge::gremlin as gb;
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use new_graph::ir::catalog::{NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns};
 use new_graph::ir::expr::Lit;
 use new_graph::ir::plan::GraphPlan;
 use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
-use new_graph::ir::rel::{RelBackend, execute_lowered};
+use new_graph::ir::rel::{RelBackend, RelBackendOptions, execute_lowered};
 use new_graph::language::cypher::parser::parse_query;
 use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
 use new_graph::planner::GremlinPlanner;
@@ -42,6 +43,73 @@ fn fixture_graph() -> PropertyGraph {
         Vec::new(),
     );
     graph.add_edges(edges).unwrap();
+    graph
+}
+
+fn long_chain_graph() -> PropertyGraph {
+    let names: ArrayRef = Arc::new(StringArray::from(
+        (0..9).map(|index| format!("n{index}")).collect::<Vec<_>>(),
+    ));
+    let person = nodes_from_columns("Person", vec![("name", names)]);
+    let mut graph = PropertyGraph::new();
+    graph.add_nodes(person);
+    graph
+        .add_edges(edges_from_columns(
+            "NEXT",
+            "Person",
+            "Person",
+            (0..8).collect(),
+            (1..9).collect(),
+            Vec::new(),
+        ))
+        .unwrap();
+    graph
+}
+
+fn mixed_path_graph() -> PropertyGraph {
+    let people: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob"]));
+    let cities: ArrayRef = Arc::new(StringArray::from(vec!["paris"]));
+    let mut graph = PropertyGraph::new();
+    graph.add_nodes(nodes_from_columns("Person", vec![("name", people)]));
+    graph.add_nodes(nodes_from_columns("City", vec![("name", cities)]));
+    graph
+        .add_edges(edges_from_columns(
+            "KNOWS",
+            "Person",
+            "Person",
+            vec![0],
+            vec![1],
+            Vec::new(),
+        ))
+        .unwrap();
+    graph
+        .add_edges(edges_from_columns(
+            "LIVES_IN",
+            "Person",
+            "City",
+            vec![1],
+            vec![0],
+            Vec::new(),
+        ))
+        .unwrap();
+    graph
+}
+
+fn union_property_graph() -> PropertyGraph {
+    let field = Field::new("grade", DataType::Utf8, true).with_metadata(HashMap::from([(
+        "new_graph.value_type".to_string(),
+        "value".to_string(),
+    )]));
+    let values: ArrayRef = Arc::new(StringArray::from(vec![
+        r#"Map({"__tag": String("grade1"), "__value": Float(3.5)})"#,
+        r#"Map({"__tag": String("grade2"), "__value": Int(4)})"#,
+    ]));
+    let batch = RecordBatch::try_new(Arc::new(Schema::new(vec![field])), vec![values]).unwrap();
+    let mut graph = PropertyGraph::new();
+    graph.add_nodes(NodeTable {
+        label: "Movie".to_string(),
+        batch,
+    });
     graph
 }
 
@@ -98,7 +166,11 @@ fn cell_to_string(array: &ArrayRef, row: usize) -> String {
 
 /// Run the plan through DuckDB and through in-process DataFusion, assert they
 /// agree, and return the DuckDB rows.
-async fn duckdb_and_datafusion(plan: &GraphPlan, graph: &PropertyGraph, ordered: bool) -> Vec<String> {
+async fn duckdb_and_datafusion(
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+    ordered: bool,
+) -> Vec<String> {
     let backend = RelBackend::new();
     let lowered = backend.lower(plan, graph).expect("lower");
     let prepared = sql::prepare(&lowered, SqlDialect::DuckDb)
@@ -151,10 +223,153 @@ async fn cypher_order_desc_limit_on_duckdb() {
 
 #[tokio::test]
 async fn cypher_arithmetic_filter_on_duckdb() {
-    let plan =
-        cypher_plan("MATCH (p:Person) WHERE p.age + 1 >= 31 RETURN p.name ORDER BY p.name");
+    let plan = cypher_plan("MATCH (p:Person) WHERE p.age + 1 >= 31 RETURN p.name ORDER BY p.name");
     let rows = duckdb_and_datafusion(&plan, &fixture_graph(), true).await;
     assert_eq!(rows, vec!["alice", "carol"]);
+}
+
+#[tokio::test]
+async fn cypher_stored_union_tag_on_duckdb() {
+    let plan = cypher_plan("MATCH (m:Movie) RETURN union_tag(m.grade) AS tag ORDER BY tag");
+    let rows = duckdb_and_datafusion(&plan, &union_property_graph(), true).await;
+    assert_eq!(rows, vec!["grade1", "grade2"]);
+}
+
+#[tokio::test]
+async fn cypher_unbounded_varlen_uses_recursive_cte_on_duckdb() {
+    let graph = fixture_graph();
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[:KNOWS*1..]->(f) \
+         WHERE p.name = 'alice' \
+         RETURN f.name, count(*) AS paths ORDER BY f.name",
+    );
+    let lowered = RelBackend::new().lower(&plan, &graph).expect("lower");
+    let prepared = sql::prepare(&lowered, SqlDialect::DuckDb)
+        .await
+        .expect("prepare sql");
+    assert!(
+        prepared.query.starts_with("WITH RECURSIVE"),
+        "query did not use a recursive CTE:\n{}",
+        prepared.query
+    );
+    assert!(
+        prepared
+            .setup
+            .iter()
+            .all(|statement| !statement.contains("__graph_varlen_")),
+        "CTE work table was incorrectly materialized: {:?}",
+        prepared.setup
+    );
+
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_prepared(&mut executor, &prepared)
+        .unwrap_or_else(|err| panic!("duckdb execute: {err}\nquery: {}", prepared.query));
+    assert_eq!(batch_lines(&returned.batch), vec!["bob|1", "carol|2"]);
+}
+
+#[tokio::test]
+async fn cypher_unbounded_varlen_is_not_silently_capped() {
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[:NEXT*1..]->(f) \
+         WHERE p.name = 'n0' RETURN count(*)",
+    );
+    let lowered = RelBackend::new()
+        .lower(&plan, &long_chain_graph())
+        .expect("lower");
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
+        .await
+        .expect("execute recursive path");
+    assert_eq!(batch_lines(&returned.batch), vec!["8"]);
+}
+
+#[tokio::test]
+async fn cypher_varlen_optional_ceiling_is_explicit() {
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[:NEXT*1..]->(f) \
+         WHERE p.name = 'n0' RETURN count(*)",
+    );
+    let backend = RelBackend::with_options(RelBackendOptions {
+        varlen_recursive_ceiling: Some(3),
+        ..RelBackendOptions::default()
+    });
+    let lowered = backend.lower(&plan, &long_chain_graph()).expect("lower");
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
+        .await
+        .expect("execute guarded recursive path");
+    assert_eq!(batch_lines(&returned.batch), vec!["3"]);
+}
+
+#[tokio::test]
+async fn cypher_varlen_path_and_undirected_length_on_duckdb() {
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[e:KNOWS*2..2]-(f) \
+         WHERE p.name = 'alice' \
+         RETURN f.name, length(e), e ORDER BY f.name",
+    );
+    let lowered = RelBackend::new()
+        .lower(&plan, &fixture_graph())
+        .expect("lower");
+    let prepared = sql::prepare(&lowered, SqlDialect::DuckDb)
+        .await
+        .expect("prepare sql");
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_prepared(&mut executor, &prepared)
+        .unwrap_or_else(|err| panic!("duckdb execute: {err}\nquery: {}", prepared.query));
+    let rows = batch_lines(&returned.batch);
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].starts_with("bob|2|{_NODES: ["));
+    assert!(rows[1].starts_with("carol|2|{_NODES: ["));
+    assert!(rows.iter().all(|row| row.contains("_RELS: [")));
+}
+
+#[tokio::test]
+async fn cypher_count_distinct_varlen_paths_on_duckdb() {
+    let plan = cypher_plan(
+        "MATCH (p:Person)-[e:KNOWS*1..]->(f) \
+         WHERE p.name = 'alice' RETURN count(DISTINCT e)",
+    );
+    let lowered = RelBackend::new()
+        .lower(&plan, &fixture_graph())
+        .expect("lower");
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
+        .await
+        .expect("execute recursive paths");
+    assert_eq!(batch_lines(&returned.batch), vec!["3"]);
+}
+
+#[tokio::test]
+async fn cypher_named_path_spans_varlen_and_fixed_segments() {
+    let plan = cypher_plan(
+        "MATCH p = (a:Person)-[:KNOWS*1..1]->(:Person)-[:LIVES_IN]->(:City) \
+         WHERE a.name = 'alice' RETURN p",
+    );
+    let lowered = RelBackend::new()
+        .lower(&plan, &mixed_path_graph())
+        .expect("lower mixed path");
+    let mut executor = DuckDbExecutor::new();
+    let returned = sql::execute_lowered_sql(&mut executor, &lowered)
+        .await
+        .expect("execute mixed path");
+    let rows = batch_lines(&returned.batch);
+    assert_eq!(rows.len(), 1);
+    let path = &rows[0];
+    assert_eq!(path.matches("_LABEL: Person").count(), 2, "{path}");
+    assert_eq!(path.matches("_LABEL: City").count(), 1, "{path}");
+    assert_eq!(path.matches("_LABEL: KNOWS").count(), 1, "{path}");
+    assert_eq!(path.matches("_LABEL: LIVES_IN").count(), 1, "{path}");
+}
+
+#[tokio::test]
+async fn cypher_dynamic_list_and_unwind_on_duckdb() {
+    let plan = cypher_plan(
+        "MATCH (p:Person) WHERE p.name = 'alice' \
+         UNWIND [p.age, p.age + 1] AS age RETURN age ORDER BY age",
+    );
+    let rows = duckdb_and_datafusion(&plan, &fixture_graph(), true).await;
+    assert_eq!(rows, vec!["30", "31"]);
 }
 
 #[tokio::test]
@@ -207,6 +422,56 @@ async fn graph_setup_sql_materializes_catalog_tables() {
         .run(&statements, "SELECT count(*) FROM \"node_person\"")
         .expect("query materialized graph");
     assert_eq!(rows, vec![vec![sql::SqlValue::Int(3)]]);
+    let rows = executor
+        .run(&statements, "SELECT count(*) FROM \"node_person\"")
+        .expect("query reused materialized graph");
+    assert_eq!(
+        rows,
+        vec![vec![sql::SqlValue::Int(3)]],
+        "reapplying a prepared setup must not duplicate rows"
+    );
+}
+
+#[test]
+fn duckdb_preserves_hugeint_results_exactly() {
+    let mut executor = DuckDbExecutor::new();
+    let value = "170141183460469231731687303715884105727";
+    let rows = executor
+        .run(&[], &format!("SELECT CAST('{value}' AS HUGEINT)"))
+        .expect("hugeint query");
+    assert_eq!(
+        rows,
+        vec![vec![sql::SqlValue::ExactNumber(value.to_string())]]
+    );
+}
+
+#[test]
+fn duckdb_replaces_changed_materialization_blocks() {
+    let mut executor = DuckDbExecutor::new();
+    let first = vec![
+        "CREATE OR REPLACE TABLE \"items\" (\"value\" BIGINT)".to_string(),
+        "INSERT INTO \"items\" VALUES (1)".to_string(),
+    ];
+    let second = vec![
+        "CREATE OR REPLACE TABLE \"items\" (\"value\" BIGINT)".to_string(),
+        "INSERT INTO \"items\" VALUES (2)".to_string(),
+    ];
+    assert_eq!(
+        executor
+            .run(&first, "SELECT sum(value) FROM items")
+            .unwrap(),
+        vec![vec![sql::SqlValue::ExactNumber("1".to_string())]]
+    );
+    assert_eq!(
+        executor
+            .run(&second, "SELECT sum(value) FROM items")
+            .unwrap(),
+        vec![vec![sql::SqlValue::ExactNumber("2".to_string())]]
+    );
+    assert_eq!(
+        executor.run(&second, "SELECT count(*) FROM items").unwrap(),
+        vec![vec![sql::SqlValue::Int(1)]]
+    );
 }
 
 #[cfg(feature = "postgres")]
