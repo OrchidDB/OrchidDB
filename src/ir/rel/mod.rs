@@ -65,6 +65,9 @@ const DST_LABEL_SUFFIX: &str = "__dst_label";
 /// Separator between a `x.*` projection alias and the property name each
 /// expanded column carries (`a.*__star__ID`).
 const STAR_SEP: &str = "__star__";
+/// Hop count of a materialized variable-length path binding. The path value
+/// itself lives in a column named after the binding.
+const PATH_LEN_SUFFIX: &str = "__pathlen";
 const MAX_EXECUTABLE_PLAN_NODES: usize = 200;
 const MAX_EXECUTABLE_PLAN_DEPTH: usize = 64;
 
@@ -886,7 +889,6 @@ impl<'a> LoweringContext<'a> {
             // exhaust real paths well below this depth.
             None => VARLEN_CAP,
         };
-        let _ = rel_binding; // a var-length rel binding would be a list; not materialized.
 
         let input = self.lower_node(input)?;
         if has_binding_shape(&input.plan, source).is_none() {
@@ -934,7 +936,16 @@ impl<'a> LoweringContext<'a> {
                         .build()?
                 }
             };
-            branches.push(self.varlen_branch_projection(plan, &input_columns, target)?);
+            let plan = match rel_binding {
+                Some(rel) => self.project_varlen_path(plan, rel, &[], &[])?,
+                None => plan,
+            };
+            branches.push(self.varlen_branch_projection(
+                plan,
+                &input_columns,
+                target,
+                rel_binding,
+            )?);
         }
 
         for k in lo.max(1)..=hi {
@@ -1005,7 +1016,21 @@ impl<'a> LoweringContext<'a> {
                 plan = LogicalPlanBuilder::from(plan).filter(filter)?.build()?;
             }
             islands.merge(chain.islands);
-            branches.push(self.varlen_branch_projection(plan, &input_columns, target)?);
+            if let Some(rel) = rel_binding {
+                // Intermediate nodes only — the endpoints are already bound
+                // as `source` and `target`, and that is what direct
+                // evaluation puts in `_NODES`.
+                let hop_nodes: Vec<String> = (1..k)
+                    .map(|hop| format!("__vln_{uniq}_{k}_{hop}"))
+                    .collect();
+                plan = self.project_varlen_path(plan, rel, &hop_nodes, &hop_rels)?;
+            }
+            branches.push(self.varlen_branch_projection(
+                plan,
+                &input_columns,
+                target,
+                rel_binding,
+            )?);
         }
 
         let mut union_plan: Option<LogicalPlan> = None;
@@ -1027,6 +1052,53 @@ impl<'a> LoweringContext<'a> {
         })
     }
 
+    /// Materialize a variable-length relationship binding for one unrolled
+    /// branch: the path value itself, plus its hop count.
+    ///
+    /// Every branch has a fixed number of hops, so both are concrete here
+    /// even though neither is expressible once the branches are unioned.
+    /// The rendering matches direct evaluation's path form,
+    /// `{_NODES: [...], _RELS: [...]}`, where `_NODES` holds only the
+    /// intermediate nodes — the endpoints are already bound separately.
+    fn project_varlen_path(
+        &self,
+        plan: LogicalPlan,
+        rel_binding: &str,
+        hop_nodes: &[String],
+        hop_rels: &[String],
+    ) -> RelResult<LogicalPlan> {
+        let render = |binding: &str, shape: BindingShape| -> RelResult<Expr> {
+            if self.language == Language::Gremlin {
+                gremlin_element_display_expr(&plan, binding)
+            } else {
+                self.cypher_element_display_expr(&plan, binding, shape)
+            }
+        };
+        let mut parts = vec![lit("{_NODES: [")];
+        for (index, node) in hop_nodes.iter().enumerate() {
+            if index > 0 {
+                parts.push(lit(","));
+            }
+            parts.push(render(node, BindingShape::Node)?);
+        }
+        parts.push(lit("], _RELS: ["));
+        for (index, rel) in hop_rels.iter().enumerate() {
+            if index > 0 {
+                parts.push(lit(","));
+            }
+            parts.push(render(rel, BindingShape::Edge)?);
+        }
+        parts.push(lit("]}"));
+
+        let mut projections = existing_columns(
+            &plan,
+            &BTreeSet::from([rel_binding.to_string(), path_len_col(rel_binding)]),
+        );
+        projections.push(concat_exprs(parts).alias(rel_binding));
+        projections.push(lit(hop_rels.len() as i64).alias(path_len_col(rel_binding)));
+        Ok(LogicalPlanBuilder::from(plan).project(projections)?.build()?)
+    }
+
     /// Project a var-length branch down to the shared schema: the original
     /// input columns plus the target binding's columns.
     fn varlen_branch_projection(
@@ -1034,6 +1106,7 @@ impl<'a> LoweringContext<'a> {
         plan: LogicalPlan,
         input_columns: &[String],
         target: &str,
+        rel_binding: Option<&String>,
     ) -> RelResult<LogicalPlan> {
         let mut names = Vec::new();
         for name in input_columns {
@@ -1043,7 +1116,9 @@ impl<'a> LoweringContext<'a> {
         }
         for field in plan.schema().fields() {
             let name = field.name();
-            if is_binding_column(name, target) && !names.iter().any(|existing| existing == name) {
+            let keep = is_binding_column(name, target)
+                || rel_binding.is_some_and(|rel| is_binding_column(name, rel));
+            if keep && !names.iter().any(|existing| existing == name) {
                 names.push(name.clone());
             }
         }
@@ -2052,14 +2127,22 @@ impl<'a> LoweringContext<'a> {
         {
             return Ok(vec![lit(ScalarValue::Utf8(None)).alias(alias)]);
         }
-        // Path values from variable-length expands are not materialized
-        // relationally; a null placeholder keeps count/exists-style queries
-        // over paths working, while queries that actually print the path
-        // surface as visible mismatches.
-        if self.options.tolerate_internal_path_state
-            && matches!(expr, IrExpr::Call { name, .. } if name == "recursive_relationship_path")
+        if let IrExpr::Call { name, args } = expr
+            && name == "recursive_relationship_path"
         {
-            return Ok(vec![lit(ScalarValue::Utf8(None)).alias(alias)]);
+            // The variable-length expand materializes the path under the
+            // binding's own name, one branch per hop count.
+            if let Some(IrExpr::Binding(binding)) = args.first()
+                && has_exact_col(plan, binding)
+            {
+                return Ok(vec![col_exact(binding).alias(alias)]);
+            }
+            // Otherwise the path was not materialized. A null placeholder
+            // keeps count/exists-style queries over paths working, while
+            // queries that actually print the path surface as mismatches.
+            if self.options.tolerate_internal_path_state {
+                return Ok(vec![lit(ScalarValue::Utf8(None)).alias(alias)]);
+            }
         }
         Ok(vec![self.lower_expr(plan, expr)?.alias(alias)])
     }
@@ -2714,6 +2797,14 @@ impl<'a> LoweringContext<'a> {
                 let [value] = args else {
                     return Err(RelError::Unsupported(format!("{name} arity")));
                 };
+                // `length(p)` over a path is its hop count. The path renders
+                // as text, so without this it would measure that text.
+                if let IrExpr::Binding(binding) = value {
+                    let hops = path_len_col(binding);
+                    if has_exact_col(plan, &hops) {
+                        return Ok(col_exact(hops));
+                    }
+                }
                 Ok(df_unicode::length(cast_utf8(self.lower_expr(plan, value)?)))
             }
             "size" => {
@@ -5803,6 +5894,10 @@ fn existing_columns_excluding_bindings(plan: &LogicalPlan, bindings: &[&str]) ->
         .collect()
 }
 
+fn path_len_col(binding: &str) -> String {
+    format!("{binding}{PATH_LEN_SUFFIX}")
+}
+
 fn is_binding_column(name: &str, binding: &str) -> bool {
     name == binding
         || name == id_col(binding)
@@ -5811,6 +5906,7 @@ fn is_binding_column(name: &str, binding: &str) -> bool {
         || name == src_label_col(binding)
         || name == dst_id_col(binding)
         || name == dst_label_col(binding)
+        || name == path_len_col(binding)
         || name.starts_with(&format!("{binding}{PROP_MARKER}"))
 }
 
