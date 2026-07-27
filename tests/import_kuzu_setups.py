@@ -322,7 +322,38 @@ BLOCKER_PATTERNS = [
 WRITE_KEYWORD_RE = re.compile(r"\b(create|set|delete|merge|insert)\b", re.IGNORECASE)
 
 
-def classify_setup(stmts):
+# Bulk generators (`UNWIND range(0, 200000) ... CREATE ...`) are scale tests
+# the tree interpreter cannot replay in bounded time; importing them turns a
+# skipped case into a multi-minute hang. Anything above this row count stays
+# a broken import.
+BULK_ROW_LIMIT = 2000
+RANGE_CALL_RE = re.compile(r"\brange\s*\(\s*(-?\d+)\s*,\s*(-?\d+)", re.IGNORECASE)
+
+
+def bulk_row_estimate(text):
+    """Largest row count any `range(a, b)` in `text` would generate."""
+    worst = 0
+    for lo, hi in RANGE_CALL_RE.findall(text):
+        worst = max(worst, abs(int(hi) - int(lo)) + 1)
+    return worst
+
+
+COPY_DATASET_RE = re.compile(
+    r"\$\{KUZU_ROOT_DIRECTORY\}/dataset/([A-Za-z0-9_.\-]+)", re.IGNORECASE
+)
+FIXTURE_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "ladybug", "dataset"
+)
+
+
+def available_fixtures():
+    try:
+        return {name for name in os.listdir(FIXTURE_ROOT)}
+    except OSError:
+        return set()
+
+
+def classify_setup(stmts, fixtures=None):
     """Split preceding statements into (setup_writes, blocker) where
     blocker is None or a category string.
 
@@ -331,12 +362,22 @@ def classify_setup(stmts):
     transaction is equivalent to not running them at all. A transaction
     still open when the case query runs sees its own writes, so a
     dangling BEGIN keeps its statements too."""
+    fixtures = fixtures if fixtures is not None else available_fixtures()
     setup = []
+    datasets = set()
     txn_buffer = None  # list while inside BEGIN..COMMIT/ROLLBACK
     for s in stmts:
         text = s.text.strip()
         if not text:
             continue
+        # `COPY t FROM "${KUZU_ROOT_DIRECTORY}/dataset/<name>/..."` bulk-loads
+        # a fixture the harness already ships. Record the fixture so the case
+        # can name it in metadata instead of replaying an unrunnable COPY.
+        if re.match(r"^\s*copy\s", text, re.IGNORECASE):
+            names = set(COPY_DATASET_RE.findall(text))
+            if names and names <= fixtures:
+                datasets |= names
+                continue
         if re.match(r"^begin\b", text, re.IGNORECASE):
             if txn_buffer is not None:
                 setup.extend(txn_buffer)  # nested begin: flush conservatively
@@ -350,10 +391,12 @@ def classify_setup(stmts):
         if re.match(r"^rollback\b", text, re.IGNORECASE):
             txn_buffer = None  # discard writes since BEGIN
             continue
+        if bulk_row_estimate(text) > BULK_ROW_LIMIT:
+            return None, None, "bulk_generation"
         if "${" in text:
-            return None, "substitution"
+            return None, None, "substitution"
         if "loop" in s.flags:
-            return None, "loop"
+            return None, None, "loop"
         if DDL_RE.match(text):
             continue  # schemaless engine: DDL dropped
         if CALL_CONFIG_RE.match(text):
@@ -364,7 +407,7 @@ def classify_setup(stmts):
                 blocked = cat
                 break
         if blocked:
-            return None, blocked
+            return None, None, blocked
         if not WRITE_KEYWORD_RE.search(text):
             continue  # pure read (MATCH..RETURN etc.) — drop
         # A statement with RETURN but no write clause is a read too
@@ -375,7 +418,12 @@ def classify_setup(stmts):
         target.append(text.rstrip(";").strip())
     if txn_buffer is not None:
         setup.extend(txn_buffer)  # query runs inside the open transaction
-    return setup, None
+    if len(datasets) > 1:
+        # Two fixtures merged into one database: the harness loads exactly
+        # one, so this case can't be reproduced.
+        return None, None, "multi_dataset"
+    dataset = next(iter(datasets), None)
+    return setup, dataset, None
 
 
 # --- Cypher CREATE pattern parsing (for graph_initializer) -----------------
@@ -801,13 +849,19 @@ def resolve_match_create(builder, parsed):
 
 
 def convert_case(case, stmts, idx, notes):
-    """Return (init_lines or None, setup_lines or None, blocker or None)."""
+    """Return (init_lines, setup_lines, dataset, blocker); any may be None."""
     preceding = stmts[:idx]
-    setup, blocker = classify_setup(preceding)
+    setup, dataset, blocker = classify_setup(preceding)
     if blocker:
-        return None, None, blocker
-    if not setup:
-        return None, None, "no_setup_writes"
+        return None, None, None, blocker
+    if not setup and not dataset:
+        return None, None, None, "no_setup_writes"
+
+    # A fixture-backed case gets its graph from the named dataset, so the
+    # structured initializer (which would replace the whole graph) is out;
+    # remaining writes replay as setup statements.
+    if dataset:
+        return None, fix_setup_label_case(setup, case) or None, dataset, None
 
     # --- Sequential method-A attempt: CREATEs (incl. resolvable
     # MATCH..CREATE rels) into the initializer, trailing SET/DELETEs into
@@ -848,30 +902,20 @@ def convert_case(case, stmts, idx, notes):
         if not builder.node_lines:
             # nothing but SET/DELETE against an empty graph: express as
             # raw setup statements (order preserved).
-            return None, fix_setup_label_case(mutates, case), None
+            return None, fix_setup_label_case(mutates, case), None, None
         init_lines = fix_label_case(builder.render(), case)
         setup_lines = (
             fix_setup_label_case(mutates, case, init_lines) if mutates else None
         )
-        return init_lines, setup_lines, None
+        return init_lines, setup_lines, None, None
 
-    # --- Method-B fallback: works when no statement needs a relationship
-    # pattern or MERGE — node-only CREATEs (any literal exprs) plus
-    # SET/DELETE in original order.
+    # --- Method-B fallback: replay the write statements verbatim as
+    # setup_statements. The engine executes CREATE with relationship
+    # patterns, MATCH..CREATE, and MERGE directly.
     fallback_ok = True
-    for text in setup:
-        head_m = re.match(r"^\s*(\w+)", text)
-        head = head_m.group(1).lower() if head_m else ""
-        if re.search(r"\bmerge\b", text, re.IGNORECASE):
-            fallback_ok = False
-            break
-        if re.search(r"\bcreate\b", text, re.IGNORECASE):
-            if head != "create" or HAS_REL_PATTERN_RE.search(text):
-                fallback_ok = False
-                break
     if fallback_ok:
-        return None, fix_setup_label_case(setup, case), None
-    return None, None, blocker
+        return None, fix_setup_label_case(setup, case), None, None
+    return None, None, None, blocker
 
 
 def fix_label_case(init_lines, case):
@@ -930,7 +974,7 @@ def fix_setup_label_case(setup_lines, case, init_lines=None):
 # File rewriting
 # ---------------------------------------------------------------------------
 
-def rewrite_case_file(case, init_lines, setup_lines, dry_run=False):
+def rewrite_case_file(case, init_lines, setup_lines, dataset=None, dry_run=False):
     path = case["path"]
     with open(path, encoding="utf-8") as f:
         raw = f.read()
@@ -943,6 +987,13 @@ def rewrite_case_file(case, init_lines, setup_lines, dry_run=False):
     if insert_at is None:
         return False
     meta = case["meta"]
+    if dataset:
+        # Point the case at the shipped fixture the upstream COPY loaded.
+        meta = dict(meta, dataset=dataset)
+        for i, line in enumerate(lines):
+            if line.rstrip("\n") == "--- metadata":
+                lines[i + 1] = json.dumps(meta, sort_keys=True, separators=(",", ":")) + "\n"
+                break
     comment = "# re-extracted from kuzu test/test_files/%s case %s" % (
         meta.get("source", "?"),
         meta.get("source_case", "?"),
@@ -1033,7 +1084,7 @@ def main():
             blockers["no_query_match"] += 1
             examples.setdefault("no_query_match", case["path"])
             continue
-        init_lines, setup_lines, blocker = convert_case(
+        init_lines, setup_lines, dataset, blocker = convert_case(
             case, all_stmts, idx, None
         )
         if blocker:
@@ -1043,8 +1094,10 @@ def main():
             if verbose:
                 print("BLOCKED", blocker, case["path"])
             continue
-        if rewrite_case_file(case, init_lines, setup_lines, dry_run):
-            if init_lines and setup_lines:
+        if rewrite_case_file(case, init_lines, setup_lines, dataset, dry_run):
+            if dataset:
+                stats["converted_dataset"] += 1
+            elif init_lines and setup_lines:
                 stats["converted_both"] += 1
             elif init_lines:
                 stats["converted_init"] += 1

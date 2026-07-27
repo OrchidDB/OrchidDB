@@ -91,17 +91,50 @@ final kuzu-agent reverts.
 - Newly honest-but-red suites worth knowing: dml_node 46/190, dml_rel 29/63,
   transaction (kuzu-ext) 137/387, copy (kuzu-ext) 55/131.
 
-Full-corpus single-process runs still OOM when many per-case timeout threads
-leak (each leaked thread pins a deep clone of the dataset). Run per-suite
-(`CYPHER_SUITE=<substring>`), and for `lsqb`/`ldbc`/`read_list` run per-case
-or per-subdir in separate processes.
+### Measurement hazards — read before trusting any number here
+
+Two defects have understated or destabilised every sweep taken so far.
+
+1. **`-- --nocapture` is mandatory.** `cargo test` captures stdout for a
+   suite that fully passes, so the tier-summary block is only printed when
+   the suite *fails*. Without the flag, every all-green suite contributes
+   nothing and the totals come out low. The numbers in section 4 above
+   predate this discovery and are understated by roughly a dozen suites.
+
+2. **Timed-out cases leak live threads.** `CYPHER_TIMEOUT_MS` runs each
+   case on a worker thread and gives up with `recv_timeout`; the thread
+   cannot be cancelled and keeps allocating for the life of the process
+   (each one also pins a deep clone of the dataset). Accumulated leaks have
+   exhausted host memory and tripped the macOS kernel watchdog
+   (`/Library/Logs/DiagnosticReports/panic-full-*.panic`, "no checkins from
+   watchdogd in 90 seconds"). `MAX_ABANDONED_CASES = 2` in
+   `tests/cypher_ladybug_cases.rs` now bounds this: past the budget the run
+   names the offenders and hard-exits 101 rather than taking the host down.
+   Note the runner default is `CYPHER_TIMEOUT_MS=0` — *no* per-case
+   timeout — so an unguarded runaway case will otherwise hang forever.
+
+The paired upstream guard is `BULK_ROW_LIMIT = 2000` in
+`tests/import_kuzu_setups.py`, which refuses to import setups that generate
+huge row counts (one imported `UNWIND range(1, 300000) AS i CREATE …` was
+the case that wedged the machine).
+
+Run per-suite (`CYPHER_SUITE="ladybug/<suite>/"` — keep the prefix and
+trailing slash, bare names double-count via substring overlap), and for
+`lsqb`/`ldbc`/`read_list` run per-case or per-subdir in separate processes.
 
 ## 5. Ranked remaining corpus-side work
 
-1. **Finish the 649 blocked re-imports where feasible**: biggest buckets are
-   setups needing relationship CREATE mid-sequence (would be unblocked by
-   interpreter edge-insert support, or by smarter reordering into the
-   initializer DSL) and MERGE-based setups. Script:
+1. **Finish the remaining blocked re-imports.** The two biggest historical
+   buckets — setups needing relationship `CREATE` mid-sequence, and
+   `MERGE`-based setups — are now unblocked: the interpreter supports edge
+   insertion, relationship patterns/chains/self-loops in `CREATE`, `SET`
+   map forms, relationship and `DETACH DELETE`, and `MERGE` with
+   `ON CREATE` / `ON MATCH`. Combined with fixture dataset overrides this
+   converted 127 cases and dropped broken-import from 368 to 78. Remaining
+   importer blockers, by count: `no_setup_writes` 383, `substitution` 35,
+   `call` 19, `directive` 9, `no_upstream_case` 8, `copy` 7,
+   `no_upstream_file` 6, `no_query_match` 4, plus `bulk_generation`
+   (deliberately refused, see `BULK_ROW_LIMIT`). Script:
    `tests/import_kuzu_setups.py`.
 2. **Missing TCK initializers / unmatched scenarios** (~119 unmatched at last
    count): extend the matching in `tests/import_tck_initializers.py` /

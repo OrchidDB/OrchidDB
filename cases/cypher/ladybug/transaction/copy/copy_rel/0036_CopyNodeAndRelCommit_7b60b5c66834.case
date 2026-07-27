@@ -1,6 +1,9 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyNodeAndRelCommit.7b60b5c66834","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyNodeAndRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyNodeAndRelCommit.7b60b5c66834","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyNodeAndRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:person)-[e:knows]->(:person) RETURN COUNT(e)
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/copy/copy_rel.test case CopyNodeAndRelCommit
+MATCH (p1:person) MATCH (p2:person) WHERE p1.fname='Bob' AND p2.fname='Alice' CREATE (p1)-[e:knows]->(p2)
 --- expected
 7

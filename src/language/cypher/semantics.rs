@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::language::cypher::ast::{
-    BinaryOp, Clause, ExistsSubquery, Expr, Literal, PatternElement, PatternPart, ProjectionBody,
-    Query, UnaryOp,
+    BinaryOp, Clause, ExistsSubquery, Expr, Literal, NodePattern, PatternElement, PatternPart,
+    ProjectionBody, Query, UnaryOp,
 };
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 
@@ -169,6 +169,16 @@ impl SemanticAnalyzer {
         let mut result_fields = None;
         for clause in &query.clauses {
             match clause {
+                Clause::Merge(clause) => {
+                    // MERGE's pattern binds like MATCH — the create arm
+                    // introduces exactly the same variables.
+                    self.analyze_pattern_part_with_clause(&clause.pattern, scope, None)?;
+                    for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                        for expr in merge_set_item_exprs(item) {
+                            self.validate_expr_scope(expr, scope, "MERGE SET")?;
+                        }
+                    }
+                }
                 Clause::Match(clause) => {
                     let mut clause_relationships = BTreeMap::new();
                     for part in &clause.patterns {
@@ -244,17 +254,7 @@ impl SemanticAnalyzer {
                 }
                 Clause::Create(clause) => {
                     for part in &clause.patterns {
-                        if let Some(properties) = &part.element.start.properties {
-                            self.validate_expr_scope(properties, scope, "CREATE properties")?;
-                        }
-                        if let Some(variable) = &part.element.start.variable {
-                            if scope.contains(variable) {
-                                return Err(CypherPlanError::Invalid(format!(
-                                    "CREATE variable `{variable}` is already in scope"
-                                )));
-                            }
-                            scope.insert(variable.clone(), BindingKind::Node);
-                        }
+                        self.validate_create_node(&part.element.start, scope)?;
                         for chain in &part.element.chains {
                             if let Some(properties) = &chain.relationship.properties {
                                 self.validate_expr_scope(
@@ -266,22 +266,12 @@ impl SemanticAnalyzer {
                             if let Some(variable) = &chain.relationship.variable {
                                 if scope.contains(variable) {
                                     return Err(CypherPlanError::Invalid(format!(
-                                        "CREATE variable `{variable}` is already in scope"
+                                        "Binder exception: Variable {variable} already exists."
                                     )));
                                 }
                                 scope.insert(variable.clone(), BindingKind::Relationship);
                             }
-                            if let Some(properties) = &chain.node.properties {
-                                self.validate_expr_scope(properties, scope, "CREATE properties")?;
-                            }
-                            if let Some(variable) = &chain.node.variable {
-                                if scope.contains(variable) {
-                                    return Err(CypherPlanError::Invalid(format!(
-                                        "CREATE variable `{variable}` is already in scope"
-                                    )));
-                                }
-                                scope.insert(variable.clone(), BindingKind::Node);
-                            }
+                            self.validate_create_node(&chain.node, scope)?;
                         }
                     }
                 }
@@ -537,6 +527,34 @@ impl SemanticAnalyzer {
             outputs.push(SemanticOutput { name, kind });
         }
         outputs
+    }
+
+    /// Validate one node pattern inside CREATE. A variable already in scope
+    /// re-references that node, which is how `MATCH (a) CREATE (a)-[:R]->(b)`
+    /// and self-loops work; restating labels or properties on it is not a
+    /// reference but a redefinition, and is rejected.
+    fn validate_create_node(
+        &mut self,
+        pattern: &NodePattern,
+        scope: &mut SemanticScope,
+    ) -> CypherPlanResult<()> {
+        if let Some(variable) = &pattern.variable {
+            if scope.contains(variable) {
+                if !pattern.labels.is_empty() || pattern.properties.is_some() {
+                    return Err(CypherPlanError::Invalid(format!(
+                        "Binder exception: Variable {variable} already exists."
+                    )));
+                }
+                return Ok(());
+            }
+        }
+        if let Some(properties) = &pattern.properties {
+            self.validate_expr_scope(properties, scope, "CREATE properties")?;
+        }
+        if let Some(variable) = &pattern.variable {
+            scope.insert(variable.clone(), BindingKind::Node);
+        }
+        Ok(())
     }
 
     fn validate_expr_scope(
@@ -844,6 +862,17 @@ fn validate_clause_static_expression_types(clause: &Clause) -> CypherPlanResult<
             }
             if let Some(predicate) = &clause.predicate {
                 validate_static_expression_types(predicate)?;
+            }
+            Ok(())
+        }
+        Clause::Merge(clause) => {
+            for properties in merge_pattern_properties(&clause.pattern) {
+                validate_static_expression_types(properties)?;
+            }
+            for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                for expr in merge_set_item_exprs(item) {
+                    validate_static_expression_types(expr)?;
+                }
             }
             Ok(())
         }
@@ -2161,6 +2190,19 @@ fn collect_query_references(
                     collect_free_variables(predicate, &mut query_bound, out);
                 }
             }
+            Clause::Merge(clause) => {
+                for properties in merge_pattern_properties(&clause.pattern) {
+                    collect_free_variables(properties, &mut query_bound, out);
+                }
+                for variable in merge_pattern_variables(&clause.pattern) {
+                    query_bound.insert(variable);
+                }
+                for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                    for expr in merge_set_item_exprs(item) {
+                        collect_free_variables(expr, &mut query_bound, out);
+                    }
+                }
+            }
             Clause::Create(clause) => {
                 for part in &clause.patterns {
                     if let Some(properties) = &part.element.start.properties {
@@ -2349,6 +2391,11 @@ fn remove_query_outputs(query: &Query, refs: &mut BTreeSet<String>) {
                     }
                 }
             }
+            Clause::Merge(clause) => {
+                for variable in merge_pattern_variables(&clause.pattern) {
+                    refs.remove(&variable);
+                }
+            }
             Clause::Create(clause) => {
                 for part in &clause.patterns {
                     if let Some(variable) = &part.element.start.variable {
@@ -2463,6 +2510,17 @@ fn query_contains_aggregate(query: &Query) -> bool {
         Clause::Call(clause) => {
             clause.args.iter().any(contains_aggregate)
                 || clause.predicate.as_ref().is_some_and(contains_aggregate)
+        }
+        Clause::Merge(clause) => {
+            merge_pattern_properties(&clause.pattern)
+                .into_iter()
+                .any(contains_aggregate)
+                || clause
+                    .on_create
+                    .iter()
+                    .chain(clause.on_match.iter())
+                    .flat_map(merge_set_item_exprs)
+                    .any(contains_aggregate)
         }
         Clause::Create(clause) => clause.patterns.iter().any(|part| {
             part.element
@@ -2705,5 +2763,49 @@ mod tests {
         assert!(err.contains(
             "Binder exception: Expression hello has data type STRING but expected INT64."
         ));
+    }
+}
+
+/// Every variable a pattern part binds (node and relationship).
+fn merge_pattern_variables(pattern: &PatternPart) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(variable) = &pattern.element.start.variable {
+        out.push(variable.clone());
+    }
+    for chain in &pattern.element.chains {
+        if let Some(variable) = &chain.relationship.variable {
+            out.push(variable.clone());
+        }
+        if let Some(variable) = &chain.node.variable {
+            out.push(variable.clone());
+        }
+    }
+    out
+}
+
+/// Every inline property map a pattern part carries.
+fn merge_pattern_properties(pattern: &PatternPart) -> Vec<&Expr> {
+    let mut out = Vec::new();
+    if let Some(properties) = &pattern.element.start.properties {
+        out.push(properties);
+    }
+    for chain in &pattern.element.chains {
+        if let Some(properties) = &chain.relationship.properties {
+            out.push(properties);
+        }
+        if let Some(properties) = &chain.node.properties {
+            out.push(properties);
+        }
+    }
+    out
+}
+
+/// Every expression a `SET` item evaluates.
+fn merge_set_item_exprs(item: &crate::language::cypher::ast::SetItem) -> Vec<&Expr> {
+    use crate::language::cypher::ast::SetItem as Item;
+    match item {
+        Item::Property { target, value, .. } => vec![target, value],
+        Item::Replace { value, .. } | Item::Merge { value, .. } => vec![value],
+        Item::Labels { .. } => Vec::new(),
     }
 }

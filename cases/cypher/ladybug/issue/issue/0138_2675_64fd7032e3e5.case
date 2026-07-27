@@ -2,5 +2,16 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2675.64fd7032e3e5","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2675","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:V3)-[:MYREL]->(b:V2) RETURN a.*, b.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2675
+node s0_v21:V2 {id: "v21"}
+node s0_v11:V1 {id: "v11"}
+node s1_v22:V2 {id: "v22"}
+node s1_v23:V2 {id: "v23"}
+node s2_anon1:V3 {id: "v3"}
+node s2_anon2:V2 {id: "v2"}
+edge s0_v21 -[:E]-> s0_v11
+edge s1_v22 -[:E]-> s1_v23
+edge s2_anon1 -[:MYREL]-> s2_anon2
 --- expected
 v3|v2

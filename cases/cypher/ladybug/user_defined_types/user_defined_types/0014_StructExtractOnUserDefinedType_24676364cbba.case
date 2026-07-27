@@ -2,6 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.StructExtractOnUserDefinedType.24676364cbba","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDT","source_log":"StructExtractOnUserDefinedType","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person)-[e:knows]->(p1:person) return p.description, p1.description, e.info
+--- setup_statements
+# re-extracted from kuzu test/test_files/user_defined_types/user_defined_types.test case UDT
+CREATE (:person {id: 5, description: {age: 5, name: 'Alice'}})
+CREATE (:person {id: 8, description: {age: 3, name: 'Bob'}})
+CREATE (:person {id: 12, description: {age: 1, name: 'Dan'}})
+MATCH (p:person {id: 5}), (p1:person {id: 8}) CREATE (p)-[:knows {info: {meetDate:date('2020-05-03'), length:interval('3 years 2 hours')}}]->(p1)
+MATCH (p:person {id: 12}), (p1:person {id: 8}) CREATE (p)-[:knows {info: {meetDate:date('2011-11-12'), length:interval('3 days 2 minutes')}}]->(p1)
+MATCH (p:person {id: 8}), (p1:person {id: 5}) CREATE (p)-[:knows {info: {meetDate:date('1988-02-21'), length:interval('3 hours')}}]->(p1)
 --- expected
 {age: 1, name: Dan}|{age: 3, name: Bob}|{meetDate: 2011-11-12, length: 3 days 00:02:00}
 {age: 3, name: Bob}|{age: 5, name: Alice}|{meetDate: 1988-02-21, length: 03:00:00}

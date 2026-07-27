@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_basic.CopyDoublePK.fa6875c3237d","language":"cypher","ordered":true,"source":"copy/copy_pk_basic.test","source_case":"CopyDoublePK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"primary-key-tests","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_basic.CopyDoublePK.fa6875c3237d","language":"cypher","ordered":true,"source":"copy/copy_pk_basic.test","source_case":"CopyDoublePK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person)-[:follows]->(o:org) return p.fName, o.ID
 --- expected

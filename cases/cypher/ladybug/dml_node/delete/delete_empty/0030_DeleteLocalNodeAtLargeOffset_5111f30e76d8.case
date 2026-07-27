@@ -1,6 +1,9 @@
 --- metadata
-{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_empty.DeleteLocalNodeAtLargeOffset.5111f30e76d8","language":"cypher","ordered":true,"source":"dml_node/delete/delete_empty.test","source_case":"DeleteLocalNodeAtLargeOffset","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_empty.DeleteLocalNodeAtLargeOffset.5111f30e76d8","language":"cypher","ordered":true,"source":"dml_node/delete/delete_empty.test","source_case":"DeleteLocalNodeAtLargeOffset","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (c:Comment) WHERE c.id = 8933535696141 RETURN c.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/delete/delete_empty.test case DeleteLocalNodeAtLargeOffset
+CREATE (:Comment {id: 8933535696141})
 --- expected
 8933535696141

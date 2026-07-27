@@ -282,6 +282,16 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
                     .count();
                 stack.push((input, depth + 1));
             }
+            Node::GraphMerge {
+                input,
+                match_arm,
+                create_arm,
+                ..
+            } => {
+                stack.push((input, depth + 1));
+                stack.push((match_arm, depth + 1));
+                stack.push((create_arm, depth + 1));
+            }
             Node::GraphReturn { input, .. }
             | Node::GraphConstructTriples { input, .. }
             | Node::GraphDescribe { input, .. }
@@ -1320,10 +1330,28 @@ impl<'a> LoweringContext<'a> {
         };
         let mut islands = left.islands;
         islands.merge(right.islands);
+        // A join widens the row: both sides' fields survive. Keeping only
+        // `left.fields` silently drops everything the right side binds, so
+        // any later reference to it fails to resolve ("Referenced column
+        // … was not found"). This stayed latent while nothing in the Cypher
+        // path emitted `GraphJoin`; uncorrelated `MATCH (a), (b)` now does.
+        // Left order wins on collision, matching the interpreter's
+        // `join_op`, which inserts right bindings with `or_insert_with`.
+        let fields = match (left.fields, right.fields) {
+            (Some(mut left_fields), Some(right_fields)) => {
+                for field in right_fields {
+                    if !left_fields.contains(&field) {
+                        left_fields.push(field);
+                    }
+                }
+                Some(left_fields)
+            }
+            (left_fields, right_fields) => left_fields.or(right_fields),
+        };
         Ok(LoweredNode {
             plan,
             islands,
-            fields: left.fields,
+            fields,
             result_form: left.result_form,
         })
     }
@@ -3052,7 +3080,7 @@ impl<'a> LoweringContext<'a> {
         match shape {
             BindingShape::Node => {
                 for label in self.graph.node_label_order() {
-                    push_keys(self.graph.node_property_keys(label));
+                    push_keys(self.graph.node_property_keys_with_id(label));
                 }
             }
             BindingShape::Edge => {
@@ -5690,6 +5718,12 @@ fn first_correlate_bindings(node: &Node) -> Option<Vec<String>> {
 fn node_children(node: &Node) -> Vec<&Node> {
     use Node::*;
     match node {
+        GraphMerge {
+            input,
+            match_arm,
+            create_arm,
+            ..
+        } => vec![input, match_arm, create_arm],
         GraphReturn { input, .. }
         | GraphConstructTriples { input, .. }
         | GraphDescribe { input, .. }
@@ -5780,6 +5814,7 @@ fn unsupported_node_name(node: &Node) -> &'static str {
         Node::GraphRepeat { .. } => "GraphRepeat",
         Node::GraphPathFilter { .. } => "GraphPathFilter",
         Node::GraphCreate { .. } => "GraphCreate",
+        Node::GraphMerge { .. } => "GraphMerge",
         Node::GraphSetProperty { .. } => "GraphSetProperty",
         Node::GraphDelete { .. } => "GraphDelete",
         Node::GraphGroupMap { .. } => "GraphGroupMap",

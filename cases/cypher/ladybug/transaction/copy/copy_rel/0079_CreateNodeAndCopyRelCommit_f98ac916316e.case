@@ -1,7 +1,14 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CreateNodeAndCopyRelCommit.f98ac916316e","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CreateNodeAndCopyRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CreateNodeAndCopyRelCommit.f98ac916316e","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CreateNodeAndCopyRelCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:person)-[e:knows]->(:person) return e.date
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/copy/copy_rel.test case CreateNodeAndCopyRelCommit
+CREATE (p:person {id: 0, fname: 'Alice'})
+CREATE (p:person {id: 2, fname: 'Bob'})
+CREATE (p:person {id: 3, fname: 'Carol'})
+CREATE (p:person {id: 5, fname: 'Dan'})
+CREATE (p:person {id: 7, fname: 'Elizabeth'})
 --- expected
 2021-06-30
 2021-06-30

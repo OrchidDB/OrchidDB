@@ -512,12 +512,38 @@ pub struct CreateNode {
     pub properties: Option<IrExpr>,
 }
 
+/// One relationship element created by `GraphCreate`. `src`/`dst` name
+/// bindings that are either already in scope or created by the same
+/// `GraphCreate` node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateEdge {
+    pub bind: Option<BindingId>,
+    pub rel_type: String,
+    pub src: BindingId,
+    pub dst: BindingId,
+    pub properties: Option<IrExpr>,
+}
+
 /// One mutation target for `GraphSetProperty`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetPropertyItem {
     pub target: IrExpr,
+    /// The property name for [`SetMode::Property`]; empty otherwise.
     pub key: String,
+    pub mode: SetMode,
     pub value: IrExpr,
+}
+
+/// How a `GraphSetProperty` item applies its value. Cypher spells these
+/// `n.k = v`, `n = {…}` and `n += {…}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetMode {
+    /// Assign one property named by `key`.
+    Property,
+    /// Replace the whole property bag with the map `value`.
+    Replace,
+    /// Merge the map `value` into the existing property bag.
+    Merge,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -693,11 +719,25 @@ pub enum Node {
     },
 
     // -------- mutations --------
-    /// `GraphCreate(nodes)` — create graph elements once per input row.
+    /// `GraphCreate(nodes, edges)` — create graph elements once per input
+    /// row. All `nodes` are created before any `edges`, so an edge may name
+    /// a node bound in the same clause.
     GraphCreate {
         graph: String,
         nodes: Vec<CreateNode>,
+        edges: Vec<CreateEdge>,
         input: Box<Node>,
+    },
+    /// `GraphMerge` — Cypher `MERGE`. Per input row, run `match_arm`; if it
+    /// yields no rows, run `create_arm` instead. Both arms are correlated
+    /// subplans rooted at `GraphCorrelate(correlation)` and carry their own
+    /// `ON MATCH` / `ON CREATE` mutations.
+    GraphMerge {
+        correlation: Vec<BindingId>,
+        outputs: Vec<BindingId>,
+        input: Box<Node>,
+        match_arm: Box<Node>,
+        create_arm: Box<Node>,
     },
     /// `GraphSetProperty(items)` — mutate properties and pass rows through.
     GraphSetProperty {
@@ -1143,6 +1183,7 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
         Node::GraphCreate {
             graph,
             nodes,
+            edges,
             input,
         } => {
             let specs = nodes
@@ -1153,8 +1194,38 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            writeln!(buf, "GraphCreate(graph=[{graph}], nodes=[{specs}])").ok();
+            let edge_specs = edges
+                .iter()
+                .map(|edge| {
+                    let bind = edge.bind.as_deref().unwrap_or("");
+                    format!("({})-[{bind}:{}]->({})", edge.src, edge.rel_type, edge.dst)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(
+                buf,
+                "GraphCreate(graph=[{graph}], nodes=[{specs}], edges=[{edge_specs}])"
+            )
+            .ok();
             write_node(buf, input, depth + 1);
+        }
+        Node::GraphMerge {
+            correlation,
+            outputs,
+            input,
+            match_arm,
+            create_arm,
+        } => {
+            writeln!(
+                buf,
+                "GraphMerge(correlation=[{}], outputs=[{}])",
+                correlation.join(", "),
+                outputs.join(", ")
+            )
+            .ok();
+            write_node(buf, input, depth + 1);
+            write_node(buf, match_arm, depth + 1);
+            write_node(buf, create_arm, depth + 1);
         }
         Node::GraphSetProperty { items, input } => {
             let specs = items

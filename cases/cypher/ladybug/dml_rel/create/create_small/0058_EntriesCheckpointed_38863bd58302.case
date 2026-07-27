@@ -1,6 +1,9 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.38863bd58302","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRelOnLargeNodeTable","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
+{"dataset":"lsqb-sf01","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.38863bd58302","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRelOnLargeNodeTable","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:N1)-[r:Rel1]->(m:N2) RETURN n.ID, m.ID
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case CreateOneToOneRelOnLargeNodeTable
+MATCH (n1:N1), (n2:N2) WHERE n1.ID=1099512015344 AND n2.ID=3 CREATE (n1)-[r:Rel1]->(n2)
 --- expected
 1099512015344|3

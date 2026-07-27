@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateWithLargeStringPK.098d73b4a05a","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateWithLargeStringPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateWithLargeStringPK
+node s0_t:test {id: "fe38f9dc-f761-4184-8b8b"}
+node s1_t:test {id: "foobar-ewe-j323-8nd*-ewew"}
 --- expected
 fe38f9dc-f761-4184-8b8b
 foobar-ewe-j323-8nd*-ewew

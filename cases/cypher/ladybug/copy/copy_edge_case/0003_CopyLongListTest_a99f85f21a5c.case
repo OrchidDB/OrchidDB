@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_edge_case.CopyLongListTest.a99f85f21a5c","language":"cypher","ordered":true,"source":"copy/copy_edge_case.test","source_case":"CopyLongListTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.copy.copy_edge_case.CopyLongListTest.a99f85f21a5c","language":"cypher","ordered":true,"source":"copy/copy_edge_case.test","source_case":"CopyLongListTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 match (d:dog) return d.*
 --- expected

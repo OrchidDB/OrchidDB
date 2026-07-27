@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_duplicate.CopyInt64PK.75aabad87551","language":"cypher","ordered":true,"source":"copy/copy_pk_duplicate.test","source_case":"CopyInt64PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"primary-key-tests","expected_kind":"rows","id":"cypher.ladybug.copy.copy_pk_duplicate.CopyInt64PK.75aabad87551","language":"cypher","ordered":true,"source":"copy/copy_pk_duplicate.test","source_case":"CopyInt64PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) return p.*
 --- expected

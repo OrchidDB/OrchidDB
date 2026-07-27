@@ -2,5 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.rel_empty.CreateRelRecovery.8831972c11c2","language":"cypher","ordered":true,"source":"transaction/recovery/rel_empty.test","source_case":"CreateRelRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person)-[r:knows]->(b:person) RETURN a.id, b.id, r.since
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/recovery/rel_empty.test case CreateRelRecovery
+CREATE (a:person {id:0, isTrue:True, birthday:Date('2019-01-01')})
+CREATE (a:person {id:1, isTrue:False, birthday:Date('2020-01-01')})
+MATCH (a:person), (b:person) WHERE a.id = 0 AND b.id = 1 CREATE (a)-[r:knows {since:Date('2019-01-01')}]->(b)
 --- expected
 0|1|2019-01-01

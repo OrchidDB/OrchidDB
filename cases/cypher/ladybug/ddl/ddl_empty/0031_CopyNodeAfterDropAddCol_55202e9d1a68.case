@@ -1,7 +1,10 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyNodeAfterDropAddCol.55202e9d1a68","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyNodeAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"demo-db","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyNodeAfterDropAddCol.55202e9d1a68","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyNodeAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:User) RETURN n.name, n.age
+--- setup_statements
+# re-extracted from kuzu test/test_files/ddl/ddl_empty.test case CopyNodeAfterDropAddCol
+CREATE (:User {name: 'Alice', alias: 'A'})
 --- expected
 Alice|
 Adam|30

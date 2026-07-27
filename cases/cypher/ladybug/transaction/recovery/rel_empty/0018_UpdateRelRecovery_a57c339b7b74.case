@@ -2,6 +2,13 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.rel_empty.UpdateRelRecovery.a57c339b7b74","language":"cypher","ordered":true,"source":"transaction/recovery/rel_empty.test","source_case":"UpdateRelRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person)-[r:knows]->(b:person) RETURN a.id, b.id, r.since
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/recovery/rel_empty.test case UpdateRelRecovery
+CREATE (a:person {id:0, isTrue:True, birthday:Date('2019-01-01')})
+CREATE (a:person {id:1, isTrue:False, birthday:Date('2020-01-01')})
+MATCH (a:person), (b:person) WHERE a.id = 1 AND b.id = 1 CREATE (a)-[r:knows {since:Date('2010-01-01')}]->(b)
+MATCH (a:person), (b:person) WHERE a.id = 0 AND b.id = 1 CREATE (a)-[r:knows {since:Date('2019-01-01')}]->(b)
+MATCH (a:person)-[e:knows]->(b:person) WHERE a.id = 0 AND b.id = 1 SET e.since = Date('2022-01-01')
 --- expected
 1|1|2010-01-01
 0|1|2022-01-01

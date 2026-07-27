@@ -6,6 +6,7 @@ pub enum Clause {
     Unwind(UnwindClause),
     Call(ProcedureCallClause),
     Create(CreateClause),
+    Merge(MergeClause),
     Set(SetClause),
     Delete(DeleteClause),
     With(WithClause),
@@ -44,6 +45,15 @@ pub struct ProcedureYieldItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateClause {
     pub patterns: Vec<PatternPart>,
+}
+
+/// `MERGE (pattern) [ON CREATE SET …] [ON MATCH SET …]`. The pattern is
+/// matched first; only if it matches nothing is it created.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeClause {
+    pub pattern: PatternPart,
+    pub on_create: Vec<SetItem>,
+    pub on_match: Vec<SetItem>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

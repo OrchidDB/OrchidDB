@@ -2,6 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.nested_types.InsertListOfStructCommit.93f9e6e9333a","language":"cypher","ordered":true,"source":"transaction/create_node/nested_types.test","source_case":"InsertListOfStructCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) return t.random
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/nested_types.test case InsertListOfStructCommit
+node s0_anon1:test
+node s0_anon2:test
+node s0_anon3:test
 --- expected
 [{revenue: 144, ages: [3.200000,7.200000]}]
 [{revenue: 144, ages: [3.200000,7.200000]}]

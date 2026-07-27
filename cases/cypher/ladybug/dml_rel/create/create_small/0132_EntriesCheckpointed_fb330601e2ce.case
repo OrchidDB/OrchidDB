@@ -2,6 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.fb330601e2ce","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"issue3906","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n0)<-[r4]-(n1)-[r5]-(n2), (n3 :L3)-[r6]->(n4)-[r7]-(n5) RETURN DISTINCT r7.k80 , n0.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case issue3906
+CREATE (n0 :L3{k17:false, k16: 8993382861735600205, k19:true, k18:true, k20: 627801758695764003, id: 1})
+CREATE (n0 :L1{k5:true, k6: "0sE0v", id: 3, k7:true, k8: 4583869781704786832, k9: -2450552654359393402})
+CREATE (n0 :L3{k17:true, k16: -6767407109008028552, k19:true, k18:true, k20: 3222522150000917167, id: 7})
+CREATE (n0 :L2{k11:true, k10: "hxS0uD", id: 8, k13: "GW6VMHfM", k12: "hSWWBpac0", k15: -8129440654474488646, k14:true})
+MATCH (n0 {id: 3}), (n1 {id: 8}) CREATE(n0)-[r :T4{k80: 1623934273299180333, k81: 2691253309671402116, k75:false, k77: "OdcmX8O", k76: 8922449714764930060, id: 12, k79: 2358311490140127332, k78: -8031617625991434006}]->(n1)
+MATCH (n0 {id: 7}), (n1 {id: 3}) CREATE(n0)-[r :T3{k71:false, k70: "5vgOI", k72: "yfz47n32", k74:false, id: 14, k68: 5436079733038307420, k69: 7879073479750221767}]->(n1)
 --- expected
 |3
 |8

@@ -95,11 +95,46 @@ struct EdgeRowLocation {
     local_row: i64,
 }
 
+/// An edge added by `CREATE`/`MERGE` after the catalog was built. Kept in
+/// the overlay rather than an Arrow batch so writes stay cheap and the
+/// original batches remain shareable.
+#[derive(Debug, Clone)]
+struct InsertedEdge {
+    src_label: String,
+    src_id: i64,
+    dst_label: String,
+    dst_id: i64,
+    properties: BTreeMap<String, Value>,
+}
+
 #[derive(Debug, Clone, Default)]
 struct GraphOverlay {
     inserted_nodes: HashMap<(String, i64), BTreeMap<String, Value>>,
     node_property_overrides: HashMap<(String, i64), BTreeMap<String, Value>>,
     deleted_nodes: HashSet<(String, i64)>,
+    /// Keyed by (rel_type, edge_row); `BTreeMap` so iteration is id-ordered.
+    inserted_edges: BTreeMap<(String, i64), InsertedEdge>,
+    edge_property_overrides: HashMap<(String, i64), BTreeMap<String, Value>>,
+    deleted_edges: HashSet<(String, i64)>,
+    /// Per-label / per-rel-type insert counters. Kept alongside the maps so
+    /// allocating the next id stays O(1) — a bulk `CREATE` loop would
+    /// otherwise be quadratic in the number of rows it writes.
+    inserted_node_counts: HashMap<String, i64>,
+    inserted_edge_counts: HashMap<String, i64>,
+    /// Adjacency for overlay edges, so expanding a node does not scan
+    /// every edge written so far.
+    inserted_out_adj: HashMap<(String, i64), Vec<(String, i64)>>,
+    inserted_in_adj: HashMap<(String, i64), Vec<(String, i64)>>,
+    /// Elements whose base-table property bag was wholesale replaced by
+    /// `SET n = {…}`. Any key not present in the overrides reads as null.
+    replaced_node_properties: HashSet<(String, i64)>,
+    replaced_edge_properties: HashSet<(String, i64)>,
+}
+
+impl GraphOverlay {
+    fn edge_is_live(&self, rel_type: &str, edge_row: i64) -> bool {
+        !self.deleted_edges.contains(&(rel_type.to_string(), edge_row))
+    }
 }
 
 impl PropertyGraph {
@@ -242,6 +277,11 @@ impl PropertyGraph {
                 out.push(rel_type.clone());
             }
         }
+        for (rel_type, _) in self.overlay.borrow().inserted_edges.keys() {
+            if !out.iter().any(|existing| existing == rel_type) {
+                out.push(rel_type.clone());
+            }
+        }
         out.sort();
         out
     }
@@ -276,11 +316,33 @@ impl PropertyGraph {
                     if overlay
                         .deleted_nodes
                         .contains(&(r.other_label.clone(), r.other_id))
+                        || !overlay.edge_is_live(rel, r.edge_row)
                     {
                         continue;
                     }
                     out.push((rel.clone(), r.edge_row, r.other_label.clone(), r.other_id));
                 }
+            }
+        }
+        if let Some(refs) = overlay
+            .inserted_out_adj
+            .get(&(src_label.to_string(), src_id))
+        {
+            for (rel, edge_row) in refs {
+                if !rel_filter.is_empty() && !rel_filter.iter().any(|want| want == rel) {
+                    continue;
+                }
+                let Some(edge) = overlay.inserted_edges.get(&(rel.clone(), *edge_row)) else {
+                    continue;
+                };
+                if !overlay.edge_is_live(rel, *edge_row)
+                    || overlay
+                        .deleted_nodes
+                        .contains(&(edge.dst_label.clone(), edge.dst_id))
+                {
+                    continue;
+                }
+                out.push((rel.clone(), *edge_row, edge.dst_label.clone(), edge.dst_id));
             }
         }
         out
@@ -314,11 +376,30 @@ impl PropertyGraph {
                     if overlay
                         .deleted_nodes
                         .contains(&(r.other_label.clone(), r.other_id))
+                        || !overlay.edge_is_live(rel, r.edge_row)
                     {
                         continue;
                     }
                     out.push((rel.clone(), r.edge_row, r.other_label.clone(), r.other_id));
                 }
+            }
+        }
+        if let Some(refs) = overlay.inserted_in_adj.get(&(dst_label.to_string(), dst_id)) {
+            for (rel, edge_row) in refs {
+                if !rel_filter.is_empty() && !rel_filter.iter().any(|want| want == rel) {
+                    continue;
+                }
+                let Some(edge) = overlay.inserted_edges.get(&(rel.clone(), *edge_row)) else {
+                    continue;
+                };
+                if !overlay.edge_is_live(rel, *edge_row)
+                    || overlay
+                        .deleted_nodes
+                        .contains(&(edge.src_label.clone(), edge.src_id))
+                {
+                    continue;
+                }
+                out.push((rel.clone(), *edge_row, edge.src_label.clone(), edge.src_id));
             }
         }
         out
@@ -327,8 +408,21 @@ impl PropertyGraph {
     /// Property-key columns exposed for a node label. Excludes the
     /// id/source/destination columns that the catalog reserves.
     pub fn node_property_keys(&self, label: &str) -> Vec<String> {
+        self.node_property_keys_inner(label, false)
+    }
+
+    /// Like [`Self::node_property_keys`] but keeps a column literally named
+    /// `id`. Cypher fixtures use `id` as an ordinary primary-key property
+    /// and expect `RETURN n.*` / node printing to show it; Gremlin treats
+    /// element ids as separate from properties, so the default hides it.
+    pub fn node_property_keys_with_id(&self, label: &str) -> Vec<String> {
+        self.node_property_keys_inner(label, true)
+    }
+
+    fn node_property_keys_inner(&self, label: &str, keep_id: bool) -> Vec<String> {
+        let excluded: &[&str] = if keep_id { &[] } else { &["id"] };
         let mut out = match self.nodes.get(label) {
-            Some(table) => table_property_keys(&table.batch, &["id"]),
+            Some(table) => table_property_keys(&table.batch, excluded),
             None => Vec::new(),
         };
         let overlay = self.overlay.borrow();
@@ -364,6 +458,26 @@ impl PropertyGraph {
         } else if let Some(table) = self.edges.get(rel_type) {
             out = table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"]);
         }
+        let overlay = self.overlay.borrow();
+        let inserted = overlay
+            .inserted_edges
+            .iter()
+            .filter(|((edge_rel, _), _)| edge_rel == rel_type)
+            .map(|(_, edge)| &edge.properties)
+            .chain(
+                overlay
+                    .edge_property_overrides
+                    .iter()
+                    .filter(|((edge_rel, _), _)| edge_rel == rel_type)
+                    .map(|(_, props)| props),
+            );
+        for props in inserted {
+            for key in props.keys() {
+                if !out.iter().any(|existing| existing == key) {
+                    out.push(key.clone());
+                }
+            }
+        }
         out
     }
 
@@ -383,6 +497,9 @@ impl PropertyGraph {
                 return value.clone();
             }
         }
+        if overlay.replaced_node_properties.contains(&node_key) {
+            return Value::Null;
+        }
         drop(overlay);
         let Some(table) = self.nodes.get(label) else {
             return Value::Null;
@@ -392,6 +509,24 @@ impl PropertyGraph {
 
     /// Read a property of an edge by edge row id.
     pub fn edge_property(&self, rel_type: &str, edge_row: i64, key: &str) -> Value {
+        let edge_key = (rel_type.to_string(), edge_row);
+        {
+            let overlay = self.overlay.borrow();
+            if overlay.deleted_edges.contains(&edge_key) {
+                return Value::Null;
+            }
+            if let Some(edge) = overlay.inserted_edges.get(&edge_key) {
+                return map_property_value(&edge.properties, key);
+            }
+            if let Some(props) = overlay.edge_property_overrides.get(&edge_key) {
+                if let Some(value) = map_property_value_if_present(props, key) {
+                    return value.clone();
+                }
+            }
+            if overlay.replaced_edge_properties.contains(&edge_key) {
+                return Value::Null;
+            }
+        }
         if let Some(location) = self
             .edge_row_locations
             .get(&(rel_type.to_string(), edge_row))
@@ -422,7 +557,78 @@ impl PropertyGraph {
                     .map(|table| table.batch.num_rows() as i64)
                     .unwrap_or(0)
             });
-        (0..count).collect()
+        let overlay = self.overlay.borrow();
+        let mut out: Vec<i64> = (0..count)
+            .filter(|row| overlay.edge_is_live(rel_type, *row))
+            .collect();
+        out.extend(
+            overlay
+                .inserted_edges
+                .keys()
+                .filter(|(edge_rel, _)| edge_rel == rel_type)
+                .map(|(_, row)| *row)
+                .filter(|row| overlay.edge_is_live(rel_type, *row)),
+        );
+        out
+    }
+
+    /// Append an edge between two node values. Returns the new edge value.
+    pub fn insert_edge(
+        &self,
+        rel_type: impl Into<String>,
+        src: &Value,
+        dst: &Value,
+        properties: BTreeMap<String, Value>,
+    ) -> CatalogResult<Value> {
+        let rel_type = rel_type.into();
+        let (src_label, src_id) = node_ref(src, &rel_type, "source")?;
+        let (dst_label, dst_id) = node_ref(dst, &rel_type, "destination")?;
+        let base = self
+            .edge_row_counts
+            .get(&rel_type)
+            .copied()
+            .unwrap_or_else(|| {
+                self.edges
+                    .get(&rel_type)
+                    .map(|table| table.batch.num_rows() as i64)
+                    .unwrap_or(0)
+            });
+        let mut overlay = self.overlay.borrow_mut();
+        let counter = overlay
+            .inserted_edge_counts
+            .entry(rel_type.clone())
+            .or_insert(0);
+        let id = base + *counter;
+        *counter += 1;
+        overlay
+            .inserted_out_adj
+            .entry((src_label.clone(), src_id))
+            .or_default()
+            .push((rel_type.clone(), id));
+        overlay
+            .inserted_in_adj
+            .entry((dst_label.clone(), dst_id))
+            .or_default()
+            .push((rel_type.clone(), id));
+        overlay.inserted_edges.insert(
+            (rel_type.clone(), id),
+            InsertedEdge {
+                src_label: src_label.clone(),
+                src_id,
+                dst_label: dst_label.clone(),
+                dst_id,
+                properties,
+            },
+        );
+        Ok(Value::Edge {
+            rel_type,
+            id,
+            src_label,
+            src_id,
+            dst_label,
+            dst_id,
+            projected_properties: None,
+        })
     }
 
     /// Iterate node ids of a given label, optionally filtered by a label
@@ -466,12 +672,9 @@ impl PropertyGraph {
             .map(|table| table.batch.num_rows() as i64)
             .unwrap_or(0);
         let mut overlay = self.overlay.borrow_mut();
-        let inserted = overlay
-            .inserted_nodes
-            .keys()
-            .filter(|(node_label, _)| node_label == &label)
-            .count() as i64;
-        let id = base_rows + inserted;
+        let counter = overlay.inserted_node_counts.entry(label.clone()).or_insert(0);
+        let id = base_rows + *counter;
+        *counter += 1;
         overlay
             .inserted_nodes
             .insert((label.clone(), id), properties);
@@ -503,21 +706,123 @@ impl PropertyGraph {
                 }
                 Ok(())
             }
-            Value::Edge { .. } => Ok(()),
+            Value::Edge { rel_type, id, .. } => {
+                let edge_key = (rel_type.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_edges.contains(&edge_key) {
+                    return Ok(());
+                }
+                if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
+                    edge.properties.insert(key, value);
+                } else {
+                    overlay
+                        .edge_property_overrides
+                        .entry(edge_key)
+                        .or_default()
+                        .insert(key, value);
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
 
-    pub fn delete_value(&self, target: &Value, _detach: bool) -> CatalogResult<()> {
+    /// Apply a whole property map to an element. `replace` discards every
+    /// property not named in `properties` (Cypher `n = {…}`); otherwise the
+    /// map is merged over the existing bag (`n += {…}`).
+    pub fn set_properties(
+        &self,
+        target: &Value,
+        properties: BTreeMap<String, Value>,
+        replace: bool,
+    ) -> CatalogResult<()> {
         match target {
             Value::Node { label, id } => {
+                let node_key = (label.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_nodes.contains(&node_key) {
+                    return Ok(());
+                }
+                if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
+                    if replace {
+                        *props = properties;
+                    } else {
+                        props.extend(properties);
+                    }
+                    return Ok(());
+                }
+                if replace {
+                    overlay.replaced_node_properties.insert(node_key.clone());
+                    overlay.node_property_overrides.insert(node_key, properties);
+                } else {
+                    overlay
+                        .node_property_overrides
+                        .entry(node_key)
+                        .or_default()
+                        .extend(properties);
+                }
+                Ok(())
+            }
+            Value::Edge { rel_type, id, .. } => {
+                let edge_key = (rel_type.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_edges.contains(&edge_key) {
+                    return Ok(());
+                }
+                if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
+                    if replace {
+                        edge.properties = properties;
+                    } else {
+                        edge.properties.extend(properties);
+                    }
+                    return Ok(());
+                }
+                if replace {
+                    overlay.replaced_edge_properties.insert(edge_key.clone());
+                    overlay.edge_property_overrides.insert(edge_key, properties);
+                } else {
+                    overlay
+                        .edge_property_overrides
+                        .entry(edge_key)
+                        .or_default()
+                        .extend(properties);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub fn delete_value(&self, target: &Value, detach: bool) -> CatalogResult<()> {
+        match target {
+            Value::Node { label, id } => {
+                if detach {
+                    for (rel_type, edge_row, _, _) in self.out_edges(label, *id, &[]) {
+                        self.overlay
+                            .borrow_mut()
+                            .deleted_edges
+                            .insert((rel_type, edge_row));
+                    }
+                    for (rel_type, edge_row, _, _) in self.in_edges(label, *id, &[]) {
+                        self.overlay
+                            .borrow_mut()
+                            .deleted_edges
+                            .insert((rel_type, edge_row));
+                    }
+                }
                 self.overlay
                     .borrow_mut()
                     .deleted_nodes
                     .insert((label.clone(), *id));
                 Ok(())
             }
-            Value::Edge { .. } => Ok(()),
+            Value::Edge { rel_type, id, .. } => {
+                self.overlay
+                    .borrow_mut()
+                    .deleted_edges
+                    .insert((rel_type.clone(), *id));
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -528,6 +833,19 @@ impl PropertyGraph {
         rel_type: &str,
         edge_row: i64,
     ) -> Option<(String, i64, String, i64)> {
+        if let Some(edge) = self
+            .overlay
+            .borrow()
+            .inserted_edges
+            .get(&(rel_type.to_string(), edge_row))
+        {
+            return Some((
+                edge.src_label.clone(),
+                edge.src_id,
+                edge.dst_label.clone(),
+                edge.dst_id,
+            ));
+        }
         if let Some(location) = self
             .edge_row_locations
             .get(&(rel_type.to_string(), edge_row))
@@ -578,6 +896,17 @@ impl PropertyGraph {
             table.dst_label.clone(),
             dst.value(row),
         ))
+    }
+}
+
+/// Unwrap a value that must be a node to `(label, id)`, for edge endpoints.
+fn node_ref(value: &Value, rel_type: &str, role: &str) -> CatalogResult<(String, i64)> {
+    match value {
+        Value::Node { label, id } => Ok((label.clone(), *id)),
+        other => Err(CatalogError::Schema(format!(
+            "relationship `{rel_type}` {role} must be a node, got {}",
+            other.type_name()
+        ))),
     }
 }
 

@@ -2,6 +2,16 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2376.8214d1a872f2","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2376","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:thing) RETURN n
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue.test case 2376
+MATCH (n) DELETE n
+MERGE (n:thing {name: 'original'})
+MATCH (n:thing {name: 'original'}) SET n.name = 'rename 1x' RETURN n
+MATCH (n:thing {name: 'rename 1x'}) SET n.name = 'rename 2x' RETURN n
+CREATE (n:thing {name: 'original'})
+CREATE (n:thing {name: 'rename 1x'})
+CREATE (n:thing {name: 'rename 2x'})
+MATCH (n:thing) WHERE n.name='rename 1x' DELETE n
 --- expected
 {_ID: 0:1, _LABEL: thing, name: original}
 {_ID: 0:0, _LABEL: thing, name: rename 2x}

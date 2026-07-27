@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateMap.98ede2c1976f","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateMap","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateMap
+node s0_t:test {name: "foo"}
+node s1_t:test {name: "foobar"}
 --- expected
 foo|
 foobar|

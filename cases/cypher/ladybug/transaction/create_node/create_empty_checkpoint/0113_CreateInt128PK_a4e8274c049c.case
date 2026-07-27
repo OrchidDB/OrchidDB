@@ -2,5 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateInt128PK.a4e8274c049c","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateInt128PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) WHERE t.id = 170141183460469231731687303715884105727 RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateInt128PK
+node s0_t:test {id: 1}
+node s1_t:test {id: 170141183460469231731687303715884105727}
 --- expected
 170141183460469231731687303715884105727

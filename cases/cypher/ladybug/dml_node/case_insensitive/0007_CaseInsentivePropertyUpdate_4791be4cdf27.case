@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.case_insensitive.CaseInsentivePropertyUpdate.4791be4cdf27","language":"cypher","ordered":true,"source":"dml_node/case_insensitive.test","source_case":"CaseInsentivePropertyUpdate","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:TEST) RETURN a.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/case_insensitive.test case CaseInsentivePropertyUpdate
+CREATE (a:TEST {ID: 1, NAME:'A'})
+MATCH (a:TEST {iD:1}) SET a.Name = 'B'
+MERGE (a:TEST {ID:2}) ON CREATE SET a.NAME = 'C'
+MERGE (a:TEST {Id:1}) ON MATCH SET a.namE = 'D'
 --- expected
 1|D
 2|C

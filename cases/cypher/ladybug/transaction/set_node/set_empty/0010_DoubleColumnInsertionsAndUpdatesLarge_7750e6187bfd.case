@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.set_node.set_empty.DoubleColumnInsertionsAndUpdatesLarge.7750e6187bfd","language":"cypher","ordered":true,"source":"transaction/set_node/set_empty.test","source_case":"DoubleColumnInsertionsAndUpdatesLarge","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) WHERE a.value = 1010101010.1 RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/set_node/set_empty.test case DoubleColumnInsertionsAndUpdatesLarge
+UNWIND range(0, 1000) AS i CREATE (a:test {value: 0})
+UNWIND range(1001, 1340) AS i CREATE (a:test {value: 1010101010.1})
+CREATE (a:test {value:1010101010.2})
+MATCH (a:test) WHERE a.id = 0 SET a.value = 1010101010.3
 --- expected
 340

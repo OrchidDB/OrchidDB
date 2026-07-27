@@ -1,10 +1,13 @@
 use crate::grammar::generated::cypher::cypherparser::{
     OC_CreateContext, OC_CreateContextAttrs, OC_DeleteContext, OC_DeleteContextAttrs,
-    OC_MergeActionContext, OC_MergeContext, OC_NodeLabelsContextAttrs, OC_RemoveContext,
+    OC_MergeActionContext, OC_MergeActionContextAttrs, OC_MergeContext, OC_MergeContextAttrs,
+    OC_NodeLabelsContextAttrs, OC_RemoveContext,
     OC_RemoveItemContext, OC_SetContext, OC_SetContextAttrs, OC_SetItemContext,
     OC_SetItemContextAttrs, OC_UpdatingClauseContext, OC_UpdatingClauseContextAttrs,
 };
-use crate::language::cypher::ast::{Clause, CreateClause, DeleteClause, Expr, SetClause, SetItem};
+use crate::language::cypher::ast::{
+    Clause, CreateClause, DeleteClause, Expr, MergeClause, SetClause, SetItem,
+};
 use crate::language::cypher::parser::Result;
 use antlr4rust::tree::ParseTree;
 
@@ -38,12 +41,50 @@ pub(crate) fn lower_create(ctx: &OC_CreateContext<'_>) -> Result<Clause> {
     }))
 }
 
-pub(crate) fn lower_merge(_ctx: &OC_MergeContext<'_>) -> Result<Clause> {
-    context::unsupported("MERGE is outside read and side-effect query lowering")
+pub(crate) fn lower_merge(ctx: &OC_MergeContext<'_>) -> Result<Clause> {
+    let Some(pattern) = ctx.oC_PatternPart() else {
+        return context::missing("MERGE missing pattern");
+    };
+    let mut on_create = Vec::new();
+    let mut on_match = Vec::new();
+    for action in ctx.oC_MergeAction_all() {
+        let (kind, items) = lower_merge_action(action.as_ref())?;
+        match kind {
+            MergeActionKind::Create => on_create.extend(items),
+            MergeActionKind::Match => on_match.extend(items),
+        }
+    }
+    Ok(Clause::Merge(MergeClause {
+        pattern: patterns::lower_pattern_part(pattern.as_ref())?,
+        on_create,
+        on_match,
+    }))
 }
 
-pub(crate) fn lower_merge_action(_ctx: &OC_MergeActionContext<'_>) -> Result<()> {
-    context::unsupported("MERGE actions are outside read and side-effect query lowering")
+pub(crate) enum MergeActionKind {
+    Create,
+    Match,
+}
+
+pub(crate) fn lower_merge_action(
+    ctx: &OC_MergeActionContext<'_>,
+) -> Result<(MergeActionKind, Vec<SetItem>)> {
+    let kind = if ctx.CREATE().is_some() {
+        MergeActionKind::Create
+    } else if ctx.MATCH().is_some() {
+        MergeActionKind::Match
+    } else {
+        return context::missing("MERGE action missing ON CREATE / ON MATCH");
+    };
+    let Some(set) = ctx.oC_Set() else {
+        return context::missing("MERGE action missing SET");
+    };
+    let items = set
+        .oC_SetItem_all()
+        .into_iter()
+        .map(|item| lower_set_item(item.as_ref()))
+        .collect::<Result<Vec<_>>>()?;
+    Ok((kind, items))
 }
 
 pub(crate) fn lower_set(ctx: &OC_SetContext<'_>) -> Result<Clause> {

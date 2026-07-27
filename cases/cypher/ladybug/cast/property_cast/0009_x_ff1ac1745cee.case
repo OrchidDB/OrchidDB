@@ -2,6 +2,9 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.property_cast.x.ff1ac1745cee","language":"cypher","ordered":true,"source":"cast/property_cast.test","source_case":"x","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a) RETURN a.ID, a.p
+--- setup_statements
+# re-extracted from kuzu test/test_files/cast/property_cast.test case x
+CREATE (:N1 {ID:0, p:0}), (:N2 {ID:0, p:'a'}), (:N3 {ID:'a', p:[1,2,3]}), (:N4 {ID:'a', p:1.2}), (:N5 {p:date('2025-01-01')})
 --- expected
 0|0
 0|2025-01-01

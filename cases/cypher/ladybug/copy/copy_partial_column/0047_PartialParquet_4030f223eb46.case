@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialParquet.4030f223eb46","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialParquet","status":"imported","suite":"ladybug","version":1}
+{"dataset":"copy-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialParquet.4030f223eb46","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialParquet","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (row:tableOfTypes12) WHERE row.id >= 20 AND row.id <= 24 RETURN row.*
 --- expected

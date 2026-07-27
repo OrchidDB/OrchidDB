@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyNodeRollbackAndManualCheckpoint.7252a0d1526b","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyNodeRollbackAndManualCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"copy-test","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyNodeRollbackAndManualCheckpoint.7252a0d1526b","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyNodeRollbackAndManualCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) return count(*)
 --- expected

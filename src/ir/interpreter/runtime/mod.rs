@@ -939,7 +939,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("cypher_property_star", [Value::Node { label, id }]) => {
             let mut map = std::collections::BTreeMap::new();
             let mut order = Vec::new();
-            for key in graph.node_property_keys(label) {
+            for key in graph.node_property_keys_with_id(label) {
                 order.push(Value::String(key.clone()));
                 map.insert(key.clone(), graph.node_property(label, *id, &key));
             }

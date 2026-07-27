@@ -1,7 +1,11 @@
 --- metadata
-{"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.copy.mismatch_from_to.MismatchFromToType.6505aa8e3fd3","language":"cypher","ordered":true,"source":"copy/mismatch_from_to.test","source_case":"MismatchFromToType","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"demo-db","expected_kind":"rows","id":"cypher.ladybug.copy.mismatch_from_to.MismatchFromToType.6505aa8e3fd3","language":"cypher","ordered":true,"source":"copy/mismatch_from_to.test","source_case":"MismatchFromToType","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:N2)-[:R2]->(b:N2) RETURN a.id, b.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/copy/mismatch_from_to.test case MismatchFromToType
+CREATE (:N2 {id:'Waterloo'}), (:N2 {id:'Kitchener'}), (:N2 {id:'Guelph'})
+CREATE (:N2 {id:'150000'}), (:N2 {id:'200000'}), (:N2 {id:'75000'})
 --- expected
 Guelph|75000
 Kitchener|200000

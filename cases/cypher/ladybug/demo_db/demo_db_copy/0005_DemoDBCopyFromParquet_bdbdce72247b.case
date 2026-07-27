@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"PARQUET EMPTY","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_copy.DemoDBCopyFromParquet.bdbdce72247b","language":"cypher","ordered":true,"source":"demo_db/demo_db_copy.test","source_case":"DemoDBCopyFromParquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"demo-db","expected_kind":"rows","id":"cypher.ladybug.demo_db.demo_db_copy.DemoDBCopyFromParquet.bdbdce72247b","language":"cypher","ordered":true,"source":"demo_db/demo_db_copy.test","source_case":"DemoDBCopyFromParquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:User2) RETURN a.*
 --- expected

@@ -19,7 +19,7 @@ use super::ops::distinct::{distinct_op, row_signature};
 use super::ops::expand::{bind_op, expand_op};
 use super::ops::join::join_op;
 use super::ops::list_comprehension::list_comprehension_op;
-use super::ops::mutation::{create_op, delete_op, set_property_op};
+use super::ops::mutation::{create_op, delete_op, merge_op, set_property_op};
 use super::ops::path_pattern::path_pattern_op;
 use super::ops::project::{current_project_op, project_op};
 use super::ops::quantifier::quantifier_op;
@@ -230,9 +230,24 @@ pub(crate) fn run_with_context(
                 })
                 .collect())
         }
-        Node::GraphCreate { nodes, input, .. } => {
+        Node::GraphCreate {
+            nodes,
+            edges,
+            input,
+            ..
+        } => {
             let rows = run_with_context(input, graph, ctx)?;
-            create_op(nodes, rows, graph)
+            create_op(nodes, edges, rows, graph)
+        }
+        Node::GraphMerge {
+            outputs,
+            input,
+            match_arm,
+            create_arm,
+            ..
+        } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            merge_op(outputs, rows, match_arm, create_arm, graph, ctx)
         }
         Node::GraphSetProperty { items, input } => {
             let rows = run_with_context(input, graph, ctx)?;

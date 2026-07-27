@@ -1,7 +1,10 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyRelAfterDropAddCol.699b6a7fba75","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyRelAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"demo-db","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyRelAfterDropAddCol.699b6a7fba75","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyRelAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:User)-[e:Follows]->(b:User) RETURN a.name, e.since, b.name
+--- setup_statements
+# re-extracted from kuzu test/test_files/ddl/ddl_empty.test case CopyRelAfterDropAddCol
+MATCH (a:User {name: 'Zhang'}), (b:User {name: 'Adam'}) CREATE (a)-[:Follows {comment: 'platform is tiktok'}]->(b)
 --- expected
 Adam|2020|Karissa
 Adam|2020|Zhang

@@ -96,11 +96,25 @@ DataFusion numbers are post-fix and verified.
 
 ## Ranked remaining work (post-change top blockers, DataFusion mode)
 
+0. **Write clauses have no relational lowering.** The interpreter now
+   supports the full Cypher DML surface (relationship `CREATE`, `SET` map
+   forms, relationship / `DETACH DELETE`, `MERGE`), but relationally only
+   `GraphCreate` lowers at all; `Node::GraphMerge` returns
+   `NotImplemented("GraphMerge has no relational lowering")` from
+   `node_to_plan` in `src/ir/df.rs`. Any case whose *setup* now replays
+   writes therefore still reads empty in DataFusion/DuckDB mode. Deciding
+   the model here is a prerequisite for the item below — the honest
+   options are (a) execute setup writes through the interpreter overlay
+   and materialize the result into the relational session, or (b) lower
+   writes to real SQL DML. (a) is far cheaper and matches how the harness
+   already builds fixtures.
 1. ~500 zero-row mismatch cases ("row count: actual 0, expected N") —
    mostly **broken imports** (DML/transaction suites whose setup
    statements the importer stripped; no graph_initializer) plus fixture
    loaders that load empty (demo_db_parquet/lsqb/npy). Harness/importer
-   work, not lowering. See memory note `cypher-conformance-state`.
+   work, not lowering. Note the import side has improved a lot — see
+   `handoff_corpus.md`; broken-import is down 368 → 78 — so a re-measure
+   should move this number. See memory note `cypher-conformance-state`.
 2. `GraphQuantifier` (84) — any/all/none/single over per-row property
    lists; blocked on lists being display *strings* relationally. Real
    fix: keep list properties as Arrow `List` columns end-to-end

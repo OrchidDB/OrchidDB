@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.5954.68673b4ae5d3","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"5954","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH ()-[r]->() RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue.test case 5954
+CREATE (:Execution { id: 'E1' })-[:REQUESTED_BY]->(:Request { id: 'R1' })-[:TARGET]->(:Device { id: 'D1' })
+MATCH (execution:Execution { id: 'E1' }) CREATE (execution)-[:REQUESTED_BY]->(r:Request { id: 'R2' })-[:TARGET]->(d:Device { id: 'D2' }) return execution.id, r.id, d.id
+MATCH (request:Request { id: 'R1' }) DETACH DELETE request
+MATCH (execution:Execution { id: 'E1' }) DETACH DELETE execution
 --- expected
 1

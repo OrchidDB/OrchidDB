@@ -2,6 +2,16 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_rel.delete.delete_empty.DeleteALPException.714bde6c0888","language":"cypher","ordered":true,"source":"dml_rel/delete/delete_empty.test","source_case":"DeleteALPException","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person)-[e:knows]->(b:person) RETURN a.ID, b.ID, e.val
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_rel/delete/delete_empty.test case DeleteALPException
+CREATE (a:person {ID: 88})
+CREATE (a:person {ID: 77})
+CREATE (a:person {ID: 66})
+CREATE (a:person {ID: 55})
+MATCH (a:person), (b:person) WHERE a.ID = 77 AND b.ID = 88 CREATE (a)-[e:knows {val:5.1}]->(b) RETURN COUNT(*)
+MATCH (a:person), (b:person) WHERE a.ID = 77 AND b.ID = 66 CREATE (a)-[e:knows {val:123456789.123}]->(b) RETURN COUNT(*)
+MATCH (a:person), (b:person) WHERE a.ID = 77 AND b.ID = 55 CREATE (a)-[e:knows {val:1.2}]->(b) RETURN COUNT(*)
+MATCH (a:person), (b:person) WHERE a.ID = 66 AND b.ID = 55 CREATE (a)-[e:knows {val:2.3}]->(b) RETURN COUNT(*)
 --- expected
 77|88|5.100000
 77|66|123456789.123000

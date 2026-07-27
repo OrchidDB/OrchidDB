@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"PARQUET empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_parquet.CopyParquet.6117ed1fefb8","language":"cypher","ordered":true,"source":"copy/copy_parquet.test","source_case":"CopyParquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"parquet","expected_kind":"rows","id":"cypher.ladybug.copy.copy_parquet.CopyParquet.6117ed1fefb8","language":"cypher","ordered":true,"source":"copy/copy_parquet.test","source_case":"CopyParquet","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test2) RETURN a.*
 --- expected

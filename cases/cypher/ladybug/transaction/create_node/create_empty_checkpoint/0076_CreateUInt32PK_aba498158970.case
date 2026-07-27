@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateUInt32PK.aba498158970","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateUInt32PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateUInt32PK
+node s0_t:test {id: 1}
+node s1_t:test {id: 255}
 --- expected
 1
 255

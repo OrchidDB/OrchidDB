@@ -2,6 +2,10 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.cast.property_cast.x.8257859d8921","language":"cypher","ordered":true,"source":"cast/property_cast.test","source_case":"x","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:N1)-[e]->(b:N1) RETURN e.p
+--- setup_statements
+# re-extracted from kuzu test/test_files/cast/property_cast.test case x
+CREATE (:N1 {id:0, p:0}), (:N2 {id:0, p:'a'}), (:N3 {id:'a', p:[1,2,3]}), (:N4 {id:'a', p:1.2}), (:N5 {p:date('2025-01-01')})
+MATCH (a:N1), (b:N1) CREATE (a)-[:R1 {p:1}]->(b), (a)-[:R2 {p:'hh'}]->(b), (a)-[:R3 {p:[1,2,3]}]->(b), (a)-[:R4 {p:3.14}]->(b), (a)-[:R5 {p:date('2024-10-10')}]->(b)
 --- expected
 1
 2024-10-10

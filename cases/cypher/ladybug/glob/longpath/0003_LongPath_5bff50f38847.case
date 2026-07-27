@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.glob.longpath.LongPath.5bff50f38847","language":"cypher","ordered":true,"source":"glob/longpath.test","source_case":"LongPath","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"copy-fault-tests","expected_kind":"rows","id":"cypher.ladybug.glob.longpath.LongPath.5bff50f38847","language":"cypher","ordered":true,"source":"glob/longpath.test","source_case":"LongPath","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tab) RETURN t.*
 --- expected

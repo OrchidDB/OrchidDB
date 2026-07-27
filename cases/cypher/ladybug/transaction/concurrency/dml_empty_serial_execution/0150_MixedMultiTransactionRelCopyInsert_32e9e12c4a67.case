@@ -1,7 +1,10 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.dml_empty_serial_execution.MixedMultiTransactionRelCopyInsert.32e9e12c4a67","language":"cypher","ordered":true,"source":"transaction/concurrency/dml_empty_serial_execution.test","source_case":"MixedMultiTransactionRelCopyInsert","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.concurrency.dml_empty_serial_execution.MixedMultiTransactionRelCopyInsert.32e9e12c4a67","language":"cypher","ordered":true,"source":"transaction/concurrency/dml_empty_serial_execution.test","source_case":"MixedMultiTransactionRelCopyInsert","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p1:person)-[k:knows]->(p2:person) RETURN p1.ID,p2.ID
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/concurrency/dml_empty_serial_execution.test case MixedMultiTransactionRelCopyInsert
+MATCH (p1:person), (p2:person) WHERE p1.ID = 3 AND p2.ID = 5 CREATE (p1)-[:knows{date:Date('2026-01-01')}]->(p2)
 --- expected
 0|2
 0|3

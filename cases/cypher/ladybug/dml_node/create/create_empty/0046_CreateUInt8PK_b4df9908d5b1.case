@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateUInt8PK.b4df9908d5b1","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateUInt8PK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateUInt8PK
+node s0_t:test {id: 1}
+node s1_t:test {id: 255}
 --- expected
 1
 255

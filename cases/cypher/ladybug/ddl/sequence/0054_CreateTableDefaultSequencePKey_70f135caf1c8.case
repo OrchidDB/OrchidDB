@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.sequence.CreateTableDefaultSequencePKey.70f135caf1c8","language":"cypher","ordered":true,"source":"ddl/sequence.test","source_case":"CreateTableDefaultSequencePKey","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/ddl/sequence.test case CreateTableDefaultSequencePKey
+node s0_t:test
 --- expected
 1

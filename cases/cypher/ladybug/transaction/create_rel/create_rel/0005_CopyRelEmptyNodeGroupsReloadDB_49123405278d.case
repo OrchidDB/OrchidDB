@@ -1,6 +1,9 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.create_rel.CopyRelEmptyNodeGroupsReloadDB.49123405278d","language":"cypher","ordered":true,"source":"transaction/create_rel/create_rel.test","source_case":"CopyRelEmptyNodeGroupsReloadDB","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.transaction.create_rel.create_rel.CopyRelEmptyNodeGroupsReloadDB.49123405278d","language":"cypher","ordered":true,"source":"transaction/create_rel/create_rel.test","source_case":"CopyRelEmptyNodeGroupsReloadDB","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:Comment)-[:replyOf_Comment]->(b:Comment) RETURN a.id, b.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/create_rel/create_rel.test case CopyRelEmptyNodeGroupsReloadDB
+MATCH (a:Comment), (b:Comment) WHERE a.id = 1030792523059 AND b.id = 962073046352 CREATE (a)-[:replyOf_Comment]->(b)
 --- expected
 1030792523059|962073046352

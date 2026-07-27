@@ -2,5 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue6.issue3576.cefe049243a9","language":"cypher","ordered":true,"source":"issue/issue6.test","source_case":"issue3576","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:MyNode)-[:MyRel]->(m:MyOtherNode) RETURN n.uid, m.uid
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue6.test case issue3576
+CREATE (n:MyNode) RETURN n.uid
+CREATE (n:MyOtherNode) RETURN n.uid
+MATCH (i1:MyNode {uid: 0}), (i2:MyOtherNode {uid: 0}) CREATE (i1)-[:MyRel]->(i2)
 --- expected
 0|0

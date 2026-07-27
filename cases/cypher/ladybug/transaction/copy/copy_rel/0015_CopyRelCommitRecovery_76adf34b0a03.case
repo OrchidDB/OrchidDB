@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyRelCommitRecovery.76adf34b0a03","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyRelCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_rel.CopyRelCommitRecovery.76adf34b0a03","language":"cypher","ordered":true,"source":"transaction/copy/copy_rel.test","source_case":"CopyRelCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:person)-[e:knows]->(:person) RETURN COUNT(e)
 --- expected

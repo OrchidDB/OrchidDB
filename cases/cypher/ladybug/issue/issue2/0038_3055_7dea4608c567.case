@@ -2,5 +2,30 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue2.3055.7dea4608c567","language":"cypher","ordered":true,"source":"issue/issue2.test","source_case":"3055","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH  (f) - [r:etable] -> (t) WHERE  t.id = 'ewm8ewnn@l23:' and r.eprop3 = 'qqewj932-ew2b-5f88-nfew' RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue2.test case 3055
+MERGE (n:test { id: "ewm8ewnn@l23:" }) SET n.prop1 = "model", n.prop2 = 6, n.prop3 = "trips_2", n.prop4 = "0bbhfwnenwafnw88989382932wwewej332938293jiwojewie923892389283923" RETURN n.id
+MERGE (n:test { id: "ewm8ewnn ewweklnbgeireg@l23:ewe" }) SET n.prop1 = "model", n.prop2 = 16, n.prop3 = "normalize_data", n.prop4 = "1bbhfwnenwafnw88989234342wwewej332938293jiwojewie923892389283923" RETURN n.id
+MERGE (n:test { id: "ewm8ewnn ewweklnbgew888g@lew3:ewe" }) SET n.prop1 = "model", n.prop2 = 74, n.prop3 = "zones", n.prop4 = "2bbhfwnenaafnw88989234342wwewej332938293jiwojewie923192389283923" RETURN n.id
+MERGE (n:test { id: "ewm8ew43lnbgew888g@lew3:ewe" }) SET n.prop1 = "expectation", n.prop2 = 27, n.prop3 = "test_trips_1", n.prop4 = "3bbhfwnenaafnw88989234342wwewej332938213jiwojewie923192389283923" RETURN n.id
+MERGE (n:test { id: "ewm8ew43ffbgew888g@lew3:ewe" }) SET n.prop1 = "expectation", n.prop2 = 37, n.prop3 = "test_trips_2", n.prop4 = "4bbhfwnenaafnw88989234312wwewej332938213jiwojewie923192389283923" RETURN n.id
+MERGE (n:test { id: "ewm8ew43ffrrr88g@lew3:ewe" }) SET n.prop1 = "expectation", n.prop2 = 47, n.prop3 = "test_norm_data_1", n.prop4 = "5bbhfwnenaafnw88989234312wwewej332938213jiwojewie923192389283923" RETURN n.id
+MERGE (n:test { id: "fwfwfe8g@lew3:ewe" }) SET n.prop1 = "model", n.prop4 = "6bbhfwnenaafnw88989234312wwewej332938213jiwojewie923192389283923" RETURN n.id
+MERGE (n:test { id: "nfewnfwn+wnfw"}) RETURN n.id
+MERGE (n:test { id: "nfewn32n+wnfw"}) RETURN n.id
+MERGE (n:res { name: "nfewnnfw" })  RETURN n.name
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "nfewnfwn+wnfw" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "nfewj932-ew2b-5f33-nfew" }]->(t) RETURN r
+MERGE (n:res { name: "fwfsiewmk" })  RETURN n.name
+MATCH (f:res), (t:test) WHERE f.name = "fwfsiewmk" AND t.id = "nfewnfwn+wnfw" CREATE (f)-[r:etable { eprop1: "0.0.0", eprop3: "nfewj932-ew2b-5f33-nfew" }]->(t) RETURN r
+MERGE (n:res { name: "nfewnnfw" })  RETURN n.name
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "nfewn32n+wnfw" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "mdewj932-ew2b-5f44-nfew" }]->(t) RETURN r
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "s3scan+taxi_fhvhv" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "mdewj932-ew2b-5f44-nfew" }]->(t) RETURN r
+MERGE (n:res { name: "fwfsiewmk" })  RETURN n.name
+MATCH (f:res), (t:test) WHERE f.name = "fwfsiewmk" AND t.id = "nfewn32n+wnfw" CREATE (f)-[r:etable { eprop1: "0.0.0", eprop3: "mdewj932-ew2b-5f44-nfew" }]->(t) RETURN r
+MATCH (f:res), (t:test) WHERE f.name = "fwfsiewmk" AND t.id = "s3scan+taxi_fhvhv" CREATE (f)-[r:etable { eprop1: "0.0.0", eprop3: "mdewj932-ew2b-5f44-nfew" }]->(t) RETURN r
+MERGE (n:res { name: "nfewnnfw" })  RETURN n.name
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "ewm8ewnn ewweklnbgew888g@lew3:ewe" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "qqewj932-ew2b-5f88-nfew" }]->(t) RETURN r
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "ewm8ewnn@l23:" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "qqewj932-ew2b-5f88-nfew" }]->(t) RETURN r
+MATCH (f:res), (t:test) WHERE f.name = "nfewnnfw" AND t.id = "ewm8ew43ffrrr88g@lew3:ewe" CREATE (f)-[r:etable { eprop1: "1.1.1", eprop3: "qqewj932-ew2b-5f88-nfew" }]->(t) RETURN r
 --- expected
 1

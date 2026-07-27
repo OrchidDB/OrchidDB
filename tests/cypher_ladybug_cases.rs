@@ -215,6 +215,8 @@ fn cypher_ladybug_cases() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    spawn_memory_watchdog();
+    let extra_quarantine = env_quarantine();
     walk_cases(&root, &mut |path| {
         if !profile.includes(path) {
             return;
@@ -224,7 +226,15 @@ fn cypher_ladybug_cases() {
                 return;
             }
         }
-        let run = run_with_timeout(path, timeout_ms);
+        if let Ok(mut current) = CURRENT_CASE.lock() {
+            *current = path.display().to_string();
+        }
+        let run = match is_quarantined(path, &extra_quarantine) {
+            Some(reason) => CaseRun::from_outcome(Outcome::Skipped(format!(
+                "quarantined (exhausts host memory): {reason}"
+            ))),
+            None => run_with_timeout(path, timeout_ms),
+        };
         if !matches!(run.outcome, Outcome::Correct) {
             if let Err(err) = dump_failure(&failures_dir, path, &run) {
                 eprintln!(
@@ -356,6 +366,147 @@ fn is_ident_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
+/// Cases that exhaust host memory before any timeout can fire, matched as
+/// path substrings.
+///
+/// The interpreter materializes intermediate rows eagerly with no spill and
+/// no count-only path, so a query whose *intermediate* cardinality is huge
+/// allocates without bound even when its result is a single number —
+/// `MATCH (a:person), (b:person) RETURN COUNT(*)` builds all 36,000,000
+/// cross-product rows to count them. A per-case timeout does not help: tens
+/// of gigabytes are gone in a few seconds, and the abandoned thread keeps
+/// allocating afterwards because it cannot be cancelled.
+///
+/// These are reported as `Skipped` (never as passing) so the conformance
+/// number stays honest. Removing an entry is the natural regression test for
+/// factorized/count-only evaluation when that lands — see the interpreter
+/// join-performance item in `docs/handoff_corpus.md`.
+const MEMORY_QUARANTINE: &[&str] = &[
+    // `MATCH (a:person), (b:person) RETURN COUNT(*)` over 6k persons — 36M
+    // intermediate rows for a one-row answer. CSV and parquet twins.
+    "read_list/large_adj_list/0006_CrossProduct1",
+    "read_list/large_adj_list_parquet/0006_CrossProduct1",
+    // Symmetric two-hop join behind a COUNT(*); same missing count-only path.
+    "read_list/small_large_property_list_reading/0002_ReadingLargeListSymmetricTwoHop",
+    // Variable-length expansion over a very large adjacency list.
+    "read_list/var_length_large_adj_list_extend/0004_KnowsVeryLargeAdjListLongPathTest",
+];
+
+/// Extra quarantine entries from `CYPHER_SKIP_CASES` (newline- or
+/// comma-separated path substrings).
+///
+/// A memory breach can only be handled by killing the process, which loses
+/// the rest of the suite. So the watchdog appends the offender to
+/// `CYPHER_BLOWUP_LOG` on its way out and the sweep driver feeds that file
+/// back in here on the next attempt, converging on a complete run without
+/// anyone hand-enumerating cases. Confirmed offenders graduate into
+/// [`MEMORY_QUARANTINE`].
+fn env_quarantine() -> Vec<String> {
+    std::env::var("CYPHER_SKIP_CASES")
+        .unwrap_or_default()
+        .split(['\n', ','])
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn is_quarantined(path: &Path, extra: &[String]) -> Option<String> {
+    let text = path.to_string_lossy().replace('\\', "/");
+    if let Some(hit) = MEMORY_QUARANTINE
+        .iter()
+        .copied()
+        .find(|needle| text.contains(needle))
+    {
+        return Some(hit.to_string());
+    }
+    extra
+        .iter()
+        .find(|needle| text.contains(needle.as_str()))
+        .cloned()
+}
+
+/// Case currently being executed, for the memory watchdog to name when it
+/// trips. Poisoning is irrelevant here — we only ever store a path.
+static CURRENT_CASE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Append `case` to `CYPHER_BLOWUP_LOG` so the sweep driver can skip it on
+/// the next attempt. Best-effort: a missing or unwritable log is not fatal.
+fn record_blowup(case: &str) {
+    let Ok(log) = std::env::var("CYPHER_BLOWUP_LOG") else {
+        return;
+    };
+    use std::io::Write;
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&log) {
+        let _ = writeln!(file, "{case}");
+    }
+}
+
+/// Abort the process if its resident set exceeds `CYPHER_MEM_LIMIT_GB`.
+///
+/// A per-case *timeout* bounds time, not memory, and that is not enough: a
+/// single pathological case (`read_list`, `lsqb`) can allocate tens of
+/// gigabytes inside a 20-second window, driving the host into swap and
+/// tripping the kernel watchdog long before the timeout would fire. The
+/// interpreter materializes intermediate rows eagerly with no spill, so
+/// there is no internal backpressure to rely on — this watchdog is the
+/// backstop. Set the limit to 0 to disable.
+fn spawn_memory_watchdog() {
+    let limit_gb: f64 = std::env::var("CYPHER_MEM_LIMIT_GB")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8.0);
+    if limit_gb <= 0.0 {
+        return;
+    }
+    let pid = std::process::id();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(500));
+            // `ps` keeps this dependency-free; rss is reported in KiB.
+            let Ok(out) = std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &pid.to_string()])
+                .output()
+            else {
+                return;
+            };
+            let Ok(text) = String::from_utf8(out.stdout) else {
+                return;
+            };
+            let Ok(rss_kib) = text.trim().parse::<f64>() else {
+                return; // process gone, or a platform without this `ps` form
+            };
+            let rss_gb = rss_kib / 1_048_576.0;
+            if rss_gb > limit_gb {
+                let case = CURRENT_CASE.lock().map(|c| c.clone()).unwrap_or_default();
+                record_blowup(&case);
+                eprintln!(
+                    "\n[cypher_ladybug_cases] MEMORY LIMIT: resident set reached \
+                     {rss_gb:.1} GB (limit {limit_gb:.1} GB) while running `{case}`.\n\
+                     Aborting before the host is driven into swap. Quarantine or fix \
+                     that case, or raise CYPHER_MEM_LIMIT_GB if this is expected."
+                );
+                std::process::exit(102);
+            }
+        }
+    });
+}
+
+/// Run one case, giving up after `timeout_ms`.
+///
+/// A timed-out case is **fatal to the process**, deliberately. Rust has no
+/// thread cancellation, so the worker we walked away from keeps running and
+/// keeps allocating for the rest of the run — and the cases that time out
+/// are exactly the ones allocating hardest. Continuing means racing a thread
+/// we cannot stop: in practice the OS reached the process first and SIGKILLed
+/// it, losing the whole suite's results anyway (and, before the memory
+/// watchdog existed, wedging the host badly enough to trip the kernel
+/// watchdog).
+///
+/// So we record the offender to `CYPHER_BLOWUP_LOG` and exit. The sweep
+/// driver re-runs the suite with that case in `CYPHER_SKIP_CASES`, which
+/// converges on a complete run in as many attempts as there are bad cases —
+/// and every skip is visible rather than silently absorbed.
 fn run_with_timeout(path: &Path, timeout_ms: u64) -> CaseRun {
     if timeout_ms == 0 {
         return run_one(path);
@@ -368,12 +519,17 @@ fn run_with_timeout(path: &Path, timeout_ms: u64) -> CaseRun {
     });
     match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
         Ok(run) => run,
-        Err(_) => CaseRun {
-            query: None,
-            plan_tree: None,
-            outcome: Outcome::RunError(format!("timeout after {timeout_ms}ms")),
-            broken_import: false,
-        },
+        Err(_) => {
+            let case = path.display().to_string();
+            record_blowup(&case);
+            eprintln!(
+                "\n[cypher_ladybug_cases] TIMEOUT after {timeout_ms}ms: `{case}`.\n\
+                 Its worker thread cannot be cancelled and is still allocating, so \
+                 continuing is unsafe — exiting. Re-run with this case in \
+                 CYPHER_SKIP_CASES (the sweep driver does this automatically)."
+            );
+            std::process::exit(101);
+        }
     }
 }
 

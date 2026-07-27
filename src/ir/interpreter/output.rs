@@ -453,7 +453,7 @@ fn gremlin_node_name(graph: &PropertyGraph, label: &str, id: i64) -> String {
 fn format_node(graph: &PropertyGraph, label: &str, id: i64) -> String {
     let table_id = node_table_index(graph, label);
     let mut parts = vec![format!("_ID: {table_id}:{id}"), format!("_LABEL: {label}")];
-    for key in graph.node_property_keys(label) {
+    for key in graph.node_property_keys_with_id(label) {
         let value = graph.node_property(label, id, &key);
         if matches!(value, Value::Null) {
             continue;

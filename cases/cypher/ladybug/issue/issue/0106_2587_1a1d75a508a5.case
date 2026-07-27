@@ -2,6 +2,13 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2587.1a1d75a508a5","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2587","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:T) RETURN t.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2587
+node s0_anon1:T {id: "foo"}
+node s1_anon1:T {id: "123456789012"}
+node s2_anon1:T {id: "bar", descr: "fe38f9dc-f761-4184-8b8b-ec9a1b5ffb83"}
+node s3_anon1:T {id: "ge38f9dc-f751-4174-8b8b-ec9a1b6gab83"}
+node s4_anon1:T {id: "1234567890123"}
 --- expected
 foo|
 123456789012|

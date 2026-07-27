@@ -2,5 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2589.23ecc63a870a","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2589","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 WITH "node_after" as selected MATCH (t1:T{id: "t1"})-[:E]->(t2:T{id: "t2"}) WITH CASE WHEN selected <> "node_after" THEN t2 ELSE t1 END as ret RETURN ret
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2589
+node s0_t1:T {id: "t1"}
+node s0_t2:T {id: "t2"}
+edge s0_t1 -[:E]-> s0_t2
 --- expected
 {_ID: 0:0, _LABEL: T, id: t1}

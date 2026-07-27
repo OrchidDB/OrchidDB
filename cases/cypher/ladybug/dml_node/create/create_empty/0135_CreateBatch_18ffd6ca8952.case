@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateBatch.18ffd6ca8952","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateBatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) WHERE t.age IS NOT NULL RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateBatch
+UNWIND RANGE(1,100) AS id CREATE (t:test {id:id})
 --- expected
 0

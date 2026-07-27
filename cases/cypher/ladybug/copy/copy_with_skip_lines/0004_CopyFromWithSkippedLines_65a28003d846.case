@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_with_skip_lines.CopyFromWithSkippedLines.65a28003d846","language":"cypher","ordered":true,"source":"copy/copy_with_skip_lines.test","source_case":"CopyFromWithSkippedLines","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_with_skip_lines.CopyFromWithSkippedLines.65a28003d846","language":"cypher","ordered":true,"source":"copy/copy_with_skip_lines.test","source_case":"CopyFromWithSkippedLines","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) return p.*
 --- expected

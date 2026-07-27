@@ -2,6 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.nested_types.InsertMapCommitRecovery.976e213cc5d5","language":"cypher","ordered":true,"source":"transaction/create_node/nested_types.test","source_case":"InsertMapCommitRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) return t.random
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/nested_types.test case InsertMapCommitRecovery
+node s0_anon1:test
+node s0_anon2:test
+node s0_anon3:test
 --- expected
 {key3=[3,2,1]}
 {key3=[3,2,1]}

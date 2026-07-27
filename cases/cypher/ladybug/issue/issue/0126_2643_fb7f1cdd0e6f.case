@@ -2,6 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2643.fb7f1cdd0e6f","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2643","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person) RETURN a.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue.test case 2643
+CREATE (:person {y: {a: 1, b: 2}}), (:person {y: {a: 3, b: 4}})
 --- expected
 0|{a: 1, b: 2}
 1|{a: 3, b: 4}

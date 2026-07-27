@@ -2,6 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.AggregateFunctions.07050d7eb4b6","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"AggregateFunctions","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (z:tab) RETURN floor(z.value)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/uint128/uint128.test case AggregateFunctions
+node s0_x:tab {intkey: 0, value: 5}
+node s1_x:tab {intkey: 1, value: 190}
+node s2_x:tab {intkey: 2, value: 170141183460469231731687303715884105727}
 --- expected
 5
 190

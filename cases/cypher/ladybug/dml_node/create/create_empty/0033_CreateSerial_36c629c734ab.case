@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateSerial.36c629c734ab","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateSerial","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) RETURN n
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateSerial
+node s0_anon1:A
+node s1_anon1:B
 --- expected
 {_ID: 0:0, _LABEL: A, pk1: 0}
 {_ID: 1:0, _LABEL: B, pk2: 0}

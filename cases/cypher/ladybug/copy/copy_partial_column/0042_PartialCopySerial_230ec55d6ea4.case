@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialCopySerial.230ec55d6ea4","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialCopySerial","status":"imported","suite":"ladybug","version":1}
+{"dataset":"copy-test","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialCopySerial.230ec55d6ea4","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"NodePartialColumnsTest","source_log":"PartialCopySerial","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (row:tableOfTypes10) RETURN sum(row.serialPk)
 --- expected

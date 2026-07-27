@@ -1884,6 +1884,24 @@ fn add_candidate_bindings_from_query_body(
                     add_candidate_refs_from_expr_scoped(predicate, candidates, locals, refs);
                 }
             }
+            // MERGE binds the same variables as CREATE over one pattern,
+            // then applies its ON CREATE / ON MATCH sets.
+            Clause::Merge(clause) => {
+                add_candidate_bindings_from_pattern_scoped(
+                    &clause.pattern,
+                    candidates,
+                    locals,
+                    refs,
+                );
+                for name in pattern_binding_names(&clause.pattern) {
+                    locals.insert(name);
+                }
+                for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                    for expr in set_item_exprs(item) {
+                        add_candidate_refs_from_expr_scoped(expr, candidates, locals, refs);
+                    }
+                }
+            }
             Clause::Create(clause) => {
                 for part in &clause.patterns {
                     if let Some(properties) = &part.element.start.properties {
@@ -2340,6 +2358,16 @@ fn remove_local_query_body_bindings(
                 }
                 if let Some(predicate) = &clause.predicate {
                     remove_local_exists_bindings(predicate, candidates, refs);
+                }
+            }
+            Clause::Merge(clause) => {
+                for name in pattern_binding_names(&clause.pattern) {
+                    remove_query_local_name(&name, candidates, refs);
+                }
+                for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                    for expr in set_item_exprs(item) {
+                        remove_local_exists_bindings(expr, candidates, refs);
+                    }
                 }
             }
             Clause::Create(clause) => {
@@ -3182,6 +3210,16 @@ fn collect_query_body_variable_references(
                 }
                 if let Some(predicate) = &clause.predicate {
                     collect_free_variables(predicate, bound, out);
+                }
+            }
+            Clause::Merge(clause) => {
+                for name in pattern_binding_names(&clause.pattern) {
+                    bound.insert(name);
+                }
+                for item in clause.on_create.iter().chain(clause.on_match.iter()) {
+                    for expr in set_item_exprs(item) {
+                        collect_free_variables(expr, bound, out);
+                    }
                 }
             }
             Clause::Create(clause) => {
@@ -5145,5 +5183,15 @@ fn requires_scoped_materialization(expr: &Expr) -> bool {
                     .is_some_and(requires_scoped_materialization)
         }
         _ => false,
+    }
+}
+
+/// Every expression a `SET` item evaluates, for scope walkers.
+fn set_item_exprs(item: &crate::language::cypher::ast::SetItem) -> Vec<&Expr> {
+    use crate::language::cypher::ast::SetItem;
+    match item {
+        SetItem::Property { target, value, .. } => vec![target, value],
+        SetItem::Replace { value, .. } | SetItem::Merge { value, .. } => vec![value],
+        SetItem::Labels { .. } => Vec::new(),
     }
 }

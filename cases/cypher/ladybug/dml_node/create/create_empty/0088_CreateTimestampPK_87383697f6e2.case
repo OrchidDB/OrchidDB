@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateTimestampPK.87383697f6e2","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateTimestampPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateTimestampPK
+CREATE (t:test {id:timestamp('2024-01-24')})
+CREATE (t:test {id:timestamp('2024-01-01')})
 --- expected
 2024-01-24 00:00:00
 2024-01-01 00:00:00

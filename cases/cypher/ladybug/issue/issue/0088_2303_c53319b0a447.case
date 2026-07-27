@@ -2,5 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2303.c53319b0a447","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2303","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[e]->(b) RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue.test case 2303
+CREATE (t1:T {id: "t1"})-[e1:AFTER {id: "e1"}]->(t2:T {id: "t2"})-[e2:AFTER {id: "e2"}]->(t3:T {id: "t3"}), (t4:T {id: "t4"})-[e3:AFTER {id: "e3"}]->(t5:T {id: "t5"})-[e4:AFTER {id: "e4"}]->(t6:T {id: "t6"})-[e5:AFTER {id: "e5"}]->(t7:T {id: "t7"})
+MATCH (s:T {id: "t2"}), (a:T {id: "t6"}), (t1:T)-[e1:AFTER]->(s), (s)-[e2:AFTER]->(t3:T), (t5:T)-[e4:AFTER]->(a) DELETE e1,e2,e4 CREATE (s)-[e7:AFTER]->(a) CREATE (t1)-[e8:AFTER]->(t3) CREATE (t5)-[e9:AFTER]->(s)
 --- expected
 5

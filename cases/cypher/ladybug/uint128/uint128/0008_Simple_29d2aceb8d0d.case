@@ -2,6 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Simple.29d2aceb8d0d","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Simple","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (z:tab) WHERE z.value = 340282366920938463463374607431768211455 RETURN z.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/uint128/uint128.test case Simple
+CREATE (n1:tab {intkey: 1, value: 42}) RETURN n1.*
+CREATE (n2:tab {intkey: 98764, value: 157782}) RETURN n2.*
+MATCH (z:tab) WHERE z.intkey = 98764 SET z.value = 170141183460469231731687303715884105727 RETURN z.value + CAST(1 AS UINT128)
+MATCH (z:tab) SET z.value = z.value / CAST(2 AS UINT128) RETURN z.*
+CREATE(n3:tab {intkey: 2, value:CAST(170141183460469231731687303715884105727 AS UINT128) * CAST(2 AS UINT128) + CAST(1 AS UINT128)})
+CREATE(n4:tab {intkey: 3, value: 340282366920938463463374607431768211455})
 --- expected
 2|340282366920938463463374607431768211455
 3|340282366920938463463374607431768211455

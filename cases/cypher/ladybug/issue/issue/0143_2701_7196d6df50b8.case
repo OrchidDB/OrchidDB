@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2701.7196d6df50b8","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2701","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n1), (n2)<-[]-(n2), (n1)<-[]-(n2) RETURN n1.id, n2.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue.test case 2701
+CREATE ({id: 1})-[:R]->({id:2})
+MATCH (a {id: 1}) CREATE (a)-[:R]->(a)
 --- expected
 1|1
 2|1

@@ -584,6 +584,40 @@ pub(crate) fn run_with_frontier(
                 Ok(vec![Row::new().with("current", Value::Map(map))])
             }
         }
+        // Mutations inside a correlated arm (MERGE's create arm, a
+        // CREATE under an Apply) must see the outer bindings their
+        // patterns reference.
+        Node::GraphCreate {
+            nodes,
+            edges,
+            input,
+            ..
+        } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::mutation::create_op(nodes, edges, rows, graph)
+        }
+        Node::GraphSetProperty { items, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::mutation::set_property_op(items, rows, graph)
+        }
+        Node::GraphDelete {
+            targets,
+            detach,
+            input,
+        } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::mutation::delete_op(targets, *detach, rows, graph)
+        }
+        Node::GraphMerge {
+            outputs,
+            input,
+            match_arm,
+            create_arm,
+            ..
+        } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::mutation::merge_op(outputs, rows, match_arm, create_arm, graph, ctx)
+        }
         // Sources without correlation behave normally.
         other => run_with_context(other, graph, ctx),
     }

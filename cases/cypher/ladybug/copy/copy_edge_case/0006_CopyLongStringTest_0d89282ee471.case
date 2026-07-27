@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_edge_case.CopyLongStringTest.0d89282ee471","language":"cypher","ordered":true,"source":"copy/copy_edge_case.test","source_case":"CopyLongStringTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"csv-edge-case-tests","expected_kind":"rows","id":"cypher.ladybug.copy.copy_edge_case.CopyLongStringTest.0d89282ee471","language":"cypher","ordered":true,"source":"copy/copy_edge_case.test","source_case":"CopyLongStringTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 match (c:cat) return c.*
 --- expected

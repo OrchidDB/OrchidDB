@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.string_empty.StringConcatOnUncheckpointedProperties.dfa6ef6563d2","language":"cypher","ordered":true,"source":"function/string_empty.test","source_case":"StringConcatOnUncheckpointedProperties","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 match (a)-[m:marries]->(b) return concat("note:'", m.note, "'")
+--- setup_statements
+# re-extracted from kuzu test/test_files/function/string_empty.test case StringConcatOnUncheckpointedProperties
+create (:person {id: 9}); create (:person {id: 11}); create (:person {id: 12}); create (:person {id: 13})
+match (a:person), (b:person) where a.id = 9 and b.id = 11 create (a)-[:marries{note: "some note"}]->(b); match (a:person), (b:person) where a.id = 12 and b.id = 13 create (a)-[:marries]->(b)
 --- expected
 note:''
 note:'some note'

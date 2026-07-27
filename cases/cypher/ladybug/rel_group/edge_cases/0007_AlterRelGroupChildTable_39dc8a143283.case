@@ -2,5 +2,10 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.rel_group.edge_cases.AlterRelGroupChildTable.39dc8a143283","language":"cypher","ordered":true,"source":"rel_group/edge_cases.test","source_case":"AlterRelGroupChildTable","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[]->(b) RETURN a.id, b.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/rel_group/edge_cases.test case AlterRelGroupChildTable
+CREATE (:PersonA {id:0}), (:PersonB {id:0})
+MATCH (p1:PersonA {id:0}), (p2:PersonB {id:0}) CREATE (p1)-[e:Knows]->(p2)
+MATCH (p1 {id:0}), (p2 {id:0}) CREATE (p1)-[e:Knows]->(p2)
 --- expected
 0|0

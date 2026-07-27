@@ -1,11 +1,14 @@
+use std::collections::HashSet;
+
+use crate::ir::expr::{BindingId, IrExpr};
 use crate::ir::plan::{
-    ApplyKind, CreateNode, Node, ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode,
-    ProjectionItem, SetPropertyItem,
+    ApplyKind, CreateEdge, CreateNode, Direction, Node, ProcedureArg, ProcedureMode,
+    ProjectErrorPolicy, ProjectMode, ProjectionItem, SetMode, SetPropertyItem,
 };
 use crate::ir::policy::OptionalMissing;
 use crate::language::cypher::ast::{
-    Clause, CreateClause, DeleteClause, MatchClause, ProcedureCallClause, SetClause, SetItem,
-    UnwindClause,
+    Clause, CreateClause, DeleteClause, Expr, MatchClause, MergeClause, NodePattern,
+    ProcedureCallClause, SetClause, SetItem, UnwindClause,
 };
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
@@ -20,6 +23,7 @@ pub fn lower_clause(lowerer: &mut Lowerer, input: Node, clause: &Clause) -> Cyph
         Clause::Unwind(clause) => lower_unwind(lowerer, input, clause),
         Clause::Call(clause) => lower_call(lowerer, input, clause),
         Clause::Create(clause) => lower_create(lowerer, input, clause),
+        Clause::Merge(clause) => lower_merge(lowerer, input, clause),
         Clause::Set(clause) => lower_set(lowerer, input, clause),
         Clause::Delete(clause) => lower_delete(lowerer, input, clause),
         Clause::With(clause) => project::lower_with(lowerer, input, clause),
@@ -163,69 +167,262 @@ fn lower_create(
     input: Node,
     clause: &CreateClause,
 ) -> CypherPlanResult<Node> {
-    let (node, outputs) = lowerer.with_child_traversal(CypherTraversalKind::Create, |lowerer| {
-        let mut input = input;
-        let mut nodes = Vec::new();
-        let mut outputs = Vec::new();
-        for part in &clause.patterns {
-            if part.variable.is_some() {
-                return Err(CypherPlanError::Unsupported(
-                    "CREATE path-variable binding is not implemented yet".into(),
-                ));
-            }
-            if !part.element.chains.is_empty() {
-                return Err(CypherPlanError::Unsupported(
-                    "CREATE relationship patterns are not implemented yet".into(),
-                ));
-            }
-            let node = &part.element.start;
-            if node.labels.len() != 1 {
-                return Err(CypherPlanError::Unsupported(
-                    "CREATE currently requires exactly one node label".into(),
-                ));
-            }
-            if let Some(bind) = &node.variable {
-                if lowerer.is_visible(bind) {
-                    return Err(CypherPlanError::Invalid(format!(
-                        "CREATE variable `{bind}` is already in scope"
-                    )));
+    let (node, node_outputs, edge_outputs) =
+        lowerer.with_child_traversal(CypherTraversalKind::Create, |lowerer| {
+            let mut state = CreateState::default();
+            let mut input = input;
+            for part in &clause.patterns {
+                if part.variable.is_some() {
+                    return Err(CypherPlanError::Unsupported(
+                        "CREATE path-variable binding is not implemented yet".into(),
+                    ));
                 }
-                outputs.push(bind.clone());
+                let element = &part.element;
+                let mut left = create_endpoint(lowerer, &mut state, &mut input, &element.start)?;
+                for chain in &element.chains {
+                    let right = create_endpoint(lowerer, &mut state, &mut input, &chain.node)?;
+                    let rel = &chain.relationship;
+                    if rel.types.len() != 1 {
+                        return Err(CypherPlanError::Invalid(
+                            "Binder exception: Create relationship requires exactly one \
+                             relationship label."
+                                .into(),
+                        ));
+                    }
+                    if rel.range.explicit {
+                        return Err(CypherPlanError::Invalid(
+                            "Binder exception: Create relationship must have a single hop."
+                                .into(),
+                        ));
+                    }
+                    if rel.recursive.is_some() {
+                        return Err(CypherPlanError::Unsupported(
+                            "CREATE recursive relationship patterns are not implemented yet".into(),
+                        ));
+                    }
+                    let (src, dst) = match rel.direction {
+                        Direction::Out => (left.clone(), right.clone()),
+                        Direction::In => (right.clone(), left.clone()),
+                        Direction::Both => {
+                            return Err(CypherPlanError::Invalid(
+                                "Binder exception: Create undirected relationship is not \
+                                 supported."
+                                    .into(),
+                            ));
+                        }
+                    };
+                    if let Some(bind) = &rel.variable {
+                        if lowerer.is_visible(bind) || state.bound.contains(bind) {
+                            return Err(CypherPlanError::Invalid(format!(
+                                "Binder exception: Variable {bind} already exists."
+                            )));
+                        }
+                        state.bound.insert(bind.clone());
+                        state.edge_outputs.push(bind.clone());
+                    }
+                    let properties = lower_create_properties(
+                        lowerer,
+                        &mut input,
+                        rel.properties.as_ref(),
+                    )?;
+                    state.edges.push(CreateEdge {
+                        bind: rel.variable.clone(),
+                        rel_type: rel.types[0].clone(),
+                        src,
+                        dst,
+                        properties,
+                    });
+                    left = right;
+                }
             }
-            let properties = if let Some(properties) = &node.properties {
-                project::validate_expression_scope(lowerer, properties, "CREATE properties")?;
-                let (next, lowered) = project::lower_expr_with_input(lowerer, input, properties)?;
-                input = next;
-                Some(lowered)
-            } else {
-                None
+            let CreateState {
+                nodes,
+                edges,
+                node_outputs,
+                edge_outputs,
+                ..
+            } = state;
+            let node = Node::GraphCreate {
+                graph: "default".to_string(),
+                nodes,
+                edges,
+                input: input.boxed(),
             };
-            nodes.push(CreateNode {
-                bind: node.variable.clone(),
-                label: node.labels[0].clone(),
-                properties,
-            });
-        }
-        let node = Node::GraphCreate {
-            graph: "default".to_string(),
-            nodes,
-            input: input.boxed(),
-        };
-        lowerer.record_current_imports(lowerer.visible_fields());
-        lowerer.record_current_outputs(outputs.clone());
-        Ok((node, outputs))
-    })?;
-    for output in outputs {
+            lowerer.record_current_imports(lowerer.visible_fields());
+            let mut outputs = node_outputs.clone();
+            outputs.extend(edge_outputs.iter().cloned());
+            lowerer.record_current_outputs(outputs);
+            Ok((node, node_outputs, edge_outputs))
+        })?;
+    for output in node_outputs {
         lowerer.add_visible_kind(output, BindingKind::Node);
+    }
+    for output in edge_outputs {
+        lowerer.add_visible_kind(output, BindingKind::Relationship);
     }
     Ok(node)
 }
 
+/// Accumulator threaded through one CREATE clause. `bound` holds every
+/// variable the clause has introduced so far, so a variable repeated across
+/// pattern parts (`CREATE (a:A)-[:R]->(b:B), (a)-[:R2]->(c:C)`) and
+/// self-loops `(a)-[:R]->(a)` reuse the first binding instead of erroring.
+#[derive(Default)]
+struct CreateState {
+    nodes: Vec<CreateNode>,
+    edges: Vec<CreateEdge>,
+    node_outputs: Vec<BindingId>,
+    edge_outputs: Vec<BindingId>,
+    bound: HashSet<BindingId>,
+}
+
+fn lower_create_properties(
+    lowerer: &mut Lowerer,
+    input: &mut Node,
+    properties: Option<&Expr>,
+) -> CypherPlanResult<Option<IrExpr>> {
+    let Some(properties) = properties else {
+        return Ok(None);
+    };
+    project::validate_expression_scope(lowerer, properties, "CREATE properties")?;
+    let owned = std::mem::replace(input, Node::GraphEmpty);
+    let (next, lowered) = project::lower_expr_with_input(lowerer, owned, properties)?;
+    *input = next;
+    Ok(Some(lowered))
+}
+
+/// Resolve one node pattern inside CREATE to the binding its edges use,
+/// registering a new `CreateNode` unless the variable already resolves.
+fn create_endpoint(
+    lowerer: &mut Lowerer,
+    state: &mut CreateState,
+    input: &mut Node,
+    pattern: &NodePattern,
+) -> CypherPlanResult<BindingId> {
+    // A variable already in scope (from MATCH, or from an earlier part of
+    // this same clause) refers to the existing node; only its bare form is
+    // legal, since re-stating labels or properties would be a redefinition.
+    if let Some(bind) = &pattern.variable {
+        if lowerer.is_visible(bind) || state.bound.contains(bind) {
+            if !pattern.labels.is_empty() || pattern.properties.is_some() {
+                return Err(CypherPlanError::Invalid(format!(
+                    "Binder exception: Variable {bind} already exists."
+                )));
+            }
+            return Ok(bind.clone());
+        }
+    }
+    if pattern.labels.len() != 1 {
+        return Err(CypherPlanError::Invalid(
+            "Binder exception: Create node requires exactly one node label.".into(),
+        ));
+    }
+    let properties = lower_create_properties(lowerer, input, pattern.properties.as_ref())?;
+    let bind = match &pattern.variable {
+        Some(bind) => {
+            state.bound.insert(bind.clone());
+            state.node_outputs.push(bind.clone());
+            bind.clone()
+        }
+        // Anonymous nodes still need a name so edges can reach them; the
+        // synthetic binding never becomes visible to the user's scope.
+        None => lowerer.synthetic("create_node"),
+    };
+    state.nodes.push(CreateNode {
+        bind: Some(bind.clone()),
+        label: pattern.labels[0].clone(),
+        properties,
+    });
+    Ok(bind)
+}
+
 fn lower_set(lowerer: &mut Lowerer, input: Node, clause: &SetClause) -> CypherPlanResult<Node> {
+    lower_set_items(lowerer, input, &clause.items)
+}
+
+/// `MERGE` lowers to two correlated arms over the same pattern: a MATCH-shaped
+/// arm carrying `ON MATCH SET`, and a CREATE-shaped arm carrying
+/// `ON CREATE SET`. `GraphMerge` runs the second only when the first is empty.
+fn lower_merge(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause: &MergeClause,
+) -> CypherPlanResult<Node> {
+    let outer_fields = lowerer.visible_fields();
+    let outer_visible = lowerer.visible_set();
+
+    let (match_arm, outputs, output_kinds) = lowerer.with_preserved_scope(|lowerer| {
+        lowerer.with_child_traversal(CypherTraversalKind::MatchPattern, |lowerer| {
+            let mut arm = Node::GraphCorrelate {
+                bindings: outer_fields.clone(),
+            };
+            arm = pattern::lower_pattern_part(lowerer, arm, &clause.pattern, false, None, false)?;
+            if !clause.on_match.is_empty() {
+                arm = lower_set_items(lowerer, arm, &clause.on_match)?;
+            }
+            let outputs = lowerer
+                .visible_fields()
+                .into_iter()
+                .filter(|binding| !outer_visible.contains(binding))
+                .collect::<Vec<_>>();
+            let output_kinds = outputs
+                .iter()
+                .map(|binding| {
+                    (
+                        binding.clone(),
+                        lowerer
+                            .binding_kind(binding)
+                            .unwrap_or(BindingKind::Unknown),
+                    )
+                })
+                .collect::<Vec<_>>();
+            Ok((arm, outputs, output_kinds))
+        })
+    })?;
+
+    let create_clause = CreateClause {
+        patterns: vec![clause.pattern.clone()],
+    };
+    let create_arm = lowerer.with_preserved_scope(|lowerer| {
+        let arm = Node::GraphCorrelate {
+            bindings: outer_fields.clone(),
+        };
+        let mut arm = lower_create(lowerer, arm, &create_clause)?;
+        if !clause.on_create.is_empty() {
+            arm = lower_set_items(lowerer, arm, &clause.on_create)?;
+        }
+        Ok(arm)
+    })?;
+
+    let node = Node::GraphMerge {
+        correlation: outer_fields.clone(),
+        outputs: outputs.clone(),
+        input: input.boxed(),
+        match_arm: match_arm.boxed(),
+        create_arm: create_arm.boxed(),
+    };
+    lowerer.record_current_imports(outer_fields.clone());
+    lowerer.record_current_correlation(outer_fields);
+    lowerer.record_current_outputs(outputs.clone());
+    for output in outputs {
+        let kind = output_kinds
+            .iter()
+            .find_map(|(binding, kind)| (binding == &output).then_some(*kind))
+            .unwrap_or(BindingKind::Unknown);
+        lowerer.add_visible_kind(output, kind);
+    }
+    Ok(node)
+}
+
+fn lower_set_items(
+    lowerer: &mut Lowerer,
+    input: Node,
+    clause_items: &[SetItem],
+) -> CypherPlanResult<Node> {
     lowerer.with_child_traversal(CypherTraversalKind::Set, |lowerer| {
         let mut input = input;
         let mut items = Vec::new();
-        for item in &clause.items {
+        for item in clause_items {
             match item {
                 SetItem::Property { target, key, value } => {
                     project::validate_expression_scope(lowerer, target, "SET property target")?;
@@ -237,18 +434,33 @@ fn lower_set(lowerer: &mut Lowerer, input: Node, clause: &SetClause) -> CypherPl
                     items.push(SetPropertyItem {
                         target,
                         key: key.clone(),
+                        mode: SetMode::Property,
                         value,
                     });
                 }
-                SetItem::Replace { variable, .. } => {
-                    return Err(CypherPlanError::Unsupported(format!(
-                        "SET {variable} = <map> is not implemented yet"
-                    )));
-                }
-                SetItem::Merge { variable, .. } => {
-                    return Err(CypherPlanError::Unsupported(format!(
-                        "SET {variable} += <map> is not implemented yet"
-                    )));
+                SetItem::Replace { variable, value } | SetItem::Merge { variable, value } => {
+                    let mode = match item {
+                        SetItem::Replace { .. } => SetMode::Replace,
+                        _ => SetMode::Merge,
+                    };
+                    if !lowerer.is_visible(variable) {
+                        return Err(CypherPlanError::Invalid(format!(
+                            "Binder exception: Variable {variable} is not in scope."
+                        )));
+                    }
+                    project::validate_expression_scope(lowerer, value, "SET property value")?;
+                    let target_expr = Expr::Variable(variable.clone());
+                    let (next, target) =
+                        project::lower_expr_with_input(lowerer, input, &target_expr)?;
+                    input = next;
+                    let (next, value) = project::lower_expr_with_input(lowerer, input, value)?;
+                    input = next;
+                    items.push(SetPropertyItem {
+                        target,
+                        key: String::new(),
+                        mode,
+                        value,
+                    });
                 }
                 SetItem::Labels { variable, .. } => {
                     return Err(CypherPlanError::Unsupported(format!(

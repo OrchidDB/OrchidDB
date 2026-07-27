@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialColumnsSequenceSerial.3c26d52ca336","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"RelPartialColumnsTest","source_log":"PartialColumnsSequenceSerial","status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.copy.copy_partial_column.PartialColumnsSequenceSerial.3c26d52ca336","language":"cypher","ordered":true,"source":"copy/copy_partial_column.test","source_case":"RelPartialColumnsTest","source_log":"PartialColumnsSequenceSerial","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person)-[e:knows5]->(:person) RETURN sum(e.seqColumn), sum(e.serColumn)
 --- expected

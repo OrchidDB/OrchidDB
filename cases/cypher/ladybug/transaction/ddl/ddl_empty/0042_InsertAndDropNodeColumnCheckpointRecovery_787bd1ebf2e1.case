@@ -2,6 +2,13 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.ddl.ddl_empty.InsertAndDropNodeColumnCheckpointRecovery.787bd1ebf2e1","language":"cypher","ordered":true,"source":"transaction/ddl/ddl_empty.test","source_case":"InsertAndDropNodeColumnCheckpointRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:test) RETURN n.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/ddl/ddl_empty.test case InsertAndDropNodeColumnCheckpointRecovery
+node s0_t:test {id: 0, age: 20, name: "test", prop2: 1}
+node s1_t:test {id: 1, age: 21, name: "test1", prop2: 2}
+node s2_t:test {id: 2, age: 22, name: "test2", prop2: 3}
+node s3_t:test {id: 3, age: 23, name: "test3", prop2: 4}
+node s4_t:test {id: 4, age: 24, name: "test4", prop2: 5}
 --- expected
 0|20|1
 1|21|2

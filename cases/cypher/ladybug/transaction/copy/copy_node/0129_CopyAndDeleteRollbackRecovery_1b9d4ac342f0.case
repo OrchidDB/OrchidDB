@@ -1,7 +1,10 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyAndDeleteRollbackRecovery.1b9d4ac342f0","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyAndDeleteRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.CopyAndDeleteRollbackRecovery.1b9d4ac342f0","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"CopyAndDeleteRollbackRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) RETURN p.ID
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/copy/copy_node.test case CopyAndDeleteRollbackRecovery
+MATCH (p:person) WHERE p.fname='Bob' DELETE p
 --- expected
 0
 3

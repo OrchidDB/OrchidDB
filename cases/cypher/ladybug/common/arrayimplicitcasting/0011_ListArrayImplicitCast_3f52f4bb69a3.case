@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.common.arrayimplicitcasting.ListArrayImplicitCast.3f52f4bb69a3","language":"cypher","ordered":true,"source":"common/arrayimplicitcasting.test","source_case":"ListArrayImplicitCast","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:T0) RETURN a.a, a.b, a.c, a.d
+--- setup_statements
+# re-extracted from kuzu test/test_files/common/arrayimplicitcasting.test case ListArrayImplicitCast
+CREATE (:T0 {b: [1.0, 2.0], c: [1, 2], d: [3, 5]})
 --- expected
 0|[1,2]|[1.000000,2.000000]|[3,5]

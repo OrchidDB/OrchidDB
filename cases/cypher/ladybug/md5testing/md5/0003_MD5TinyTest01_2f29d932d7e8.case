@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.md5testing.md5.MD5TinyTest01.2f29d932d7e8","language":"cypher","ordered":false,"source":"md5testing/md5.test","source_case":"MD5TinyTest01","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (v:T) RETURN v.VAL
+--- graph_initializer
+# re-extracted from kuzu test/test_files/md5testing/md5.test case MD5TinyTest01
+node s0_anon1:T {VAL: 100}
 --- expected
 1 tuples hashed to 919d117956d3135c4c683ff021352f5c

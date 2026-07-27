@@ -1,6 +1,9 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.InsertAndCopyCommit.e91ea81c7348","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"InsertAndCopyCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"tinysnb","expected_kind":"rows","id":"cypher.ladybug.transaction.copy.copy_node.InsertAndCopyCommit.e91ea81c7348","language":"cypher","ordered":true,"source":"transaction/copy/copy_node.test","source_case":"InsertAndCopyCommit","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/copy/copy_node.test case InsertAndCopyCommit
+CREATE (p:person {ID: 100000})
 --- expected
 6

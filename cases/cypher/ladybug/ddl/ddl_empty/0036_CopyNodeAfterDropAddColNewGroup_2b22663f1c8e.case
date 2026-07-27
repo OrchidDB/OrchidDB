@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyNodeAfterDropAddColNewGroup.2b22663f1c8e","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyNodeAfterDropAddColNewGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"ldbc-sf01","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.CopyNodeAfterDropAddColNewGroup.2b22663f1c8e","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"CopyNodeAfterDropAddColNewGroup","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:Comment) WHERE n.id = 1030792151057 return n.size
 --- expected

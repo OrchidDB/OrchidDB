@@ -39,7 +39,8 @@ use datafusion::logical_expr::{
 use crate::ir::expr::{AggCall, IrExpr};
 use crate::ir::plan::{
     ApplyKind, BarrierBulkPolicy, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched,
-    CoalesceArmOutput, CoalesceSuccess, ConstructTriple, CreateNode, Direction, DistinctBulk,
+    CoalesceArmOutput, CoalesceSuccess, ConstructTriple, CreateEdge, CreateNode, Direction,
+    DistinctBulk,
     DistinctMode, EmitMode, GraphPlan, GroupValue, JoinKind, LabelExpr, Length, MinusCompatibility,
     Node, PathFilterScope, PathMaterialization, PathObjects, PathPart, PathSelector, PathUpdate,
     ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode, ProjectionItem, QuantifierKind,
@@ -403,12 +404,14 @@ ir_extension! {
     GraphCreate {
         graph: String,
         nodes: Vec<CreateNode>,
+        edges: Vec<CreateEdge>,
     }
     rebuild(s, c) {
         let mut c = c;
         Node::GraphCreate {
             graph: s.graph.clone(),
             nodes: s.nodes.clone(),
+            edges: s.edges.clone(),
             input: Box::new(c.remove(0)),
         }
     },
@@ -1233,13 +1236,23 @@ fn node_to_plan_with_policy(
         Node::GraphCreate {
             graph,
             nodes,
+            edges,
             input,
         } => extension(GraphCreate {
             graph: graph.clone(),
             nodes: nodes.clone(),
+            edges: edges.clone(),
             schema,
             inputs: vec![node_to_plan(input)?],
         }),
+        // MERGE's match-or-create control flow has no DataFusion
+        // equivalent; the relational backend rejects it explicitly rather
+        // than emitting a plan that silently drops the create arm.
+        Node::GraphMerge { .. } => {
+            return Err(DataFusionError::NotImplemented(
+                "GraphMerge has no relational lowering".to_string(),
+            ));
+        }
         Node::GraphSetProperty { items, input } => extension(GraphSetProperty {
             items: items.clone(),
             schema,
@@ -1987,13 +2000,35 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         | Node::GraphPathFilter { input, .. }
         | Node::GraphSetProperty { input, .. }
         | Node::GraphDelete { input, .. } => schema_fields_for_node(input),
-        Node::GraphCreate { nodes, input, .. } => {
+        Node::GraphMerge {
+            outputs, match_arm, ..
+        } => {
+            let mut fields = schema_fields_for_node(match_arm);
+            for output in outputs {
+                upsert_field(&mut fields, semantic_field(output, DataType::Utf8, true, "node"));
+            }
+            fields
+        }
+        Node::GraphCreate {
+            nodes,
+            edges,
+            input,
+            ..
+        } => {
             let mut fields = schema_fields_for_node(input);
             for node in nodes {
                 if let Some(bind) = &node.bind {
                     upsert_field(
                         &mut fields,
                         semantic_field(bind, DataType::Utf8, true, "node"),
+                    );
+                }
+            }
+            for edge in edges {
+                if let Some(bind) = &edge.bind {
+                    upsert_field(
+                        &mut fields,
+                        semantic_field(bind, DataType::Utf8, true, "edge"),
                     );
                 }
             }

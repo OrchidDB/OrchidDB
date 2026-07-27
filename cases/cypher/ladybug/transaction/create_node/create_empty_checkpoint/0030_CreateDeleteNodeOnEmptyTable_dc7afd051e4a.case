@@ -2,5 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateDeleteNodeOnEmptyTable.dc7afd051e4a","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateDeleteNodeOnEmptyTable","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:emptyTable) RETURN a.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateDeleteNodeOnEmptyTable
+CREATE (e:emptyTable {id: 0, prop: [3,2]})
+MATCH (a:emptyTable) DELETE a
+CREATE (e:emptyTable {id: 2, prop: [1,5,6]})
 --- expected
 2|[1,5,6]
