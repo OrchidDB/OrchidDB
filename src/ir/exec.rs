@@ -227,6 +227,8 @@ const SRC_ID_SUFFIX: &str = "__src_id";
 const SRC_LABEL_SUFFIX: &str = "__src_label";
 const DST_ID_SUFFIX: &str = "__dst_id";
 const DST_LABEL_SUFFIX: &str = "__dst_label";
+/// Separator between a `x.*` projection alias and each expanded property.
+const STAR_SEP: &str = "__star__";
 
 /// Rewrite `plan` so every maximal relationally-lowerable subtree is replaced
 /// by its already-computed rows.
@@ -348,6 +350,16 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         .iter()
         .map(|field| field.name().to_string())
         .collect();
+
+    // A `x.*` projection fans one field out into one column per property.
+    // Those columns are not bindings, and the residual `GraphReturn` above
+    // still asks for the single field `x.*` — which no longer exists, so the
+    // row comes back blank. Decline instead, and the partitioner islands the
+    // subtree below the projection, leaving the star expansion where it can
+    // still be evaluated.
+    if names.iter().any(|name| name.contains(STAR_SEP)) {
+        return None;
+    }
 
     enum Source {
         /// `(id column, label column)`
