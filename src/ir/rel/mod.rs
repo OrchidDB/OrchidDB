@@ -539,10 +539,26 @@ impl<'a> LoweringContext<'a> {
                             AggKind::Max | AggKind::MaxOrNull => {
                                 df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
                             }
-                            AggKind::CollectRows | AggKind::CollectTraversers => distinct_if(
-                                df_array_agg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
-                                agg.distinct,
-                            )?,
+                            AggKind::CollectRows | AggKind::CollectTraversers => {
+                                let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                                if agg.distinct {
+                                    // `DISTINCT` collects in first-appearance
+                                    // order, which no SQL ordering expresses,
+                                    // so leave it to the engine.
+                                    distinct_if(df_array_agg(arg), true)?
+                                } else {
+                                    // Direct evaluation collects in scan
+                                    // order; SQL aggregates have no inherent
+                                    // order at all. Pin it to the element ids
+                                    // so both sides agree.
+                                    let keys = scan_order_keys(&input.plan);
+                                    if keys.is_empty() {
+                                        df_array_agg(arg)
+                                    } else {
+                                        df_array_agg(arg).order_by(keys).build()?
+                                    }
+                                }
+                            }
                             other => {
                                 return Err(RelError::Unsupported(format!(
                                     "aggregate `{other:?}` is not relationally lowered yet"
@@ -4224,6 +4240,21 @@ fn constant_list_sort(args: &[IrExpr], reverse_default: bool) -> RelResult<Optio
     Ok(Some(Value::List(sort_list_values(
         items, descending, nulls_last,
     ))))
+}
+
+/// Element-id columns of `plan`, in schema order, as ascending sort keys.
+///
+/// These reconstruct the row order direct evaluation would have seen, which
+/// is what an unordered SQL aggregate otherwise loses.
+fn scan_order_keys(plan: &LogicalPlan) -> Vec<datafusion::logical_expr::SortExpr> {
+    plan.schema()
+        .fields()
+        .iter()
+        .filter(|field| {
+            field.name().ends_with(ID_SUFFIX) && !field.name().contains(PROP_MARKER)
+        })
+        .map(|field| col_exact(field.name()).sort(true, false))
+        .collect()
 }
 
 /// Did lowering the right side of an `Apply` pull the left side in?

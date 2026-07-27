@@ -296,7 +296,78 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
     let statement = unparser.plan_to_sql(&plan).map_err(|err| {
         SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name()))
     })?;
-    Ok(dialect.fixup_query(statement.to_string()))
+    let sql = restore_aggregate_ordering(&plan, &unparser, statement.to_string())?;
+    Ok(dialect.fixup_query(sql))
+}
+
+/// Re-attach aggregate `ORDER BY` clauses the unparser drops.
+///
+/// `array_agg(x ORDER BY k)` is valid in every dialect here, but DataFusion's
+/// unparser only emits an aggregate's ordering as `WITHIN GROUP`, and only
+/// for functions that accept that clause. For `array_agg` the ordering simply
+/// vanishes, so the emitted SQL means something different from the plan —
+/// collection order becomes whatever the engine happens to produce.
+///
+/// The call text is regenerated with the same unparser that produced the
+/// statement, so it matches the emitted text exactly, and the ordering is
+/// spliced in before the closing parenthesis. Anything ambiguous (a call that
+/// does not appear exactly once) is reported as unsupported rather than
+/// patched on a guess — a wrong splice would be silently wrong SQL, which is
+/// precisely what this is fixing.
+fn restore_aggregate_ordering(
+    plan: &LogicalPlan,
+    unparser: &Unparser<'_>,
+    sql: String,
+) -> SqlResult<String> {
+    let mut ordered: Vec<datafusion::logical_expr::expr::AggregateFunction> = Vec::new();
+    plan.apply_with_subqueries(|node| {
+        node.apply_expressions(|expr| {
+            expr.apply(|inner| {
+                if let Expr::AggregateFunction(agg) = inner
+                    && !agg.params.order_by.is_empty()
+                    && !agg.func.supports_within_group_clause()
+                {
+                    ordered.push(agg.clone());
+                }
+                Ok(TreeNodeRecursion::Continue)
+            })
+        })?;
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+
+    let mut sql = sql;
+    for agg in ordered {
+        let mut plain = agg.clone();
+        plain.params.order_by = Vec::new();
+        let call = unparser
+            .expr_to_sql(&Expr::AggregateFunction(plain))
+            .map_err(|err| SqlError::Unsupported(format!("aggregate call: {err}")))?
+            .to_string();
+        if sql.matches(call.as_str()).count() != 1 {
+            return Err(SqlError::Unsupported(format!(
+                "cannot place ORDER BY on `{call}` unambiguously"
+            )));
+        }
+        let mut keys = Vec::with_capacity(agg.params.order_by.len());
+        for sort in &agg.params.order_by {
+            let key = unparser
+                .expr_to_sql(&sort.expr)
+                .map_err(|err| SqlError::Unsupported(format!("order key: {err}")))?;
+            keys.push(format!(
+                "{key} {} NULLS {}",
+                if sort.asc { "ASC" } else { "DESC" },
+                if sort.nulls_first { "FIRST" } else { "LAST" }
+            ));
+        }
+        let Some(open) = call.rfind(')') else {
+            return Err(SqlError::Unsupported(format!(
+                "unrecognized aggregate call text `{call}`"
+            )));
+        };
+        let ordered_call = format!("{} ORDER BY {})", &call[..open], keys.join(", "));
+        sql = sql.replace(call.as_str(), &ordered_call);
+    }
+    Ok(sql)
 }
 
 /// Remove projections that select every input column unchanged. The unparser
