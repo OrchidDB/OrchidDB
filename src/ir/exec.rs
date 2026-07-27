@@ -30,6 +30,9 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use arrow::array::Array;
+use arrow::datatypes::{DataType, Field};
+
 use crate::ir::catalog::{PropertyGraph, array_value};
 use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::plan::{GraphPlan, Node};
@@ -413,8 +416,8 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         }
     }
 
-    let column_value = |index: usize, row: usize| -> Value {
-        array_value(
+    let column_value = |index: usize, row: usize| -> Option<Value> {
+        decode_value(
             batch.column(index).as_ref(),
             row,
             Some(schema.field(index)),
@@ -438,10 +441,10 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         let mut out = Vec::with_capacity(sources.len());
         for source in &sources {
             let value = match source {
-                Source::Scalar(index) => column_value(*index, row),
+                Source::Scalar(index) => column_value(*index, row)?,
                 Source::NodeCols(id, label) => {
-                    let id_value = column_value(*id, row);
-                    let label_value = column_value(*label, row);
+                    let id_value = column_value(*id, row)?;
+                    let label_value = column_value(*label, row)?;
                     match (as_i64(&id_value), as_label(&label_value)) {
                         (Some(id), Some(label)) => Value::Node { label, id },
                         // A null id is an outer-join miss, not a broken
@@ -453,21 +456,25 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
                     }
                 }
                 Source::EdgeCols(src_id, src_label, dst_id, dst_label, id, label) => {
-                    let src_id_value = column_value(*src_id, row);
+                    let src_id_value = column_value(*src_id, row)?;
                     if matches!(src_id_value, Value::Null) {
                         Value::Null
                     } else {
                         Value::Edge {
                             rel_type: label
-                                .and_then(|index| as_label(&column_value(index, row)))
+                                .and_then(|index| column_value(index, row))
+                                .as_ref()
+                                .and_then(as_label)
                                 .unwrap_or_default(),
                             id: id
-                                .and_then(|index| as_i64(&column_value(index, row)))
+                                .and_then(|index| column_value(index, row))
+                                .as_ref()
+                                .and_then(as_i64)
                                 .unwrap_or_default(),
-                            src_label: as_label(&column_value(*src_label, row))?,
+                            src_label: as_label(&column_value(*src_label, row)?)?,
                             src_id: as_i64(&src_id_value)?,
-                            dst_label: as_label(&column_value(*dst_label, row))?,
-                            dst_id: as_i64(&column_value(*dst_id, row))?,
+                            dst_label: as_label(&column_value(*dst_label, row)?)?,
+                            dst_id: as_i64(&column_value(*dst_id, row)?)?,
                             projected_properties: None,
                         }
                     }
@@ -483,6 +490,85 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         rows,
         bulk: None,
     })
+}
+
+/// Decode one Arrow cell into a [`Value`], or `None` if the type has no
+/// faithful representation here.
+///
+/// `None` is load-bearing: it makes the whole island decline, so the subtree
+/// falls back to direct evaluation. The alternative — substituting `Null` for
+/// anything unrecognized, which is what [`array_value`] does by design for
+/// property reads — turns an unsupported type into a silently wrong answer.
+/// That is exactly how `collect()` results were being dropped.
+fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<Value> {
+    if row >= array.len() || array.is_null(row) {
+        return Some(Value::Null);
+    }
+    match array.data_type() {
+        DataType::Null => Some(Value::Null),
+        DataType::Boolean
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::Float64
+        | DataType::Utf8 => Some(array_value(array, row, field)),
+        // Narrower and unsigned widths carry the same values; widen rather
+        // than decline, since the graph value model has one integer type.
+        DataType::Int8 => widen_int::<arrow::array::Int8Array>(array, row),
+        DataType::Int16 => widen_int::<arrow::array::Int16Array>(array, row),
+        DataType::UInt8 => widen_int::<arrow::array::UInt8Array>(array, row),
+        DataType::UInt16 => widen_int::<arrow::array::UInt16Array>(array, row),
+        DataType::UInt32 => widen_int::<arrow::array::UInt32Array>(array, row),
+        DataType::UInt64 => array
+            .as_any()
+            .downcast_ref::<arrow::array::UInt64Array>()
+            .and_then(|typed| i64::try_from(typed.value(row)).ok())
+            .map(Value::Long),
+        DataType::Float32 => array
+            .as_any()
+            .downcast_ref::<arrow::array::Float32Array>()
+            .map(|typed| Value::Float(f64::from(typed.value(row)))),
+        DataType::LargeUtf8 => array
+            .as_any()
+            .downcast_ref::<arrow::array::LargeStringArray>()
+            .map(|typed| Value::String(typed.value(row).to_string())),
+        DataType::Utf8View => array
+            .as_any()
+            .downcast_ref::<arrow::array::StringViewArray>()
+            .map(|typed| Value::String(typed.value(row).to_string())),
+        // `collect()` and friends produce real Arrow lists; decode them
+        // elementwise so nested lists work too.
+        DataType::List(inner) => {
+            let typed = array.as_any().downcast_ref::<arrow::array::ListArray>()?;
+            decode_list(typed.value(row).as_ref(), inner)
+        }
+        DataType::LargeList(inner) => {
+            let typed = array
+                .as_any()
+                .downcast_ref::<arrow::array::LargeListArray>()?;
+            decode_list(typed.value(row).as_ref(), inner)
+        }
+        _ => None,
+    }
+}
+
+fn widen_int<T>(array: &dyn Array, row: usize) -> Option<Value>
+where
+    T: arrow::array::Array + 'static,
+    for<'a> &'a T: arrow::array::ArrayAccessor,
+    for<'a> <&'a T as arrow::array::ArrayAccessor>::Item: Into<i64>,
+{
+    let typed = array.as_any().downcast_ref::<T>()?;
+    Some(Value::Long(
+        arrow::array::ArrayAccessor::value(&typed, row).into(),
+    ))
+}
+
+fn decode_list(items: &dyn Array, inner: &Field) -> Option<Value> {
+    let mut out = Vec::with_capacity(items.len());
+    for index in 0..items.len() {
+        out.push(decode_value(items, index, Some(inner))?);
+    }
+    Some(Value::List(out))
 }
 
 /// Does this subtree write to the graph?

@@ -146,6 +146,19 @@ struct IslandTally {
     islands: usize,
     /// Why residual work remained, by reason.
     residual_reasons: BTreeMap<String, usize>,
+    /// Cases where the SQL path and the interpreter disagreed on the answer.
+    /// The interpreter is the reference, so each of these is a lowering or
+    /// execution bug — as opposed to a corpus gap, which makes both wrong
+    /// together and shows up in neither this list nor `agreed`.
+    divergences: Vec<Divergence>,
+    agreed: usize,
+}
+
+#[derive(Debug)]
+struct Divergence {
+    query: String,
+    islands: Vec<String>,
+    interpreter: Vec<String>,
 }
 
 static ISLAND_TALLY: std::sync::Mutex<Option<IslandTally>> = std::sync::Mutex::new(None);
@@ -190,7 +203,33 @@ fn render_island_tally() -> String {
     for (reason, count) in reasons.iter().take(40) {
         out.push_str(&format!("  {count:>5}  {reason}\n"));
     }
+    if crosscheck_enabled() {
+        let checked = tally.agreed + tally.divergences.len();
+        out.push_str(&format!(
+            "crosscheck vs interpreter: checked={} agreed={} ({:.1}%) diverged={}\n",
+            checked,
+            tally.agreed,
+            percent(tally.agreed, checked),
+            tally.divergences.len()
+        ));
+        out.push_str("\n--- divergences (SQL path vs interpreter) ---\n");
+        for divergence in &tally.divergences {
+            out.push_str(&format!(
+                "\nquery: {}\n  sql        : {:?}\n  interpreter: {:?}\n",
+                divergence.query,
+                truncate_rows(&divergence.islands),
+                truncate_rows(&divergence.interpreter),
+            ));
+        }
+    }
     out
+}
+
+fn truncate_rows(rows: &[String]) -> Vec<String> {
+    rows.iter()
+        .take(4)
+        .map(|row| row.chars().take(120).collect())
+        .collect()
 }
 
 #[derive(Debug)]
@@ -421,9 +460,65 @@ async fn execute_case_islands(
     let target = default_target();
     let (hybrid, stats) = plan_with_islands(plan, graph, backend, target.as_ref()).await;
     record_island_stats(&stats);
-    ExecRun {
-        result: interpret(&hybrid, graph).map_err(|err| format!("{err}")),
-        sql: None,
+    let result = interpret(&hybrid, graph).map_err(|err| format!("{err}"));
+    if crosscheck_enabled() {
+        crosscheck_against_interpreter(plan, graph, &result);
+    }
+    ExecRun { result, sql: None }
+}
+
+/// The case currently executing, so a divergence can name itself. Set by the
+/// language runners before execution.
+static CURRENT_CASE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn set_current_case(query: &str) {
+    *CURRENT_CASE.lock().expect("current case") = query.to_string();
+}
+
+fn current_case() -> String {
+    CURRENT_CASE.lock().expect("current case").clone()
+}
+
+fn crosscheck_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("GRAPH_REL_CROSSCHECK").is_ok_and(|v| v == "1"))
+}
+
+/// Run the same plan straight through the interpreter and compare.
+///
+/// A case can fail for two very different reasons: the lowering is wrong, or
+/// the fixture/corpus is wrong. Only the first is ours to fix, and only this
+/// comparison tells them apart — expected-output mismatches conflate them.
+fn crosscheck_against_interpreter(
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+    islands: &Result<ReturnedBatches, String>,
+) {
+    let reference = interpret(plan, graph);
+    let render = |result: &Result<ReturnedBatches, String>| -> Vec<String> {
+        match result {
+            Ok(batches) => {
+                let mut lines = cypher_case_runner::format::lines_from_batch(batches);
+                lines.sort();
+                lines
+            }
+            Err(err) => vec![format!("<error> {}", first_line(err))],
+        }
+    };
+    // The interpreter is only a reference when it produces an answer.
+    let Ok(reference) = reference else { return };
+    let expected = render(&Ok(reference));
+    let actual = render(islands);
+    let mut guard = ISLAND_TALLY.lock().expect("island tally");
+    let tally = guard.get_or_insert_with(IslandTally::default);
+    if expected == actual {
+        tally.agreed += 1;
+    } else {
+        tally.divergences.push(Divergence {
+            query: current_case(),
+            islands: actual,
+            interpreter: expected,
+        });
     }
 }
 
@@ -593,6 +688,7 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             outcome: Outcome::LowerError(format!("{err}")),
         };
     }
+    set_current_case(&query);
     let exec = execute_case(backend, &plan, &graph, exec_mode).await;
     let returned = match exec.result {
         Ok(returned) => returned,
@@ -721,6 +817,7 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
             outcome: Outcome::LowerError(format!("{err}")),
         };
     }
+    set_current_case(&query);
     let exec = execute_case(backend, &plan, &graph, exec_mode).await;
     let returned = match exec.result {
         Ok(returned) => returned,

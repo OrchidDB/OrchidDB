@@ -139,6 +139,39 @@ fn mutations_are_never_islanded() {
     assert_eq!(stats.islands, 0, "a CREATE plan must not be islanded");
 }
 
+/// `collect()` produces a real list column. An island that cannot decode a
+/// column type used to substitute NULL, which turned every collected list
+/// into an empty cell — a wrong answer rather than a fallback.
+#[test]
+fn island_results_carry_collected_lists() {
+    let graph = fixture();
+    let query = "MATCH (p:person) RETURN collect(p.name)";
+    let (stats, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
+    assert_eq!(rows, rows_of(&graph, query));
+    assert!(
+        rows.iter().all(|row| !row.trim().is_empty()),
+        "collected list came back empty: {rows:?} (islands={})",
+        stats.islands
+    );
+}
+
+/// A column the island cannot decode must make the island decline, so the
+/// subtree is evaluated directly instead of yielding a fabricated NULL.
+#[test]
+fn undecodable_columns_decline_rather_than_null_out() {
+    let graph = fixture();
+    // Whatever the engine returns for these, the rows must agree with direct
+    // evaluation — either by decoding faithfully or by declining the island.
+    for query in [
+        "MATCH (p:person) RETURN collect(p.age)",
+        "MATCH (p:person) RETURN p.age, collect(p.name)",
+        "MATCH (a:person)-[:knows]->(b:person) RETURN a.name, collect(b.age)",
+    ] {
+        let (_, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
+        assert_eq!(rows, rows_of(&graph, query), "mismatch for `{query}`");
+    }
+}
+
 /// The engine is a swappable target, not a hardcoded dependency: the same
 /// plan must produce the same rows on DuckDB and on in-process DataFusion.
 #[test]
