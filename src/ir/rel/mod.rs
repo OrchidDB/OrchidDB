@@ -1375,6 +1375,17 @@ impl<'a> LoweringContext<'a> {
             ApplyKind::Inner => {
                 let mut right = right;
                 right.islands.merge(left.islands);
+                // The right side normally absorbs the left through
+                // `correlate_plan`, which is why returning it alone is
+                // usually right. When it did not — an uncorrelated pattern
+                // such as `UNWIND ... MATCH ...` or a comma-separated match —
+                // the left is a genuine cross-product factor, and dropping it
+                // loses both its multiplicity and its bindings.
+                if !absorbed_correlation(&left.plan, &right.plan) {
+                    right.plan = LogicalPlanBuilder::from(left.plan.clone())
+                        .cross_join(right.plan.clone())?
+                        .build()?;
+                }
                 if !cleanup.is_empty() {
                     let projections = existing_columns_by_name(&right.plan, &cleanup);
                     right.plan = LogicalPlanBuilder::from(right.plan)
@@ -4213,6 +4224,24 @@ fn constant_list_sort(args: &[IrExpr], reverse_default: bool) -> RelResult<Optio
     Ok(Some(Value::List(sort_list_values(
         items, descending, nulls_last,
     ))))
+}
+
+/// Did lowering the right side of an `Apply` pull the left side in?
+///
+/// Correlated right sides reach the left through `GraphCorrelate`, so every
+/// left column reappears in the right plan's schema. An uncorrelated right
+/// side carries none of them, and the two need joining instead.
+fn absorbed_correlation(left: &LogicalPlan, right: &LogicalPlan) -> bool {
+    let right_names: BTreeSet<&str> = right
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.name().as_str())
+        .collect();
+    left.schema()
+        .fields()
+        .iter()
+        .all(|field| right_names.contains(field.name().as_str()))
 }
 
 /// Apply `DISTINCT` to an aggregate call when the query asked for it.
