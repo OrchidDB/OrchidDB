@@ -522,28 +522,27 @@ impl<'a> LoweringContext<'a> {
                                     self.lower_expr(&input.plan, arg)?,
                                 )
                             }
-                            AggKind::Sum | AggKind::SumOrZero => {
-                                df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
-                            }
-                            AggKind::Avg | AggKind::AvgOrZero | AggKind::AvgOrNull => {
-                                df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
-                            }
+                            // `DISTINCT` changes the result of these, unlike
+                            // MIN/MAX where it is a no-op, so it has to be
+                            // carried onto the aggregate rather than dropped.
+                            AggKind::Sum | AggKind::SumOrZero => distinct_if(
+                                df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                agg.distinct,
+                            )?,
+                            AggKind::Avg | AggKind::AvgOrZero | AggKind::AvgOrNull => distinct_if(
+                                df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                agg.distinct,
+                            )?,
                             AggKind::Min | AggKind::MinOrNull => {
                                 df_min(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
                             }
                             AggKind::Max | AggKind::MaxOrNull => {
                                 df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
                             }
-                            AggKind::CollectRows | AggKind::CollectTraversers => {
-                                let expr = df_array_agg(
-                                    self.lower_required_agg_arg(&input.plan, &agg.arg)?,
-                                );
-                                if agg.distinct {
-                                    expr.distinct().build()?
-                                } else {
-                                    expr
-                                }
-                            }
+                            AggKind::CollectRows | AggKind::CollectTraversers => distinct_if(
+                                df_array_agg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                agg.distinct,
+                            )?,
                             other => {
                                 return Err(RelError::Unsupported(format!(
                                     "aggregate `{other:?}` is not relationally lowered yet"
@@ -2070,11 +2069,31 @@ impl<'a> LoweringContext<'a> {
             }
             IrExpr::Id(binding) => {
                 let col = id_col(binding);
-                if has_exact_col(plan, &col) {
-                    Ok(col_exact(col))
-                } else {
-                    Err(RelError::Unsupported(format!("id({binding})")))
+                if !has_exact_col(plan, &col) {
+                    return Err(RelError::Unsupported(format!("id({binding})")));
                 }
+                // Kuzu's `ID()` yields an internal id that prints as
+                // `table:offset`, not a bare offset. Mirror
+                // `interpreter::element_id` so the same element gets the same
+                // id whichever path evaluated it.
+                let table_index = match has_binding_shape(plan, binding) {
+                    Some(BindingShape::Node) => label_index_case(
+                        col_exact(label_col(binding)),
+                        self.graph.node_label_order(),
+                        0,
+                        1,
+                    ),
+                    Some(BindingShape::Edge) => {
+                        rel_index_case(col_exact(label_col(binding)), self.graph)
+                    }
+                    // Not an element binding — nothing to qualify it with.
+                    None => return Ok(col_exact(col)),
+                };
+                Ok(concat_exprs(vec![
+                    table_index,
+                    lit(":"),
+                    cast_utf8(col_exact(col)),
+                ]))
             }
             IrExpr::Label(binding) => {
                 let col = label_col(binding);
@@ -3103,7 +3122,7 @@ impl<'a> LoweringContext<'a> {
         shape: BindingShape,
     ) -> RelResult<Expr> {
         let node_index = |label_expr: Expr| {
-            label_index_case(label_expr, self.graph.node_label_order())
+            label_index_case(label_expr, self.graph.node_label_order(), 0, 1)
         };
         let property_segments = |parts: &mut Vec<Expr>| {
             for key in self.element_property_keys(plan, binding, shape) {
@@ -3146,10 +3165,7 @@ impl<'a> LoweringContext<'a> {
                     lit(")-{_LABEL: "),
                     col_exact(label_col(binding)),
                     lit(", _ID: "),
-                    label_index_case(
-                        col_exact(label_col(binding)),
-                        self.graph.edge_rel_order(),
-                    ),
+                    rel_index_case(col_exact(label_col(binding)), self.graph),
                     lit(":"),
                     cast_utf8(col_exact(id_col(binding))),
                 ];
@@ -4199,6 +4215,15 @@ fn constant_list_sort(args: &[IrExpr], reverse_default: bool) -> RelResult<Optio
     ))))
 }
 
+/// Apply `DISTINCT` to an aggregate call when the query asked for it.
+fn distinct_if(expr: Expr, distinct: bool) -> RelResult<Expr> {
+    if distinct {
+        Ok(expr.distinct().build()?)
+    } else {
+        Ok(expr)
+    }
+}
+
 fn constant_list_append(args: &[IrExpr], prepend: bool) -> RelResult<Option<Value>> {
     let [items, item] = args else {
         return Ok(None);
@@ -4770,21 +4795,37 @@ fn plan_column_type(plan: &LogicalPlan, name: &str) -> Option<DataType> {
         .map(|field| field.data_type().clone())
 }
 
+/// Relationship-table index for `_ID` printing.
+///
+/// Kuzu numbers relationship tables in the same namespace as node tables and
+/// reserves a second internal slot per relationship type for the reverse
+/// adjacency table, so visible ids advance by two per type after the node
+/// tables. This mirrors `interpreter::element_id::edge_table_index`; the two
+/// must agree or the same edge prints with different ids depending on which
+/// path ran it.
+fn rel_index_case(label_expr: Expr, graph: &PropertyGraph) -> Expr {
+    let base = graph.node_label_order().len() as i64;
+    label_index_case(label_expr, graph.edge_rel_order(), base, 2)
+}
+
 /// `CASE label WHEN l0 THEN '0' WHEN l1 THEN '1' ... END` — the catalog
 /// insertion-order table index used by Kuzu-style `_ID` printing.
-fn label_index_case(label_expr: Expr, order: &[String]) -> Expr {
+///
+/// `base` and `stride` place the result in Kuzu's table-id numbering, which
+/// node and relationship tables share. See [`rel_index_case`].
+fn label_index_case(label_expr: Expr, order: &[String], base: i64, stride: i64) -> Expr {
     let arms = order
         .iter()
         .enumerate()
         .map(|(idx, label)| {
             (
                 Box::new(lit(label.clone())),
-                Box::new(lit(idx.to_string())),
+                Box::new(lit((base + idx as i64 * stride).to_string())),
             )
         })
         .collect::<Vec<_>>();
     if arms.is_empty() {
-        return lit("0");
+        return lit(base.to_string());
     }
     Expr::Case(Case::new(
         Some(Box::new(label_expr)),
