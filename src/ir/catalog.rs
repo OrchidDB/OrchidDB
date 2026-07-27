@@ -129,6 +129,48 @@ struct GraphOverlay {
     /// `SET n = {…}`. Any key not present in the overrides reads as null.
     replaced_node_properties: HashSet<(String, i64)>,
     replaced_edge_properties: HashSet<(String, i64)>,
+    /// Distinct property keys written per label / rel-type, in first-seen
+    /// order, maintained as writes happen.
+    ///
+    /// Rendering an element asks for its label's property keys, so
+    /// recomputing them by walking every overlay element made bulk writes
+    /// quadratic — 60k `CREATE`s spent essentially all their time in
+    /// `memcmp` here, and 150k took over ten minutes instead of under a
+    /// second. Insert and override are tracked separately so the exposed key
+    /// order stays "everything created, then everything overridden"; both are
+    /// insertion-ordered, where the maps they replaced were `HashMap`s whose
+    /// iteration order varied between runs.
+    inserted_node_keys: BTreeMap<String, Vec<String>>,
+    override_node_keys: BTreeMap<String, Vec<String>>,
+    inserted_edge_keys: BTreeMap<String, Vec<String>>,
+    override_edge_keys: BTreeMap<String, Vec<String>>,
+}
+
+/// Record every key of `properties` against `label`, preserving first-seen
+/// order. The per-label key list is bounded by the schema, so this linear
+/// scan is cheap — unlike scanning the elements themselves.
+fn note_keys(
+    keys: &mut BTreeMap<String, Vec<String>>,
+    label: &str,
+    properties: &BTreeMap<String, Value>,
+) {
+    if properties.is_empty() {
+        return;
+    }
+    let entry = keys.entry(label.to_string()).or_default();
+    for key in properties.keys() {
+        if !entry.iter().any(|existing| existing == key) {
+            entry.push(key.clone());
+        }
+    }
+}
+
+/// Record a single key written against `label`.
+fn note_key(keys: &mut BTreeMap<String, Vec<String>>, label: &str, key: &str) {
+    let entry = keys.entry(label.to_string()).or_default();
+    if !entry.iter().any(|existing| existing == key) {
+        entry.push(key.to_string());
+    }
 }
 
 impl GraphOverlay {
@@ -426,17 +468,15 @@ impl PropertyGraph {
             None => Vec::new(),
         };
         let overlay = self.overlay.borrow();
-        for ((node_label, _), props) in overlay
-            .inserted_nodes
-            .iter()
-            .chain(overlay.node_property_overrides.iter())
+        for key in overlay
+            .inserted_node_keys
+            .get(label)
+            .into_iter()
+            .flatten()
+            .chain(overlay.override_node_keys.get(label).into_iter().flatten())
         {
-            if node_label == label {
-                for key in props.keys() {
-                    if !out.iter().any(|existing| existing == key) {
-                        out.push(key.clone());
-                    }
-                }
+            if !out.iter().any(|existing| existing == key) {
+                out.push(key.clone());
             }
         }
         out
@@ -458,24 +498,19 @@ impl PropertyGraph {
         } else if let Some(table) = self.edges.get(rel_type) {
             out = table_property_keys(&table.batch, &["src", "dst", "id", "__src_id", "__dst_id"]);
         }
+        // Incremental for the same reason as `node_property_keys_inner`:
+        // filtering every overlay edge on each call made bulk edge writes
+        // quadratic.
         let overlay = self.overlay.borrow();
-        let inserted = overlay
-            .inserted_edges
-            .iter()
-            .filter(|((edge_rel, _), _)| edge_rel == rel_type)
-            .map(|(_, edge)| &edge.properties)
-            .chain(
-                overlay
-                    .edge_property_overrides
-                    .iter()
-                    .filter(|((edge_rel, _), _)| edge_rel == rel_type)
-                    .map(|(_, props)| props),
-            );
-        for props in inserted {
-            for key in props.keys() {
-                if !out.iter().any(|existing| existing == key) {
-                    out.push(key.clone());
-                }
+        for key in overlay
+            .inserted_edge_keys
+            .get(rel_type)
+            .into_iter()
+            .flatten()
+            .chain(overlay.override_edge_keys.get(rel_type).into_iter().flatten())
+        {
+            if !out.iter().any(|existing| existing == key) {
+                out.push(key.clone());
             }
         }
         out
@@ -610,6 +645,7 @@ impl PropertyGraph {
             .entry((dst_label.clone(), dst_id))
             .or_default()
             .push((rel_type.clone(), id));
+        note_keys(&mut overlay.inserted_edge_keys, &rel_type, &properties);
         overlay.inserted_edges.insert(
             (rel_type.clone(), id),
             InsertedEdge {
@@ -675,6 +711,7 @@ impl PropertyGraph {
         let counter = overlay.inserted_node_counts.entry(label.clone()).or_insert(0);
         let id = base_rows + *counter;
         *counter += 1;
+        note_keys(&mut overlay.inserted_node_keys, &label, &properties);
         overlay
             .inserted_nodes
             .insert((label.clone(), id), properties);
@@ -696,13 +733,15 @@ impl PropertyGraph {
                     return Ok(());
                 }
                 if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
-                    props.insert(key, value);
+                    props.insert(key.clone(), value);
+                    note_key(&mut overlay.inserted_node_keys, label, &key);
                 } else {
                     overlay
                         .node_property_overrides
                         .entry(node_key)
                         .or_default()
-                        .insert(key, value);
+                        .insert(key.clone(), value);
+                    note_key(&mut overlay.override_node_keys, label, &key);
                 }
                 Ok(())
             }
@@ -713,13 +752,15 @@ impl PropertyGraph {
                     return Ok(());
                 }
                 if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
-                    edge.properties.insert(key, value);
+                    edge.properties.insert(key.clone(), value);
+                    note_key(&mut overlay.inserted_edge_keys, rel_type, &key);
                 } else {
                     overlay
                         .edge_property_overrides
                         .entry(edge_key)
                         .or_default()
-                        .insert(key, value);
+                        .insert(key.clone(), value);
+                    note_key(&mut overlay.override_edge_keys, rel_type, &key);
                 }
                 Ok(())
             }
@@ -745,12 +786,14 @@ impl PropertyGraph {
                 }
                 if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
                     if replace {
-                        *props = properties;
+                        *props = properties.clone();
                     } else {
-                        props.extend(properties);
+                        props.extend(properties.clone());
                     }
+                    note_keys(&mut overlay.inserted_node_keys, label, &properties);
                     return Ok(());
                 }
+                note_keys(&mut overlay.override_node_keys, label, &properties);
                 if replace {
                     overlay.replaced_node_properties.insert(node_key.clone());
                     overlay.node_property_overrides.insert(node_key, properties);
@@ -771,12 +814,14 @@ impl PropertyGraph {
                 }
                 if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
                     if replace {
-                        edge.properties = properties;
+                        edge.properties = properties.clone();
                     } else {
-                        edge.properties.extend(properties);
+                        edge.properties.extend(properties.clone());
                     }
+                    note_keys(&mut overlay.inserted_edge_keys, rel_type, &properties);
                     return Ok(());
                 }
+                note_keys(&mut overlay.override_edge_keys, rel_type, &properties);
                 if replace {
                     overlay.replaced_edge_properties.insert(edge_key.clone());
                     overlay.edge_property_overrides.insert(edge_key, properties);

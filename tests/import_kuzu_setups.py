@@ -322,11 +322,23 @@ BLOCKER_PATTERNS = [
 WRITE_KEYWORD_RE = re.compile(r"\b(create|set|delete|merge|insert)\b", re.IGNORECASE)
 
 
-# Bulk generators (`UNWIND range(0, 200000) ... CREATE ...`) are scale tests
-# the tree interpreter cannot replay in bounded time; importing them turns a
-# skipped case into a multi-minute hang. Anything above this row count stays
-# a broken import.
-BULK_ROW_LIMIT = 2000
+# Bulk generators (`UNWIND range(0, 200000) ... CREATE ...`).
+#
+# Plain bulk *inserts* are cheap now — the overlay used to recompute a
+# label's property keys by walking every element written so far, making
+# replay quadratic, and with that scan made incremental 151k `CREATE`s run
+# in well under a second. So a large range alone is no longer a blocker.
+#
+# A bulk generator that also does a per-row `MATCH`, though, is a join:
+# `UNWIND range(0, 9999) AS i MATCH (p:Person {id:i}) ...` is 10k full scans
+# of 10k nodes, because the tree interpreter has no index or hash join. Those
+# stay blocked until such queries execute relationally (see
+# docs/handoff_rel_lowering.md) rather than in the interpreter — building a
+# bespoke index in the interpreter would be reimplementing the database we
+# already lower to.
+BULK_ROW_LIMIT = 400000
+BULK_JOIN_ROW_LIMIT = 2000
+MATCH_RE = re.compile(r"\bmatch\b", re.IGNORECASE)
 RANGE_CALL_RE = re.compile(r"\brange\s*\(\s*(-?\d+)\s*,\s*(-?\d+)", re.IGNORECASE)
 
 
@@ -391,8 +403,11 @@ def classify_setup(stmts, fixtures=None):
         if re.match(r"^rollback\b", text, re.IGNORECASE):
             txn_buffer = None  # discard writes since BEGIN
             continue
-        if bulk_row_estimate(text) > BULK_ROW_LIMIT:
+        rows = bulk_row_estimate(text)
+        if rows > BULK_ROW_LIMIT:
             return None, None, "bulk_generation"
+        if rows > BULK_JOIN_ROW_LIMIT and MATCH_RE.search(text):
+            return None, None, "bulk_join"
         if "${" in text:
             return None, None, "substitution"
         if "loop" in s.flags:

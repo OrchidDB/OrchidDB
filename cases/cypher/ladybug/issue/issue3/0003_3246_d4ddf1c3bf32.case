@@ -2,6 +2,9 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.issue.issue3.3246.d4ddf1c3bf32","language":"cypher","ordered":true,"source":"issue/issue3.test","source_case":"3246","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person) RETURN a
+--- setup_statements
+# re-extracted from kuzu test/test_files/issue/issue3.test case 3246
+UNWIND range(0, 2049) AS x CREATE (a:person)
 --- expected
 {_ID: 0:0, _LABEL: person, ID: 0}
 {_ID: 0:1, _LABEL: person, ID: 1}

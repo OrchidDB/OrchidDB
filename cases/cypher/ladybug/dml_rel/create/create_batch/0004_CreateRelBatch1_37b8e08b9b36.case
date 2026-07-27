@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_batch.CreateRelBatch1.37b8e08b9b36","language":"cypher","ordered":true,"source":"dml_rel/create/create_batch.test","source_case":"CreateRelBatch1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:Person) RETURN COUNT(*)
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_rel/create/create_batch.test case CreateRelBatch1
+UNWIND range(0, 10000) AS i CREATE (n:Person {id:i})
 --- expected
 10001

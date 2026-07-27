@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateManyDoubleAfterCheckpoint.a9ec969a18ef","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateManyDoubleAfterCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) WHERE t.id < 50000 RETURN CAST(SUM(t.id), "UINT64")
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateManyDoubleAfterCheckpoint
+UNWIND RANGE(1,10000) AS i CREATE (t:test {id:0.5 * i})
+UNWIND RANGE(10001,20000) AS i CREATE (t:test {id:0.5 * i})
+UNWIND RANGE(2,2000) AS i CREATE (t:test {id:50000 + 12345.6789 / i})
+UNWIND RANGE(20001,21500) AS i CREATE (t:test {id:0.5 * i})
 --- expected
 115567875

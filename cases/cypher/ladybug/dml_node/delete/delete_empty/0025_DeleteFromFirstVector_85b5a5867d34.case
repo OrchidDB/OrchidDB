@@ -2,5 +2,10 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.dml_node.delete.delete_empty.DeleteFromFirstVector.85b5a5867d34","language":"cypher","ordered":true,"source":"dml_node/delete/delete_empty.test","source_case":"DeleteFromFirstVector","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN MIN(t.id), MAX(t.id)
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/delete/delete_empty.test case DeleteFromFirstVector
+UNWIND RANGE(1, 2048) AS x CREATE (t:test {id:x})
+UNWIND RANGE(2049, 4000) AS x CREATE (t:test {id:x})
+MATCH (t:test) WHERE t.id < 100 DELETE t
 --- expected
 100|4000
