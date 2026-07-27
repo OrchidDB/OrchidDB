@@ -2,6 +2,27 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2578.3e90304f0de2","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2578","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 WITH "t1" as parentid MATCH p = (t1:T)<-[e:CHILD_OF*0..1]-(t0:T) WHERE CASE WHEN parentid IS NULL THEN NOT EXISTS {MATCH (t1)-[:CHILD_OF]->(:T)} ELSE EXISTS {MATCH (t1)-[:CHILD_OF]->(:T {id: parentid})} END AND (NOT EXISTS {MATCH (:T)-[:CHILD_OF]->(t0)} OR length(e) = 1) RETURN properties(nodes(p),'id')
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2578
+node s0_t1:T {id: "t1"}
+node s0_t11:T {id: "t11"}
+node s0_t12:T {id: "t12"}
+node s0_t13:T {id: "t13"}
+node s0_t111:T {id: "t111"}
+node s0_t112:T {id: "t112"}
+node s0_t1111:T {id: "t1111"}
+node s0_t2:T {id: "t2"}
+node s0_t21:T {id: "t21"}
+node s0_t22:T {id: "t22"}
+node s0_t3:T {id: "t3"}
+edge s0_t1111 -[:CHILD_OF]-> s0_t111
+edge s0_t111 -[:CHILD_OF]-> s0_t11
+edge s0_t112 -[:CHILD_OF]-> s0_t11
+edge s0_t11 -[:CHILD_OF]-> s0_t1
+edge s0_t12 -[:CHILD_OF]-> s0_t1
+edge s0_t13 -[:CHILD_OF]-> s0_t1
+edge s0_t21 -[:CHILD_OF]-> s0_t2
+edge s0_t22 -[:CHILD_OF]-> s0_t2
 --- expected
 [t11,t111]
 [t11,t112]

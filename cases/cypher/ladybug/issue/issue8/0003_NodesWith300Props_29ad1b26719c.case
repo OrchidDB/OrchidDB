@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue8.NodesWith300Props.29ad1b26719c","language":"cypher","ordered":true,"source":"issue/issue8.test","source_case":"NodesWith300Props","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) return p
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue8.test case NodesWith300Props
+node s0_p:person {prop1: 5}
 --- expected
 {_ID: 0:0, _LABEL: person, prop1: 5}

@@ -208,7 +208,7 @@ fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
                 }),
             ]
         }
-        GValue::List(items) => items
+        GValue::List(items) | GValue::Set(items) => items
             .iter()
             .flat_map(|item| id_filter_parts(item, id_target))
             .collect(),

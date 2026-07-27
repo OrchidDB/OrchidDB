@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario4.8924e10718d5","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match-where/MatchWhere1.feature#[4] Filter start node of relationship with property predicate on multi variables with multiple bindings","id":"cypher.ladybug.tck.match_where.match_where1.Scenario4.8924e10718d5","language":"cypher","ordered":false,"source":"tck/match_where/match_where1.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:Person)-->() WHERE n.name = 'Bob' RETURN n
 --- graph_initializer
@@ -10,4 +10,4 @@ node d:N
 edge a -[:T]-> c
 edge b -[:T]-> d
 --- expected
-{_ID: 0:1, _LABEL: Person, ID: 1, name: Bob}
+(:Person {name: 'Bob'})

@@ -59,6 +59,18 @@ pub(crate) fn eval_binary(
             // strings carrying a numeric payload — decode before comparing.
             let lhs = decode_display_number(&lhs).unwrap_or(lhs);
             let rhs = decode_display_number(&rhs).unwrap_or(rhs);
+            // Kuzu float semantics: NaN orders below every numeric value
+            // (including another NaN), so `NaN > x` / `NaN >= x` are
+            // false and `NaN < x` / `NaN <= x` are true.
+            if let Some(ord) = nan_cmp(&lhs, &rhs) {
+                return Ok(Value::Bool(match op {
+                    BinaryOp::Lt => ord == std::cmp::Ordering::Less,
+                    BinaryOp::Lte => ord != std::cmp::Ordering::Greater,
+                    BinaryOp::Gt => ord == std::cmp::Ordering::Greater,
+                    BinaryOp::Gte => ord != std::cmp::Ordering::Less,
+                    _ => unreachable!(),
+                }));
+            }
             match temporal_cmp(&lhs, &rhs).or_else(|| lhs.three_valued_cmp(&rhs)) {
                 Some(ord) => Ok(Value::Bool(match op {
                     BinaryOp::Lt => ord == std::cmp::Ordering::Less,
@@ -73,6 +85,32 @@ pub(crate) fn eval_binary(
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => arithmetic(op, &lhs, &rhs),
         BinaryOp::And | BinaryOp::Or => unreachable!(),
     }
+}
+
+/// Ordering override when either side is a float NaN and the other side
+/// is numeric: the NaN side sorts `Less`. Returns None when no NaN is
+/// involved (or the other operand isn't numeric).
+fn nan_cmp(lhs: &Value, rhs: &Value) -> Option<std::cmp::Ordering> {
+    fn as_float(value: &Value) -> Option<f64> {
+        match value {
+            Value::Float(n) => Some(*n),
+            Value::Float32(n) => Some(*n as f64),
+            Value::Byte(n) => Some(*n as f64),
+            Value::Short(n) => Some(*n as f64),
+            Value::Int(n) => Some(*n as f64),
+            Value::Long(n) => Some(*n as f64),
+            _ => None,
+        }
+    }
+    let l = as_float(lhs)?;
+    let r = as_float(rhs)?;
+    if l.is_nan() {
+        return Some(std::cmp::Ordering::Less);
+    }
+    if r.is_nan() {
+        return Some(std::cmp::Ordering::Greater);
+    }
+    None
 }
 
 /// `d[3].l` / `d[0.5].d` marker strings → numeric values. Returns None

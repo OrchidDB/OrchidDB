@@ -78,6 +78,11 @@ where
 }
 
 pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
+    // Map-valued side effects registered by `tree(label)` / `group(label)`
+    // not already consumed: cap collapses the stream to that map.
+    if let Some(map_node) = lo.group_side_effect_maps.get(label) {
+        return map_node.clone();
+    }
     if lo.group_count_side_effects.contains(label) {
         return Node::GraphCap {
             labels: vec![label.to_string()],
@@ -109,6 +114,35 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                 input: writer.boxed(),
             })
             .collect();
+        // A Set-typed seed (`withSideEffect(label, {..})`) makes the bag a
+        // LinkedHashSet: cap() yields ONE traverser holding the deduplicated
+        // seed-then-stream union rather than the raw bulk stream.
+        // `{}` parses as an empty Map literal, but as a side-effect seed it
+        // means an empty Set (TinkerPop gherkin `withSideEffect("x", {})`).
+        let set_seed = match lo.side_effect_seeds.get(label) {
+            Some(seed @ crate::language::gremlin::semantics::GValue::Set(_)) => Some(seed),
+            Some(seed @ crate::language::gremlin::semantics::GValue::Map(m)) if m.is_empty() => {
+                Some(seed)
+            }
+            _ => None,
+        };
+        if let Some(seed) = set_seed {
+            if let Ok(seed_expr) = gvalue_to_expr(seed) {
+                let folded = fold_expr(union_all(projected), IrExpr::Binding(CURRENT.into()));
+                return Node::GraphProject {
+                    mode: ProjectMode::ReplaceCurrent,
+                    items: vec![ProjectionItem {
+                        alias: CURRENT.into(),
+                        expr: IrExpr::Call {
+                            name: "set_compact".into(),
+                            args: vec![seed_expr, IrExpr::Binding(CURRENT.into())],
+                        },
+                    }],
+                    error_policy: ProjectErrorPolicy::PropagateError,
+                    input: folded.boxed(),
+                };
+            }
+        }
         // `withSideEffect(label, seed, Operator.addAll)` seeds the bag but
         // still exposes bag entries as traversers at cap time. `assign`
         // replaces the seed with the aggregate stream, so it fans out the
@@ -120,16 +154,22 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                     return union_all(projected);
                 }
                 SackOp::Assign => {
-                    // `assign` keeps only the most recent write: the bag is
-                    // a scalar register, so cap() yields the last value.
-                    return Node::GraphSlice {
-                        slice: crate::ir::plan::Slice {
-                            offset: 0,
-                            fetch: None,
-                            tail: Some(1),
-                        },
-                        input: union_all(projected).boxed(),
-                    };
+                    // `assign` replaces the seed with the aggregated
+                    // stream. A barrier aggregate assigns the whole
+                    // BulkSet at once (cap yields every entry); a lazy
+                    // `local(aggregate(..))` writes one traverser at a
+                    // time, so only the last value survives.
+                    if lo.side_effect_local_labels.contains(label) {
+                        return Node::GraphSlice {
+                            slice: crate::ir::plan::Slice {
+                                offset: 0,
+                                fetch: None,
+                                tail: Some(1),
+                            },
+                            input: union_all(projected).boxed(),
+                        };
+                    }
+                    return union_all(projected);
                 }
                 _ => {
                     if let Ok(seed) = gvalue_to_expr(seed) {
@@ -163,7 +203,8 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
 
 fn seed_values(seed: &crate::language::gremlin::semantics::GValue) -> Node {
     let rows = match seed {
-        crate::language::gremlin::semantics::GValue::List(items) => items
+        crate::language::gremlin::semantics::GValue::List(items)
+        | crate::language::gremlin::semantics::GValue::Set(items) => items
             .iter()
             .map(|value| vec![gvalue_to_value(value)])
             .collect(),
@@ -279,13 +320,16 @@ pub(super) fn lower_subgraph(input: Node, _label: &str) -> Node {
 }
 
 pub(super) fn lower_tree(input: Node, _label: Option<&str>) -> Node {
+    // Fold every traverser's path history and build the nested tree map
+    // (root = traversal origin) from those paths.
+    let folded = fold_expr(input, IrExpr::Binding(super::context::PATH.into()));
     Node::GraphCurrentProject {
         expr: IrExpr::Call {
             name: "tree_value".into(),
             args: vec![IrExpr::Binding(CURRENT.into())],
         },
         fields: vec![CURRENT.to_string()],
-        input: lower_fold(input).boxed(),
+        input: folded.boxed(),
     }
 }
 
@@ -461,6 +505,30 @@ fn visit_writers(node: &Node, alias: &str, out: &mut Vec<Node>) {
         Node::GraphApply { left, right, .. } | Node::GraphUnion { left, right, .. } => {
             visit_writers(left, alias, out);
             visit_writers(right, alias, out);
+        }
+        Node::GraphRepeat { seed, body, .. } => {
+            // Writers upstream of the loop (in the seed) contribute their
+            // rows once. Writers inside the body write once per
+            // iteration: re-run the loop with emit-after-each-iteration
+            // so the bag sees every write, not just the final frontier.
+            visit_writers(seed, alias, out);
+            let mut body_writers = Vec::new();
+            visit_writers(body, alias, &mut body_writers);
+            if !body_writers.is_empty() {
+                let mut emit_each = node.clone();
+                if let Node::GraphRepeat { emit, .. } = &mut emit_each {
+                    *emit = crate::ir::plan::EmitMode::AfterEachIteration;
+                }
+                out.push(Node::GraphProject {
+                    mode: ProjectMode::PreserveVisible,
+                    items: vec![ProjectionItem {
+                        alias: alias.to_string(),
+                        expr: IrExpr::Binding(alias.to_string()),
+                    }],
+                    error_policy: ProjectErrorPolicy::PropagateError,
+                    input: emit_each.boxed(),
+                });
+            }
         }
         _ => {}
     }

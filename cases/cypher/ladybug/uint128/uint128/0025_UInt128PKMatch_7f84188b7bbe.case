@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.UInt128PKMatch.7f84188b7bbe","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"UInt128PKMatch","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (z:tab) WHERE z.uint128key > 10000 AND z.uint128key < 20000 RETURN z.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/uint128/uint128.test case UInt128PKMatch
+node s0_n1:tab {uint128key: 0, value: 0}
+node s1_n2:tab {uint128key: 11111, value: 1}
+node s2_n3:tab {uint128key: 22222, value: 2}
+node s3_n4:tab {uint128key: 15000, value: 3}
 --- expected
 11111|1
 15000|3

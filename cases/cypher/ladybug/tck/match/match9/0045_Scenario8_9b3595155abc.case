@@ -1,9 +1,9 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match9.Scenario8.9b3595155abc","language":"cypher","ordered":true,"source":"tck/match/match9.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match9.feature#[8] Variable length relationship in OPTIONAL MATCH","id":"cypher.ladybug.tck.match.match9.Scenario8.9b3595155abc","language":"cypher","ordered":false,"source":"tck/match/match9.test","source_case":"Scenario8","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A), (b:B) OPTIONAL MATCH (a)-[r*]-(b) WHERE r IS NULL AND a <> b RETURN b
 --- graph_initializer
 node _n1:A
 node _n2:B
 --- expected
-{_ID: 1:0, _LABEL: B, ID: 0}
+(:B)

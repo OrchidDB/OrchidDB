@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.case_insensitive.CaseInsentivePropertyUpdate.4791be4cdf27","language":"cypher","ordered":true,"source":"dml_node/case_insensitive.test","source_case":"CaseInsentivePropertyUpdate","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:TEST) RETURN a.*
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_node/case_insensitive.test case CaseInsentivePropertyUpdate
+node s0_a:TEST {ID: 1, NAME: "A"}
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/case_insensitive.test case CaseInsentivePropertyUpdate
+MATCH (a:TEST {ID:1}) SET a.NAME = 'B'
 --- expected
 1|B

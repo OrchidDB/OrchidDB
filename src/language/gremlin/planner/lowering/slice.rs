@@ -87,7 +87,17 @@ where
             AstSortDir::Asc => SortDir::Asc,
             AstSortDir::Desc => SortDir::Desc,
         };
-        let (new_input, expr) = if let Some(expr) = simple_by_key_expr(&spec, lo) {
+        let (new_input, expr) = if spec.key.is_none() && spec.traversal.is_none() {
+            // Direction-only `by(asc)` / `by(desc)`: order the traverser
+            // itself under full orderability semantics.
+            (
+                input,
+                IrExpr::Call {
+                    name: "gremlin_order_key".into(),
+                    args: vec![IrExpr::Binding(CURRENT.into())],
+                },
+            )
+        } else if let Some(expr) = simple_by_key_expr(&spec, lo) {
             apply_unproductive_filter(input, expr, lo)
         } else {
             apply_by_spec(input, &spec, lo, ctx)?

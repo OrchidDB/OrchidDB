@@ -1,6 +1,10 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario2.3ab7b2190e05","language":"cypher","ordered":true,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-skip-limit/WithSkipLimit2.feature#[2] Handle dependencies across WITH with LIMIT","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario2.3ab7b2190e05","language":"cypher","ordered":false,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:Begin) WITH a.num AS property LIMIT 1 MATCH (b) WHERE b.id = property RETURN b
+--- graph_initializer
+node a:End {num: 42, id: 0}
+node _n1:End {num: 3}
+node _n2:Begin {num: 0}
 --- expected
-{_ID: 0:0, _LABEL: End, ID: 0, num: 42, id: 0}
+(:End {num: 42, id: 0})

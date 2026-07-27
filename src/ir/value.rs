@@ -15,6 +15,31 @@ use num_traits::FromPrimitive;
 pub const STRUCT_ORDER_KEY: &str = "__new_graph_struct_order";
 pub const STRUCT_TYPES_KEY: &str = "__new_graph_struct_types";
 
+/// Gremlin Set marker. A `Value::Map` whose only entry is this key
+/// (holding a `Value::List`) represents an order-preserving,
+/// deduplicated Set — Gremlin `{a, b}` literals and Set-typed
+/// side-effect bags. Cypher never produces this shape.
+pub const GREMLIN_SET_KEY: &str = "__gremlin_set";
+
+/// Build a Gremlin Set value (order-preserving, caller-deduplicated).
+pub fn gremlin_set(items: Vec<Value>) -> Value {
+    let mut map = BTreeMap::new();
+    map.insert(GREMLIN_SET_KEY.to_string(), Value::List(items));
+    Value::Map(map)
+}
+
+/// If `value` is a Gremlin Set marker map, return its items.
+pub fn as_gremlin_set(value: &Value) -> Option<&[Value]> {
+    let Value::Map(map) = value else { return None };
+    if map.len() != 1 {
+        return None;
+    }
+    match map.get(GREMLIN_SET_KEY) {
+        Some(Value::List(items)) => Some(items),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     /// Cypher `null` / SPARQL unbound. Distinct from `Unproductive`.

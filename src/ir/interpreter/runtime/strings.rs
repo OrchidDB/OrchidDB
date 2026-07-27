@@ -28,6 +28,16 @@ fn normalize_substring_index(index: i64, len: i64) -> i64 {
 /// / `d[N].i`) so a `groupCount()` keyed on a BigDecimal renders with
 /// the same form the harness expects.
 pub(crate) fn display_for_concat(v: &Value) -> String {
+    if let Some(items) = crate::ir::value::as_gremlin_set(v) {
+        let parts = items
+            .iter()
+            .map(display_for_tagged_container)
+            .collect::<Vec<_>>();
+        return format!("s[{}]", parts.join(","));
+    }
+    if let Some(rendered) = display_property_object(v) {
+        return rendered;
+    }
     match v {
         Value::String(s) => s.clone(),
         Value::Bool(b) => b.to_string(),
@@ -196,7 +206,42 @@ fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<Stri
         .collect()
 }
 
+/// TinkerPop property rendering: a property-object map
+/// (`{element, key, value, ...}`) renders as `vp[owner-key->value]` for
+/// vertex properties and `p[key->value]` for edge properties.
+fn display_property_object(v: &Value) -> Option<String> {
+    let Value::Map(map) = v else { return None };
+    if !(map.contains_key("element") && map.contains_key("key") && map.contains_key("value")) {
+        return None;
+    }
+    let key = match map.get("key") {
+        Some(Value::String(k)) => k.clone(),
+        Some(other) => display_for_tagged_container(other),
+        None => return None,
+    };
+    let value = display_for_tagged_container(map.get("value")?);
+    match map.get("element")? {
+        Value::Node { label, id } => Some(format!(
+            "vp[{}-{key}->{value}]",
+            display_node_name(label, *id)
+        )),
+        Value::Edge { .. } => Some(format!("p[{key}->{value}]")),
+        Value::String(owner) if owner.contains("->") => Some(format!("p[{key}->{value}]")),
+        Value::String(owner) => {
+            let owner = owner
+                .strip_prefix("v[")
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(owner);
+            Some(format!("vp[{owner}-{key}->{value}]"))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn display_for_tagged_container(v: &Value) -> String {
+    if crate::ir::value::as_gremlin_set(v).is_some() {
+        return display_for_concat(v);
+    }
     match v {
         Value::String(s) => s.clone(),
         Value::Bool(b) => b.to_string(),

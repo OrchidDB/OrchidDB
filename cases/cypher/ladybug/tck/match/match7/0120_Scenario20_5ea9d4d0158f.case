@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario20.5ea9d4d0158f","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario20","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match7.feature#[20] Variable length optional relationships with bound nodes, no matches","id":"cypher.ladybug.tck.match.match7.Scenario20.5ea9d4d0158f","language":"cypher","ordered":false,"source":"tck/match/match7.test","source_case":"Scenario20","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A), (b:B) OPTIONAL MATCH p = (a)-[*]->(b) RETURN p
 --- graph_initializer
@@ -12,4 +12,4 @@ edge s -[:REL]-> b
 edge a -[:REL]-> c
 edge b -[:LOOP]-> b
 --- expected
-{_NODES: [{_ID: 1:0, _LABEL: A, ID: 0, num: 42}], _RELS: []}
+null

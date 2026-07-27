@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario19.9394f9239fbf","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario19","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match7.feature#[19] Optionally matching named paths with single and variable length patterns","id":"cypher.ladybug.tck.match.match7.Scenario19.9394f9239fbf","language":"cypher","ordered":false,"source":"tck/match/match7.test","source_case":"Scenario19","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a {name: 'A'}) OPTIONAL MATCH p = (a)-->(b)-[*]->(c) RETURN p
 --- graph_initializer
@@ -7,4 +7,4 @@ node a:N {name: "A"}
 node b:N {name: "B"}
 edge a -[:X]-> b
 --- expected
-{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},,], _RELS: []}
+null

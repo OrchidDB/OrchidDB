@@ -2,5 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.45dd9c327988","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"ResizeAndDistribute","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:Person)-[e:knows]->(b:Person) RETURN a.id, b.id, e.age
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case ResizeAndDistribute
+node s0_anon1:Person {id: 0, age: 20}
+node s1_anon1:Person {id: 1, age: 21}
+node s2_anon1:Person {id: 2, age: 22}
+node s3_anon1:Person {id: 3, age: 23}
+node s4_anon1:Person {id: 4, age: 24}
+node s5_anon1:Person {id: 5, age: 25}
+edge s0_anon1 -[:knows {age: 100}]-> s1_anon1
 --- expected
 0|1|100

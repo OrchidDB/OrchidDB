@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.MultipleCreations.ff8c3a47a17b","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"MultipleCreations","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case MultipleCreations
+node s0_t:test {id: 1}
+node s1_t:test {id: 2}
+node s2_t:test {id: 3}
+node s3_t:test {id: 4}
 --- expected
 1
 2

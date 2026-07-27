@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario4.9edce6b70efb","language":"cypher","ordered":true,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-skip-limit/WithSkipLimit2.feature#[4] Ordering and limiting on aggregate","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario4.9edce6b70efb","language":"cypher","ordered":false,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH ()-[r1]->(x) WITH x, sum(r1.num) AS c ORDER BY c LIMIT 1 RETURN x, c
 --- graph_initializer
@@ -12,4 +12,4 @@ node _n3:N
 node _n4:Y
 edge _n3 -[:T3 {num: 1}]-> _n4
 --- expected
-{_ID: 2:0, _LABEL: Y, ID: 0}|1
+(:Y)|1

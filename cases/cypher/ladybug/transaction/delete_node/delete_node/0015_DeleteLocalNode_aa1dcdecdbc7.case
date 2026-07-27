@@ -2,6 +2,17 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_node.delete_node.DeleteLocalNode.aa1dcdecdbc7","language":"cypher","ordered":true,"source":"transaction/delete_node/delete_node.test","source_case":"DeleteLocalNode","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) RETURN ID(p)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/delete_node/delete_node.test case DeleteLocalNode
+node s0_p:person {oid: 0, fName: "Alice"}
+node s1_p:person {oid: 1, fName: "Bob"}
+node s2_p:person {oid: 2, fName: "Charlie"}
+node s3_p:person {oid: 3, fName: "Dave"}
+edge s0_p -[:knows]-> s2_p
+edge s0_p -[:knows]-> s3_p
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/delete_node/delete_node.test case DeleteLocalNode
+MATCH (p:person) WHERE p.oid=1 DELETE p
 --- expected
 0:0
 0:2

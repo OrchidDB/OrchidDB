@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.450ba65ae191","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateAndScanManyToManyRel","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:N1) RETURN n.ID
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case CreateAndScanManyToManyRel
+node s0_anon1:N1 {ID: 10}
+node s0_anon2:N1 {ID: 1}
+node s0_anon3:N2 {ID: 12}
+node s0_anon4:N2 {ID: 8}
 --- expected
 10
 1

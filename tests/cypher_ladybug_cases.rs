@@ -401,7 +401,9 @@ fn run_one(path: &Path) -> CaseRun {
         .graph_initializer
         .as_deref()
         .or_else(|| default_graph_initializer(&case.metadata));
-    let broken_import = is_broken_import(&case, graph_initializer);
+    let setup_statements = extract_setup_statements(&raw);
+    let broken_import =
+        setup_statements.is_empty() && is_broken_import(&case, graph_initializer);
 
     let query = case.query.clone();
     let parsed = match parse_query(&query) {
@@ -442,6 +444,49 @@ fn run_one(path: &Path) -> CaseRun {
         }
     };
     apply_default_graph_overlay(&case.metadata, &graph);
+
+    // Execute any `--- setup_statements` (raw Cypher writes re-extracted
+    // from the upstream Kuzu test source) against the graph before the
+    // case query runs. A failing setup statement means the fixture can't
+    // be reproduced — the case is skipped, never marked incorrect.
+    for (idx, stmt) in setup_statements.iter().enumerate() {
+        let setup_err = |stage: &str, err: String| {
+            Outcome::Skipped(format!(
+                "setup statement {} failed at {stage}: {err} (stmt: {stmt})",
+                idx + 1
+            ))
+        };
+        let parsed_setup = match parse_query(stmt) {
+            Ok(q) => q,
+            Err(err) => {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome: setup_err("parse", format!("{err}")),
+                    broken_import,
+                };
+            }
+        };
+        let setup_plan = match CypherPlanner::new().plan(&parsed_setup) {
+            Ok(plan) => plan,
+            Err(err) => {
+                return CaseRun {
+                    query: Some(query),
+                    plan_tree: None,
+                    outcome: setup_err("plan", format!("{err}")),
+                    broken_import,
+                };
+            }
+        };
+        if let Err(err) = execute(&setup_plan, &graph) {
+            return CaseRun {
+                query: Some(query),
+                plan_tree: None,
+                outcome: setup_err("run", format!("{err}")),
+                broken_import,
+            };
+        }
+    }
 
     let plan = match CypherPlanner::new().plan(&parsed) {
         Ok(plan) => plan,
@@ -528,6 +573,36 @@ fn run_one(path: &Path) -> CaseRun {
         outcome,
         broken_import,
     }
+}
+
+/// Extract the optional `--- setup_statements` section from a raw case
+/// file. The shared `case_file` parser (reused verbatim from the gremlin
+/// runner) ignores unknown sections, so the cypher runner re-scans the
+/// raw text itself. Contract with `tests/import_kuzu_setups.py`:
+/// one complete Cypher statement per non-empty line (multi-line
+/// statements are joined at import time); `#`-prefixed lines are
+/// comments; a trailing `;` is stripped.
+fn extract_setup_statements(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_section = false;
+    for line in raw.lines() {
+        if let Some(header) = line.strip_prefix("--- ") {
+            in_section = header.trim() == "setup_statements";
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let stmt = trimmed.trim_end_matches(';').trim();
+        if !stmt.is_empty() {
+            out.push(stmt.to_string());
+        }
+    }
+    out
 }
 
 /// Machine-detection for structurally unpassable imports: the importer

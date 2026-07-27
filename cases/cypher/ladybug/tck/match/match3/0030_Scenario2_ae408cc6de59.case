@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.ae408cc6de59","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario8","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match3.feature#[8] Matching using relationship predicate with multiples of the same type","id":"cypher.ladybug.tck.match.match3.Scenario2.ae408cc6de59","language":"cypher","ordered":false,"source":"tck/match/match3.test","source_case":"Scenario8","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[:T|:T]->(b) RETURN b
 --- graph_initializer
@@ -7,4 +7,4 @@ node a:A
 node b:B
 edge a -[:T]-> b
 --- expected
-{_ID: 1:0, _LABEL: B, ID: 0}
+(:B)

@@ -131,8 +131,12 @@ pub(super) fn lower_local_scoped(
     })
 }
 
-pub(super) fn lower_local_order(input: Node, by: Option<BySpec>) -> GremlinPlanResult<Node> {
-    let helper_call = match by {
+pub(super) fn lower_local_order(
+    input: Node,
+    by: Option<BySpec>,
+    merge_map: bool,
+) -> GremlinPlanResult<Node> {
+    let mut helper_call = match by {
         Some(spec) if spec.traversal.is_none() => {
             let key = spec.key.unwrap_or_else(|| "value".to_string());
             let dir = match spec.direction {
@@ -146,6 +150,10 @@ pub(super) fn lower_local_order(input: Node, by: Option<BySpec>) -> GremlinPlanR
         }
         _ => call("local_order", vec![cur()]),
     };
+    if merge_map {
+        // Only merges when the pre-order traverser was itself a Map.
+        helper_call = call("local_order_merge_map", vec![cur(), helper_call]);
+    }
     Ok(Node::GraphCurrentProject {
         expr: helper_call,
         fields: vec![CURRENT.to_string()],

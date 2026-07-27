@@ -29,7 +29,7 @@ pub use duckdb_exec::DuckDbExecutor;
 #[cfg(feature = "postgres")]
 pub use postgres_exec::PostgresExecutor;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use arrow::array::{
@@ -249,18 +249,40 @@ fn strip_identity_projections(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     Ok(transformed.data)
 }
 
-/// Rewrite every column reference to be unqualified. DataFusion plans keep
-/// base-table qualifiers alive across projection boundaries, which the
-/// unparser turns into references like `"table"."col"` outside the derived
-/// table that hides `"table"` — invalid SQL. Lowered plans use globally
-/// binding-prefixed column names (`a__id`, `e1__src_id`, ...), so unqualified
-/// references stay unambiguous.
+/// Rewrite column references to be unqualified wherever that stays
+/// unambiguous. DataFusion plans keep base-table qualifiers alive across
+/// projection boundaries, which the unparser turns into references like
+/// `"table"."col"` outside the derived table that hides `"table"` — invalid
+/// SQL. Lowered plans use globally binding-prefixed column names (`a__id`,
+/// `e1__src_id`, ...), so unqualified references stay unambiguous — except
+/// inside user-supplied subplans ("bring your own schema" views/queries),
+/// where the same column name can appear on both sides of a join. There the
+/// qualifier is required and is kept: it names a `SubqueryAlias`/table that
+/// exists as a FROM alias in the emitted SQL.
 fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, DataFusionError> {
     let transformed = plan.transform_up_with_subqueries(|node| {
+        // Count how many input fields share each unqualified name in this
+        // node's scope; only unique names can safely lose their qualifier.
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        {
+            let inputs = node.inputs();
+            let scope_schemas: Vec<_> = if inputs.is_empty() {
+                vec![node.schema()]
+            } else {
+                inputs.iter().map(|input| input.schema()).collect()
+            };
+            for schema in scope_schemas {
+                for (_, field) in schema.iter() {
+                    *counts.entry(field.name().clone()).or_default() += 1;
+                }
+            }
+        }
+        let unique = |name: &str| counts.get(name).copied().unwrap_or(0) <= 1;
         let rewritten = node.map_expressions(|expr| {
             expr.transform_up(|inner| {
                 if let Expr::Column(column) = &inner
                     && column.relation.is_some()
+                    && unique(&column.name)
                 {
                     return Ok(Transformed::yes(Expr::Column(Column::new_unqualified(
                         column.name.clone(),
@@ -312,12 +334,23 @@ fn is_identity_projection(projection: &datafusion::logical_expr::Projection) -> 
 /// subqueries) with their full contents, so they can be materialized in a
 /// target database under the same names the unparsed SQL references.
 pub async fn plan_tables(plan: &LogicalPlan) -> SqlResult<Vec<TableData>> {
+    plan_tables_excluding(plan, &BTreeSet::new()).await
+}
+
+/// Like [`plan_tables`], but skips scan leaves whose table name is in
+/// `external` — tables the caller knows already exist in the target database
+/// (e.g. "bring your own schema" mappings), which must not be materialized.
+pub async fn plan_tables_excluding(
+    plan: &LogicalPlan,
+    external: &BTreeSet<String>,
+) -> SqlResult<Vec<TableData>> {
     let mut sources = BTreeMap::new();
     plan.apply_with_subqueries(|node| {
         if let LogicalPlan::TableScan(scan) = node {
-            sources
-                .entry(scan.table_name.to_string())
-                .or_insert_with(|| Arc::clone(&scan.source));
+            let name = scan.table_name.to_string();
+            if !external.contains(&name) && !external.contains(scan.table_name.table()) {
+                sources.entry(name).or_insert_with(|| Arc::clone(&scan.source));
+            }
         }
         Ok(TreeNodeRecursion::Continue)
     })?;
@@ -431,8 +464,21 @@ pub fn graph_setup_sql(dialect: SqlDialect, graph: &PropertyGraph) -> SqlResult<
 
 /// Generate SQL text and setup statements for a lowered plan.
 pub async fn prepare(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<PreparedSql> {
+    prepare_with_external(lowered, dialect, &BTreeSet::new()).await
+}
+
+/// Like [`prepare`], but treats the named tables as *external*: they already
+/// exist in the target database (the user's own tables/views under a
+/// [`GraphMapping`](crate::ir::rel::mapping::GraphMapping)), so no
+/// `CREATE TABLE`/`INSERT` setup is generated for them. Pass
+/// `GraphMapping::physical_table_names()` here.
+pub async fn prepare_with_external(
+    lowered: &LoweredPlan,
+    dialect: SqlDialect,
+    external: &BTreeSet<String>,
+) -> SqlResult<PreparedSql> {
     let query = unparse(lowered, dialect)?;
-    let tables = plan_tables(&lowered.plan).await?;
+    let tables = plan_tables_excluding(&lowered.plan, external).await?;
     let mut setup = Vec::new();
     for table in &tables {
         setup.extend(table_setup_sql(dialect, table)?);

@@ -238,7 +238,7 @@ fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str)
     }
 }
 
-fn element_id_token(value: &Value, graph: &PropertyGraph) -> String {
+pub(crate) fn element_id_token(value: &Value, graph: &PropertyGraph) -> String {
     match value {
         Value::Node { label, id } => format!("v[{}].id", node_name(graph, label, *id)),
         Value::Edge {

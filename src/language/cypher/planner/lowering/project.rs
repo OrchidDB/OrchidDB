@@ -216,7 +216,7 @@ fn lower_projection_body(
                 }
                 if contains_aggregate(&item.expr) {
                     return Err(CypherPlanError::Invalid(
-                        "ORDER BY aggregate expressions must be part of an aggregate projection"
+                        "Binder exception: Cannot evaluate expression with type AGGREGATE_FUNCTION."
                             .to_string(),
                     ));
                 }
@@ -509,10 +509,7 @@ fn rewrite_aggregate_projection_expr(
             args,
         } if aggregate_kind(name).is_some() => {
             if args.iter().any(contains_aggregate) {
-                return Err(CypherPlanError::Unsupported(
-                    "Binder exception: Expression SUM(SUM(a.age)) contains nested aggregation."
-                        .to_string(),
-                ));
+                return Err(nested_aggregate_error(name, args));
             }
             for arg in args {
                 let local_refs = free_variable_names_for_local_scope(arg, bound)
@@ -1241,10 +1238,7 @@ fn rewrite_aggregate_projection(
             args,
         } if aggregate_kind(name).is_some() => {
             if args.iter().any(contains_aggregate) {
-                return Err(CypherPlanError::Unsupported(
-                    "Binder exception: Expression SUM(SUM(a.age)) contains nested aggregation."
-                        .to_string(),
-                ));
+                return Err(nested_aggregate_error(name, args));
             }
             let alias = preferred_alias
                 .map(ToString::to_string)
@@ -1300,9 +1294,14 @@ fn rewrite_aggregate_projection(
             Ok(IrExpr::Binding(alias))
         }
         Expr::Unary { op, expr } => {
+            let typed_negate = matches!(op, UnaryOp::Neg) && is_typed_negate_operand(expr);
             let expr = rewrite_aggregate_projection(lowerer, expr, rewrite, None)?;
             Ok(match op {
                 UnaryOp::Not => IrExpr::Not(Box::new(expr)),
+                UnaryOp::Neg if typed_negate => IrExpr::Call {
+                    name: "negate".to_string(),
+                    args: vec![expr],
+                },
                 UnaryOp::Neg => IrExpr::Binary {
                     op: IrBinaryOp::Sub,
                     lhs: Box::new(IrExpr::Lit(Lit::Int(0))),
@@ -4633,6 +4632,10 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
         },
         Expr::Unary { op, expr } => match op {
             UnaryOp::Not => IrExpr::Not(Box::new(lower_expr(lowerer, expr)?)),
+            UnaryOp::Neg if is_typed_negate_operand(expr) => IrExpr::Call {
+                name: "negate".to_string(),
+                args: vec![lower_expr(lowerer, expr)?],
+            },
             UnaryOp::Neg => IrExpr::Binary {
                 op: IrBinaryOp::Sub,
                 lhs: Box::new(IrExpr::Lit(Lit::Int(0))),
@@ -4857,6 +4860,58 @@ fn unify_numeric_type(left: String, right: String) -> String {
     } else {
         left
     }
+}
+
+/// True when a unary minus applies to an explicitly typed value
+/// (`-CAST(x, 'UINT8')`, `-to_int8(x)`), where Kuzu's typed NEGATE
+/// semantics (unsigned wrap-around, INT_MIN overflow error) differ
+/// from plain `0 - x` arithmetic.
+fn is_typed_negate_operand(expr: &Expr) -> bool {
+    match expr {
+        Expr::Function { name, .. } => {
+            let lower = name.to_ascii_lowercase();
+            lower == "cast"
+                || lower.starts_with("to_int")
+                || lower.starts_with("to_uint")
+                || matches!(
+                    lower.as_str(),
+                    "toint8"
+                        | "toint16"
+                        | "toint32"
+                        | "toint64"
+                        | "touint8"
+                        | "touint16"
+                        | "touint32"
+                        | "touint64"
+                )
+        }
+        _ => false,
+    }
+}
+
+/// Render an expression the way Kuzu's binder prints it inside error
+/// messages (`COUNT(COUNT_STAR())`, `SUM(SUM(a.age))`, ...). Best
+/// effort: unhandled shapes render as `...`.
+fn render_kuzu_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::CountStar => "COUNT_STAR()".to_string(),
+        Expr::Variable(name) => name.clone(),
+        Expr::Property { target, key } => format!("{}.{}", render_kuzu_expr(target), key),
+        Expr::Function { name, args, .. } => format!(
+            "{}({})",
+            name.to_ascii_uppercase(),
+            args.iter().map(render_kuzu_expr).collect::<Vec<_>>().join(",")
+        ),
+        _ => "...".to_string(),
+    }
+}
+
+fn nested_aggregate_error(name: &str, args: &[Expr]) -> CypherPlanError {
+    CypherPlanError::Unsupported(format!(
+        "Binder exception: Expression {}({}) contains nested aggregation.",
+        name.to_ascii_uppercase(),
+        args.iter().map(render_kuzu_expr).collect::<Vec<_>>().join(",")
+    ))
 }
 
 fn contains_aggregate(expr: &Expr) -> bool {

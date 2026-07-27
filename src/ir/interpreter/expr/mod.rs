@@ -15,7 +15,7 @@ pub(crate) use path_predicate::is_simple_path;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::{IrExpr, Lit, StringOp};
 use crate::ir::policy::PropertyMissing;
-use crate::ir::value::Value;
+use crate::ir::value::{STRUCT_ORDER_KEY, Value};
 
 use super::Row;
 use super::runtime::{algorithm_property, eval_call, runtime_list};
@@ -56,7 +56,33 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     }
                 }
                 Value::Edge { rel_type, id, .. } => graph.edge_property(&rel_type, id, name),
-                Value::Map(map) => map.get(name).cloned().unwrap_or(Value::Null),
+                Value::Map(map) => match map.get(name) {
+                    Some(v) => v.clone(),
+                    // Kuzu struct/map field lookup is case-insensitive:
+                    // `map.nAMe` resolves the first field that matches
+                    // ignoring case, honouring declaration order when
+                    // the struct carries one.
+                    None => {
+                        let declared: Vec<String> = match map.get(STRUCT_ORDER_KEY) {
+                            Some(Value::List(items)) => items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    Value::String(key) => Some(key.clone()),
+                                    _ => None,
+                                })
+                                .collect(),
+                            _ => map.keys().cloned().collect(),
+                        };
+                        declared
+                            .iter()
+                            .find(|key| {
+                                !key.starts_with("__") && key.eq_ignore_ascii_case(name)
+                            })
+                            .and_then(|key| map.get(key))
+                            .cloned()
+                            .unwrap_or(Value::Null)
+                    }
+                },
                 Value::Null => Value::Null,
                 // Non-element values (Int/Bool/String/...) under a
                 // `property(...)` access — return null. This shows up

@@ -1,6 +1,10 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with2.Scenario1.214df45c180f","language":"cypher","ordered":true,"source":"tck/with/with2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with/With2.feature#[1] Forwarding a property to express a join","id":"cypher.ladybug.tck.with.with2.Scenario1.214df45c180f","language":"cypher","ordered":false,"source":"tck/with/with2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:Begin) WITH a.num AS property MATCH (b) WHERE b.id = property RETURN b
+--- graph_initializer
+node a:End {num: 42, id: 0}
+node _n1:End {num: 3}
+node _n2:Begin {num: 0}
 --- expected
-{_ID: 0:0, _LABEL: End, ID: 0, num: 42, id: 0}
+(:End {num: 42, id: 0})

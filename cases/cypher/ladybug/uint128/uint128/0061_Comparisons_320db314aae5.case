@@ -2,6 +2,13 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.uint128.uint128.Comparisons.320db314aae5","language":"cypher","ordered":true,"source":"uint128/uint128.test","source_case":"Comparisons","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (z:tab) WHERE z.value > 0 RETURN z.value
+--- setup_statements
+# re-extracted from kuzu test/test_files/uint128/uint128.test case Comparisons
+CREATE(n1:tab {intkey: 1, value: 42}) RETURN n1.*
+CREATE(n2:tab {intkey: 172804, value: 170141183460469231731687303715884105727}) RETURN n2.*
+CREATE(n3:tab {intkey: 2, value: 190079603397242969825244409620089274368}) RETURN n3.*
+CREATE(n4:tab {intkey: 3, value: 340282366920938463463374607431768211455}) RETURN n4.*
+CREATE(n5:tab {intkey: -92, value: 0}) RETURN n5.*
 --- expected
 42
 170141183460469231731687303715884105727

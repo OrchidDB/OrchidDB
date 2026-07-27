@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.CreateOneToOneRel2.e364f41ac386","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneRel2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:N2)-[r:Rel2]->(:N1) RETURN COUNT(*)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case CreateOneToOneRel2
+node s0_anon1:N1 {ID: 10}
+node s0_anon2:N1 {ID: 11}
+node s1_anon1:N2 {ID: 12}
+node s1_anon2:N2 {ID: 13}
 --- expected
 0

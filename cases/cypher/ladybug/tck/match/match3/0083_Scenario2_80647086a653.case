@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.80647086a653","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario22","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match3.feature#[22] Returning bound nodes that are not part of the pattern","id":"cypher.ladybug.tck.match.match3.Scenario2.80647086a653","language":"cypher","ordered":false,"source":"tck/match/match3.test","source_case":"Scenario22","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a {name: 'A'}), (c {name: 'C'}) MATCH (a)-->(b) RETURN a, b, c
 --- graph_initializer
@@ -8,4 +8,4 @@ node b:N {name: "B"}
 node c:N {name: "C"}
 edge a -[:KNOWS]-> b
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0, name: A}|{_ID: 0:1, _LABEL: A, ID: 1, name: B}|{_ID: 0:2, _LABEL: A, ID: 2, name: C}
+({name: 'A'})|({name: 'B'})|({name: 'C'})

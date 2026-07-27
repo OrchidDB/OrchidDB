@@ -137,9 +137,23 @@ where
             IrExpr::Binding(CURRENT.into())
         } else {
             let spec = by_spec_for_label(&by_specs, index);
-            let (next_input, value_expr) = apply_by_spec(input, spec, lo, ctx)?;
-            input = next_input;
-            value_expr
+            let is_id_spec = spec.traversal.is_none()
+                && spec
+                    .key
+                    .as_deref()
+                    .map(|key| key.strip_prefix("T.").unwrap_or(key))
+                    .is_some_and(|key| key.eq_ignore_ascii_case("id"));
+            if is_id_spec {
+                // Display-context id: harness token, not the raw id.
+                IrExpr::Call {
+                    name: "gremlin_id_token".into(),
+                    args: vec![IrExpr::Binding(CURRENT.into())],
+                }
+            } else {
+                let (next_input, value_expr) = apply_by_spec(input, spec, lo, ctx)?;
+                input = next_input;
+                value_expr
+            }
         };
         let value_alias = lo.fresh("select_by");
         input = Node::GraphProject {
@@ -275,7 +289,10 @@ fn direct_by_expr(spec: &BySpec) -> Option<IrExpr> {
     let key = spec.key.as_deref()?;
     let key = key.strip_prefix("T.").unwrap_or(key);
     Some(match key.to_ascii_lowercase().as_str() {
-        "id" => IrExpr::Id(CURRENT.into()),
+        "id" => IrExpr::Call {
+            name: "gremlin_id_token".into(),
+            args: vec![IrExpr::Binding(CURRENT.into())],
+        },
         "label" => IrExpr::Label(CURRENT.into()),
         _ => IrExpr::property(
             CURRENT,

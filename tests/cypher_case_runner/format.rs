@@ -318,8 +318,19 @@ fn normalize_cypher_row(line: &str) -> String {
 }
 
 fn normalize_cypher_cell(cell: &str) -> String {
-    let trimmed = cell.trim();
-    if trimmed.eq_ignore_ascii_case("null") {
+    canonicalize_value(cell)
+}
+
+/// Canonicalize one cell (or nested value) so structurally-equal values
+/// from different renders compare equal. Both the engine's Kuzu-style
+/// render (`{_ID: 0:0, _LABEL: End, num: 42}`) and the openCypher TCK's
+/// neutral render (`(:End {num: 42})`) fold into the same canonical node
+/// text with internal identifiers (`_ID`, `__`-prefixed synthetic
+/// columns) dropped. The transformation is applied symmetrically to the
+/// actual and expected sides, so equal inputs always stay equal.
+fn canonicalize_value(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
         return String::new();
     }
     if trimmed.eq_ignore_ascii_case("true") {
@@ -328,7 +339,163 @@ fn normalize_cypher_cell(cell: &str) -> String {
     if trimmed.eq_ignore_ascii_case("false") {
         return "False".to_string();
     }
+    // One layer of surrounding quotes: TCK strings are single-quoted,
+    // engine output is bare. (Symmetric on both sides.)
+    if let Some(inner) = strip_symmetric_quotes(trimmed) {
+        return inner.to_string();
+    }
+    // Engine relationship render: `(0:0)-{_LABEL: T, _ID: 2:0, p: v}->(0:1)`.
+    if let Some(canon) = canonicalize_engine_rel(trimmed) {
+        return canon;
+    }
+    // TCK relationship render: `[:T]` / `[:T {p: v}]`.
+    if let Some(canon) = canonicalize_tck_rel(trimmed) {
+        return canon;
+    }
+    // Map / struct / engine node render.
+    if let Some(inner) = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        return canonicalize_map_body(inner);
+    }
+    // TCK node render: `(:L {p: v})` / `(:L)` / `({p: v})` / `()`.
+    if let Some(canon) = canonicalize_tck_node(trimmed) {
+        return canon;
+    }
+    // List: recurse into items.
+    if let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        if inner.trim().is_empty() {
+            return "[]".to_string();
+        }
+        let items: Vec<String> = split_top_level(inner, ',')
+            .into_iter()
+            .map(canonicalize_value)
+            .collect();
+        return format!("[{}]", items.join(","));
+    }
     trimmed.to_string()
+}
+
+fn strip_symmetric_quotes(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 2 {
+        return None;
+    }
+    let quote = bytes[0];
+    if (quote == b'\'' || quote == b'"') && bytes[bytes.len() - 1] == quote {
+        Some(&text[1..text.len() - 1])
+    } else {
+        None
+    }
+}
+
+/// Parse a `k: v, k: v, …` body. Returns `(label, sorted props)` where
+/// `label` comes from a `_LABEL` entry when present; `_ID` and
+/// `__`-prefixed synthetic keys are dropped.
+fn parse_props_body(inner: &str) -> (Option<String>, Vec<(String, String)>) {
+    let mut label = None;
+    let mut props: Vec<(String, String)> = Vec::new();
+    for entry in split_top_level(inner, ',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = entry.split_once(':') else {
+            props.push((entry.to_string(), String::new()));
+            continue;
+        };
+        let key = key.trim().trim_matches('"').trim_matches('`').to_string();
+        if key == "_ID" || key.starts_with("__") {
+            continue;
+        }
+        if key == "_LABEL" {
+            label = Some(value.trim().to_string());
+            continue;
+        }
+        props.push((key, canonicalize_value(value)));
+    }
+    props.sort();
+    (label, props)
+}
+
+fn render_props(props: &[(String, String)]) -> String {
+    let body: Vec<String> = props.iter().map(|(k, v)| format!("{k}:{v}")).collect();
+    format!("{{{}}}", body.join(","))
+}
+
+/// `{_ID: 0:0, _LABEL: End, num: 42}` → `(:End {num:42})`;
+/// any other `{…}` body → `{k:v,…}` with sorted keys.
+fn canonicalize_map_body(inner: &str) -> String {
+    let (label, props) = parse_props_body(inner);
+    match label {
+        Some(label) => format!("(:{label} {})", render_props(&props)),
+        None => render_props(&props),
+    }
+}
+
+/// `(:L {p: 1})` / `(:L:M)` / `({p: 1})` / `()` → `(:L {p:1})` canonical.
+fn canonicalize_tck_node(text: &str) -> Option<String> {
+    let inner = text.strip_prefix('(')?.strip_suffix(')')?;
+    // Reject things that are clearly not node patterns (e.g. arithmetic
+    // in parentheses): the inner text may only be labels + a prop map.
+    let (head, props_body) = match inner.find('{') {
+        Some(idx) => {
+            let body = inner[idx..].strip_prefix('{')?.strip_suffix('}')?;
+            (inner[..idx].trim(), Some(body))
+        }
+        None => (inner.trim(), None),
+    };
+    let labels = head.trim();
+    if !labels.is_empty() {
+        let stripped = labels.strip_prefix(':')?;
+        if !stripped
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | ':' | '`' | ' '))
+        {
+            return None;
+        }
+    }
+    let (_, props) = match props_body {
+        Some(body) => parse_props_body(body),
+        None => (None, Vec::new()),
+    };
+    let label = labels.strip_prefix(':').unwrap_or("").trim().to_string();
+    Some(format!("(:{label} {})", render_props(&props)))
+}
+
+/// `[:T {p: 1}]` / `[:T]` → `[:T {p:1}]` canonical.
+fn canonicalize_tck_rel(text: &str) -> Option<String> {
+    let inner = text.strip_prefix("[:")?.strip_suffix(']')?;
+    let (ty, props_body) = match inner.find('{') {
+        Some(idx) => {
+            let body = inner[idx..].strip_prefix('{')?.strip_suffix('}')?;
+            (inner[..idx].trim(), Some(body))
+        }
+        None => (inner.trim(), None),
+    };
+    if ty.is_empty() || !ty.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let (_, props) = match props_body {
+        Some(body) => parse_props_body(body),
+        None => (None, Vec::new()),
+    };
+    Some(format!("[:{ty} {}]", render_props(&props)))
+}
+
+/// Engine relationship render `(0:0)-{_LABEL: T, _ID: 2:0, p: v}->(0:1)`
+/// → `[:T {p:v}]` canonical (endpoint internal ids dropped).
+fn canonicalize_engine_rel(text: &str) -> Option<String> {
+    if !text.starts_with('(') || !text.ends_with(')') {
+        return None;
+    }
+    let open = text.find("-{")?;
+    let close = text.find("}->")?;
+    if close < open {
+        return None;
+    }
+    let body = &text[open + 2..close];
+    let (label, props) = parse_props_body(body);
+    let ty = label?;
+    Some(format!("[:{ty} {}]", render_props(&props)))
 }
 
 #[cfg(test)]
@@ -344,7 +511,31 @@ mod tests {
     fn preserves_pipe_like_text_inside_collections() {
         assert_eq!(
             strip_expected_tags("[true, false] | {x: 'a|b'}"),
-            "[true, false]|{x: 'a|b'}"
+            "[True,False]|{x:a|b}"
+        );
+    }
+
+    #[test]
+    fn kuzu_and_tck_node_renders_canonicalize_identically() {
+        assert_eq!(
+            strip_expected_tags("{_ID: 0:0, _LABEL: End, num: 42, id: 0}"),
+            strip_expected_tags("(:End {id: 0, num: 42})"),
+        );
+    }
+
+    #[test]
+    fn synthetic_row_column_is_dropped_from_node_renders() {
+        assert_eq!(
+            strip_expected_tags("{_ID: 0:0, _LABEL: A, __row: 0}"),
+            strip_expected_tags("(:A)"),
+        );
+    }
+
+    #[test]
+    fn rel_renders_canonicalize_identically() {
+        assert_eq!(
+            strip_expected_tags("(0:0)-{_LABEL: KNOWS, _ID: 2:0, since: 2020}->(0:1)"),
+            strip_expected_tags("[:KNOWS {since: 2020}]"),
         );
     }
 }

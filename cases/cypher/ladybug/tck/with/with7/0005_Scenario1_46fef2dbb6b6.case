@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with.with7.Scenario1.46fef2dbb6b6","language":"cypher","ordered":true,"source":"tck/with/with7.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with/With7.feature#[1] A simple pattern with one bound endpoint","id":"cypher.ladybug.tck.with.with7.Scenario1.46fef2dbb6b6","language":"cypher","ordered":false,"source":"tck/with/with7.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A)-[r:REL]->(b:B) WITH a AS b, b AS tmp, r AS r WITH b AS a, r LIMIT 1 MATCH (a)-[r]->(b) RETURN a, r, b
 --- graph_initializer
@@ -7,4 +7,4 @@ node _n1:A
 node _n2:B
 edge _n1 -[:REL]-> _n2
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0}|(0:0)-{_LABEL: REL, _ID: 2:0}->(1:0)|{_ID: 1:0, _LABEL: B, ID: 0}
+(:A)|[:REL]|(:B)

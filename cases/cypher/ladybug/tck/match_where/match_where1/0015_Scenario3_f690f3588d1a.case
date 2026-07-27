@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario3.f690f3588d1a","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match-where/MatchWhere1.feature#[3] Filter node with property predicate on a single variable with multiple bindings","id":"cypher.ladybug.tck.match_where.match_where1.Scenario3.f690f3588d1a","language":"cypher","ordered":false,"source":"tck/match_where/match_where1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) WHERE n.name = 'Bar' RETURN n
 --- graph_initializer
@@ -7,4 +7,4 @@ node _n1:N
 node _n2:N {name: "Bar"}
 node _n3:Bar
 --- expected
-{_ID: 1:0, _LABEL: B, ID: 0, name: Bar}
+({name: 'Bar'})

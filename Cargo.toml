@@ -27,4 +27,5 @@ thiserror = "2"
 unicode-segmentation = "1"
 
 [dev-dependencies]
+parquet = { version = "58.2.0", features = ["arrow"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

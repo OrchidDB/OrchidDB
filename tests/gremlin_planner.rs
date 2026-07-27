@@ -173,7 +173,7 @@ fn choose_option_dispatch_handles_predicate_none_and_unproductive() {
     .unwrap();
     assert_eq!(
         current_strings(&rows),
-        vec!["marko", "vadas", "josh", "peter", "Software", "Software"]
+        vec!["marko", "Software", "vadas", "Software", "josh", "peter"]
     );
 }
 

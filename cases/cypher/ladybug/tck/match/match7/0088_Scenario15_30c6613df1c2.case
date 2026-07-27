@@ -1,9 +1,9 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario15.30c6613df1c2","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario15","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match7.feature#[15] Variable length patterns and nulls","id":"cypher.ladybug.tck.match.match7.Scenario15.30c6613df1c2","language":"cypher","ordered":false,"source":"tck/match/match7.test","source_case":"Scenario15","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A) OPTIONAL MATCH (a)-[:FOO]->(b:B) OPTIONAL MATCH (b)<-[:BAR*]-(c:B) RETURN a, b, c
 --- graph_initializer
 node a:A
 node b:B
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0}||
+(:A)|null|null

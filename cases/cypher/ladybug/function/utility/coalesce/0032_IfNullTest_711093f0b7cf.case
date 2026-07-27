@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullTest.711093f0b7cf","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"TableTest","source_log":"IfNullTest","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tbl) RETURN coalesce(t.a, cast(t.c, "INT32"))
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/coalesce.test case TableTest
+node s0_t:tbl {id: 1, a: null, b: 111, c: "1111"}
+node s1_t:tbl {id: 2, a: 22, b: null, c: "2222"}
+node s2_t:tbl {id: 3, a: null, b: null, c: "3333"}
+node s3_t:tbl {id: 4, a: 44, b: 444, c: "4444"}
 --- expected
 1111
 22

@@ -195,16 +195,68 @@ fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
 }
 
 fn gremlin_order_key(graph: &PropertyGraph, value: &Value) -> Value {
+    // TinkerPop orderability: rank the value's type class per the
+    // orderability spec, then order within the class. The key is a
+    // `[rank, class_key]` pair — list comparison is lexicographic, so
+    // cross-class ordering follows the rank and same-class pairs fall
+    // through to the class key.
+    let (rank, key) = gremlin_orderability_parts(graph, value);
+    Value::List(vec![Value::Int(rank), key])
+}
+
+/// (class rank, within-class key) per the TinkerPop orderability spec:
+/// null < Boolean < Number < Date < String < UUID < Vertex < Edge <
+/// VertexProperty < Property < Path < Set < List < Map < unknown.
+fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Value) {
+    if let Some(items) = crate::ir::value::as_gremlin_set(value) {
+        return (11, Value::List(items.to_vec()));
+    }
     match value {
-        Value::Map(map) => map
-            .get("__order")
-            .or_else(|| map.get("__id"))
-            .cloned()
-            .unwrap_or_else(|| value.clone()),
-        Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
-            gremlin_scan_order(graph, value)
+        Value::Null => (0, Value::Null),
+        Value::Bool(_) => (1, value.clone()),
+        Value::Byte(_)
+        | Value::UInt8(_)
+        | Value::Short(_)
+        | Value::UInt16(_)
+        | Value::Int(_)
+        | Value::UInt32(_)
+        | Value::Long(_)
+        | Value::UInt64(_)
+        | Value::Float32(_)
+        | Value::Float(_)
+        | Value::BigInt(_)
+        | Value::UInt128(_)
+        | Value::BigDecimal(_) => (2, value.clone()),
+        Value::DateTime(_) => (3, value.clone()),
+        Value::String(s) => {
+            if s.starts_with("uuid[") && s.ends_with(']') {
+                (5, value.clone())
+            } else {
+                (4, value.clone())
+            }
         }
-        _ => value.clone(),
+        Value::Node { .. } | Value::InternalId { .. } => (6, gremlin_scan_order(graph, value)),
+        Value::Edge { .. } => (7, gremlin_scan_order(graph, value)),
+        Value::Map(map) => {
+            // Property objects: VertexProperty (rank 8) orders by id;
+            // Property on an edge (rank 9) orders by (key, value).
+            let is_prop = map.contains_key("element")
+                && map.contains_key("key")
+                && map.contains_key("value");
+            let edge_owned = matches!(map.get("element"), Some(Value::Edge { .. }))
+                || matches!(map.get("element"), Some(Value::String(s)) if s.contains("->"));
+            if is_prop && edge_owned {
+                let key = map.get("key").cloned().unwrap_or(Value::Null);
+                let val = map.get("value").cloned().unwrap_or(Value::Null);
+                return (9, Value::List(vec![key, val]));
+            }
+            match map.get("__order").or_else(|| map.get("__id")) {
+                Some(order) => (8, order.clone()),
+                None => (13, value.clone()),
+            }
+        }
+        Value::Path(_) => (10, value.clone()),
+        Value::List(_) => (12, value.clone()),
     }
 }
 
@@ -233,10 +285,18 @@ fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str, dir: &str
             .into_iter()
             .filter_map(|entry_key| {
                 let entry_value = map.get(&entry_key)?.clone();
+                // `t[id]` / `t[label]` display keys sort by their token
+                // name (`id` / `label`), matching TinkerPop's T-token
+                // ordering among plain string keys.
+                let sort_key_text = entry_key
+                    .strip_prefix("t[")
+                    .and_then(|s| s.strip_suffix(']'))
+                    .unwrap_or(entry_key.as_str())
+                    .to_string();
                 let sort_value = match key {
-                    "key" | "keys" => Value::String(entry_key.clone()),
+                    "key" | "keys" => Value::String(sort_key_text.clone()),
                     "value" | "values" => entry_value.clone(),
-                    _ => Value::String(entry_key.clone()),
+                    _ => Value::String(sort_key_text),
                 };
                 let mut single = BTreeMap::new();
                 single.insert(entry_key, entry_value);
@@ -303,15 +363,30 @@ fn gremlin_math_scalar(value: &Value) -> Option<f64> {
 }
 
 fn tree_value(value: &Value) -> Value {
-    let mut map = BTreeMap::new();
-    let items = match value {
-        Value::List(items) | Value::Path(items) => items.clone(),
-        Value::Null => Vec::new(),
-        other => vec![other.clone()],
-    };
-    for item in items {
-        map.entry(display_for_concat(&item))
+    // Build the nested tree map from a folded list of path histories:
+    // each path contributes root -> child -> ... chains.
+    fn insert_path(map: &mut BTreeMap<String, Value>, items: &[Value]) {
+        let Some(head) = items.first() else { return };
+        let entry = map
+            .entry(display_for_concat(head))
             .or_insert(Value::Map(BTreeMap::new()));
+        if let Value::Map(child) = entry {
+            insert_path(child, &items[1..]);
+        }
+    }
+    let mut map = BTreeMap::new();
+    match value {
+        Value::List(items) => {
+            for item in items {
+                match item {
+                    Value::Path(p) | Value::List(p) => insert_path(&mut map, p),
+                    other => insert_path(&mut map, std::slice::from_ref(other)),
+                }
+            }
+        }
+        Value::Path(p) => insert_path(&mut map, p),
+        Value::Null => {}
+        other => insert_path(&mut map, std::slice::from_ref(other)),
     }
     Value::Map(map)
 }
@@ -451,6 +526,43 @@ fn property_pair_has_key(value: &Value, key: &str) -> bool {
         value,
         Value::Map(map) if matches!(map.get("key"), Some(Value::String(candidate)) if candidate == key)
     )
+}
+
+/// `valueMap()` stores its per-key values pre-rendered as `["josh"]`
+/// display strings (so the map renders in TinkerPop's form). When a
+/// `select(key)` extracts such an entry back onto the traverser, revive
+/// it as a real list so downstream rendering shows `l[josh]`, not the
+/// raw display text.
+fn revive_value_map_entry(value: Value) -> Value {
+    let Value::String(text) = &value else {
+        return value;
+    };
+    let Some(inner) = text.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
+        return value;
+    };
+    if inner.is_empty() {
+        return Value::List(Vec::new());
+    }
+    let mut items = Vec::new();
+    for part in inner.split(',') {
+        let part = part.trim();
+        let item = if let Some(unquoted) = part.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+        {
+            Value::String(unquoted.to_string())
+        } else if let Ok(n) = part.parse::<i64>() {
+            Value::Int(n)
+        } else if let Ok(f) = part.parse::<f64>() {
+            Value::Float(f)
+        } else if part == "true" || part == "false" {
+            Value::Bool(part == "true")
+        } else {
+            // Not a rendered value list (e.g. an arbitrary string that
+            // happens to be bracketed) — leave untouched.
+            return value;
+        };
+        items.push(item);
+    }
+    Value::List(items)
 }
 
 fn algorithm_value_map_literal(value: &Value) -> String {
@@ -1029,13 +1141,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("range", [start, end]) => Ok(Some(make_range(start, end, &Value::Int(1))?)),
         ("range", [start, end, step]) => Ok(Some(make_range(start, end, step)?)),
         // ----- coalesce(...) — first non-null arg, else null -----
-        ("coalesce", values) => Ok(Some(
-            values
-                .iter()
-                .find(|v| !matches!(v, Value::Null))
-                .cloned()
-                .unwrap_or(Value::Null),
-        )),
+        ("coalesce", values) => Ok(Some(coalesce_promoted(values))),
         ("ifnull", [left, right]) => Ok(Some(if matches!(left, Value::Null) {
             right.clone()
         } else {
@@ -1217,7 +1323,24 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         // TryOrLenient mode so a single source of truth handles every
         // surface spelling. Falling back to lenient null on failure
         // preserves the Cypher-spec semantics.
-        ("tointeger", [v]) => Ok(Some(cast_value(v, "INT64", CastMode::TryOrLenient)?)),
+        // openCypher `toInteger` truncates floats toward zero (2.9 → 2)
+        // and accepts float-formatted strings ('2.9' → 2); this differs
+        // from Kuzu's CAST, which rounds. Truncate before delegating.
+        ("tointeger", [v]) => Ok(Some(match v {
+            Value::Float(f) if f.is_finite() => Value::Long(f.trunc() as i64),
+            Value::Float32(f) if f.is_finite() => Value::Long(f.trunc() as i64),
+            Value::String(s) => match cast_value(v, "INT64", CastMode::TryOrLenient)? {
+                Value::Null => s
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|f| f.is_finite())
+                    .map(|f| Value::Long(f.trunc() as i64))
+                    .unwrap_or(Value::Null),
+                other => other,
+            },
+            _ => cast_value(v, "INT64", CastMode::TryOrLenient)?,
+        })),
         ("tofloat", [v]) => Ok(Some(cast_value(v, "DOUBLE", CastMode::TryOrLenient)?)),
         ("toboolean", [v]) => Ok(Some(cast_value(v, "BOOL", CastMode::TryOrLenient)?)),
         (
@@ -1226,6 +1349,9 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             | "toboolean",
             args,
         ) if args.iter().any(|arg| matches!(arg, Value::Null)) => Ok(Some(Value::Null)),
+        // Typed unary negation (Kuzu NEGATE): unsigned types wrap
+        // modulo 2^n; signed MIN values raise an overflow error.
+        ("negate", [v]) => Ok(Some(negate_typed_value(v)?)),
         // ----- math functions used by Cypher (case-insensitive) -----
         ("abs", [v]) => Ok(Some(abs_value(v)?)),
         ("ceil", [v]) => Ok(Some(
@@ -2540,18 +2666,38 @@ fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
             .three_valued_eq(right)
             .map(|value| Value::Bool(!value))
             .unwrap_or(Value::Null),
-        _ => left
-            .three_valued_cmp(right)
-            .map(|ord| {
-                Value::Bool(match op {
-                    "lt" => ord == std::cmp::Ordering::Less,
-                    "lte" => ord != std::cmp::Ordering::Greater,
-                    "gt" => ord == std::cmp::Ordering::Greater,
-                    "gte" => ord != std::cmp::Ordering::Less,
-                    _ => false,
+        _ => {
+            // Kuzu float semantics: NaN orders below every numeric value
+            // (including another NaN).
+            fn nan_side(value: &Value) -> Option<bool> {
+                match value {
+                    Value::Float(n) => Some(n.is_nan()),
+                    Value::Float32(n) => Some(n.is_nan()),
+                    Value::Byte(_)
+                    | Value::Short(_)
+                    | Value::Int(_)
+                    | Value::Long(_) => Some(false),
+                    _ => None,
+                }
+            }
+            let nan_ord = match (nan_side(left), nan_side(right)) {
+                (Some(true), Some(_)) => Some(std::cmp::Ordering::Less),
+                (Some(false), Some(true)) => Some(std::cmp::Ordering::Greater),
+                _ => None,
+            };
+            nan_ord
+                .or_else(|| left.three_valued_cmp(right))
+                .map(|ord| {
+                    Value::Bool(match op {
+                        "lt" => ord == std::cmp::Ordering::Less,
+                        "lte" => ord != std::cmp::Ordering::Greater,
+                        "gt" => ord == std::cmp::Ordering::Greater,
+                        "gte" => ord != std::cmp::Ordering::Less,
+                        _ => false,
+                    })
                 })
-            })
-            .unwrap_or(Value::Null),
+                .unwrap_or(Value::Null)
+        }
     }
 }
 
@@ -3886,10 +4032,8 @@ fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
             Ok(value) => Ok(value),
             Err(err) => downgrade_or_err(err, mode),
         },
-        "DECIMAL" | "NUMERIC" => match cast_to_bigdecimal(v) {
-            Value::Null => mode_conversion_error(mode),
-            value => Ok(value),
-        },
+        // Kuzu's bare `DECIMAL` defaults to DECIMAL(18, 3).
+        "DECIMAL" | "NUMERIC" => cast_to_parametric_decimal(v, 18, 3, mode),
         "BOOL" | "BOOLEAN" => match cast_to_bool(v) {
             Value::Null => mode_conversion_error(mode),
             value => Ok(value),
@@ -5161,6 +5305,98 @@ fn format_actual_signature(args: &[Value]) -> String {
     format!("({types})")
 }
 
+/// COALESCE with Kuzu's numeric promotion: when any argument (null or
+/// not) is DOUBLE-typed, an integer result is promoted to DOUBLE so the
+/// output type matches Kuzu's unified COALESCE type. Same for integer
+/// lists when a double list appears among the arguments.
+fn coalesce_promoted(values: &[Value]) -> Value {
+    let result = values
+        .iter()
+        .find(|v| !matches!(v, Value::Null))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let any_float = values
+        .iter()
+        .any(|v| matches!(v, Value::Float(_) | Value::Float32(_)));
+    let any_float_list = values.iter().any(|v| {
+        matches!(v, Value::List(items) if items
+            .iter()
+            .any(|item| matches!(item, Value::Float(_) | Value::Float32(_))))
+    });
+    match result {
+        Value::Int(n) if any_float => Value::Float(n as f64),
+        Value::Long(n) if any_float => Value::Float(n as f64),
+        Value::List(items) if any_float_list => Value::List(
+            items
+                .into_iter()
+                .map(|item| match item {
+                    Value::Int(n) => Value::Float(n as f64),
+                    Value::Long(n) => Value::Float(n as f64),
+                    other => other,
+                })
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// Kuzu typed NEGATE: unsigned integers wrap modulo 2^n; signed MIN
+/// values raise an overflow error; everything else negates normally.
+fn negate_typed_value(value: &Value) -> IrResult<Value> {
+    fn min_negate_error(v: impl std::fmt::Display, ty: &str) -> InterpretError {
+        InterpretError::Runtime(format!(
+            "Overflow exception: Value {v} cannot be negated within {ty} range."
+        ))
+    }
+    Ok(match value {
+        Value::Null => Value::Null,
+        Value::UInt8(v) => Value::UInt8(v.wrapping_neg()),
+        Value::UInt16(v) => Value::UInt16(v.wrapping_neg()),
+        Value::UInt32(v) => Value::UInt32(v.wrapping_neg()),
+        Value::UInt64(v) => Value::UInt64(v.wrapping_neg()),
+        Value::UInt128(v) => {
+            let modulus: num_bigint::BigInt = num_bigint::BigInt::from(1u8) << 128;
+            let reduced: num_bigint::BigInt = v.clone() % modulus.clone();
+            let wrapped: num_bigint::BigInt = (modulus.clone() - reduced) % modulus;
+            Value::UInt128(wrapped)
+        }
+        Value::Byte(v) => {
+            if *v == i8::MIN {
+                return Err(min_negate_error(v, "INT8"));
+            }
+            Value::Byte(-v)
+        }
+        Value::Short(v) => {
+            if *v == i16::MIN {
+                return Err(min_negate_error(v, "INT16"));
+            }
+            Value::Short(-v)
+        }
+        Value::Int(v) => {
+            if *v == i32::MIN as i64 {
+                return Err(min_negate_error(v, "INT32"));
+            }
+            Value::Int(-v)
+        }
+        Value::Long(v) => {
+            if *v == i64::MIN {
+                return Err(min_negate_error(v, "INT64"));
+            }
+            Value::Long(-v)
+        }
+        Value::Float32(v) => Value::Float32(-v),
+        Value::Float(v) => Value::Float(-v),
+        Value::BigInt(v) => Value::BigInt(-v.clone()),
+        Value::BigDecimal(v) => Value::BigDecimal(-v.clone()),
+        other => {
+            return Err(InterpretError::Type(format!(
+                "negate on {}",
+                other.type_name()
+            )));
+        }
+    })
+}
+
 fn abs_value(value: &Value) -> IrResult<Value> {
     match value {
         Value::BigInt(n) => {
@@ -6064,6 +6300,13 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
         ("element_kind", [_]) => Ok(Value::String("VertexProperty".into())),
         ("gremlin_id", [value]) => Ok(gremlin_user_id(graph, value)),
+        // Display-context id (`select(..).by(T.id)`): elements render as
+        // their harness token (`v[lop].id`); non-elements fall back to
+        // the user id.
+        ("gremlin_id_token", [value @ (Value::Node { .. } | Value::Edge { .. })]) => Ok(
+            Value::String(property_object::element_id_token(value, graph)),
+        ),
+        ("gremlin_id_token", [value]) => Ok(gremlin_user_id(graph, value)),
         ("gremlin_scan_order", [value]) => Ok(gremlin_scan_order(graph, value)),
         ("gremlin_order_key", [value]) => Ok(gremlin_order_key(graph, value)),
         ("gremlin_within", [needle, candidates]) => {
@@ -6335,7 +6578,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Ok(binding.clone())
         }
         ("select_key_or_binding", [Value::Map(map), _, Value::String(key)]) => {
-            Ok(map.get(key).cloned().unwrap_or(Value::Null))
+            Ok(revive_value_map_entry(
+                map.get(key).cloned().unwrap_or(Value::Null),
+            ))
         }
         ("select_key_or_binding", [_, binding, _]) => Ok(binding.clone()),
         // `map_has_key(map, key)` — true iff `map` is a Map containing the
@@ -6367,7 +6612,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
                 return Ok(select_binding_by_pop(binding, history, pop));
             }
             if let Value::Map(map) = source {
-                return Ok(map.get(key).cloned().unwrap_or(Value::Null));
+                return Ok(revive_value_map_entry(
+                    map.get(key).cloned().unwrap_or(Value::Null),
+                ));
             }
             Ok(Value::Null)
         }
@@ -6473,6 +6720,35 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             path_last_label(path).is_some_and(|label| label == expected),
         )),
         ("tree_value", [value]) => Ok(tree_value(value)),
+        // Gremlin `{a, b}` set literal — marker-map Set value.
+        ("set_literal", [Value::List(items)]) => {
+            Ok(crate::ir::value::gremlin_set(items.clone()))
+        }
+        ("set_literal", [other]) => Ok(crate::ir::value::gremlin_set(vec![other.clone()])),
+        // Merge a Set-typed side-effect seed with the aggregated stream:
+        // seed items first, then stream values in first-occurrence
+        // order, deduplicated (LinkedHashSet semantics).
+        ("set_compact", [seed, folded]) => {
+            let mut items: Vec<Value> = Vec::new();
+            let mut push = |v: &Value| {
+                if !matches!(v, Value::Null) && !items.contains(v) {
+                    items.push(v.clone());
+                }
+            };
+            match crate::ir::value::as_gremlin_set(seed) {
+                Some(seed_items) => seed_items.iter().for_each(&mut push),
+                None => match seed {
+                    Value::List(seed_items) => seed_items.iter().for_each(&mut push),
+                    Value::Map(m) if m.is_empty() => {}
+                    other => push(other),
+                },
+            }
+            match folded {
+                Value::List(stream) => stream.iter().for_each(&mut push),
+                other => push(other),
+            }
+            Ok(crate::ir::value::gremlin_set(items))
+        }
         // Null-through-collect sentinel pair (gremlin side-effect bags
         // under ProductiveByStrategy): collects skip nulls, so nulls are
         // encoded as a marker string before the fold and decoded after.
@@ -6511,9 +6787,43 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         // Gremlin `unfold()` item source: unlike Cypher UNWIND, a null
         // traverser unfolds to itself (one null item) and a non-iterable
         // scalar unfolds to a single-item list.
+        // `order(Scope.local)` over a Map orders entries as single-entry
+        // maps for a following unfold; when the traverser stays a Map,
+        // merge the ordered entries back into one map.
+        // Dynamic map-key select: look up a map entry whose (string) key
+        // is the display form of the given value (`select(__.select("a"))`
+        // against a group("m") map keyed by vertices).
+        ("map_get_display", [Value::Map(map), key]) => {
+            if let Some(v) = map.get(&display_for_concat(key)) {
+                return Ok(v.clone());
+            }
+            let tagged = strings::display_for_tagged_container(key);
+            Ok(map.get(&tagged).cloned().unwrap_or(Value::Null))
+        }
+        ("map_get_display", [_, _]) => Ok(Value::Null),
+        ("local_order_merge_map", [original, ordered]) => {
+            if matches!(original, Value::Map(_)) {
+                if let Value::List(items) = ordered {
+                    let mut merged = BTreeMap::new();
+                    for item in items {
+                        if let Value::Map(entry) = item {
+                            for (k, v) in entry {
+                                merged.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    return Ok(Value::Map(merged));
+                }
+            }
+            Ok(ordered.clone())
+        }
         ("gremlin_unfold_items", [value]) => Ok(match value {
             Value::Null => Value::List(vec![Value::Null]),
             Value::List(items) => Value::List(items.clone()),
+            // Gremlin Set marker maps unfold to their items.
+            set if crate::ir::value::as_gremlin_set(set).is_some() => Value::List(
+                crate::ir::value::as_gremlin_set(set).unwrap().to_vec(),
+            ),
             Value::Map(entries) => Value::List(
                 entries
                     .iter()

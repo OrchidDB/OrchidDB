@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario10.0f46a464a18c","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match6.feature#[10] Named path with alternating directed/undirected relationships","id":"cypher.ladybug.tck.match.match6.Scenario10.0f46a464a18c","language":"cypher","ordered":false,"source":"tck/match/match6.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (n)-->(m)--(o) RETURN p
 --- graph_initializer
@@ -9,4 +9,4 @@ node c:C
 edge b -[:T]-> a
 edge c -[:T]-> b
 --- expected
-{_NODES: [{_ID: 2:0, _LABEL: C, ID: 0},{_ID: 1:0, _LABEL: B, ID: 0},{_ID: 0:0, _LABEL: A, ID: 0}], _RELS: [(2:0)-{_LABEL: T, _ID: 5:0}->(1:0),(1:0)-{_LABEL: KNOWS, _ID: 3:0}->(0:0)]}
+<(:C)-[:T]->(:B)-[:T]->(:A)>

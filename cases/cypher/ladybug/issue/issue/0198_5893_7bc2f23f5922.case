@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.5893.7bc2f23f5922","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"5893","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 match (a_account:Account {service: 'A'}) match (b_account:Account {service: 'B'}) where a_account.name = b_account.name return a_account.name
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 5893
+node s0_a:Account {service: "A", name: "alice"}
+node s1_a:Account {service: "A", name: null}
+node s2_a:Account {service: "B", name: null}
+node s3_a:Account {service: "B", name: "alice"}
 --- expected
 alice

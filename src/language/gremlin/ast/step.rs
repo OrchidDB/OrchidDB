@@ -102,6 +102,10 @@ pub enum Step {
     /// `Pop::First` picks the earliest. Unbound labels degenerate to
     /// Identity at the planner.
     Select(String, Pop),
+    /// `select(__.select("a"))` — traversal-valued select key: look up
+    /// the current map-shaped traverser with the *value* of another
+    /// binding as the key (matched via its display form).
+    SelectMapValueBy(String),
     /// `select(Column.keys)` / `select(keys)` and the values equivalent on
     /// a map-shaped traverser.
     SelectColumn(MapColumn),

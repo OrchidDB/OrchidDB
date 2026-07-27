@@ -166,6 +166,18 @@ fn build_node_table(
     nodes: &[NodeDecl],
 ) -> Result<new_graph::ir::catalog::NodeTable, DatasetError> {
     let kinds = collect_property_kinds(rows.iter().map(|i| &nodes[*i].properties))?;
+    if kinds.is_empty() {
+        // Property-less nodes: Arrow cannot carry rows without columns,
+        // so emit a hidden `__row` column to materialize the row count.
+        // The cypher formatter strips `__`-prefixed keys from node
+        // renders, so the synthetic column never leaks into output.
+        let ids: Vec<i64> = (0..rows.len() as i64).collect();
+        let column: ArrayRef = Arc::new(Int64Array::from(ids));
+        return Ok(nodes_from_columns(
+            label.to_string(),
+            vec![("__row", column)],
+        ));
+    }
     let columns: Vec<(&str, ArrayRef)> = kinds
         .iter()
         .map(|(name, kind)| {

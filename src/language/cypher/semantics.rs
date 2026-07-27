@@ -1118,6 +1118,30 @@ fn arithmetic_kinds_compatible(op: BinaryOp, lhs: BindingKind, rhs: BindingKind)
     ) {
         return true;
     }
+    // openCypher list concatenation/append: `list + list`, `list +
+    // element` and `element + list` are all valid `+` forms.
+    if matches!(op, BinaryOp::Add)
+        && (matches!(
+            lhs,
+            BindingKind::ListInt | BindingKind::FixedListInt
+        ) && matches!(
+            rhs,
+            BindingKind::Int
+                | BindingKind::Float
+                | BindingKind::Bool
+                | BindingKind::String
+                | BindingKind::ListInt
+                | BindingKind::FixedListInt
+        ) || matches!(
+            rhs,
+            BindingKind::ListInt | BindingKind::FixedListInt
+        ) && matches!(
+            lhs,
+            BindingKind::Int | BindingKind::Float | BindingKind::Bool | BindingKind::String
+        ))
+    {
+        return true;
+    }
     matches!(
         (op, lhs, rhs),
         (BinaryOp::Mul, BindingKind::Interval, BindingKind::Int)
@@ -1192,11 +1216,23 @@ fn validate_coalesce_static_types(args: &[Expr]) -> CypherPlanResult<()> {
             continue;
         };
         if let Some(expected_type) = &expected {
-            if expected_type != &actual {
+            // Kuzu unifies numeric COALESCE arguments (INT64 + DOUBLE
+            // promotes to DOUBLE) — only genuinely incompatible types
+            // (e.g. INT64 vs STRING) are binder errors.
+            let numeric = |name: &str| matches!(name, "INT64" | "DOUBLE" | "FLOAT");
+            let numeric_list = |name: &str| matches!(name, "INT64[]" | "DOUBLE[]" | "FLOAT[]");
+            let compatible = expected_type == &actual
+                || (numeric(expected_type) && numeric(&actual))
+                || (numeric_list(expected_type) && numeric_list(&actual));
+            if !compatible {
                 return Err(CypherPlanError::Invalid(format!(
                     "Binder exception: Expression {} has data type {actual} but expected {expected_type}. Implicit cast is not supported.",
                     display_literal_expr(arg)
                 )));
+            }
+            if (numeric(&actual) && actual == "DOUBLE") || (numeric_list(&actual) && actual == "DOUBLE[]")
+            {
+                expected = Some(actual);
             }
         } else {
             expected = Some(actual);
@@ -1726,7 +1762,28 @@ fn is_variable_length(range: &crate::language::cypher::ast::RangeLiteral) -> boo
 fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
     match expr {
         Expr::Variable(binding) => scope.kind(binding).unwrap_or(BindingKind::Unknown),
-        Expr::Property { key, .. } => property_key_kind(key),
+        Expr::Property { target, key } => {
+            // The key-name heuristic only holds for fixture graph
+            // elements. A nested access (`map.a.b`) or an access on a
+            // literal map/struct value has no fixture-backed type.
+            match &**target {
+                Expr::Property { .. } | Expr::Map(_) => BindingKind::Unknown,
+                Expr::Variable(binding)
+                    if !matches!(
+                        scope.kind(binding),
+                        None | Some(
+                            BindingKind::Node
+                                | BindingKind::Relationship
+                                | BindingKind::RecursiveRelationship
+                                | BindingKind::Unknown
+                        )
+                    ) =>
+                {
+                    BindingKind::Unknown
+                }
+                _ => property_key_kind(key),
+            }
+        }
         Expr::Literal(Literal::Bool(_)) => BindingKind::Bool,
         Expr::Literal(Literal::Integer(_)) => BindingKind::Int,
         Expr::Literal(Literal::Float(_)) => BindingKind::Float,

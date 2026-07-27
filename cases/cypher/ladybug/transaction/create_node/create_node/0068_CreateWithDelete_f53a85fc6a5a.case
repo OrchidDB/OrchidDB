@@ -2,6 +2,15 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_node.CreateWithDelete.f53a85fc6a5a","language":"cypher","ordered":true,"source":"transaction/create_node/create_node.test","source_case":"CreateWithDelete","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) RETURN a.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_node.test case CreateWithDelete
+node s0_a:test {id: 0}
+node s1_a:test {id: 1}
+node s2_a:test {id: 2}
+node s3_a:test {id: 3}
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/create_node/create_node.test case CreateWithDelete
+MATCH (t:test) WHERE t.id < 2 DELETE t
 --- expected
 2
 3

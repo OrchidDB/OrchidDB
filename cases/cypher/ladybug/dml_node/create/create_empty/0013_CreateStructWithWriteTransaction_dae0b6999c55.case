@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateStructWithWriteTransaction.dae0b6999c55","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateStructWithWriteTransaction","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) RETURN a.prop
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateStructWithWriteTransaction
+CREATE (a:test {id:1, prop:{age:10, name:'A'}})
 --- expected
 {age: 10, name: A}

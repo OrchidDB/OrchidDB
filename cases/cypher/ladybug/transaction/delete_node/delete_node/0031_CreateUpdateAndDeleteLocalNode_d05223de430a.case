@@ -2,6 +2,17 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_node.delete_node.CreateUpdateAndDeleteLocalNode.d05223de430a","language":"cypher","ordered":true,"source":"transaction/delete_node/delete_node.test","source_case":"CreateUpdateAndDeleteLocalNode","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) RETURN ID(p), p.fName
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/delete_node/delete_node.test case CreateUpdateAndDeleteLocalNode
+node s0_p:person {oid: 0, fName: "Alice"}
+node s1_p:person {oid: 1, fName: "Bob"}
+node s2_p:person {oid: 2, fName: "Charlie"}
+node s3_p:person {oid: 3, fName: "Dave"}
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/delete_node/delete_node.test case CreateUpdateAndDeleteLocalNode
+MATCH (p:person) WHERE p.oid=1 SET p.fName='Bob2'
+MATCH (p:person) WHERE p.oid=1 DELETE p
+MATCH (p:person) WHERE p.oid=2 SET p.fName='Charlie2'
 --- expected
 0:0|Alice
 0:2|Charlie2

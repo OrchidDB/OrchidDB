@@ -325,11 +325,21 @@ impl LoweringVisitor {
                 let key = match key_text.as_deref().and_then(parse_pick_key) {
                     Some(key) => key,
                     None => {
-                        let value = c.genericArgument().and_then(|arg| {
-                            self.visit_genericArgument(&arg);
-                            self.pop_value()
-                        })?;
-                        OptionKey::Value(value)
+                        // `option(__.hasLabel("x"), t)` — an anonymous
+                        // traversal key hides inside genericLiteral.
+                        if let Some(nested) = c
+                            .genericArgument()
+                            .and_then(|arg| arg.genericLiteral())
+                            .and_then(|lit| lit.nestedTraversal())
+                        {
+                            OptionKey::Traversal(self.lower_nested_traversal(&nested))
+                        } else {
+                            let value = c.genericArgument().and_then(|arg| {
+                                self.visit_genericArgument(&arg);
+                                self.pop_value()
+                            })?;
+                            OptionKey::Value(value)
+                        }
                     }
                 };
                 let traversal = c
@@ -2074,7 +2084,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
                     }
                 }
             }
-            self.value_stack.push(GValue::List(elements));
+            self.value_stack.push(GValue::Set(elements));
             return;
         }
         // Unsupported literal forms: lower as Null so the
@@ -4335,9 +4345,16 @@ impl LoweringVisitor {
                 (labels, pop)
             }
             TraversalMethod_selectContextAll::TraversalMethod_select_TraversalContext(c) => {
-                let labels = c
+                let inner = c
                     .nestedTraversal()
-                    .and_then(|nested| select_label_from_constant_traversal(&self.lower_nested_traversal(&nested)))
+                    .map(|nested| self.lower_nested_traversal(&nested))
+                    .unwrap_or_default();
+                if let [Step::Select(label, _)] = inner.as_slice() {
+                    // `select(__.select("a"))` — dynamic map-key select.
+                    self.steps.push(Step::SelectMapValueBy(label.clone()));
+                    return;
+                }
+                let labels = select_label_from_constant_traversal(&inner)
                     .into_iter()
                     .collect();
                 (labels, Pop::Last)

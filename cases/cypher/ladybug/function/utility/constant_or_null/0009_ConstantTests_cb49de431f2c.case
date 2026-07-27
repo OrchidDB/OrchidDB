@@ -2,6 +2,13 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.constant_or_null.ConstantTests.cb49de431f2c","language":"cypher","ordered":true,"source":"function/utility/constant_or_null.test","source_case":"ConstantTests","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tbl) RETURN constant_or_null(1, CASE WHEN t.id % 2 = 0 THEN NULL ELSE t.id END)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/constant_or_null.test case ConstantTests
+node s0_t:tbl {id: 1}
+node s1_t:tbl {id: 2}
+node s2_t:tbl {id: 3}
+node s3_t:tbl {id: 4}
+node s4_t:tbl {id: 5}
 --- expected
 1
 1

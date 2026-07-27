@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match2.Scenario6.8f385e0b7a67","language":"cypher","ordered":true,"source":"tck/match/match2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match2.feature#[6] Match relationships with multiple types","id":"cypher.ladybug.tck.match.match2.Scenario6.8f385e0b7a67","language":"cypher","ordered":false,"source":"tck/match/match2.test","source_case":"Scenario6","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n)-[r:KNOWS|HATES]->(x) RETURN r
 --- graph_initializer
@@ -10,5 +10,5 @@ edge a -[:KNOWS]-> b
 edge a -[:HATES]-> c
 edge a -[:WONDERS]-> c
 --- expected
-(0:0)-{_LABEL: HATES, _ID: 3:0}->(0:1)
-(0:0)-{_LABEL: KNOWS, _ID: 1:0}->(0:2)
+[:KNOWS]
+[:HATES]

@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match7.Scenario27.5705e63b7644","language":"cypher","ordered":true,"source":"tck/match/match7.test","source_case":"Scenario27","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match7.feature#[27] Handling optional matches between optionally matched entities","id":"cypher.ladybug.tck.match.match7.Scenario27.5705e63b7644","language":"cypher","ordered":false,"source":"tck/match/match7.test","source_case":"Scenario27","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 OPTIONAL MATCH (a:NotThere) WITH a MATCH (b:B) WITH a, b OPTIONAL MATCH (b)-[r:NOR_THIS]->(a) RETURN a, b, r
 --- graph_initializer
@@ -12,4 +12,4 @@ edge s -[:REL]-> b
 edge a -[:REL]-> c
 edge b -[:LOOP]-> b
 --- expected
-|{_ID: 2:0, _LABEL: B, ID: 0, num: 46}|
+null|(:B {num: 46})|null

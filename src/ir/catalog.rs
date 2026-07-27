@@ -686,7 +686,7 @@ fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Value {
     }
 }
 
-fn parse_debug_value(input: &str) -> Option<Value> {
+pub(crate) fn parse_debug_value(input: &str) -> Option<Value> {
     let input = input.trim();
     if input == "Null" {
         return Some(Value::Null);
@@ -919,6 +919,29 @@ pub fn nodes_from_columns(label: impl Into<String>, columns: Vec<(&str, ArrayRef
     let arrays: Vec<ArrayRef> = columns.into_iter().map(|(_, a)| a).collect();
     let batch = RecordBatch::try_new(schema, arrays).expect("node batch");
     NodeTable { label, batch }
+}
+
+/// Build a node table from columnar Rust data with an explicit row
+/// count. Unlike [`nodes_from_columns`], property-less node tables keep
+/// their rows (Arrow needs the count when there are zero columns), so
+/// scenario initializers can declare `node a:Label` without properties.
+pub fn nodes_from_columns_with_count(
+    label: impl Into<String>,
+    columns: Vec<(&str, ArrayRef)>,
+    row_count: usize,
+) -> NodeTable {
+    let label = label.into();
+    if columns.is_empty() {
+        let schema: SchemaRef = Arc::new(Schema::empty());
+        let batch = RecordBatch::try_new_with_options(
+            schema,
+            Vec::new(),
+            &arrow::array::RecordBatchOptions::new().with_row_count(Some(row_count)),
+        )
+        .expect("empty node batch with count");
+        return NodeTable { label, batch };
+    }
+    nodes_from_columns(label, columns)
 }
 
 /// Build an edge table from `__src_id, __dst_id` plus property columns.

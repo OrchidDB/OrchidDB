@@ -20,7 +20,7 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
         // still compiles; semantics may be off (a list-vs-null compare
         // collapses), but the failure surface is much better than
         // killing the whole query at a leaf-level lit conversion.
-        GValue::List(_) => Lit::Null,
+        GValue::List(_) | GValue::Set(_) => Lit::Null,
     })
 }
 
@@ -36,6 +36,15 @@ pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
                 .map(gvalue_to_expr)
                 .collect::<GremlinPlanResult<Vec<_>>>()?,
         ),
+        GValue::Set(items) => IrExpr::Call {
+            name: "set_literal".into(),
+            args: vec![IrExpr::List(
+                items
+                    .iter()
+                    .map(gvalue_to_expr)
+                    .collect::<GremlinPlanResult<Vec<_>>>()?,
+            )],
+        },
         GValue::Map(map) => {
             let keys = IrExpr::List(
                 map.keys()
@@ -65,6 +74,9 @@ pub(super) fn gvalue_to_value(value: &GValue) -> Value {
         GValue::DateTime(s) => Value::DateTime(s.clone()),
         GValue::String(s) => Value::String(s.clone()),
         GValue::List(items) => Value::List(items.iter().map(gvalue_to_value).collect()),
+        GValue::Set(items) => {
+            crate::ir::value::gremlin_set(items.iter().map(gvalue_to_value).collect())
+        }
         GValue::Map(map) => Value::Map(
             map.iter()
                 .map(|(key, value)| (key.clone(), gvalue_to_value(value)))

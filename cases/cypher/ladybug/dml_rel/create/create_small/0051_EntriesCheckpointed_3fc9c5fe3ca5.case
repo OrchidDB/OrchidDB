@@ -2,6 +2,17 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_rel.create.create_small.EntriesCheckpointed.3fc9c5fe3ca5","language":"cypher","ordered":true,"source":"dml_rel/create/create_small.test","source_case":"CreateOneToOneInBatch","source_log":"EntriesCheckpointed","status":"imported","suite":"ladybug","version":1}
 --- query
 match (a)-[e]->(b) return e
+--- graph_initializer
+# re-extracted from kuzu test/test_files/dml_rel/create/create_small.test case CreateOneToOneInBatch
+node s0_anon1:person {id: 1}
+node s1_anon1:animal {id: 1}
+node s2_anon1:person {id: 2}
+node s3_anon1:animal {id: 2}
+node s4_anon1:person {id: 3}
+node s5_anon1:animal {id: 3}
+edge s0_anon1 -[:own]-> s1_anon1
+edge s2_anon1 -[:own]-> s3_anon1
+edge s4_anon1 -[:own]-> s5_anon1
 --- expected
 (1:0)-{_LABEL: own, _ID: 2:0}->(0:0)
 (1:1)-{_LABEL: own, _ID: 2:1}->(0:1)

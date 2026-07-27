@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.CoalesceTest.b499f1c6b41d","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"PredicateTest","source_log":"CoalesceTest","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tbl) WHERE NOT coalesce(NULL, t.bool, NULL) RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/coalesce.test case PredicateTest
+node s0_t:tbl {id: 1, bool: true}
+node s1_t:tbl {id: 2, bool: false}
+node s2_t:tbl {id: 3, bool: null}
+node s3_t:tbl {id: 4, bool: true}
 --- expected
 2

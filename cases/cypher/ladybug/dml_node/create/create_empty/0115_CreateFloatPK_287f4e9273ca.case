@@ -2,5 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateFloatPK.287f4e9273ca","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateFloatPK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) WHERE t.id = to_float("inf") RETURN t.id
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateFloatPK
+CREATE (t:test {id:0.1})
+CREATE (t:test {id:0.2})
+CREATE (t:test {id:0})
+CREATE (t:test {id:1.0/0.0})
 --- expected
 inf

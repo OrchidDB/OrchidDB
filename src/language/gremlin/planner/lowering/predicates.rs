@@ -39,7 +39,9 @@ fn flatten_predicate_values(values: &[GValue]) -> Vec<GValue> {
     let mut out = Vec::with_capacity(values.len());
     for value in values {
         match value {
-            GValue::List(items) => out.extend(flatten_predicate_values(items)),
+            GValue::List(items) | GValue::Set(items) => {
+                out.extend(flatten_predicate_values(items))
+            }
             other => out.push(other.clone()),
         }
     }
@@ -67,6 +69,17 @@ pub(super) fn predicate_to_expr_with_bindings(
                     CompareOp::Lte | CompareOp::Gte => IrExpr::IsNull(Box::new(target)),
                     CompareOp::Lt | CompareOp::Gt => IrExpr::lit_bool(false),
                 });
+            }
+            // TinkerPop comparability: ordered comparison against NaN is
+            // an error, and errors filter the traverser (P.lt(NaN) etc.
+            // never match).
+            if matches!(value, GValue::Float(f) if f.is_nan())
+                && matches!(
+                    op,
+                    CompareOp::Lt | CompareOp::Lte | CompareOp::Gt | CompareOp::Gte
+                )
+            {
+                return Ok(IrExpr::lit_bool(false));
             }
             let rhs = predicate_value_expr_with(value, resolve_binding)?;
             let bin = match op {

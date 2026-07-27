@@ -132,6 +132,7 @@ struct HarnessConfig {
     limit: Option<usize>,
     strict: bool,
     exec: ExecMode,
+    timeout_ms: u64,
 }
 
 impl HarnessConfig {
@@ -148,6 +149,10 @@ impl HarnessConfig {
                 .and_then(|value| value.parse().ok()),
             strict: std::env::var("GRAPH_REL_STRICT").is_ok_and(|value| value == "1"),
             exec,
+            timeout_ms: std::env::var("GRAPH_REL_TIMEOUT_MS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(10_000),
         }
     }
 
@@ -190,33 +195,55 @@ async fn run_language(
         seen += 1;
         // Each case runs on its own thread (with its own runtime) so a
         // panicking case (e.g. from a fixture initializer) records a failure
-        // instead of aborting the whole run.
+        // instead of aborting the whole run, and a per-case timeout keeps a
+        // single expensive plan (e.g. an unrolled variable-length expand on
+        // a large fixture) from stalling the harness. Timed-out threads are
+        // detached; their result is discarded when it eventually arrives.
         let run = {
             let path = path.clone();
             let backend = backend.clone();
             let exec = config.exec;
+            let (sender, receiver) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .expect("case runtime");
-                runtime.block_on(async {
-                    match lang {
-                        Language::Cypher => run_cypher_case(&path, &backend, exec).await,
-                        Language::Gremlin => run_gremlin_case(&path, &backend, exec).await,
-                    }
-                })
-            })
-            .join()
-            .unwrap_or_else(|panic| CaseRun {
-                query: None,
-                plan_tree: None,
-                sql: None,
-                outcome: Outcome::ExecutionError(format!(
-                    "case panicked: {}",
-                    panic_message(panic.as_ref())
-                )),
-            })
+                let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    runtime.block_on(async {
+                        match lang {
+                            Language::Cypher => run_cypher_case(&path, &backend, exec).await,
+                            Language::Gremlin => run_gremlin_case(&path, &backend, exec).await,
+                        }
+                    })
+                }))
+                .unwrap_or_else(|panic| CaseRun {
+                    query: None,
+                    plan_tree: None,
+                    sql: None,
+                    outcome: Outcome::ExecutionError(format!(
+                        "case panicked: {}",
+                        panic_message(panic.as_ref())
+                    )),
+                });
+                let _ = sender.send(run);
+            });
+            // Backstop only: the cooperative tokio timeout inside the case
+            // normally fires first, letting the thread exit cleanly.
+            match receiver.recv_timeout(std::time::Duration::from_millis(
+                config.timeout_ms.saturating_mul(3).saturating_add(5_000),
+            )) {
+                Ok(run) => run,
+                Err(_) => CaseRun {
+                    query: None,
+                    plan_tree: None,
+                    sql: None,
+                    outcome: Outcome::ExecutionError(format!(
+                        "case timed out after {}ms",
+                        config.timeout_ms
+                    )),
+                },
+            }
         };
         if !matches!(run.outcome, Outcome::Matched) {
             let _ = dump_case(out_dir, lang, &path, &run);
@@ -260,6 +287,28 @@ struct ExecRun {
     sql: Option<String>,
 }
 
+#[cfg(feature = "duckdb")]
+fn count_plan_nodes(plan: &datafusion::logical_expr::LogicalPlan) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![plan];
+    while let Some(node) = stack.pop() {
+        count += 1;
+        stack.extend(node.inputs());
+    }
+    count
+}
+
+fn case_timeout() -> std::time::Duration {
+    static TIMEOUT_MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let ms = *TIMEOUT_MS.get_or_init(|| {
+        std::env::var("GRAPH_REL_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(10_000)
+    });
+    std::time::Duration::from_millis(ms)
+}
+
 async fn execute_case(
     backend: &RelBackend,
     plan: &GraphPlan,
@@ -267,13 +316,23 @@ async fn execute_case(
     mode: ExecMode,
 ) -> ExecRun {
     match mode {
-        ExecMode::DataFusion => ExecRun {
-            result: backend
-                .execute(plan, graph)
-                .await
-                .map_err(|err| format!("{err}")),
-            sql: None,
-        },
+        // A cooperative timeout drops the DataFusion future so a single
+        // expensive plan cannot pin memory/CPU for the rest of the run.
+        ExecMode::DataFusion => {
+            match tokio::time::timeout(case_timeout(), backend.execute(plan, graph)).await {
+                Ok(result) => ExecRun {
+                    result: result.map_err(|err| format!("{err}")),
+                    sql: None,
+                },
+                Err(_) => ExecRun {
+                    result: Err(format!(
+                        "execution timed out after {}ms",
+                        case_timeout().as_millis()
+                    )),
+                    sql: None,
+                },
+            }
+        }
         ExecMode::DuckDb => execute_case_duckdb(backend, plan, graph).await,
     }
 }
@@ -293,6 +352,19 @@ async fn execute_case_duckdb(
             };
         }
     };
+    // DuckDB executes synchronously and cannot be cancelled by the case
+    // timeout; refuse oversized plans (e.g. deep variable-length unrolls
+    // over large fixtures) up front so one query cannot pin a core for the
+    // rest of the run.
+    let nodes = count_plan_nodes(&lowered.plan);
+    if nodes > 200 {
+        return ExecRun {
+            result: Err(format!(
+                "unsupported relational lowering: plan too large for uncancellable DuckDB execution ({nodes} nodes)"
+            )),
+            sql: None,
+        };
+    }
     let prepared = match sql::prepare(&lowered, SqlDialect::DuckDb).await {
         Ok(prepared) => prepared,
         Err(err) => {
@@ -668,6 +740,11 @@ fn error_match_candidates(actual: &str) -> Vec<String> {
         "Runtime exception:",
         "Binder exception:",
         "Parser exception:",
+        "Conversion exception:",
+        "Overflow exception:",
+        "Unsupported exception:",
+        "Catalog exception:",
+        "RuntimeError:",
         "SyntaxError:",
         "Error:",
     ] {

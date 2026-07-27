@@ -2,6 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.InvalidUserDefinedTypeErr.53837b1b0b20","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"UDTCastTest","source_log":"InvalidUserDefinedTypeErr","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:person) RETURN cast(p.description as LENGTH[3])
+--- setup_statements
+# re-extracted from kuzu test/test_files/user_defined_types/user_defined_types.test case UDTCastTest
+CREATE (:person {id: 5, description: [2,5,6], info: {age: 5, name: 'alice'}})
+CREATE (:person {id: 25, description: [1,3,4], info: {age: 21, name: 'Bob'}})
+CREATE (:person {id: 67, description: [4,5,8], info: {age: 32, name: 'Carol'}})
 --- expected
 [2,5,6]
 [1,3,4]

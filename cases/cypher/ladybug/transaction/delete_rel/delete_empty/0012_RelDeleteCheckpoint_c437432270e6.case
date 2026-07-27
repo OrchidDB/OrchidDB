@@ -2,5 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.delete_rel.delete_empty.RelDeleteCheckpoint.c437432270e6","language":"cypher","ordered":true,"source":"transaction/delete_rel/delete_empty.test","source_case":"RelDeleteCheckpoint","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:person)-[e:knows]->(:person) RETURN COUNT(e)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/delete_rel/delete_empty.test case RelDeleteCheckpoint
+node s0_p:person {ID: 10}
+node s1_p:person {ID: 20}
+node s2_p:person {ID: 30}
+node s3_p:person {ID: 40}
+edge s0_p -[:knows]-> s1_p
+edge s1_p -[:knows]-> s2_p
+edge s2_p -[:knows]-> s3_p
 --- expected
 3

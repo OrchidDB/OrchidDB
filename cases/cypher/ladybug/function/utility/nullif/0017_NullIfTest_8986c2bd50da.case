@@ -2,6 +2,17 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.8986c2bd50da","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t3:test3) RETURN t3.a, CASE WHEN t3.a>11 THEN CAST(t3.a, "STRING") ELSE CAST(t3.b, "STRING") END ORDER BY t3.a
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/nullif.test case NullIfTest
+node s0_t:test {a: "hello"}
+node s1_t:test {a: "world"}
+node s2_t:test {a: "test"}
+node s3_t:test2 {a: "blabla", b: "b"}
+node s4_t:test2 {a: "blabla2", b: "c"}
+node s5_t:test2 {a: "blabla3", b: "d"}
+node s6_t:test3 {a: 11, b: 22}
+node s7_t:test3 {a: 13, b: 22}
+node s8_t:test3 {a: 12, b: 21}
 --- expected
 11|22
 12|12

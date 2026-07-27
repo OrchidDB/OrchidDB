@@ -26,9 +26,15 @@ pub(super) fn lower_match(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    // `and(p1, p2)` inside match parses to a run of WhereTraversal steps;
+    // TinkerPop's MatchStep treats those as first-class patterns whose
+    // labels join the match environment. Flatten them, then order the
+    // patterns solver-style: binding patterns run start-label-bound-first
+    // and pure filters (where clauses, or()-filters) run last.
+    let patterns = solver_ordered_patterns(patterns);
     let mut acc = input;
     let mut seen_labels = Vec::new();
-    for pattern in patterns {
+    for pattern in &patterns {
         let mut pattern = pattern.clone();
         if let Some(Step::As(label)) = pattern.first() {
             if seen_labels.iter().any(|seen| seen == label) {
@@ -78,6 +84,90 @@ pub(super) fn lower_match(
         };
     }
     Ok(acc)
+}
+
+/// Flatten `and()`-style multi-WhereTraversal patterns and order the
+/// result: binding patterns (leading `as(label)`) are arranged so each
+/// one's start label is already bound when it runs (the incoming
+/// traverser binds the first pattern's start), and filter-only patterns
+/// run after every label they reference has been bound.
+fn solver_ordered_patterns(patterns: &[Vec<Step>]) -> Vec<Vec<Step>> {
+    fn flatten_one(pattern: &[Step], out: &mut Vec<Vec<Step>>) {
+        let all_where = pattern.len() > 1
+            && pattern
+                .iter()
+                .all(|s| matches!(s, Step::WhereTraversal(_)));
+        if all_where {
+            for step in pattern {
+                if let Step::WhereTraversal(inner) = step {
+                    flatten_one(inner, out);
+                }
+            }
+        } else {
+            out.push(pattern.to_vec());
+        }
+    }
+    let mut flattened = Vec::new();
+    for pattern in patterns {
+        flatten_one(pattern, &mut flattened);
+    }
+
+    let (mut binding, filters): (Vec<Vec<Step>>, Vec<Vec<Step>>) = flattened
+        .into_iter()
+        .partition(|p| matches!(p.first(), Some(Step::As(_))));
+
+    let start_label = |p: &[Step]| match p.first() {
+        Some(Step::As(label)) => label.clone(),
+        _ => String::new(),
+    };
+    // Labels produced by a pattern beyond its start label.
+    let mut non_start_outputs: Vec<String> = Vec::new();
+    for p in &binding {
+        let start = start_label(p);
+        let mut outputs = Vec::new();
+        for step in p {
+            collect_step_outputs(step, &mut outputs);
+        }
+        for label in outputs {
+            if label != start && !non_start_outputs.contains(&label) {
+                non_start_outputs.push(label);
+            }
+        }
+    }
+
+    let mut ordered = Vec::with_capacity(binding.len());
+    let mut bound: Vec<String> = Vec::new();
+    while !binding.is_empty() {
+        let idx = binding
+            .iter()
+            .position(|p| bound.contains(&start_label(p)))
+            .or_else(|| {
+                if ordered.is_empty() {
+                    // First pick: prefer a root — a start label no other
+                    // pattern produces, so the incoming traverser can
+                    // bind it without stranding another pattern.
+                    binding
+                        .iter()
+                        .position(|p| !non_start_outputs.contains(&start_label(p)))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+        let p = binding.remove(idx);
+        let mut outputs = Vec::new();
+        for step in &p {
+            collect_step_outputs(step, &mut outputs);
+        }
+        for label in outputs {
+            if !bound.contains(&label) {
+                bound.push(label);
+            }
+        }
+        ordered.push(p);
+    }
+    ordered.extend(filters);
+    ordered
 }
 
 /// Walk the pattern collecting `as(label)` declarations so the wrapping

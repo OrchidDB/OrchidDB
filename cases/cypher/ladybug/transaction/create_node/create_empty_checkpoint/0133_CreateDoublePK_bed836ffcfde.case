@@ -2,5 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_empty_checkpoint.CreateDoublePK.bed836ffcfde","language":"cypher","ordered":true,"source":"transaction/create_node/create_empty_checkpoint.test","source_case":"CreateDoublePK","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) WHERE t.id = 0.1 RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_empty_checkpoint.test case CreateDoublePK
+node s0_t:test {id: 0.1}
+node s1_t:test {id: 0.2}
 --- expected
 0.100000

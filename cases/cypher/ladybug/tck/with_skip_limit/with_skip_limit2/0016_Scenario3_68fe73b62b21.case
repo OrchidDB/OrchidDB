@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario3.68fe73b62b21","language":"cypher","ordered":true,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-skip-limit/WithSkipLimit2.feature#[3] Connected components succeeding WITH with LIMIT","id":"cypher.ladybug.tck.with_skip_limit.with_skip_limit2.Scenario3.68fe73b62b21","language":"cypher","ordered":false,"source":"tck/with_skip_limit/with_skip_limit2.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:A) WITH n LIMIT 1 MATCH (m:B), (n)-->(x:X) RETURN *
 --- graph_initializer
@@ -8,4 +8,4 @@ node _n2:X
 edge _n1 -[:REL]-> _n2
 node _n3:B
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0}|{_ID: 2:0, _LABEL: B, ID: 0}|{_ID: 1:0, _LABEL: X, ID: 0}
+(:B)|(:A)|(:X)

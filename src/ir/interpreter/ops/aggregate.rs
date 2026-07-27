@@ -316,19 +316,45 @@ pub(crate) fn compute_aggregate(
                 .arg
                 .as_ref()
                 .ok_or_else(|| InterpretError::Type("min/max requires an argument".into()))?;
+            // Cross-type fallback follows openCypher orderability
+            // (maps < nodes < rels < lists < temporals < strings <
+            // booleans < numbers) when values aren't mutually
+            // comparable.
+            fn orderability_rank(value: &Value) -> u8 {
+                match value {
+                    Value::Map(_) => 0,
+                    Value::Node { .. } => 1,
+                    Value::Edge { .. } => 2,
+                    Value::List(_) | Value::Path(_) => 3,
+                    Value::DateTime(_) => 4,
+                    Value::String(_) => 5,
+                    Value::Bool(_) => 6,
+                    _ => 7,
+                }
+            }
             let mut current: Option<Value> = None;
             for v in aggregate_values(expr, rows, graph, agg.distinct)? {
                 current = match current.take() {
                     None => Some(v),
-                    Some(existing) => match (existing.three_valued_cmp(&v), agg.kind) {
-                        (Some(std::cmp::Ordering::Greater), AggKind::Min | AggKind::MinOrNull) => {
-                            Some(v)
+                    Some(existing) => {
+                        let ord = existing.three_valued_cmp(&v).or_else(|| {
+                            if matches!(existing, Value::Null) || matches!(v, Value::Null) {
+                                None
+                            } else {
+                                Some(orderability_rank(&existing).cmp(&orderability_rank(&v)))
+                            }
+                        });
+                        match (ord, agg.kind) {
+                            (
+                                Some(std::cmp::Ordering::Greater),
+                                AggKind::Min | AggKind::MinOrNull,
+                            ) => Some(v),
+                            (Some(std::cmp::Ordering::Less), AggKind::Max | AggKind::MaxOrNull) => {
+                                Some(v)
+                            }
+                            (_, _) => Some(existing),
                         }
-                        (Some(std::cmp::Ordering::Less), AggKind::Max | AggKind::MaxOrNull) => {
-                            Some(v)
-                        }
-                        (_, _) => Some(existing),
-                    },
+                    }
                 };
             }
             Ok(current.unwrap_or(Value::Null))
@@ -394,6 +420,10 @@ pub(crate) fn compute_aggregate(
                     list.push(v);
                 }
             }
+            // Kuzu renders COLLECT over only-null inputs as NULL (the
+            // agg suites assert `size(collect(...))` is NULL for empty
+            // groups); openCypher's TCK wants `[]` here, but the corpus
+            // ground truth is Kuzu's output.
             if matches!(agg.kind, AggKind::CollectRows) && evaluated > 0 && list.is_empty() {
                 return Ok(Value::Null);
             }

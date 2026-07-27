@@ -153,6 +153,11 @@ pub fn lower_pattern_part(
                     &chain.node,
                     path_binding.clone(),
                     history.map(ToString::to_string),
+                    // Kuzu variable-length relationships default to WALK
+                    // semantics (edges may repeat within one recursive
+                    // expansion) — recursive_join/* encodes that. The
+                    // openCypher TCK expects trail semantics here, but
+                    // the corpus ground truth is Kuzu's output.
                     variable_length,
                 );
                 if variable_length {

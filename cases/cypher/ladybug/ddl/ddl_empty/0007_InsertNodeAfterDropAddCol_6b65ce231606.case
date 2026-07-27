@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.ddl.ddl_empty.InsertNodeAfterDropAddCol.6b65ce231606","language":"cypher","ordered":true,"source":"ddl/ddl_empty.test","source_case":"InsertNodeAfterDropAddCol","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n:person) RETURN n.id, n.name
+--- graph_initializer
+# re-extracted from kuzu test/test_files/ddl/ddl_empty.test case InsertNodeAfterDropAddCol
+node s0_anon1:person {id: 10, name: "A"}
 --- expected
 10|A

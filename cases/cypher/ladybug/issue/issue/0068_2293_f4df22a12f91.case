@@ -2,5 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2293.f4df22a12f91","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2293","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t1:T)-[e]-(t2:T) RETURN COUNT(*)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2293
+node s0_t1:T {id: 0}
+node s0_t2:T {id: 1}
 --- expected
 0

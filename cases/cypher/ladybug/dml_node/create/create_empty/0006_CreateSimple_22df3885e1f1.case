@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.create.create_empty.CreateSimple.22df3885e1f1","language":"cypher","ordered":true,"source":"dml_node/create/create_empty.test","source_case":"CreateSimple","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) RETURN a.id, a.name, a.isTrue, a.birthday
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/create/create_empty.test case CreateSimple
+CREATE (a:test {id:0, name:'A', isTrue:True, birthday:Date('2019-01-01')})
 --- expected
 0|A|True|2019-01-01

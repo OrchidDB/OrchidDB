@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where5.Scenario1.28da87515b13","language":"cypher","ordered":true,"source":"tck/match_where/match_where5.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match-where/MatchWhere5.feature#[1] Filter out on null","id":"cypher.ladybug.tck.match_where.match_where5.Scenario1.28da87515b13","language":"cypher","ordered":false,"source":"tck/match_where/match_where5.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (:Root {name: 'x'})-->(i:TextNode) WHERE i.var > 'te' RETURN i
 --- graph_initializer
@@ -9,4 +9,4 @@ node child2:IntNode {var: 0}
 edge root -[:T]-> child1
 edge root -[:T]-> child2
 --- expected
-{_ID: 1:0, _LABEL: TextNode, ID: 0, var: text}
+(:TextNode {var: 'text'})

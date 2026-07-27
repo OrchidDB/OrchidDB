@@ -2,6 +2,14 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.nullif.NullIfTest.44423940756c","language":"cypher","ordered":true,"source":"function/utility/nullif.test","source_case":"NullIfTest","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t2:test2) RETURN NULLIF(t2.a, t2.b)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/nullif.test case NullIfTest
+node s0_t:test {a: "hello"}
+node s1_t:test {a: "world"}
+node s2_t:test {a: "test"}
+node s3_t:test2 {a: "blabla", b: "b"}
+node s4_t:test2 {a: "blabla2", b: "c"}
+node s5_t:test2 {a: "blabla3", b: "d"}
 --- expected
 blabla
 blabla2

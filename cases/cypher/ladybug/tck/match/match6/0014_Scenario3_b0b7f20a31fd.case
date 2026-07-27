@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario3.b0b7f20a31fd","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match6.feature#[3] Return a three node path","id":"cypher.ladybug.tck.match.match6.Scenario3.b0b7f20a31fd","language":"cypher","ordered":false,"source":"tck/match/match6.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (a {name: 'A'})-[rel1]->(b)-[rel2]->(c) RETURN p
 --- graph_initializer
@@ -9,4 +9,4 @@ edge a -[:KNOWS]-> b
 node c:C {name: "C"}
 edge b -[:KNOWS]-> c
 --- expected
-{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 1:0, _LABEL: B, ID: 0, name: B},{_ID: 2:0, _LABEL: C, ID: 0, name: C}], _RELS: [(0:0)-{_LABEL: KNOWS, _ID: 3:0}->(1:0),(1:0)-{_LABEL: KNOWS, _ID: 4:0}->(2:0)]}
+<(:A {name: 'A'})-[:KNOWS]->(:B {name: 'B'})-[:KNOWS]->(:C {name: 'C'})>

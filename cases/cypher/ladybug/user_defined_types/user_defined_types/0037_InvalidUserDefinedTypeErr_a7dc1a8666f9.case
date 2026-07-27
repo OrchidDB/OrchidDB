@@ -2,6 +2,10 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.user_defined_types.user_defined_types.InvalidUserDefinedTypeErr.a7dc1a8666f9","language":"cypher","ordered":true,"source":"user_defined_types/user_defined_types.test","source_case":"Example","source_log":"InvalidUserDefinedTypeErr","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (p:PERSON) RETURN CAST(p.ID AS INT32)
+--- graph_initializer
+# re-extracted from kuzu test/test_files/user_defined_types/user_defined_types.test case Example
+node s0_p:PERSON {ID: 5}
+node s1_p:PERSON {ID: 10}
 --- expected
 5
 10

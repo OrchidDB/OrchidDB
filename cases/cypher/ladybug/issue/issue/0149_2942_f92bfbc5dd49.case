@@ -2,6 +2,19 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.2942.f92bfbc5dd49","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"2942","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (v:V)-[e:childof*]->(v1:V {id: "v1"}) OPTIONAL MATCH (r)-[:relatedto]->(v) RETURN r.id, v.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 2942
+node s0_v1:V {id: "v1"}
+node s0_v11:V {id: "v11"}
+node s0_v12:V {id: "v12"}
+node s0_v111:V {id: "v111"}
+node s0_r1:R {id: "r1"}
+node s0_r12:R {id: "r12"}
+edge s0_v111 -[:childof]-> s0_v11
+edge s0_v11 -[:childof]-> s0_v1
+edge s0_v12 -[:childof]-> s0_v1
+edge s0_r1 -[:relatedto]-> s0_v1
+edge s0_r12 -[:relatedto]-> s0_v12
 --- expected
 r12|v12
 |v11

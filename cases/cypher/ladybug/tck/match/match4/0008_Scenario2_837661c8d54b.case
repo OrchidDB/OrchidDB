@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match4.Scenario2.837661c8d54b","language":"cypher","ordered":true,"source":"tck/match/match4.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match4.feature#[2] Simple variable length pattern","id":"cypher.ladybug.tck.match.match4.Scenario2.837661c8d54b","language":"cypher","ordered":false,"source":"tck/match/match4.test","source_case":"Scenario2","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a {name: 'A'})-[*]->(x) RETURN x
 --- graph_initializer
@@ -11,6 +11,6 @@ edge a -[:CONTAINS]-> b
 edge b -[:CONTAINS]-> c
 edge c -[:CONTAINS]-> d
 --- expected
-{_ID: 0:1, _LABEL: A, ID: 1, name: B}
-{_ID: 0:2, _LABEL: A, ID: 2, name: C}
-{_ID: 0:3, _LABEL: A, ID: 3, name: D}
+({name: 'B'})
+({name: 'C'})
+({name: 'D'})

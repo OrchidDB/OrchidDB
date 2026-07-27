@@ -979,6 +979,133 @@ fn push_inline_edge_group(
     }
 }
 
+/// Rows loaded from one `COPY` source file, plus (when the file carries
+/// one) a header describing the columns by name. CSVs with Neo4j-style
+/// typed headers (`id:ID(Person)`, `:START_ID(Person)`, `name:STRING`)
+/// and Parquet files (whose schema names columns) both surface a
+/// header; plain positional CSVs surface `None` and keep the legacy
+/// schema-order interpretation.
+struct FileRows {
+    header: Option<Vec<String>>,
+    rows: Vec<Vec<Option<String>>>,
+}
+
+fn load_entry_rows(root: &Path, entry: &CopyEntry) -> Option<FileRows> {
+    let path = root.join(&entry.file);
+    if entry.file.to_ascii_lowercase().ends_with(".parquet") {
+        return read_parquet_rows(&path);
+    }
+    let raw = fs::read_to_string(&path).ok()?;
+    let delim = detect_delimiter(&raw);
+    let mut rows = parse_csv_delim(&raw, delim);
+    if rows
+        .first()
+        .is_some_and(|first| is_typed_header_row(first))
+    {
+        let header = rows
+            .remove(0)
+            .into_iter()
+            .map(|cell| cell.unwrap_or_default())
+            .collect();
+        return Some(FileRows {
+            header: Some(header),
+            rows,
+        });
+    }
+    Some(FileRows { header: None, rows })
+}
+
+/// Read a Parquet file into string-rendered rows. The loader pipeline is
+/// string-based (it re-parses cells per the schema's column types), so
+/// every value is rendered via Arrow's display formatting.
+fn read_parquet_rows(path: &Path) -> Option<FileRows> {
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    let file = fs::File::open(path).ok()?;
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .ok()?
+        .build()
+        .ok()?;
+    let mut header: Option<Vec<String>> = None;
+    let mut saw_schema = false;
+    let mut rows = Vec::new();
+    for batch in reader {
+        let batch = batch.ok()?;
+        if !saw_schema {
+            saw_schema = true;
+            let names: Vec<String> = batch
+                .schema()
+                .fields()
+                .iter()
+                .map(|f| f.name().clone())
+                .collect();
+            // Kuzu's converted fixtures carry generic `f0`/`f1`/…
+            // column names; those are positional, not name-mapped.
+            let generic = names.iter().all(|name| {
+                let mut chars = name.chars();
+                matches!(chars.next(), Some('f' | 'F'))
+                    && chars.clone().next().is_some()
+                    && chars.all(|c| c.is_ascii_digit())
+            });
+            if !generic {
+                header = Some(names);
+            }
+        }
+        for row in 0..batch.num_rows() {
+            let mut cells = Vec::with_capacity(batch.num_columns());
+            for col in batch.columns() {
+                if col.is_null(row) {
+                    cells.push(None);
+                } else {
+                    cells.push(arrow::util::display::array_value_to_string(col, row).ok());
+                }
+            }
+            rows.push(cells);
+        }
+    }
+    Some(FileRows { header, rows })
+}
+
+/// Pick the CSV delimiter from the first line: LDBC-style fixtures are
+/// `|`-separated; everything else in the corpus is comma-separated.
+fn detect_delimiter(raw: &str) -> char {
+    let first = raw.lines().next().unwrap_or("");
+    if first.contains('|') { '|' } else { ',' }
+}
+
+/// True when a parsed first row looks like a Neo4j-import typed header:
+/// at least one cell of the form `name:TYPE`, `:START_ID(Label)`,
+/// `:END_ID(Label)` or `id:ID(Label)` where the type token is
+/// uppercase-ish.
+fn is_typed_header_row(row: &[Option<String>]) -> bool {
+    row.iter().any(|cell| {
+        let Some(cell) = cell.as_deref() else {
+            return false;
+        };
+        let Some((_, ty)) = cell.split_once(':') else {
+            return false;
+        };
+        let ty = ty.trim();
+        !ty.is_empty()
+            && ty.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && ty
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '(' | ')' | ' '))
+    })
+}
+
+/// `id:ID(Person)` → `id`; `:START_ID(Person)` → `` (empty).
+fn header_base(header: &str) -> &str {
+    header.split(':').next().unwrap_or("").trim()
+}
+
+/// `id:ID(Person)` → `ID(Person)`; `name` → `` (empty).
+fn header_type(header: &str) -> &str {
+    header
+        .split_once(':')
+        .map(|(_, ty)| ty.trim())
+        .unwrap_or("")
+}
+
 fn build_node_table(
     root: &Path,
     def: &NodeDef,
@@ -987,12 +1114,41 @@ fn build_node_table(
 ) -> Result<NodeTable, DatasetError> {
     let mut columns: Vec<Vec<Option<String>>> = vec![Vec::new(); def.columns.len()];
     for entry in entries {
-        let path = root.join(&entry.file);
-        let raw = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(_) => continue,
+        let Some(file) = load_entry_rows(root, entry) else {
+            continue;
         };
-        let mut rows = parse_csv(&raw);
+        if let Some(header) = &file.header {
+            // Name-mapped path (typed CSV header or Parquet schema):
+            // match each schema column against the header by base name;
+            // a `:ID(...)`-typed header column with an empty base maps
+            // to the schema's primary-key column.
+            let mapping: Vec<Option<usize>> = def
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(idx, column)| {
+                    header
+                        .iter()
+                        .position(|h| header_base(h).eq_ignore_ascii_case(&column.name))
+                        .or_else(|| {
+                            (idx == def.pk_index).then(|| {
+                                header.iter().position(|h| {
+                                    header_base(h).is_empty()
+                                        && header_type(h).to_ascii_uppercase().starts_with("ID")
+                                })
+                            })?
+                        })
+                })
+                .collect();
+            for row in file.rows {
+                for (idx, mapped) in mapping.iter().enumerate() {
+                    let cell = mapped.and_then(|src| row.get(src).cloned().flatten());
+                    columns[idx].push(cell);
+                }
+            }
+            continue;
+        }
+        let mut rows = file.rows;
         let has_header = entry
             .has_header_hint
             .unwrap_or_else(|| infer_header(&rows, def));
@@ -1049,24 +1205,64 @@ fn build_edge_table(
     let mut prop_columns: Vec<Vec<Option<String>>> = vec![Vec::new(); def.properties.len()];
 
     for entry in entries {
-        let path = root.join(&entry.file);
-        let raw = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(_) => continue,
+        let Some(file) = load_entry_rows(root, entry) else {
+            continue;
         };
-        let mut rows = parse_csv(&raw);
-        let has_header = entry
-            .has_header_hint
-            .unwrap_or_else(|| infer_edge_header(&rows, def, pk_index));
-        if has_header && !rows.is_empty() {
-            rows.remove(0);
+        // Column layout: positional (FROM, TO, props…) unless a header
+        // names the endpoint columns (`:START_ID(L)` / `:END_ID(L)` or
+        // from/to-style names), in which case columns map by name.
+        let mut from_col = 0usize;
+        let mut to_col = 1usize;
+        let mut prop_mapping: Vec<Option<usize>> =
+            (0..def.properties.len()).map(|i| Some(2 + i)).collect();
+        if let Some(header) = &file.header {
+            let find_endpoint = |type_prefix: &str, names: &[&str]| {
+                header
+                    .iter()
+                    .position(|h| {
+                        header_type(h)
+                            .to_ascii_uppercase()
+                            .starts_with(type_prefix)
+                    })
+                    .or_else(|| {
+                        header.iter().position(|h| {
+                            names
+                                .iter()
+                                .any(|name| header_base(h).eq_ignore_ascii_case(name))
+                        })
+                    })
+            };
+            let from = find_endpoint("START_ID", &["from", "src", "source", "__src_id"]);
+            let to = find_endpoint("END_ID", &["to", "dst", "target", "__dst_id"]);
+            if let (Some(from), Some(to)) = (from, to) {
+                from_col = from;
+                to_col = to;
+                prop_mapping = def
+                    .properties
+                    .iter()
+                    .map(|prop| {
+                        header
+                            .iter()
+                            .position(|h| header_base(h).eq_ignore_ascii_case(&prop.name))
+                    })
+                    .collect();
+            }
+        }
+        let mut rows = file.rows;
+        if file.header.is_none() {
+            let has_header = entry
+                .has_header_hint
+                .unwrap_or_else(|| infer_edge_header(&rows, def, pk_index));
+            if has_header && !rows.is_empty() {
+                rows.remove(0);
+            }
         }
         for row in rows {
-            let from_text = match row.first().and_then(|c| c.clone()) {
+            let from_text = match row.get(from_col).and_then(|c| c.clone()) {
                 Some(text) => text,
                 None => continue,
             };
-            let to_text = match row.get(1).and_then(|c| c.clone()) {
+            let to_text = match row.get(to_col).and_then(|c| c.clone()) {
                 Some(text) => text,
                 None => continue,
             };
@@ -1084,8 +1280,8 @@ fn build_edge_table(
             };
             src_ids.push(src);
             dst_ids.push(dst);
-            for (prop_idx, _) in def.properties.iter().enumerate() {
-                let cell = row.get(2 + prop_idx).cloned().flatten();
+            for (prop_idx, mapped) in prop_mapping.iter().enumerate() {
+                let cell = mapped.and_then(|src_col| row.get(src_col).cloned().flatten());
                 prop_columns[prop_idx].push(cell);
             }
         }
@@ -1959,11 +2155,11 @@ fn parse_bool(text: &str) -> Option<bool> {
 // CSV reader
 // ============================================================
 
-/// Minimal CSV reader: `,` delimiter, `"`-quoted fields, `""` for an
-/// embedded quote, `\` for backslash escapes inside quoted fields.
-/// Empty fields between delimiters surface as `None`; quoted empty
-/// fields surface as `Some("")`.
-fn parse_csv(input: &str) -> Vec<Vec<Option<String>>> {
+/// Minimal CSV reader: configurable delimiter (`,` or `|`), `"`-quoted
+/// fields, `""` for an embedded quote, `\` for backslash escapes inside
+/// quoted fields. Empty fields between delimiters surface as `None`;
+/// quoted empty fields surface as `Some("")`.
+fn parse_csv_delim(input: &str, delim: char) -> Vec<Vec<Option<String>>> {
     let mut rows: Vec<Vec<Option<String>>> = Vec::new();
     let mut row: Vec<Option<String>> = Vec::new();
     let mut field = String::new();
@@ -2006,7 +2202,7 @@ fn parse_csv(input: &str) -> Vec<Vec<Option<String>>> {
                 in_quotes = true;
                 field_was_quoted = true;
             }
-            ',' => {
+            ch if ch == delim => {
                 row.push(finalize_field(&mut field, &mut field_was_quoted));
             }
             '\n' => {

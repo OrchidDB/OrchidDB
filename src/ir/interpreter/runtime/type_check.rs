@@ -44,6 +44,9 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         // `subgraph()` cap surfaces as a Map of edges; accept those
         // type tags as Map-shaped values. `traverser` and `bulkset`
         // are also commonly typed as Map at this layer.
+        Value::Map(_) if crate::ir::value::as_gremlin_set(value).is_some() => {
+            matches!(normalised.as_str(), "set" | "bulkset" | "collection")
+        }
         Value::Map(_) => matches!(
             normalised.as_str(),
             "map" | "tree" | "graph" | "bulkset" | "traverser"

@@ -203,6 +203,13 @@ impl ColumnBuilder {
     }
 
     fn push(&mut self, value: Value) {
+        // Gremlin Set marker maps surface as their item list — the
+        // harness strips `s[...]` tags to comma-joined text, which is
+        // exactly the list rendering. Cypher never produces this shape.
+        let value = match crate::ir::value::as_gremlin_set(&value) {
+            Some(items) => Value::List(items.to_vec()),
+            None => value,
+        };
         self.values.push(value);
     }
 

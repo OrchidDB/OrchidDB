@@ -2,5 +2,25 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue4.3262.4ee1e8cdca92","language":"cypher","ordered":true,"source":"issue/issue4.test","source_case":"3262","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (usr:User)-[h1:has]->(src:Source {xxx: "1-src"}) RETURN h1
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue4.test case 3262
+node s0_ex:Exercise {xxx: "11-ex"}
+node s1_ex:Exercise {xxx: "12-ex"}
+node s2_ex:Exercise {xxx: "13-ex"}
+node s5_src:Source {xxx: "1-src"}
+node s9_usr:User {xxx: "usr"}
+node s11_ex:Exercise {xxx: "21-ex"}
+node s12_ex:Exercise {xxx: "22-ex"}
+node s14_src:Source {xxx: "2-src"}
+edge s0_ex -[:next {xxx: "next"}]-> s1_ex
+edge s1_ex -[:next {xxx: "next"}]-> s2_ex
+edge s5_src -[:has {xxx: "has"}]-> s0_ex
+edge s5_src -[:has {xxx: "has"}]-> s1_ex
+edge s5_src -[:has {xxx: "has"}]-> s2_ex
+edge s9_usr -[:has {xxx: "has"}]-> s5_src
+edge s11_ex -[:next {xxx: "next"}]-> s12_ex
+edge s14_src -[:has {xxx: "has"}]-> s11_ex
+edge s14_src -[:has {xxx: "has"}]-> s12_ex
+edge s9_usr -[:has {xxx: "has"}]-> s14_src
 --- expected
 (4:0)-{_LABEL: has, _ID: 5:0, xxx: has}->(3:0)

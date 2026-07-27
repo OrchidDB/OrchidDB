@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where6.Scenario1.88c4c95cce15","language":"cypher","ordered":true,"source":"tck/with_where/with_where6.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-where/WithWhere6.feature#[1] Filter a single aggregate","id":"cypher.ladybug.tck.with_where.with_where6.Scenario1.88c4c95cce15","language":"cypher","ordered":false,"source":"tck/with_where/with_where6.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-->() WITH a, count(*) AS relCount WHERE relCount > 1 RETURN a
 --- graph_initializer
@@ -14,4 +14,4 @@ edge a -[:REL]-> _n3
 node _n4:N
 edge b -[:REL]-> _n4
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0, name: A}
+({name: 'A'})

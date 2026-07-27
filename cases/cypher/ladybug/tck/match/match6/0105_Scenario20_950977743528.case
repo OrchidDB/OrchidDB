@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario20.950977743528","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario20","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match6.feature#[20] Variable length relationship without bounds","id":"cypher.ladybug.tck.match.match6.Scenario20.950977743528","language":"cypher","ordered":false,"source":"tck/match/match6.test","source_case":"Scenario20","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = ({name: 'A'})-[:KNOWS*..]->() RETURN p
 --- graph_initializer
@@ -9,5 +9,5 @@ node c:N {name: "C"}
 edge a -[:KNOWS]-> b
 edge b -[:KNOWS]-> c
 --- expected
-{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 0:1, _LABEL: A, ID: 1, name: B},{_ID: 0:2, _LABEL: A, ID: 2, name: C}], _RELS: [(0:0)-{_LABEL: KNOWS, _ID: 1:1}->(0:1),(0:1)-{_LABEL: KNOWS, _ID: 1:0}->(0:2)]}
-{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: A},{_ID: 0:1, _LABEL: A, ID: 1, name: B}], _RELS: [(0:0)-{_LABEL: KNOWS, _ID: 1:1}->(0:1)]}
+<({name: 'A'})-[:KNOWS]->({name: 'B'})>
+<({name: 'A'})-[:KNOWS]->({name: 'B'})-[:KNOWS]->({name: 'C'})>

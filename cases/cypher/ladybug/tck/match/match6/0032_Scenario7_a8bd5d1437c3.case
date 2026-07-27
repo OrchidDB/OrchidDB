@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match6.Scenario7.a8bd5d1437c3","language":"cypher","ordered":true,"source":"tck/match/match6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match6.feature#[7] Respecting direction when matching existing path","id":"cypher.ladybug.tck.match.match6.Scenario7.a8bd5d1437c3","language":"cypher","ordered":false,"source":"tck/match/match6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = ({name: 'a'})-->({name: 'b'}) RETURN p
 --- graph_initializer
@@ -7,4 +7,4 @@ node a:N {name: "a"}
 node b:N {name: "b"}
 edge a -[:T]-> b
 --- expected
-{_NODES: [{_ID: 0:0, _LABEL: A, ID: 0, name: a},{_ID: 0:1, _LABEL: A, ID: 1, name: b}], _RELS: [(0:0)-{_LABEL: T, _ID: 1:0}->(0:1)]}
+<({name: 'a'})-[:T]->({name: 'b'})>

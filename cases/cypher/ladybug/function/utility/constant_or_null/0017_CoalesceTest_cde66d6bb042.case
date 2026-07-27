@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.constant_or_null.CoalesceTest.cde66d6bb042","language":"cypher","ordered":true,"source":"function/utility/constant_or_null.test","source_case":"PredicateTests","source_log":"CoalesceTest","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tbl) WHERE constant_or_null(t.bool, t.bool) RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/constant_or_null.test case PredicateTests
+node s0_t:tbl {id: 1, bool: true}
+node s1_t:tbl {id: 2, bool: false}
+node s2_t:tbl {id: 3, bool: null}
+node s3_t:tbl {id: 4, bool: true}
 --- expected
 1
 4

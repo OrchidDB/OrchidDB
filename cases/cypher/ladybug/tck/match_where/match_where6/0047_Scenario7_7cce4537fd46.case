@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where6.Scenario7.7cce4537fd46","language":"cypher","ordered":true,"source":"tck/match_where/match_where6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match-where/MatchWhere6.feature#[7] Join nodes on non-equality of properties \u2013 OPTIONAL MATCH on two relationships and WHERE","id":"cypher.ladybug.tck.match_where.match_where6.Scenario7.7cce4537fd46","language":"cypher","ordered":false,"source":"tck/match_where/match_where6.test","source_case":"Scenario7","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (x:X) OPTIONAL MATCH (x)-[:E1]->(y:Y)-[:E2]->(z:Z) WHERE x.val < z.val RETURN x, y, z
 --- graph_initializer
@@ -13,6 +13,6 @@ node _n5:Y {val: 5}
 edge _n4 -[:E1]-> _n5
 node _n6:X {val: 6}
 --- expected
-{_ID: 0:0, _LABEL: X, ID: 0, val: 1}|{_ID: 1:0, _LABEL: Y, ID: 0, val: 2}|{_ID: 2:0, _LABEL: Z, ID: 0, val: 3}
-{_ID: 0:1, _LABEL: X, ID: 1, val: 4}||
-{_ID: 0:2, _LABEL: X, ID: 2, val: 6}||
+(:X {val: 1})|(:Y {val: 2})|(:Z {val: 3})
+(:X {val: 4})|null|null
+(:X {val: 6})|null|null

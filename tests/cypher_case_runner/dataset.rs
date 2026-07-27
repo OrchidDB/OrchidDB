@@ -138,6 +138,18 @@ fn candidates_for(name: &str) -> Vec<String> {
         if let Some(rest) = strip_prefix_ci(&original, prefix) {
             push_unique(&mut out, rest.to_string());
             push_unique(&mut out, rest.to_ascii_lowercase());
+            // Kuzu's `CSV_TO_PARQUET(name)` wrapper converts a CSV
+            // fixture to Parquet at test time; the data is identical,
+            // so the harness loads the underlying CSV fixture.
+            if let Some(inner) = rest
+                .trim()
+                .strip_prefix("CSV_TO_PARQUET(")
+                .or_else(|| rest.trim().strip_prefix("csv_to_parquet("))
+                .and_then(|s| s.strip_suffix(')'))
+            {
+                push_unique(&mut out, inner.trim().to_string());
+                push_unique(&mut out, inner.trim().to_ascii_lowercase());
+            }
         }
     }
     out

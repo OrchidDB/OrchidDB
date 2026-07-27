@@ -2,6 +2,15 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.3691.3cf6c5ee745a","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"3691","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH p = (v)-[e* (r,n | WHERE true)]->(v2) RETURN properties(nodes(p), 'id')
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case 3691
+node s0_anon1:V {id: 1}
+node s0_anon2:V {id: 2}
+node s0_anon3:V {id: 3}
+node s0_anon4:V {id: 4}
+edge s0_anon1 -[:E]-> s0_anon2
+edge s0_anon2 -[:E]-> s0_anon3
+edge s0_anon3 -[:E]-> s0_anon4
 --- expected
 [1,2,3,4]
 [1,2,3]

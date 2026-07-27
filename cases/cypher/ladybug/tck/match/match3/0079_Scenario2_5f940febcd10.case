@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.5f940febcd10","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario21","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match3.feature#[21] Three bound nodes pointing to the same node with extra connections","id":"cypher.ladybug.tck.match.match3.Scenario2.5f940febcd10","language":"cypher","ordered":false,"source":"tck/match/match3.test","source_case":"Scenario21","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a {name: 'a'}), (b {name: 'b'}), (c {name: 'c'}) MATCH (a)-->(x), (b)-->(x), (c)-->(x) RETURN x
 --- graph_initializer
@@ -30,5 +30,5 @@ edge c -[:KNOWS]-> h
 edge c -[:KNOWS]-> g
 edge c -[:KNOWS]-> j
 --- expected
-{_ID: 0:3, _LABEL: A, ID: 3, name: d}
-{_ID: 0:4, _LABEL: A, ID: 4, name: e}
+({name: 'd'})
+({name: 'e'})

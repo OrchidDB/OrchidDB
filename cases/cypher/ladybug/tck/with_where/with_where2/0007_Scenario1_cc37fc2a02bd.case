@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where2.Scenario1.cc37fc2a02bd","language":"cypher","ordered":true,"source":"tck/with_where/with_where2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-where/WithWhere2.feature#[1] Filter nodes with conjunctive two-part property predicate on multi variables with multiple bindings","id":"cypher.ladybug.tck.with_where.with_where2.Scenario1.cc37fc2a02bd","language":"cypher","ordered":false,"source":"tck/with_where/with_where2.test","source_case":"Scenario1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)--(b)--(c)--(d)--(a), (b)--(d) WITH a, c, d WHERE a.id = 1 AND c.id = 2 RETURN d
 --- graph_initializer
@@ -14,5 +14,5 @@ edge b -[:T]-> c
 edge b -[:T]-> d
 edge c -[:T]-> d
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0}
-{_ID: 1:0, _LABEL: D, ID: 0}
+(:A)
+(:D)

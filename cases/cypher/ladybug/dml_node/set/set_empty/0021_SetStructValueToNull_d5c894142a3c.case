@@ -2,6 +2,11 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.dml_node.set.set_empty.SetStructValueToNull.d5c894142a3c","language":"cypher","ordered":true,"source":"dml_node/set/set_empty.test","source_case":"SetStructValueToNull","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:test) RETURN t.prop
+--- setup_statements
+# re-extracted from kuzu test/test_files/dml_node/set/set_empty.test case SetStructValueToNull
+CREATE (t:test {id:1, prop:{age:10, name:'Alice'}})
+CREATE (t:test {id:2, prop:{age:20, name:'Bobdjiweknfwhuwiehfuw'}})
+CREATE (t:test {id:3, prop:{age:30, name:'Delta'}})
 --- expected
 {age: 10, name: Alice}
 {age: 20, name: Bobdjiweknfwhuwiehfuw}

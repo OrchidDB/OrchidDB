@@ -2,5 +2,8 @@
 {"dataset":"CSV EMPTY","expected_kind":"rows","id":"cypher.ladybug.common.types.type_alias.TypeAlias.065b0939e6ce","language":"cypher","ordered":true,"source":"common/types/type_alias.test","source_case":"TypeAlias","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:durationTest) RETURN a.*
+--- setup_statements
+# re-extracted from kuzu test/test_files/common/types/type_alias.test case TypeAlias
+CREATE (a:durationTest { ID: 1, a:cast(2.1, "INT"), b:cast(1.1, "FLOAT8"), c:cast(1.1, "FLOAT4"), d:cast(true, "BOOLEAN"), e:encode('ü'), f:cast("2020-01-01T00:00:00Z", "TIMESTAMP_S"), g:cast("1s", "DURATION") })
 --- expected
 1|2.000000|1.100000|1.100000|True|\xC3\xBC|2020-01-01 00:00:00|00:00:01

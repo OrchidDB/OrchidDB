@@ -34,6 +34,10 @@ pub enum GValue {
     DateTime(String),
     String(String),
     List(Vec<GValue>),
+    /// Gremlin `{a, b}` set literal — order-preserving, deduplicated.
+    /// Carries set identity so `P.typeOf(GType.SET)` and the harness's
+    /// `s[...]` rendering can distinguish it from a plain list.
+    Set(Vec<GValue>),
     Map(BTreeMap<String, GValue>),
 }
 
@@ -47,6 +51,7 @@ impl GValue {
             Self::DateTime(value) => format!("datetime('{}')", value.replace('\'', "''")),
             Self::String(value) => format!("'{}'", value.replace('\'', "''")),
             Self::List(_) => "<list>".to_owned(),
+            Self::Set(_) => "<set>".to_owned(),
             Self::Map(_) => "<map>".to_owned(),
         }
     }

@@ -157,30 +157,27 @@ pub(super) fn lower_choose_traversal(
         }
         .boxed(),
     };
-    let true_arm = lower_child_traversal(then, lo, ctx, ChildTraversalKind::BranchArm)?;
-    let false_arm = match else_branch {
-        Some(steps) => lower_child_traversal(steps, lo, ctx, ChildTraversalKind::BranchArm)?,
-        None => Node::GraphCorrelate {
-            bindings: vec![CURRENT.into()],
-        },
+    // Route the true/false traverser *streams* through the arms so
+    // arm-internal barriers (order/limit/fold) see every routed
+    // traverser (TinkerPop choose semantics), not one row at a time.
+    let true_stream = Node::GraphFilter {
+        condition: IrExpr::IsBound(probe.clone()),
+        input: probe_apply.clone().boxed(),
     };
-    Ok(Node::GraphChoose {
-        selector: ChooseSelector::Boolean(IrExpr::IsBound(probe)),
-        output: CURRENT.into(),
-        correlation: vec![CURRENT.into()],
-        arms: vec![
-            ChooseArm {
-                key: None,
-                body: true_arm,
-            },
-            ChooseArm {
-                key: None,
-                body: false_arm,
-            },
-        ],
-        default: None,
-        unmatched: ChooseUnmatched::PassThrough,
+    let true_arm = lower_arm_continuation(true_stream, then, lo, ctx)?;
+    let false_stream = Node::GraphFilter {
+        condition: IrExpr::Not(Box::new(IrExpr::IsBound(probe))),
         input: probe_apply.boxed(),
+    };
+    let false_arm = match else_branch {
+        Some(steps) => lower_arm_continuation(false_stream, steps, lo, ctx)?,
+        None => false_stream,
+    };
+    Ok(Node::GraphUnion {
+        all: true,
+        align: UnionAlign::ByPosition,
+        left: true_arm.boxed(),
+        right: false_arm.boxed(),
     })
 }
 
@@ -200,6 +197,7 @@ pub(super) fn lower_branch_options(
     let keyed_input = lower_dispatch_key(input, dispatch, &dispatch_key, is_choose, lo, ctx)?;
 
     let mut regular = Vec::new();
+    let mut regular_trav = Vec::new();
     let mut pick_any = Vec::new();
     let mut pick_none = Vec::new();
     let mut pick_unproductive = Vec::new();
@@ -222,9 +220,12 @@ pub(super) fn lower_branch_options(
             OptionKey::PickAny => pick_any.push(opt.traversal.clone()),
             OptionKey::PickNone => pick_none.push(opt.traversal.clone()),
             OptionKey::PickUnproductive => pick_unproductive.push(opt.traversal.clone()),
+            OptionKey::Traversal(key_steps) if !is_choose => {
+                regular_trav.push((key_steps.clone(), opt.traversal.clone()));
+            }
             OptionKey::Traversal(_) => {
                 return Err(GremlinPlanError::Unsupported(
-                    "option(__.dispatch_traversal) keys are not yet wired".to_string(),
+                    "choose().option(__.dispatch_traversal) keys are not yet wired".to_string(),
                 ));
             }
         }
@@ -245,6 +246,7 @@ pub(super) fn lower_branch_options(
             keyed_input,
             &dispatch_key,
             regular,
+            regular_trav,
             pick_any,
             pick_none,
             pick_unproductive,
@@ -353,52 +355,145 @@ fn lower_choose_options(
     Ok(attach_input(fallback, input))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_branch_option_union(
     input: Node,
     dispatch_key: &str,
     regular: Vec<(IrExpr, Vec<Step>)>,
+    regular_trav: Vec<(Vec<Step>, Vec<Step>)>,
     pick_any: Vec<Vec<Step>>,
     pick_none: Vec<Vec<Step>>,
     pick_unproductive: Vec<Vec<Step>>,
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    // Each arm routes the *stream* of matching traversers through the
+    // option traversal (TinkerPop branch semantics: barriers inside an
+    // arm — fold/count/order — see every routed traverser, not one row
+    // at a time).
     let mut nodes = Vec::new();
     let mut regular_conditions = Vec::new();
     for (condition, steps) in regular {
         regular_conditions.push(condition.clone());
-        let body = lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm)?;
-        nodes.push(boolean_choose(
+        let filtered = Node::GraphFilter {
             condition,
-            body,
-            Node::GraphEmpty,
-            input.clone(),
-        ));
+            input: input.clone().boxed(),
+        };
+        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
+    }
+    for (key_steps, steps) in regular_trav {
+        // Traversal-valued option key: the arm admits traversers whose
+        // dispatch value satisfies the key traversal (≥1 result).
+        let saved = lo.fresh("branch_saved");
+        let pre = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![ProjectionItem {
+                alias: saved.clone(),
+                expr: IrExpr::Binding(CURRENT.into()),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: input.clone().boxed(),
+        };
+        let as_key = Node::GraphProject {
+            mode: ProjectMode::ReplaceCurrent,
+            items: vec![ProjectionItem {
+                alias: CURRENT.into(),
+                expr: IrExpr::Binding(dispatch_key.to_string()),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: pre.boxed(),
+        };
+        let semi = Node::GraphApply {
+            kind: ApplyKind::Semi,
+            correlation: vec![CURRENT.into()],
+            outputs: Vec::new(),
+            optional_missing: OptionalMissing::Null,
+            left: as_key.boxed(),
+            right: lower_child_traversal(&key_steps, lo, ctx, ChildTraversalKind::WherePredicate)?
+                .boxed(),
+        };
+        let restored = Node::GraphProject {
+            mode: ProjectMode::ReplaceCurrent,
+            items: vec![ProjectionItem {
+                alias: CURRENT.into(),
+                expr: IrExpr::Binding(saved),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: semi.boxed(),
+        };
+        nodes.push(lower_arm_continuation(restored, &steps, lo, ctx)?);
     }
     for steps in pick_any {
-        let body = lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm)?;
-        nodes.push(boolean_choose(
-            productive_condition(dispatch_key),
-            body,
-            Node::GraphEmpty,
-            input.clone(),
-        ));
+        let filtered = Node::GraphFilter {
+            condition: productive_condition(dispatch_key),
+            input: input.clone().boxed(),
+        };
+        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
     }
     for steps in pick_none {
-        let body = lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm)?;
-        let none_body = no_regular_match(dispatch_key, regular_conditions.clone(), body);
-        nodes.push(attach_input(none_body, input.clone()));
+        let no_match = IrExpr::and(
+            regular_conditions
+                .iter()
+                .map(|c| IrExpr::Not(Box::new(c.clone())))
+                .collect(),
+        );
+        let filtered = Node::GraphFilter {
+            condition: no_match,
+            input: input.clone().boxed(),
+        };
+        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
     }
     for steps in pick_unproductive {
-        let body = lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm)?;
-        nodes.push(boolean_choose(
-            unproductive_condition(dispatch_key),
-            body,
-            Node::GraphEmpty,
-            input.clone(),
-        ));
+        let filtered = Node::GraphFilter {
+            condition: unproductive_condition(dispatch_key),
+            input: input.clone().boxed(),
+        };
+        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
     }
     Ok(union_all(nodes))
+}
+
+/// Lower an option-arm traversal as a continuation of the routed stream
+/// (not a per-row correlated apply), so arm-internal barriers behave.
+/// Arms containing a reducing barrier are gated on the routed stream
+/// being non-empty — a barrier fed by zero traversers emits nothing in
+/// TinkerPop (unlike a root-level `fold()`).
+fn lower_arm_continuation(
+    input: Node,
+    steps: &[Step],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let gate = arm_has_barrier(steps).then(|| input.clone());
+    let mut node = input;
+    let mut iter = steps.iter().peekable();
+    while let Some(step) = iter.next() {
+        node = super::dispatch::lower_step_with_context(node, step, &mut iter, lo, ctx)?;
+    }
+    if let Some(stream) = gate {
+        node = Node::GraphApply {
+            kind: ApplyKind::Semi,
+            correlation: Vec::new(),
+            outputs: Vec::new(),
+            optional_missing: OptionalMissing::Null,
+            left: node.boxed(),
+            right: stream.boxed(),
+        };
+    }
+    Ok(node)
+}
+
+fn arm_has_barrier(steps: &[Step]) -> bool {
+    steps.iter().any(|s| {
+        matches!(
+            s,
+            Step::Fold
+                | Step::Count
+                | Step::Aggregate(_)
+                | Step::FoldReduce { .. }
+                | Step::GroupCount
+        )
+    })
 }
 
 fn lower_first_pick(

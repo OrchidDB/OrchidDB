@@ -2,5 +2,9 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.recovery.rollback.RelGroupAlterRollbackAndRecovery.c2d58e8fb3dc","language":"cypher","ordered":true,"source":"transaction/recovery/rollback.test","source_case":"RelGroupAlterRollbackAndRecovery","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:person)-[k:knows]->(b:person) RETURN k.age
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/recovery/rollback.test case RelGroupAlterRollbackAndRecovery
+node s0_anon1:person {id: 1, name: "Alice"}
+edge s0_anon1 -[:knows {age: 12}]-> s0_anon1
 --- expected
 12

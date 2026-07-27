@@ -21,6 +21,11 @@ pub(crate) fn unwind_op(
     let mut out = Vec::new();
     for row in rows {
         let value = eval(expr, &row, graph)?;
+        // Gremlin Set marker maps unfold to their items, not map entries.
+        let value = match crate::ir::value::as_gremlin_set(&value) {
+            Some(items) => Value::List(items.to_vec()),
+            None => value,
+        };
         match value {
             Value::List(items) if items.is_empty() => {
                 if outer_flag {

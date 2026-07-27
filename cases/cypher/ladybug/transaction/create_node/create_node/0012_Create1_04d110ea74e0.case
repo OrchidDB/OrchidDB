@@ -2,5 +2,8 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_node.Create1.04d110ea74e0","language":"cypher","ordered":true,"source":"transaction/create_node/create_node.test","source_case":"Create1","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) RETURN a.id, a.name, a.isTrue, a.birthday
+--- setup_statements
+# re-extracted from kuzu test/test_files/transaction/create_node/create_node.test case Create1
+CREATE (a:test {id:0, name:'A', isTrue:True, birthday:Date('2019-01-01')})
 --- expected
 0|A|True|2019-01-01

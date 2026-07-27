@@ -204,6 +204,12 @@ pub(crate) fn expand_op(
                             && !matches!(match_mode, MatchMode::RepeatableElements))
                             || (path_binding.is_some_and(|binding| binding != "__path")
                                 && !matches!(path_mode, PathMode::Walk)));
+                    // NOTE: openCypher expects clause-wide relationship
+                    // uniqueness even across single-hop patterns
+                    // (tck/match/match8), but Kuzu allows distinct rel
+                    // variables to bind the same edge and the Kuzu-derived
+                    // suites (match/*) encode that. The corpus follows
+                    // Kuzu here, so 1..1 expansions never prune on reuse.
                     let history_contains =
                         enforces_trail && path_contains_edge(&path, &rel_type, edge_row);
                     if history_contains {

@@ -2,6 +2,12 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.function.utility.coalesce.IfNullTest.1ace72974a5f","language":"cypher","ordered":true,"source":"function/utility/coalesce.test","source_case":"PredicateTest","source_log":"IfNullTest","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t:tbl) WHERE ifnull(NULL, t.bool) RETURN t.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/function/utility/coalesce.test case PredicateTest
+node s0_t:tbl {id: 1, bool: true}
+node s1_t:tbl {id: 2, bool: false}
+node s2_t:tbl {id: 3, bool: null}
+node s3_t:tbl {id: 4, bool: true}
 --- expected
 1
 4

@@ -96,7 +96,7 @@ pub(super) fn lower_has_id(input: Node, ids: &[GValue]) -> Node {
     fn flatten(values: &[GValue], out: &mut Vec<GValue>) {
         for v in values {
             match v {
-                GValue::List(items) => flatten(items, out),
+                GValue::List(items) | GValue::Set(items) => flatten(items, out),
                 GValue::Null => {}
                 other => out.push(other.clone()),
             }
@@ -170,14 +170,52 @@ pub(super) fn lower_is<'a, I>(
     input: Node,
     predicate: &Predicate,
     steps: &mut Peekable<I>,
-    lo: &Lowerer,
+    lo: &mut Lowerer,
 ) -> GremlinPlanResult<Node>
 where
     I: Iterator<Item = &'a Step>,
 {
     let by = consume_by(steps);
+    // `where(P.within("x"))` referencing an aggregate side-effect bag:
+    // attach the *global* bag (all writer values folded to a list) as a
+    // hidden binding so the membership test sees every entry, not just
+    // the row-local write.
+    let mut input = input;
+    let mut bag_refs: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for label in predicate_string_refs(predicate) {
+        if bag_refs.contains_key(&label) || !lo.side_effect_bags.contains_key(&label) {
+            continue;
+        }
+        if let Some(bag_plan) =
+            super::side_effects::lower_side_effect_bag_as_list(input.clone(), &label, lo)
+        {
+            let alias = lo.fresh("bag_ref");
+            let right = Node::GraphProject {
+                mode: crate::ir::plan::ProjectMode::PreserveVisible,
+                items: vec![crate::ir::plan::ProjectionItem {
+                    alias: alias.clone(),
+                    expr: IrExpr::Binding(CURRENT.into()),
+                }],
+                error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+                input: bag_plan.boxed(),
+            };
+            input = Node::GraphApply {
+                kind: crate::ir::plan::ApplyKind::Scalar,
+                correlation: Vec::new(),
+                outputs: vec![alias.clone()],
+                optional_missing: crate::ir::policy::OptionalMissing::Null,
+                left: input.boxed(),
+                right: right.boxed(),
+            };
+            bag_refs.insert(label, alias);
+        }
+    }
     let target = binding_by_expr(CURRENT, by.as_ref());
     let condition = predicate_to_expr_with_bindings(target, predicate, &|label| {
+        if let Some(alias) = bag_refs.get(label) {
+            return Some(IrExpr::Binding(alias.clone()));
+        }
         if let Some(by) = by.as_ref() {
             return Some(binding_by_expr(label, Some(by)));
         }
@@ -190,6 +228,41 @@ where
         condition,
         input: input.boxed(),
     })
+}
+
+/// String values referenced anywhere inside a predicate tree (candidate
+/// binding / side-effect-bag names).
+fn predicate_string_refs(predicate: &Predicate) -> Vec<String> {
+    fn value_refs(value: &GValue, out: &mut Vec<String>) {
+        match value {
+            GValue::String(s) => out.push(s.clone()),
+            GValue::List(items) | GValue::Set(items) => {
+                for item in items {
+                    value_refs(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn walk(p: &Predicate, out: &mut Vec<String>) {
+        match p {
+            Predicate::Compare { value, .. } => value_refs(value, out),
+            Predicate::Within(values) | Predicate::Without(values) => {
+                for v in values {
+                    value_refs(v, out);
+                }
+            }
+            Predicate::And(a, b) | Predicate::Or(a, b) => {
+                walk(a, out);
+                walk(b, out);
+            }
+            Predicate::Not(inner) => walk(inner, out),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(predicate, &mut out);
+    out
 }
 
 pub(super) fn lower_quantifier_filter(
@@ -280,6 +353,7 @@ pub(super) fn lower_where_string<'a, I>(
     label: &str,
     predicate: &crate::language::gremlin::semantics::Predicate,
     steps: &mut Peekable<I>,
+    productive_by: bool,
 ) -> GremlinPlanResult<Node>
 where
     I: Iterator<Item = &'a Step>,
@@ -305,6 +379,7 @@ where
         lhs_by: Option<&BySpec>,
         op: CompareOp,
         other: &str,
+        productive_by: bool,
     ) -> IrExpr {
         let lhs = binding_by_expr(label, lhs_by);
         let rhs = binding_by_expr(other, lhs_by);
@@ -313,6 +388,34 @@ where
             lhs: Box::new(lhs.clone()),
             rhs: Box::new(rhs.clone()),
         };
+        if lhs_by.is_some() && productive_by {
+            // ProductiveByStrategy keeps unproductive by() values as
+            // null; `eq`/`neq` then compare null against null.
+            let both_null = IrExpr::and(vec![
+                IrExpr::IsNull(Box::new(lhs.clone())),
+                IrExpr::IsNull(Box::new(rhs.clone())),
+            ]);
+            return match op {
+                CompareOp::Eq => IrExpr::Binary {
+                    op: crate::ir::expr::BinaryOp::Or,
+                    lhs: Box::new(both_null),
+                    rhs: Box::new(cmp),
+                },
+                CompareOp::Neq => IrExpr::and(vec![
+                    IrExpr::Not(Box::new(both_null)),
+                    IrExpr::Binary {
+                        op: crate::ir::expr::BinaryOp::Or,
+                        lhs: Box::new(IrExpr::IsNull(Box::new(lhs))),
+                        rhs: Box::new(IrExpr::Binary {
+                            op: crate::ir::expr::BinaryOp::Or,
+                            lhs: Box::new(IrExpr::IsNull(Box::new(rhs))),
+                            rhs: Box::new(cmp),
+                        }),
+                    },
+                ]),
+                _ => cmp,
+            };
+        }
         if lhs_by.is_some() {
             // `by(key)` modulators are productive filters: a missing
             // property on either side drops the traverser rather than
@@ -379,7 +482,7 @@ where
             value: GValue::String(other),
         } => {
             if bys.len() <= 1 {
-                compare_bindings(label, lhs_by, *op, other)
+                compare_bindings(label, lhs_by, *op, other, productive_by)
             } else {
                 IrExpr::Binary {
                     op: compare_op(*op),

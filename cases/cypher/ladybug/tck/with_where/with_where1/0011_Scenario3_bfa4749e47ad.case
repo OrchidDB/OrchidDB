@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.with_where.with_where1.Scenario3.bfa4749e47ad","language":"cypher","ordered":true,"source":"tck/with_where/with_where1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/with-where/WithWhere1.feature#[3] Filter for an unbound relationship variable","id":"cypher.ladybug.tck.with_where.with_where1.Scenario3.bfa4749e47ad","language":"cypher","ordered":false,"source":"tck/with_where/with_where1.test","source_case":"Scenario3","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:A), (other:B) OPTIONAL MATCH (a)-[r]->(other) WITH other WHERE r IS NULL RETURN other
 --- graph_initializer
@@ -8,4 +8,4 @@ node b:B {id: 1}
 node _n1:B {id: 2}
 edge a -[:T]-> b
 --- expected
-{_ID: 1:1, _LABEL: B, id: 2}
+(:B {id: 2})

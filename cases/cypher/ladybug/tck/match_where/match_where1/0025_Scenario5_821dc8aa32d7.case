@@ -1,5 +1,5 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match_where.match_where1.Scenario5.821dc8aa32d7","language":"cypher","ordered":true,"source":"tck/match_where/match_where1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match-where/MatchWhere1.feature#[5] Filter end node of relationship with property predicate on multi variables with multiple bindings","id":"cypher.ladybug.tck.match_where.match_where1.Scenario5.821dc8aa32d7","language":"cypher","ordered":false,"source":"tck/match_where/match_where1.test","source_case":"Scenario5","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH ()-[rel:X]-(a) WHERE a.name = 'Andres' RETURN a
 --- graph_initializer
@@ -9,4 +9,4 @@ edge _n2 -[:X]-> _n1
 node _n3:N {name: "Andres"}
 edge _n2 -[:X]-> _n3
 --- expected
-{_ID: 0:1, _LABEL: A, ID: 1, name: Andres}
+({name: 'Andres'})

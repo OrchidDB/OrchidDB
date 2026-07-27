@@ -222,6 +222,10 @@ pub(super) struct Lowerer {
     /// Labels written by real map-valued `groupCount(label)` side effects.
     /// These are read by `cap(label)` through the interpreter side channel.
     pub(super) group_count_side_effects: BTreeSet<String>,
+    /// Labels whose aggregate writer is lazy (`local(aggregate(label))` /
+    /// `aggregate(Scope.local, label)`) — writes land one traverser at a
+    /// time, so an `Operator.assign` reducer keeps only the last value.
+    pub(super) side_effect_local_labels: BTreeSet<String>,
     /// Map-valued `group(label)` side effects that were *not* immediately
     /// consumed by `cap(label)`. Keyed by label; the stored plan computes
     /// the full group map from the source so a later `select(label)` can
@@ -250,6 +254,7 @@ impl Lowerer {
             side_effect_seeds: BTreeMap::new(),
             side_effect_reducers: BTreeMap::new(),
             group_count_side_effects: BTreeSet::new(),
+            side_effect_local_labels: BTreeSet::new(),
             group_side_effect_maps: BTreeMap::new(),
             in_subgraph_filter_eval: false,
         }

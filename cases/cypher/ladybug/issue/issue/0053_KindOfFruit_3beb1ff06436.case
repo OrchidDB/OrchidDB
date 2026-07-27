@@ -2,5 +2,18 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.issue.issue.KindOfFruit.3beb1ff06436","language":"cypher","ordered":true,"source":"issue/issue.test","source_case":"KindOfFruit","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (t1:T)-[:KIND_OF*]->(t2:T), (t1)-[:LIKES]->(f1:Fruit), (t2)-[:LIKES]->(f2:Fruit) WHERE f1.name = "Apple" and f2.name = "Banana" OR f1.name = "Banana" and f2.name = "Apple" return t1.name as t
+--- graph_initializer
+# re-extracted from kuzu test/test_files/issue/issue.test case KindOfFruit
+node s0_t1:T {name: "T1"}
+node s0_t2:T {name: "T2"}
+node s0_t3:T {name: "T3"}
+node s0_f1:Fruit {name: "Banana"}
+node s0_f2:Fruit {name: "Orange"}
+node s0_f3:Fruit {name: "Apple"}
+edge s0_t1 -[:LIKES]-> s0_f1
+edge s0_t2 -[:LIKES]-> s0_f2
+edge s0_t3 -[:LIKES]-> s0_f3
+edge s0_t1 -[:KIND_OF]-> s0_t2
+edge s0_t2 -[:KIND_OF]-> s0_t3
 --- expected
 T1

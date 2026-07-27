@@ -1,9 +1,9 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.match.match3.Scenario2.6c1e04d657b5","language":"cypher","ordered":true,"source":"tck/match/match3.test","source_case":"Scenario11&12","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/match/Match3.feature#[11] Undirected match in self-relationship graph","id":"cypher.ladybug.tck.match.match3.Scenario2.6c1e04d657b5","language":"cypher","ordered":false,"source":"tck/match/match3.test","source_case":"Scenario11&12","source_log":"Scenario2","status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a)-[r]-(b) RETURN a, r, b
 --- graph_initializer
 node a:A
 edge a -[:LOOP]-> a
 --- expected
-{_ID: 0:0, _LABEL: A, ID: 0}|(0:0)-{_LABEL: LOOP, _ID: 1:0}->(0:0)|{_ID: 0:0, _LABEL: A, ID: 0}
+(:A)|[:LOOP]|(:A)

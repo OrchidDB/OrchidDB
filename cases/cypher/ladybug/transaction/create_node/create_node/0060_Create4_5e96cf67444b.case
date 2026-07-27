@@ -2,6 +2,19 @@
 {"dataset":"CSV empty","expected_kind":"rows","id":"cypher.ladybug.transaction.create_node.create_node.Create4.5e96cf67444b","language":"cypher","ordered":true,"source":"transaction/create_node/create_node.test","source_case":"Create4","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (a:test) RETURN a.id
+--- graph_initializer
+# re-extracted from kuzu test/test_files/transaction/create_node/create_node.test case Create4
+node s0_a:test {id: 0}
+node s1_a:test {id: 1}
+node s2_a:test {id: 2}
+node s3_a:test {id: 3}
+node s4_a:test {id: 4}
+node s5_a:test {id: 5}
+node s6_a:test {id: 6}
+node s7_a:test {id: 7}
+node s8_a:test {id: 8}
+node s9_a:test {id: 9}
+node s10_a:test {id: 10}
 --- expected
 0
 1

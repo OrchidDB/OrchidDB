@@ -2482,6 +2482,7 @@ dependencies = [
  "md-5 0.10.6",
  "num-bigint",
  "num-traits",
+ "parquet",
  "postgres",
  "regex",
  "sha2 0.10.9",

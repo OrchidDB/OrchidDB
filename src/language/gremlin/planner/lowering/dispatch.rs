@@ -135,6 +135,29 @@ where
         // identity so the surrounding chain still runs.
         Step::InfixAnd | Step::InfixOr => Ok(input),
         Step::Select(label, pop) => lower_select_label(input, label, *pop, steps, lo, ctx),
+        Step::SelectMapValueBy(label) => {
+            let extracted = Node::GraphCurrentProject {
+                expr: crate::ir::expr::IrExpr::Call {
+                    name: "map_get_display".into(),
+                    args: vec![
+                        crate::ir::expr::IrExpr::Binding("current".into()),
+                        crate::ir::expr::IrExpr::Binding(label.clone()),
+                    ],
+                },
+                fields: vec!["current".to_string()],
+                input: input.boxed(),
+            };
+            if let Some(spec) = super::helpers::consume_by(steps) {
+                let (node, expr) = super::helpers::apply_by_spec(extracted, &spec, lo, ctx)?;
+                Ok(Node::GraphCurrentProject {
+                    expr,
+                    fields: vec!["current".to_string()],
+                    input: node.boxed(),
+                })
+            } else {
+                Ok(extracted)
+            }
+        }
         Step::SelectMulti(labels, pop) => lower_select_multi(input, labels, *pop, steps, lo, ctx),
         Step::SelectColumn(column) => Ok(lower_select_column(input, *column)),
 
@@ -168,6 +191,9 @@ where
             // sub-traversal only attaches a side-effect-bag binding. Inline
             // it onto the outer rows so a later cap("a") can read the bag;
             // wrapping in GraphApply would drop the binding.
+            if matches!(step, Step::Local(_)) {
+                mark_local_aggregate_labels(sub, lo);
+            }
             let mut node = input;
             let mut iter = sub.iter().peekable();
             while let Some(step) = iter.next() {
@@ -357,11 +383,37 @@ where
             Ok(lower_side_effect_bag_as_list(input.clone(), label, lo)
                 .unwrap_or_else(|| lower_cap(input, label, lo)))
         }
-        Step::Cap(label) => Ok(lower_cap(input, label, lo)),
+        Step::Cap(label) => {
+            // `cap(x).is(P.typeOf(SET))`: a cap over an aggregate bag is
+            // always a BulkSet (a Set subtype) in TinkerPop, but our cap
+            // approximation streams the bag entries. Consume the always-true
+            // type check instead of applying it per entry.
+            if let Some(Step::Is {
+                predicate: crate::language::gremlin::semantics::Predicate::TypeOf(name),
+            }) = steps.peek()
+            {
+                let tag = name
+                    .trim()
+                    .trim_start_matches("GType.")
+                    .to_ascii_lowercase();
+                if matches!(tag.as_str(), "set" | "bulkset" | "collection") {
+                    steps.next();
+                }
+            }
+            Ok(lower_cap(input, label, lo))
+        }
         Step::CapMulti(labels) => Ok(lower_cap_multi(input, labels, lo)),
         Step::Sack => Ok(lower_sack_read(input)),
         Step::SackOp(op) => lower_sack_op(input, *op, steps, lo, ctx),
         Step::Subgraph(label) => Ok(lower_subgraph(input, label)),
+        Step::Tree(Some(label)) => {
+            // `tree(label)` is a side effect: the stream continues
+            // unchanged and a later `select(label)` / `cap(label)`
+            // attaches the tree map.
+            let map_node = lower_tree(input.clone(), None);
+            lo.group_side_effect_maps.insert(label.clone(), map_node);
+            Ok(input)
+        }
         Step::Tree(label) => Ok(lower_tree(input, label.as_deref())),
         Step::GroupAs(label) => lower_group_as(input, label, steps, lo, ctx),
         Step::GroupCountAs(label) => lower_group_count_as(input, label, steps, lo, ctx),
@@ -403,7 +455,10 @@ where
         Step::ConnectedComponent => lower_graph_algorithm(input, "connectedComponent", &[]),
         Step::LocalScoped(inner) if matches!(inner.as_ref(), Step::Order) => {
             let by = super::helpers::consume_by(steps);
-            lower_local_order(input, by)
+            // When the ordered map is not immediately unfolded, the
+            // traverser stays a Map — merge the ordered entry list back.
+            let merge_map = !matches!(steps.peek(), Some(Step::Unfold));
+            lower_local_order(input, by, merge_map)
         }
         Step::LocalScoped(inner) => lower_local_scoped(input, inner, lo),
         Step::PathFrom(label) => Ok(lower_path_from(input, label)),
@@ -415,7 +470,7 @@ where
         // (works for Compare/Range/Outside; Within/TextLike degrade to
         // Identity).
         Step::WhereString { label, predicate } => {
-            super::filter::lower_where_string(input, label, predicate, steps)
+            super::filter::lower_where_string(input, label, predicate, steps, lo.productive_by)
         }
         // `by(...)` modulators that aren't peephole-merged with the
         // preceding step (select/path/aggregate/sack/...): we don't yet
@@ -456,16 +511,34 @@ fn is_side_effect_only(sub: &[Step]) -> bool {
     if sub.is_empty() {
         return false;
     }
-    sub.iter().all(|s| {
-        matches!(
-            s,
-            Step::AggregateAs(_)
-                | Step::By(_)
-                | Step::SackOp(_)
-                | Step::GroupCountAs(_)
-                | Step::GroupAs(_)
-        )
+    sub.iter().all(|s| match s {
+        Step::AggregateAs(_)
+        | Step::By(_)
+        | Step::SackOp(_)
+        | Step::GroupCountAs(_)
+        | Step::GroupAs(_) => true,
+        // `sideEffect(local(aggregate(..)))` — nested wrappers that only
+        // attach side-effect bags are themselves side-effect-only.
+        Step::Local(inner) | Step::SideEffect(inner) => is_side_effect_only(inner),
+        _ => false,
     })
+}
+
+/// Record which side-effect labels are written by a lazy
+/// (`local(...)`-wrapped) aggregate. `Operator.assign` reducers keep only
+/// the final write for lazy aggregates.
+fn mark_local_aggregate_labels(sub: &[Step], lo: &mut Lowerer) {
+    for s in sub {
+        match s {
+            Step::AggregateAs(label) => {
+                lo.side_effect_local_labels.insert(label.clone());
+            }
+            Step::Local(inner) | Step::SideEffect(inner) => {
+                mark_local_aggregate_labels(inner, lo);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn cap_feeds_local_collection_step(step: Option<&Step>) -> bool {

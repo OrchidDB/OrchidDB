@@ -1,8 +1,8 @@
 --- metadata
-{"dataset":"CSV tck","expected_kind":"rows","id":"cypher.ladybug.tck.return.return6.Scenario10.db41200e525e","language":"cypher","ordered":true,"source":"tck/return/return6.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
+{"dataset":"CSV tck","expected_kind":"rows","expected_provenance":"openCypher tck/features/clauses/return/Return6.feature#[10] Multiple aggregates on same variable","id":"cypher.ladybug.tck.return.return6.Scenario10.db41200e525e","language":"cypher","ordered":false,"source":"tck/return/return6.test","source_case":"Scenario10","source_log":null,"status":"imported","suite":"ladybug","version":1}
 --- query
 MATCH (n) RETURN count(n), collect(n)
 --- graph_initializer
 node _n1:N
 --- expected
-1|[{_ID: 0:0, _LABEL: A, ID: 0}]
+1|[()]
