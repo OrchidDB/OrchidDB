@@ -3097,7 +3097,17 @@ impl<'a> LoweringContext<'a> {
                 Err(CatalogError::UnknownLabel(_)) => continue,
                 Err(err) => return Err(err.into()),
             };
-            merge_property_defs(&mut defs, table.batch.schema().as_ref(), &["id"])?;
+            // Cypher fixtures use `id` as an ordinary primary-key property
+            // and expect `RETURN n.*` and node printing to show it; Gremlin
+            // treats element ids as separate from properties. This mirrors
+            // `node_property_keys` vs `node_property_keys_with_id` — excluding
+            // it unconditionally left `n.id` unresolvable, which the
+            // NullOnMissing policy then turned into a silent `NULL`.
+            let excluded: &[&str] = match self.language {
+                Language::Gremlin => &["id"],
+                _ => &[],
+            };
+            merge_property_defs(&mut defs, table.batch.schema().as_ref(), excluded)?;
         }
         Ok(defs
             .into_iter()
