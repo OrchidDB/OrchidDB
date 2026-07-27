@@ -33,9 +33,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder, RecordBatch,
-    StringBuilder, new_null_array,
+    Array, ArrayRef, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder, ListArray,
+    RecordBatch, StringBuilder, new_null_array,
 };
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::common::{Column, ScalarValue};
@@ -121,7 +122,14 @@ impl SqlDialect {
         }
     }
 
-    fn ddl_type(self, data_type: &DataType) -> SqlResult<&'static str> {
+    fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
+        // List-valued properties are ordinary graph data (a `tags` array on a
+        // node), so they have to survive the round trip through the engine.
+        if let DataType::List(inner) | DataType::LargeList(inner) | DataType::FixedSizeList(inner, _) =
+            data_type
+        {
+            return Ok(format!("{}[]", self.ddl_type(inner.data_type())?));
+        }
         Ok(match data_type {
             DataType::Boolean => "BOOLEAN",
             DataType::Int8 | DataType::Int16 | DataType::UInt8 => "SMALLINT",
@@ -144,7 +152,8 @@ impl SqlDialect {
                     self.name()
                 )));
             }
-        })
+        }
+        .to_string())
     }
 
     /// Dialect-specific rewrites of unparsed SQL text. Fixups that cannot be
@@ -217,6 +226,63 @@ pub enum SqlValue {
     Int(i64),
     Float(f64),
     Text(String),
+    List(Vec<SqlValue>),
+}
+
+/// Convert one Arrow array element into an engine-neutral [`SqlValue`].
+///
+/// DuckDB hands nested values back as Arrow arrays rather than scalars, so its
+/// executor reuses this instead of re-deriving the mapping.
+pub(super) fn sql_value_from_array(array: &dyn Array, index: usize) -> SqlResult<SqlValue> {
+    scalar_to_sql_value(&ScalarValue::try_from_array(array, index)?)
+}
+
+fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
+    fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> SqlValue) -> SqlValue {
+        value.as_ref().map_or(SqlValue::Null, render)
+    }
+    Ok(match scalar {
+        ScalarValue::Null => SqlValue::Null,
+        ScalarValue::Boolean(v) => opt(v, |b| SqlValue::Bool(*b)),
+        ScalarValue::Int8(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::Int16(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::Int32(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::Int64(v) => opt(v, |i| SqlValue::Int(*i)),
+        ScalarValue::UInt8(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::UInt16(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::UInt32(v) => opt(v, |i| SqlValue::Int(i64::from(*i))),
+        ScalarValue::UInt64(v) => match v {
+            Some(value) => SqlValue::Int(i64::try_from(*value).map_err(|_| {
+                SqlError::Conversion(format!("unsigned {value} overflows i64"))
+            })?),
+            None => SqlValue::Null,
+        },
+        ScalarValue::Float32(v) => opt(v, |f| SqlValue::Float(f64::from(*f))),
+        ScalarValue::Float64(v) => opt(v, |f| SqlValue::Float(*f)),
+        ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => {
+            opt(v, |s| SqlValue::Text(s.clone()))
+        }
+        ScalarValue::List(array) => nested_sql_values(array.as_ref(), array.value(0))?,
+        ScalarValue::LargeList(array) => nested_sql_values(array.as_ref(), array.value(0))?,
+        ScalarValue::FixedSizeList(array) => nested_sql_values(array.as_ref(), array.value(0))?,
+        other => {
+            return Err(SqlError::Unsupported(format!(
+                "engine value of type {}",
+                other.data_type()
+            )));
+        }
+    })
+}
+
+fn nested_sql_values(outer: &dyn Array, items: ArrayRef) -> SqlResult<SqlValue> {
+    if outer.is_null(0) {
+        return Ok(SqlValue::Null);
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for index in 0..items.len() {
+        out.push(sql_value_from_array(items.as_ref(), index)?);
+    }
+    Ok(SqlValue::List(out))
 }
 
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
@@ -569,8 +635,14 @@ fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
         ScalarValue::Float32(v) => opt(v, |f| float_literal(dialect, f64::from(*f))),
         ScalarValue::Float64(v) => opt(v, |f| float_literal(dialect, *f)),
         ScalarValue::Utf8(v) | ScalarValue::LargeUtf8(v) | ScalarValue::Utf8View(v) => {
-            opt(v, |s| string_literal(s))
+            match v {
+                Some(text) => string_literal(dialect, text)?,
+                None => "NULL".to_string(),
+            }
         }
+        ScalarValue::List(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
+        ScalarValue::LargeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
+        ScalarValue::FixedSizeList(array) => list_literal(dialect, array.as_ref(), array.value(0))?,
         other => {
             return Err(SqlError::Unsupported(format!(
                 "sql literal for {} value",
@@ -580,8 +652,50 @@ fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
     })
 }
 
-fn string_literal(input: &str) -> String {
-    format!("'{}'", input.replace('\'', "''"))
+/// Render a list value. The result is always cast to the column's array type:
+/// an empty list is otherwise untyped, and both engines reject that.
+fn list_literal(dialect: SqlDialect, outer: &dyn Array, items: ArrayRef) -> SqlResult<String> {
+    if outer.is_null(0) {
+        return Ok("NULL".to_string());
+    }
+    let mut cells = Vec::with_capacity(items.len());
+    for index in 0..items.len() {
+        let scalar = ScalarValue::try_from_array(&items, index)?;
+        cells.push(sql_literal(dialect, &scalar)?);
+    }
+    let joined = cells.join(", ");
+    let literal = match dialect {
+        SqlDialect::DuckDb => format!("[{joined}]"),
+        SqlDialect::Postgres => format!("ARRAY[{joined}]"),
+    };
+    Ok(format!(
+        "CAST({literal} AS {})",
+        dialect.ddl_type(outer.data_type())?
+    ))
+}
+
+/// Render a string literal, including one containing a NUL character.
+///
+/// NUL is legal in graph string properties but cannot appear verbatim in
+/// statement text: engine client APIs take NUL-terminated strings, so the
+/// statement would be silently truncated or rejected.
+fn string_literal(dialect: SqlDialect, input: &str) -> SqlResult<String> {
+    let quote = |part: &str| format!("'{}'", part.replace('\'', "''"));
+    if !input.contains('\0') {
+        return Ok(quote(input));
+    }
+    match dialect {
+        SqlDialect::DuckDb => Ok(input
+            .split('\0')
+            .map(quote)
+            .collect::<Vec<_>>()
+            .join(" || chr(0) || ")),
+        // Postgres `text` cannot represent the NUL code point at all, so
+        // there is no encoding to fall back to.
+        SqlDialect::Postgres => Err(SqlError::Unsupported(
+            "postgres text cannot contain a NUL character".to_string(),
+        )),
+    }
 }
 
 fn float_literal(dialect: SqlDialect, value: f64) -> String {
@@ -689,6 +803,35 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
                 }
             }
             Arc::new(builder.finish())
+        }
+        DataType::List(inner) => {
+            // Rebuild the list column from the engine's per-row lists: flatten
+            // the elements into a single child column (recursing through the
+            // same conversion, so nested lists work), then re-slice it with
+            // offsets.
+            let mut offsets: Vec<i32> = vec![0];
+            let mut flat: Vec<Vec<SqlValue>> = Vec::new();
+            let mut present: Vec<bool> = Vec::with_capacity(rows.len());
+            for row in rows {
+                match &row[index] {
+                    SqlValue::Null => present.push(false),
+                    SqlValue::List(items) => {
+                        present.push(true);
+                        flat.extend(items.iter().map(|item| vec![item.clone()]));
+                    }
+                    other => return Err(mismatch(other)),
+                }
+                offsets.push(i32::try_from(flat.len()).map_err(|_| {
+                    SqlError::Conversion(format!("list column `{}` is too long", field.name()))
+                })?);
+            }
+            let values = build_column(inner, &flat, 0)?;
+            Arc::new(ListArray::try_new(
+                Arc::clone(inner),
+                OffsetBuffer::new(offsets.into()),
+                values,
+                Some(NullBuffer::from(present)),
+            )?)
         }
         other => {
             return Err(SqlError::Unsupported(format!(

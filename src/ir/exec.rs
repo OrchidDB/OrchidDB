@@ -27,20 +27,192 @@
 //!   to bindings produced outside it. Lowering it standalone fails on the
 //!   unresolved binding, so it declines to island on its own.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::ir::catalog::{PropertyGraph, array_value};
+use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::plan::{GraphPlan, Node};
-use crate::ir::rel::{RelBackend, execute_lowered};
+use crate::ir::rel::sql;
+use crate::ir::rel::{LoweredPlan, RelBackend, execute_lowered};
 use crate::ir::value::Value;
 
+/// A future returned by [`IslandTarget::execute`]. Boxed because the trait is
+/// object-safe by design: the target is chosen at runtime (config, env var,
+/// or per-call), not at compile time.
+pub type IslandFuture<'a> = Pin<Box<dyn Future<Output = Result<ReturnedBatches, String>> + 'a>>;
+
+/// Where a SQL island actually runs.
+///
+/// The partitioner decides *what* to push down; this decides *who executes
+/// it*. Keeping them apart is what makes the engine retargetable: DuckDB is
+/// the default, but nothing above this trait knows that.
+pub trait IslandTarget {
+    /// Short name for diagnostics and harness reporting (`duckdb`, ...).
+    fn name(&self) -> &str;
+    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a>;
+}
+
+/// In-process DataFusion. No external engine, no SQL text — useful as a
+/// reference target and for environments without a database.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DataFusionTarget;
+
+impl IslandTarget for DataFusionTarget {
+    fn name(&self) -> &str {
+        "datafusion"
+    }
+
+    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a> {
+        Box::pin(async move {
+            execute_lowered(lowered)
+                .await
+                .map_err(|err| format!("{err}"))
+        })
+    }
+}
+
+/// A real SQL engine: the lowered plan is unparsed to dialect-specific SQL,
+/// the referenced tables are materialized, and the query runs on the engine.
+///
+/// Generic over the executor so any [`SqlExecutor`](crate::ir::rel::sql::SqlExecutor)
+/// implementation — DuckDB, Postgres, or one added later — can back an island
+/// without touching the partitioner.
+pub struct SqlTarget<F> {
+    dialect: sql::SqlDialect,
+    /// Executors take `&mut self` and some (Postgres) own a connection, so
+    /// the target builds a fresh one per island rather than holding shared
+    /// mutable state. That keeps island futures `Send` and keeps targets
+    /// usable from any runtime.
+    make_executor: F,
+}
+
+impl<F, E> SqlTarget<F>
+where
+    F: Fn() -> sql::SqlResult<E>,
+    E: sql::SqlExecutor,
+{
+    pub fn new(dialect: sql::SqlDialect, make_executor: F) -> Self {
+        Self {
+            dialect,
+            make_executor,
+        }
+    }
+}
+
+impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>> {
+    /// The default target: an in-process DuckDB database per island.
+    #[cfg(feature = "duckdb")]
+    pub fn duckdb() -> Self {
+        Self::new(sql::SqlDialect::DuckDb, || Ok(sql::DuckDbExecutor::new()))
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl SqlTarget<fn() -> sql::SqlResult<sql::PostgresExecutor>> {
+    /// Postgres, connecting per island through
+    /// [`PostgresExecutor::ENV_URL`](sql::PostgresExecutor::ENV_URL).
+    pub fn postgres() -> Self {
+        Self::new(sql::SqlDialect::Postgres, || {
+            let url = std::env::var(sql::PostgresExecutor::ENV_URL).map_err(|_| {
+                sql::SqlError::Setup(format!(
+                    "{} is not set",
+                    sql::PostgresExecutor::ENV_URL
+                ))
+            })?;
+            sql::PostgresExecutor::connect(&url)
+        })
+    }
+}
+
+impl<F, E> IslandTarget for SqlTarget<F>
+where
+    F: Fn() -> sql::SqlResult<E>,
+    E: sql::SqlExecutor,
+{
+    fn name(&self) -> &str {
+        self.dialect.name()
+    }
+
+    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a> {
+        Box::pin(async move {
+            // SQL engines run synchronously and cannot be cancelled once
+            // started, so oversized plans are refused up front rather than
+            // allowed to pin a core. DataFusion applies the same bound in
+            // `execute_lowered`.
+            let nodes = logical_plan_nodes(&lowered.plan);
+            if nodes > MAX_ISLAND_PLAN_NODES {
+                return Err(format!(
+                    "island plan too large for uncancellable execution ({nodes} nodes)"
+                ));
+            }
+            let prepared = sql::prepare(&lowered, self.dialect)
+                .await
+                .map_err(|err| format!("{err}"))?;
+            let mut executor = (self.make_executor)().map_err(|err| format!("{err}"))?;
+            sql::execute_prepared(&mut executor, &prepared).map_err(|err| format!("{err}"))
+        })
+    }
+}
+
+/// Upper bound on the relational plan size handed to a synchronous engine.
+const MAX_ISLAND_PLAN_NODES: usize = 200;
+
+fn logical_plan_nodes(plan: &datafusion::logical_expr::LogicalPlan) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![plan];
+    while let Some(node) = stack.pop() {
+        count += 1;
+        stack.extend(node.inputs());
+    }
+    count
+}
+
+/// The default island target: DuckDB when compiled in, DataFusion otherwise.
+///
+/// `GRAPH_ISLAND_TARGET` overrides it (`duckdb`, `postgres`, `datafusion`) so
+/// the same binary can be pointed at a different engine.
+pub fn default_target() -> Box<dyn IslandTarget> {
+    let requested = std::env::var("GRAPH_ISLAND_TARGET").unwrap_or_default();
+    match requested.as_str() {
+        "datafusion" => Box::new(DataFusionTarget),
+        #[cfg(feature = "postgres")]
+        "postgres" => Box::new(SqlTarget::postgres()),
+        #[cfg(feature = "duckdb")]
+        _ => Box::new(SqlTarget::duckdb()),
+        #[cfg(not(feature = "duckdb"))]
+        _ => Box::new(DataFusionTarget),
+    }
+}
+
 /// What the partitioner did, for tests and for the harness to report.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct ExecStats {
     /// Subtrees executed relationally.
     pub islands: usize,
     /// Rows those islands returned in total.
     pub island_rows: usize,
-    /// Operators left for the interpreter (islands excluded).
+    /// Every operator left in the rewritten plan, islands included.
     pub residual_ops: usize,
+    /// Operators the interpreter must still evaluate — everything in the
+    /// residual except the spliced-in island results and the `GraphReturn`
+    /// result-shaping boundary, neither of which does query work.
+    pub interpreted_ops: usize,
+    /// Why subtrees declined to island, outermost attempt first. This is the
+    /// work list for closing lowering gaps — every entry is a query shape
+    /// that still needs the interpreter.
+    pub declined: Vec<String>,
+}
+
+impl ExecStats {
+    /// Did the whole plan push down, leaving the interpreter nothing to do
+    /// but shape already-computed rows?
+    ///
+    /// This is the metric that gates retiring the interpreter: it can be
+    /// deleted once every case in the corpus reports `true`.
+    pub fn fully_pushed_down(&self) -> bool {
+        self.islands >= 1 && self.interpreted_ops == 0
+    }
 }
 
 /// Column-name suffixes the relational lowering uses to encode a graph
@@ -63,11 +235,13 @@ pub async fn plan_with_islands(
     plan: &GraphPlan,
     graph: &PropertyGraph,
     backend: &RelBackend,
+    target: &dyn IslandTarget,
 ) -> (GraphPlan, ExecStats) {
     let mut root = (*plan.root).clone();
     let mut stats = ExecStats::default();
-    islandize(&mut root, &plan.policy, graph, backend, &mut stats).await;
+    islandize(&mut root, &plan.policy, graph, backend, target, &mut stats).await;
     stats.residual_ops = count_ops(&root);
+    stats.interpreted_ops = count_interpreted_ops(&root);
     (
         GraphPlan {
             policy: plan.policy.clone(),
@@ -85,46 +259,75 @@ fn islandize<'a>(
     policy: &'a crate::ir::policy::GraphPlanPolicy,
     graph: &'a PropertyGraph,
     backend: &'a RelBackend,
+    target: &'a dyn IslandTarget,
     stats: &'a mut ExecStats,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
     Box::pin(async move {
-        if let Some(values) = try_island(node, policy, graph, backend).await {
-            if let Node::GraphValues { rows, .. } = &values {
-                stats.islands += 1;
-                stats.island_rows += rows.len();
+        match try_island(node, policy, graph, backend, target).await {
+            Ok(values) => {
+                if let Node::GraphValues { rows, .. } = &values {
+                    stats.islands += 1;
+                    stats.island_rows += rows.len();
+                }
+                *node = values;
+                return;
             }
-            *node = values;
-            return;
+            Err(Decline::Ineligible) => {}
+            Err(Decline::Reason(reason)) => stats.declined.push(reason),
         }
         for child in children_mut(node) {
-            islandize(child, policy, graph, backend, stats).await;
+            islandize(child, policy, graph, backend, target, stats).await;
         }
     })
 }
 
-/// Execute `node` relationally and materialize the result, or `None` if it is
-/// not a legal or lowerable island.
+/// Why a subtree did not become an island.
+enum Decline {
+    /// Structurally not a candidate (leaf, mutation, result boundary). Not a
+    /// gap in the lowering, so it is not worth reporting.
+    Ineligible,
+    /// The relational backend or the target engine rejected it. These are the
+    /// gaps worth closing.
+    Reason(String),
+}
+
+/// Execute `node` on the target engine and materialize the result.
 async fn try_island(
     node: &Node,
     policy: &crate::ir::policy::GraphPlanPolicy,
     graph: &PropertyGraph,
     backend: &RelBackend,
-) -> Option<Node> {
+    target: &dyn IslandTarget,
+) -> Result<Node, Decline> {
     // A bare source is already as cheap as it gets; islanding one buys
     // nothing and only costs a materialization.
     if children_count(node) == 0 {
-        return None;
+        return Err(Decline::Ineligible);
     }
     if contains_mutation(node) {
-        return None;
+        return Err(Decline::Ineligible);
+    }
+    // `GraphReturn` is result shaping, not query work: it names the output
+    // columns and applies the result form. Islanding it would hand the
+    // engine's column order to the caller instead of the declared field
+    // order, so it stays put and its input islands instead.
+    if matches!(node, Node::GraphReturn { .. }) {
+        return Err(Decline::Ineligible);
     }
     let candidate = GraphPlan {
         policy: policy.clone(),
         root: Box::new(node.clone()),
     };
-    let lowered = backend.lower(&candidate, graph).ok()?;
-    let returned = execute_lowered(lowered).await.ok()?;
-    batch_to_values(&returned)
+    let lowered = backend
+        .lower(&candidate, graph)
+        .map_err(|err| Decline::Reason(format!("{err}")))?;
+    let returned = target
+        .execute(lowered)
+        .await
+        .map_err(|err| Decline::Reason(format!("{}: {err}", target.name())))?;
+    batch_to_values(&returned).ok_or_else(|| {
+        Decline::Reason("island result did not match the graph column encoding".to_string())
+    })
 }
 
 /// Rebuild a relational result batch into `GraphValues` bindings.
@@ -134,7 +337,7 @@ async fn try_island(
 /// reassembled from their id/label columns; property columns are dropped
 /// because the catalog remains the source of truth for property reads, so
 /// carrying them would only risk disagreeing with it.
-fn batch_to_values(returned: &crate::ir::interpreter::ReturnedBatches) -> Option<Node> {
+fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
     let batch = &returned.batch;
     let schema = batch.schema();
     let names: Vec<String> = schema
@@ -298,6 +501,21 @@ fn contains_mutation(node: &Node) -> bool {
 
 fn count_ops(node: &Node) -> usize {
     1 + children(node).into_iter().map(count_ops).sum::<usize>()
+}
+
+/// Operators that represent real work left for the interpreter. Spliced
+/// island results and the `GraphReturn` boundary are excluded: the first is
+/// already computed, the second only names and shapes the output.
+fn count_interpreted_ops(node: &Node) -> usize {
+    let self_cost = usize::from(!matches!(
+        node,
+        Node::GraphValues { .. } | Node::GraphReturn { .. }
+    ));
+    self_cost
+        + children(node)
+            .into_iter()
+            .map(count_interpreted_ops)
+            .sum::<usize>()
 }
 
 fn children_count(node: &Node) -> usize {

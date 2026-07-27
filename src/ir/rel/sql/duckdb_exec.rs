@@ -4,9 +4,9 @@
 //! and executes the query, so cases never observe each other's tables.
 
 use duckdb::Connection;
-use duckdb::types::ValueRef;
+use duckdb::types::{ListType, ValueRef};
 
-use super::{SqlDialect, SqlError, SqlExecutor, SqlResult, SqlValue};
+use super::{SqlDialect, SqlError, SqlExecutor, SqlResult, SqlValue, sql_value_from_array};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DuckDbExecutor;
@@ -82,6 +82,27 @@ fn convert_value(value: ValueRef<'_>) -> SqlResult<SqlValue> {
                 .map_err(|err| SqlError::Conversion(format!("duckdb decimal {value}: {err}")))?,
         ),
         ValueRef::Text(bytes) => SqlValue::Text(String::from_utf8_lossy(bytes).into_owned()),
+        // List-valued graph properties come back as one Arrow list per row;
+        // slice out this row's elements and convert them the same way.
+        ValueRef::List(list, row) => {
+            let (values, offset, length) = match list {
+                ListType::Regular(array) => (
+                    array.values(),
+                    array.value_offsets()[row] as usize,
+                    array.value_length(row) as usize,
+                ),
+                ListType::Large(array) => (
+                    array.values(),
+                    array.value_offsets()[row] as usize,
+                    array.value_length(row) as usize,
+                ),
+            };
+            let mut items = Vec::with_capacity(length);
+            for index in offset..offset + length {
+                items.push(sql_value_from_array(values.as_ref(), index)?);
+            }
+            SqlValue::List(items)
+        }
         other => {
             return Err(SqlError::Unsupported(format!(
                 "duckdb value type {other:?}"

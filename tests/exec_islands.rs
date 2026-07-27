@@ -11,7 +11,7 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
 use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::exec::plan_with_islands;
+use new_graph::ir::exec::{DataFusionTarget, ExecStats, IslandTarget, SqlTarget, plan_with_islands};
 use new_graph::ir::interpreter::execute;
 use new_graph::ir::rel::RelBackend;
 use new_graph::language::cypher::parser::parse_query;
@@ -60,8 +60,12 @@ fn render(returned: new_graph::ir::interpreter::ReturnedBatches) -> Vec<String> 
         .collect()
 }
 
-/// Partition `query`, returning (island count, rows).
-fn islanded(graph: &PropertyGraph, query: &str) -> (usize, Vec<String>) {
+/// Partition `query` against `target`, returning its stats and result rows.
+fn islanded_on(
+    graph: &PropertyGraph,
+    query: &str,
+    target: &dyn IslandTarget,
+) -> (ExecStats, Vec<String>) {
     let parsed = parse_query(query).expect("parse");
     let plan = CypherPlanner::new().plan(&parsed).expect("plan");
     let backend = RelBackend::new();
@@ -69,9 +73,15 @@ fn islanded(graph: &PropertyGraph, query: &str) -> (usize, Vec<String>) {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(plan_with_islands(&plan, graph, &backend));
+        .block_on(plan_with_islands(&plan, graph, &backend, target));
     let returned = execute(&hybrid, graph).expect("run hybrid");
-    (stats.islands, render(returned))
+    (stats, render(returned))
+}
+
+/// Partition `query` on the default engine (DuckDB).
+fn islanded(graph: &PropertyGraph, query: &str) -> (usize, Vec<String>) {
+    let (stats, rows) = islanded_on(graph, query, &SqlTarget::duckdb());
+    (stats.islands, rows)
 }
 
 #[test]
@@ -120,6 +130,58 @@ fn mutations_are_never_islanded() {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(plan_with_islands(&plan, &graph, &backend));
+        .block_on(plan_with_islands(
+            &plan,
+            &graph,
+            &backend,
+            &SqlTarget::duckdb(),
+        ));
     assert_eq!(stats.islands, 0, "a CREATE plan must not be islanded");
+}
+
+/// The engine is a swappable target, not a hardcoded dependency: the same
+/// plan must produce the same rows on DuckDB and on in-process DataFusion.
+#[test]
+fn targets_are_interchangeable() {
+    let graph = fixture();
+    let query = "MATCH (p:person) WHERE p.age > 25 RETURN p.name, p.age";
+    let (duck_stats, duck_rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
+    let (df_stats, df_rows) = islanded_on(&graph, query, &DataFusionTarget);
+    assert_eq!(duck_rows, rows_of(&graph, query));
+    assert_eq!(duck_rows, df_rows);
+    assert_eq!(duck_stats.islands, df_stats.islands);
+}
+
+/// A query that lowers completely leaves the interpreter with no work — only
+/// the result-shaping boundary over already-computed rows. This is the
+/// condition that has to hold corpus-wide before the interpreter can go.
+#[test]
+fn a_fully_lowered_query_leaves_no_interpreted_operators() {
+    let graph = fixture();
+    let (stats, _) = islanded_on(
+        &graph,
+        "MATCH (p:person) WHERE p.age > 25 RETURN p.name",
+        &SqlTarget::duckdb(),
+    );
+    assert!(
+        stats.fully_pushed_down(),
+        "expected no interpreted operators, got {stats:?}"
+    );
+}
+
+/// ...and one that does not lower completely reports the gap rather than
+/// silently falling back, so the remaining work is enumerable.
+#[test]
+fn an_unlowerable_query_reports_why() {
+    let graph = fixture();
+    let (stats, _) = islanded_on(
+        &graph,
+        "MATCH (p:person) RETURN list_append([1], p.age)",
+        &SqlTarget::duckdb(),
+    );
+    assert!(!stats.fully_pushed_down());
+    assert!(
+        !stats.declined.is_empty(),
+        "expected a recorded reason for the residual"
+    );
 }

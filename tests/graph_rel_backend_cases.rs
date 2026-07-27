@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::ReturnedBatches;
+use new_graph::ir::exec::{ExecStats, default_target, plan_with_islands};
+use new_graph::ir::interpreter::{ReturnedBatches, execute as interpret};
 use new_graph::ir::plan::{GraphPlan, explain};
 use new_graph::ir::rel::RelBackend;
 #[cfg(feature = "duckdb")]
@@ -95,9 +96,10 @@ async fn graph_rel_backend_cases() {
     }
 
     let report = format!(
-        "exec mode: {}\n{}",
+        "exec mode: {}\n{}{}",
         config.exec.as_str(),
-        summary.render(started.elapsed().as_secs_f64())
+        summary.render(started.elapsed().as_secs_f64()),
+        render_island_tally()
     );
     print!("{report}");
     fs::write(out_dir.join("summary.txt"), report).expect("write summary");
@@ -114,6 +116,12 @@ async fn graph_rel_backend_cases() {
 enum ExecMode {
     DataFusion,
     DuckDb,
+    /// Partition the plan into SQL islands, run each on the island target
+    /// (DuckDB by default), and let the interpreter handle whatever is left.
+    /// Unlike the whole-plan modes, a case that does not lower completely
+    /// still produces an answer, so this measures both correctness and how
+    /// much of the corpus still needs the interpreter at all.
+    Islands,
 }
 
 impl ExecMode {
@@ -121,8 +129,68 @@ impl ExecMode {
         match self {
             Self::DataFusion => "datafusion",
             Self::DuckDb => "duckdb",
+            Self::Islands => "islands",
         }
     }
+}
+
+/// Corpus-wide island statistics, accumulated across cases.
+///
+/// A global rather than a threaded-through parameter: the harness is a single
+/// test entry point, and this keeps the ~25 `CaseRun` construction sites from
+/// having to carry a field none of them care about.
+#[derive(Debug, Default)]
+struct IslandTally {
+    cases: usize,
+    fully_pushed_down: usize,
+    islands: usize,
+    /// Why residual work remained, by reason.
+    residual_reasons: BTreeMap<String, usize>,
+}
+
+static ISLAND_TALLY: std::sync::Mutex<Option<IslandTally>> = std::sync::Mutex::new(None);
+
+fn record_island_stats(stats: &ExecStats) {
+    let mut guard = ISLAND_TALLY.lock().expect("island tally");
+    let tally = guard.get_or_insert_with(IslandTally::default);
+    tally.cases += 1;
+    tally.islands += stats.islands;
+    if stats.fully_pushed_down() {
+        tally.fully_pushed_down += 1;
+    } else {
+        // The outermost decline is the one that actually blocks full
+        // pushdown; inner ones are consequences of the same gap.
+        if let Some(reason) = stats.declined.first() {
+            *tally
+                .residual_reasons
+                .entry(first_line(reason))
+                .or_default() += 1;
+        } else if stats.islands == 0 {
+            *tally
+                .residual_reasons
+                .entry("no island attempted".to_string())
+                .or_default() += 1;
+        }
+    }
+}
+
+fn render_island_tally() -> String {
+    let guard = ISLAND_TALLY.lock().expect("island tally");
+    let Some(tally) = guard.as_ref() else {
+        return String::new();
+    };
+    let pct = percent(tally.fully_pushed_down, tally.cases);
+    let mut out = format!(
+        "\nislands: cases={} fully_pushed_down={} ({pct:.1}%) islands={}\n",
+        tally.cases, tally.fully_pushed_down, tally.islands
+    );
+    let mut reasons: Vec<_> = tally.residual_reasons.iter().collect();
+    reasons.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    out.push_str("top residual reasons (cases still needing the interpreter):\n");
+    for (reason, count) in reasons.iter().take(40) {
+        out.push_str(&format!("  {count:>5}  {reason}\n"));
+    }
+    out
 }
 
 #[derive(Debug)]
@@ -139,6 +207,7 @@ impl HarnessConfig {
     fn from_env() -> Self {
         let exec = match std::env::var("GRAPH_REL_EXEC").as_deref() {
             Ok("duckdb") => ExecMode::DuckDb,
+            Ok("islands") => ExecMode::Islands,
             _ => ExecMode::DataFusion,
         };
         Self {
@@ -334,6 +403,27 @@ async fn execute_case(
             }
         }
         ExecMode::DuckDb => execute_case_duckdb(backend, plan, graph).await,
+        ExecMode::Islands => execute_case_islands(backend, plan, graph).await,
+    }
+}
+
+/// Partition the plan into SQL islands, then interpret the residual.
+///
+/// Every case produces an answer here: the islands carry whatever lowers, and
+/// the interpreter covers the rest. The tally records how many cases needed
+/// the interpreter at all, which is what has to reach zero before it can be
+/// deleted.
+async fn execute_case_islands(
+    backend: &RelBackend,
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+) -> ExecRun {
+    let target = default_target();
+    let (hybrid, stats) = plan_with_islands(plan, graph, backend, target.as_ref()).await;
+    record_island_stats(&stats);
+    ExecRun {
+        result: interpret(&hybrid, graph).map_err(|err| format!("{err}")),
+        sql: None,
     }
 }
 
