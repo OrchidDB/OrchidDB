@@ -525,11 +525,24 @@ impl<'a> LoweringContext<'a> {
                             // `DISTINCT` changes the result of these, unlike
                             // MIN/MAX where it is a no-op, so it has to be
                             // carried onto the aggregate rather than dropped.
-                            AggKind::Sum | AggKind::SumOrZero => distinct_if(
-                                df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
-                                agg.distinct,
-                            )?,
-                            AggKind::Avg | AggKind::AvgOrZero | AggKind::AvgOrNull => distinct_if(
+                            // SQL's SUM/AVG are NULL over an empty or all-NULL
+                            // group; Kuzu's identity for these is zero. Only
+                            // the `OrNull`/plain-AVG kinds want SQL's answer.
+                            AggKind::Sum | AggKind::SumOrZero => df_core::coalesce(vec![
+                                distinct_if(
+                                    df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                    agg.distinct,
+                                )?,
+                                lit(0_i64),
+                            ]),
+                            AggKind::AvgOrZero => df_core::coalesce(vec![
+                                distinct_if(
+                                    df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                    agg.distinct,
+                                )?,
+                                lit(0.0_f64),
+                            ]),
+                            AggKind::Avg | AggKind::AvgOrNull => distinct_if(
                                 df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
                                 agg.distinct,
                             )?,
