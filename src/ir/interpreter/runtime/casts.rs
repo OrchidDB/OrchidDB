@@ -218,7 +218,9 @@ fn display_map_for_as_string(map: &std::collections::BTreeMap<String, Value>) ->
             .collect::<Vec<_>>();
         return format!("{{{}}}", parts.join(", "));
     }
-    let separator = if map.contains_key(STRUCT_ORDER_KEY) {
+    // Structured SQL values carry both field order and field types. Gremlin
+    // valueMap() carries order only and uses Java Map's `key=value` display.
+    let separator = if map.contains_key(STRUCT_ORDER_KEY) && map.contains_key(STRUCT_TYPES_KEY) {
         ": "
     } else {
         "="
@@ -367,10 +369,8 @@ pub(crate) fn cast_to_int(v: &Value) -> Value {
         Value::UInt32(n) => Value::Int(*n as i64),
         Value::Long(n) => Value::Int(*n),
         Value::UInt64(n) => i64::try_from(*n).map(Value::Int).unwrap_or(Value::Null),
-        // Kuzu rounds when narrowing a float to an integer (e.g.
-        // `to_int32(1.731)` → 2). Match that with `f.round()` instead
-        // of Rust's default `as i64` truncation so the conformance
-        // cases that exercise CAST<-FLOAT line up.
+        // The shared SQL/Kuzu cast rounds when narrowing a float. Gremlin
+        // selects its own helper below because TinkerPop truncates instead.
         Value::Float32(f) => Value::Int(f.round() as i64),
         Value::Float(f) => Value::Int(f.round() as i64),
         Value::BigInt(n) => n.to_i64().map(Value::Int).unwrap_or(Value::Null),
@@ -380,6 +380,16 @@ pub(crate) fn cast_to_int(v: &Value) -> Value {
         Value::Bool(false) => Value::Int(0),
         Value::String(s) => parse_integerish(s).map(Value::Int).unwrap_or(Value::Null),
         _ => Value::Null,
+    }
+}
+
+pub(crate) fn cast_to_gremlin_int(v: &Value) -> Value {
+    match v {
+        // TinkerPop's asNumber(GType.INT) narrows toward zero. Keep this
+        // dialect choice out of the shared cast used by other frontends.
+        Value::Float32(f) => Value::Int(f.trunc() as i64),
+        Value::Float(f) => Value::Int(f.trunc() as i64),
+        _ => cast_to_int(v),
     }
 }
 
@@ -610,6 +620,21 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
     }
 }
 
+/// Gremlin's `asDate()` produces a Date instant, not a calendar-only date.
+/// Preserve a valid timestamp's time and offset while retaining the shared
+/// numeric epoch-millisecond and date-only conversions.
+pub(crate) fn cast_to_gremlin_date(v: &Value) -> Value {
+    match v {
+        Value::DateTime(raw) => parse_datetime_string(raw)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
+        Value::String(raw) => parse_datetime_string(raw)
+            .map(Value::DateTime)
+            .unwrap_or(Value::Null),
+        _ => cast_to_date(v),
+    }
+}
+
 fn date_part(raw: &str) -> Option<&str> {
     let trimmed = raw.trim();
     let end = trimmed
@@ -645,8 +670,6 @@ fn numeric_i64(v: &Value) -> Option<i64> {
         Value::UInt32(n) => Some(*n as i64),
         Value::Long(n) => Some(*n),
         Value::UInt64(n) => i64::try_from(*n).ok(),
-        // Same rounding convention as `cast_to_int` — used by the
-        // narrow-int casters (`cast_to_byte`, `cast_to_short`, `cast_to_long`).
         Value::Float32(f) => Some(f.round() as i64),
         Value::Float(f) => Some(f.round() as i64),
         Value::BigInt(n) => n.to_i64(),

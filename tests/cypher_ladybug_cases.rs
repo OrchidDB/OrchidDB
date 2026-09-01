@@ -558,8 +558,7 @@ fn run_one(path: &Path) -> CaseRun {
         .as_deref()
         .or_else(|| default_graph_initializer(&case.metadata));
     let setup_statements = extract_setup_statements(&raw);
-    let broken_import =
-        setup_statements.is_empty() && is_broken_import(&case, graph_initializer);
+    let broken_import = setup_statements.is_empty() && is_broken_import(&case, graph_initializer);
 
     let query = case.query.clone();
     let parsed = match parse_query(&query) {

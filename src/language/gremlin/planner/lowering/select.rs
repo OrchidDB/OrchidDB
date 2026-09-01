@@ -66,11 +66,9 @@ where
         return Ok(attach_scalar_current(input, map_node));
     }
     if lo.side_effect_bags.contains_key(label) {
-        if let Some(bag_list) = super::side_effects::lower_side_effect_bag_as_list(
-            input.clone(),
-            label,
-            lo,
-        ) {
+        if let Some(bag_list) =
+            super::side_effects::lower_side_effect_bag_as_list(input.clone(), label, lo)
+        {
             return Ok(attach_scalar_current(input, bag_list));
         }
     }

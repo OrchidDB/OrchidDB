@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f3ede2"/>
+  <path d="M0 72h1200M72 0v630" stroke="#172225"/>
+  <g fill="none" stroke="#b4573e" stroke-width="10" stroke-linecap="square" transform="translate(94 98)">
+    <path d="M30 40 5 18M110 40l25-22M30 88 2 106M110 88l28 18M48 27 38 0M92 27l10-27"/>
+    <path d="M25 34h90v58c0 29-18 45-45 45S25 121 25 92V34Z"/>
+  </g>
+  <text x="270" y="180" fill="#172225" font-family="IBM Plex Mono, monospace" font-size="34" font-weight="600">crabgraph</text>
+  <text x="72" y="350" fill="#172225" font-family="Manrope, sans-serif" font-size="78" font-weight="800" letter-spacing="-4">Keep the tables.</text>
+  <text x="72" y="445" fill="#b4573e" font-family="Manrope, sans-serif" font-size="78" font-weight="800" letter-spacing="-4">Ask graph questions.</text>
+  <text x="76" y="535" fill="#667174" font-family="IBM Plex Mono, monospace" font-size="23">CYPHER + GREMLIN → GRAPH IR → SQL ISLANDS</text>
+</svg>

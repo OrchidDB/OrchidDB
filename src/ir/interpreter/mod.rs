@@ -112,6 +112,16 @@ pub fn execute(plan: &GraphPlan, graph: &PropertyGraph) -> IrResult<ReturnedBatc
             let rows = run(input, graph)?;
             return finalize_return(fields, *result_form, rows, graph, &policy);
         }
+        Node::GraphAsk { field, .. } => {
+            let rows = run(&plan.root, graph)?;
+            return finalize_return(
+                std::slice::from_ref(field),
+                ResultForm::Boolean,
+                rows,
+                graph,
+                &policy,
+            );
+        }
         _ => run(&plan.root, graph)?,
     };
     // No explicit `Return` — emit a synthetic batch using all bindings of

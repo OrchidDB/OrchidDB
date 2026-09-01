@@ -415,7 +415,7 @@ pub enum QuantifierKind {
 // SPARQL / RDF supporting types (spec §0.6, §5.9, §5.10, §8.x)
 // ============================================================
 
-/// One RDF term as it appears in `GraphRdfQuadScan`,
+/// One RDF term as it appears in `GraphSparqlTriplePattern`,
 /// `GraphRdfPropertyPath`, `GraphConstructTriples`, `GraphService`, etc.
 /// Mirrors the spec's `iri(...)`, `literal(...)`, `?var`, `_:b`
 /// renderings.
@@ -613,11 +613,11 @@ pub enum Node {
     GraphCorrelate {
         bindings: Vec<BindingId>,
     },
-    /// `GraphRdfQuadScan(dataset, graphScope, subject, predicate, object,
-    /// outputs)` — scans RDF triples/quads in a query dataset and graph
-    /// scope. Spec §8.x. Terms may be IRIs, literals, blank nodes, or
-    /// variables (newly bound or correlated from the outer scope).
-    GraphRdfQuadScan {
+    /// `GraphSparqlTriplePattern(dataset, graphScope, subject, predicate,
+    /// object, outputs)` preserves an unresolved SPARQL triple pattern until
+    /// ontology mapping resolves it to property-graph operators. This is a
+    /// logical boundary, not an RDF storage adapter.
+    GraphSparqlTriplePattern {
         dataset: String,
         graph_scope: RdfGraphScope,
         subject: RdfTerm,
@@ -1545,7 +1545,7 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
                 write_node(buf, input, depth + 1);
             }
         }
-        Node::GraphRdfQuadScan {
+        Node::GraphSparqlTriplePattern {
             dataset,
             graph_scope,
             subject,
@@ -1555,7 +1555,7 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
         } => {
             writeln!(
                 buf,
-                "GraphRdfQuadScan(dataset=[{dataset}], graphScope=[{graph_scope:?}], subject=[{subject:?}], predicate=[{predicate:?}], object=[{object:?}], outputs=[{}])",
+                "GraphSparqlTriplePattern(dataset=[{dataset}], graphScope=[{graph_scope:?}], subject=[{subject:?}], predicate=[{predicate:?}], object=[{object:?}], outputs=[{}])",
                 outputs.join(", ")
             )
             .ok();

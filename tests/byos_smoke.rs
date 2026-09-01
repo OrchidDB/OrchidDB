@@ -36,8 +36,7 @@ const HIGH_VALUE_VIEW_SQL: &str = "SELECT c.cust_id, c.full_name \
      FROM customers c JOIN orders o ON o.cust_id = c.cust_id \
      WHERE o.total > 400.0";
 
-const VIP_QUERY_SQL: &str =
-    "SELECT cust_id, full_name, age FROM customers WHERE age >= 30";
+const VIP_QUERY_SQL: &str = "SELECT cust_id, full_name, age FROM customers WHERE age >= 30";
 
 /// The user's own schema as in-memory Arrow tables (the in-process side).
 fn user_tables() -> Vec<(&'static str, RecordBatch)> {
@@ -136,9 +135,11 @@ fn byos_mapping() -> Arc<GraphMapping> {
             .property("name", "full_name"),
     );
     mapping.map_edge(
-        EdgeMapping::table("ORDERED", "orders", "cust_id", "order_id", "Person", "Order")
-            .with_id("order_id")
-            .property("total", "total"),
+        EdgeMapping::table(
+            "ORDERED", "orders", "cust_id", "order_id", "Person", "Order",
+        )
+        .with_id("order_id")
+        .property("total", "total"),
     );
     mapping.map_edge(EdgeMapping::table(
         "FOLLOWS", "follows", "src_id", "dst_id", "Person", "Person",
@@ -234,7 +235,9 @@ async fn both_engines(plan: &GraphPlan, ordered: bool) -> Vec<String> {
         .unwrap_or_else(|err| panic!("duckdb execute: {err}\nquery: {}", prepared.query));
 
     // In-process path.
-    let from_datafusion = execute_lowered(lower(plan)).await.expect("datafusion execute");
+    let from_datafusion = execute_lowered(lower(plan))
+        .await
+        .expect("datafusion execute");
 
     let mut duckdb_lines = batch_lines(&from_duckdb.batch);
     let mut datafusion_lines = batch_lines(&from_datafusion.batch);

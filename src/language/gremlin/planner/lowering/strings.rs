@@ -69,11 +69,9 @@ pub(super) fn lower_string_op(
             // runtime name so Cypher's null-propagating `split` doesn't
             // swallow the call.
             None => project_call(input, "gremlin_split_ws", vec![arg()]),
-            Some(delim) => project_call(
-                input,
-                "split",
-                vec![arg(), IrExpr::lit_str(delim.clone())],
-            ),
+            Some(delim) => {
+                project_call(input, "split", vec![arg(), IrExpr::lit_str(delim.clone())])
+            }
         }),
         AstStringOp::ConcatTraversal(sub) => lower_concat_traversal(input, sub, lo, ctx),
     }

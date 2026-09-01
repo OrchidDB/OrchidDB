@@ -1,8 +1,8 @@
 //! Language frontends.
 //!
-//! Gremlin is the primary compiled frontend. Cypher is exposed for parser
-//! and Graph IR planning work while its broader language coverage remains
-//! incremental.
+//! Each frontend parses its source language and lowers supported constructs
+//! into the shared Graph IR.
 
 pub mod cypher;
 pub mod gremlin;
+pub mod sparql;

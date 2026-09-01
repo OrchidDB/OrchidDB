@@ -16,13 +16,14 @@ arrow-select = "58.2.0"
 bigdecimal = "0.4"
 datafusion = "53.1.0"
 datafusion-sql = "53.1.0"
-duckdb = { version = "1.10502.0", features = ["bundled"], optional = true }
+duckdb = { version = "1.10502.0", features = ["bundled", "chrono"], optional = true }
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
 postgres = { version = "0.19", optional = true }
 regex = "1"
 sha2 = "0.10"
+spargebra = "0.4.7"
 thiserror = "2"
 unicode-segmentation = "1"
 

@@ -16,8 +16,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BooleanBuilder, Float64Builder, Int64Array, Int64Builder, RecordBatch, StringArray,
-    StringBuilder, new_null_array,
+    ArrayRef, BooleanBuilder, Float64Builder, Int64Array, Int64Builder, ListBuilder, RecordBatch,
+    StringArray, StringBuilder, new_null_array,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_select::concat::concat_batches;
@@ -25,6 +25,7 @@ use datafusion::common::{Column, ScalarValue};
 use datafusion::datasource::{MemTable, provider_as_source};
 use datafusion::error::DataFusionError;
 use datafusion::functions::core::expr_fn as df_core;
+use datafusion::functions::datetime::expr_fn as df_datetime;
 use datafusion::functions::math::expr_fn as df_math;
 use datafusion::functions::regex::expr_fn as df_regex;
 use datafusion::functions::string::expr_fn as df_string;
@@ -52,8 +53,8 @@ use crate::ir::interpreter::{
 };
 use crate::ir::plan::{
     ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
-    GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, Slice, SortDir,
-    TargetMode, UnionAlign,
+    GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, QuantifierKind,
+    Slice, SortDir, TargetMode, UnionAlign,
 };
 use crate::ir::policy::{Language, ResultForm};
 use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
@@ -392,7 +393,7 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphOneRow
             | Node::GraphEmpty
             | Node::GraphCorrelate { .. }
-            | Node::GraphRdfQuadScan { .. }
+            | Node::GraphSparqlTriplePattern { .. }
             | Node::GraphRdfPropertyPath { .. } => {}
         }
     }
@@ -566,6 +567,13 @@ impl<'a> LoweringContext<'a> {
                                     self.lower_expr(&input.plan, arg)?,
                                 )
                             }
+                            AggKind::CountIf => {
+                                let original = agg.arg.as_ref().ok_or_else(|| {
+                                    RelError::Unsupported("count_if requires an argument".into())
+                                })?;
+                                let arg = self.lower_expr(&input.plan, original)?;
+                                self.lower_count_if(&input.plan, original, arg, agg.distinct)?
+                            }
                             // `DISTINCT` changes the result of these, unlike
                             // MIN/MAX where it is a no-op, so it has to be
                             // carried onto the aggregate rather than dropped.
@@ -687,6 +695,19 @@ impl<'a> LoweringContext<'a> {
             }
             GraphSort { keys, input } => {
                 let input = self.lower_node(input)?;
+                // Gremlin inserts an internal source-order marker to make
+                // interpreter scans deterministic. The relational scan is
+                // already emitted in that catalog order. Materializing this
+                // marker as a SQL SORT can cause DataFusion to discard a
+                // later user-facing order().by(...) as redundant.
+                if keys.len() == 1
+                    && matches!(
+                        &keys[0].expr,
+                        IrExpr::Call { name, .. } if name == "gremlin_scan_order"
+                    )
+                {
+                    return Ok(input);
+                }
                 let mut sorts = Vec::new();
                 for key in keys {
                     sorts.extend(self.sort_exprs(&input.plan, key)?);
@@ -764,6 +785,16 @@ impl<'a> LoweringContext<'a> {
                 output,
                 input,
             } => self.lower_group_map(key, value, output, input)?,
+            GraphQuantifier {
+                kind,
+                item_binding,
+                input_expr,
+                predicate,
+                output,
+                input,
+            } => {
+                self.lower_quantifier(*kind, item_binding, input_expr, predicate, output, input)?
+            }
             GraphRepeat {
                 times,
                 emit,
@@ -803,6 +834,51 @@ impl<'a> LoweringContext<'a> {
             ));
         };
         self.lower_expr(plan, arg)
+    }
+
+    fn lower_count_if(
+        &self,
+        plan: &LogicalPlan,
+        original: &IrExpr,
+        value: Expr,
+        distinct: bool,
+    ) -> RelResult<Expr> {
+        let data_type = value
+            .get_type(plan.schema())
+            .map_err(|err| RelError::Unsupported(format!("count_if argument type: {err}")))?;
+        let truthy = match data_type {
+            DataType::Boolean => value.clone(),
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Decimal128(_, _)
+            | DataType::Decimal256(_, _) => binary(value.clone(), BinaryOp::Neq, lit(0_i64)),
+            DataType::Float16 | DataType::Float32 | DataType::Float64 => Expr::and(
+                binary(value.clone(), BinaryOp::Neq, lit(0.0_f64)),
+                Expr::Not(Box::new(df_math::isnan(value.clone()))),
+            ),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                if expression_has_wide_numeric_cast(original) =>
+            {
+                let numeric = Expr::TryCast(TryCast::new(
+                    Box::new(value.clone()),
+                    DataType::Decimal128(38, 0),
+                ));
+                binary(numeric, BinaryOp::Neq, lit(0_i64))
+            }
+            _ => lit(false),
+        };
+        let count = df_count(value).filter(truthy);
+        if distinct {
+            Ok(count.distinct().build()?)
+        } else {
+            Ok(count.build()?)
+        }
     }
 
     fn is_blob_property_expr(&self, expr: &IrExpr) -> bool {
@@ -1662,34 +1738,116 @@ impl<'a> LoweringContext<'a> {
         input: &Node,
     ) -> RelResult<LoweredNode> {
         use crate::ir::plan::GroupValue;
-        match value {
-            GroupValue::CountBulk => {}
-            GroupValue::Aggregate(agg)
-                if matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) => {}
-            _ => {
-                return Err(RelError::Unsupported(
-                    "GraphGroupMap with non-count aggregate".into(),
-                ));
-            }
-        }
         let input = self.lower_node(input)?;
         let key_expr = self.lower_expr(&input.plan, key)?;
         let key_type = key_expr
             .get_type(input.plan.schema())
             .map_err(|err| RelError::Unsupported(format!("group key type: {err}")))?;
         let key_text = gremlin_tagged_text_expr(key_expr, &key_type);
+        let value_alias = "__gm_value";
+        let mut collected_value = false;
+        let value_agg = match value {
+            GroupValue::CountBulk => count_all(),
+            GroupValue::Aggregate(agg) => match agg.kind {
+                AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
+                    Some(arg) => df_count(self.lower_expr(&input.plan, arg)?),
+                    None => count_all(),
+                },
+                AggKind::CountDistinct => {
+                    let Some(arg) = &agg.arg else {
+                        return Err(RelError::Unsupported(
+                            "group count distinct without argument".into(),
+                        ));
+                    };
+                    datafusion::functions_aggregate::count::count_distinct(
+                        self.lower_expr(&input.plan, arg)?,
+                    )
+                }
+                AggKind::CountIf => {
+                    let original = agg.arg.as_ref().ok_or_else(|| {
+                        RelError::Unsupported("count_if requires an argument".into())
+                    })?;
+                    let arg = self.lower_expr(&input.plan, original)?;
+                    self.lower_count_if(&input.plan, original, arg, agg.distinct)?
+                }
+                AggKind::Sum | AggKind::SumOrZero => df_core::coalesce(vec![
+                    distinct_if(
+                        df_sum(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                        agg.distinct,
+                    )?,
+                    lit(0_i64),
+                ]),
+                AggKind::AvgOrZero => df_core::coalesce(vec![
+                    distinct_if(
+                        df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                        agg.distinct,
+                    )?,
+                    lit(0.0_f64),
+                ]),
+                AggKind::Avg | AggKind::AvgOrNull => distinct_if(
+                    df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                    agg.distinct,
+                )?,
+                AggKind::Min | AggKind::MinOrNull => {
+                    df_min(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                }
+                AggKind::Max | AggKind::MaxOrNull => {
+                    df_max(self.lower_required_agg_arg(&input.plan, &agg.arg)?)
+                }
+                AggKind::CollectRows | AggKind::CollectTraversers => {
+                    let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
+                    if agg.alias.contains("unwrap") {
+                        df_min(arg)
+                    } else {
+                        let arg_type = arg.get_type(input.plan.schema()).map_err(|err| {
+                            RelError::Unsupported(format!("group value type: {err}"))
+                        })?;
+                        let rendered = gremlin_tagged_text_expr(arg.clone(), &arg_type);
+                        collected_value = true;
+                        let collect = df_array_agg(rendered).filter(arg.is_not_null());
+                        if agg.distinct {
+                            distinct_if(collect.build()?, true)?
+                        } else {
+                            collect.build()?
+                        }
+                    }
+                }
+                other => {
+                    return Err(RelError::Unsupported(format!(
+                        "GraphGroupMap aggregate `{other:?}`"
+                    )));
+                }
+            },
+        };
         let grouped = LogicalPlanBuilder::from(input.plan.clone())
             .aggregate(
                 vec![key_text.alias("__gm_key")],
-                vec![count_all().alias("__gm_cnt")],
+                vec![value_agg.alias(value_alias)],
             )?
             .build()?;
+        let value_text = if collected_value {
+            concat_exprs(vec![
+                lit("l["),
+                df_core::coalesce(vec![
+                    datafusion::functions_nested::expr_fn::array_to_string(
+                        col_exact(value_alias),
+                        lit(","),
+                    ),
+                    lit(""),
+                ]),
+                lit("]"),
+            ])
+        } else {
+            let value_type = plan_column_type(&grouped, value_alias)
+                .ok_or_else(|| RelError::Unsupported("group value type is unavailable".into()))?;
+            gremlin_tagged_text_expr(col_exact(value_alias), &value_type)
+        };
         let entry = concat_exprs(vec![
             lit("\""),
             df_core::coalesce(vec![col_exact("__gm_key"), lit("null")]),
-            lit("\":\"d["),
-            cast_utf8(col_exact("__gm_cnt")),
-            lit("].l\""),
+            lit("\":\""),
+            value_text,
+            lit("\""),
         ]);
         let entries = LogicalPlanBuilder::from(grouped)
             .project(vec![entry.alias("__gm_entry")])?
@@ -1711,6 +1869,199 @@ impl<'a> LoweringContext<'a> {
         ]);
         let plan = LogicalPlanBuilder::from(entries)
             .project(vec![rendered.alias(output)])?
+            .build()?;
+        Ok(input.with_plan(plan))
+    }
+
+    /// Lower three-valued ALL/ANY/NONE/SINGLE semantics by assigning each
+    /// input row an identity, unnesting its list, and reducing predicate
+    /// outcomes back to one boolean per original row. The interpreter keeps
+    /// the same truth table and remains the semantic oracle for these cases.
+    fn lower_quantifier(
+        &mut self,
+        kind: QuantifierKind,
+        item_binding: &str,
+        input_expr: &IrExpr,
+        predicate: &IrExpr,
+        output: &str,
+        input: &Node,
+    ) -> RelResult<LoweredNode> {
+        let input = self.lower_node(input)?;
+        let original_columns = output_fields(&input.plan);
+        let suffix = self.scan_counter;
+        self.scan_counter += 1;
+        let row_id = format!("__w_quantifier_row_{suffix}");
+        let list_col = format!("__w_quantifier_list_{suffix}");
+        let input_null = format!("__w_quantifier_null_{suffix}");
+        let total = format!("__w_quantifier_total_{suffix}");
+        let true_count = format!("__w_quantifier_true_{suffix}");
+        let null_count = format!("__w_quantifier_unknown_{suffix}");
+        let result_row = format!("__w_quantifier_result_row_{suffix}");
+
+        let list = self.lower_expr(&input.plan, input_expr)?;
+        let list_type = list
+            .get_type(input.plan.schema())
+            .map_err(|err| RelError::Unsupported(format!("quantifier input type: {err}")))?;
+        if !matches!(
+            list_type,
+            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+        ) {
+            return Err(RelError::Unsupported(
+                "GraphQuantifier over non-list expression".into(),
+            ));
+        }
+
+        let row_number = df_window::row_number().alias(row_id.clone());
+        let numbered = LogicalPlanBuilder::from(input.plan.clone())
+            .window(vec![row_number])?
+            .build()?;
+        let list_length = datafusion::functions_nested::expr_fn::array_length(list.clone());
+        let mut base_projection = existing_columns(&numbered, &BTreeSet::new());
+        base_projection.extend([
+            list.clone().alias(list_col.clone()),
+            list.is_null().alias(input_null.clone()),
+            Expr::Cast(Cast::new(Box::new(list_length), DataType::Int64)).alias(total.clone()),
+        ]);
+        let base = LogicalPlanBuilder::from(numbered)
+            .project(base_projection)?
+            .build()?;
+
+        let mut expanded_projection =
+            existing_columns(&base, &BTreeSet::from([item_binding.into()]));
+        expanded_projection.push(col_exact(&list_col).alias(item_binding));
+        let mut options = datafusion::common::UnnestOptions::default();
+        options.preserve_nulls = true;
+        let expanded = LogicalPlanBuilder::from(base.clone())
+            .project(expanded_projection)?
+            .unnest_column_with_options(Column::new_unqualified(item_binding), options)?
+            .build()?;
+        let predicate = self.lower_expr(&expanded, predicate)?;
+        let has_item = binary(col_exact(&total), BinaryOp::Gt, lit(0_i64));
+        let true_value = Expr::and(has_item.clone(), Expr::IsTrue(Box::new(predicate.clone())));
+        let unknown_value = Expr::and(has_item, predicate.is_null());
+        let count_case = |condition: Expr| {
+            Expr::Case(Case::new(
+                None,
+                vec![(Box::new(condition), Box::new(lit(1_i64)))],
+                Some(Box::new(lit(0_i64))),
+            ))
+        };
+        let reduced = LogicalPlanBuilder::from(expanded)
+            .aggregate(
+                vec![
+                    col_exact(&row_id),
+                    col_exact(&input_null),
+                    col_exact(&total),
+                ],
+                vec![
+                    df_sum(count_case(true_value)).alias(true_count.clone()),
+                    df_sum(count_case(unknown_value)).alias(null_count.clone()),
+                ],
+            )?
+            .build()?;
+
+        let true_is_zero = binary(col_exact(&true_count), BinaryOp::Eq, lit(0_i64));
+        let true_is_one = binary(col_exact(&true_count), BinaryOp::Eq, lit(1_i64));
+        let true_gt_one = binary(col_exact(&true_count), BinaryOp::Gt, lit(1_i64));
+        let no_unknown = binary(col_exact(&null_count), BinaryOp::Eq, lit(0_i64));
+        let false_count = binary(
+            binary(col_exact(&total), BinaryOp::Sub, col_exact(&true_count)),
+            BinaryOp::Sub,
+            col_exact(&null_count),
+        );
+        let has_false = binary(false_count, BinaryOp::Gt, lit(0_i64));
+        let null_bool = lit(ScalarValue::Boolean(None));
+        let value = match kind {
+            QuantifierKind::All => Expr::Case(Case::new(
+                None,
+                vec![
+                    (
+                        Box::new(col_exact(&input_null)),
+                        Box::new(null_bool.clone()),
+                    ),
+                    (Box::new(has_false), Box::new(lit(false))),
+                    (Box::new(no_unknown.clone()), Box::new(lit(true))),
+                ],
+                Some(Box::new(null_bool.clone())),
+            )),
+            QuantifierKind::Any => Expr::Case(Case::new(
+                None,
+                vec![
+                    (
+                        Box::new(col_exact(&input_null)),
+                        Box::new(null_bool.clone()),
+                    ),
+                    (
+                        Box::new(Expr::IsTrue(Box::new(binary(
+                            col_exact(&true_count),
+                            BinaryOp::Gt,
+                            lit(0_i64),
+                        )))),
+                        Box::new(lit(true)),
+                    ),
+                    (Box::new(no_unknown.clone()), Box::new(lit(false))),
+                ],
+                Some(Box::new(null_bool.clone())),
+            )),
+            QuantifierKind::None => Expr::Case(Case::new(
+                None,
+                vec![
+                    (
+                        Box::new(col_exact(&input_null)),
+                        Box::new(null_bool.clone()),
+                    ),
+                    (
+                        Box::new(binary(col_exact(&true_count), BinaryOp::Gt, lit(0_i64))),
+                        Box::new(lit(false)),
+                    ),
+                    (Box::new(no_unknown.clone()), Box::new(lit(true))),
+                ],
+                Some(Box::new(null_bool.clone())),
+            )),
+            QuantifierKind::Single => Expr::Case(Case::new(
+                None,
+                vec![
+                    (
+                        Box::new(col_exact(&input_null)),
+                        Box::new(null_bool.clone()),
+                    ),
+                    (Box::new(true_gt_one), Box::new(lit(false))),
+                    (
+                        Box::new(Expr::and(true_is_one, no_unknown.clone())),
+                        Box::new(lit(true)),
+                    ),
+                    (
+                        Box::new(Expr::and(true_is_zero, no_unknown)),
+                        Box::new(lit(false)),
+                    ),
+                ],
+                Some(Box::new(null_bool)),
+            )),
+        };
+        let result = LogicalPlanBuilder::from(reduced)
+            .project(vec![
+                col_exact(&row_id).alias(result_row.clone()),
+                value.alias(output),
+            ])?
+            .build()?;
+        let joined = LogicalPlanBuilder::from(base)
+            .join_on(
+                result,
+                JoinType::Inner,
+                vec![binary(
+                    col_exact(&row_id),
+                    BinaryOp::Eq,
+                    col_exact(&result_row),
+                )],
+            )?
+            .build()?;
+        let mut final_projection = original_columns
+            .into_iter()
+            .map(col_exact)
+            .collect::<Vec<_>>();
+        final_projection.push(col_exact(output));
+        let plan = LogicalPlanBuilder::from(joined)
+            .project(final_projection)?
             .build()?;
         Ok(input.with_plan(plan))
     }
@@ -2154,6 +2505,24 @@ impl<'a> LoweringContext<'a> {
                 return duplicate_binding_projection_only(plan, binding, alias);
             }
         }
+        // Edge endpoint helpers are element-valued expressions. Preserve
+        // their node shape as separate id/label columns so the following
+        // vertex subgraph join can attach the user's mapped properties.
+        if let IrExpr::Call { name, args } = expr
+            && matches!(name.as_str(), "edge_src" | "edge_dst")
+            && let [IrExpr::Binding(binding)] = args.as_slice()
+            && has_binding_shape(plan, binding) == Some(BindingShape::Edge)
+        {
+            let (id, label) = if name == "edge_src" {
+                (src_id_col(binding), src_label_col(binding))
+            } else {
+                (dst_id_col(binding), dst_label_col(binding))
+            };
+            return Ok(vec![
+                col_exact(id).alias(id_col(alias)),
+                col_exact(label).alias(label_col(alias)),
+            ]);
+        }
         if let IrExpr::Call { name, args } = expr
             && matches!(name.as_str(), "make_map" | "map")
             && args.len() % 2 == 0
@@ -2212,11 +2581,13 @@ impl<'a> LoweringContext<'a> {
         }
         if let IrExpr::Call { name, args } = expr
             && name == "cypher_property_star"
-            && let [IrExpr::Property {
-                binding,
-                name: property,
-                ..
-            }] = args.as_slice()
+            && let [
+                IrExpr::Property {
+                    binding,
+                    name: property,
+                    ..
+                },
+            ] = args.as_slice()
         {
             let prefix = format!("{}__w_struct__", prop_col(binding, property));
             let fields = output_fields(plan)
@@ -2320,6 +2691,12 @@ impl<'a> LoweringContext<'a> {
                 let col = id_col(binding);
                 if !has_exact_col(plan, &col) {
                     return Err(RelError::Unsupported(format!("id({binding})")));
+                }
+                // Gremlin source and hasId filters pair a label predicate
+                // with the per-label row id. Cypher's ID() result is the
+                // provider-qualified `table:offset` value below.
+                if self.language == Language::Gremlin {
+                    return Ok(col_exact(col));
                 }
                 // Kuzu's `ID()` yields an internal id that prints as
                 // `table:offset`, not a bare offset. Mirror
@@ -2462,6 +2839,49 @@ impl<'a> LoweringContext<'a> {
             {
                 Ok(df_string::uuid())
             }
+            IrExpr::Call { name, args }
+                if name.eq_ignore_ascii_case("gremlin_cast_int") && args.len() == 1 =>
+            {
+                // TinkerPop narrows fractional values toward zero. DuckDB's
+                // direct floating-to-integer cast rounds, so make the
+                // language choice explicit in the relational expression.
+                let value = self.lower_expr(plan, &args[0])?;
+                Ok(Expr::Cast(Cast::new(
+                    Box::new(df_math::trunc(vec![value])),
+                    DataType::Int32,
+                )))
+            }
+            IrExpr::Call { name, args } if name == "cast_number" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let data_type = value.get_type(plan.schema())?;
+                Ok(match data_type {
+                    DataType::Int8
+                    | DataType::Int16
+                    | DataType::Int32
+                    | DataType::Int64
+                    | DataType::UInt8
+                    | DataType::UInt16
+                    | DataType::UInt32
+                    | DataType::UInt64
+                    | DataType::Float32
+                    | DataType::Float64
+                    | DataType::Decimal128(_, _) => value,
+                    DataType::Boolean => Expr::Cast(Cast::new(Box::new(value), DataType::Int64)),
+                    _ => Expr::TryCast(TryCast::new(Box::new(value), DataType::Float64)),
+                })
+            }
+            IrExpr::Call { name, args } if name == "gremlin_cast_date" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let data_type = value.get_type(plan.schema())?;
+                Ok(match data_type {
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => value,
+                    DataType::Date32 | DataType::Timestamp(_, _) => cast_utf8(value),
+                    _ => cast_utf8(Expr::TryCast(TryCast::new(
+                        Box::new(value),
+                        DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                    ))),
+                })
+            }
             IrExpr::Call { name, args } if is_cast_function(name, args) => {
                 if cast_target_text(name, args).is_some_and(|target| target.trim().ends_with("[]"))
                 {
@@ -2504,11 +2924,95 @@ impl<'a> LoweringContext<'a> {
             IrExpr::Call { name, args } if is_date_function(name) && args.len() == 1 => {
                 Ok(cast_utf8(self.lower_expr(plan, &args[0])?))
             }
+            IrExpr::Call { name, args }
+                if matches!(
+                    normalize_function_name(name).as_str(),
+                    "date_part" | "date_trunc"
+                ) =>
+            {
+                self.lower_temporal_function(plan, name, args)
+            }
             IrExpr::Call { name, args } if is_string_function(name) => {
                 self.lower_string_function(plan, name, args)
             }
             IrExpr::Call { name, args } if is_core_variadic_function(name) => {
                 self.lower_core_variadic_function(plan, name, args)
+            }
+            IrExpr::Call { name, args } if name == "gremlin_math_bin" && args.len() == 3 => {
+                let IrExpr::Lit(Lit::String(op)) = &args[0] else {
+                    return Err(RelError::Unsupported(
+                        "dynamic Gremlin math operator".into(),
+                    ));
+                };
+                let number =
+                    |expr: Expr| Expr::TryCast(TryCast::new(Box::new(expr), DataType::Float64));
+                let lhs = number(self.lower_expr(plan, &args[1])?);
+                let rhs = number(self.lower_expr(plan, &args[2])?);
+                let op = match op.as_str() {
+                    "add" => BinaryOp::Add,
+                    "sub" => BinaryOp::Sub,
+                    "mul" => BinaryOp::Mul,
+                    "div" => BinaryOp::Div,
+                    _ => {
+                        return Err(RelError::Unsupported(format!(
+                            "Gremlin math operator `{op}`"
+                        )));
+                    }
+                };
+                Ok(binary(lhs, op, rhs))
+            }
+            IrExpr::Call { name, args } if name == "format_concat" && !args.is_empty() => {
+                let pieces = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(concat_exprs(pieces))
+            }
+            IrExpr::Call { name, args } if name == "conjoin" && args.len() == 2 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let delimiter = cast_utf8(self.lower_expr(plan, &args[1])?);
+                let data_type = value.get_type(plan.schema())?;
+                Ok(
+                    if matches!(
+                        data_type,
+                        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                    ) {
+                        datafusion::functions_nested::expr_fn::array_to_string(value, delimiter)
+                    } else if matches!(
+                        data_type,
+                        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                    ) {
+                        concat_exprs(vec![cast_utf8(value), delimiter])
+                    } else {
+                        cast_utf8(value)
+                    },
+                )
+            }
+            IrExpr::Call { name, args } if name == "null_to_sentinel" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(value.clone().is_null()),
+                        Box::new(lit("\0gremlin.null")),
+                    )],
+                    Some(Box::new(cast_utf8(value))),
+                )))
+            }
+            IrExpr::Call { name, args } if name == "gremlin_dedup_key" && args.len() == 1 => {
+                // Relational maps are already canonical display values. For
+                // scalar and element keys, Gremlin dedup uses the value as-is.
+                self.lower_expr(plan, &args[0])
+            }
+            IrExpr::Call { name, args }
+                if name == "list_restore_null_sentinels" && args.len() == 1 =>
+            {
+                let value = self.lower_native_list(plan, &args[0])?;
+                Ok(datafusion::functions_nested::expr_fn::array_replace_all(
+                    value,
+                    lit("\0gremlin.null"),
+                    lit(ScalarValue::Utf8(None)),
+                ))
             }
             IrExpr::Call { name, args } if name.eq_ignore_ascii_case("xor") && args.len() == 2 => {
                 let lhs = self.lower_expr(plan, &args[0])?;
@@ -2606,8 +3110,80 @@ impl<'a> LoweringContext<'a> {
             {
                 self.lower_value_map(plan, name, args)
             }
+            IrExpr::Call { name, args } if name == "gremlin_unfold_items" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let data_type = value.get_type(plan.schema())?;
+                if matches!(
+                    data_type,
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                ) {
+                    Ok(value)
+                } else {
+                    // Gremlin unfolds a scalar, including null, as one item.
+                    Ok(datafusion::functions_nested::expr_fn::make_array(vec![
+                        value,
+                    ]))
+                }
+            }
+            IrExpr::Call { name, args } if name == "local_count" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let data_type = value.get_type(plan.schema())?;
+                if matches!(
+                    data_type,
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                ) {
+                    Ok(Expr::Cast(Cast::new(
+                        Box::new(datafusion::functions_nested::expr_fn::array_length(value)),
+                        DataType::Int64,
+                    )))
+                } else {
+                    Ok(lit(1_i64))
+                }
+            }
+            IrExpr::Call { name, args }
+                if matches!(name.as_str(), "local_min" | "local_max") && args.len() == 1 =>
+            {
+                let value = self.lower_expr(plan, &args[0])?;
+                let data_type = value.get_type(plan.schema())?;
+                if matches!(
+                    data_type,
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                ) {
+                    Ok(if name == "local_min" {
+                        datafusion::functions_nested::expr_fn::array_min(value)
+                    } else {
+                        datafusion::functions_nested::expr_fn::array_max(value)
+                    })
+                } else {
+                    Ok(value)
+                }
+            }
+            IrExpr::Call { name, args }
+                if matches!(
+                    name.as_str(),
+                    "list_combine" | "list_merge" | "list_intersect"
+                ) && args.len() == 2 =>
+            {
+                let lhs = self.lower_native_list(plan, &args[0])?;
+                let rhs = self.lower_native_list(plan, &args[1])?;
+                Ok(match name.as_str() {
+                    "list_combine" => {
+                        datafusion::functions_nested::expr_fn::array_concat(vec![lhs, rhs])
+                    }
+                    "list_merge" => datafusion::functions_nested::expr_fn::array_distinct(
+                        datafusion::functions_nested::expr_fn::array_concat(vec![lhs, rhs]),
+                    ),
+                    "list_intersect" => {
+                        datafusion::functions_nested::expr_fn::array_intersect(lhs, rhs)
+                    }
+                    _ => unreachable!(),
+                })
+            }
             IrExpr::Call { name, args } if name == "map" => self.lower_cypher_map(plan, args),
             IrExpr::Call { name, args } if name == "make_map" => self.lower_make_map(plan, args),
+            IrExpr::Call { name, args } if name == "cypher_subscript" && args.len() == 2 => {
+                self.lower_cypher_subscript(plan, &args[0], &args[1])
+            }
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {
                 let op = match name.as_str() {
                     "cypher_eq" => BinaryOp::Eq,
@@ -2749,22 +3325,280 @@ impl<'a> LoweringContext<'a> {
         args: &[IrExpr],
     ) -> RelResult<Option<Expr>> {
         let normalized = normalize_function_name(name);
-        if !matches!(
-            normalized.as_str(),
-            "list_element" | "list_extract" | "element_at"
-        ) {
-            return Ok(None);
+        match normalized.as_str() {
+            "list_append" | "array_append" | "array_push_back" => {
+                let [items, item] = args else {
+                    return Ok(None);
+                };
+                Ok(Some(self.lower_list_insert(plan, items, item, false)?))
+            }
+            "list_prepend" | "array_prepend" | "array_push_front" => {
+                let [items, item] = args else {
+                    return Ok(None);
+                };
+                Ok(Some(self.lower_list_insert(plan, items, item, true)?))
+            }
+            "list_element" | "list_extract" | "element_at" => {
+                let [IrExpr::List(items), index] = args else {
+                    return Ok(None);
+                };
+                let Some(index) = literal_i64(index) else {
+                    return Ok(None);
+                };
+                let Some(item) = list_element_1_based_expr(items, index) else {
+                    return Ok(Some(lit(ScalarValue::Utf8(None))));
+                };
+                Ok(Some(self.lower_expr(plan, item)?))
+            }
+            "list_unique" => {
+                let [items] = args else {
+                    return Ok(None);
+                };
+                let distinct = datafusion::functions_nested::expr_fn::array_distinct(
+                    self.lower_native_list(plan, items)?,
+                );
+                let count = Expr::Cast(Cast::new(
+                    Box::new(datafusion::functions_nested::expr_fn::array_length(
+                        distinct,
+                    )),
+                    DataType::Int64,
+                ));
+                // DataFusion and DuckDB both omit nulls from array_distinct.
+                // Cypher's list_unique follows the same rule, so the resulting
+                // array length is already the desired count.
+                Ok(Some(count))
+            }
+            "list_contains" | "list_has" | "array_contains" | "array_has" => {
+                let [items, needle] = args else {
+                    return Ok(None);
+                };
+                Ok(Some(datafusion::functions_nested::expr_fn::array_has(
+                    self.lower_native_list(plan, items)?,
+                    self.lower_expr(plan, needle)?,
+                )))
+            }
+            "list_has_all" => {
+                let [items, needles] = args else {
+                    return Ok(None);
+                };
+                Ok(Some(datafusion::functions_nested::expr_fn::array_has_all(
+                    self.lower_native_list(plan, items)?,
+                    self.lower_native_list(plan, needles)?,
+                )))
+            }
+            _ => Ok(None),
         }
-        let [IrExpr::List(items), index] = args else {
-            return Ok(None);
+    }
+
+    fn lower_native_list(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if let IrExpr::List(items) = expr {
+            return Ok(datafusion::functions_nested::expr_fn::make_array(
+                items
+                    .iter()
+                    .map(|item| self.lower_expr(plan, item))
+                    .collect::<RelResult<Vec<_>>>()?,
+            ));
+        }
+        let lowered = self.lower_expr(plan, expr)?;
+        let data_type = lowered.get_type(plan.schema())?;
+        if matches!(
+            data_type,
+            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+        ) {
+            Ok(lowered)
+        } else {
+            Err(RelError::Unsupported(format!(
+                "list operation over non-list type {data_type}"
+            )))
+        }
+    }
+
+    fn lower_list_insert(
+        &self,
+        plan: &LogicalPlan,
+        items: &IrExpr,
+        item: &IrExpr,
+        prepend: bool,
+    ) -> RelResult<Expr> {
+        let items = if matches!(items, IrExpr::List(_)) {
+            self.lower_native_list(plan, items)?
+        } else {
+            self.lower_expr(plan, items)?
         };
-        let Some(index) = literal_i64(index) else {
-            return Ok(None);
+        let item = self.lower_expr(plan, item)?;
+        let items_type = items.get_type(plan.schema())?;
+        let item_type = item.get_type(plan.schema())?;
+        match items_type {
+            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+                if prepend {
+                    Ok(datafusion::functions_nested::expr_fn::array_prepend(
+                        item, items,
+                    ))
+                } else {
+                    Ok(datafusion::functions_nested::expr_fn::array_append(
+                        items, item,
+                    ))
+                }
+            }
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
+                let items = cast_utf8(items);
+                let rendered_item = render_property_text_expr(item, &item_type);
+                let empty = binary(items.clone(), BinaryOp::Eq, lit("[]"));
+                if prepend {
+                    let suffix = Expr::Case(Case::new(
+                        None,
+                        vec![(Box::new(empty), Box::new(lit("]")))],
+                        Some(Box::new(concat_exprs(vec![
+                            lit(","),
+                            df_unicode::substring(
+                                items.clone(),
+                                lit(2_i64),
+                                binary(df_unicode::length(items), BinaryOp::Sub, lit(1_i64)),
+                            ),
+                        ]))),
+                    ));
+                    Ok(concat_exprs(vec![lit("["), rendered_item, suffix]))
+                } else {
+                    let prefix = Expr::Case(Case::new(
+                        None,
+                        vec![(Box::new(empty), Box::new(lit("[")))],
+                        Some(Box::new(concat_exprs(vec![
+                            df_unicode::substring(
+                                items.clone(),
+                                lit(1_i64),
+                                binary(df_unicode::length(items), BinaryOp::Sub, lit(1_i64)),
+                            ),
+                            lit(","),
+                        ]))),
+                    ));
+                    Ok(concat_exprs(vec![prefix, rendered_item, lit("]")]))
+                }
+            }
+            other => Err(RelError::Unsupported(format!(
+                "list operation over non-list type {other}"
+            ))),
+        }
+    }
+
+    fn lower_temporal_function(
+        &self,
+        plan: &LogicalPlan,
+        name: &str,
+        args: &[IrExpr],
+    ) -> RelResult<Expr> {
+        let [unit, value] = args else {
+            return Err(RelError::Unsupported(format!("{name} arity")));
         };
-        let Some(item) = list_element_1_based_expr(items, index) else {
-            return Ok(Some(lit(ScalarValue::Utf8(None))));
+        let unit = match constant_value_expr(unit)? {
+            Some(Value::String(unit)) => lit(normalize_temporal_unit(&unit)),
+            _ => cast_utf8(self.lower_expr(plan, unit)?),
         };
-        Ok(Some(self.lower_expr(plan, item)?))
+        let value = self.lower_expr(plan, value)?;
+        let original_type = value.get_type(plan.schema())?;
+        let temporal = if matches!(
+            original_type,
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        ) {
+            Expr::TryCast(TryCast::new(
+                Box::new(value.clone()),
+                DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
+            ))
+        } else {
+            value.clone()
+        };
+        match normalize_function_name(name).as_str() {
+            "date_part" => Ok(df_datetime::date_part(unit, temporal)),
+            "date_trunc" => {
+                let rendered = cast_utf8(df_datetime::date_trunc(unit, temporal));
+                if matches!(
+                    original_type,
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                ) {
+                    // Date values and timestamps share the catalog's textual
+                    // boundary. Preserve date-only output when the source has
+                    // no time component; timestamps retain midnight fields.
+                    let is_date = binary(
+                        df_unicode::length(cast_utf8(value)),
+                        BinaryOp::Eq,
+                        lit(10_i64),
+                    );
+                    Ok(Expr::Case(Case::new(
+                        None,
+                        vec![(
+                            Box::new(is_date),
+                            Box::new(df_unicode::substring(
+                                rendered.clone(),
+                                lit(1_i64),
+                                lit(10_i64),
+                            )),
+                        )],
+                        Some(Box::new(rendered)),
+                    )))
+                } else {
+                    Ok(rendered)
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn lower_cypher_subscript(
+        &self,
+        plan: &LogicalPlan,
+        target: &IrExpr,
+        index: &IrExpr,
+    ) -> RelResult<Expr> {
+        let target_expr = if matches!(target, IrExpr::List(_)) {
+            self.lower_native_list(plan, target)?
+        } else {
+            self.lower_expr(plan, target)?
+        };
+        let data_type = target_expr.get_type(plan.schema())?;
+        let index = Expr::Cast(Cast::new(
+            Box::new(self.lower_expr(plan, index)?),
+            DataType::Int64,
+        ));
+        match data_type {
+            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => Ok(
+                datafusion::functions_nested::expr_fn::array_element(target_expr, index),
+            ),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
+                let length = df_unicode::length(cast_utf8(target_expr.clone()));
+                let absolute = df_math::abs(index.clone());
+                let valid = Expr::and(
+                    binary(index.clone(), BinaryOp::Neq, lit(0_i64)),
+                    binary(absolute, BinaryOp::Lte, length.clone()),
+                );
+                let position = Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(binary(index.clone(), BinaryOp::Lt, lit(0_i64))),
+                        Box::new(binary(
+                            binary(length, BinaryOp::Add, index.clone()),
+                            BinaryOp::Add,
+                            lit(1_i64),
+                        )),
+                    )],
+                    Some(Box::new(index.clone())),
+                ));
+                Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(valid),
+                        Box::new(df_unicode::substring(
+                            cast_utf8(target_expr),
+                            position,
+                            lit(1_i64),
+                        )),
+                    )],
+                    Some(Box::new(lit(ScalarValue::Utf8(None)))),
+                )))
+            }
+            DataType::Null => Ok(lit(ScalarValue::Utf8(None))),
+            other => Err(RelError::Unsupported(format!(
+                "cypher subscript over type {other}"
+            ))),
+        }
     }
 
     fn lower_integer_literal(&self, arg: &IrExpr) -> RelResult<Expr> {
@@ -2918,21 +3752,21 @@ impl<'a> LoweringContext<'a> {
                 };
                 Ok(df_string::upper(cast_utf8(self.lower_expr(plan, value)?)))
             }
-            "trim" => {
+            "trim" | "local_trim" => {
                 let args = args
                     .iter()
                     .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
                     .collect::<RelResult<Vec<_>>>()?;
                 Ok(df_string::trim(args))
             }
-            "ltrim" => {
+            "ltrim" | "local_ltrim" => {
                 let args = args
                     .iter()
                     .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
                     .collect::<RelResult<Vec<_>>>()?;
                 Ok(df_string::ltrim(args))
             }
-            "rtrim" => {
+            "rtrim" | "local_rtrim" => {
                 let args = args
                     .iter()
                     .map(|arg| self.lower_expr(plan, arg).map(cast_utf8))
@@ -2949,7 +3783,7 @@ impl<'a> LoweringContext<'a> {
                     cast_utf8(self.lower_expr(plan, to)?),
                 ))
             }
-            "reverse" => {
+            "reverse" | "local_reverse_strings" => {
                 let [value] = args else {
                     return Err(RelError::Unsupported("reverse arity".into()));
                 };
@@ -3008,7 +3842,7 @@ impl<'a> LoweringContext<'a> {
                     _ => Err(RelError::Unsupported("gremlin_substring arity".into())),
                 }
             }
-            "length" | "char_length" | "character_length" => {
+            "length" | "local_length" | "char_length" | "character_length" => {
                 let [value] = args else {
                     return Err(RelError::Unsupported(format!("{name} arity")));
                 };
@@ -3396,6 +4230,23 @@ impl<'a> LoweringContext<'a> {
                 col_exact(id_col(binding)).sort(asc, nulls_first),
             ]);
         }
+        if let IrExpr::Call { name, args } = &key.expr
+            && name == "gremlin_order_key"
+            && let Some(IrExpr::Binding(binding)) = args.first()
+        {
+            // A relational column has one Arrow type, so its TinkerPop type
+            // rank is constant within the sort. Elements order by their
+            // provider scan key; scalars order by their native SQL value.
+            if has_binding_shape(plan, binding).is_some() {
+                return Ok(vec![
+                    col_exact(label_col(binding)).sort(asc, nulls_first),
+                    col_exact(id_col(binding)).sort(asc, nulls_first),
+                ]);
+            }
+            if let Some(column) = resolve_column_name(plan, binding) {
+                return Ok(vec![col_exact(column).sort(asc, nulls_first)]);
+            }
+        }
         self.lower_expr(plan, &key.expr)
             .map(|expr| vec![expr.sort(asc, nulls_first)])
     }
@@ -3702,8 +4553,7 @@ fn merge_struct_field_defs(
             if source.is_null(row) {
                 continue;
             }
-            let Some(Value::Map(map)) =
-                crate::ir::catalog::parse_debug_value(source.value(row))
+            let Some(Value::Map(map)) = crate::ir::catalog::parse_debug_value(source.value(row))
             else {
                 continue;
             };
@@ -4007,7 +4857,9 @@ fn property_struct_field_array(
         .column(idx)
         .as_any()
         .downcast_ref::<StringArray>()
-        .ok_or_else(|| RelError::Unsupported(format!("structured property `{name}` is not text")))?;
+        .ok_or_else(|| {
+            RelError::Unsupported(format!("structured property `{name}` is not text"))
+        })?;
     use arrow::array::Array as _;
     let mut builder = StringBuilder::new();
     for row in 0..source.len() {
@@ -4056,7 +4908,10 @@ fn values_batch(
         ));
     }
     let types = (0..bindings.len())
-        .map(|idx| infer_value_type(rows.iter().map(|row| &row[idx])))
+        .map(|idx| {
+            let values = rows.iter().map(|row| &row[idx]).collect::<Vec<_>>();
+            infer_value_type(&values)
+        })
         .collect::<RelResult<Vec<_>>>()?;
     let fields = bindings
         .iter()
@@ -4072,9 +4927,47 @@ fn values_batch(
     Ok(RecordBatch::try_new(schema, arrays)?)
 }
 
-fn infer_value_type<'a>(values: impl Iterator<Item = &'a Value>) -> RelResult<DataType> {
+fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
+    if values.iter().any(|value| matches!(value, Value::List(_)))
+        && values
+            .iter()
+            .all(|value| matches!(value, Value::Null | Value::List(_)))
+    {
+        let elements = values
+            .iter()
+            .flat_map(|value| match value {
+                Value::List(items) => items.iter().collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let element_type = if elements.iter().any(|value| {
+            matches!(
+                value,
+                Value::String(_)
+                    | Value::DateTime(_)
+                    | Value::BigInt(_)
+                    | Value::UInt128(_)
+                    | Value::BigDecimal(_)
+                    | Value::InternalId { .. }
+                    | Value::Node { .. }
+                    | Value::Edge { .. }
+                    | Value::Map(_)
+                    | Value::Path(_)
+                    | Value::List(_)
+            )
+        }) {
+            DataType::Utf8
+        } else {
+            infer_value_type(&elements)?
+        };
+        return Ok(DataType::List(Arc::new(Field::new(
+            "item",
+            element_type,
+            true,
+        ))));
+    }
     let mut data_type = DataType::Utf8;
-    for value in values {
+    for value in values.iter().copied() {
         match value {
             Value::Null => {}
             Value::Bool(_) => data_type = promote_type(data_type, DataType::Boolean)?,
@@ -4193,6 +5086,138 @@ fn values_array<'a>(
             }
             Ok(Arc::new(builder.finish()))
         }
+        DataType::List(field) => match field.data_type() {
+            DataType::Boolean => {
+                let mut builder = ListBuilder::new(BooleanBuilder::new());
+                for value in values {
+                    match value {
+                        Value::Null => builder.append(false),
+                        Value::List(items) => {
+                            for item in items {
+                                match item {
+                                    Value::Null => builder.values().append_null(),
+                                    Value::Bool(value) => builder.values().append_value(*value),
+                                    other => {
+                                        return Err(RelError::Unsupported(format!(
+                                            "cannot put `{}` in Boolean GraphValues list",
+                                            other.type_name()
+                                        )));
+                                    }
+                                }
+                            }
+                            builder.append(true);
+                        }
+                        other => {
+                            return Err(RelError::Unsupported(format!(
+                                "cannot put `{}` in GraphValues list column",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                Ok(Arc::new(builder.finish()))
+            }
+            DataType::Int64 => {
+                let mut builder = ListBuilder::new(Int64Builder::new());
+                for value in values {
+                    match value {
+                        Value::Null => builder.append(false),
+                        Value::List(items) => {
+                            for item in items {
+                                match item {
+                                    Value::Null => builder.values().append_null(),
+                                    item => match item.as_i64() {
+                                        Some(value) => builder.values().append_value(value),
+                                        None => {
+                                            return Err(RelError::Unsupported(format!(
+                                                "cannot put `{}` in Int64 GraphValues list",
+                                                item.type_name()
+                                            )));
+                                        }
+                                    },
+                                }
+                            }
+                            builder.append(true);
+                        }
+                        other => {
+                            return Err(RelError::Unsupported(format!(
+                                "cannot put `{}` in GraphValues list column",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                Ok(Arc::new(builder.finish()))
+            }
+            DataType::Float64 => {
+                let mut builder = ListBuilder::new(Float64Builder::new());
+                for value in values {
+                    match value {
+                        Value::Null => builder.append(false),
+                        Value::List(items) => {
+                            for item in items {
+                                match item {
+                                    Value::Null => builder.values().append_null(),
+                                    Value::Float(value) => builder.values().append_value(*value),
+                                    Value::Float32(value) => {
+                                        builder.values().append_value(f64::from(*value))
+                                    }
+                                    item => match item.as_i64() {
+                                        Some(value) => builder.values().append_value(value as f64),
+                                        None => {
+                                            return Err(RelError::Unsupported(format!(
+                                                "cannot put `{}` in Float64 GraphValues list",
+                                                item.type_name()
+                                            )));
+                                        }
+                                    },
+                                }
+                            }
+                            builder.append(true);
+                        }
+                        other => {
+                            return Err(RelError::Unsupported(format!(
+                                "cannot put `{}` in GraphValues list column",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                Ok(Arc::new(builder.finish()))
+            }
+            DataType::Utf8 => {
+                let mut builder = ListBuilder::new(StringBuilder::new());
+                for value in values {
+                    match value {
+                        Value::Null => builder.append(false),
+                        Value::List(items) => {
+                            for item in items {
+                                match item {
+                                    Value::Null => builder.values().append_null(),
+                                    Value::String(value) | Value::DateTime(value) => {
+                                        builder.values().append_value(value)
+                                    }
+                                    other => builder
+                                        .values()
+                                        .append_value(graph_values_display(other, language)),
+                                }
+                            }
+                            builder.append(true);
+                        }
+                        other => {
+                            return Err(RelError::Unsupported(format!(
+                                "cannot put `{}` in GraphValues list column",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                Ok(Arc::new(builder.finish()))
+            }
+            other => Err(RelError::Unsupported(format!(
+                "GraphValues list element type `{other:?}`"
+            ))),
+        },
         other => Err(RelError::Unsupported(format!(
             "GraphValues type `{other:?}`"
         ))),
@@ -5870,6 +6895,44 @@ fn normalize_function_name(name: &str) -> String {
     name.to_ascii_lowercase().replace('-', "_")
 }
 
+fn normalize_temporal_unit(unit: &str) -> String {
+    let normalized = unit.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "years" => "year",
+        "months" => "month",
+        "weeks" => "week",
+        "days" => "day",
+        "hours" => "hour",
+        "minutes" => "minute",
+        "seconds" => "second",
+        "milliseconds" => "millisecond",
+        "microseconds" => "microsecond",
+        "nanoseconds" => "nanosecond",
+        "quarters" => "quarter",
+        "decades" => "decade",
+        "centuries" => "century",
+        "millennia" | "millenniums" => "millennium",
+        _ => normalized.as_str(),
+    }
+    .to_string()
+}
+
+fn expression_has_wide_numeric_cast(expr: &IrExpr) -> bool {
+    let IrExpr::Call { name, args } = expr else {
+        return false;
+    };
+    cast_target_text(name, args).is_some_and(|target| {
+        matches!(
+            target
+                .trim()
+                .trim_matches('"')
+                .to_ascii_uppercase()
+                .as_str(),
+            "INT128" | "UINT128"
+        )
+    })
+}
+
 fn is_unary_math_function(name: &str) -> bool {
     matches!(
         normalize_function_name(name).as_str(),
@@ -5982,7 +7045,12 @@ fn is_string_function(name: &str) -> bool {
             | "lcase"
             | "left"
             | "length"
+            | "local_length"
             | "local_lcase"
+            | "local_ltrim"
+            | "local_reverse_strings"
+            | "local_rtrim"
+            | "local_trim"
             | "local_ucase"
             | "lower"
             | "lpad"
@@ -6056,7 +7124,7 @@ fn cast_target_from_function_name(name: &str) -> RelResult<&'static str> {
         "cast_short" => Ok("INT16"),
         "to_int8" => Ok("INT8"),
         "to_int16" => Ok("INT16"),
-        "to_int32" | "cast_int" => Ok("INT32"),
+        "to_int32" | "cast_int" | "gremlin_cast_int" => Ok("INT32"),
         "to_int64" | "to_serial" | "cast_long" => Ok("INT64"),
         "to_int128" => Ok("INT128"),
         "to_uint8" => Ok("UINT8"),
@@ -6067,6 +7135,8 @@ fn cast_target_from_function_name(name: &str) -> RelResult<&'static str> {
         "to_float" | "cast_float" => Ok("FLOAT"),
         "to_double" | "cast_double" => Ok("DOUBLE"),
         "cast_bool" | "cast_boolean" => Ok("BOOL"),
+        "cast_bigint" => Ok("DECIMAL(38,0)"),
+        "cast_bigdecimal" => Ok("DECIMAL(38,6)"),
         _ => Err(RelError::Unsupported(format!(
             "function `{name}` is not relationally lowered yet"
         ))),
@@ -6116,7 +7186,28 @@ fn data_type_for_cast_target(type_name: &str) -> RelResult<DataType> {
         "FLOAT" => Ok(DataType::Float32),
         "DOUBLE" | "FLOAT64" => Ok(DataType::Float64),
         "DECIMAL" => Ok(DataType::Decimal128(18, 3)),
-        "STRING" | "VARCHAR" => Ok(DataType::Utf8),
+        "STRING" | "VARCHAR" | "UUID" => Ok(DataType::Utf8),
+        "DATE" => Ok(DataType::Date32),
+        "TIMESTAMP" | "TIMESTAMP_US" => Ok(DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Microsecond,
+            None,
+        )),
+        "TIMESTAMP_NS" => Ok(DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Nanosecond,
+            None,
+        )),
+        "TIMESTAMP_MS" => Ok(DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Millisecond,
+            None,
+        )),
+        "TIMESTAMP_SEC" => Ok(DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Second,
+            None,
+        )),
+        "TIMESTAMP_TZ" => Ok(DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Microsecond,
+            Some("UTC".into()),
+        )),
         // 128-bit integers have no native Arrow representation; a
         // zero-scale decimal covers the numeric range these cases use and
         // prints identically. Values beyond 38 digits fail the cast, which
@@ -6665,7 +7756,7 @@ fn node_children(node: &Node) -> Vec<&Node> {
         | GraphOneRow
         | GraphEmpty
         | GraphCorrelate { .. }
-        | GraphRdfQuadScan { .. }
+        | GraphSparqlTriplePattern { .. }
         | GraphRdfPropertyPath { .. } => Vec::new(),
     }
 }
@@ -6673,7 +7764,7 @@ fn node_children(node: &Node) -> Vec<&Node> {
 fn unsupported_node_name(node: &Node) -> &'static str {
     match node {
         Node::GraphCorrelate { .. } => "GraphCorrelate",
-        Node::GraphRdfQuadScan { .. } => "GraphRdfQuadScan",
+        Node::GraphSparqlTriplePattern { .. } => "GraphSparqlTriplePattern",
         Node::GraphPathPattern { .. } => "GraphPathPattern",
         Node::GraphRdfPropertyPath { .. } => "GraphRdfPropertyPath",
         Node::GraphRepeat { .. } => "GraphRepeat",

@@ -64,8 +64,22 @@ pub fn build_with_initializer(
     if let Some(source) = inline_source {
         let trimmed = source.trim();
         if !trimmed.is_empty() {
-            let scenario = initializer::parse(trimmed)?;
-            return initializer::build(&scenario);
+            // Imported corpora repeat the same inline fixture across many
+            // cases. Cache the immutable graph just like directory-backed
+            // fixtures so focused and full runs do not parse and rebuild it
+            // for every query.
+            let key = format!("inline:{trimmed}");
+            let mut guard = cache().lock().expect("dataset cache poisoned");
+            if !guard.contains_key(&key) {
+                let loaded = initializer::parse(trimmed)
+                    .and_then(|scenario| initializer::build(&scenario))
+                    .map_err(|err| err.0);
+                guard.insert(key.clone(), loaded);
+            }
+            return match guard.get(&key).expect("just inserted") {
+                Ok(graph) => Ok(graph.clone()),
+                Err(err) => Err(DatasetError(err.clone())),
+            };
         }
     }
     let trimmed = name.trim();

@@ -9,8 +9,8 @@ use crate::ir::value::Value;
 
 use super::super::expr::eval;
 use super::super::run::ExecutionContext;
-use super::repeat::run_with_outer;
 use super::super::{InterpretError, IrResult, Row};
+use super::repeat::run_with_outer;
 
 pub(crate) fn create_op(
     nodes: &[CreateNode],

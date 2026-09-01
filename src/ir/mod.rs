@@ -1,9 +1,7 @@
 //! Graph IR — logical operators, an in-memory property graph store, and
 //! an interpreter that runs the IR over Apache Arrow record batches.
 //!
-//! Reference: `docs/graph_ir_language_examples_v0_2_draft.md`. Per the
-//! user's directive, SPARQL and GQL-only operators are intentionally not
-//! implemented; Cypher and Gremlin coverage is the focus.
+//! Reference: `docs/graph_ir_language_examples_v0_2_draft.md`.
 
 pub mod bridge;
 pub mod catalog;
@@ -29,7 +27,8 @@ pub use interpreter::{
 };
 pub use plan::{
     ApplyKind, BindKind, Direction, DistinctMode, GraphPlan, LabelExpr, Length, Node, NullsOrder,
-    ProjectMode, ProjectionItem, Slice, SortDir, SortKey, TargetMode, explain,
+    ProjectMode, ProjectionItem, RdfGraphScope, RdfTerm, Slice, SortDir, SortKey, TargetMode,
+    explain,
 };
 pub use policy::{
     GraphPlanPolicy, GraphScope, Language, MatchMode, Multiplicity, OptionalMissing, OutputNaming,

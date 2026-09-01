@@ -1150,24 +1150,21 @@ fn arithmetic_kinds_compatible(op: BinaryOp, lhs: BindingKind, rhs: BindingKind)
     // openCypher list concatenation/append: `list + list`, `list +
     // element` and `element + list` are all valid `+` forms.
     if matches!(op, BinaryOp::Add)
-        && (matches!(
-            lhs,
-            BindingKind::ListInt | BindingKind::FixedListInt
-        ) && matches!(
-            rhs,
-            BindingKind::Int
-                | BindingKind::Float
-                | BindingKind::Bool
-                | BindingKind::String
-                | BindingKind::ListInt
-                | BindingKind::FixedListInt
-        ) || matches!(
-            rhs,
-            BindingKind::ListInt | BindingKind::FixedListInt
-        ) && matches!(
-            lhs,
-            BindingKind::Int | BindingKind::Float | BindingKind::Bool | BindingKind::String
-        ))
+        && (matches!(lhs, BindingKind::ListInt | BindingKind::FixedListInt)
+            && matches!(
+                rhs,
+                BindingKind::Int
+                    | BindingKind::Float
+                    | BindingKind::Bool
+                    | BindingKind::String
+                    | BindingKind::ListInt
+                    | BindingKind::FixedListInt
+            )
+            || matches!(rhs, BindingKind::ListInt | BindingKind::FixedListInt)
+                && matches!(
+                    lhs,
+                    BindingKind::Int | BindingKind::Float | BindingKind::Bool | BindingKind::String
+                ))
     {
         return true;
     }
@@ -1259,7 +1256,8 @@ fn validate_coalesce_static_types(args: &[Expr]) -> CypherPlanResult<()> {
                     display_literal_expr(arg)
                 )));
             }
-            if (numeric(&actual) && actual == "DOUBLE") || (numeric_list(&actual) && actual == "DOUBLE[]")
+            if (numeric(&actual) && actual == "DOUBLE")
+                || (numeric_list(&actual) && actual == "DOUBLE[]")
             {
                 expected = Some(actual);
             }

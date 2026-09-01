@@ -150,8 +150,14 @@ mod tests {
     fn deepest_prefix_wins() {
         let m = manifest();
         assert_eq!(m.lookup("match/match1/0001_Foo_ab.case"), Tier::Core);
-        assert_eq!(m.lookup("transaction/basic/0001_Foo_ab.case"), Tier::KuzuExt);
-        assert_eq!(m.lookup("function/gds/basic/0002_Foo_ab.case"), Tier::KuzuExt);
+        assert_eq!(
+            m.lookup("transaction/basic/0001_Foo_ab.case"),
+            Tier::KuzuExt
+        );
+        assert_eq!(
+            m.lookup("function/gds/basic/0002_Foo_ab.case"),
+            Tier::KuzuExt
+        );
         assert_eq!(
             m.lookup("function/gds/basic/0001_Special_abc.case"),
             Tier::Core

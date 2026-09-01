@@ -128,4 +128,19 @@ impl GraphPlanPolicy {
             provider_features: Vec::new(),
         }
     }
+
+    pub fn sparql() -> Self {
+        Self {
+            language: Language::Sparql,
+            result_form: ResultForm::RowSet,
+            multiplicity: Multiplicity::Bag,
+            property_missing: PropertyMissing::Unbound,
+            optional_missing: OptionalMissing::Unbound,
+            path_mode: PathMode::None,
+            match_mode: MatchMode::None,
+            graph_scope: GraphScope::DefaultRdfGraph,
+            output_naming: OutputNaming::SourceNames,
+            provider_features: Vec::new(),
+        }
+    }
 }

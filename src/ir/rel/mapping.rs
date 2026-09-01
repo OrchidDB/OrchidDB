@@ -100,7 +100,11 @@ impl NodeMapping {
         Self::new(label, MappedSource::Query(sql.into()), id_column)
     }
 
-    pub fn new(label: impl Into<String>, source: MappedSource, id_column: impl Into<String>) -> Self {
+    pub fn new(
+        label: impl Into<String>,
+        source: MappedSource,
+        id_column: impl Into<String>,
+    ) -> Self {
         Self {
             label: label.into(),
             source,
@@ -754,7 +758,9 @@ impl GraphMapping {
                     }
                     mapping.map_edge(edge);
                 }
-                [kind, _name, last] if last == "properties" && (kind == "node" || kind == "edge") => {
+                [kind, _name, last]
+                    if last == "properties" && (kind == "node" || kind == "edge") =>
+                {
                     // handled with the parent section
                 }
                 other => {

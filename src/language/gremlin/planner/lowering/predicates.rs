@@ -39,9 +39,7 @@ fn flatten_predicate_values(values: &[GValue]) -> Vec<GValue> {
     let mut out = Vec::with_capacity(values.len());
     for value in values {
         match value {
-            GValue::List(items) | GValue::Set(items) => {
-                out.extend(flatten_predicate_values(items))
-            }
+            GValue::List(items) | GValue::Set(items) => out.extend(flatten_predicate_values(items)),
             other => out.push(other.clone()),
         }
     }

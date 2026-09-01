@@ -1,9 +1,9 @@
 use crate::grammar::generated::cypher::cypherparser::{
     OC_CreateContext, OC_CreateContextAttrs, OC_DeleteContext, OC_DeleteContextAttrs,
     OC_MergeActionContext, OC_MergeActionContextAttrs, OC_MergeContext, OC_MergeContextAttrs,
-    OC_NodeLabelsContextAttrs, OC_RemoveContext,
-    OC_RemoveItemContext, OC_SetContext, OC_SetContextAttrs, OC_SetItemContext,
-    OC_SetItemContextAttrs, OC_UpdatingClauseContext, OC_UpdatingClauseContextAttrs,
+    OC_NodeLabelsContextAttrs, OC_RemoveContext, OC_RemoveItemContext, OC_SetContext,
+    OC_SetContextAttrs, OC_SetItemContext, OC_SetItemContextAttrs, OC_UpdatingClauseContext,
+    OC_UpdatingClauseContextAttrs,
 };
 use crate::language::cypher::ast::{
     Clause, CreateClause, DeleteClause, Expr, MergeClause, SetClause, SetItem,

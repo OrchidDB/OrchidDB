@@ -355,7 +355,8 @@ where
     // and remember a plan that computes the full group map, so a later
     // `select(label)` can attach it per traverser.
     let map_node = lower_group(input.clone(), key_by, value_by, false, lo, ctx)?;
-    lo.group_side_effect_maps.insert(label.to_string(), map_node);
+    lo.group_side_effect_maps
+        .insert(label.to_string(), map_node);
     Ok(input)
 }
 

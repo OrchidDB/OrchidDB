@@ -9,10 +9,7 @@ use crate::ir::value::Value;
 /// dates, ...) reduces via the cross-type total order. Nulls are ignored;
 /// an empty / all-null list yields Null.
 pub(crate) fn reduce_list_orderable(items: &[Value], op: &str) -> Value {
-    let non_null: Vec<&Value> = items
-        .iter()
-        .filter(|v| !matches!(v, Value::Null))
-        .collect();
+    let non_null: Vec<&Value> = items.iter().filter(|v| !matches!(v, Value::Null)).collect();
     if non_null.is_empty() {
         return Value::Null;
     }

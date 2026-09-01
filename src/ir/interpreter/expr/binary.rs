@@ -123,7 +123,10 @@ fn decode_display_number(value: &Value) -> Option<Value> {
     let close = body.find(']')?;
     let digits = &body[..close];
     let suffix = &body[close + 1..];
-    if !matches!(suffix, ".i" | ".l" | ".s" | ".b" | ".n" | ".d" | ".f" | ".m" | "") {
+    if !matches!(
+        suffix,
+        ".i" | ".l" | ".s" | ".b" | ".n" | ".d" | ".f" | ".m" | ""
+    ) {
         return None;
     }
     if let Ok(n) = digits.parse::<i64>() {

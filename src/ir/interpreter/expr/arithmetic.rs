@@ -324,7 +324,9 @@ pub(crate) fn modulo(lhs: &Value, rhs: &Value) -> IrResult<Value> {
         // Keep the wider operand scale on the result (Kuzu renders
         // `DECIMAL(18, 3) % DECIMAL(18, 3)` results at scale 3, even
         // for exact zero).
-        let scale = left.fractional_digit_count().max(right.fractional_digit_count());
+        let scale = left
+            .fractional_digit_count()
+            .max(right.fractional_digit_count());
         let result = left % right;
         return Ok(Value::BigDecimal(if scale > 0 {
             result.with_scale(scale)

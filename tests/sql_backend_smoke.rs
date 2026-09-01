@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray,
+    Array, ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 
@@ -24,6 +24,8 @@ use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
 use new_graph::ir::rel::{RelBackend, RelBackendOptions, execute_lowered};
 use new_graph::language::cypher::parser::parse_query;
 use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use new_graph::language::gremlin::parser::parse_traversal;
+use new_graph::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
 use new_graph::planner::GremlinPlanner;
 
 fn fixture_graph() -> PropertyGraph {
@@ -146,6 +148,12 @@ fn cell_to_string(array: &ArrayRef, row: usize) -> String {
             .unwrap()
             .value(row)
             .to_string(),
+        DataType::Int32 => array
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .value(row)
+            .to_string(),
         DataType::Float64 => {
             let value = array
                 .as_any()
@@ -160,6 +168,10 @@ fn cell_to_string(array: &ArrayRef, row: usize) -> String {
             .unwrap()
             .value(row)
             .to_string(),
+        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+            arrow::util::display::array_value_to_string(array.as_ref(), row)
+                .expect("render list result")
+        }
         other => panic!("unhandled result type in smoke test: {other}"),
     }
 }
@@ -212,6 +224,24 @@ async fn cypher_aggregates_on_duckdb() {
         cypher_plan("MATCH (p:Person) RETURN min(p.age) AS lo, max(p.age) AS hi, sum(p.age) AS s");
     let rows = duckdb_and_datafusion(&plan, &fixture_graph(), true).await;
     assert_eq!(rows, vec!["28|41|99"]);
+}
+
+#[tokio::test]
+async fn cypher_count_if_truthiness_on_duckdb() {
+    let plan = cypher_plan(
+        "RETURN count_if(1) AS one, count_if(0) AS zero, count_if(false) AS false_count",
+    );
+    let rows = duckdb_and_datafusion(&plan, &PropertyGraph::new(), true).await;
+    assert_eq!(rows, vec!["1|0|0"]);
+}
+
+#[tokio::test]
+async fn cypher_dynamic_list_insertions_on_duckdb() {
+    let plan = cypher_plan(
+        "WITH 7 AS x RETURN list_append([x], x) AS appended, list_prepend([x], x + 1) AS prepended",
+    );
+    let rows = duckdb_and_datafusion(&plan, &PropertyGraph::new(), true).await;
+    assert_eq!(rows, vec!["[7, 7]|[8, 7]"]);
 }
 
 #[tokio::test]
@@ -407,6 +437,17 @@ async fn gremlin_count_on_duckdb() {
     let plan = GremlinPlanner::new().plan(&traversal);
     let rows = duckdb_and_datafusion(&plan, &fixture_graph(), true).await;
     assert_eq!(rows, vec!["3"]);
+}
+
+#[tokio::test]
+async fn gremlin_local_length_preserves_null_on_duckdb() {
+    let traversal = parse_traversal(r#"g.inject("feature", "test", null).length(Scope.local)"#)
+        .expect("parse Gremlin");
+    let plan = AstGremlinPlanner::new()
+        .plan(&traversal)
+        .expect("plan Gremlin");
+    let rows = duckdb_and_datafusion(&plan, &PropertyGraph::new(), true).await;
+    assert_eq!(rows, vec!["7", "4", "null"]);
 }
 
 #[tokio::test]

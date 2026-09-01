@@ -71,12 +71,7 @@ pub(super) fn rewrite_infix_connectives(steps: &[Step]) -> Option<Vec<Step>> {
         if and_segments.len() == 1 {
             or_branches.push(and_segments.into_iter().next().unwrap_or_default());
         } else {
-            or_branches.push(
-                and_segments
-                    .into_iter()
-                    .map(Step::WhereTraversal)
-                    .collect(),
-            );
+            or_branches.push(and_segments.into_iter().map(Step::WhereTraversal).collect());
         }
     }
 

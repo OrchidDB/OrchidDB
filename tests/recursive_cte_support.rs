@@ -38,7 +38,8 @@ fn unparsed_terms_assemble_into_a_working_recursive_cte() {
         vec![Arc::new(Int64Array::from(vec![1i64])) as ArrayRef],
     )
     .expect("seed batch");
-    let provider = Arc::new(MemTable::try_new(Arc::clone(&schema), vec![vec![seed]]).expect("seed"));
+    let provider =
+        Arc::new(MemTable::try_new(Arc::clone(&schema), vec![vec![seed]]).expect("seed"));
 
     // Base case. For a graph walk this is the match input, not a constant,
     // which is why it reads a table here.

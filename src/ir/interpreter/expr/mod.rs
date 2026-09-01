@@ -75,9 +75,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                         };
                         declared
                             .iter()
-                            .find(|key| {
-                                !key.starts_with("__") && key.eq_ignore_ascii_case(name)
-                            })
+                            .find(|key| !key.starts_with("__") && key.eq_ignore_ascii_case(name))
                             .and_then(|key| map.get(key))
                             .cloned()
                             .unwrap_or(Value::Null)

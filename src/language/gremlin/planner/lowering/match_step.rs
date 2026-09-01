@@ -93,10 +93,8 @@ pub(super) fn lower_match(
 /// run after every label they reference has been bound.
 fn solver_ordered_patterns(patterns: &[Vec<Step>]) -> Vec<Vec<Step>> {
     fn flatten_one(pattern: &[Step], out: &mut Vec<Vec<Step>>) {
-        let all_where = pattern.len() > 1
-            && pattern
-                .iter()
-                .all(|s| matches!(s, Step::WhereTraversal(_)));
+        let all_where =
+            pattern.len() > 1 && pattern.iter().all(|s| matches!(s, Step::WhereTraversal(_)));
         if all_where {
             for step in pattern {
                 if let Step::WhereTraversal(inner) = step {

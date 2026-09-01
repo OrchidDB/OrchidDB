@@ -188,8 +188,45 @@ impl SqlDialect {
                 sql = sql.replace(from, to);
             }
         }
+        if self == Self::DuckDb {
+            for (from, to) in [
+                ("array_intersect(", "list_intersect("),
+                ("array_min(", "list_min("),
+                ("array_max(", "list_max("),
+                ("array_replace_all(", "list_replace("),
+            ] {
+                if sql.contains(from) {
+                    sql = sql.replace(from, to);
+                }
+            }
+            sql = alias_duckdb_unnest_outputs(sql);
+        }
         sql
     }
+}
+
+/// DataFusion tracks an unnested column under its input name, but its SQL
+/// unparser omits that alias. DuckDB instead names the result
+/// `unnest(column)`, which breaks outer projections and correlated filters.
+fn alias_duckdb_unnest_outputs(mut sql: String) -> String {
+    let mut search_from = 0;
+    while let Some(relative_start) = sql[search_from..].find("UNNEST(\"") {
+        let start = search_from + relative_start;
+        let name_start = start + "UNNEST(\"".len();
+        let Some(relative_end) = sql[name_start..].find("\")") else {
+            break;
+        };
+        let end = name_start + relative_end + 2;
+        if sql[end..].starts_with(" AS ") {
+            search_from = end;
+            continue;
+        }
+        let name = sql[name_start..end - 2].to_string();
+        let alias = format!(" AS \"{name}\"");
+        sql.insert_str(end, &alias);
+        search_from = end + alias.len();
+    }
+    sql
 }
 
 /// A leaf table referenced by a lowered plan: its name in the generated SQL
@@ -1105,5 +1142,16 @@ mod tests {
             .ddl_type(&DataType::Binary)
             .unwrap_err();
         assert!(matches!(err, SqlError::Unsupported(_)));
+    }
+
+    #[test]
+    fn duckdb_fixups_alias_unnest_and_nested_function_names() {
+        let sql = SqlDialect::DuckDb.fixup_query(
+            "SELECT UNNEST(\"items\"), UNNEST(\"items\") AS \"copy\", array_min(\"items\"), array_intersect(\"items\", \"other\")".into(),
+        );
+        assert_eq!(
+            sql,
+            "SELECT UNNEST(\"items\") AS \"items\", UNNEST(\"items\") AS \"copy\", list_min(\"items\"), list_intersect(\"items\", \"other\")"
+        );
     }
 }

@@ -40,12 +40,11 @@ use crate::ir::expr::{AggCall, IrExpr};
 use crate::ir::plan::{
     ApplyKind, BarrierBulkPolicy, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched,
     CoalesceArmOutput, CoalesceSuccess, ConstructTriple, CreateEdge, CreateNode, Direction,
-    DistinctBulk,
-    DistinctMode, EmitMode, GraphPlan, GroupValue, JoinKind, LabelExpr, Length, MinusCompatibility,
-    Node, PathFilterScope, PathMaterialization, PathObjects, PathPart, PathSelector, PathUpdate,
-    ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode, ProjectionItem, QuantifierKind,
-    RdfGraphScope, RdfPathExpr, RdfTerm, SetPropertyItem, Slice, SortKey, TargetMode, UnionAlign,
-    ZeroLengthPolicy,
+    DistinctBulk, DistinctMode, EmitMode, GraphPlan, GroupValue, JoinKind, LabelExpr, Length,
+    MinusCompatibility, Node, PathFilterScope, PathMaterialization, PathObjects, PathPart,
+    PathSelector, PathUpdate, ProcedureArg, ProcedureMode, ProjectErrorPolicy, ProjectMode,
+    ProjectionItem, QuantifierKind, RdfGraphScope, RdfPathExpr, RdfTerm, SetPropertyItem, Slice,
+    SortKey, TargetMode, UnionAlign, ZeroLengthPolicy,
 };
 use crate::ir::policy::{GraphPlanPolicy, MatchMode, OptionalMissing, PathMode, ResultForm};
 use crate::ir::value::Value;
@@ -895,8 +894,8 @@ ir_extension! {
 // ============================================================
 
 ir_extension! {
-    /// `GraphRdfQuadScan(...)` — leaf source. No children.
-    GraphRdfQuadScan {
+    /// `GraphSparqlTriplePattern(...)` — unresolved logical leaf. No children.
+    GraphSparqlTriplePattern {
         dataset: String,
         graph_scope: RdfGraphScope,
         subject: RdfTerm,
@@ -906,7 +905,7 @@ ir_extension! {
     }
     rebuild(s, _c) {
         let _ = _c;
-        Node::GraphRdfQuadScan {
+        Node::GraphSparqlTriplePattern {
             dataset: s.dataset.clone(),
             graph_scope: s.graph_scope.clone(),
             subject: s.subject.clone(),
@@ -1578,14 +1577,14 @@ fn node_to_plan_with_policy(
         }
 
         // -------- SPARQL / RDF --------
-        Node::GraphRdfQuadScan {
+        Node::GraphSparqlTriplePattern {
             dataset,
             graph_scope,
             subject,
             predicate,
             object,
             outputs,
-        } => extension(GraphRdfQuadScan {
+        } => extension(GraphSparqlTriplePattern {
             dataset: dataset.clone(),
             graph_scope: graph_scope.clone(),
             subject: subject.clone(),
@@ -1791,7 +1790,7 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphProcedureCall,
         GraphExtension,
         // SPARQL / RDF
-        GraphRdfQuadScan,
+        GraphSparqlTriplePattern,
         GraphRdfPropertyPath,
         GraphSparqlMinus,
         GraphService,
@@ -2005,7 +2004,10 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         } => {
             let mut fields = schema_fields_for_node(match_arm);
             for output in outputs {
-                upsert_field(&mut fields, semantic_field(output, DataType::Utf8, true, "node"));
+                upsert_field(
+                    &mut fields,
+                    semantic_field(output, DataType::Utf8, true, "node"),
+                );
             }
             fields
         }
@@ -2204,7 +2206,7 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
             }
             fields
         }
-        Node::GraphRdfQuadScan { outputs, .. } => outputs
+        Node::GraphSparqlTriplePattern { outputs, .. } => outputs
             .iter()
             .map(|name| semantic_field(name, DataType::Utf8, true, "rdf_term"))
             .collect(),

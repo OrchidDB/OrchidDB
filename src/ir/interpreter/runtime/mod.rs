@@ -22,14 +22,14 @@ use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 use casts::{
     cast_list_to_string, cast_to_bigdecimal, cast_to_bigint, cast_to_bool, cast_to_byte,
-    cast_to_date, cast_to_float, cast_to_float32, cast_to_int, cast_to_long, cast_to_number,
-    cast_to_short, cast_to_string, datetime_offset_seconds, datetime_to_epoch_millis,
-    epoch_millis_to_datetime_with_offset, parse_datetime_string,
+    cast_to_date, cast_to_float, cast_to_float32, cast_to_gremlin_date, cast_to_gremlin_int,
+    cast_to_int, cast_to_long, cast_to_number, cast_to_short, cast_to_string,
+    datetime_offset_seconds, datetime_to_epoch_millis, epoch_millis_to_datetime_with_offset,
+    parse_datetime_string,
 };
 use path::{
     apply_path_by_keys, apply_path_by_keys_keep_nulls, path_intermediate_pairs, path_pairs,
-    project_path_edges,
-    slice_path_at, slice_path_at_value,
+    project_path_edges, slice_path_at, slice_path_at_value,
 };
 use property_object::{eval_property_element, eval_property_object};
 use reductions::apply_sack_op;
@@ -240,9 +240,8 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         Value::Map(map) => {
             // Property objects: VertexProperty (rank 8) orders by id;
             // Property on an edge (rank 9) orders by (key, value).
-            let is_prop = map.contains_key("element")
-                && map.contains_key("key")
-                && map.contains_key("value");
+            let is_prop =
+                map.contains_key("element") && map.contains_key("key") && map.contains_key("value");
             let edge_owned = matches!(map.get("element"), Some(Value::Edge { .. }))
                 || matches!(map.get("element"), Some(Value::String(s)) if s.contains("->"));
             if is_prop && edge_owned {
@@ -2673,10 +2672,9 @@ fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
                 match value {
                     Value::Float(n) => Some(n.is_nan()),
                     Value::Float32(n) => Some(n.is_nan()),
-                    Value::Byte(_)
-                    | Value::Short(_)
-                    | Value::Int(_)
-                    | Value::Long(_) => Some(false),
+                    Value::Byte(_) | Value::Short(_) | Value::Int(_) | Value::Long(_) => {
+                        Some(false)
+                    }
                     _ => None,
                 }
             }
@@ -6454,6 +6452,17 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             other.clone(),
             Value::Int(0),
         ])])),
+        ("index_map", [Value::List(items)]) => Ok(Value::Map(
+            items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (format!("d[{index}].i"), item.clone()))
+                .collect(),
+        )),
+        ("index_map", [other]) => Ok(Value::Map(BTreeMap::from([(
+            "d[0].i".to_string(),
+            other.clone(),
+        )]))),
         // ----- hasValue helper: stringify any-property -----
         ("any_property", [Value::Node { label, id }]) => {
             let mut combined = Vec::new();
@@ -6577,11 +6586,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("select_key_or_binding", [_, binding, _]) if !matches!(binding, Value::Null) => {
             Ok(binding.clone())
         }
-        ("select_key_or_binding", [Value::Map(map), _, Value::String(key)]) => {
-            Ok(revive_value_map_entry(
-                map.get(key).cloned().unwrap_or(Value::Null),
-            ))
-        }
+        ("select_key_or_binding", [Value::Map(map), _, Value::String(key)]) => Ok(
+            revive_value_map_entry(map.get(key).cloned().unwrap_or(Value::Null)),
+        ),
         ("select_key_or_binding", [_, binding, _]) => Ok(binding.clone()),
         // `map_has_key(map, key)` — true iff `map` is a Map containing the
         // given key. Used by lowering to decide whether to keep a row.
@@ -6721,9 +6728,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         )),
         ("tree_value", [value]) => Ok(tree_value(value)),
         // Gremlin `{a, b}` set literal — marker-map Set value.
-        ("set_literal", [Value::List(items)]) => {
-            Ok(crate::ir::value::gremlin_set(items.clone()))
-        }
+        ("set_literal", [Value::List(items)]) => Ok(crate::ir::value::gremlin_set(items.clone())),
         ("set_literal", [other]) => Ok(crate::ir::value::gremlin_set(vec![other.clone()])),
         // Merge a Set-typed side-effect seed with the aggregated stream:
         // seed items first, then stream values in first-occurrence
@@ -6770,9 +6775,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Ok(Value::Map(slim))
         }
         ("gremlin_dedup_key", [other]) => Ok(other.clone()),
-        ("null_to_sentinel", [Value::Null]) => {
-            Ok(Value::String("\u{0}gremlin.null".to_string()))
-        }
+        ("null_to_sentinel", [Value::Null]) => Ok(Value::String("\u{0}gremlin.null".to_string())),
         ("null_to_sentinel", [other]) => Ok(other.clone()),
         ("list_restore_null_sentinels", [Value::List(items)]) => Ok(Value::List(
             items
@@ -6821,9 +6824,9 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Value::Null => Value::List(vec![Value::Null]),
             Value::List(items) => Value::List(items.clone()),
             // Gremlin Set marker maps unfold to their items.
-            set if crate::ir::value::as_gremlin_set(set).is_some() => Value::List(
-                crate::ir::value::as_gremlin_set(set).unwrap().to_vec(),
-            ),
+            set if crate::ir::value::as_gremlin_set(set).is_some() => {
+                Value::List(crate::ir::value::as_gremlin_set(set).unwrap().to_vec())
+            }
             Value::Map(entries) => Value::List(
                 entries
                     .iter()
@@ -7340,7 +7343,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
             Ok(Value::List(items.iter().map(cast_to_short).collect()))
         }
         ("local_cast_int", [Value::List(items)]) => {
-            Ok(Value::List(items.iter().map(cast_to_int).collect()))
+            Ok(Value::List(items.iter().map(cast_to_gremlin_int).collect()))
         }
         ("local_cast_long", [Value::List(items)]) => {
             Ok(Value::List(items.iter().map(cast_to_long).collect()))
@@ -7360,24 +7363,25 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("local_cast_bool", [Value::List(items)]) => {
             Ok(Value::List(items.iter().map(cast_to_bool).collect()))
         }
-        ("local_cast_date", [Value::List(items)]) => {
-            Ok(Value::List(items.iter().map(cast_to_date).collect()))
-        }
+        ("local_cast_date", [Value::List(items)]) => Ok(Value::List(
+            items.iter().map(cast_to_gremlin_date).collect(),
+        )),
         ("local_cast_number", [v]) => Ok(cast_to_number(v)),
         ("local_cast_byte", [v]) => Ok(cast_to_byte(v)),
         ("local_cast_short", [v]) => Ok(cast_to_short(v)),
-        ("local_cast_int", [v]) => Ok(cast_to_int(v)),
+        ("local_cast_int", [v]) => Ok(cast_to_gremlin_int(v)),
         ("local_cast_long", [v]) => Ok(cast_to_long(v)),
         ("local_cast_bigint", [v]) => Ok(cast_to_bigint(v)),
         ("local_cast_float", [v]) => Ok(cast_to_float32(v)),
         ("local_cast_double", [v]) => Ok(cast_to_float(v)),
         ("local_cast_bigdecimal", [v]) => Ok(cast_to_bigdecimal(v)),
         ("local_cast_bool", [v]) => Ok(cast_to_bool(v)),
-        ("local_cast_date", [v]) => Ok(cast_to_date(v)),
+        ("local_cast_date", [v]) => Ok(cast_to_gremlin_date(v)),
         ("cast_number", [v]) => Ok(cast_to_number(v)),
         ("cast_byte", [v]) => Ok(cast_to_byte(v)),
         ("cast_short", [v]) => Ok(cast_to_short(v)),
         ("cast_int", [v]) => Ok(cast_to_int(v)),
+        ("gremlin_cast_int", [v]) => Ok(cast_to_gremlin_int(v)),
         ("cast_long", [v]) => Ok(cast_to_long(v)),
         ("cast_bigint", [v]) => Ok(cast_to_bigint(v)),
         ("cast_float", [v]) => Ok(cast_to_float32(v)),
@@ -7385,6 +7389,7 @@ pub(super) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> 
         ("cast_bigdecimal", [v]) => Ok(cast_to_bigdecimal(v)),
         ("cast_bool", [v]) => Ok(cast_to_bool(v)),
         ("cast_date", [v]) => Ok(cast_to_date(v)),
+        ("gremlin_cast_date", [v]) => Ok(cast_to_gremlin_date(v)),
         ("datetime_literal", [Value::String(s)]) => Ok(parse_datetime_string(s)
             .map(Value::DateTime)
             .unwrap_or(Value::Null)),

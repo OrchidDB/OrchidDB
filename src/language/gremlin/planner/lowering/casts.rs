@@ -1,6 +1,6 @@
 //! Scalar casts: `asNumber`, `asString`, `asBool`, `asDate`.
 //!
-//! Each lowers to a `GraphCurrentProject` whose expression is an
+//! Each lowers to a `GraphProject` whose expression is an
 //! `IrExpr::Call` against a runtime cast helper. The interpreter
 //! dispatches the call name to a per-target conversion. Complex inputs
 //! (List/Map/Node/Edge) follow Gremlin's "best effort" rule: numeric/
@@ -10,7 +10,7 @@
 use super::context::CURRENT;
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::IrExpr;
-use crate::ir::plan::Node;
+use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem};
 use crate::language::gremlin::ast::{CastTarget, NumericCast};
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
@@ -21,7 +21,7 @@ pub(super) fn lower_cast_scalar(input: Node, target: CastTarget) -> Node {
         CastTarget::Numeric(num) => match num {
             NumericCast::Byte => "cast_byte",
             NumericCast::Short => "cast_short",
-            NumericCast::Int => "cast_int",
+            NumericCast::Int => "gremlin_cast_int",
             NumericCast::Long => "cast_long",
             NumericCast::BigInt => "cast_bigint",
             NumericCast::Float => "cast_float",
@@ -30,14 +30,21 @@ pub(super) fn lower_cast_scalar(input: Node, target: CastTarget) -> Node {
         },
         CastTarget::String => "cast_string",
         CastTarget::Bool => "cast_bool",
-        CastTarget::Date => "cast_date",
+        CastTarget::Date => "gremlin_cast_date",
     };
-    Node::GraphCurrentProject {
-        expr: IrExpr::Call {
-            name: name.into(),
-            args: vec![IrExpr::Binding(CURRENT.into())],
-        },
-        fields: vec![CURRENT.to_string()],
+    // A cast that evaluates to null is still a productive Gremlin map step.
+    // GraphCurrentProject implements DropUnproductive and would incorrectly
+    // discard that traverser, so replace the current binding explicitly.
+    Node::GraphProject {
+        mode: ProjectMode::ReplaceCurrent,
+        items: vec![ProjectionItem {
+            alias: CURRENT.to_string(),
+            expr: IrExpr::Call {
+                name: name.into(),
+                args: vec![IrExpr::Binding(CURRENT.into())],
+            },
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),
     }
 }

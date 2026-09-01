@@ -20,6 +20,16 @@
 //! ```ignore
 //! GRAPH_REL_EXEC=duckdb cargo test --release --test graph_rel_backend_cases -- --ignored --nocapture
 //! ```
+//!
+//! Large corpora can be split into deterministic contiguous shards. Contiguous
+//! ranges keep cases from the same suite together, which preserves fixture
+//! reuse inside each DuckDB process:
+//!
+//! ```ignore
+//! GRAPH_REL_SHARD_COUNT=4 GRAPH_REL_SHARD_INDEX=0 \
+//! GRAPH_REL_OUTPUT_DIR=target/coverage/cypher-0 cargo test --release \
+//!   --test graph_rel_backend_cases -- --ignored --nocapture
+//! ```
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -46,6 +56,15 @@ const CYPHER_ROOT: &str = "cases/cypher/ladybug";
 const GREMLIN_ROOT: &str = "cases/gremlin/tinkerpop";
 const OUTPUT_DIR: &str = "target/graph_rel_backend_cases";
 
+// Reuse one DuckDB session across the serial corpus run. Prepared setup is
+// keyed by materialized table name and contents inside DuckDbExecutor, so
+// repeated cases over the same fixture avoid recreating and reinserting tens
+// of thousands of rows. PropertyGraph clones are cheap; SQL setup was the
+// dominant cost in the slow-case trace.
+#[cfg(feature = "duckdb")]
+static HARNESS_DUCKDB_EXECUTOR: std::sync::Mutex<Option<DuckDbExecutor>> =
+    std::sync::Mutex::new(None);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Language {
     Cypher,
@@ -65,10 +84,14 @@ impl Language {
 #[ignore]
 async fn graph_rel_backend_cases() {
     let started = Instant::now();
-    let out_dir = PathBuf::from(OUTPUT_DIR);
+    let config = HarnessConfig::from_env();
+    let out_dir = config.output_dir.clone();
     prepare_output_dir(&out_dir).expect("prepare output dir");
 
-    let config = HarnessConfig::from_env();
+    #[cfg(feature = "duckdb")]
+    if config.exec == ExecMode::DuckDb {
+        *HARNESS_DUCKDB_EXECUTOR.lock().expect("duckdb executor") = None;
+    }
     let backend = RelBackend::new();
     let mut summary = Summary::default();
 
@@ -96,13 +119,18 @@ async fn graph_rel_backend_cases() {
     }
 
     let report = format!(
-        "exec mode: {}\n{}{}",
+        "exec mode: {}\nshard: {}/{}\n{}{}",
         config.exec.as_str(),
-        summary.render(started.elapsed().as_secs_f64()),
+        config.shard_index,
+        config.shard_count,
+        summary.render(started.elapsed().as_secs_f64(), &out_dir),
         render_island_tally()
     );
     print!("{report}");
     fs::write(out_dir.join("summary.txt"), report).expect("write summary");
+    summary
+        .write_machine_reports(&out_dir)
+        .expect("write machine-readable summary");
 
     if config.strict && summary.failed_cases() > 0 {
         panic!(
@@ -239,7 +267,12 @@ struct HarnessConfig {
     limit: Option<usize>,
     strict: bool,
     exec: ExecMode,
+    case_timeout_ms: u64,
     timeout_ms: u64,
+    shard_count: usize,
+    shard_index: usize,
+    shard_chunk_size: Option<usize>,
+    output_dir: PathBuf,
 }
 
 impl HarnessConfig {
@@ -249,6 +282,19 @@ impl HarnessConfig {
             Ok("islands") => ExecMode::Islands,
             _ => ExecMode::DataFusion,
         };
+        let shard_count = std::env::var("GRAPH_REL_SHARD_COUNT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1)
+            .max(1);
+        let shard_index = std::env::var("GRAPH_REL_SHARD_INDEX")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        assert!(
+            shard_index < shard_count,
+            "GRAPH_REL_SHARD_INDEX ({shard_index}) must be less than GRAPH_REL_SHARD_COUNT ({shard_count})"
+        );
         Self {
             lang: std::env::var("GRAPH_REL_LANG").unwrap_or_else(|_| "all".into()),
             suite_filter: std::env::var("GRAPH_REL_SUITE").ok(),
@@ -257,10 +303,23 @@ impl HarnessConfig {
                 .and_then(|value| value.parse().ok()),
             strict: std::env::var("GRAPH_REL_STRICT").is_ok_and(|value| value == "1"),
             exec,
+            case_timeout_ms: std::env::var("GRAPH_REL_CASE_TIMEOUT_MS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(60_000),
             timeout_ms: std::env::var("GRAPH_REL_TIMEOUT_MS")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(10_000),
+            shard_count,
+            shard_index,
+            shard_chunk_size: std::env::var("GRAPH_REL_SHARD_CHUNK_SIZE")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|value| *value > 0),
+            output_dir: std::env::var_os("GRAPH_REL_OUTPUT_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(OUTPUT_DIR)),
         }
     }
 
@@ -289,26 +348,49 @@ async fn run_language(
     let mut paths = Vec::new();
     walk_cases(root, &mut |path| paths.push(path.to_path_buf()));
     paths.sort();
+    if let Some(filter) = &config.suite_filter {
+        paths.retain(|path| path.to_string_lossy().contains(filter.as_str()));
+    }
 
-    let mut seen = 0usize;
-    for path in paths {
-        if let Some(filter) = &config.suite_filter {
-            if !path.to_string_lossy().contains(filter.as_str()) {
-                continue;
-            }
-        }
-        if config.limit.is_some_and(|limit| seen >= limit) {
-            break;
-        }
-        seen += 1;
+    // Paths are sorted by suite and fixture. Small round-robin chunks prevent
+    // one worker from receiving every expensive suite while still retaining
+    // setup-cache locality across adjacent cases. With no chunk size, retain
+    // the original single contiguous range behavior.
+    let shard_paths = if let Some(chunk_size) = config.shard_chunk_size {
+        paths
+            .iter()
+            .enumerate()
+            .filter(|(position, _)| {
+                (position / chunk_size) % config.shard_count == config.shard_index
+            })
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>()
+    } else {
+        let start = paths.len() * config.shard_index / config.shard_count;
+        let end = paths.len() * (config.shard_index + 1) / config.shard_count;
+        paths[start..end].iter().collect::<Vec<_>>()
+    };
+    eprintln!(
+        "coverage-shard language={} index={} count={} chunk_size={} cases={} corpus={}",
+        lang.as_str(),
+        config.shard_index,
+        config.shard_count,
+        config
+            .shard_chunk_size
+            .map_or_else(|| "contiguous".into(), |size| size.to_string()),
+        shard_paths.len(),
+        paths.len(),
+    );
+
+    for path in shard_paths.iter().take(config.limit.unwrap_or(usize::MAX)) {
+        let case_started = Instant::now();
         // Each case runs on its own thread (with its own runtime) so a
         // panicking case (e.g. from a fixture initializer) records a failure
         // instead of aborting the whole run, and a per-case timeout keeps a
         // single expensive plan (e.g. an unrolled variable-length expand on
-        // a large fixture) from stalling the harness. Timed-out threads are
-        // detached; their result is discarded when it eventually arrives.
+        // a large fixture) from stalling the harness.
         let run = {
-            let path = path.clone();
+            let worker_path = path.to_path_buf();
             let backend = backend.clone();
             let exec = config.exec;
             let (sender, receiver) = std::sync::mpsc::channel();
@@ -320,8 +402,10 @@ async fn run_language(
                 let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     runtime.block_on(async {
                         match lang {
-                            Language::Cypher => run_cypher_case(&path, &backend, exec).await,
-                            Language::Gremlin => run_gremlin_case(&path, &backend, exec).await,
+                            Language::Cypher => run_cypher_case(&worker_path, &backend, exec).await,
+                            Language::Gremlin => {
+                                run_gremlin_case(&worker_path, &backend, exec).await
+                            }
                         }
                     })
                 }))
@@ -336,27 +420,73 @@ async fn run_language(
                 });
                 let _ = sender.send(run);
             });
-            // Backstop only: the cooperative tokio timeout inside the case
-            // normally fires first, letting the thread exit cleanly.
-            match receiver.recv_timeout(std::time::Duration::from_millis(
-                config.timeout_ms.saturating_mul(3).saturating_add(5_000),
-            )) {
+            // Backstop only. DuckDBExecutor now issues a real database
+            // interrupt at the configured deadline, so this thread should
+            // return promptly instead of becoming detached CPU work.
+            let backstop_ms = if config.exec == ExecMode::DuckDb {
+                config.case_timeout_ms
+            } else {
+                config.timeout_ms.saturating_add(3_000)
+            };
+            match receiver.recv_timeout(std::time::Duration::from_millis(backstop_ms)) {
                 Ok(run) => run,
                 Err(_) => CaseRun {
-                    query: None,
+                    query: diagnostic_query(path),
                     plan_tree: None,
                     sql: None,
                     outcome: Outcome::ExecutionError(format!(
-                        "case timed out after {}ms",
-                        config.timeout_ms
+                        "case timed out before completion after {backstop_ms}ms"
                     )),
                 },
             }
         };
-        if !matches!(run.outcome, Outcome::Matched) {
-            let _ = dump_case(out_dir, lang, &path, &run);
+        let elapsed = case_started.elapsed();
+        let slow_ms = std::env::var("GRAPH_REL_SLOW_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(500);
+        if elapsed.as_millis() >= u128::from(slow_ms) {
+            eprintln!(
+                "slow-case elapsed_ms={} outcome={} plan_lines={} sql_bytes={} case={} query={}",
+                elapsed.as_millis(),
+                run.outcome.label(),
+                run.plan_tree
+                    .as_deref()
+                    .map(|plan| plan.lines().count())
+                    .unwrap_or(0),
+                run.sql.as_deref().map(str::len).unwrap_or(0),
+                path.display(),
+                run.query
+                    .as_deref()
+                    .unwrap_or("<unavailable>")
+                    .replace('\n', " ")
+            );
         }
-        summary.record(lang, &path, run.outcome);
+        if !matches!(run.outcome, Outcome::Matched) {
+            let _ = dump_case(out_dir, lang, path, &run);
+        }
+        summary.record(lang, path, run.outcome);
+    }
+}
+
+fn diagnostic_query(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    case_file::parse(&raw).ok().map(|case| case.query)
+}
+
+fn record_slow_phase(path: &Path, phase: &str, started: Instant) {
+    let slow_ms = std::env::var("GRAPH_REL_SLOW_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(500);
+    let elapsed = started.elapsed();
+    if elapsed.as_millis() >= u128::from(slow_ms) {
+        eprintln!(
+            "slow-phase elapsed_ms={} phase={} case={}",
+            elapsed.as_millis(),
+            phase,
+            path.display()
+        );
     }
 }
 
@@ -410,6 +540,18 @@ fn case_timeout() -> std::time::Duration {
     static TIMEOUT_MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let ms = *TIMEOUT_MS.get_or_init(|| {
         std::env::var("GRAPH_REL_TIMEOUT_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1_000)
+    });
+    std::time::Duration::from_millis(ms)
+}
+
+#[cfg(feature = "duckdb")]
+fn setup_timeout() -> std::time::Duration {
+    static TIMEOUT_MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let ms = *TIMEOUT_MS.get_or_init(|| {
+        std::env::var("GRAPH_REL_SETUP_TIMEOUT_MS")
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(10_000)
@@ -528,6 +670,7 @@ async fn execute_case_duckdb(
     plan: &GraphPlan,
     graph: &PropertyGraph,
 ) -> ExecRun {
+    let phase_started = Instant::now();
     let lowered = match backend.lower(plan, graph) {
         Ok(lowered) => lowered,
         Err(err) => {
@@ -537,6 +680,12 @@ async fn execute_case_duckdb(
             };
         }
     };
+    record_slow_engine_phase(
+        "lower",
+        phase_started,
+        None,
+        count_plan_nodes(&lowered.plan),
+    );
     // DuckDB executes synchronously and cannot be cancelled by the case
     // timeout; refuse oversized plans (e.g. deep variable-length unrolls
     // over large fixtures) up front so one query cannot pin a core for the
@@ -553,6 +702,7 @@ async fn execute_case_duckdb(
             sql: None,
         };
     }
+    let phase_started = Instant::now();
     let prepared = match sql::prepare(&lowered, SqlDialect::DuckDb).await {
         Ok(prepared) => prepared,
         Err(err) => {
@@ -562,11 +712,50 @@ async fn execute_case_duckdb(
             };
         }
     };
-    let mut executor = DuckDbExecutor::new();
-    let result = sql::execute_prepared(&mut executor, &prepared).map_err(|err| format!("{err}"));
+    record_slow_engine_phase(
+        "prepare_setup_sql",
+        phase_started,
+        Some(prepared.query.len()),
+        nodes,
+    );
+    let phase_started = Instant::now();
+    let mut guard = HARNESS_DUCKDB_EXECUTOR.lock().expect("duckdb executor");
+    let executor =
+        guard.get_or_insert_with(|| DuckDbExecutor::with_timeouts(case_timeout(), setup_timeout()));
+    let result = sql::execute_prepared(executor, &prepared).map_err(|err| format!("{err}"));
+    record_slow_engine_phase(
+        "duckdb_setup_and_query",
+        phase_started,
+        Some(prepared.query.len()),
+        nodes,
+    );
     ExecRun {
         result,
         sql: Some(prepared.query),
+    }
+}
+
+#[cfg(feature = "duckdb")]
+fn record_slow_engine_phase(
+    phase: &str,
+    started: Instant,
+    sql_bytes: Option<usize>,
+    plan_nodes: usize,
+) {
+    let slow_ms = std::env::var("GRAPH_REL_SLOW_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(500);
+    let elapsed = started.elapsed();
+    if elapsed.as_millis() >= u128::from(slow_ms) {
+        eprintln!(
+            "slow-engine-phase elapsed_ms={} phase={} plan_nodes={} sql_bytes={} query={}",
+            elapsed.as_millis(),
+            phase,
+            plan_nodes,
+            sql_bytes.unwrap_or(0),
+            current_case().replace('\n', " ")
+        );
     }
 }
 
@@ -595,6 +784,20 @@ enum Outcome {
     LowerError(String),
     ExecutionError(String),
     Skipped(String),
+}
+
+impl Outcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Matched => "matched",
+            Self::Mismatch { .. } => "mismatch",
+            Self::ParseError(_) => "parse_error",
+            Self::PlanError(_) => "plan_error",
+            Self::LowerError(_) => "lower_error",
+            Self::ExecutionError(_) => "execution_error",
+            Self::Skipped(_) => "skipped",
+        }
+    }
 }
 
 async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode) -> CaseRun {
@@ -630,6 +833,7 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             };
         }
     };
+    let phase_started = Instant::now();
     let graph = match cypher_case_runner::dataset::build_with_initializer(
         &case.metadata.dataset,
         case.graph_initializer.as_deref(),
@@ -647,6 +851,8 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             };
         }
     };
+    record_slow_phase(path, "dataset", phase_started);
+    let phase_started = Instant::now();
     let plan = match CypherPlanner::new().plan(&parsed) {
         Ok(plan) => plan,
         Err(err) => {
@@ -670,8 +876,11 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             };
         }
     };
+    record_slow_phase(path, "plan", phase_started);
     let plan_tree = explain(&plan);
-    if let Err(err) = backend.lower(&plan, &graph) {
+    if exec_mode != ExecMode::DuckDb
+        && let Err(err) = backend.lower(&plan, &graph)
+    {
         if let Some(outcome) = expected_error_outcome(
             &case.expected,
             &case.metadata.expected_kind,
@@ -692,7 +901,9 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
         };
     }
     set_current_case(&query);
+    let phase_started = Instant::now();
     let exec = execute_case(backend, &plan, &graph, exec_mode).await;
+    record_slow_phase(path, "lower_prepare_execute", phase_started);
     let returned = match exec.result {
         Ok(returned) => returned,
         Err(err) => {
@@ -710,7 +921,11 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
                 query: Some(query),
                 plan_tree: Some(plan_tree),
                 sql: exec.sql,
-                outcome: Outcome::ExecutionError(err),
+                outcome: if exec_mode == ExecMode::DuckDb && looks_like_lower_error(&err) {
+                    Outcome::LowerError(err)
+                } else {
+                    Outcome::ExecutionError(err)
+                },
             };
         }
     };
@@ -759,6 +974,7 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
             };
         }
     };
+    let phase_started = Instant::now();
     let graph = match gremlin_case_runner::dataset::build_with_initializer(
         &case.metadata.dataset,
         case.graph_initializer.as_deref(),
@@ -776,6 +992,8 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
             };
         }
     };
+    record_slow_phase(path, "dataset", phase_started);
+    let phase_started = Instant::now();
     let plan = match GremlinPlanner::new().plan(&traversal) {
         Ok(plan) => plan,
         Err(err) => {
@@ -799,8 +1017,11 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
             };
         }
     };
+    record_slow_phase(path, "plan", phase_started);
     let plan_tree = explain(&plan);
-    if let Err(err) = backend.lower(&plan, &graph) {
+    if exec_mode != ExecMode::DuckDb
+        && let Err(err) = backend.lower(&plan, &graph)
+    {
         if let Some(outcome) = expected_error_outcome(
             &case.expected,
             &case.metadata.expected_kind,
@@ -821,7 +1042,9 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
         };
     }
     set_current_case(&query);
+    let phase_started = Instant::now();
     let exec = execute_case(backend, &plan, &graph, exec_mode).await;
+    record_slow_phase(path, "lower_prepare_execute", phase_started);
     let returned = match exec.result {
         Ok(returned) => returned,
         Err(err) => {
@@ -839,7 +1062,11 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
                 query: Some(query),
                 plan_tree: Some(plan_tree),
                 sql: exec.sql,
-                outcome: Outcome::ExecutionError(err),
+                outcome: if exec_mode == ExecMode::DuckDb && looks_like_lower_error(&err) {
+                    Outcome::LowerError(err)
+                } else {
+                    Outcome::ExecutionError(err)
+                },
             };
         }
     };
@@ -854,6 +1081,12 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
         case.metadata.ordered,
         &case.metadata.expected_kind,
     )
+}
+
+fn looks_like_lower_error(error: &str) -> bool {
+    error.starts_with("unsupported relational lowering:")
+        || error.starts_with("datafusion:")
+        || error.starts_with("catalog:")
 }
 
 fn read_case(path: &Path) -> Result<case_file::Case, CaseRun> {
@@ -1014,6 +1247,14 @@ fn normalize_numbers(input: &str) -> String {
 struct Summary {
     by_language: BTreeMap<&'static str, Counts>,
     reasons: BTreeMap<String, usize>,
+    case_results: Vec<CaseResult>,
+}
+
+struct CaseResult {
+    language: &'static str,
+    path: String,
+    outcome: &'static str,
+    reason: String,
 }
 
 #[derive(Default)]
@@ -1029,7 +1270,22 @@ struct Counts {
 }
 
 impl Summary {
-    fn record(&mut self, lang: Language, _path: &Path, outcome: Outcome) {
+    fn record(&mut self, lang: Language, path: &Path, outcome: Outcome) {
+        let reason = match &outcome {
+            Outcome::Matched => String::new(),
+            Outcome::Mismatch { reason, .. }
+            | Outcome::ParseError(reason)
+            | Outcome::PlanError(reason)
+            | Outcome::LowerError(reason)
+            | Outcome::ExecutionError(reason)
+            | Outcome::Skipped(reason) => first_line(reason),
+        };
+        self.case_results.push(CaseResult {
+            language: lang.as_str(),
+            path: path.to_string_lossy().into_owned(),
+            outcome: outcome.label(),
+            reason,
+        });
         let counts = self.by_language.entry(lang.as_str()).or_default();
         counts.total += 1;
         match &outcome {
@@ -1076,7 +1332,7 @@ impl Summary {
             .sum()
     }
 
-    fn render(&self, elapsed_secs: f64) -> String {
+    fn render(&self, elapsed_secs: f64, out_dir: &Path) -> String {
         let mut out = String::new();
         out.push_str(&format!(
             "\nGraph relational backend harness finished in {elapsed_secs:.2}s\n"
@@ -1111,8 +1367,47 @@ impl Summary {
         for (idx, (reason, count)) in reasons.into_iter().take(20).enumerate() {
             out.push_str(&format!("{:>2}. {:>5} {reason}\n", idx + 1, count));
         }
-        out.push_str(&format!("\nFailure files: `{OUTPUT_DIR}`\n"));
+        out.push_str(&format!("\nFailure files: `{}`\n", out_dir.display()));
         out
+    }
+
+    fn write_machine_reports(&self, out_dir: &Path) -> std::io::Result<()> {
+        let mut metrics = String::from(
+            "language\ttotal\trunnable\tmatched\tparsed\tplanned\tlowered\texecuted\tmismatches\tskipped\n",
+        );
+        for (lang, counts) in &self.by_language {
+            let runnable = counts.total.saturating_sub(counts.skipped);
+            let parsed = counts.total - counts.parse - counts.skipped;
+            let planned = counts.total - counts.parse - counts.plan - counts.skipped;
+            let lowered = counts.total - counts.parse - counts.plan - counts.lower - counts.skipped;
+            let executed = counts.matched + counts.mismatch;
+            metrics.push_str(&format!(
+                "{lang}\t{}\t{runnable}\t{}\t{parsed}\t{planned}\t{lowered}\t{executed}\t{}\t{}\n",
+                counts.total, counts.matched, counts.mismatch, counts.skipped,
+            ));
+        }
+        fs::write(out_dir.join("metrics.tsv"), metrics)?;
+
+        let mut blockers = String::from("count\treason\n");
+        for (reason, count) in &self.reasons {
+            blockers.push_str(&format!(
+                "{count}\t{}\n",
+                reason.replace(['\t', '\n', '\r'], " ")
+            ));
+        }
+        fs::write(out_dir.join("blockers.tsv"), blockers)?;
+
+        let mut cases = String::from("language\tpath\toutcome\treason\n");
+        for result in &self.case_results {
+            cases.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                result.language,
+                result.path.replace(['\t', '\n', '\r'], " "),
+                result.outcome,
+                result.reason.replace(['\t', '\n', '\r'], " "),
+            ));
+        }
+        fs::write(out_dir.join("cases.tsv"), cases)
     }
 }
 

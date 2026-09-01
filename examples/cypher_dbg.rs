@@ -73,7 +73,10 @@ fn main() {
     match execute(&plan, &graph) {
         Ok(returned) => {
             println!("--- fields: {:?}", returned.fields);
-            println!("{}", arrow::util::pretty::pretty_format_batches(&[returned.batch]).unwrap());
+            println!(
+                "{}",
+                arrow::util::pretty::pretty_format_batches(&[returned.batch]).unwrap()
+            );
         }
         Err(e) => println!("RUN ERROR: {e}"),
     }

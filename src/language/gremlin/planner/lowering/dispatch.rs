@@ -429,10 +429,15 @@ where
             },
             input: input.boxed(),
         }),
-        // `index()` — emits `(item, index)` pairs from a list traverser.
+        // `index()` emits `(item, index)` pairs by default. Its indexer
+        // option selects a map result instead.
         Step::Index => Ok(Node::GraphCurrentProject {
             expr: crate::ir::expr::IrExpr::Call {
-                name: "index_list".into(),
+                name: if consume_index_map_option(steps) {
+                    "index_map".into()
+                } else {
+                    "index_list".into()
+                },
                 args: vec![crate::ir::expr::IrExpr::Binding("current".into())],
             },
             fields: vec!["current".to_string()],
@@ -582,4 +587,28 @@ where
         steps.next();
     }
     options
+}
+
+fn consume_index_map_option<'a, I>(steps: &mut Peekable<I>) -> bool
+where
+    I: Iterator<Item = &'a Step>,
+{
+    let Some(Step::WithOption { key, value, .. }) = steps.peek() else {
+        return false;
+    };
+    let is_indexer = key
+        .rsplit('.')
+        .next()
+        .is_some_and(|part| part.eq_ignore_ascii_case("indexer"));
+    let is_map = matches!(
+        value,
+        Some(crate::language::gremlin::semantics::GValue::String(value))
+            if value.rsplit('.').next().is_some_and(|part| part.eq_ignore_ascii_case("map"))
+    );
+    if is_indexer && is_map {
+        steps.next();
+        true
+    } else {
+        false
+    }
 }

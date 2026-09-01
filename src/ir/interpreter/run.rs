@@ -536,8 +536,8 @@ pub(crate) fn run_with_context(
         ))),
 
         // -------- SPARQL / RDF --------
-        Node::GraphRdfQuadScan { .. } => Err(InterpretError::Unsupported(
-            "GraphRdfQuadScan: SPARQL quad scans require an RDF store".into(),
+        Node::GraphSparqlTriplePattern { .. } => Err(InterpretError::Unsupported(
+            "unresolved SPARQL triple patterns must pass through ontology mapping".into(),
         )),
         Node::GraphRdfPropertyPath { .. } => Err(InterpretError::Unsupported(
             "GraphRdfPropertyPath: SPARQL property paths require an RDF store".into(),
@@ -554,9 +554,10 @@ pub(crate) fn run_with_context(
         Node::GraphDescribe { .. } => Err(InterpretError::Unsupported(
             "GraphDescribe: SPARQL DESCRIBE output is not yet implemented".into(),
         )),
-        Node::GraphAsk { .. } => Err(InterpretError::Unsupported(
-            "GraphAsk: SPARQL ASK output is not yet implemented".into(),
-        )),
+        Node::GraphAsk { field, input } => {
+            let answer = !run_with_context(input, graph, ctx)?.is_empty();
+            Ok(vec![Row::new().with(field, Value::Bool(answer))])
+        }
         Node::GraphListComprehension {
             input_expr,
             item,

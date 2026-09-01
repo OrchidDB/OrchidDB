@@ -71,10 +71,23 @@ pub(super) fn lower_local_scoped(
             }
             call(helper, vec![cur()])
         }
+        Step::StringOp(AstStringOp::Length) => {
+            // length(local) is productive for a null traverser and returns
+            // null. GraphCurrentProject would incorrectly drop that row.
+            return Ok(Node::GraphProject {
+                mode: crate::ir::plan::ProjectMode::ReplaceCurrent,
+                items: vec![crate::ir::plan::ProjectionItem {
+                    alias: CURRENT.into(),
+                    expr: call("local_length", vec![cur()]),
+                }],
+                error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+                input: input.boxed(),
+            });
+        }
         Step::StringOp(op) => match op {
             AstStringOp::ToLower => call("local_lcase", vec![cur()]),
             AstStringOp::ToUpper => call("local_ucase", vec![cur()]),
-            AstStringOp::Length => call("local_length", vec![cur()]),
+            AstStringOp::Length => unreachable!("handled above"),
             AstStringOp::Trim => call("local_trim", vec![cur()]),
             AstStringOp::LTrim => call("local_ltrim", vec![cur()]),
             AstStringOp::RTrim => call("local_rtrim", vec![cur()]),

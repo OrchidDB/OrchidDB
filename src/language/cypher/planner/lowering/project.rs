@@ -4938,7 +4938,10 @@ fn render_kuzu_expr(expr: &Expr) -> String {
         Expr::Function { name, args, .. } => format!(
             "{}({})",
             name.to_ascii_uppercase(),
-            args.iter().map(render_kuzu_expr).collect::<Vec<_>>().join(",")
+            args.iter()
+                .map(render_kuzu_expr)
+                .collect::<Vec<_>>()
+                .join(",")
         ),
         _ => "...".to_string(),
     }
@@ -4948,7 +4951,10 @@ fn nested_aggregate_error(name: &str, args: &[Expr]) -> CypherPlanError {
     CypherPlanError::Unsupported(format!(
         "Binder exception: Expression {}({}) contains nested aggregation.",
         name.to_ascii_uppercase(),
-        args.iter().map(render_kuzu_expr).collect::<Vec<_>>().join(",")
+        args.iter()
+            .map(render_kuzu_expr)
+            .collect::<Vec<_>>()
+            .join(",")
     ))
 }
 

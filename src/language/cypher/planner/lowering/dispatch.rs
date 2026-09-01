@@ -191,8 +191,7 @@ fn lower_create(
                     }
                     if rel.range.explicit {
                         return Err(CypherPlanError::Invalid(
-                            "Binder exception: Create relationship must have a single hop."
-                                .into(),
+                            "Binder exception: Create relationship must have a single hop.".into(),
                         ));
                     }
                     if rel.recursive.is_some() {
@@ -220,11 +219,8 @@ fn lower_create(
                         state.bound.insert(bind.clone());
                         state.edge_outputs.push(bind.clone());
                     }
-                    let properties = lower_create_properties(
-                        lowerer,
-                        &mut input,
-                        rel.properties.as_ref(),
-                    )?;
+                    let properties =
+                        lower_create_properties(lowerer, &mut input, rel.properties.as_ref())?;
                     state.edges.push(CreateEdge {
                         bind: rel.variable.clone(),
                         rel_type: rel.types[0].clone(),
@@ -343,11 +339,7 @@ fn lower_set(lowerer: &mut Lowerer, input: Node, clause: &SetClause) -> CypherPl
 /// `MERGE` lowers to two correlated arms over the same pattern: a MATCH-shaped
 /// arm carrying `ON MATCH SET`, and a CREATE-shaped arm carrying
 /// `ON CREATE SET`. `GraphMerge` runs the second only when the first is empty.
-fn lower_merge(
-    lowerer: &mut Lowerer,
-    input: Node,
-    clause: &MergeClause,
-) -> CypherPlanResult<Node> {
+fn lower_merge(lowerer: &mut Lowerer, input: Node, clause: &MergeClause) -> CypherPlanResult<Node> {
     let outer_fields = lowerer.visible_fields();
     let outer_visible = lowerer.visible_set();
 

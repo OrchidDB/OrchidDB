@@ -175,7 +175,9 @@ fn note_key(keys: &mut BTreeMap<String, Vec<String>>, label: &str, key: &str) {
 
 impl GraphOverlay {
     fn edge_is_live(&self, rel_type: &str, edge_row: i64) -> bool {
-        !self.deleted_edges.contains(&(rel_type.to_string(), edge_row))
+        !self
+            .deleted_edges
+            .contains(&(rel_type.to_string(), edge_row))
     }
 }
 
@@ -426,7 +428,10 @@ impl PropertyGraph {
                 }
             }
         }
-        if let Some(refs) = overlay.inserted_in_adj.get(&(dst_label.to_string(), dst_id)) {
+        if let Some(refs) = overlay
+            .inserted_in_adj
+            .get(&(dst_label.to_string(), dst_id))
+        {
             for (rel, edge_row) in refs {
                 if !rel_filter.is_empty() && !rel_filter.iter().any(|want| want == rel) {
                     continue;
@@ -507,7 +512,13 @@ impl PropertyGraph {
             .get(rel_type)
             .into_iter()
             .flatten()
-            .chain(overlay.override_edge_keys.get(rel_type).into_iter().flatten())
+            .chain(
+                overlay
+                    .override_edge_keys
+                    .get(rel_type)
+                    .into_iter()
+                    .flatten(),
+            )
         {
             if !out.iter().any(|existing| existing == key) {
                 out.push(key.clone());
@@ -708,7 +719,10 @@ impl PropertyGraph {
             .map(|table| table.batch.num_rows() as i64)
             .unwrap_or(0);
         let mut overlay = self.overlay.borrow_mut();
-        let counter = overlay.inserted_node_counts.entry(label.clone()).or_insert(0);
+        let counter = overlay
+            .inserted_node_counts
+            .entry(label.clone())
+            .or_insert(0);
         let id = base_rows + *counter;
         *counter += 1;
         note_keys(&mut overlay.inserted_node_keys, &label, &properties);
