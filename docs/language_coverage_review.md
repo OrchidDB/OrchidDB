@@ -34,22 +34,40 @@ The report uses the five-case net change. It does not claim the six targeted fix
 
 Gremlin has complete parser-to-runtime reach across the runnable corpus. Its 83 remaining runnable misses are result mismatches, not unsupported syntax or failed planning. The largest clusters are repeat control flow, graph algorithms, sack and side-effect behavior, orderability, path history, and match constraints.
 
+The separate full DuckDB denominator now verifies the relational path over the
+same 1,709 imported cases:
+
+| Gremlin through DuckDB | Verified result |
+|---|---:|
+| Total cases | 1,709 |
+| Runnable cases | 1,667 |
+| Matched expected output | 578 (34.7% of runnable) |
+| Parsed and planned | 1,667 |
+| Lowered to relational work | 888 (53.3% of runnable) |
+| Executed in DuckDB | 782 (46.9% of runnable) |
+| Result mismatches | 204 |
+| Missing harness data | 42 |
+
+The initial DuckDB checkpoint matched 536 cases and lowered 739. The current
+checkpoint adds 42 matches and 149 lowered cases. The final transition report
+contains no matched-to-failed regressions.
+
 Cypher has broad read-language support. Its DuckDB runner now uses a real
 database interrupt across fixture setup and query execution, resets the
 session after interruption, and distributes small ordered chunks across
-persistent workers. The complete 5,593-case denominator finished in 58.09
+persistent workers. The complete 5,593-case denominator finished in 57.62
 seconds on the 2026-08-31 development machine:
 
 | Measure | Verified result |
 |---|---:|
 | Total cases | 5,593 |
 | Runnable cases | 5,446 |
-| Matched expected output | 3,238 (57.9% of total) |
+| Matched expected output | 3,392 (60.6% of total; 62.3% of runnable) |
 | Parsed | 5,427 |
 | Planned | 5,399 |
-| Lowered to relational work | 4,610 |
-| Executed in DuckDB | 4,443 |
-| Result mismatches | 1,205 |
+| Lowered to relational work | 4,816 (88.4% of runnable) |
+| Executed in DuckDB | 4,634 (85.1% of runnable) |
+| Result mismatches | 1,242 |
 | Missing harness data | 147 |
 
 Reproduce the merged report with:
@@ -58,14 +76,15 @@ Reproduce the merged report with:
 scripts/run-rel-coverage.sh cypher 4
 ```
 
-The command writes per-worker logs and artifacts plus merged `metrics.tsv`
-and `blockers.tsv` files under
+The command writes per-worker logs and artifacts plus merged `metrics.tsv`,
+`blockers.tsv`, and `cases.tsv` files under
 `target/coverage-reports/cypher-duckdb-sharded/`. The default eight-case
 chunks retain nearby fixture reuse without concentrating all expensive LDBC
 or LSQB work in one process. `GRAPH_REL_SHARD_CHUNK_SIZE` and the worker count
-are configurable.
+are configurable. Each run retains its predecessor under a `-previous` path
+and writes exact `transitions.tsv` and `regressions.tsv` comparisons.
 
-The current report includes 50 fixture setups that exceeded the deliberately
+The current report includes 52 fixture setups that exceeded the deliberately
 short one-second DuckDB operation budget. They are reported separately as
 setup timeouts, not mistaken for slow generated queries. Several focused
 suites also include imported cases whose scenario data or compile-time schema
@@ -99,7 +118,7 @@ Provider configuration should refine a language policy, not replace it. For exam
 1. Import scenario initializers and schema types for `CSV tck`. Exclude neither expected rows nor expected binder errors merely because the shared fixture is empty.
 2. Represent Gremlin productivity separately from `Value::Null`. This is required to preserve injected nulls through `fold()` without retaining results from unproductive traversals.
 3. Address repeated Gremlin clusters in this order: repeat state, sack and side effects, path history, match constraints, then graph-computer algorithms.
-4. Build the mapped SPARQL DuckDB execution denominator. Language accuracy, SQL agreement, and full pushdown should remain separate columns in reports and on the landing page.
+4. Extend the mapped SPARQL DuckDB execution matrix beyond its initial six expected-output queries. Add `OPTIONAL`, unions, values, aggregates, and property paths while keeping execution accuracy separate from W3C parser and planner coverage.
 
 ## Regression rule
 

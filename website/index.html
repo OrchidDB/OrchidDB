@@ -227,34 +227,34 @@ ex:owner    →  Account.owner</code></pre>
 
       <div class="metrics">
         <article class="metric featured">
-          <p class="metric-name">Cypher SQL agreement</p>
-          <p class="metric-value">99.3<small>%</small></p>
-          <p class="metric-detail"><b>1,002 / 1,009</b> cases where SQL islands and the interpreter both returned an answer.</p>
-          <p class="metric-source">Ladybug corpus · first 1,600 · DuckDB · July 2026 snapshot</p>
+          <p class="metric-name">Cypher DuckDB accuracy</p>
+          <p class="metric-value">62.3<small>%</small></p>
+          <p class="metric-detail"><b>3,392 / 5,446</b> runnable cases executed through the relational path and matched expected output.</p>
+          <p class="metric-source">Ladybug corpus · full denominator · DuckDB · August 2026 snapshot</p>
         </article>
         <article class="metric">
-          <p class="metric-name">Cypher full pushdown</p>
-          <p class="metric-value">96.2<small>%</small></p>
-          <p class="metric-detail"><b>991 / 1,030</b> planned cases completed with no interpreted operators.</p>
-          <p class="metric-source">Ladybug corpus · first 1,600 · DuckDB · July 2026 snapshot</p>
+          <p class="metric-name">Cypher relational lowering</p>
+          <p class="metric-value">88.4<small>%</small></p>
+          <p class="metric-detail"><b>4,816 / 5,446</b> runnable cases lowered into relational work for SQL generation.</p>
+          <p class="metric-source">Ladybug corpus · full denominator · August 2026 snapshot</p>
         </article>
         <article class="metric">
           <p class="metric-name">Gremlin accuracy</p>
           <p class="metric-value">95.0<small>%</small></p>
-          <p class="metric-detail"><b>1,584 / 1,667</b> runnable cases matched expected output. Another 42 lacked harness datasets.</p>
+          <p class="metric-detail"><b>1,584 / 1,667</b> runnable interpreter cases matched expected output. The separate DuckDB path matches <b>578 / 1,667</b>.</p>
           <p class="metric-source">TinkerPop corpus · interpreter · August 2026 snapshot</p>
         </article>
         <article class="metric">
           <p class="metric-name">SPARQL Graph IR planning</p>
           <p class="metric-value">96.0<small>%</small></p>
-          <p class="metric-detail"><b>408 / 425</b> selected W3C query files reached Graph IR. All <b>408 / 408</b> queries accepted by the standards parser were planned.</p>
+          <p class="metric-detail"><b>408 / 425</b> selected W3C query files reached Graph IR. A mapped <b>6 / 6</b> integration matrix also matched expected rows in DuckDB.</p>
           <p class="metric-source">W3C RDF tests · query collections · August 2026 snapshot</p>
         </article>
       </div>
 
       <details class="benchmark-note">
-        <summary>Why four different measures?</summary>
-        <p><b>Agreement</b> tests whether SQL execution matches the graph interpreter. <b>Pushdown</b> tests whether a plan ran entirely in SQL. <b>Accuracy</b> tests an execution result against imported corpus output. <b>SPARQL planning</b> counts W3C query files that reach Graph IR after parsing. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/language_coverage_review.md">language review</a> records the current Gremlin denominator and reproduction command. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/sparql_coverage.md">SPARQL benchmark note</a> pins its corpus commit and reproduction command.</p>
+        <summary>Why different measures?</summary>
+        <p><b>Accuracy</b> compares an execution result with imported corpus output. <b>Relational lowering</b> counts plans that reach relational work for SQL generation. <b>SPARQL planning</b> counts W3C query files that reach Graph IR after parsing. The mapped SPARQL matrix separately checks expected DuckDB rows. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/language_coverage_review.md">language review</a> records the current Cypher and Gremlin denominators and reproduction commands. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/sparql_coverage.md">SPARQL benchmark note</a> pins its corpus commit and execution matrix.</p>
       </details>
 
       <div class="matrix-wrap" tabindex="0" aria-label="Scrollable implementation coverage table">

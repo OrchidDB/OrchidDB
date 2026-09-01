@@ -82,3 +82,27 @@ resolves vocabulary IRIs to property-graph labels, relationship types, and
 properties. The existing graph schema mapping then resolves those concepts to
 user-owned tables, queries, and views. Crabgraph does not require or provide an
 RDF triples or quads storage adapter.
+
+## Mapped DuckDB execution matrix
+
+The repository also contains a six-query expected-output matrix over
+user-owned DuckDB views. It covers mapped resource identities and properties,
+filters, ordering and limits, distinct projection, relationships, and required
+numeric properties. All six queries parse, plan through the ontology and graph
+schema mappings, lower to SQL, execute in DuckDB, and match their expected
+rows.
+
+| Boundary | Result |
+| --- | ---: |
+| Mapped queries planned | 6 / 6 (100.0%) |
+| Mapped queries lowered to DuckDB SQL | 6 / 6 (100.0%) |
+| DuckDB results matching expected rows | 6 / 6 (100.0%) |
+
+Reproduce the matrix with:
+
+```sh
+cargo test --test sparql_smoke mapped_sparql_duckdb_execution_matrix -- --nocapture
+```
+
+This is an integration matrix, not a SPARQL conformance denominator. The W3C
+query-file denominator above remains the broader parser and planner measure.

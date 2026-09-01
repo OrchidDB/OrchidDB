@@ -407,4 +407,9 @@ fn mapped_sparql_duckdb_execution_matrix() {
             index + 1
         );
     }
+    eprintln!(
+        "mapped SPARQL DuckDB execution: {}/{} matched",
+        cases.len(),
+        cases.len()
+    );
 }

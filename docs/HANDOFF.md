@@ -50,22 +50,22 @@ Command:
 scripts/run-rel-coverage.sh cypher 4
 ```
 
-Last full checkpoint before the final Gremlin batch:
+Current full checkpoint:
 
 | Measure | Result |
 | --- | ---: |
 | Total | 5,593 |
 | Runnable | 5,446 |
-| Matched | 3,390 |
+| Matched | 3,392 |
 | Parsed | 5,427 |
 | Planned | 5,399 |
-| Lowered | 4,813 |
+| Lowered | 4,816 |
 | Executed | 4,634 |
-| Mismatches | 1,244 |
+| Mismatches | 1,242 |
 | Skipped fixture data | 147 |
 
 The original checkpoint was 3,238 matches, 4,610 lowered, and 4,443
-executed. The verified net movement was therefore +152 matches, +203 lowered,
+executed. The verified net movement is therefore +154 matches, +206 lowered,
 and +191 executed.
 
 ### Gremlin through DuckDB
@@ -82,17 +82,16 @@ Last full checkpoint:
 | --- | ---: |
 | Total | 1,709 |
 | Runnable | 1,667 |
-| Matched | 558 |
+| Matched | 578 |
 | Parsed | 1,667 |
 | Planned | 1,667 |
-| Lowered | 823 |
-| Executed | 725 |
-| Mismatches | 167 |
+| Lowered | 888 |
+| Executed | 782 |
+| Mismatches | 204 |
 | Skipped fixture data | 42 |
 
-This is +22 matches over the initial 536-match DuckDB checkpoint. The last
-verified pass converted 16 execution errors into matches and recorded zero
-matched-to-failed regressions.
+This is +42 matches and +149 lowered cases over the initial DuckDB checkpoint.
+The final transition report records zero matched-to-failed regressions.
 
 ### SPARQL
 
@@ -105,10 +104,11 @@ identity and property mappings, filters, ordering and limits, distinct
 projection, relationships, and required mapped numeric properties over
 user-owned views.
 
+The current matrix result is 6 / 6 planned, lowered, executed, and matched.
+
 ## Current verification boundary
 
-The final batched edits after the 558-match Gremlin checkpoint have not yet
-received a full corpus run. They add relational lowering for:
+The final batched edits add relational lowering for:
 
 - `cast_number`, `cast_bigint`, `cast_bigdecimal`, and `gremlin_cast_date`;
 - `gremlin_math_bin`;
@@ -119,8 +119,9 @@ received a full corpus run. They add relational lowering for:
 - local trim and reverse string aliases;
 - DuckDB list-replacement naming.
 
-Run formatting, the focused SPARQL matrix, and the two full denominators before
-changing public coverage figures:
+They have received the focused SPARQL execution check and full Gremlin and
+Cypher DuckDB denominators. Both transition reports contain zero
+matched-to-failed regressions. Reproduce the verification with:
 
 ```sh
 cargo fmt --all -- --check
@@ -155,7 +156,7 @@ presented as execution conformance.
 ## Website and copy
 
 The landing page is under `website/`. Its language should continue to follow
-`website/STYLE_GUIDE.md`: direct technical prose, concrete nouns, measured
+`website/STYLE.md`: direct technical prose, concrete nouns, measured
 claims, and no em dashes. Keep DataFusion described as the foundation of the
 planner, not as a database. Keep the graph schema and ontology mapping layers
 separate in diagrams and examples.
