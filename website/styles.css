@@ -52,16 +52,24 @@ h1 strong { color: var(--red); font-weight: inherit; }
 .button-secondary { background: var(--white); box-shadow: 4px 4px 0 var(--ink); }
 .hero-note { margin: 24px 0 0; color: var(--muted); font: 500 11px var(--mono); }
 
-.compiler-card { align-self: center; margin: 48px clamp(24px, 4vw, 64px); border: 1px solid var(--ink); background: var(--white); box-shadow: 10px 10px 0 var(--blue); font-family: var(--mono); }
+.compiler-card { --cycle-duration: 5.4s; align-self: center; margin: 48px clamp(24px, 4vw, 64px); border: 1px solid var(--ink); background: var(--white); box-shadow: 10px 10px 0 var(--blue); font-family: var(--mono); }
 .card-bar { border-bottom: 1px solid var(--ink); background: var(--ink); color: white; font-size: 11px; }
 .card-top { display: flex; justify-content: space-between; padding: 11px 16px; }
 .example-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #52615d; }
-.example-tabs button { min-width: 0; padding: 9px 5px; border: 0; border-right: 1px solid #52615d; background: transparent; color: #aebbb7; font: 500 9px var(--mono); cursor: pointer; }
+.example-tabs button { position: relative; min-width: 0; overflow: hidden; padding: 9px 5px 11px; border: 0; border-right: 1px solid #52615d; background: transparent; color: #aebbb7; font: 500 9px var(--mono); cursor: pointer; }
+.example-tabs button span { position: relative; z-index: 1; }
+.example-tabs button i { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--red); opacity: 0; transform: scaleX(0); transform-origin: left; }
 .example-tabs button:last-child { border-right: 0; }
 .example-tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); }
+.example-tabs button[aria-selected="true"] i { opacity: 1; animation: tab-cycle var(--cycle-duration) linear forwards; }
+.compiler-card.is-paused .example-tabs button[aria-selected="true"] i { animation-play-state: paused; }
+.compiler-card.is-switching .example-tabs button[aria-selected="true"] i { opacity: .45; animation: none; transform: scaleX(1); }
 .example-tabs button:hover:not([aria-selected="true"]) { color: white; background: #26312e; }
+.plan-content { transition: opacity .18s ease, transform .18s ease; }
+.compiler-card.is-switching .plan-content { opacity: .28; transform: translateY(3px); }
 .status-light { color: #d9e5d2; }
 .status-light::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; background: #d9e5d2; border-radius: 50%; box-shadow: 0 0 0 3px rgb(217 229 210 / 14%); }
+.compiler-card.is-switching .status-light::before { border: 1px solid #d9e5d2; border-top-color: transparent; background: transparent; box-shadow: none; animation: plan-spin .65s linear infinite; }
 .code-stage, .ir-stage, .sql-stage { padding: 18px 20px; }
 .code-stage { background: #f8f6ef; }
 .sql-stage { background: var(--blue); color: #edf5fc; }
@@ -213,4 +221,11 @@ footer > div a:hover { color: var(--red); }
 @media (prefers-reduced-motion: no-preference) {
   .compiler-card { animation: settle .6s cubic-bezier(.2,.8,.2,1) both; }
   @keyframes settle { from { opacity: 0; transform: translateY(14px); } }
+  @keyframes tab-cycle { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes plan-spin { to { transform: rotate(360deg); } }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .example-tabs button[aria-selected="true"] i { animation: none; transform: scaleX(1); }
+  .plan-content { transition: none; }
 }

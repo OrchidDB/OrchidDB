@@ -36,6 +36,16 @@
   const ir = document.querySelector("#ir-rows");
   const sql = document.querySelector("#sql-code");
   const outputLabel = document.querySelector("#output-label");
+  const demo = document.querySelector("[data-query-demo]");
+  const panel = document.querySelector("#query-example-panel");
+  const planStatus = document.querySelector("#plan-status");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const cycleDuration = 5400;
+  const transitionDuration = 220;
+  let cycleTimer;
+  let transitionTimer;
+  let isVisible = true;
+  let interactionPaused = false;
 
   function selectExample(tab) {
     const example = examples[tab.dataset.example];
@@ -51,19 +61,90 @@
     ).join("");
     outputLabel.textContent = example.outputLabel;
     sql.innerHTML = example.sql;
+    panel.setAttribute("aria-labelledby", tab.id);
+  }
+
+  function stopCycle() {
+    window.clearTimeout(cycleTimer);
+    cycleTimer = undefined;
+  }
+
+  function scheduleCycle() {
+    stopCycle();
+    if (reduceMotion.matches || !isVisible || interactionPaused || document.hidden) return;
+    demo.classList.remove("is-paused");
+    cycleTimer = window.setTimeout(() => {
+      const current = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+      transitionTo(tabs[(current + 1) % tabs.length]);
+    }, cycleDuration);
+  }
+
+  function transitionTo(tab, immediate = false) {
+    stopCycle();
+    window.clearTimeout(transitionTimer);
+    if (immediate || reduceMotion.matches) {
+      selectExample(tab);
+      planStatus.textContent = interactionPaused ? "plan selected" : "cycling live plans";
+      scheduleCycle();
+      return;
+    }
+    demo.classList.add("is-switching");
+    planStatus.textContent = `planning ${tab.dataset.example}…`;
+    transitionTimer = window.setTimeout(() => {
+      selectExample(tab);
+      demo.classList.remove("is-switching");
+      planStatus.textContent = "cycling live plans";
+      scheduleCycle();
+    }, transitionDuration);
+  }
+
+  function pauseForInteraction() {
+    interactionPaused = true;
+    demo.classList.add("is-paused");
+    planStatus.textContent = "plan selected";
+    stopCycle();
+  }
+
+  function resumeCycle() {
+    interactionPaused = false;
+    demo.classList.remove("is-paused");
+    planStatus.textContent = "cycling live plans";
+    scheduleCycle();
   }
 
   tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => selectExample(tab));
+    tab.addEventListener("click", () => {
+      pauseForInteraction();
+      transitionTo(tab);
+    });
     tab.addEventListener("keydown", (event) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
       const offset = event.key === "ArrowRight" ? 1 : -1;
       const next = tabs[(index + offset + tabs.length) % tabs.length];
-      selectExample(next);
+      pauseForInteraction();
+      transitionTo(next, true);
       next.focus();
     });
   });
+
+  demo.addEventListener("mouseenter", pauseForInteraction);
+  demo.addEventListener("mouseleave", () => {
+    if (!demo.contains(document.activeElement)) resumeCycle();
+  });
+  demo.addEventListener("focusin", pauseForInteraction);
+  demo.addEventListener("focusout", (event) => {
+    if (!demo.contains(event.relatedTarget) && !demo.matches(":hover")) resumeCycle();
+  });
+  document.addEventListener("visibilitychange", scheduleCycle);
+  reduceMotion.addEventListener("change", scheduleCycle);
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(([entry]) => {
+      isVisible = entry.isIntersecting;
+      scheduleCycle();
+    }, { threshold: 0.25 }).observe(demo);
+  }
+  scheduleCycle();
 
   const byosExamples = {
     cypher: {

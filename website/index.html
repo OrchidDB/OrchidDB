@@ -49,17 +49,18 @@
         <p class="hero-note">Rust · Apache Arrow · built on DataFusion · DuckDB by default</p>
       </div>
 
-      <div class="compiler-card" aria-label="A Cypher query becomes graph IR and a SQL island">
+      <div class="compiler-card" aria-label="Graph queries become graph IR and SQL islands" data-query-demo>
         <div class="card-bar">
-          <div class="card-top"><span>query.plan</span><span class="status-light">live architecture</span></div>
+          <div class="card-top"><span>query.plan</span><span class="status-light" id="plan-status">cycling live plans</span></div>
           <div class="example-tabs" role="tablist" aria-label="Query examples">
-            <button type="button" role="tab" aria-selected="true" tabindex="0" data-example="cypher">Cypher</button>
-            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-example="gremlin">Gremlin</button>
-            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-example="sparql">SPARQL</button>
-            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-example="recursive">Recursive path</button>
+            <button id="example-tab-cypher" type="button" role="tab" aria-controls="query-example-panel" aria-selected="true" tabindex="0" data-example="cypher"><span>Cypher</span><i aria-hidden="true"></i></button>
+            <button id="example-tab-gremlin" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="gremlin"><span>Gremlin</span><i aria-hidden="true"></i></button>
+            <button id="example-tab-sparql" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="sparql"><span>SPARQL</span><i aria-hidden="true"></i></button>
+            <button id="example-tab-recursive" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="recursive"><span>Recursive path</span><i aria-hidden="true"></i></button>
           </div>
         </div>
-        <div class="code-stage" role="tabpanel" aria-live="polite">
+        <div class="plan-content" id="query-example-panel" role="tabpanel" aria-labelledby="example-tab-cypher" aria-live="polite" aria-atomic="true">
+        <div class="code-stage">
           <p class="stage-label"><span>01</span> <b id="input-label">CYPHER INPUT</b></p>
           <pre><code id="query-code"><span class="kw">MATCH</span> (p:Person)-[:KNOWS]-&gt;(f)
 <span class="kw">WHERE</span> f.city = <span class="str">'Chicago'</span>
@@ -77,6 +78,7 @@
           <p class="stage-label"><span>03</span> <b id="output-label">DUCKDB SQL</b></p>
           <pre><code id="sql-code"><span class="kw">SELECT</span> p.name, <span class="fn">count</span>(f.id) …
 <span class="kw">FROM</span> person p <span class="kw">JOIN</span> knows e …</code></pre>
+        </div>
         </div>
       </div>
     </section>
