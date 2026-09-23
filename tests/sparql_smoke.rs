@@ -430,7 +430,7 @@ async fn distinct_preserves_order_by_unprojected_values() {
             .unwrap();
         let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await.unwrap();
         let actual = DuckDbExecutor::new()
-            .run(&prepared.setup, &prepared.query)
+            .run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
             .unwrap();
         let expected = expected
             .into_iter()
@@ -464,7 +464,7 @@ async fn nested_distinct_has_independent_internal_columns() {
         .unwrap();
     let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await.unwrap();
     let actual = DuckDbExecutor::new()
-        .run(&prepared.setup, &prepared.query)
+        .run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
         .unwrap();
     assert_eq!(
         actual,

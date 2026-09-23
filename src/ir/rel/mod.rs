@@ -7,7 +7,11 @@
 //! base relational scans, joins, projections, filters, and aggregates that
 //! DataFusion can execute directly.
 
+mod apply;
+mod casts;
 pub mod mapping;
+pub mod rdf;
+mod repeat;
 pub mod sql;
 mod varlen;
 
@@ -46,6 +50,7 @@ use datafusion::prelude::{SessionConfig, SessionContext, lit};
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 
+use crate::ir::analysis::{ReadCapabilities, ReadValidationError, validate_read_capabilities};
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
 use crate::ir::interpreter::{
@@ -54,9 +59,9 @@ use crate::ir::interpreter::{
 use crate::ir::plan::{
     ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
     GraphPlan, JoinKind, LabelExpr, Node, NullsOrder, ProjectMode, ProjectionItem, QuantifierKind,
-    Slice, SortDir, TargetMode, UnionAlign,
+    Slice, SortDir, SortKey, TargetMode, UnionAlign,
 };
-use crate::ir::policy::{Language, ResultForm};
+use crate::ir::policy::{GraphPlanPolicy, Language, ResultForm};
 use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 const ID_SUFFIX: &str = "__id";
@@ -92,6 +97,8 @@ pub struct RelBackendOptions {
     /// through this mapping (user tables, views, or SQL queries) instead of
     /// the `PropertyGraph` catalog. See [`mapping::GraphMapping`].
     pub mapping: Option<Arc<mapping::GraphMapping>>,
+    /// Read-only RDF quad sources keyed by SPARQL dataset name.
+    pub rdf_datasets: Option<Arc<rdf::RdfDatasetMapping>>,
     /// Optional, explicitly requested guard on recursive variable-length
     /// expansion depth. `None` preserves complete trail semantics and is the
     /// default; setting a value trades completeness for a workload ceiling.
@@ -103,6 +110,7 @@ impl Default for RelBackendOptions {
         Self {
             tolerate_internal_path_state: true,
             mapping: None,
+            rdf_datasets: None,
             varlen_recursive_ceiling: None,
         }
     }
@@ -110,6 +118,8 @@ impl Default for RelBackendOptions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RelError {
+    #[error("read plan validation: {0}")]
+    ReadValidation(#[from] ReadValidationError),
     #[error("unsupported relational lowering: {0}")]
     Unsupported(String),
     #[error("catalog: {0}")]
@@ -174,9 +184,11 @@ enum BindingShape {
 struct LoweringContext<'a> {
     graph: &'a PropertyGraph,
     options: RelBackendOptions,
+    policy: GraphPlanPolicy,
     language: Language,
     scan_counter: usize,
     correlate_plan: Option<LogicalPlan>,
+    rdf_typed_terms_used: bool,
 }
 
 impl RelBackend {
@@ -189,6 +201,7 @@ impl RelBackend {
     }
 
     pub fn lower(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
+        validate_read_capabilities(plan, ReadCapabilities::LOCAL_DUCKDB)?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin
             && graph_stats.bidirectional_expands >= 2
@@ -206,9 +219,11 @@ impl RelBackend {
         let mut ctx = LoweringContext {
             graph,
             options: self.options.clone(),
+            policy: plan.policy.clone(),
             language: plan.policy.language,
             scan_counter: 0,
             correlate_plan: None,
+            rdf_typed_terms_used: false,
         };
         let lowered = ctx.lower_node(&plan.root)?;
         let fields = lowered
@@ -218,7 +233,7 @@ impl RelBackend {
         Ok(LoweredPlan {
             plan: lowered.plan,
             fields,
-            result_form: lowered.result_form.unwrap_or(ResultForm::RowSet),
+            result_form: lowered.result_form.unwrap_or(ctx.policy.result_form),
             islands: lowered.islands,
         })
     }
@@ -411,6 +426,17 @@ impl<'a> LoweringContext<'a> {
                 input,
             } => {
                 let input = self.lower_node(input)?;
+                if self.rdf_typed_terms_used
+                    && fields.iter().any(|field| {
+                        rdf::binding_identity_columns(field)
+                            .iter()
+                            .any(|identity| has_exact_col(&input.plan, identity))
+                    })
+                {
+                    return Err(RelError::Unsupported(
+                        "typed RDF result terms cannot be represented by ReturnedBatches; project them only after an explicit RDF-term result contract is available".into(),
+                    ));
+                }
                 let exprs = self.return_projection(&input.plan, fields)?;
                 let plan = LogicalPlanBuilder::from(input.plan)
                     .project(exprs)?
@@ -426,6 +452,22 @@ impl<'a> LoweringContext<'a> {
                 binding, labels, ..
             } => self.lower_node_scan(binding, labels)?,
             GraphRelScan { binding, types, .. } => self.lower_rel_scan(binding, types)?,
+            GraphSparqlTriplePattern {
+                dataset,
+                graph_scope,
+                subject,
+                predicate,
+                object,
+                outputs,
+            } => rdf::lower_iri_quad_pattern(
+                self,
+                dataset,
+                graph_scope,
+                subject,
+                predicate,
+                object,
+                outputs,
+            )?,
             GraphValues {
                 bindings,
                 rows,
@@ -525,6 +567,11 @@ impl<'a> LoweringContext<'a> {
                 group, aggs, input, ..
             } => {
                 let input = self.lower_node(input)?;
+                if input.plan.schema().fields().iter().any(|field| field.name().starts_with("__rdf:term:")) {
+                    return Err(RelError::Unsupported(
+                        "aggregation over RDF terms requires an identity-aware aggregate contract".into(),
+                    ));
+                }
                 if aggs.len() == 1
                     && aggs[0].distinct
                     && matches!(
@@ -691,7 +738,22 @@ impl<'a> LoweringContext<'a> {
                 let input = self.lower_node(input)?;
                 let barrier_id = self.scan_counter;
                 self.scan_counter += 1;
-                let plan = keyed_distinct(input.plan.clone(), keys, barrier_id)?;
+                let mut identity_keys = Vec::new();
+                for key in keys {
+                    let aliases = rdf::binding_identity_columns(key);
+                    let present = aliases.iter().filter(|name| has_exact_col(&input.plan, name)).count();
+                    if present != 0 && present != aliases.len() {
+                        return Err(RelError::Unsupported(format!(
+                            "RDF DISTINCT key `{key}` has incomplete term identity metadata"
+                        )));
+                    }
+                    if present == aliases.len() {
+                        identity_keys.extend(aliases);
+                    }
+                }
+                let mut distinct_keys = keys.clone();
+                distinct_keys.extend(identity_keys);
+                let plan = keyed_distinct(input.plan.clone(), &distinct_keys, barrier_id)?;
                 input.with_plan(plan)
             }
             GraphSort { keys, input } => {
@@ -786,6 +848,13 @@ impl<'a> LoweringContext<'a> {
                 output,
                 input,
             } => self.lower_group_map(key, value, output, input)?,
+            GraphCollect {
+                value,
+                distinct,
+                order,
+                alias,
+                input,
+            } => self.lower_collect(value, *distinct, order, alias, input)?,
             GraphQuantifier {
                 kind,
                 item_binding,
@@ -797,6 +866,7 @@ impl<'a> LoweringContext<'a> {
                 self.lower_quantifier(*kind, item_binding, input_expr, predicate, output, input)?
             }
             GraphRepeat {
+                loop_name,
                 times,
                 emit,
                 until,
@@ -807,17 +877,18 @@ impl<'a> LoweringContext<'a> {
                 seed,
                 body,
                 ..
-            } => self.lower_repeat(
-                *times,
+            } => self.lower_repeat(repeat::RepeatSpec {
+                loop_name: loop_name.as_deref(),
+                times: *times,
                 emit,
-                until.as_ref(),
-                until_traversal.as_deref(),
-                path.as_deref(),
-                prefix_predicate.as_ref(),
-                prefix_traversal.as_deref(),
+                until: until.as_ref(),
+                until_traversal: until_traversal.as_deref(),
+                path: path.as_deref(),
+                prefix_predicate: prefix_predicate.as_ref(),
+                prefix_traversal: prefix_traversal.as_deref(),
                 seed,
                 body,
-            )?,
+            })?,
             other => {
                 return Err(RelError::Unsupported(format!(
                     "{}",
@@ -1185,7 +1256,10 @@ impl<'a> LoweringContext<'a> {
             };
         };
 
-        let mut projections = existing_columns(&input.plan, &BTreeSet::from([bind.to_string()]));
+        let mut projections = existing_columns(
+            &input.plan,
+            &BTreeSet::from([bind.to_string(), casts::value_union_tag_col(bind)]),
+        );
         projections.extend(self.project_item_exprs(&input.plan, bind, expr)?);
         let plan = LogicalPlanBuilder::from(input.plan.clone())
             .project(projections)?
@@ -1544,7 +1618,25 @@ impl<'a> LoweringContext<'a> {
         input: &Node,
     ) -> RelResult<LoweredNode> {
         let input = self.lower_node(input)?;
-        let aliases = projection_aliases(items);
+        let projected_aliases = items.iter().map(|item| item.alias.as_str()).collect::<BTreeSet<_>>();
+        if mode == ProjectMode::ReplaceScope
+            && input.plan.schema().fields().iter().any(|field| {
+                field.name().starts_with("__rdf:term:")
+                    && !projected_aliases.contains(field.name().as_str())
+            })
+        {
+            return Err(RelError::Unsupported(
+                "SPARQL projection would discard RDF term identity needed for typed results or joins".into(),
+            ));
+        }
+        let mut aliases = projection_aliases(items);
+        // A re-projected alias replaces its union-tag companion too, or the
+        // carried and the re-emitted companion would share a name.
+        aliases.extend(
+            items
+                .iter()
+                .map(|item| casts::value_union_tag_col(&item.alias)),
+        );
         if mode == ProjectMode::PreserveVisible
             && aliases
                 .iter()
@@ -1558,7 +1650,10 @@ impl<'a> LoweringContext<'a> {
         }
         let mut projections = match mode {
             ProjectMode::PreserveVisible => existing_columns(&input.plan, &aliases),
-            ProjectMode::ReplaceScope => Vec::new(),
+            ProjectMode::ReplaceScope => apply_correlation_key_columns(&input.plan)
+                .iter()
+                .map(col_exact)
+                .collect(),
             ProjectMode::ReplaceCurrent => {
                 let mut excluded = aliases;
                 excluded.insert("current".to_string());
@@ -1668,8 +1763,17 @@ impl<'a> LoweringContext<'a> {
         right: &Node,
     ) -> RelResult<LoweredNode> {
         let left = self.lower_node(left)?;
-        let (left_plan, key_cols, cleanup) =
+        let (left_plan, mut key_cols, mut cleanup) =
             with_apply_correlation_keys(left.plan.clone(), correlation)?;
+        let left_plan = if matches!(kind, ApplyKind::Scalar | ApplyKind::Optional)
+            && first_correlate_bindings(right).is_some()
+        {
+            let barrier_id = self.scan_counter;
+            self.scan_counter += 1;
+            apply::with_row_identity(left_plan, &mut key_cols, &mut cleanup, barrier_id)?
+        } else {
+            left_plan
+        };
         let left = left.with_plan(left_plan);
         let previous = self.correlate_plan.replace(left.plan.clone());
         let right = self.lower_node(right);
@@ -1705,7 +1809,26 @@ impl<'a> LoweringContext<'a> {
                         .project(columns)?
                         .alias(name)?
                         .build()?;
-                    right.plan = LogicalPlanBuilder::from(left.plan.clone())
+                    // GraphApply's interpreter lets an inner traversal's
+                    // synthetic Gremlin path replace the incoming path. Keep
+                    // that same ownership here: a cross join with both
+                    // columns named `__path` leaves DataFusion unable to
+                    // resolve the right CTE's qualified field alongside the
+                    // outer unqualified field.
+                    let left_plan = if has_exact_col(&left.plan, "__path")
+                        && has_exact_col(&right.plan, "__path")
+                    {
+                        let projections = existing_columns_by_name(
+                            &left.plan,
+                            &BTreeSet::from(["__path".to_string()]),
+                        );
+                        LogicalPlanBuilder::from(left.plan.clone())
+                            .project(projections)?
+                            .build()?
+                    } else {
+                        left.plan.clone()
+                    };
+                    right.plan = LogicalPlanBuilder::from(left_plan)
                         .cross_join(right_input)?
                         .build()?;
                 }
@@ -1720,7 +1843,9 @@ impl<'a> LoweringContext<'a> {
             ApplyKind::Semi | ApplyKind::Anti => {
                 self.lower_existence_apply(kind, &key_cols, cleanup, left, right)
             }
-            ApplyKind::Optional | ApplyKind::Scalar => {
+            ApplyKind::Optional => self.lower_left_apply(&key_cols, outputs, cleanup, left, right),
+            ApplyKind::Scalar => {
+                let right = apply::guard_scalar_cardinality(right, &key_cols)?;
                 self.lower_left_apply(&key_cols, outputs, cleanup, left, right)
             }
         }
@@ -1973,6 +2098,121 @@ impl<'a> LoweringContext<'a> {
         Ok(input.with_plan(plan))
     }
 
+    /// Collect the rows produced for one correlated input into a list.
+    /// Unlike aggregate `COLLECT`, this projection retains null elements and
+    /// returns an empty list for an input that produced no rows.
+    fn lower_collect(
+        &mut self,
+        value: &IrExpr,
+        distinct: bool,
+        order: &[SortKey],
+        alias: &str,
+        input: &Node,
+    ) -> RelResult<LoweredNode> {
+        if distinct {
+            return Err(RelError::Unsupported(
+                "GraphCollect DISTINCT has no stable first-occurrence ordering".into(),
+            ));
+        }
+
+        let input = self.lower_node(input)?;
+        let value_expr = self.lower_expr(&input.plan, value)?;
+        let value_type = value_expr
+            .get_type(input.plan.schema())
+            .map_err(|err| RelError::Unsupported(format!("GraphCollect value type: {err}")))?;
+        let correlation_keys = apply_correlation_key_columns(&input.plan);
+        let order_exprs = if order.is_empty() {
+            // Keep backend scan order when available. GraphUnwind currently
+            // carries no element ordinal, so ties cannot portably order list
+            // elements; that limitation is reported at the feature boundary.
+            scan_order_keys(&input.plan)
+        } else {
+            order
+                .iter()
+                .map(|key| self.sort_exprs(&input.plan, key))
+                .collect::<RelResult<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
+        let list_expr = if order_exprs.is_empty() {
+            df_array_agg(value_expr)
+        } else {
+            df_array_agg(value_expr).order_by(order_exprs).build()?
+        };
+        let empty_list = Expr::Cast(Cast::new(
+            Box::new(datafusion::functions_nested::expr_fn::make_array(Vec::new())),
+            DataType::List(Arc::new(Field::new("item", value_type, true))),
+        ));
+
+        if correlation_keys.is_empty() {
+            let plan = LogicalPlanBuilder::from(input.plan.clone())
+                .aggregate(
+                    Vec::<Expr>::new(),
+                    vec![df_core::coalesce(vec![list_expr, empty_list]).alias(alias)],
+                )?
+                .build()?;
+            return Ok(input.with_plan(plan));
+        }
+
+        let right_key_aliases = correlation_keys
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("__w_collect_key_{index}"))
+            .collect::<Vec<_>>();
+        let group_exprs = correlation_keys
+            .iter()
+            .zip(&right_key_aliases)
+            .map(|(key, alias)| col_exact(key).alias(alias))
+            .collect::<Vec<_>>();
+        let grouped = LogicalPlanBuilder::from(input.plan.clone())
+            .aggregate(
+                group_exprs,
+                vec![list_expr.alias("__w_collect_values")],
+            )?
+            .build()?;
+
+        // Reintroduce correlated input rows whose collection became empty
+        // after UNWIND/filter. Using distinct correlation identities prevents
+        // the inner result from multiplying duplicate outer rows.
+        let correlated = self.correlate_plan.as_ref().ok_or_else(|| {
+            RelError::Unsupported(
+                "GraphCollect with correlation keys has no correlated outer input".into(),
+            )
+        })?;
+        if !correlation_keys
+            .iter()
+            .all(|key| has_exact_col(correlated, key))
+        {
+            return Err(RelError::Unsupported(
+                "GraphCollect correlation keys are unavailable from the outer input".into(),
+            ));
+        }
+        let base = LogicalPlanBuilder::from(correlated.clone())
+            .project(correlation_keys.iter().map(col_exact).collect::<Vec<_>>())?
+            .build()?;
+        let barrier_id = self.scan_counter;
+        self.scan_counter += 1;
+        let base = keyed_distinct(base, &correlation_keys, barrier_id)?;
+        let join_conditions = correlation_keys
+            .iter()
+            .zip(&right_key_aliases)
+            .map(|(left, right)| col_exact(left).eq(col_exact(right)))
+            .collect::<Vec<_>>();
+        let joined = LogicalPlanBuilder::from(base)
+            .join_on(grouped, JoinType::Left, join_conditions)?
+            .build()?;
+        let mut output = correlation_keys
+            .iter()
+            .map(col_exact)
+            .collect::<Vec<_>>();
+        output.push(
+            df_core::coalesce(vec![col_exact("__w_collect_values"), empty_list]).alias(alias),
+        );
+        let plan = LogicalPlanBuilder::from(joined).project(output)?.build()?;
+        Ok(input.with_plan(plan))
+    }
+
     /// Lower three-valued ALL/ANY/NONE/SINGLE semantics by assigning each
     /// input row an identity, unnesting its list, and reducing predicate
     /// outcomes back to one boolean per original row. The interpreter keeps
@@ -2166,152 +2406,6 @@ impl<'a> LoweringContext<'a> {
         Ok(input.with_plan(plan))
     }
 
-    /// `repeat(body).times(n)` via bounded unrolling: apply the lowered
-    /// body n times, feeding each iteration's plan into the body's
-    /// `GraphCorrelate` leaf. Only the times-terminated subset lowers;
-    /// until-terminated loops keep their typed unsupported error.
-    #[allow(clippy::too_many_arguments)]
-    fn lower_repeat(
-        &mut self,
-        times: Option<u32>,
-        emit: &crate::ir::plan::EmitMode,
-        until: Option<&IrExpr>,
-        until_traversal: Option<&Node>,
-        path: Option<&str>,
-        prefix_predicate: Option<&IrExpr>,
-        prefix_traversal: Option<&Node>,
-        seed: &Node,
-        body: &Node,
-    ) -> RelResult<LoweredNode> {
-        use crate::ir::plan::EmitMode;
-        const REPEAT_CAP: u32 = 8;
-        if until.is_some() || until_traversal.is_some() {
-            return Err(RelError::Unsupported(
-                "GraphRepeat with until termination".into(),
-            ));
-        }
-        if prefix_traversal.is_some() {
-            return Err(RelError::Unsupported(
-                "GraphRepeat with emit sub-traversal".into(),
-            ));
-        }
-        if path.is_some() && !self.options.tolerate_internal_path_state {
-            return Err(RelError::Unsupported("GraphRepeat with path".into()));
-        }
-        let Some(times) = times else {
-            return Err(RelError::Unsupported(
-                "GraphRepeat without times bound".into(),
-            ));
-        };
-        if times > REPEAT_CAP {
-            return Err(RelError::Unsupported(format!(
-                "GraphRepeat times {times} exceeds unroll cap {REPEAT_CAP}"
-            )));
-        }
-        if times > 1 {
-            let mut pending = vec![body];
-            while let Some(node) = pending.pop() {
-                if matches!(node, Node::GraphDistinct { .. }) {
-                    // The repeat interpreter shares a seen set across rounds.
-                    // Independent SQL DISTINCT windows would reset that state.
-                    return Err(RelError::Unsupported(
-                        "GraphRepeat with stateful deduplication across iterations".into(),
-                    ));
-                }
-                pending.extend(node_children(node));
-            }
-        }
-        // Whether the seed itself is emitted (`emit()` before `repeat`).
-        let emit_seed = match (emit, prefix_predicate) {
-            (EmitMode::AfterLoop, _) => false,
-            (_, Some(predicate)) => match constant_value_expr(predicate) {
-                Ok(Some(Value::Bool(value))) => value,
-                _ => {
-                    return Err(RelError::Unsupported(
-                        "GraphRepeat with non-constant emit predicate".into(),
-                    ));
-                }
-            },
-            // Mirrors the interpreter: the seed is only emitted when a
-            // prefix-emit predicate/traversal was attached.
-            (EmitMode::AfterEachIteration, None) => false,
-            (EmitMode::AfterEachIfPredicate(_) | EmitMode::AfterEachIfTraversal(_), None) => {
-                return Err(RelError::Unsupported(
-                    "GraphRepeat with conditional emit".into(),
-                ));
-            }
-        };
-        let emit_each = !matches!(emit, EmitMode::AfterLoop);
-
-        let seed = self.lower_node(seed)?;
-        let mut islands = seed.islands.clone();
-        let mut current = seed.plan.clone();
-        let mut emitted: Vec<LogicalPlan> = Vec::new();
-        if emit_seed {
-            emitted.push(current.clone());
-        }
-        let correlate_bindings = first_correlate_bindings(body);
-        for _ in 0..times {
-            // The body re-lowers with fixed binding names each iteration;
-            // restrict the incoming plan to the bindings its correlate leaf
-            // consumes so re-introduced scans do not collide with leftover
-            // columns from the previous iteration.
-            let feed = match &correlate_bindings {
-                Some(bindings) => {
-                    let mut projections = apply_correlation_key_columns(&current)
-                        .iter()
-                        .map(col_exact)
-                        .collect::<Vec<_>>();
-                    for field in output_fields(&current) {
-                        if bindings
-                            .iter()
-                            .any(|binding| field == *binding || is_binding_column(&field, binding))
-                            && !projections
-                                .iter()
-                                .any(|expr| matches!(expr, Expr::Column(col) if col.name == field))
-                        {
-                            projections.push(col_exact(&field));
-                        }
-                    }
-                    if projections.is_empty() {
-                        current.clone()
-                    } else {
-                        LogicalPlanBuilder::from(current.clone())
-                            .project(projections)?
-                            .build()?
-                    }
-                }
-                None => current.clone(),
-            };
-            let iteration = self.lower_with_correlate(feed, body)?;
-            islands.merge(iteration.islands);
-            current = iteration.plan;
-            if emit_each {
-                emitted.push(current.clone());
-            }
-        }
-        if !emit_each {
-            emitted.push(current);
-        }
-        let mut union_plan: Option<LogicalPlan> = None;
-        for branch in emitted {
-            union_plan = Some(match union_plan {
-                None => branch,
-                Some(plan) => LogicalPlanBuilder::from(plan)
-                    .union_by_name(branch)?
-                    .build()?,
-            });
-        }
-        let plan = union_plan
-            .ok_or_else(|| RelError::Unsupported("GraphRepeat emitted no iterations".into()))?;
-        Ok(LoweredNode {
-            plan,
-            islands,
-            fields: seed.fields,
-            result_form: seed.result_form,
-        })
-    }
-
     /// UNWIND over a non-constant expression. When the lowered expression
     /// has a real Arrow list type (e.g. it came from `collect(...)` /
     /// `array_agg`), DataFusion's unnest expands it directly.
@@ -2363,6 +2457,19 @@ impl<'a> LoweringContext<'a> {
     ) -> RelResult<LoweredNode> {
         let left = self.lower_node(left)?;
         let right = self.lower_node(right)?;
+        let left_rdf_identity = left.plan.schema().fields().iter()
+            .filter(|field| field.name().starts_with("__rdf:term:"))
+            .map(|field| field.name().to_string()).collect::<BTreeSet<_>>();
+        let right_rdf_identity = right.plan.schema().fields().iter()
+            .filter(|field| field.name().starts_with("__rdf:term:"))
+            .map(|field| field.name().to_string()).collect::<BTreeSet<_>>();
+        if left_rdf_identity != right_rdf_identity
+            && (!left_rdf_identity.is_empty() || !right_rdf_identity.is_empty())
+        {
+            return Err(RelError::Unsupported(
+                "SPARQL UNION cannot align branches with different RDF term identity columns".into(),
+            ));
+        }
         let builder = LogicalPlanBuilder::from(left.plan.clone());
         let plan = match (all, align) {
             (true, UnionAlign::ByPosition) if self.language == Language::Gremlin => {
@@ -2395,63 +2502,12 @@ impl<'a> LoweringContext<'a> {
     fn lower_coalesce(
         &mut self,
         success: CoalesceSuccess,
-        _output: &str,
+        output: &str,
         correlation: &[String],
         input: &Node,
         arms: &[Node],
     ) -> RelResult<LoweredNode> {
-        if success != CoalesceSuccess::FirstNonEmpty || arms.len() != 2 {
-            return Err(RelError::Unsupported("GraphCoalesce".into()));
-        }
-        if !matches!(arms.get(1), Some(Node::GraphCorrelate { .. })) {
-            return Err(RelError::Unsupported(
-                "GraphCoalesce with non-pass-through fallback".into(),
-            ));
-        }
-
-        let input = self.lower_node(input)?;
-        let (left_plan, key_cols, cleanup) =
-            with_apply_correlation_keys(input.plan.clone(), correlation)?;
-        let left = input.with_plan(left_plan);
-
-        let previous = self.correlate_plan.replace(left.plan.clone());
-        let first = self.lower_node(&arms[0]);
-        self.correlate_plan = previous;
-        let first = first?;
-
-        let mut matched_plan = first.plan.clone();
-        if !cleanup.is_empty() {
-            let projections = existing_columns_by_name(&matched_plan, &cleanup);
-            matched_plan = LogicalPlanBuilder::from(matched_plan)
-                .project(projections)?
-                .build()?;
-        }
-
-        let (left_plan, right_plan, join_exprs, right_cleanup) =
-            prepare_apply_join_inputs(left.plan.clone(), first.plan.clone(), &key_cols, &[])?;
-        let mut fallback_cleanup = cleanup;
-        fallback_cleanup.extend(right_cleanup);
-        let mut fallback_plan = LogicalPlanBuilder::from(left_plan)
-            .join_on(right_plan, JoinType::LeftAnti, join_exprs)?
-            .build()?;
-        if !fallback_cleanup.is_empty() {
-            let projections = existing_columns_by_name(&fallback_plan, &fallback_cleanup);
-            fallback_plan = LogicalPlanBuilder::from(fallback_plan)
-                .project(projections)?
-                .build()?;
-        }
-
-        let plan = LogicalPlanBuilder::from(matched_plan)
-            .union_by_name(fallback_plan)?
-            .build()?;
-        let mut islands = left.islands;
-        islands.merge(first.islands);
-        Ok(LoweredNode {
-            plan,
-            islands,
-            fields: left.fields,
-            result_form: left.result_form,
-        })
+        apply::lower_coalesce(self, success, output, correlation, input, arms)
     }
 
     fn lower_choose(
@@ -2755,6 +2811,12 @@ impl<'a> LoweringContext<'a> {
                 return Ok(vec![lit(ScalarValue::Utf8(None)).alias(alias)]);
             }
         }
+        if let Some(tags) = self.projected_union_tags(plan, expr)? {
+            return Ok(vec![
+                self.lower_expr(plan, expr)?.alias(alias),
+                tags.alias(casts::value_union_tag_col(alias)),
+            ]);
+        }
         Ok(vec![self.lower_expr(plan, expr)?.alias(alias)])
     }
 
@@ -3006,13 +3068,13 @@ impl<'a> LoweringContext<'a> {
                 })
             }
             IrExpr::Call { name, args } if is_cast_function(name, args) => {
-                if cast_target_text(name, args).is_some_and(|target| target.trim().ends_with("[]"))
+                if let Some(target) = cast_target_text(name, args)
+                    && target.trim().trim_matches('"').trim().ends_with("[]")
                 {
-                    // Catalog list properties are already normalized to
-                    // canonical display strings at the relational boundary.
-                    // Casting only changes their element type; every supported
-                    // list element here has the same Cypher display text.
-                    return self.lower_expr(plan, &args[0]);
+                    // Catalog list properties are canonical display strings
+                    // at the relational boundary, so a list cast rewrites
+                    // that text; `casts.rs` proves the rewrite per value.
+                    return self.lower_list_cast(plan, name, args, target);
                 }
                 let (value, data_type, lenient) = self.cast_parts(plan, name, args)?;
                 let cast = if lenient {
@@ -3181,6 +3243,8 @@ impl<'a> LoweringContext<'a> {
                 {
                     let (tag, _) = union_constructor_field(args)?;
                     Ok(lit(tag.to_string()))
+                } else if let Some(tag) = self.lower_value_union_tag(plan, &args[0])? {
+                    Ok(tag)
                 } else if let IrExpr::Property { binding, name, .. } = &args[0] {
                     let column = union_tag_col(binding, name);
                     if has_exact_col(plan, &column) {
@@ -3396,6 +3460,26 @@ impl<'a> LoweringContext<'a> {
             }
             let value = self.lower_expr(plan, item)?;
             let data_type = value.get_type(plan.schema())?;
+            if matches!(self.language, Language::Cypher | Language::Gql) {
+                // The interpreter prints a null list element as empty text
+                // (`[NULL]` is `[]`, `[NULL, NULL]` is `[,]`) and floats with
+                // six decimals. `||` propagates NULL, so every element is
+                // rendered and then defaulted to the empty string.
+                let rendered = match data_type {
+                    DataType::Boolean => Expr::Case(Case::new(
+                        None,
+                        vec![
+                            (Box::new(value.clone()), Box::new(lit("True"))),
+                            (Box::new(Expr::Not(Box::new(value))), Box::new(lit("False"))),
+                        ],
+                        None,
+                    )),
+                    DataType::Null => lit(""),
+                    _ => render_property_text_expr(value, &data_type),
+                };
+                pieces.push(df_core::coalesce(vec![rendered, lit("")]));
+                continue;
+            }
             pieces.push(match data_type {
                 DataType::Boolean => Expr::Case(Case::new(
                     None,
@@ -8143,7 +8227,7 @@ fn with_apply_correlation_keys(
 fn right_apply_output_columns(right: &LogicalPlan, outputs: &[String]) -> RelResult<Vec<String>> {
     let mut out = Vec::new();
     for output in outputs {
-        if output.starts_with("__") {
+        if output.starts_with("__") && !output.starts_with("__rdf:term:") {
             continue;
         }
         if has_exact_col(right, output) {
@@ -8238,7 +8322,11 @@ fn prepare_apply_join_inputs(
     let join_exprs = key_pairs
         .into_iter()
         .map(|(left_key, right_key)| {
-            binary(col_exact(left_key), BinaryOp::Eq, col_exact(right_key))
+            let left = col_exact(left_key);
+            let right = col_exact(right_key);
+            left.clone()
+                .eq(right.clone())
+                .or(left.is_null().and(right.is_null()))
         })
         .collect::<Vec<_>>();
     Ok((left, right, join_exprs, cleanup))

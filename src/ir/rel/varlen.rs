@@ -568,7 +568,8 @@ impl LoweringContext<'_> {
                 let hop_nodes: Vec<String> = (1..k)
                     .map(|hop| format!("__vln_{uniq}_{k}_{hop}"))
                     .collect();
-                plan = self.project_varlen_path(plan, rel, (source, target), &hop_nodes, &hop_rels)?;
+                plan =
+                    self.project_varlen_path(plan, rel, (source, target), &hop_nodes, &hop_rels)?;
             }
             branches.push(self.varlen_branch_projection(
                 plan,
@@ -695,7 +696,7 @@ impl LoweringContext<'_> {
     }
 }
 
-fn case_when(condition: Expr, then_expr: Expr, else_expr: Expr) -> Expr {
+pub(super) fn case_when(condition: Expr, then_expr: Expr, else_expr: Expr) -> Expr {
     Expr::Case(Case::new(
         None,
         vec![(Box::new(condition), Box::new(then_expr))],

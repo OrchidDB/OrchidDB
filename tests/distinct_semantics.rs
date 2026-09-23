@@ -47,7 +47,7 @@ async fn sql_rows(plan: &GraphPlan, graph: &PropertyGraph) -> Vec<Vec<SqlValue>>
         .await
         .expect("prepare sql");
     DuckDbExecutor::new()
-        .run(&prepared.setup, &prepared.query)
+        .run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
         .expect("duckdb execute")
 }
 

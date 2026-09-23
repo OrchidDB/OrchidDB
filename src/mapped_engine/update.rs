@@ -171,7 +171,8 @@ impl MappedGraphEngine {
         let mut created = false;
         let result = (|| -> Result<usize, String> {
             self.executor
-                .run(
+                .run_with_tables(
+                    &prepared.tables,
                     &prepared.setup,
                     &format!("CREATE TEMP TABLE {temporary} AS {}", prepared.query),
                 )

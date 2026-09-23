@@ -11,7 +11,18 @@
 //! cargo test --test graph_rel_backend_cases -- --ignored --nocapture
 //! GRAPH_REL_LANG=cypher GRAPH_REL_LIMIT=100 cargo test --test graph_rel_backend_cases -- --ignored --nocapture
 //! GRAPH_REL_SUITE=filter cargo test --test graph_rel_backend_cases -- --ignored --nocapture
+//! GRAPH_REL_PROFILE=read_only GRAPH_REL_STRICT=1 cargo test --test graph_rel_backend_cases -- --ignored --nocapture
 //! ```
+//!
+//! `GRAPH_REL_PROFILE=read_only` excludes only query writes proven by the
+//! parsed Cypher clause AST or planned Graph IR effects. Fixture initializers
+//! may write while preparing data and do not exclude a read query. The Gremlin
+//! traversal AST currently has no source-write steps, so a Gremlin write that
+//! fails to parse remains a visible parse failure, not an inferred exclusion.
+//! Unknown/opaque effects and missing fixtures also remain strict failures.
+//! `metrics.tsv` keeps its original first ten columns and appends
+//! `excluded_writes` and `read_total`; `excluded_writes.tsv` gives each
+//! exclusion's case path and stable structural reason.
 //!
 //! With `GRAPH_REL_EXEC=duckdb` the lowered plan is additionally unparsed to
 //! DuckDB SQL and executed against a real in-memory DuckDB database (instead
@@ -36,13 +47,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use new_graph::ir::analysis::{ReadValidationError, validate_read_only};
 use new_graph::ir::catalog::PropertyGraph;
 use new_graph::ir::exec::{ExecStats, default_target, plan_with_islands};
 use new_graph::ir::interpreter::{ReturnedBatches, execute as interpret};
-use new_graph::ir::plan::{GraphPlan, explain};
+use new_graph::ir::plan::{GraphPlan, Node, ProcedureMode, explain};
+use new_graph::ir::policy::GraphPlanPolicy;
 use new_graph::ir::rel::RelBackend;
 #[cfg(feature = "duckdb")]
 use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+use new_graph::language::cypher::ast::{Clause, Query};
 use new_graph::language::cypher::parser::parse_query;
 use new_graph::language::cypher::planner::CypherPlanner;
 use new_graph::language::gremlin::planner::GremlinPlanner;
@@ -119,8 +133,9 @@ async fn graph_rel_backend_cases() {
     }
 
     let report = format!(
-        "exec mode: {}\nshard: {}/{}\n{}{}",
+        "exec mode: {}\nprofile: {}\nshard: {}/{}\n{}{}",
         config.exec.as_str(),
+        config.profile.as_str(),
         config.shard_index,
         config.shard_count,
         summary.render(started.elapsed().as_secs_f64(), &out_dir),
@@ -132,10 +147,10 @@ async fn graph_rel_backend_cases() {
         .write_machine_reports(&out_dir)
         .expect("write machine-readable summary");
 
-    if config.strict && summary.failed_cases() > 0 {
+    if config.strict && summary.incomplete_cases() > 0 {
         panic!(
-            "rel backend strict mode saw {} failed cases",
-            summary.failed_cases()
+            "rel backend strict mode saw {} incomplete cases (including parse, plan, lower, execution, mismatch, and skip outcomes)",
+            summary.incomplete_cases()
         );
     }
 }
@@ -150,6 +165,21 @@ enum ExecMode {
     /// still produces an answer, so this measures both correctness and how
     /// much of the corpus still needs the interpreter at all.
     Islands,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Profile {
+    All,
+    ReadOnly,
+}
+
+impl Profile {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::ReadOnly => "read_only",
+        }
+    }
 }
 
 impl ExecMode {
@@ -266,6 +296,7 @@ struct HarnessConfig {
     suite_filter: Option<String>,
     limit: Option<usize>,
     strict: bool,
+    profile: Profile,
     exec: ExecMode,
     case_timeout_ms: u64,
     timeout_ms: u64,
@@ -302,6 +333,13 @@ impl HarnessConfig {
                 .ok()
                 .and_then(|value| value.parse().ok()),
             strict: std::env::var("GRAPH_REL_STRICT").is_ok_and(|value| value == "1"),
+            profile: match std::env::var("GRAPH_REL_PROFILE").as_deref() {
+                Ok("read_only") => Profile::ReadOnly,
+                Ok("all") | Err(_) => Profile::All,
+                Ok(value) => {
+                    panic!("unknown GRAPH_REL_PROFILE={value:?}; expected all or read_only")
+                }
+            },
             exec,
             case_timeout_ms: std::env::var("GRAPH_REL_CASE_TIMEOUT_MS")
                 .ok()
@@ -393,6 +431,7 @@ async fn run_language(
             let worker_path = path.to_path_buf();
             let backend = backend.clone();
             let exec = config.exec;
+            let profile = config.profile;
             let (sender, receiver) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()
@@ -402,9 +441,11 @@ async fn run_language(
                 let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     runtime.block_on(async {
                         match lang {
-                            Language::Cypher => run_cypher_case(&worker_path, &backend, exec).await,
+                            Language::Cypher => {
+                                run_cypher_case(&worker_path, &backend, exec, profile).await
+                            }
                             Language::Gremlin => {
-                                run_gremlin_case(&worker_path, &backend, exec).await
+                                run_gremlin_case(&worker_path, &backend, exec, profile).await
                             }
                         }
                     })
@@ -462,7 +503,7 @@ async fn run_language(
                     .replace('\n', " ")
             );
         }
-        if !matches!(run.outcome, Outcome::Matched) {
+        if !matches!(run.outcome, Outcome::Matched | Outcome::ExcludedWrite(_)) {
             let _ = dump_case(out_dir, lang, path, &run);
         }
         summary.record(lang, path, run.outcome);
@@ -774,6 +815,7 @@ async fn execute_case_duckdb(
 #[derive(Debug)]
 enum Outcome {
     Matched,
+    ExcludedWrite(String),
     Mismatch {
         reason: String,
         actual: Vec<String>,
@@ -790,6 +832,7 @@ impl Outcome {
     fn label(&self) -> &'static str {
         match self {
             Self::Matched => "matched",
+            Self::ExcludedWrite(_) => "excluded_write",
             Self::Mismatch { .. } => "mismatch",
             Self::ParseError(_) => "parse_error",
             Self::PlanError(_) => "plan_error",
@@ -800,7 +843,41 @@ impl Outcome {
     }
 }
 
-async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode) -> CaseRun {
+/// Only a parsed write is excluded. An unparsed query stays in the read
+/// denominator, since text or case names cannot prove its effects.
+fn cypher_write_clause(query: &Query) -> Option<&'static str> {
+    for clause in &query.clauses {
+        match clause {
+            Clause::Create(_) => return Some("Cypher CREATE"),
+            Clause::Merge(_) => return Some("Cypher MERGE"),
+            Clause::Set(_) => return Some("Cypher SET"),
+            Clause::Delete(_) => return Some("Cypher DELETE"),
+            _ => {}
+        }
+    }
+    query
+        .unions
+        .iter()
+        .find_map(|branch| cypher_write_clause(&branch.query))
+}
+
+fn planned_source_mutation(plan: &GraphPlan) -> Option<String> {
+    match validate_read_only(plan) {
+        Err(ReadValidationError::SourceMutation { operator, .. }) => {
+            Some(format!("Graph IR {operator}"))
+        }
+        // Opaque extensions and unavailable read capabilities are not proof
+        // of a write. They remain ordinary failures in strict read coverage.
+        _ => None,
+    }
+}
+
+async fn run_cypher_case(
+    path: &Path,
+    backend: &RelBackend,
+    exec_mode: ExecMode,
+    profile: Profile,
+) -> CaseRun {
     let case = match read_case(path) {
         Ok(case) => case,
         Err(run) => return run,
@@ -833,6 +910,16 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             };
         }
     };
+    if profile == Profile::ReadOnly
+        && let Some(reason) = cypher_write_clause(&parsed)
+    {
+        return CaseRun {
+            query: Some(query),
+            plan_tree: None,
+            sql: None,
+            outcome: Outcome::ExcludedWrite(reason.into()),
+        };
+    }
     let phase_started = Instant::now();
     let graph = match cypher_case_runner::dataset::build_with_initializer(
         &case.metadata.dataset,
@@ -876,6 +963,16 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
             };
         }
     };
+    if profile == Profile::ReadOnly
+        && let Some(reason) = planned_source_mutation(&plan)
+    {
+        return CaseRun {
+            query: Some(query),
+            plan_tree: Some(explain(&plan)),
+            sql: None,
+            outcome: Outcome::ExcludedWrite(reason),
+        };
+    }
     record_slow_phase(path, "plan", phase_started);
     let plan_tree = explain(&plan);
     if exec_mode != ExecMode::DuckDb
@@ -943,7 +1040,12 @@ async fn run_cypher_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode)
     )
 }
 
-async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode) -> CaseRun {
+async fn run_gremlin_case(
+    path: &Path,
+    backend: &RelBackend,
+    exec_mode: ExecMode,
+    profile: Profile,
+) -> CaseRun {
     let case = match read_case(path) {
         Ok(case) => case,
         Err(run) => return run,
@@ -1017,6 +1119,16 @@ async fn run_gremlin_case(path: &Path, backend: &RelBackend, exec_mode: ExecMode
             };
         }
     };
+    if profile == Profile::ReadOnly
+        && let Some(reason) = planned_source_mutation(&plan)
+    {
+        return CaseRun {
+            query: Some(query),
+            plan_tree: Some(explain(&plan)),
+            sql: None,
+            outcome: Outcome::ExcludedWrite(reason),
+        };
+    }
     record_slow_phase(path, "plan", phase_started);
     let plan_tree = explain(&plan);
     if exec_mode != ExecMode::DuckDb
@@ -1261,6 +1373,7 @@ struct CaseResult {
 struct Counts {
     total: usize,
     matched: usize,
+    excluded_writes: usize,
     mismatch: usize,
     parse: usize,
     plan: usize,
@@ -1269,10 +1382,21 @@ struct Counts {
     skipped: usize,
 }
 
+impl Counts {
+    fn read_total(&self) -> usize {
+        self.total.saturating_sub(self.excluded_writes)
+    }
+
+    fn incomplete_cases(&self) -> usize {
+        self.read_total().saturating_sub(self.matched)
+    }
+}
+
 impl Summary {
     fn record(&mut self, lang: Language, path: &Path, outcome: Outcome) {
         let reason = match &outcome {
             Outcome::Matched => String::new(),
+            Outcome::ExcludedWrite(reason) => reason.clone(),
             Outcome::Mismatch { reason, .. }
             | Outcome::ParseError(reason)
             | Outcome::PlanError(reason)
@@ -1290,6 +1414,10 @@ impl Summary {
         counts.total += 1;
         match &outcome {
             Outcome::Matched => counts.matched += 1,
+            Outcome::ExcludedWrite(reason) => {
+                counts.excluded_writes += 1;
+                self.bump_reason("excluded_write", reason);
+            }
             Outcome::Mismatch { reason, .. } => {
                 counts.mismatch += 1;
                 self.bump_reason("mismatch", reason);
@@ -1325,10 +1453,10 @@ impl Summary {
             .or_default() += 1;
     }
 
-    fn failed_cases(&self) -> usize {
+    fn incomplete_cases(&self) -> usize {
         self.by_language
             .values()
-            .map(|counts| counts.mismatch + counts.execution)
+            .map(Counts::incomplete_cases)
             .sum()
     }
 
@@ -1341,17 +1469,19 @@ impl Summary {
             if counts.total == 0 {
                 continue;
             }
-            let runnable = counts.total.saturating_sub(counts.skipped);
-            let matched_pct = percent(counts.matched, counts.total);
+            let read_total = counts.read_total();
+            let runnable = read_total.saturating_sub(counts.skipped);
+            let matched_pct = percent(counts.matched, read_total);
             let executed = counts.matched + counts.mismatch;
             out.push_str(&format!(
-                "{lang}: total={} runnable={} matched={} ({matched_pct:.1}%) parsed={} planned={} lowered={} executed={} mismatches={} skipped={}\n",
+                "{lang}: total={} read_total={read_total} excluded_writes={} runnable={} matched={} ({matched_pct:.1}%) parsed={} planned={} lowered={} executed={} mismatches={} skipped={}\n",
                 counts.total,
+                counts.excluded_writes,
                 runnable,
                 counts.matched,
-                counts.total - counts.parse - counts.skipped,
-                counts.total - counts.parse - counts.plan - counts.skipped,
-                counts.total - counts.parse - counts.plan - counts.lower - counts.skipped,
+                read_total - counts.parse - counts.skipped,
+                read_total - counts.parse - counts.plan - counts.skipped,
+                read_total - counts.parse - counts.plan - counts.lower - counts.skipped,
                 executed,
                 counts.mismatch,
                 counts.skipped,
@@ -1373,17 +1503,18 @@ impl Summary {
 
     fn write_machine_reports(&self, out_dir: &Path) -> std::io::Result<()> {
         let mut metrics = String::from(
-            "language\ttotal\trunnable\tmatched\tparsed\tplanned\tlowered\texecuted\tmismatches\tskipped\n",
+            "language\ttotal\trunnable\tmatched\tparsed\tplanned\tlowered\texecuted\tmismatches\tskipped\texcluded_writes\tread_total\n",
         );
         for (lang, counts) in &self.by_language {
-            let runnable = counts.total.saturating_sub(counts.skipped);
-            let parsed = counts.total - counts.parse - counts.skipped;
-            let planned = counts.total - counts.parse - counts.plan - counts.skipped;
-            let lowered = counts.total - counts.parse - counts.plan - counts.lower - counts.skipped;
+            let read_total = counts.read_total();
+            let runnable = read_total.saturating_sub(counts.skipped);
+            let parsed = read_total - counts.parse - counts.skipped;
+            let planned = read_total - counts.parse - counts.plan - counts.skipped;
+            let lowered = read_total - counts.parse - counts.plan - counts.lower - counts.skipped;
             let executed = counts.matched + counts.mismatch;
             metrics.push_str(&format!(
-                "{lang}\t{}\t{runnable}\t{}\t{parsed}\t{planned}\t{lowered}\t{executed}\t{}\t{}\n",
-                counts.total, counts.matched, counts.mismatch, counts.skipped,
+                "{lang}\t{}\t{runnable}\t{}\t{parsed}\t{planned}\t{lowered}\t{executed}\t{}\t{}\t{}\t{read_total}\n",
+                counts.total, counts.matched, counts.mismatch, counts.skipped, counts.excluded_writes,
             ));
         }
         fs::write(out_dir.join("metrics.tsv"), metrics)?;
@@ -1407,7 +1538,22 @@ impl Summary {
                 result.reason.replace(['\t', '\n', '\r'], " "),
             ));
         }
-        fs::write(out_dir.join("cases.tsv"), cases)
+        fs::write(out_dir.join("cases.tsv"), cases)?;
+
+        let mut excluded = String::from("language\tpath\treason\n");
+        for result in self
+            .case_results
+            .iter()
+            .filter(|result| result.outcome == "excluded_write")
+        {
+            excluded.push_str(&format!(
+                "{}\t{}\t{}\n",
+                result.language,
+                result.path.replace(['\t', '\n', '\r'], " "),
+                result.reason.replace(['\t', '\n', '\r'], " "),
+            ));
+        }
+        fs::write(out_dir.join("excluded_writes.tsv"), excluded)
     }
 }
 
@@ -1417,6 +1563,117 @@ fn percent(part: usize, total: usize) -> f64 {
     } else {
         (part as f64 / total as f64) * 100.0
     }
+}
+
+#[test]
+fn strict_coverage_counts_every_unmatched_case() {
+    let mut summary = Summary::default();
+    let path = Path::new("fixture.case");
+    summary.record(Language::Cypher, path, Outcome::Matched);
+    assert_eq!(summary.incomplete_cases(), 0);
+
+    for outcome in [
+        Outcome::ParseError("syntax".into()),
+        Outcome::PlanError("plan".into()),
+        Outcome::LowerError("lower".into()),
+        Outcome::ExecutionError("execute".into()),
+        Outcome::Skipped("missing fixture".into()),
+        Outcome::Mismatch {
+            reason: "wrong rows".into(),
+            actual: vec![],
+            expected: vec!["expected".into()],
+        },
+    ] {
+        summary.record(Language::Cypher, path, outcome);
+    }
+
+    assert_eq!(summary.incomplete_cases(), 6);
+    summary.record(
+        Language::Cypher,
+        path,
+        Outcome::ExcludedWrite("Cypher CREATE".into()),
+    );
+    assert_eq!(summary.incomplete_cases(), 6);
+    assert_eq!(summary.by_language["cypher"].read_total(), 7);
+}
+
+#[test]
+fn read_profile_classifies_parsed_cypher_writes_not_keywords_in_literals() {
+    for (query, expected) in [
+        ("CREATE (n) RETURN n", Some("Cypher CREATE")),
+        ("MATCH (n) SET n.x = 1 RETURN n", Some("Cypher SET")),
+        ("MATCH (n) DELETE n", Some("Cypher DELETE")),
+        ("MERGE (n:X) RETURN n", Some("Cypher MERGE")),
+        ("RETURN 'CREATE SET DELETE MERGE' AS text", None),
+    ] {
+        let parsed = parse_query(query).expect(query);
+        assert_eq!(cypher_write_clause(&parsed), expected, "{query}");
+    }
+}
+
+#[test]
+fn read_profile_classifies_planned_procedure_effects() {
+    let procedure = |mode| {
+        GraphPlan::new(
+            GraphPlanPolicy::cypher(),
+            Node::GraphProcedureCall {
+                name: "example.procedure".into(),
+                args: vec![],
+                yields: vec![],
+                mode,
+                input: None,
+            },
+        )
+    };
+    assert_eq!(
+        planned_source_mutation(&procedure(ProcedureMode::Write)),
+        Some("Graph IR GraphProcedureCall".into())
+    );
+    assert_eq!(
+        planned_source_mutation(&procedure(ProcedureMode::Read)),
+        None
+    );
+    let opaque = GraphPlan::new(
+        GraphPlanPolicy::cypher(),
+        Node::GraphExtension {
+            name: "unknown".into(),
+            metadata: vec![],
+            inputs: vec![Node::GraphOneRow],
+        },
+    );
+    assert_eq!(planned_source_mutation(&opaque), None);
+}
+
+#[test]
+fn read_profile_reports_excluded_writes_separately() {
+    let mut summary = Summary::default();
+    summary.record(
+        Language::Cypher,
+        Path::new("write.case"),
+        Outcome::ExcludedWrite("Cypher CREATE".into()),
+    );
+    summary.record(
+        Language::Cypher,
+        Path::new("missing.case"),
+        Outcome::Skipped("missing fixture".into()),
+    );
+    let dir = std::env::temp_dir().join(format!(
+        "graph-rel-report-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    fs::create_dir(&dir).expect("temporary report directory");
+    summary.write_machine_reports(&dir).expect("write reports");
+    let metrics = fs::read_to_string(dir.join("metrics.tsv")).expect("metrics");
+    assert!(metrics.contains("cypher\t2\t0\t0\t0\t0\t0\t0\t0\t1\t1\t1"));
+    let excluded = fs::read_to_string(dir.join("excluded_writes.tsv")).expect("excluded report");
+    assert!(excluded.contains("cypher\twrite.case\tCypher CREATE"));
+    assert!(!excluded.contains("missing.case"));
+    assert_eq!(summary.incomplete_cases(), 1);
+    fs::remove_dir_all(dir).expect("remove temporary report directory");
 }
 
 fn first_line(input: &str) -> String {

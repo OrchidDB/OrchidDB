@@ -8,6 +8,9 @@ that do not yet lower to SQL.
 `GraphEngine` provides managed graph persistence, transactions, typed Cypher
 parameters, and Arrow results. `MappedGraphEngine` runs SQL-only graph reads
 over existing DuckDB tables and views, plus explicit native SQL property updates.
+`RdfGraphEngine` runs read-only SPARQL queries over mapped RDF quad tables in
+DuckDB. Its initial quad mapping supports IRI terms, variable predicates, and
+default or named graph selection; other RDF term kinds remain explicit errors.
 Language coverage is partial. Managed writes use the graph runtime and persist
 changed records transactionally in DuckDB, with checkpoints for compaction. See [the engine API and its current limits](docs/engine.md).
 
@@ -130,6 +133,10 @@ to integrate with Calcite-style planner rules as the project matures.
 
 For examples of the intended logical operators and semantic policy model, see
 `docs/graph_ir_language_examples_v0_2_draft.md`.
+
+For the read-only Cypher, SPARQL, and Gremlin completion roadmap, architecture
+changes, and subagent work packages, see the
+[DuckDB read-query completion plan](docs/duckdb_read_query_completion_plan.md).
 
 ## License
 

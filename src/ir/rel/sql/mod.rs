@@ -24,6 +24,8 @@ mod database;
 #[cfg(feature = "duckdb")]
 mod duckdb_exec;
 #[cfg(feature = "duckdb")]
+pub mod program;
+#[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
 #[cfg(feature = "postgres")]
 mod postgres_exec;
@@ -242,12 +244,72 @@ pub struct TableData {
     pub batches: Vec<RecordBatch>,
 }
 
+impl TableData {
+    /// A name derived from the table's column types and contents, not from
+    /// the scan that produced it. Scans of the same labels under different
+    /// bindings, and repeated queries over the same graph, share one key, so
+    /// an engine can materialize the data once and alias it per query.
+    pub fn content_key(&self) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for field in self.schema.fields() {
+            format!("{:?}", field.data_type()).hash(&mut hasher);
+        }
+        for batch in &self.batches {
+            batch.num_rows().hash(&mut hasher);
+            for column in batch.columns() {
+                hash_array_data(&column.to_data(), &mut hasher);
+            }
+        }
+        format!("__graph_scan_{:016x}", hasher.finish())
+    }
+
+    /// Approximate in-engine footprint, used for cache eviction.
+    pub fn byte_size(&self) -> usize {
+        self.batches
+            .iter()
+            .map(RecordBatch::get_array_memory_size)
+            .sum()
+    }
+
+    /// Render this table's `CREATE TABLE` + `INSERT` statements.
+    pub fn setup_sql(&self, dialect: SqlDialect) -> SqlResult<Vec<String>> {
+        table_setup_sql(dialect, self)
+    }
+}
+
+fn hash_array_data(data: &arrow::array::ArrayData, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    format!("{:?}", data.data_type()).hash(hasher);
+    data.len().hash(hasher);
+    data.offset().hash(hasher);
+    match data.nulls() {
+        Some(nulls) => {
+            1u8.hash(hasher);
+            nulls.offset().hash(hasher);
+            nulls.buffer().as_slice().hash(hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    for buffer in data.buffers() {
+        buffer.as_slice().hash(hasher);
+    }
+    for child in data.child_data() {
+        hash_array_data(child, hasher);
+    }
+}
+
 /// Everything needed to run one lowered plan on a real database: setup DDL +
 /// inserts, the query text, and the metadata to rebuild an Arrow batch from
 /// the returned rows.
 #[derive(Debug, Clone)]
 pub struct PreparedSql {
     pub dialect: SqlDialect,
+    /// Tables the query reads that the engine must materialize first. Kept
+    /// as Arrow data so an engine can load it natively and cache it; see
+    /// [`SqlExecutor::run_with_tables`].
+    pub tables: Vec<TableData>,
+    /// Additional setup statements, applied after `tables`.
     pub setup: Vec<String>,
     pub query: String,
     pub fields: Vec<String>,
@@ -261,6 +323,25 @@ pub struct PreparedSql {
 pub trait SqlExecutor {
     fn dialect(&self) -> SqlDialect;
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>>;
+
+    /// Materialize `tables`, apply `setup`, then run `query`.
+    ///
+    /// The default renders every table as `CREATE TABLE` + `INSERT` text.
+    /// That is proportional to the data on every call, so engines that can
+    /// ingest Arrow directly and keep tables between calls should override it.
+    fn run_with_tables(
+        &mut self,
+        tables: &[TableData],
+        setup: &[String],
+        query: &str,
+    ) -> SqlResult<Vec<Vec<SqlValue>>> {
+        let mut statements = Vec::new();
+        for table in tables {
+            statements.extend(table.setup_sql(self.dialect())?);
+        }
+        statements.extend_from_slice(setup);
+        self.run(&statements, query)
+    }
 }
 
 /// Engine-neutral cell value returned by [`SqlExecutor::run`].
@@ -360,40 +441,142 @@ fn render_scaled_i128(value: i128, scale: i8) -> String {
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = strip_identity_projections(lowered.plan.clone())?;
-    let plan = encode_nul_literals(plan, dialect)?;
+    let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = strip_column_qualifiers(plan)
         .map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?;
-    recursive::unparse_plan(plan, dialect)
+    let repairs = identifier_quote_repairs(&plan, dialect)?;
+    let sql = recursive::unparse_plan(plan, dialect)?;
+    Ok(apply_identifier_repairs(sql, &repairs))
 }
 
-fn encode_nul_literals(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
-    if dialect != SqlDialect::DuckDb {
-        return Ok(plan);
-    }
-    let transformed = plan.transform_up(|node| {
+/// Rewrite literals whose unparsed text would not mean the same value.
+///
+/// * NUL cannot appear in statement text (DuckDB only; Postgres text cannot
+///   hold it at all and fails at setup).
+/// * sqlparser's quote escaper treats an existing `''` or `\'` as *already
+///   escaped* and copies it through verbatim, so the string `it''s` would be
+///   read back by the engine as `it's`, and `a\'b` would end the literal
+///   early. Such strings are rebuilt from pieces around `chr(39)`.
+/// * Non-finite floats unparse as bare `inf` / `NaN`, which engines read as
+///   column references. They become a cast from their standard spelling.
+fn encode_unprintable_literals(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+    let transformed = plan.transform_up_with_subqueries(|node| {
         node.map_expressions(|expr| {
             expr.transform_up(|inner| {
+                match &inner {
+                    Expr::Literal(ScalarValue::Float64(Some(value)), _) if !value.is_finite() => {
+                        return Ok(Transformed::yes(non_finite_float_expr(
+                            *value,
+                            DataType::Float64,
+                        )));
+                    }
+                    Expr::Literal(ScalarValue::Float32(Some(value)), _) if !value.is_finite() => {
+                        return Ok(Transformed::yes(non_finite_float_expr(
+                            f64::from(*value),
+                            DataType::Float32,
+                        )));
+                    }
+                    _ => {}
+                }
                 let Expr::Literal(ScalarValue::Utf8(Some(value)), metadata) = &inner else {
                     return Ok(Transformed::no(inner));
                 };
-                if !value.contains('\0') {
+                let encode_nul = dialect == SqlDialect::DuckDb && value.contains('\0');
+                let encode_quote = value.contains("''") || value.contains("\\'");
+                if !encode_nul && !encode_quote {
                     return Ok(Transformed::no(inner));
                 }
                 let mut parts = Vec::new();
-                for (index, part) in value.split('\0').enumerate() {
-                    if index > 0 {
-                        parts.push(df_string::chr(lit(0_i64)));
+                let mut current = String::new();
+                let flush = |current: &mut String, parts: &mut Vec<Expr>| {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(
+                            ScalarValue::Utf8(Some(std::mem::take(current))),
+                            metadata.clone(),
+                        ));
                     }
-                    parts.push(Expr::Literal(
-                        ScalarValue::Utf8(Some(part.to_string())),
-                        metadata.clone(),
-                    ));
+                };
+                for ch in value.chars() {
+                    let code = match ch {
+                        '\0' if encode_nul => 0_i64,
+                        '\'' if encode_quote => 39_i64,
+                        other => {
+                            current.push(other);
+                            continue;
+                        }
+                    };
+                    flush(&mut current, &mut parts);
+                    parts.push(df_string::chr(lit(code)));
+                }
+                flush(&mut current, &mut parts);
+                if parts.is_empty() {
+                    parts.push(lit(""));
                 }
                 Ok(Transformed::yes(df_string::concat(parts)))
             })
         })
     })?;
     Ok(transformed.data)
+}
+
+fn non_finite_float_expr(value: f64, data_type: DataType) -> Expr {
+    let spelling = if value.is_nan() {
+        "NaN"
+    } else if value > 0.0 {
+        "Infinity"
+    } else {
+        "-Infinity"
+    };
+    Expr::Cast(datafusion::logical_expr::Cast::new(
+        Box::new(lit(spelling)),
+        data_type,
+    ))
+}
+
+/// Column names the unparser would quote incorrectly, paired with the text
+/// it emits and the correct quoted form.
+///
+/// sqlparser's identifier escaper copies an existing `""` or `\"` inside a
+/// name through verbatim (it assumes the pair is already escaped), so an
+/// output alias taken from query text such as `cast("[ab\"cd]" as ...)`
+/// terminates the identifier early. Names are collected from every plan
+/// schema; each distinct misquoted rendering is rewritten in the SQL text.
+fn identifier_quote_repairs(
+    plan: &LogicalPlan,
+    dialect: SqlDialect,
+) -> SqlResult<Vec<(String, String)>> {
+    let mut names = BTreeSet::new();
+    plan.apply_with_subqueries(|node| {
+        for field in node.schema().fields() {
+            if field.name().contains('"') {
+                names.insert(field.name().clone());
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    let mut repairs = Vec::new();
+    for name in names {
+        let emitted = format!(
+            "\"{}\"",
+            datafusion::sql::sqlparser::ast::escape_quoted_string(&name, '"')
+        );
+        let correct = dialect.quote_ident(&name);
+        if emitted != correct {
+            repairs.push((emitted, correct));
+        }
+    }
+    // Longest first, so a name that contains another is repaired whole.
+    repairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+    Ok(repairs)
+}
+
+fn apply_identifier_repairs(mut sql: String, repairs: &[(String, String)]) -> String {
+    for (emitted, correct) in repairs {
+        if sql.contains(emitted.as_str()) {
+            sql = sql.replace(emitted.as_str(), correct);
+        }
+    }
+    sql
 }
 
 /// Re-attach aggregate `ORDER BY` clauses the unparser drops.
@@ -644,27 +827,8 @@ pub async fn plan_tables_excluding(
 
 /// Render `CREATE TABLE` + `INSERT` statements that materialize one table.
 pub fn table_setup_sql(dialect: SqlDialect, table: &TableData) -> SqlResult<Vec<String>> {
-    let fields = table.schema.fields();
-    if fields.is_empty() {
-        return Err(SqlError::Unsupported(format!(
-            "table `{}` has no columns",
-            table.name
-        )));
-    }
-    let mut columns = Vec::with_capacity(fields.len());
-    for field in fields {
-        columns.push(format!(
-            "{} {}",
-            dialect.quote_ident(field.name()),
-            dialect.ddl_type(field.data_type())?
-        ));
-    }
     let quoted_name = dialect.quote_ident(&table.name);
-    let mut statements = vec![format!(
-        "{} {quoted_name} ({})",
-        dialect.create_table_keyword(),
-        columns.join(", ")
-    )];
+    let mut statements = vec![create_table_sql(dialect, table)?];
 
     let mut rows = Vec::new();
     for batch in &table.batches {
@@ -684,6 +848,31 @@ pub fn table_setup_sql(dialect: SqlDialect, table: &TableData) -> SqlResult<Vec<
         ));
     }
     Ok(statements)
+}
+
+/// Render the `CREATE TABLE` statement for one table, without its rows.
+pub(crate) fn create_table_sql(dialect: SqlDialect, table: &TableData) -> SqlResult<String> {
+    let fields = table.schema.fields();
+    if fields.is_empty() {
+        return Err(SqlError::Unsupported(format!(
+            "table `{}` has no columns",
+            table.name
+        )));
+    }
+    let mut columns = Vec::with_capacity(fields.len());
+    for field in fields {
+        columns.push(format!(
+            "{} {}",
+            dialect.quote_ident(field.name()),
+            dialect.ddl_type(field.data_type())?
+        ));
+    }
+    Ok(format!(
+        "{} {} ({})",
+        dialect.create_table_keyword(),
+        dialect.quote_ident(&table.name),
+        columns.join(", ")
+    ))
 }
 
 /// Materialize an entire `PropertyGraph` as `node_<label>` / `edge_<rel>`
@@ -748,13 +937,10 @@ pub async fn prepare_with_external(
 ) -> SqlResult<PreparedSql> {
     let query = unparse(lowered, dialect)?;
     let tables = plan_tables_excluding(&lowered.plan, external).await?;
-    let mut setup = Vec::new();
-    for table in &tables {
-        setup.extend(table_setup_sql(dialect, table)?);
-    }
     Ok(PreparedSql {
         dialect,
-        setup,
+        tables,
+        setup: Vec::new(),
         query,
         fields: lowered.fields.clone(),
         result_form: lowered.result_form,
@@ -775,7 +961,7 @@ pub fn execute_prepared(
             executor.dialect().name()
         )));
     }
-    let rows = executor.run(&prepared.setup, &prepared.query)?;
+    let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)?;
     let batch = rows_to_batch(&prepared.schema, &rows)?;
     Ok(ReturnedBatches {
         fields: prepared.fields.clone(),
@@ -1020,6 +1206,46 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
             }
             Arc::new(builder.finish())
         }
+        // Narrow and unsigned integers come back from the engine widened to
+        // i64 (or, above `i64::MAX`, as exact text). Rebuild through the i64
+        // column and a checked cast, so a value outside the declared width is
+        // a conversion error instead of a wrapped or nulled value.
+        DataType::Int8
+        | DataType::Int16
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32 => {
+            let wide = build_column(
+                &Field::new(field.name(), DataType::Int64, true),
+                rows,
+                index,
+            )?;
+            checked_cast(&wide, field)?
+        }
+        DataType::UInt64 => {
+            let mut builder = arrow::array::UInt64Builder::with_capacity(rows.len());
+            for row in rows {
+                match &row[index] {
+                    SqlValue::Null => builder.append_null(),
+                    SqlValue::Int(value) => builder
+                        .append_value(u64::try_from(*value).map_err(|_| mismatch(&row[index]))?),
+                    SqlValue::ExactNumber(value) => builder
+                        .append_value(value.parse::<u64>().map_err(|_| mismatch(&row[index]))?),
+                    other => return Err(mismatch(other)),
+                }
+            }
+            Arc::new(builder.finish())
+        }
+        // Engines hand REAL values back widened to f64; narrowing them again
+        // is exact.
+        DataType::Float32 => {
+            let wide = build_column(
+                &Field::new(field.name(), DataType::Float64, true),
+                rows,
+                index,
+            )?;
+            checked_cast(&wide, field)?
+        }
         DataType::Decimal128(precision, scale) => {
             let mut builder = Decimal128Builder::with_capacity(rows.len())
                 .with_precision_and_scale(*precision, *scale)?;
@@ -1077,6 +1303,20 @@ fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) -> SqlResul
                 field.name()
             )));
         }
+    })
+}
+
+fn checked_cast(array: &ArrayRef, field: &Field) -> SqlResult<ArrayRef> {
+    let options = arrow::compute::CastOptions {
+        safe: false,
+        ..Default::default()
+    };
+    arrow::compute::cast_with_options(array.as_ref(), field.data_type(), &options).map_err(|err| {
+        SqlError::Conversion(format!(
+            "column `{}` does not fit {}: {err}",
+            field.name(),
+            field.data_type()
+        ))
     })
 }
 

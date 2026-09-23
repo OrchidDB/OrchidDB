@@ -77,11 +77,13 @@ paths, datasets, services, subqueries, and all four query forms. Aggregate,
 The extension count is reported separately so planner acceptance does not
 masquerade as native execution coverage.
 
-SPARQL execution over relational data uses two mappings. Ontology metadata
+SPARQL execution over relational data has two read paths. Ontology metadata
 resolves vocabulary IRIs to property-graph labels, relationship types, and
-properties. The existing graph schema mapping then resolves those concepts to
-user-owned tables, queries, and views. Crabgraph does not require or provide an
-RDF triples or quads storage adapter.
+properties; the graph schema mapping resolves those concepts to user-owned
+tables, queries, and views. `RdfGraphEngine` also maps user-owned IRI quad
+tables directly. This new adapter supports default/named graph selection and
+`FROM`/`FROM NAMED` over IRI-only terms; literal and blank-node support is still
+pending. Neither path requires a dedicated RDF storage engine.
 
 ## Mapped DuckDB execution matrix
 

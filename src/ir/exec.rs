@@ -599,11 +599,34 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
         DataType::UInt8 => widen_int::<arrow::array::UInt8Array>(array, row),
         DataType::UInt16 => widen_int::<arrow::array::UInt16Array>(array, row),
         DataType::UInt32 => widen_int::<arrow::array::UInt32Array>(array, row),
+        // Values above `i64::MAX` keep their unsigned type, exactly as a
+        // UINT64 property reads back through the catalog.
         DataType::UInt64 => array
             .as_any()
             .downcast_ref::<arrow::array::UInt64Array>()
-            .and_then(|typed| i64::try_from(typed.value(row)).ok())
-            .map(Value::Long),
+            .map(|typed| {
+                let value = typed.value(row);
+                i64::try_from(value).map_or(Value::UInt64(value), Value::Long)
+            }),
+        // The lowering uses zero-scale decimals for 128-bit integers and
+        // scaled decimals for `DECIMAL(p, s)`; the interpreter holds those as
+        // `BigInt` and a `BigDecimal` carrying the declared scale.
+        DataType::Decimal128(_, scale) => {
+            let typed = array
+                .as_any()
+                .downcast_ref::<arrow::array::Decimal128Array>()?;
+            let unscaled = num_bigint::BigInt::from(typed.value(row));
+            if *scale == 0 {
+                Some(Value::BigInt(unscaled))
+            } else if *scale > 0 {
+                Some(Value::BigDecimal(bigdecimal::BigDecimal::new(
+                    unscaled,
+                    i64::from(*scale),
+                )))
+            } else {
+                None
+            }
+        }
         DataType::Float32 => array
             .as_any()
             .downcast_ref::<arrow::array::Float32Array>()
@@ -654,20 +677,7 @@ fn decode_list(items: &dyn Array, inner: &Field) -> Option<Value> {
 
 /// Does this subtree write to the graph?
 pub fn contains_mutation(node: &Node) -> bool {
-    if matches!(
-        node,
-        Node::GraphCreate { .. }
-            | Node::GraphMerge { .. }
-            | Node::GraphSetProperty { .. }
-            | Node::GraphDelete { .. }
-            | Node::GraphProcedureCall {
-                mode: crate::ir::plan::ProcedureMode::Write,
-                ..
-            }
-    ) {
-        return true;
-    }
-    children(node).into_iter().any(contains_mutation)
+    crate::ir::analysis::contains_source_mutation(node)
 }
 
 fn count_ops(node: &Node) -> usize {
@@ -737,6 +747,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphUnion { left, right, .. }
         | GraphSparqlMinus { left, right, .. } => vec![left, right],
         GraphRepeat {
+            emit,
             seed,
             body,
             until_traversal,
@@ -746,6 +757,9 @@ fn children(node: &Node) -> Vec<&Node> {
             let mut out = vec![seed.as_ref(), body.as_ref()];
             out.extend(until_traversal.iter().map(|node| node.as_ref()));
             out.extend(prefix_traversal.iter().map(|node| node.as_ref()));
+            if let crate::ir::plan::EmitMode::AfterEachIfTraversal(traversal) = emit {
+                out.push(traversal);
+            }
             out
         }
         GraphCoalesce { input, arms, .. } => {
@@ -814,6 +828,7 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
         | GraphUnion { left, right, .. }
         | GraphSparqlMinus { left, right, .. } => vec![left, right],
         GraphRepeat {
+            emit,
             seed,
             body,
             until_traversal,
@@ -823,6 +838,9 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
             let mut out = vec![seed.as_mut(), body.as_mut()];
             out.extend(until_traversal.iter_mut().map(|node| node.as_mut()));
             out.extend(prefix_traversal.iter_mut().map(|node| node.as_mut()));
+            if let crate::ir::plan::EmitMode::AfterEachIfTraversal(traversal) = emit {
+                out.push(traversal.as_mut());
+            }
             out
         }
         GraphCoalesce { input, arms, .. } => {

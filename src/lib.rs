@@ -15,6 +15,8 @@ pub mod planner;
 pub mod engine;
 #[cfg(feature = "duckdb")]
 pub mod mapped_engine;
+#[cfg(feature = "duckdb")]
+pub mod rdf_engine;
 pub mod storage;
 
 /// Minimal placeholder for the syntax-tree wrapper that the Gremlin AST

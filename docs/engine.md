@@ -121,6 +121,22 @@ the relational backend explicitly declines that form.
 Current completion work targets read execution and query conformance; new
 `CREATE` and `DELETE` support is outside that scope.
 
+## Existing RDF quad tables
+
+`rdf_engine::RdfGraphEngine` runs read-only SPARQL against user-owned DuckDB
+quad tables. Register their schemas with `RdfDatasetMapping`, map one or more
+IRI-quad sources to a dataset name, and give the engine a `DuckDbExecutor` using
+the same DuckDB tables. `RdfGraphEngine::sparql` parses, lowers, and executes
+the query without copying source rows or requiring an ontology mapping.
+
+The initial adapter supports IRI-only subject, predicate, object, and named
+graph columns. A null graph value denotes the default graph. It supports
+variable predicates, joins across triple patterns, `GRAPH`, `FROM`, and
+`FROM NAMED`; selected `FROM` graphs are merged with duplicate triples removed.
+Typed literals, blank nodes, property paths, and federation still need
+additional execution work. Unsupported RDF term types fail explicitly. See
+`tests/rdf_engine.rs` and `tests/sparql_rdf_dataset.rs` for end-to-end examples.
+
 ## Release work still required
 - Full Cypher, Gremlin, and mapped SPARQL execution conformance. Current
   Gremlin gaps include implicit traversal order, partition strategies, path

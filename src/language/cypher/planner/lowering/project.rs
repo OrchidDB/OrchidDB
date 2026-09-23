@@ -4130,28 +4130,6 @@ fn materialize_list_comprehension(
     map: &Expr,
 ) -> CypherPlanResult<(Node, Expr)> {
     let alias = lowerer.synthetic("list");
-    let predicate_needs_scope = predicate_expr
-        .map(requires_scoped_materialization)
-        .unwrap_or(false);
-    if !requires_scoped_materialization(collection)
-        && !predicate_needs_scope
-        && !requires_scoped_materialization(map)
-    {
-        return Ok((
-            Node::GraphListComprehension {
-                input_expr: lower_expr(lowerer, collection)?,
-                item: variable.to_string(),
-                filter: predicate_expr
-                    .map(|expr| lower_expr(lowerer, expr))
-                    .transpose()?,
-                map_expr: Some(lower_expr(lowerer, map)?),
-                alias: alias.clone(),
-                input: input.boxed(),
-            },
-            Expr::Variable(alias),
-        ));
-    }
-
     let collection_alias = lowerer.synthetic("list_collection");
     let collection_is_null = lowerer.synthetic("list_collection_null");
     let collected_alias = lowerer.synthetic("list_values");

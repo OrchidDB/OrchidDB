@@ -451,6 +451,17 @@ pub enum RdfGraphScope {
     NamedGraph(RdfTerm),
     /// `GRAPH ?g { ... }`.
     NamedGraphVariable(BindingId),
+    /// Default graph formed by merging the listed named graphs in a SPARQL
+    /// `FROM` clause. Equal triples from different graphs occur only once.
+    DatasetDefaultGraph(Vec<String>),
+    /// `GRAPH <iri>` within an explicit dataset. Only listed `FROM NAMED`
+    /// graphs are visible, even when the source contains other graphs.
+    DatasetNamedGraph { iri: String, allowed: Vec<String> },
+    /// `GRAPH ?g` within an explicit dataset.
+    DatasetNamedGraphVariable {
+        variable: BindingId,
+        allowed: Vec<String>,
+    },
 }
 
 /// SPARQL property-path expression. Spec §5.9 / §5.10 use the form

@@ -3,14 +3,23 @@ set -euo pipefail
 
 language="${1:-all}"
 shards="${2:-4}"
+profile="${GRAPH_REL_PROFILE:-all}"
 
 if [[ ! "$shards" =~ ^[1-9][0-9]*$ ]]; then
   echo "shard count must be a positive integer" >&2
   exit 2
 fi
+if [[ "$profile" != "all" && "$profile" != "read_only" ]]; then
+  echo "GRAPH_REL_PROFILE must be all or read_only" >&2
+  exit 2
+fi
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-report_root="$repo_dir/target/coverage-reports/${language}-duckdb-sharded"
+report_name="${language}-duckdb-sharded"
+if [[ "$profile" == "read_only" ]]; then
+  report_name="${language}-read_only-duckdb-sharded"
+fi
+report_root="$repo_dir/target/coverage-reports/$report_name"
 previous_root="${report_root}-previous"
 
 if [[ -d "$report_root" ]]; then
@@ -41,6 +50,7 @@ for ((index = 0; index < shards; index++)); do
   env \
     GRAPH_REL_LANG="$language" \
     GRAPH_REL_EXEC=duckdb \
+    GRAPH_REL_PROFILE="$profile" \
     GRAPH_REL_SHARD_COUNT="$shards" \
     GRAPH_REL_SHARD_INDEX="$index" \
     GRAPH_REL_SHARD_CHUNK_SIZE="${GRAPH_REL_SHARD_CHUNK_SIZE:-8}" \
@@ -70,14 +80,14 @@ awk -F '\t' '
   FNR == 1 { next }
   {
     language=$1
-    for (column=2; column<=10; column++) totals[language, column]+=$column
+    for (column=2; column<=12; column++) totals[language, column]+=$column
     languages[language]=1
   }
   END {
-    print "language", "total", "runnable", "matched", "parsed", "planned", "lowered", "executed", "mismatches", "skipped"
+    print "language", "total", "runnable", "matched", "parsed", "planned", "lowered", "executed", "mismatches", "skipped", "excluded_writes", "read_total"
     for (language in languages) {
       printf "%s", language
-      for (column=2; column<=10; column++) printf "\t%d", totals[language, column]
+      for (column=2; column<=12; column++) printf "\t%d", totals[language, column]
       printf "\n"
     }
   }
@@ -99,6 +109,13 @@ awk -F '\t' '
     tail -n +2 "$cases_file"
   done | sort -t $'\t' -k1,1 -k2,2
 } >"$report_root/cases.tsv"
+
+{
+  printf 'language\tpath\treason\n'
+  for exclusions_file in "$report_root"/shard-*/excluded_writes.tsv; do
+    tail -n +2 "$exclusions_file"
+  done | sort -t $'\t' -k1,1 -k2,2
+} >"$report_root/excluded_writes.tsv"
 
 if [[ -f "$previous_root/cases.tsv" ]]; then
   awk -F '\t' '
@@ -146,8 +163,8 @@ fi
 awk -F '\t' '
   NR == 1 { next }
   {
-    pct = $2 == 0 ? 0 : 100 * $4 / $2
-    printf "%s: total=%d runnable=%d matched=%d (%.1f%%) parsed=%d planned=%d lowered=%d executed=%d mismatches=%d skipped=%d\n", $1, $2, $3, $4, pct, $5, $6, $7, $8, $9, $10
+    pct = $12 == 0 ? 0 : 100 * $4 / $12
+    printf "%s: total=%d read_total=%d excluded_writes=%d runnable=%d matched=%d (%.1f%%) parsed=%d planned=%d lowered=%d executed=%d mismatches=%d skipped=%d\n", $1, $2, $12, $11, $3, $4, pct, $5, $6, $7, $8, $9, $10
   }
 ' "$report_root/metrics.tsv"
 echo "reports: $report_root"

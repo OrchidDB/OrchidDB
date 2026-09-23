@@ -3,6 +3,7 @@
 //!
 //! Reference: `docs/graph_ir_language_examples_v0_2_draft.md`.
 
+pub mod analysis;
 pub mod bridge;
 pub mod catalog;
 pub mod df;
