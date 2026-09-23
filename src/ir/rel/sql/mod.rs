@@ -20,7 +20,11 @@
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 #[cfg(feature = "duckdb")]
+mod database;
+#[cfg(feature = "duckdb")]
 mod duckdb_exec;
+#[cfg(feature = "duckdb")]
+pub(crate) use database::{SharedDatabase, open_shared};
 #[cfg(feature = "postgres")]
 mod postgres_exec;
 mod recursive;

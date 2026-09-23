@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 
+[[bin]]
+name = "crabgraph"
+path = "src/bin/crabgraph.rs"
+required-features = ["duckdb"]
+
 [features]
 default = ["duckdb"]
 duckdb = ["dep:duckdb"]
@@ -26,7 +31,7 @@ sha2 = "0.10"
 spargebra = "0.4.7"
 thiserror = "2"
 unicode-segmentation = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 parquet = { version = "58.2.0", features = ["arrow"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

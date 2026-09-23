@@ -131,9 +131,9 @@ fn island_results_match_the_interpreter_for_an_expand() {
 #[test]
 fn an_unlowerable_operator_still_islands_the_subtree_beneath_it() {
     let graph = fixture();
-    // `list_append` has no relational lowering, so the projection cannot be
+    // Dynamic `list_sort` has no relational lowering, so the projection cannot be
     // part of an island — but the MATCH below it can.
-    let query = "MATCH (p:person) RETURN list_append([1], p.age)";
+    let query = "MATCH (p:person) RETURN list_sort([1, p.age])";
     let plan_islands = islanded(&graph, query);
     assert!(
         plan_islands.0 >= 1,
@@ -257,7 +257,7 @@ fn an_unlowerable_query_reports_why() {
     let graph = fixture();
     let (stats, _) = islanded_on(
         &graph,
-        "MATCH (p:person) RETURN list_append([1], p.age)",
+        "MATCH (p:person) RETURN list_sort([1, p.age])",
         &SqlTarget::duckdb(),
     );
     assert!(!stats.fully_pushed_down());

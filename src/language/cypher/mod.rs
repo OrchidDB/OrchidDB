@@ -4,6 +4,7 @@
 //! Cypher AST. The planner lowers that AST directly into the shared Graph IR.
 
 pub mod ast;
+pub mod parameters;
 pub mod parser;
 pub mod planner;
 pub mod semantics;

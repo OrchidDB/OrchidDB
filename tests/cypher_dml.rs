@@ -147,3 +147,68 @@ fn detach_delete_drops_incident_relationships() {
     );
     assert_eq!(rows, vec!["0"]);
 }
+
+/// Run `statements` in order, then `query`; return the error message if any
+/// step fails, otherwise the empty string.
+fn run_err(statements: &[&str], query: &str) -> String {
+    let graph = PropertyGraph::new();
+    for statement in statements {
+        let parsed = parse_query(statement).expect("setup parse");
+        let plan = CypherPlanner::new().plan(&parsed).expect("setup plan");
+        if let Err(err) = execute(&plan, &graph) {
+            return err.to_string();
+        }
+    }
+    let parsed = parse_query(query).expect("query parse");
+    let plan = CypherPlanner::new().plan(&parsed).expect("query plan");
+    match execute(&plan, &graph) {
+        Ok(_) => String::new(),
+        Err(err) => err.to_string(),
+    }
+}
+
+#[test]
+fn delete_node_with_relationship_errors_without_detach() {
+    let err = run_err(
+        &["CREATE (a:P {n: 'a'})-[:R]->(b:P {n: 'b'})"],
+        "MATCH (a:P {n: 'a'}) DELETE a",
+    );
+    assert!(
+        err.contains("still has relationships"),
+        "expected a delete integrity error, got: {err}"
+    );
+}
+
+#[test]
+fn delete_relationship_first_allows_node_deletion() {
+    let rows = run(
+        &[
+            "CREATE (a:P {n: 'a'})-[:R]->(b:P {n: 'b'})",
+            "MATCH (a:P)-[r:R]->(b:P) DELETE r, a",
+        ],
+        "MATCH (n:P) RETURN n.n ORDER BY n.n",
+    );
+    assert_eq!(rows, vec!["b"]);
+}
+
+#[test]
+fn detach_delete_then_repeat_is_a_noop() {
+    let rows = run(
+        &[
+            "CREATE (a:P {n: 'a'})-[:R]->(b:P {n: 'b'})",
+            "MATCH (a:P {n: 'a'}) DETACH DELETE a",
+            "MATCH (a:P {n: 'a'}) DELETE a",
+        ],
+        "MATCH (n:P) RETURN count(n)",
+    );
+    assert_eq!(rows, vec!["1"]);
+}
+
+#[test]
+fn set_property_to_null_removes_it() {
+    let rows = run(
+        &["CREATE (a:P {n: 'a', x: 1})"],
+        "MATCH (a:P) SET a.x = null RETURN a.n, a.x",
+    );
+    assert_eq!(rows, vec!["a|"]);
+}

@@ -1,9 +1,23 @@
 # new-graph
 
-`new-graph` is a prototype graph query planning crate. It adds graph-language
-frontends and graph-aware planning on top of a relational optimizer stack, with
-the long-term goal of lowering graph operations into SQL islands that can run on
-ordinary SQL engines.
+`new-graph` (Crabgraph) is an embedded graph engine in Rust built on DuckDB and
+DataFusion. Cypher, Gremlin, and SPARQL frontends produce a shared Graph IR.
+Relational query regions execute in DuckDB, with a graph runtime for operations
+that do not yet lower to SQL.
+
+`GraphEngine` provides managed graph persistence, transactions, typed Cypher
+parameters, and Arrow results. `MappedGraphEngine` runs SQL-only graph reads
+over existing DuckDB tables and views, plus explicit native SQL property updates.
+Language coverage is partial. Managed writes use the graph runtime and persist
+changed records transactionally in DuckDB, with checkpoints for compaction. See [the engine API and its current limits](docs/engine.md).
+
+```sh
+cargo run --bin crabgraph -- --database social.duckdb --query \
+  "CREATE (:Person {name:'Alice'})-[:KNOWS]->(:Person {name:'Bob'})"
+cargo run --bin crabgraph -- --database social.duckdb --query \
+  "MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.name, b.name"
+cargo run --example managed_graph
+```
 
 The project is currently implemented in Rust. It contains parsers, ASTs,
 semantic lowering, a Graph IR, planner facades, a small interpreter, and adapter
@@ -53,8 +67,10 @@ Implemented pieces include:
 - Case runners and integration tests for Gremlin/TinkerPop and Cypher/Ladybug
   corpora.
 
-Some pieces are intentionally still in progress. In particular, full SQL-island
-lowering and full language coverage are active development areas.
+Full SQL lowering, direct SQL managed mutations, disk-backed execution,
+and complete language conformance remain active development areas. Execution
+metadata distinguishes DuckDB execution from graph runtime work; SQL-only
+mode fails explicitly when a read cannot be lowered.
 
 ## Build
 

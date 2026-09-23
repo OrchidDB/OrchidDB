@@ -413,3 +413,64 @@ fn mapped_sparql_duckdb_execution_matrix() {
         cases.len()
     );
 }
+
+#[tokio::test]
+async fn distinct_preserves_order_by_unprojected_values() {
+    for (suffix, expected) in [
+        ("ORDER BY DESC(?score)", vec!["b", "a", "c"]),
+        ("ORDER BY DESC(?score) LIMIT 2 OFFSET 1", vec!["a", "c"]),
+        ("ORDER BY ?score", vec!["a", "c", "b"]),
+    ] {
+        let query = format!(
+            "SELECT DISTINCT ?name WHERE {{ VALUES (?name ?score) {{ (\"a\" 1) (\"b\" 9) (\"a\" 7) (\"c\" 3) }} }} {suffix}"
+        );
+        let plan = SparqlPlanner::default().plan_str(&query).unwrap();
+        let lowered = RelBackend::default()
+            .lower(&plan, &PropertyGraph::new())
+            .unwrap();
+        let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await.unwrap();
+        let actual = DuckDbExecutor::new()
+            .run(&prepared.setup, &prepared.query)
+            .unwrap();
+        let expected = expected
+            .into_iter()
+            .map(|s| vec![SqlValue::Text(s.into())])
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "{query}");
+        let result = RelBackend::default()
+            .execute(&plan, &PropertyGraph::new())
+            .await
+            .unwrap();
+        let names = result
+            .batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let actual = (0..result.batch.num_rows())
+            .map(|i| vec![SqlValue::Text(names.value(i).into())])
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "DataFusion: {query}");
+    }
+}
+
+#[tokio::test]
+async fn nested_distinct_has_independent_internal_columns() {
+    let plan = SparqlPlanner::default().plan_str(
+        "SELECT DISTINCT ?name WHERE { { SELECT DISTINCT ?name WHERE { VALUES ?name { \"b\" \"a\" \"a\" } } } } ORDER BY ?name"
+    ).unwrap();
+    let lowered = RelBackend::default()
+        .lower(&plan, &PropertyGraph::new())
+        .unwrap();
+    let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await.unwrap();
+    let actual = DuckDbExecutor::new()
+        .run(&prepared.setup, &prepared.query)
+        .unwrap();
+    assert_eq!(
+        actual,
+        vec![
+            vec![SqlValue::Text("a".into())],
+            vec![SqlValue::Text("b".into())]
+        ]
+    );
+}

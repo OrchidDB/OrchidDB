@@ -1,0 +1,281 @@
+//! Public mapped-table graph query engine.
+//!
+//! `MappedGraphEngine` is the integration seam between the language
+//! frontends and an external SQL engine for "bring your own schema" graphs.
+//! It owns a [`DuckDbExecutor`] and an `Arc<GraphMapping>`; every query is
+//! parsed, lowered to Graph IR, lowered again through the relational backend
+//! with the mapping installed (so node/edge scans resolve against the user's
+//! own tables and views), unparsed to DuckDB SQL, and executed there.
+//!
+//! The `cypher`, `gremlin`, and `sparql` methods accept only reads. Mutations
+//! (`CREATE`, `MERGE`, `SET`, `DELETE`, write procedures) are rejected by
+//! recursively walking the [`GraphPlan`] operator tree — never by inspecting
+//! the source string, and never by falling back to the in-memory
+//! interpreter, whose catalog overlay would silently discard writes.
+//!
+//! Explicit native property updates use [`MappedGraphEngine::cypher_update`].
+
+mod update;
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use crate::ir::catalog::PropertyGraph;
+use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::plan::{GraphPlan, Node, ProcedureMode};
+use crate::ir::rel::mapping::GraphMapping;
+use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor, execute_prepared, prepare_with_external};
+use crate::ir::rel::{RelBackend, RelBackendOptions};
+use crate::ir::value::Value;
+use crate::language::cypher::parser::parse_query;
+use crate::language::cypher::planner::CypherPlanner;
+use crate::language::gremlin::parser::parse_traversal;
+use crate::language::gremlin::planner::GremlinPlanner;
+use crate::language::sparql::{OntologyMapping, SparqlPlanner};
+
+/// Owns the external SQL executor and the schema mapping that turns graph
+/// labels/edge types into the user's relational tables.
+pub struct MappedGraphEngine {
+    executor: DuckDbExecutor,
+    mapping: Arc<GraphMapping>,
+}
+
+impl MappedGraphEngine {
+    pub fn new(executor: DuckDbExecutor, mapping: Arc<GraphMapping>) -> Self {
+        Self { executor, mapping }
+    }
+
+    /// Immutable access to the underlying executor.
+    pub fn executor(&self) -> &DuckDbExecutor {
+        &self.executor
+    }
+
+    /// Mutable access to the underlying executor (e.g. to run raw SQL or
+    /// tune timeouts).
+    pub fn executor_mut(&mut self) -> &mut DuckDbExecutor {
+        &mut self.executor
+    }
+
+    /// The schema mapping this engine resolves scans through.
+    pub fn mapping(&self) -> &GraphMapping {
+        &self.mapping
+    }
+
+    /// Apply raw SQL on every call; writes are never deduplicated as setup.
+    pub fn execute_sql(&mut self, sql: &str) -> Result<(), String> {
+        self.executor
+            .execute_batch(sql)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Run a Cypher read query against the mapped schema.
+    pub async fn cypher(&mut self, query: &str) -> Result<ReturnedBatches, String> {
+        self.cypher_with_params(query, &BTreeMap::new()).await
+    }
+
+    pub async fn cypher_with_params(
+        &mut self,
+        query: &str,
+        parameters: &BTreeMap<String, Value>,
+    ) -> Result<ReturnedBatches, String> {
+        let mut parsed = parse_query(query).map_err(|err| err.to_string())?;
+        crate::language::cypher::parameters::bind_parameters(&mut parsed, parameters)?;
+        let plan = CypherPlanner::new()
+            .plan(&parsed)
+            .map_err(|err| err.to_string())?;
+        self.run_plan(&plan).await
+    }
+
+    /// Run a Gremlin read traversal against the mapped schema.
+    pub async fn gremlin(&mut self, query: &str) -> Result<ReturnedBatches, String> {
+        let traversal = parse_traversal(query).map_err(|err| err.to_string())?;
+        let plan = GremlinPlanner::new()
+            .plan(&traversal)
+            .map_err(|err| err.to_string())?;
+        self.run_plan(&plan).await
+    }
+
+    /// Run a SPARQL query against the mapped schema. The ontology is passed
+    /// explicitly so vocabulary resolution is a caller decision, not hidden
+    /// engine state.
+    pub async fn sparql(
+        &mut self,
+        query: &str,
+        ontology: OntologyMapping,
+    ) -> Result<ReturnedBatches, String> {
+        let plan = SparqlPlanner::new("mapped")
+            .with_ontology(ontology)
+            .plan_str(query)
+            .map_err(|err| err.to_string())?;
+        self.run_plan(&plan).await
+    }
+
+    /// Lower a Cypher read query and return the generated DuckDB SQL text.
+    pub async fn explain_cypher(&mut self, query: &str) -> Result<String, String> {
+        let parsed = parse_query(query).map_err(|err| err.to_string())?;
+        let plan = CypherPlanner::new()
+            .plan(&parsed)
+            .map_err(|err| err.to_string())?;
+        self.sql_for_plan(&plan).await
+    }
+
+    fn backend(&self) -> RelBackend {
+        RelBackend::with_options(RelBackendOptions {
+            mapping: Some(self.mapping.clone()),
+            ..RelBackendOptions::default()
+        })
+    }
+
+    /// Lower a plan and return only the generated query text.
+    async fn sql_for_plan(&self, plan: &GraphPlan) -> Result<String, String> {
+        reject_mutations(plan)?;
+        let lowered = self
+            .backend()
+            .lower(plan, &PropertyGraph::new())
+            .map_err(|err| err.to_string())?;
+        let external = self.mapping.physical_table_names();
+        let prepared = prepare_with_external(&lowered, self.executor.dialect(), &external)
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(prepared.query)
+    }
+
+    /// Lower a plan, prepare it against the executor's dialect, and execute it.
+    async fn run_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
+        reject_mutations(plan)?;
+        let lowered = self
+            .backend()
+            .lower(plan, &PropertyGraph::new())
+            .map_err(|err| err.to_string())?;
+        let external = self.mapping.physical_table_names();
+        let prepared = prepare_with_external(&lowered, self.executor.dialect(), &external)
+            .await
+            .map_err(|err| err.to_string())?;
+        execute_prepared(&mut self.executor, &prepared).map_err(|err| err.to_string())
+    }
+}
+
+/// Reject mutation-shaped plans before they reach the relational lowering.
+/// This engine has no write mapping from graph identities to source tables,
+/// so graph mutations must fail before executing any query.
+fn reject_mutations(plan: &GraphPlan) -> Result<(), String> {
+    match find_mutation(plan.root.as_ref()) {
+        Some(kind) => Err(format!(
+            "mapped SQL engine does not support mutation queries \
+             (found `{kind}`); only read queries are allowed"
+        )),
+        None => Ok(()),
+    }
+}
+
+fn mutation_kind(node: &Node) -> Option<&'static str> {
+    match node {
+        Node::GraphCreate { .. } => Some("CREATE"),
+        Node::GraphMerge { .. } => Some("MERGE"),
+        Node::GraphSetProperty { .. } => Some("SET"),
+        Node::GraphDelete { .. } => Some("DELETE"),
+        Node::GraphProcedureCall {
+            mode: ProcedureMode::Write,
+            ..
+        } => Some("write procedure call"),
+        _ => None,
+    }
+}
+
+fn find_mutation(node: &Node) -> Option<&'static str> {
+    if let Some(kind) = mutation_kind(node) {
+        return Some(kind);
+    }
+    children(node).into_iter().find_map(find_mutation)
+}
+
+/// All child nodes of `node`, for recursive tree walks.
+fn children(node: &Node) -> Vec<&Node> {
+    use Node::*;
+    match node {
+        GraphMerge {
+            input,
+            match_arm,
+            create_arm,
+            ..
+        } => vec![input, match_arm, create_arm],
+        GraphReturn { input, .. }
+        | GraphConstructTriples { input, .. }
+        | GraphDescribe { input, .. }
+        | GraphAsk { input, .. }
+        | GraphBind { input, .. }
+        | GraphPathPattern { input, .. }
+        | GraphPathFilter { input, .. }
+        | GraphCreate { input, .. }
+        | GraphSetProperty { input, .. }
+        | GraphDelete { input, .. }
+        | GraphFilter { input, .. }
+        | GraphCurrentProject { input, .. }
+        | GraphAggregate { input, .. }
+        | GraphGroupMap { input, .. }
+        | GraphGroupCountSideEffect { input, .. }
+        | GraphCap { input, .. }
+        | GraphShortestPath { input, .. }
+        | GraphDistinct { input, .. }
+        | GraphSort { input, .. }
+        | GraphSlice { input, .. }
+        | GraphSliceExpr { input, .. }
+        | GraphBarrier { input, .. }
+        | GraphUnwind { input, .. }
+        | GraphQuantifier { input, .. }
+        | GraphCollect { input, .. }
+        | GraphListComprehension { input, .. }
+        | GraphSelect { input, .. }
+        | GraphExpand { input, .. }
+        | GraphProject { input, .. }
+        | GraphService { input, .. } => vec![input],
+        GraphJoin { left, right, .. }
+        | GraphApply { left, right, .. }
+        | GraphUnion { left, right, .. }
+        | GraphSparqlMinus { left, right, .. } => vec![left, right],
+        GraphRepeat {
+            seed,
+            body,
+            until_traversal,
+            prefix_traversal,
+            ..
+        } => {
+            let mut out = vec![seed.as_ref(), body.as_ref()];
+            if let Some(node) = until_traversal {
+                out.push(node);
+            }
+            if let Some(node) = prefix_traversal {
+                out.push(node);
+            }
+            out
+        }
+        GraphCoalesce { input, arms, .. } => {
+            let mut out = vec![input.as_ref()];
+            out.extend(arms.iter());
+            out
+        }
+        GraphChoose {
+            input,
+            arms,
+            default,
+            ..
+        } => {
+            let mut out = vec![input.as_ref()];
+            out.extend(arms.iter().map(|arm| &arm.body));
+            if let Some(node) = default {
+                out.push(node);
+            }
+            out
+        }
+        GraphProcedureCall { input, .. } => input.iter().map(|node| node.as_ref()).collect(),
+        GraphExtension { inputs, .. } => inputs.iter().collect(),
+        GraphNodeScan { .. }
+        | GraphRelScan { .. }
+        | GraphValues { .. }
+        | GraphOneRow
+        | GraphEmpty
+        | GraphCorrelate { .. }
+        | GraphSparqlTriplePattern { .. }
+        | GraphRdfPropertyPath { .. } => Vec::new(),
+    }
+}

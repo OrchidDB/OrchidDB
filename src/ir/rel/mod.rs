@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use arrow::array::{
     ArrayRef, BooleanBuilder, Float64Builder, Int64Array, Int64Builder, ListBuilder, RecordBatch,
-    StringArray, StringBuilder, new_null_array,
+    StringArray, StringBuilder,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_select::concat::concat_batches;
@@ -44,7 +44,7 @@ use datafusion::logical_expr::{
 };
 use datafusion::prelude::{SessionConfig, SessionContext, lit};
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
@@ -686,11 +686,11 @@ impl<'a> LoweringContext<'a> {
                     .build()?;
                 input.with_plan(plan)
             }
-            GraphDistinct { input, .. } => {
+            GraphDistinct { keys, input, .. } => {
                 let input = self.lower_node(input)?;
-                let plan = LogicalPlanBuilder::from(input.plan.clone())
-                    .distinct()?
-                    .build()?;
+                let barrier_id = self.scan_counter;
+                self.scan_counter += 1;
+                let plan = keyed_distinct(input.plan.clone(), keys, barrier_id)?;
                 input.with_plan(plan)
             }
             GraphSort { keys, input } => {
@@ -992,6 +992,69 @@ impl<'a> LoweringContext<'a> {
         Ok(input.with_plan(plan))
     }
 
+    /// Keep exact integer literals out of floating-point coercion. An integer
+    /// not representable as f64 cannot equal any floating-point column value.
+    fn lower_comparison_or_binary(
+        &self,
+        plan: &LogicalPlan,
+        left: &IrExpr,
+        op: BinaryOp,
+        right: &IrExpr,
+    ) -> RelResult<Expr> {
+        let lhs = self.lower_expr(plan, left)?;
+        let rhs = self.lower_expr(plan, right)?;
+        if matches!(
+            op,
+            BinaryOp::Eq
+                | BinaryOp::Neq
+                | BinaryOp::Lt
+                | BinaryOp::Lte
+                | BinaryOp::Gt
+                | BinaryOp::Gte
+        ) {
+            for (original, other) in [(left, &rhs), (right, &lhs)] {
+                let IrExpr::Call { name, args } = original else {
+                    continue;
+                };
+                if name != "integer_literal" || args.len() != 1 {
+                    continue;
+                }
+                let Some(text) = integer_literal_text(&args[0]) else {
+                    continue;
+                };
+                let Ok(integer) = BigInt::from_str(&text.replace('_', "")) else {
+                    continue;
+                };
+                if integer.to_i64().is_some()
+                    || !matches!(
+                        other.get_type(plan.schema())?,
+                        DataType::Float32 | DataType::Float64
+                    )
+                {
+                    continue;
+                }
+                if !matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+                    return Err(RelError::Unsupported("exact ordering between a wide integer literal and a float requires graph runtime execution".into()));
+                }
+                let rounded = integer.to_f64();
+                let exact =
+                    rounded.filter(|value| BigInt::from_f64(*value).as_ref() == Some(&integer));
+                if let Some(exact) = exact {
+                    return Ok(binary(other.clone(), op, lit(exact)));
+                }
+                return Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(other.clone().is_null()),
+                        Box::new(lit(ScalarValue::Boolean(None))),
+                    )],
+                    Some(Box::new(lit(op == BinaryOp::Neq))),
+                )));
+            }
+        }
+        Ok(binary(lhs, op, rhs))
+    }
+
     fn lower_node_scan(&mut self, binding: &str, labels: &LabelExpr) -> RelResult<LoweredNode> {
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
@@ -1001,14 +1064,34 @@ impl<'a> LoweringContext<'a> {
         let schema = node_schema(binding, &prop_defs);
         let mut batches = Vec::new();
         for label in labels {
-            let table = match self.graph.node_table(&label) {
-                Ok(table) => table,
+            if !self.graph.has_mutations() {
+                let table = match self.graph.node_table(&label) {
+                    Ok(table) => table,
+                    Err(CatalogError::UnknownLabel(_)) => continue,
+                    Err(err) => return Err(err.into()),
+                };
+                batches.push(normalize_node_table(
+                    binding,
+                    table,
+                    &prop_defs,
+                    schema.clone(),
+                    self.language,
+                )?);
+                continue;
+            }
+            let ids = match self.graph.node_ids(&label) {
+                Ok(ids) => ids,
                 Err(CatalogError::UnknownLabel(_)) => continue,
                 Err(err) => return Err(err.into()),
             };
-            batches.push(normalize_node_table(
+            if ids.is_empty() {
+                continue;
+            }
+            batches.push(materialize_node_scan_batch(
                 binding,
-                table,
+                &label,
+                &ids,
+                self.graph,
                 &prop_defs,
                 schema.clone(),
                 self.language,
@@ -1029,23 +1112,39 @@ impl<'a> LoweringContext<'a> {
         let schema = edge_schema(binding, &prop_defs);
         let mut batches = Vec::new();
         for rel_type in rel_types {
-            let mut base_id = 0_i64;
-            let tables = match self.graph.edge_tables(&rel_type) {
-                Ok(tables) => tables,
-                Err(CatalogError::UnknownRelType(_)) => continue,
-                Err(err) => return Err(err.into()),
-            };
-            for table in tables {
-                batches.push(normalize_edge_table(
-                    binding,
-                    table,
-                    base_id,
-                    &prop_defs,
-                    schema.clone(),
-                    self.language,
-                )?);
-                base_id += table.batch.num_rows() as i64;
+            if !self.graph.has_mutations() {
+                let tables = match self.graph.edge_tables(&rel_type) {
+                    Ok(tables) => tables,
+                    Err(CatalogError::UnknownRelType(_)) => continue,
+                    Err(err) => return Err(err.into()),
+                };
+                let mut base_id = 0;
+                for table in tables {
+                    batches.push(normalize_edge_table(
+                        binding,
+                        table,
+                        base_id,
+                        &prop_defs,
+                        schema.clone(),
+                        self.language,
+                    )?);
+                    base_id += table.batch.num_rows() as i64;
+                }
+                continue;
             }
+            let ids = self.graph.edge_ids(&rel_type);
+            if ids.is_empty() {
+                continue;
+            }
+            batches.push(materialize_edge_scan_batch(
+                binding,
+                &rel_type,
+                &ids,
+                self.graph,
+                &prop_defs,
+                schema.clone(),
+                self.language,
+            )?);
         }
         if batches.is_empty() {
             batches.push(RecordBatch::new_empty(schema));
@@ -2108,6 +2207,19 @@ impl<'a> LoweringContext<'a> {
                 "GraphRepeat times {times} exceeds unroll cap {REPEAT_CAP}"
             )));
         }
+        if times > 1 {
+            let mut pending = vec![body];
+            while let Some(node) = pending.pop() {
+                if matches!(node, Node::GraphDistinct { .. }) {
+                    // The repeat interpreter shares a seen set across rounds.
+                    // Independent SQL DISTINCT windows would reset that state.
+                    return Err(RelError::Unsupported(
+                        "GraphRepeat with stateful deduplication across iterations".into(),
+                    ));
+                }
+                pending.extend(node_children(node));
+            }
+        }
         // Whether the seed itself is emitted (`emit()` before `repeat`).
         let emit_seed = match (emit, prefix_predicate) {
             (EmitMode::AfterLoop, _) => false,
@@ -2743,11 +2855,7 @@ impl<'a> LoweringContext<'a> {
                     )))
                 }
             }
-            IrExpr::Binary { op, lhs, rhs } => {
-                let lhs = self.lower_expr(plan, lhs)?;
-                let rhs = self.lower_expr(plan, rhs)?;
-                Ok(binary(lhs, *op, rhs))
-            }
+            IrExpr::Binary { op, lhs, rhs } => self.lower_comparison_or_binary(plan, lhs, *op, rhs),
             IrExpr::Not(inner) => Ok(Expr::Not(Box::new(self.lower_expr(plan, inner)?))),
             IrExpr::StringPredicate {
                 op,
@@ -2776,6 +2884,8 @@ impl<'a> LoweringContext<'a> {
             IrExpr::Case { arms, otherwise } => {
                 let when_then_expr = arms
                     .iter()
+                    .filter(|(when, _)| !matches!(when, IrExpr::IsBound(binding)
+                        if !has_exact_col(plan, binding) && has_binding_shape(plan, binding).is_none()))
                     .map(|(when, then)| {
                         Ok((
                             Box::new(self.lower_expr(plan, when)?),
@@ -2787,6 +2897,11 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|expr| self.lower_expr(plan, expr).map(Box::new))
                     .transpose()?;
+                if when_then_expr.is_empty() {
+                    return Ok(else_expr
+                        .map(|expr| *expr)
+                        .unwrap_or_else(|| lit(ScalarValue::Null)));
+                }
                 Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
             }
             IrExpr::Call { name, args } if name == "path_or_self" => {
@@ -3198,11 +3313,7 @@ impl<'a> LoweringContext<'a> {
                         )));
                     }
                 };
-                Ok(binary(
-                    self.lower_expr(plan, &args[0])?,
-                    op,
-                    self.lower_expr(plan, &args[1])?,
-                ))
+                self.lower_comparison_or_binary(plan, &args[0], op, &args[1])
             }
             IrExpr::Call { name, .. } => Err(RelError::Unsupported(format!(
                 "function `{name}` is not relationally lowered yet"
@@ -4305,23 +4416,49 @@ impl<'a> LoweringContext<'a> {
     fn node_property_defs(&self, labels: &[String]) -> RelResult<Vec<PropertyDef>> {
         let mut defs = BTreeMap::<String, PropertyDef>::new();
         for label in labels {
-            let table = match self.graph.node_table(label) {
-                Ok(table) => table,
-                Err(CatalogError::UnknownLabel(_)) => continue,
+            let table: Option<&NodeTable> = match self.graph.node_table(label) {
+                Ok(table) => Some(table),
+                Err(CatalogError::UnknownLabel(_)) => None,
                 Err(err) => return Err(err.into()),
             };
-            // Cypher fixtures use `id` as an ordinary primary-key property
-            // and expect `RETURN n.*` and node printing to show it; Gremlin
-            // treats element ids as separate from properties. This mirrors
-            // `node_property_keys` vs `node_property_keys_with_id` — excluding
-            // it unconditionally left `n.id` unresolvable, which the
-            // NullOnMissing policy then turned into a silent `NULL`.
-            let excluded: &[&str] = match self.language {
-                Language::Gremlin => &["id"],
-                _ => &[],
+            if let Some(table) = table {
+                // Cypher fixtures use `id` as an ordinary primary-key property
+                // and expect `RETURN n.*` and node printing to show it; Gremlin
+                // treats element ids as separate from properties. This mirrors
+                // `node_property_keys` vs `node_property_keys_with_id` — excluding
+                // it unconditionally left `n.id` unresolvable, which the
+                // NullOnMissing policy then turned into a silent `NULL`.
+                let excluded: &[&str] = match self.language {
+                    Language::Gremlin => &["id"],
+                    _ => &[],
+                };
+                merge_property_defs(&mut defs, table.batch.schema().as_ref(), excluded)?;
+                merge_struct_field_defs(&mut defs, &table.batch)?;
+            }
+            // Overlay-written property keys with no base column (brand-new
+            // labels, or keys introduced by `SET` on existing elements) must
+            // still surface in the relational scan. Their Arrow type has to be
+            // inferred from the live overlay values; base keys keep the exact
+            // column type recorded above.
+            let keys = match self.language {
+                Language::Gremlin => self.graph.node_property_keys(label),
+                _ => self.graph.node_property_keys_with_id(label),
             };
-            merge_property_defs(&mut defs, table.batch.schema().as_ref(), excluded)?;
-            merge_struct_field_defs(&mut defs, &table.batch)?;
+            for key in keys {
+                if defs.contains_key(&key) {
+                    continue;
+                }
+                let data_type = infer_element_property_type(self.graph, false, label, &key);
+                defs.insert(
+                    key.clone(),
+                    PropertyDef {
+                        name: key,
+                        data_type,
+                        carries_union_tag: false,
+                        struct_fields: Vec::new(),
+                    },
+                );
+            }
         }
         Ok(defs.into_values().collect())
     }
@@ -4430,18 +4567,35 @@ impl<'a> LoweringContext<'a> {
     fn edge_property_defs(&self, rel_types: &[String]) -> RelResult<Vec<PropertyDef>> {
         let mut defs = BTreeMap::<String, PropertyDef>::new();
         for rel_type in rel_types {
-            let tables = match self.graph.edge_tables(rel_type) {
-                Ok(tables) => tables,
-                Err(CatalogError::UnknownRelType(_)) => continue,
+            let tables: Option<&[EdgeTable]> = match self.graph.edge_tables(rel_type) {
+                Ok(tables) => Some(tables),
+                Err(CatalogError::UnknownRelType(_)) => None,
                 Err(err) => return Err(err.into()),
             };
-            for table in tables {
-                merge_property_defs(
-                    &mut defs,
-                    table.batch.schema().as_ref(),
-                    &["src", "dst", "id", "__src_id", "__dst_id"],
-                )?;
-                merge_struct_field_defs(&mut defs, &table.batch)?;
+            if let Some(tables) = tables {
+                for table in tables {
+                    merge_property_defs(
+                        &mut defs,
+                        table.batch.schema().as_ref(),
+                        &["src", "dst", "id", "__src_id", "__dst_id"],
+                    )?;
+                    merge_struct_field_defs(&mut defs, &table.batch)?;
+                }
+            }
+            for key in self.graph.edge_property_keys(rel_type) {
+                if defs.contains_key(&key) {
+                    continue;
+                }
+                let data_type = infer_element_property_type(self.graph, true, rel_type, &key);
+                defs.insert(
+                    key.clone(),
+                    PropertyDef {
+                        name: key,
+                        data_type,
+                        carries_union_tag: false,
+                        struct_fields: Vec::new(),
+                    },
+                );
             }
         }
         Ok(defs.into_values().collect())
@@ -4802,13 +4956,13 @@ fn property_array(
             }
             Ok(batch.column(idx).clone())
         }
-        None => Ok(new_null_array(expected, rows)),
+        None => Ok(arrow::array::new_null_array(expected, rows)),
     }
 }
 
 fn property_union_tag_array(batch: &RecordBatch, name: &str, rows: usize) -> RelResult<ArrayRef> {
     let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
-        return Ok(new_null_array(&DataType::Utf8, rows));
+        return Ok(arrow::array::new_null_array(&DataType::Utf8, rows));
     };
     let source = batch
         .column(idx)
@@ -4851,7 +5005,7 @@ fn property_struct_field_array(
     language: Language,
 ) -> RelResult<ArrayRef> {
     let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
-        return Ok(new_null_array(&DataType::Utf8, rows));
+        return Ok(arrow::array::new_null_array(&DataType::Utf8, rows));
     };
     let source = batch
         .column(idx)
@@ -4883,6 +5037,415 @@ fn property_struct_field_array(
         }
     }
     Ok(Arc::new(builder.finish()) as ArrayRef)
+}
+
+/// Materialize a node label as a relational scan batch, overlay-aware.
+///
+/// Row identity comes from `PropertyGraph::node_ids`, which keeps original
+/// base row ids (including gaps left by deletions) and appends ids of
+/// inserted nodes. Properties are read through `node_property` so
+/// create/set/delete mutations are visible, while base columns keep their
+/// exact Arrow types (see [`materialize_property_array`]).
+fn materialize_node_scan_batch(
+    binding: &str,
+    label: &str,
+    ids: &[i64],
+    graph: &PropertyGraph,
+    props: &[PropertyDef],
+    schema: SchemaRef,
+    language: Language,
+) -> RelResult<RecordBatch> {
+    let rows = ids.len();
+    let mut arrays: Vec<ArrayRef> = vec![
+        Arc::new(Int64Array::from(ids.to_vec())),
+        Arc::new(StringArray::from_iter_values((0..rows).map(|_| label))),
+    ];
+    for prop in props {
+        arrays.push(materialize_property_array(
+            graph,
+            false,
+            label,
+            ids,
+            &prop.name,
+            &prop.data_type,
+            language,
+        )?);
+        if prop.carries_union_tag {
+            arrays.push(materialize_union_tag_array(
+                graph, false, label, ids, &prop.name,
+            )?);
+        }
+        for field in &prop.struct_fields {
+            arrays.push(materialize_struct_field_array(
+                graph, false, label, ids, &prop.name, field, language,
+            )?);
+        }
+    }
+    debug_assert_eq!(schema.field(0).name(), &id_col(binding));
+    Ok(RecordBatch::try_new(schema, arrays)?)
+}
+
+/// Materialize a relationship type as a relational scan batch, overlay-aware.
+///
+/// Row identity and endpoints come from `PropertyGraph::edge_ids` /
+/// `edge_endpoints`, which already resolve grouped edge tables, deletion
+/// gaps, and inserted edges. Properties are read through `edge_property`.
+fn materialize_edge_scan_batch(
+    binding: &str,
+    rel_type: &str,
+    ids: &[i64],
+    graph: &PropertyGraph,
+    props: &[PropertyDef],
+    schema: SchemaRef,
+    language: Language,
+) -> RelResult<RecordBatch> {
+    let rows = ids.len();
+    let mut src_labels = Vec::with_capacity(rows);
+    let mut src_ids = Vec::with_capacity(rows);
+    let mut dst_labels = Vec::with_capacity(rows);
+    let mut dst_ids = Vec::with_capacity(rows);
+    for &id in ids {
+        let (src_label, src_id, dst_label, dst_id) =
+            graph.edge_endpoints(rel_type, id).ok_or_else(|| {
+                RelError::Unsupported(format!("edge `{rel_type}` row {id} has no endpoints"))
+            })?;
+        src_labels.push(src_label);
+        src_ids.push(src_id);
+        dst_labels.push(dst_label);
+        dst_ids.push(dst_id);
+    }
+    let mut arrays: Vec<ArrayRef> = vec![
+        Arc::new(Int64Array::from(ids.to_vec())),
+        Arc::new(StringArray::from_iter_values((0..rows).map(|_| rel_type))),
+        Arc::new(StringArray::from(src_labels)),
+        Arc::new(Int64Array::from(src_ids)),
+        Arc::new(StringArray::from(dst_labels)),
+        Arc::new(Int64Array::from(dst_ids)),
+    ];
+    for prop in props {
+        arrays.push(materialize_property_array(
+            graph,
+            true,
+            rel_type,
+            ids,
+            &prop.name,
+            &prop.data_type,
+            language,
+        )?);
+        if prop.carries_union_tag {
+            arrays.push(materialize_union_tag_array(
+                graph, true, rel_type, ids, &prop.name,
+            )?);
+        }
+        for field in &prop.struct_fields {
+            arrays.push(materialize_struct_field_array(
+                graph, true, rel_type, ids, &prop.name, field, language,
+            )?);
+        }
+    }
+    debug_assert_eq!(schema.field(0).name(), &id_col(binding));
+    Ok(RecordBatch::try_new(schema, arrays)?)
+}
+
+/// Read a property of an element through the catalog's overlay-aware API.
+fn element_property_value(
+    graph: &PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    id: i64,
+    name: &str,
+) -> Value {
+    if is_edge {
+        graph.edge_property(element, id, name)
+    } else {
+        graph.node_property(element, id, name)
+    }
+}
+
+/// Locate the base Arrow cell for an element id, if it is a base (non-inserted)
+/// row. Inserted overlay rows and unknown elements return `None`.
+fn base_cell<'a>(
+    graph: &'a PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    id: i64,
+) -> Option<(&'a RecordBatch, usize)> {
+    if is_edge {
+        let tables = graph.edge_tables(element).ok()?;
+        let mut offset = 0_i64;
+        for table in tables {
+            let rows = table.batch.num_rows() as i64;
+            if id >= offset && id < offset + rows {
+                return Some((&table.batch, (id - offset) as usize));
+            }
+            offset += rows;
+        }
+        None
+    } else {
+        let table = graph.node_table(element).ok()?;
+        let local = id as usize;
+        (local < table.batch.num_rows()).then_some((&table.batch, local))
+    }
+}
+
+/// Materialize one property column for a scan, overlay-aware.
+///
+/// For the scalar types the interpreter can read back losslessly (booleans,
+/// i32/i64, f64, strings) the effective `node_property`/`edge_property` value
+/// is converted into the column's exact Arrow type, so base cells keep their
+/// values and overlay writes surface with the same type. For any other base
+/// type (narrow ints, `f32`, temporals, lists, …) the raw base cell is kept
+/// verbatim for unmutated rows and the scan declines if the overlay changed
+/// it, so a mismatch can never produce a wrong answer.
+fn materialize_property_array(
+    graph: &PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    ids: &[i64],
+    name: &str,
+    data_type: &DataType,
+    language: Language,
+) -> RelResult<ArrayRef> {
+    let supported = matches!(
+        data_type,
+        DataType::Boolean | DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Utf8
+    );
+    let mut scalars: Vec<ScalarValue> = Vec::with_capacity(ids.len());
+    for &id in ids {
+        let value = element_property_value(graph, is_edge, element, id, name);
+        if supported {
+            scalars.push(value_to_scalar(&value, data_type, language)?);
+            continue;
+        }
+        let Some((batch, local_row)) = base_cell(graph, is_edge, element, id) else {
+            return Err(RelError::Unsupported(format!(
+                "property `{name}` has base type `{data_type:?}` and overlay data"
+            )));
+        };
+        let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
+            return Err(RelError::Unsupported(format!(
+                "property `{name}` is missing from its base schema"
+            )));
+        };
+        let field = batch.schema().field(idx).clone();
+        let base_value = crate::ir::catalog::array_value(
+            batch.column(idx).as_ref(),
+            local_row,
+            Some(field.as_ref()),
+        );
+        if base_value != value {
+            return Err(RelError::Unsupported(format!(
+                "property `{name}` has base type `{data_type:?}` and overlay data"
+            )));
+        }
+        scalars.push(ScalarValue::try_from_array(
+            batch.column(idx).as_ref(),
+            local_row,
+        )?);
+    }
+    Ok(ScalarValue::iter_to_array(scalars)?)
+}
+
+fn value_to_scalar(
+    value: &Value,
+    data_type: &DataType,
+    language: Language,
+) -> RelResult<ScalarValue> {
+    let mismatch = || {
+        RelError::Unsupported(format!(
+            "property value `{}` cannot be stored in column type `{data_type:?}`",
+            value.type_name()
+        ))
+    };
+    match data_type {
+        DataType::Boolean => match value {
+            Value::Null => Ok(ScalarValue::Boolean(None)),
+            Value::Bool(value) => Ok(ScalarValue::Boolean(Some(*value))),
+            _ => Err(mismatch()),
+        },
+        DataType::Int32 => match value {
+            Value::Null => Ok(ScalarValue::Int32(None)),
+            _ => value_to_int(value)
+                .and_then(|value| i32::try_from(value).ok())
+                .map(|value| ScalarValue::Int32(Some(value)))
+                .ok_or_else(mismatch),
+        },
+        DataType::Int64 => match value {
+            Value::Null => Ok(ScalarValue::Int64(None)),
+            _ => value_to_int(value)
+                .map(|value| ScalarValue::Int64(Some(value)))
+                .ok_or_else(mismatch),
+        },
+        DataType::Float64 => match value {
+            Value::Null => Ok(ScalarValue::Float64(None)),
+            _ => materialized_value_to_f64(value)
+                .map(|value| ScalarValue::Float64(Some(value)))
+                .ok_or_else(mismatch),
+        },
+        DataType::Utf8 => match value {
+            Value::Null => Ok(ScalarValue::Utf8(None)),
+            Value::String(value) | Value::DateTime(value) => {
+                Ok(ScalarValue::Utf8(Some(value.clone())))
+            }
+            other => Ok(ScalarValue::Utf8(Some(rel_display_value(
+                other,
+                language,
+                literal_collection_context(language),
+            )))),
+        },
+        _ => Err(RelError::Unsupported(format!(
+            "property column type `{data_type:?}` is not relationally lowered"
+        ))),
+    }
+}
+
+/// Integer conversion that refuses lossy float truncation, so a float written
+/// into an integer column declines instead of silently truncating.
+fn value_to_int(value: &Value) -> Option<i64> {
+    match value {
+        Value::Byte(value) => Some(*value as i64),
+        Value::UInt8(value) => Some(*value as i64),
+        Value::Short(value) => Some(*value as i64),
+        Value::UInt16(value) => Some(*value as i64),
+        Value::Int(value) | Value::Long(value) => Some(*value),
+        Value::UInt32(value) => Some(*value as i64),
+        Value::UInt64(value) => i64::try_from(*value).ok(),
+        Value::BigInt(value) => value.to_i64(),
+        Value::UInt128(value) => value.to_i64(),
+        _ => None,
+    }
+}
+
+fn materialized_value_to_f64(value: &Value) -> Option<f64> {
+    match value {
+        Value::Float(value) => Some(*value),
+        Value::Float32(value) => Some(f64::from(*value)),
+        Value::BigInt(value) => value.to_f64(),
+        Value::UInt128(value) => value.to_f64(),
+        Value::BigDecimal(value) => value.to_f64(),
+        other => other.as_i64().map(|value| value as f64),
+    }
+}
+
+fn materialize_union_tag_array(
+    graph: &PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    ids: &[i64],
+    name: &str,
+) -> RelResult<ArrayRef> {
+    let mut builder = StringBuilder::new();
+    for &id in ids {
+        let value = element_property_value(graph, is_edge, element, id, name);
+        match union_tag_of(&value) {
+            Some(tag) => builder.append_value(tag),
+            None => builder.append_null(),
+        }
+    }
+    Ok(Arc::new(builder.finish()) as ArrayRef)
+}
+
+fn union_tag_of(value: &Value) -> Option<String> {
+    match value {
+        Value::Map(map) => match map.get("__tag") {
+            Some(Value::String(tag)) => Some(tag.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn materialize_struct_field_array(
+    graph: &PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    ids: &[i64],
+    name: &str,
+    struct_field: &str,
+    language: Language,
+) -> RelResult<ArrayRef> {
+    let mut builder = StringBuilder::new();
+    for &id in ids {
+        let value = element_property_value(graph, is_edge, element, id, name);
+        match struct_field_of(&value, struct_field) {
+            Some(Value::Null) | None => builder.append_null(),
+            Some(field_value) => builder.append_value(rel_display_value(
+                &field_value,
+                language,
+                literal_collection_context(language),
+            )),
+        }
+    }
+    Ok(Arc::new(builder.finish()) as ArrayRef)
+}
+
+fn struct_field_of(value: &Value, field: &str) -> Option<Value> {
+    match value {
+        Value::Map(map) => map.get(field).cloned(),
+        _ => None,
+    }
+}
+
+/// Infer an Arrow type for a property key that only exists in the overlay
+/// (a brand-new label, or a key introduced by `SET`). Mirrors the interpreter's
+/// `ColumnKind` promotion: booleans, integers, floats, and everything else as
+/// text. Base-schema keys never reach this — they keep their exact type.
+fn infer_element_property_type(
+    graph: &PropertyGraph,
+    is_edge: bool,
+    element: &str,
+    name: &str,
+) -> DataType {
+    let ids: Vec<i64> = if is_edge {
+        graph.edge_ids(element)
+    } else {
+        graph.node_ids(element).unwrap_or_default()
+    };
+    let mut values = Vec::with_capacity(ids.len());
+    for id in ids {
+        values.push(element_property_value(graph, is_edge, element, id, name));
+    }
+    infer_property_data_type(&values)
+}
+
+fn infer_property_data_type(values: &[Value]) -> DataType {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Kind {
+        Bool,
+        Int,
+        Float,
+        Utf8,
+    }
+    let mut kind: Option<Kind> = None;
+    for value in values {
+        let candidate = match value {
+            Value::Null => continue,
+            Value::Bool(_) => Kind::Bool,
+            Value::Byte(_)
+            | Value::UInt8(_)
+            | Value::Short(_)
+            | Value::UInt16(_)
+            | Value::Int(_)
+            | Value::UInt32(_)
+            | Value::Long(_)
+            | Value::UInt64(_) => Kind::Int,
+            Value::Float32(_) | Value::Float(_) => Kind::Float,
+            _ => Kind::Utf8,
+        };
+        kind = Some(match kind {
+            None => candidate,
+            Some(existing) if existing == candidate => existing,
+            Some(Kind::Int) if candidate == Kind::Float => Kind::Float,
+            Some(Kind::Float) if candidate == Kind::Int => Kind::Float,
+            _ => Kind::Utf8,
+        });
+    }
+    match kind.unwrap_or(Kind::Utf8) {
+        Kind::Bool => DataType::Boolean,
+        Kind::Int => DataType::Int64,
+        Kind::Float => DataType::Float64,
+        Kind::Utf8 => DataType::Utf8,
+    }
 }
 
 fn schema_index(schema: &Schema, name: &str) -> Option<usize> {
@@ -7256,7 +7819,7 @@ fn col_exact(name: impl Into<String>) -> Expr {
     Expr::Column(Column::new_unqualified(name.into()))
 }
 
-fn id_col(binding: &str) -> String {
+pub(crate) fn id_col(binding: &str) -> String {
     format!("{binding}{ID_SUFFIX}")
 }
 
@@ -7372,6 +7935,101 @@ fn apply_correlation_key_columns(plan: &LogicalPlan) -> Vec<String> {
         .map(|field| field.name().clone())
         .filter(|name| name.starts_with("__apply_corr_key_"))
         .collect()
+}
+
+// Carry an explicit ordinal through projections so ORDER BY expressions that
+// are absent from the final result can still determine the surviving row.
+fn with_distinct_ordinal(plan: LogicalPlan, ordinal: &str) -> RelResult<LogicalPlan> {
+    if let LogicalPlan::Projection(projection) = &plan {
+        let input = with_distinct_ordinal(projection.input.as_ref().clone(), ordinal)?;
+        let mut expr = projection.expr.clone();
+        expr.push(col_exact(ordinal));
+        return Ok(LogicalPlanBuilder::from(input).project(expr)?.build()?);
+    }
+    if let LogicalPlan::Filter(filter) = &plan {
+        let input = with_distinct_ordinal(filter.input.as_ref().clone(), ordinal)?;
+        return Ok(LogicalPlanBuilder::from(input)
+            .filter(filter.predicate.clone())?
+            .build()?);
+    }
+    let order = match &plan {
+        LogicalPlan::Sort(sort) => sort.expr.clone(),
+        _ => Vec::new(),
+    };
+    let window = df_window::row_number()
+        .order_by(order)
+        .build()?
+        .alias(ordinal);
+    Ok(LogicalPlanBuilder::from(plan)
+        .window(vec![window])?
+        .build()?)
+}
+
+fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usize) -> RelResult<LogicalPlan> {
+    let mut partition = Vec::new();
+    if keys.is_empty() {
+        partition.extend(existing_columns_by_name(&plan, &BTreeSet::new()));
+    } else {
+        for key in keys {
+            if has_binding_shape(&plan, key).is_some() {
+                partition.push(col_exact(id_col(key)));
+                partition.push(col_exact(label_col(key)));
+            } else if has_exact_col(&plan, key) {
+                partition.push(col_exact(key));
+            } else {
+                // Missing bindings share the same unbound key.
+                partition.push(lit(ScalarValue::Null));
+            }
+        }
+    }
+    partition.extend(apply_correlation_key_columns(&plan).iter().map(col_exact));
+    let ordinal = unique_internal_alias(
+        &plan,
+        &BTreeSet::new(),
+        format!("__distinct_ordinal_{barrier_id}"),
+    );
+    let mut cleanup = BTreeSet::from([ordinal.clone()]);
+    let rank = unique_internal_alias(&plan, &cleanup, format!("__distinct_rank_{barrier_id}"));
+    cleanup.insert(rank.clone());
+    // Keep the two windows in separate SQL scopes: DuckDB cannot reference
+    // one window result from another window in the same SELECT.
+    let numbered = with_distinct_ordinal(plan, &ordinal)?;
+    let input_guard = unique_internal_alias(
+        &numbered,
+        &cleanup,
+        format!("__distinct_input_guard_{barrier_id}"),
+    );
+    cleanup.insert(input_guard.clone());
+    let mut columns = existing_columns_by_name(&numbered, &BTreeSet::new());
+    columns.push(lit(1_i64).alias(input_guard));
+    let numbered = LogicalPlanBuilder::from(numbered)
+        .project(columns)?
+        .alias(format!("__w_sql_cte_distinct_{barrier_id}"))?
+        .build()?;
+    let window = df_window::row_number()
+        .partition_by(partition)
+        .order_by(vec![col_exact(&ordinal).sort(true, false)])
+        .build()?
+        .alias(&rank);
+    let ranked = LogicalPlanBuilder::from(numbered)
+        .window(vec![window])?
+        .build()?;
+    let guard = unique_internal_alias(&ranked, &cleanup, format!("__distinct_guard_{barrier_id}"));
+    cleanup.insert(guard.clone());
+    let mut columns = existing_columns_by_name(&ranked, &BTreeSet::new());
+    columns.push(lit(1_i64).alias(guard));
+    let ranked = LogicalPlanBuilder::from(ranked)
+        .project(columns)?
+        .alias(format!("__w_sql_cte_distinct_rank_{barrier_id}"))?
+        .build()?;
+    let selected = LogicalPlanBuilder::from(ranked)
+        .filter(binary(col_exact(&rank), BinaryOp::Eq, lit(1_u64)))?
+        .sort(vec![col_exact(&ordinal).sort(true, false)])?
+        .build()?;
+    let projection = existing_columns_by_name(&selected, &cleanup);
+    Ok(LogicalPlanBuilder::from(selected)
+        .project(projection)?
+        .build()?)
 }
 
 fn partitioned_limit(

@@ -11,6 +11,12 @@ pub mod ir;
 pub mod language;
 pub mod planner;
 
+#[cfg(feature = "duckdb")]
+pub mod engine;
+#[cfg(feature = "duckdb")]
+pub mod mapped_engine;
+pub mod storage;
+
 /// Minimal placeholder for the syntax-tree wrapper that the Gremlin AST
 /// keeps alongside its lowered `Traversal`. The full parser tree lives
 /// outside this crate's currently-built modules; this struct only exists

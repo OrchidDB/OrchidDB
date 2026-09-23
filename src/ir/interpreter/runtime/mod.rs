@@ -865,10 +865,7 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
             Ok(Some(Value::Bool(true)))
         }
         ("cypher_properties_match", [_target, Value::Null]) => {
-            // Parameter values are not wired into the interpreter yet. Keep
-            // parameterized pattern predicates representable for downstream
-            // lowering without dropping every interpreted row.
-            Ok(Some(Value::Bool(true)))
+            Ok(Some(Value::Null))
         }
         ("cypher_properties_match", [_target, _spec]) => Ok(Some(Value::Bool(false))),
         ("cypher_eq", [left, right]) => Ok(Some(cypher_compare_value(left, right, "eq"))),
@@ -877,7 +874,9 @@ fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Op
         ("cypher_lte", [left, right]) => Ok(Some(cypher_compare_value(left, right, "lte"))),
         ("cypher_gt", [left, right]) => Ok(Some(cypher_compare_value(left, right, "gt"))),
         ("cypher_gte", [left, right]) => Ok(Some(cypher_compare_value(left, right, "gte"))),
-        ("parameter", [Value::String(_)]) => Ok(Some(Value::Null)),
+        ("parameter", [Value::String(name)]) => Err(InterpretError::Runtime(format!(
+            "missing query parameter ${name}; bind parameters before planning"
+        ))),
         ("integer_literal", [Value::String(text)]) => Ok(Some(parse_integer_runtime_literal(text))),
         ("pow", [a, b]) => match (value_as_f64(a), value_as_f64(b)) {
             (Some(l), Some(r)) => Ok(Some(Value::Float(l.powf(r)))),

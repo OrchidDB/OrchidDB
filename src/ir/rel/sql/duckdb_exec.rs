@@ -1,10 +1,11 @@
 //! DuckDB implementation of [`SqlExecutor`].
 //!
-//! An executor owns one in-memory database. Setup statements are applied once
+//! An executor owns one in-memory or file-backed database session. Setup statements are applied once
 //! per executor, allowing successive islands over the same graph to reuse
 //! materialized tables and session state.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
 use duckdb::Connection;
@@ -15,9 +16,12 @@ use super::{SqlDialect, SqlError, SqlExecutor, SqlResult, SqlValue, sql_value_fr
 #[derive(Debug, Default)]
 pub struct DuckDbExecutor {
     connection: Option<Connection>,
+    database: Option<super::SharedDatabase>,
     applied_setup: BTreeMap<String, Vec<String>>,
     timeout: Option<Duration>,
     setup_timeout: Option<Duration>,
+    lost_connection: bool,
+    transaction_active: bool,
 }
 
 impl DuckDbExecutor {
@@ -46,6 +50,127 @@ impl DuckDbExecutor {
             ..Self::default()
         }
     }
+
+    /// Configure time budgets without replacing an existing database session.
+    pub fn set_timeouts(&mut self, query_timeout: Duration, setup_timeout: Duration) {
+        self.timeout = Some(query_timeout);
+        self.setup_timeout = Some(setup_timeout);
+    }
+
+    /// Open a file-backed DuckDB database. The connection persists across
+    /// executor calls and, because it is backed by a file, across executor
+    /// instances that reopen the same path.
+    pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let (connection, database) = super::open_shared(path.as_ref())
+            .map_err(|err| SqlError::Setup(format!("duckdb open: {err}")))?;
+        let mut executor = Self::from_connection(connection);
+        executor.database = database;
+        Ok(executor)
+    }
+
+    /// Wrap an already-open DuckDB connection.
+    pub fn from_connection(connection: Connection) -> Self {
+        let transaction_active = detect_transaction(&connection).unwrap_or(true);
+        Self {
+            connection: Some(connection),
+            database: None,
+            applied_setup: BTreeMap::new(),
+            timeout: None,
+            setup_timeout: None,
+            lost_connection: false,
+            transaction_active,
+        }
+    }
+
+    /// Return the underlying connection, opening an in-memory database on
+    /// first use.
+    pub fn connection(&mut self) -> SqlResult<&Connection> {
+        self.ensure_connection()?;
+        // Connection has interior mutability: callers can execute arbitrary
+        // SQL, including rollback or replacing materialized tables.
+        self.applied_setup.clear();
+        Ok(self.connection.as_ref().expect("connection initialized"))
+    }
+
+    fn ensure_connection(&mut self) -> SqlResult<()> {
+        if self.connection.is_none() {
+            if self.lost_connection {
+                return Err(SqlError::Execution(
+                    "DuckDB session was lost after interruption; open a new executor".into(),
+                ));
+            }
+            self.connection = Some(
+                Connection::open_in_memory()
+                    .map_err(|err| SqlError::Setup(format!("duckdb open: {err}")))?,
+            );
+        }
+        Ok(())
+    }
+
+    /// Execute a raw SQL batch. Arbitrary SQL can rewrite materialized tables,
+    /// so this invalidates the applied-setup cache.
+    pub fn execute_batch(&mut self, sql: &str) -> SqlResult<()> {
+        self.applied_setup.clear();
+        let conn = self.connection()?;
+        let result = conn
+            .execute_batch(sql)
+            .map_err(|err| SqlError::Execution(format!("duckdb execute_batch: {err}")));
+        if let Some(active) = detect_transaction(conn) {
+            self.transaction_active = active;
+        }
+        result
+    }
+
+    /// Begin an explicit transaction.
+    pub fn begin(&mut self) -> SqlResult<()> {
+        if self.in_transaction() {
+            return Err(SqlError::Setup(
+                "duckdb begin: a transaction is already active".into(),
+            ));
+        }
+        let conn = self.connection()?;
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|err| SqlError::Setup(format!("duckdb begin: {err}")))?;
+        self.transaction_active = true;
+        Ok(())
+    }
+
+    /// Commit the active transaction.
+    pub fn commit(&mut self) -> SqlResult<()> {
+        if !self.in_transaction() {
+            return Err(SqlError::Setup(
+                "duckdb commit: no active transaction".into(),
+            ));
+        }
+        let conn = self.connection()?;
+        conn.execute_batch("COMMIT")
+            .map_err(|err| SqlError::Setup(format!("duckdb commit: {err}")))?;
+        self.transaction_active = false;
+        Ok(())
+    }
+
+    /// Roll back the active transaction. Setup applied inside the rolled-back
+    /// transaction is undone, so its cache entries are discarded as well.
+    pub fn rollback(&mut self) -> SqlResult<()> {
+        if !self.in_transaction() {
+            return Err(SqlError::Setup(
+                "duckdb rollback: no active transaction".into(),
+            ));
+        }
+        let conn = self.connection()?;
+        conn.execute_batch("ROLLBACK")
+            .map_err(|err| SqlError::Setup(format!("duckdb rollback: {err}")))?;
+        self.transaction_active = false;
+        self.applied_setup.clear();
+        Ok(())
+    }
+
+    pub fn in_transaction(&self) -> bool {
+        self.connection
+            .as_ref()
+            .and_then(detect_transaction)
+            .unwrap_or(self.transaction_active)
+    }
 }
 
 impl SqlExecutor for DuckDbExecutor {
@@ -54,13 +179,9 @@ impl SqlExecutor for DuckDbExecutor {
     }
 
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
-        if self.connection.is_none() {
-            self.connection = Some(
-                Connection::open_in_memory()
-                    .map_err(|err| SqlError::Setup(format!("duckdb open: {err}")))?,
-            );
-        }
+        self.ensure_connection()?;
         let conn = self.connection.as_ref().expect("connection initialized");
+        let wrap_setup = !self.in_transaction();
         let mut blocks: Vec<Vec<String>> = Vec::new();
         for statement in setup {
             if statement.starts_with("CREATE") {
@@ -84,13 +205,14 @@ impl SqlExecutor for DuckDbExecutor {
         }
         let Some(query_timeout) = self.timeout else {
             for (key, block) in pending {
-                execute_setup_block(conn, &block)?;
+                execute_setup_block(conn, &block, wrap_setup)?;
                 self.applied_setup.insert(key, block);
             }
             return execute_query(conn, query);
         };
         let setup_timeout = self.setup_timeout.unwrap_or(query_timeout);
         let conn = self.connection.take().expect("connection initialized");
+        self.lost_connection = true;
         let interrupt = conn.interrupt_handle();
         let query = query.to_string();
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -98,7 +220,7 @@ impl SqlExecutor for DuckDbExecutor {
         let worker = std::thread::spawn(move || {
             let mut completed = Vec::new();
             for (key, block) in pending {
-                if let Err(err) = execute_setup_block(&conn, &block) {
+                if let Err(err) = execute_setup_block(&conn, &block, wrap_setup) {
                     let _ = sender.send((conn, Err(err), completed));
                     return;
                 }
@@ -119,6 +241,7 @@ impl SqlExecutor for DuckDbExecutor {
                             // setup. Keep the session so the next case does not
                             // rematerialize the same fixture.
                             self.connection = Some(conn);
+                            self.lost_connection = false;
                             for (key, block) in completed {
                                 self.applied_setup.insert(key, block);
                             }
@@ -146,10 +269,12 @@ impl SqlExecutor for DuckDbExecutor {
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 interrupt.interrupt();
                 match receiver.recv_timeout(Duration::from_secs(2)) {
-                    Ok((_conn, _, _)) => {
-                        // Start clean after interruption. A setup statement
-                        // may have been applied only partially, and retaining
-                        // that connection would make cache state ambiguous.
+                    Ok((conn, _, _)) => {
+                        // Keep the user's session and transaction available
+                        // for recovery. Never replace a file-backed database
+                        // with an empty in-memory connection after a timeout.
+                        self.connection = Some(conn);
+                        self.lost_connection = false;
                         self.applied_setup.clear();
                         let _ = worker.join();
                         return Err(SqlError::Execution(format!(
@@ -172,6 +297,7 @@ impl SqlExecutor for DuckDbExecutor {
         };
         let (conn, result, completed) = received;
         self.connection = Some(conn);
+        self.lost_connection = false;
         for (key, block) in completed {
             self.applied_setup.insert(key, block);
         }
@@ -180,13 +306,44 @@ impl SqlExecutor for DuckDbExecutor {
     }
 }
 
-fn execute_setup_block(conn: &Connection, block: &[String]) -> SqlResult<()> {
+/// Apply one setup block, wrapping it in its own transaction so a statement
+/// that fails partway through does not leave a half-materialized table behind.
+/// When the executor is already inside an explicit transaction (`atomic` is
+/// false) the statements join that transaction instead and are undone or
+/// committed with it.
+fn execute_setup_block(conn: &Connection, block: &[String], atomic: bool) -> SqlResult<()> {
+    if atomic {
+        conn.execute_batch("BEGIN TRANSACTION")
+            .map_err(|err| SqlError::Setup(format!("duckdb setup begin: {err}")))?;
+    }
     for statement in block {
-        conn.execute_batch(statement).map_err(|err| {
-            SqlError::Setup(format!("duckdb setup: {err}\nstatement: {statement}"))
-        })?;
+        if let Err(err) = conn.execute_batch(statement) {
+            if atomic {
+                let _ = conn.execute_batch("ROLLBACK");
+            }
+            return Err(SqlError::Setup(format!(
+                "duckdb setup: {err}\nstatement: {statement}"
+            )));
+        }
+    }
+    if atomic {
+        conn.execute_batch("COMMIT")
+            .map_err(|err| SqlError::Setup(format!("duckdb setup commit: {err}")))?;
     }
     Ok(())
+}
+
+/// duckdb-rs 1.10502's `Connection::is_autocommit` is an unconditional `true`
+/// stub. Two queries have the same transaction start ID only inside an
+/// explicit transaction. Failed/aborted sessions retain the last known state.
+fn detect_transaction(conn: &Connection) -> Option<bool> {
+    let first: u64 = conn
+        .query_row("SELECT txid_current()", [], |row| row.get(0))
+        .ok()?;
+    let second: u64 = conn
+        .query_row("SELECT txid_current()", [], |row| row.get(0))
+        .ok()?;
+    Some(first == second)
 }
 
 fn execute_query(conn: &Connection, query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {

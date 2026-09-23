@@ -70,7 +70,13 @@ fn each_operator_is_its_own_user_defined_logical_node() {
     walk(&logical, &mut names);
     assert_eq!(
         names,
-        vec!["GraphReturn", "GraphFilter", "GraphBind", "GraphNodeScan"]
+        vec![
+            "GraphReturn",
+            "GraphFilter",
+            "GraphSort",
+            "GraphBind",
+            "GraphNodeScan"
+        ]
     );
 }
 

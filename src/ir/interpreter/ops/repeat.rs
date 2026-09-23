@@ -81,9 +81,8 @@ fn repeat_op_inner(
     //   2. `until = Some(p)` — stop when p matches a row (that row is
     //      emitted, others continue).
     //   3. Otherwise — stop when the frontier becomes empty.
-    // Hard runtime cap: regardless of (1)/(2)/(3), no traversal runs
-    // more than `MAX_REPEAT_ITERATIONS` iterations.
-    const MAX_REPEAT_ITERATIONS: u32 = 16;
+    // A resource ceiling is an error, never a successful truncated result.
+    const MAX_REPEAT_ITERATIONS: u32 = 10_000;
     let mut frontier = seed_rows;
     let mut out = Vec::new();
     if emit_each_iteration {
@@ -96,13 +95,15 @@ fn repeat_op_inner(
     let mut iteration: u32 = 0;
     loop {
         ctx.charge(1)?;
-        if iteration >= MAX_REPEAT_ITERATIONS {
-            break;
-        }
         if let Some(n) = times {
             if iteration >= n {
                 break;
             }
+        }
+        if iteration >= MAX_REPEAT_ITERATIONS {
+            return Err(super::super::InterpretError::ExecutionLimit(format!(
+                "repeat exceeded {MAX_REPEAT_ITERATIONS} iterations"
+            )));
         }
         let body_frontier = frontier
             .into_iter()

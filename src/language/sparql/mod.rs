@@ -195,7 +195,27 @@ impl SparqlPlanner {
             }
             GraphPattern::Project { inner, variables } => {
                 let mut lowered = self.lower(inner)?;
-                lowered.projection = Some(variables.iter().map(binding).collect());
+                let fields: Vec<String> = variables.iter().map(binding).collect();
+                // Projection is an algebra operation, not just return metadata:
+                // DISTINCT and subquery joins must not see hidden bindings.
+                lowered.node = Node::GraphProject {
+                    mode: ProjectMode::ReplaceScope,
+                    items: fields
+                        .iter()
+                        .map(|name| ProjectionItem {
+                            alias: name.clone(),
+                            expr: if lowered.variables.contains(name) {
+                                IrExpr::Binding(name.clone())
+                            } else {
+                                IrExpr::Lit(crate::ir::expr::Lit::Null)
+                            },
+                        })
+                        .collect(),
+                    error_policy: ProjectErrorPolicy::UnboundOnExpressionError,
+                    input: Box::new(lowered.node),
+                };
+                lowered.variables = fields.iter().cloned().collect();
+                lowered.projection = Some(fields);
                 Ok(lowered)
             }
             GraphPattern::Distinct { inner } => {

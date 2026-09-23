@@ -101,6 +101,7 @@ where
     }
 }
 
+#[cfg(feature = "duckdb")]
 impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>, sql::DuckDbExecutor> {
     /// The default target: a reusable in-process DuckDB session.
     #[cfg(feature = "duckdb")]
@@ -652,13 +653,17 @@ fn decode_list(items: &dyn Array, inner: &Field) -> Option<Value> {
 }
 
 /// Does this subtree write to the graph?
-fn contains_mutation(node: &Node) -> bool {
+pub fn contains_mutation(node: &Node) -> bool {
     if matches!(
         node,
         Node::GraphCreate { .. }
             | Node::GraphMerge { .. }
             | Node::GraphSetProperty { .. }
             | Node::GraphDelete { .. }
+            | Node::GraphProcedureCall {
+                mode: crate::ir::plan::ProcedureMode::Write,
+                ..
+            }
     ) {
         return true;
     }
