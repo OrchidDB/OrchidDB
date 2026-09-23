@@ -107,11 +107,9 @@ impl LoweringContext<'_> {
             (Some(query), None) => Some(query),
             (None, ceiling) => ceiling,
         };
-        let seed_nodes = if rel_binding.is_some() {
-            self.cypher_element_display_expr(&input.plan, source, BindingShape::Node)?
-        } else {
-            lit("")
-        };
+        // The accumulator holds intermediate nodes only; the endpoints are
+        // already bound and are added when the full path is rendered.
+        let seed_nodes = lit("");
 
         let mut seed_projection = input_columns
             .iter()
@@ -390,17 +388,25 @@ impl LoweringContext<'_> {
             .map(|name| col_exact(&name).alias(name))
             .collect::<Vec<_>>();
         if let Some(rel) = rel_binding {
+            let source_display =
+                self.cypher_element_display_expr(&consumed, source, BindingShape::Node)?;
             let target_display =
                 self.cypher_element_display_expr(&consumed, target, BindingShape::Node)?;
+            let rels = concat_exprs(vec![lit("], _RELS: ["), col_exact(WORK_RELS), lit("]}")]);
             final_projection.push(
                 concat_exprs(vec![
                     lit("{_NODES: ["),
-                    append_csv(col_exact(WORK_NODES), target_display),
-                    lit("], _RELS: ["),
-                    col_exact(WORK_RELS),
-                    lit("]}"),
+                    append_csv(
+                        join_csv(source_display, col_exact(WORK_NODES)),
+                        target_display,
+                    ),
+                    rels.clone(),
                 ])
                 .alias(rel),
+            );
+            final_projection.push(
+                concat_exprs(vec![lit("{_NODES: ["), col_exact(WORK_NODES), rels])
+                    .alias(path_inner_col(rel)),
             );
             final_projection.push(col_exact(WORK_DEPTH).alias(path_len_col(rel)));
         }
@@ -480,7 +486,7 @@ impl LoweringContext<'_> {
                 }
             };
             let plan = match rel_binding {
-                Some(rel) => self.project_varlen_path(plan, rel, &[], &[])?,
+                Some(rel) => self.project_varlen_path(plan, rel, (source, target), &[], &[])?,
                 None => plan,
             };
             branches.push(self.varlen_branch_projection(
@@ -562,7 +568,7 @@ impl LoweringContext<'_> {
                 let hop_nodes: Vec<String> = (1..k)
                     .map(|hop| format!("__vln_{uniq}_{k}_{hop}"))
                     .collect();
-                plan = self.project_varlen_path(plan, rel, &hop_nodes, &hop_rels)?;
+                plan = self.project_varlen_path(plan, rel, (source, target), &hop_nodes, &hop_rels)?;
             }
             branches.push(self.varlen_branch_projection(
                 plan,
@@ -596,6 +602,7 @@ impl LoweringContext<'_> {
         &self,
         plan: LogicalPlan,
         rel_binding: &str,
+        endpoints: (&str, &str),
         hop_nodes: &[String],
         hop_rels: &[String],
     ) -> RelResult<LogicalPlan> {
@@ -606,27 +613,50 @@ impl LoweringContext<'_> {
                 self.cypher_element_display_expr(&plan, binding, shape)
             }
         };
-        let mut parts = vec![lit("{_NODES: [")];
-        for (index, node) in hop_nodes.iter().enumerate() {
-            if index > 0 {
-                parts.push(lit(","));
+        let render_list = |bindings: &[&str], shape: BindingShape| -> RelResult<Vec<Expr>> {
+            let mut parts = Vec::new();
+            for (index, binding) in bindings.iter().enumerate() {
+                if index > 0 {
+                    parts.push(lit(","));
+                }
+                parts.push(render(binding, shape)?);
             }
-            parts.push(render(node, BindingShape::Node)?);
-        }
-        parts.push(lit("], _RELS: ["));
-        for (index, rel) in hop_rels.iter().enumerate() {
-            if index > 0 {
-                parts.push(lit(","));
-            }
-            parts.push(render(rel, BindingShape::Edge)?);
-        }
-        parts.push(lit("]}"));
+            Ok(parts)
+        };
+        let render_path = |nodes: &[&str]| -> RelResult<Expr> {
+            let rels = hop_rels.iter().map(String::as_str).collect::<Vec<_>>();
+            let mut parts = vec![lit("{_NODES: [")];
+            parts.extend(render_list(nodes, BindingShape::Node)?);
+            parts.push(lit("], _RELS: ["));
+            parts.extend(render_list(&rels, BindingShape::Edge)?);
+            parts.push(lit("]}"));
+            Ok(concat_exprs(parts))
+        };
+
+        let inner_nodes = hop_nodes.iter().map(String::as_str).collect::<Vec<_>>();
+        // A Cypher path includes its endpoints; the relationship variable
+        // (`path_inner_col`) does not. Gremlin keeps its existing contract.
+        let full = if self.language == Language::Gremlin {
+            render_path(&inner_nodes)?
+        } else {
+            let (source, target) = endpoints;
+            let mut nodes = vec![source];
+            nodes.extend(inner_nodes.iter().copied());
+            nodes.push(target);
+            render_path(&nodes)?
+        };
+        let inner = render_path(&inner_nodes)?;
 
         let mut projections = existing_columns(
             &plan,
-            &BTreeSet::from([rel_binding.to_string(), path_len_col(rel_binding)]),
+            &BTreeSet::from([
+                rel_binding.to_string(),
+                path_len_col(rel_binding),
+                path_inner_col(rel_binding),
+            ]),
         );
-        projections.push(concat_exprs(parts).alias(rel_binding));
+        projections.push(full.alias(rel_binding));
+        projections.push(inner.alias(path_inner_col(rel_binding)));
         projections.push(lit(hop_rels.len() as i64).alias(path_len_col(rel_binding)));
         Ok(LogicalPlanBuilder::from(plan)
             .project(projections)?
@@ -678,5 +708,14 @@ fn append_csv(existing: Expr, value: Expr) -> Expr {
         binary(existing.clone(), BinaryOp::Eq, lit("")),
         value.clone(),
         concat_exprs(vec![existing, lit(","), value]),
+    )
+}
+
+/// Comma-joins two list fragments, either of which may be empty.
+fn join_csv(left: Expr, right: Expr) -> Expr {
+    case_when(
+        binary(right.clone(), BinaryOp::Eq, lit("")),
+        left.clone(),
+        append_csv(left, right),
     )
 }

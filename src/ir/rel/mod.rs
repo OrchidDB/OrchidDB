@@ -72,6 +72,7 @@ const STAR_SEP: &str = "__star__";
 /// Hop count of a materialized variable-length path binding. The path value
 /// itself lives in a column named after the binding.
 const PATH_LEN_SUFFIX: &str = "__pathlen";
+const PATH_INNER_SUFFIX: &str = "__pathinner";
 const MAX_EXECUTABLE_PLAN_NODES: usize = 200;
 const MAX_EXECUTABLE_PLAN_DEPTH: usize = 64;
 
@@ -2733,7 +2734,14 @@ impl<'a> LoweringContext<'a> {
             if let Some(IrExpr::Binding(binding)) = args.first()
                 && has_exact_col(plan, binding)
             {
-                let mut projections = vec![col_exact(binding).alias(alias)];
+                // The relationship variable excludes the path's endpoints.
+                let inner = path_inner_col(binding);
+                let rendered = if has_exact_col(plan, &inner) {
+                    col_exact(&inner)
+                } else {
+                    col_exact(binding)
+                };
+                let mut projections = vec![rendered.alias(alias)];
                 let hops = path_len_col(binding);
                 if has_exact_col(plan, &hops) {
                     projections.push(col_exact(hops).alias(path_len_col(alias)));
@@ -8267,6 +8275,12 @@ fn path_len_col(binding: &str) -> String {
     format!("{binding}{PATH_LEN_SUFFIX}")
 }
 
+/// A variable-length path rendered without its endpoint nodes: the value of
+/// the relationship variable `e` in `-[e*]->`, as opposed to a named path.
+fn path_inner_col(binding: &str) -> String {
+    format!("{binding}{PATH_INNER_SUFFIX}")
+}
+
 fn is_binding_column(name: &str, binding: &str) -> bool {
     name == binding
         || name == id_col(binding)
@@ -8276,6 +8290,7 @@ fn is_binding_column(name: &str, binding: &str) -> bool {
         || name == dst_id_col(binding)
         || name == dst_label_col(binding)
         || name == path_len_col(binding)
+        || name == path_inner_col(binding)
         || name.starts_with(&format!("{binding}{PROP_MARKER}"))
 }
 
