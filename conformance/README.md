@@ -22,11 +22,12 @@ certification or a claim to cover every product feature.
 The Gremlin matrix separates the native Rust planner, JVM OLTP execution over
 Crabgraph native storage, and native-provider GraphComputer execution. Their
 results are recorded independently; a JVM pass does not change a native result.
-The product leaderboard uses the native profile for Crabgraph.
+The product leaderboard counts each scenario once when any Crabgraph profile passes.
 
 The final gap inventory has passing evidence for its 69 executable scenarios
 and the 15 corresponding original Java tests for literal Gherkin placeholders.
-The placeholders remain skipped in the unchanged Gherkin corpus. See
+The JVM adapter now executes those 15 Java counterparts for the unchanged
+Gherkin scenario IDs and records their assertion sources. See
 [implementation results](../docs/gremlin-final-results.md),
 [case-to-evidence mapping](upstream-results/gremlin-final-gap-evidence.json),
 [JVM executor](../docs/gremlin-jvm-executor.md), and
