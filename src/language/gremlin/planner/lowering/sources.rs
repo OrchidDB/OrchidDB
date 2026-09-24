@@ -62,7 +62,7 @@ pub(super) fn source_node(
     with_initial_sack(node, lo, ctx)
 }
 
-fn with_initial_sack(
+pub(super) fn with_initial_sack(
     node: Node,
     lo: &mut Lowerer,
     ctx: &TraversalContext,

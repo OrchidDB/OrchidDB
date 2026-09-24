@@ -121,7 +121,8 @@ impl LoweringVisitor {
             }
             return;
         }
-        let mut cardinality = "list".to_string();
+        // Preserve omission so addV can distinguish folded parameters from explicit property steps.
+        let mut cardinality = "default".to_string();
         let (key, value, extras) = match ctx {
             TraversalMethod_propertyContextAll::TraversalMethod_property_Object_Object_ObjectContext(c) =>
                 (c.genericLiteral(), c.genericArgument(), c.genericArgumentVarargs()),
