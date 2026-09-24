@@ -174,6 +174,7 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
     }
     match value {
         Value::TypedMap(_) => (13, value.clone()),
+        Value::MapEntry(_) => (14, value.clone()),
         Value::Token(_) | Value::Direction(_) => (14, value.clone()),
         Value::Null => (0, Value::Null),
         Value::Bool(_) => (1, value.clone()),
@@ -248,34 +249,19 @@ pub(super) fn local_order_by_key(
         }
         return Value::List(keyed.into_iter().map(|(item, _)| item).collect());
     }
-    if let Value::Map(map) = value {
-        let mut entries = visible_map_keys(map)
-            .into_iter()
-            .filter_map(|entry_key| {
-                let entry_value = map.get(&entry_key)?.clone();
-                // `t[id]` / `t[label]` display keys sort by their token
-                // name (`id` / `label`), matching TinkerPop's T-token
-                // ordering among plain string keys.
-                let sort_key_text = entry_key
-                    .strip_prefix("t[")
-                    .and_then(|s| s.strip_suffix(']'))
-                    .unwrap_or(entry_key.as_str())
-                    .to_string();
-                let sort_value = match key {
-                    "key" | "keys" => Value::String(sort_key_text.clone()),
-                    "value" | "values" => entry_value.clone(),
-                    _ => Value::String(sort_key_text),
-                };
-                let mut single = BTreeMap::new();
-                single.insert(entry_key, entry_value);
-                Some((Value::Map(single), sort_value))
-            })
-            .collect::<Vec<_>>();
-        entries.sort_by(|(_, a), (_, b)| compare_values(a, b));
-        if desc {
-            entries.reverse();
-        }
-        return Value::List(entries.into_iter().map(|(entry, _)| entry).collect());
+    let entries = match value {
+        Value::TypedMap(entries) => Some(entries.clone()),
+        Value::Map(map) => Some(visible_map_keys(map).into_iter().filter_map(|key| map.get(&key).cloned().map(|value|(Value::String(key),value))).collect()),
+        _ => None,
+    };
+    if let Some(entries) = entries {
+        let mut keyed = entries.into_iter().map(|(entry_key, entry_value)| {
+            let sort_value = match key { "value" | "values" => entry_value.clone(), _ => entry_key.clone() };
+            (Value::MapEntry(Box::new((entry_key,entry_value))),sort_value)
+        }).collect::<Vec<_>>();
+        keyed.sort_by(|(_,a),(_,b)| compare_values(a,b));
+        if desc { keyed.reverse(); }
+        return Value::List(keyed.into_iter().map(|(entry,_)|entry).collect());
     }
     value.clone()
 }
@@ -289,10 +275,12 @@ fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value
             _ => Value::Null,
         },
         "key" | "keys" => match item {
+            Value::MapEntry(entry) => entry.0.clone(),
             Value::Map(map) => map.get("key").cloned().unwrap_or(Value::Null),
             _ => Value::Null,
         },
         "value" | "values" => match item {
+            Value::MapEntry(entry) => entry.1.clone(),
             Value::Map(map) => map.get("value").cloned().unwrap_or(Value::Null),
             _ => item.clone(),
         },
@@ -659,12 +647,13 @@ fn shortest_path_between(
 pub(super) fn select_binding_by_pop(binding: &Value, history: &Value, pop: &str) -> Value {
     let values = match history {
         Value::List(values) if !values.is_empty() => values.as_slice(),
-        _ if !matches!(binding, Value::Null) => return binding.clone(),
+        _ if !matches!(binding, Value::Null) => return if pop == "all" {
+            Value::List(vec![binding.clone()])
+        } else { binding.clone() },
         _ => return Value::Null,
     };
     match pop {
         "first" => values.first().cloned().unwrap_or(Value::Null),
-        "all" if values.len() == 1 => values[0].clone(),
         "all" => Value::List(values.to_vec()),
         "mixed" if values.len() == 1 => values[0].clone(),
         "mixed" => Value::List(values.to_vec()),

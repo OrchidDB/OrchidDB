@@ -152,7 +152,15 @@ impl LoweringContext<'_> {
             GraphFilter { condition, input } => {
                 let input = self.lower_node(input)?;
                 let condition = self.lower_expr(&input.plan, condition)?;
-                let plan = LogicalPlanBuilder::from(input.plan.clone())
+                // The filter reads projection outputs. SQL WHERE reads input
+                // columns, so flattening an alias that shadows an input name
+                // changes its meaning (e.g. edge current -> vertex current).
+                let filter_input = if matches!(input.plan, LogicalPlan::Projection(_)) {
+                    let alias = format!("__graph_filter_input_{}", self.scan_counter);
+                    self.scan_counter += 1;
+                    LogicalPlanBuilder::from(input.plan.clone()).alias(alias)?.build()?
+                } else { input.plan.clone() };
+                let plan = LogicalPlanBuilder::from(filter_input)
                     .filter(condition)?
                     .build()?;
                 input.with_plan(plan)

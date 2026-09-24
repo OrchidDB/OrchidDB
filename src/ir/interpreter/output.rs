@@ -547,6 +547,7 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                     .collect::<Vec<_>>()
             ),
         ),
+        Value::MapEntry(pair) => tagged("entry", json!([gremlin_typed_value(&pair.0, graph), gremlin_typed_value(&pair.1, graph)])),
         Value::TypedMap(entries) => tagged(
             "map",
             json!(
@@ -698,6 +699,7 @@ fn format_edge(
 /// keep their decimal point, lists/maps recurse.
 fn format_property_value(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", format_property_value(&pair.0), format_property_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(

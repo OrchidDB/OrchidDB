@@ -14,6 +14,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
     match value {
         Value::BulkSet(_) => matches!(normalised.as_str(), "bulkset" | "set" | "collection"),
         Value::Null => normalised == "null",
+        Value::MapEntry(_) => matches!(normalised.as_str(), "entry" | "map.entry" | "java.util.map$entry"),
         Value::Token(_) => normalised == "token",
         Value::Direction(_) => normalised == "direction",
         Value::Bool(_) => matches!(normalised.as_str(), "boolean" | "bool"),

@@ -114,25 +114,30 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         if let Some(c) = ctx.traversalSourceSpawnMethod_mergeE() {
             match &*c {
                 TraversalSourceSpawnMethod_mergeEContextAll::TraversalSourceSpawnMethod_mergeE_MapContext(c) => self.lower_merge_edge_map(c.genericMapNullableArgument()),
-                _ => self.fail(GremlinError::Unsupported("mergeE traversal criteria".into())),
+                TraversalSourceSpawnMethod_mergeEContextAll::TraversalSourceSpawnMethod_mergeE_TraversalContext(c) => {if let Some(n)=c.nestedTraversal(){let steps=self.lower_nested_traversal(&n);self.dynamic_merge(true,steps);}},
+                _ => self.fail(GremlinError::Unsupported("mergeE source".into())),
             }
             return;
         }
         if let Some(c) = ctx.traversalSourceSpawnMethod_mergeV() {
             match &*c {
                 TraversalSourceSpawnMethod_mergeVContextAll::TraversalSourceSpawnMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
-                _ => self.fail(GremlinError::Unsupported("mergeV traversal criteria".into())),
+                TraversalSourceSpawnMethod_mergeVContextAll::TraversalSourceSpawnMethod_mergeV_TraversalContext(c) => {if let Some(n)=c.nestedTraversal(){let steps=self.lower_nested_traversal(&n);self.dynamic_merge(false,steps);}},
+                _ => self.fail(GremlinError::Unsupported("mergeV source".into())),
             }
             return;
         }
-        if ctx.traversalSourceSpawnMethod_addE().is_some() {
-            self.fail(GremlinError::Unsupported("source addE requires traversal endpoints".into()));
-            return;
+        if let Some(c) = ctx.traversalSourceSpawnMethod_addE() {
+            use crate::language::gremlin::ast::MutationArgument;
+            let label = if let Some(nested) = c.nestedTraversal() { MutationArgument::Traversal(self.lower_nested_traversal(&nested)) }
+            else if let Some(label) = c.stringArgument().and_then(|a|self.string_argument_text(&a)) { MutationArgument::Literal(GValue::String(label)) }
+            else { self.fail(GremlinError::Parse("addE requires a label".into())); return; };
+            self.steps.push(Step::AddDynamicE { label, from: None, to: None }); return;
         }
         if let Some(c) = ctx.traversalSourceSpawnMethod_addV() {
-            if c.nestedTraversal().is_some() {
-                self.fail(GremlinError::Unsupported("addV traversal label".into()));
-                return;
+            if let Some(nested) = c.nestedTraversal() {
+                let traversal = self.lower_nested_traversal(&nested);
+                self.steps.push(Step::AddDynamicV { label: crate::language::gremlin::ast::MutationArgument::Traversal(traversal) }); return;
             }
             let label = match c.stringArgument() {
                 Some(arg) => match self.string_argument_text(&arg) { Some(label) => label, None => return },
@@ -233,14 +238,18 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         if let Some(c) = ctx.traversalMethod_mergeE() {
             match &*c {
                 TraversalMethod_mergeEContextAll::TraversalMethod_mergeE_MapContext(c) => self.lower_merge_edge_map(c.genericMapNullableArgument()),
-                _ => self.fail(GremlinError::Unsupported("mergeE dynamic criteria".into())),
+                TraversalMethod_mergeEContextAll::TraversalMethod_mergeE_TraversalContext(c) => {if let Some(n)=c.nestedTraversal(){let steps=self.lower_nested_traversal(&n);self.dynamic_merge(true,steps);}},
+                TraversalMethod_mergeEContextAll::TraversalMethod_mergeE_emptyContext(_) => self.dynamic_merge(true,vec![Step::Identity]),
+                _ => self.fail(GremlinError::Unsupported("mergeE criteria".into())),
             }
             return;
         }
         if let Some(c) = ctx.traversalMethod_mergeV() {
             match &*c {
                 TraversalMethod_mergeVContextAll::TraversalMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
-                _ => self.fail(GremlinError::Unsupported("mergeV dynamic criteria".into())),
+                TraversalMethod_mergeVContextAll::TraversalMethod_mergeV_TraversalContext(c) => {if let Some(n)=c.nestedTraversal(){let steps=self.lower_nested_traversal(&n);self.dynamic_merge(false,steps);}},
+                TraversalMethod_mergeVContextAll::TraversalMethod_mergeV_emptyContext(_) => self.dynamic_merge(false,vec![Step::Identity]),
+                _ => self.fail(GremlinError::Unsupported("mergeV criteria".into())),
             }
             return;
         }
@@ -744,7 +753,9 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         // sub-traversal — those go with addE) fall back to Identity since
         // we don't model the addE side.
         if let Some(c) = ctx.traversalMethod_from() {
-            if self.lower_edge_endpoint(&c.get_text(), true) { return; }
+            let nested = match &*c { TraversalMethod_fromContextAll::TraversalMethod_from_TraversalContext(c) => c.nestedTraversal().map(|n|self.lower_nested_traversal(&n)), _ => None };
+            let reference = self.literal_overrides.range(c.start().start..=c.stop().stop).next().map(|(_,v)|v.clone());
+            if self.lower_edge_endpoint(&c.get_text(), true, nested, reference) { return; }
             match extract_first_string_arg(&c.get_text()) {
                 Some(label) => self.steps.push(Step::PathFrom(label)),
                 None => self.steps.push(Step::Identity),
@@ -753,7 +764,9 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         }
         if let Some(c) = ctx.traversalMethod_to() {
             let raw = c.get_text();
-            if self.lower_edge_endpoint(&raw, false) { return; }
+            let nested = match &*c { TraversalMethod_toContextAll::TraversalMethod_to_TraversalContext(c) => c.nestedTraversal().map(|n|self.lower_nested_traversal(&n)), _ => None };
+            let reference = self.literal_overrides.range(c.start().start..=c.stop().stop).next().map(|(_,v)|v.clone());
+            if self.lower_edge_endpoint(&raw, false, nested, reference) { return; }
             if let Some(direction) = direction_from_to_arg(&raw) {
                 self.steps.push(Step::ExpandVertex {
                     direction,
@@ -1687,6 +1700,9 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
 
     fn visit_genericLiteral(&mut self, ctx: &GenericLiteralContext<'input>) {
         if let Some(value) = self.literal_overrides.get(&ctx.start().start).cloned() { self.value_stack.push(value); return; }
+        if let Some(token)=ctx.traversalT(){self.value_stack.push(GValue::Token(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
+        if let Some(token)=ctx.traversalDirection(){self.value_stack.push(GValue::DirectionToken(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
+        if let Some(token)=ctx.traversalMerge(){self.value_stack.push(GValue::Token(format!("Merge.{}",token.get_text().rsplit('.').next().unwrap_or(""))));return;}
         if let Some(num) = ctx.numericLiteral() {
             if let Some(int_lit) = num.integerLiteral() {
                 match parse_typed_integer_literal(&int_lit.get_text()) {
@@ -1759,21 +1775,19 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if let Some(map_lit) = ctx.genericMapLiteral() {
-            let mut map = BTreeMap::new();
+            let mut entries=Vec::new();
             for entry in map_lit.mapEntry_all() {
-                let Some(key) = entry.mapKey().map(|k| {
-                    extract_first_string_arg(&k.get_text()).unwrap_or_else(|| k.get_text())
-                }) else {
-                    continue;
-                };
-                let Some(value_ctx) = entry.genericLiteral() else {
-                    continue;
-                };
-                self.visit_genericLiteral(&value_ctx);
-                let value = self.pop_value().unwrap_or(GValue::Null);
-                map.insert(key, value);
+                let Some(key)=entry.mapKey() else {continue};
+                let key=if let Some(token)=key.traversalT().map(|t|t.get_text()).or_else(||key.traversalTLong().map(|t|t.get_text())) {GValue::Token(token.rsplit('.').next().unwrap_or("").into())}
+                else if let Some(token)=key.traversalDirection().map(|t|t.get_text()).or_else(||key.traversalDirectionLong().map(|t|t.get_text())) {GValue::DirectionToken(token.rsplit('.').next().unwrap_or("").into())}
+                else if let Some(text)=key.stringLiteral(){match decode_string_literal(&text.get_text()){Ok(text)=>GValue::String(text),Err(error)=>{self.fail(error);return}}}
+                else if let Some(num)=key.numericLiteral(){if let Some(int)=num.integerLiteral(){match parse_typed_integer_literal(&int.get_text()){Ok(v)=>v,Err(e)=>{self.fail(e);return}}}else{self.fail(GremlinError::Unsupported("noninteger map key".into()));return}}
+                else {GValue::String(key.get_text())};
+                let Some(value)=entry.genericLiteral() else {continue};self.visit_genericLiteral(&value);let Some(value)=self.pop_value() else{return};entries.push((key,value));
             }
-            self.value_stack.push(GValue::Map(map));
+            if entries.iter().all(|(k,_)|matches!(k,GValue::String(_))) {
+                self.value_stack.push(GValue::Map(entries.into_iter().map(|(k,v)|{let GValue::String(k)=k else{unreachable!()};(k,v)}).collect()));
+            } else {self.value_stack.push(GValue::TypedMap(entries));}
             return;
         }
         if let Some(set) = ctx.genericSetLiteral() {

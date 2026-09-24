@@ -13,9 +13,9 @@ use super::expand::{
     lower_endpoint_vertex, lower_expand_edge, lower_expand_vertex, lower_other_vertex,
 };
 use super::filter::{
-    lower_cyclic_path, lower_discard_or_none, lower_has, lower_has_id, lower_has_id_predicate,
+    lower_discard_or_none, lower_has, lower_has_id, lower_has_id_predicate,
     lower_has_key, lower_has_key_any, lower_has_label, lower_has_not, lower_has_value, lower_is,
-    lower_not_traversal, lower_quantifier_filter, lower_simple_path, lower_where_traversal,
+    lower_not_traversal, lower_quantifier_filter, lower_where_traversal,
 };
 use super::format::lower_format;
 use super::group::lower_group_step;
@@ -64,7 +64,11 @@ where
     I: Iterator<Item = &'a Step>,
 {
     match step {
-        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
+        Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(input,*edge,criteria,options,lo,ctx,false),
+        Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(input,label,lo,ctx),
+        Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx),
+        Step::PropertyDynamic { key,value } => super::mutations::lower_dynamic_property(input,key,value,lo,ctx),
+        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx, false),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
         Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref(), lo)),
         Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label, lo)),
@@ -170,7 +174,7 @@ where
 
         // ----- distinct / order / slice -----
         Step::Dedup => lower_dedup(input, steps, lo, ctx),
-        Step::DedupLabels(labels) => Ok(lower_dedup_labels(input, labels)),
+        Step::DedupLabels(labels) => lower_dedup_labels(input, labels, steps, lo, ctx),
         Step::Order => lower_order(input, steps, lo, ctx),
         Step::Range { low, high } => Ok(lower_range(input, *low, *high)),
         Step::Skip(n) => Ok(lower_skip(input, *n)),
@@ -187,8 +191,8 @@ where
         Step::Unfold => Ok(lower_unfold(input)),
         Step::Discard | Step::None => Ok(lower_discard_or_none(input)),
         Step::Barrier => Ok(input),
-        Step::SimplePath => Ok(lower_simple_path(input)),
-        Step::CyclicPath => Ok(lower_cyclic_path(input)),
+        Step::SimplePath => Ok(super::path::lower_path_filter(input, steps, lo, false)),
+        Step::CyclicPath => Ok(super::path::lower_path_filter(input, steps, lo, true)),
 
         // ----- subqueries -----
         Step::WhereTraversal(sub) => lower_where_traversal(input, sub, lo, ctx),
@@ -274,7 +278,7 @@ where
                         pending_times = Some(*n);
                         steps.next();
                     }
-                    _ => return Ok(input),
+                    _ => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("The repeat()-traversal was not defined".into())),
                 }
             }
         }
@@ -308,7 +312,7 @@ where
                         pending_times = Some(*n);
                         steps.next();
                     }
-                    _ => return Ok(input),
+                    _ => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("The repeat()-traversal was not defined".into())),
                 }
             }
         }
@@ -342,14 +346,10 @@ where
                         pending_until = Some(p.clone());
                         steps.next();
                     }
-                    _ => return Ok(input),
+                    _ => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("The repeat()-traversal was not defined".into())),
                 }
             }
         }
-        // Stray `times`/`emit`/`until` (no enclosing `repeat`) — the
-        // upstream `repeat` lowering must have been swapped for a
-        // fallback. Ignore so the surrounding chain still runs.
-
         // ----- string / math (subset) -----
         Step::StringOp(op) => lower_string_op(input, op, lo, ctx),
         Step::Math(expr) => lower_math(input, expr, steps, lo, ctx),

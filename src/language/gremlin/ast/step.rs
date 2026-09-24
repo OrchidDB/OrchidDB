@@ -6,6 +6,10 @@ use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    DynamicMerge { edge: bool, criteria: MutationArgument, options: std::collections::BTreeMap<String,MutationArgument> },
+    AddDynamicV { label: MutationArgument },
+    AddDynamicE { label: MutationArgument, from: Option<MutationArgument>, to: Option<MutationArgument> },
+    PropertyDynamic { key: MutationArgument, value: MutationArgument },
     MergeE {
         criteria: Option<MergeVertexMap>,
         on_create: Option<Option<MergeVertexMap>>,
@@ -451,4 +455,15 @@ pub struct MergeVertexMap {
     pub in_vertex: Option<GValue>,
     pub properties: std::collections::BTreeMap<String, GValue>,
     pub single_properties: std::collections::BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MutationArgument { Literal(GValue), Traversal(Vec<Step>), Label(String) }
+
+impl MergeVertexMap {
+    pub(crate) fn literal(&self)->GValue {
+        let mut entries:Vec<_>=self.properties.iter().map(|(k,v)|(GValue::String(k.clone()),v.clone())).collect();
+        for (key,value) in [(GValue::Token("id".into()),&self.id),(GValue::Token("label".into()),&self.label),(GValue::DirectionToken("OUT".into()),&self.out_vertex),(GValue::DirectionToken("IN".into()),&self.in_vertex)] {if let Some(value)=value {entries.push((key,value.clone()));}}
+        GValue::TypedMap(entries)
+    }
 }

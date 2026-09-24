@@ -122,3 +122,131 @@ fn partition_properties(lo: &Lowerer) -> Option<IrExpr> {
             .expect("validated partition value")
     })
 }
+
+pub(super) fn argument(
+    input: Node,
+    value: &crate::language::gremlin::ast::MutationArgument,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<(Node, IrExpr)> {
+    use crate::ir::plan::{ApplyKind, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice};
+    use crate::ir::policy::OptionalMissing;
+    use crate::language::gremlin::ast::{MutationArgument, Pop, Step};
+    let steps = match value {
+        MutationArgument::Literal(value) => return Ok((input, gvalue_to_expr(value)?)),
+        MutationArgument::Traversal(steps) => steps.clone(),
+        MutationArgument::Label(label) => vec![Step::Select(label.clone(), Pop::Last)],
+    };
+    let binding = lo.fresh("mutation_argument");
+    let child = super::sub_traversal::lower_child_traversal(
+        &steps,
+        lo,
+        ctx,
+        super::context::ChildTraversalKind::ByModulator,
+    )?;
+    let child = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem {
+            alias: binding.clone(),
+            expr: IrExpr::Binding(CURRENT.into()),
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: Node::GraphSlice {
+            slice: Slice {
+                offset: 0,
+                fetch: Some(1),
+                tail: None,
+            },
+            input: child.boxed(),
+        }
+        .boxed(),
+    };
+    Ok((
+        Node::GraphApply {
+            kind: ApplyKind::Inner,
+            correlation: vec![CURRENT.into()],
+            outputs: vec![binding.clone()],
+            optional_missing: OptionalMissing::Null,
+            left: input.boxed(),
+            right: child.boxed(),
+        },
+        IrExpr::Binding(binding),
+    ))
+}
+
+pub(super) fn write_call(input: Node, name: &str, args: Vec<IrExpr>) -> Node {
+    Node::GraphProcedureCall {
+        name: name.into(),
+        args: args
+            .into_iter()
+            .map(|value| crate::ir::plan::ProcedureArg { name: None, value })
+            .collect(),
+        yields: vec![CURRENT.into()],
+        mode: crate::ir::plan::ProcedureMode::Write,
+        input: Some(input.boxed()),
+    }
+}
+
+pub(super) fn lower_dynamic_vertex(
+    input: Node,
+    label: &crate::language::gremlin::ast::MutationArgument,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let (input, label) = argument(input, label, lo, ctx)?;
+    Ok(write_call(
+        input,
+        "gremlin.mutation.add_vertex",
+        vec![
+            label,
+            partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null)),
+        ],
+    ))
+}
+
+pub(super) fn lower_dynamic_edge(
+    input: Node,
+    label: &crate::language::gremlin::ast::MutationArgument,
+    from: Option<&crate::language::gremlin::ast::MutationArgument>,
+    to: Option<&crate::language::gremlin::ast::MutationArgument>,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let (input, label) = argument(input, label, lo, ctx)?;
+    let (input, src) = if let Some(from) = from {
+        argument(input, from, lo, ctx)?
+    } else {
+        (input, IrExpr::Binding(CURRENT.into()))
+    };
+    let (input, dst) = if let Some(to) = to {
+        argument(input, to, lo, ctx)?
+    } else {
+        (input, IrExpr::Binding(CURRENT.into()))
+    };
+    Ok(write_call(
+        input,
+        "gremlin.mutation.add_edge",
+        vec![
+            label,
+            src,
+            dst,
+            partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null)),
+        ],
+    ))
+}
+
+pub(super) fn lower_dynamic_property(
+    input: Node,
+    key: &crate::language::gremlin::ast::MutationArgument,
+    value: &crate::language::gremlin::ast::MutationArgument,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let (input, key) = argument(input, key, lo, ctx)?;
+    let (input, value) = argument(input, value, lo, ctx)?;
+    Ok(write_call(
+        input,
+        "gremlin.mutation.property",
+        vec![IrExpr::Binding(CURRENT.into()), key, value],
+    ))
+}

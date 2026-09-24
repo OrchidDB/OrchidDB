@@ -34,6 +34,7 @@ fn orderability_tag(v: &Value) -> u8 {
         Value::Token(_) => 11,
         Value::Direction(_) => 12,
         Value::BulkSet(_) => 13,
+        Value::MapEntry(_) => 14,
         Value::Node { .. } => 8,
         Value::Edge { .. } => 9,
         Value::Path(_) => 10,
@@ -98,6 +99,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
             }
             compare_maps(x, y)
         }
+        (Value::MapEntry(x), Value::MapEntry(y)) => compare_values(&x.0, &y.0).then_with(||compare_values(&x.1,&y.1)),
         (Value::TypedMap(x), Value::TypedMap(y)) => compare_typed_maps(x, y),
         (Value::Map(x), Value::TypedMap(y)) => compare_typed_maps(&map_entries(x), y),
         (Value::TypedMap(x), Value::Map(y)) => compare_typed_maps(x, &map_entries(y)),

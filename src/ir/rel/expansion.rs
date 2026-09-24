@@ -55,6 +55,12 @@ impl<'a> LoweringContext<'a> {
         dir: Direction,
         path: Option<&str>,
     ) -> RelResult<LoweredNode> {
+        if self.language == Language::Gremlin
+            && !self.options.tolerate_internal_path_state
+            && path.is_some()
+        {
+            return Err(RelError::Unsupported("Observed Gremlin paths require native traverser values".into()));
+        }
         let input = self.lower_node(input)?;
         if has_binding_shape(&input.plan, source).is_none() {
             return Err(RelError::Unsupported(format!(

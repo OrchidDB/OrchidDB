@@ -51,6 +51,12 @@ public class UpstreamGremlin {
  /** Keep upstream literal translation; omit Groovy's inject(null) overload cast. */
  static class GrammarTypeTranslator extends GroovyTranslator.LanguageTypeTranslator {
   GrammarTypeTranslator(){super(false);}
+  @Override protected String getSyntax(Number value) {
+   // The upstream Groovy renderer uses D for both Double and BigDecimal.
+   // Gremlin-language uses M for exact decimals; preserve the Java input type.
+   if(value instanceof java.math.BigDecimal decimal)return decimal.toString()+"M";
+   return super.getSyntax(value);
+  }
   @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(Set<?> value) {
    script.append("{");int i=0;for(Object item:value){if(i++>0)script.append(",");convertToScript(item);}return script.append("}");
   }
@@ -107,6 +113,7 @@ public class UpstreamGremlin {
    case "datetime" -> org.apache.tinkerpop.gremlin.util.DatetimeHelper.parse(x.asText());
    case "bulkset" -> {var values=new org.apache.tinkerpop.gremlin.process.traversal.step.util.BulkSet<Object>();x.forEach(item->values.add(nativeValue(item)));yield values;}
    case "list","set" -> {List<Object> values=new ArrayList<>();x.forEach(item->values.add(nativeValue(item)));yield type.equals("set")?new LinkedHashSet<>(values):values;}
+   case "entry" -> new AbstractMap.SimpleImmutableEntry<>(nativeValue(x.get(0)),nativeValue(x.get(1)));
    case "map" -> {Map<Object,Object> values=new LinkedHashMap<>();x.forEach(pair->values.put(nativeValue(pair.get(0)),nativeValue(pair.get(1))));yield values;}
    case "vertex" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("id")),v.get("label").asText());
    case "edge" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceEdge(nativeValue(v.get("id")),v.get("label").asText(),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("inV")),v.get("inVLabel").asText()),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("outV")),v.get("outVLabel").asText()));

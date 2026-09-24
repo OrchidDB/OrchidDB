@@ -144,3 +144,158 @@ async fn match_repeated_labels_remain_join_constraints() {
     .await;
     assert_eq!(rows.as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn path_projects_native_elements_before_collection_steps() {
+    let mut e = GraphEngine::in_memory().unwrap();
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node(
+        "person",
+        BTreeMap::from([("name".into(), GValue::String("a".into()))]),
+    );
+    let b = graph.insert_node(
+        "person",
+        BTreeMap::from([("name".into(), GValue::String("b".into()))]),
+    );
+    let c = graph.insert_node(
+        "person",
+        BTreeMap::from([("name".into(), GValue::String("c".into()))]),
+    );
+    graph.insert_edge("knows", &a, &b, BTreeMap::new()).unwrap();
+    graph.insert_edge("knows", &b, &c, BTreeMap::new()).unwrap();
+    e.replace_graph(graph).unwrap();
+    let rows = native(
+        &mut e,
+        "g.union(__.V().out().out()).path().by('name').combine([])",
+    )
+    .await;
+    assert_eq!(
+        rows[0][0]["value"],
+        json!([{"type":"string","value":"a"},{"type":"string","value":"b"},{"type":"string","value":"c"}])
+    );
+    let rows = native(&mut e, "g.V().values('name').as('x').select(Pop.all,'x')").await;
+    assert!(
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row[0]["type"] == "list" && row[0]["value"].as_array().unwrap().len() == 1)
+    );
+}
+#[tokio::test]
+async fn repeat_modulators_require_repeat_body() {
+    let mut e = GraphEngine::in_memory().unwrap();
+    for q in [
+        "g.V().emit()",
+        "g.V().until(__.identity())",
+        "g.V().times(5)",
+    ] {
+        assert!(
+            e.gremlin(q)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("The repeat()-traversal was not defined")
+        );
+    }
+}
+
+#[tokio::test]
+async fn path_filters_slice_and_project_without_replacing_current() {
+    let mut e = GraphEngine::in_memory().unwrap();
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node(
+        "person",
+        BTreeMap::from([
+            ("name".into(), GValue::String("a".into())),
+            ("age".into(), GValue::Int(1)),
+        ]),
+    );
+    let b = graph.insert_node(
+        "person",
+        BTreeMap::from([
+            ("name".into(), GValue::String("b".into())),
+            ("age".into(), GValue::Int(1)),
+        ]),
+    );
+    graph.insert_edge("knows", &a, &b, BTreeMap::new()).unwrap();
+    e.replace_graph(graph).unwrap();
+    assert_eq!(
+        native(&mut e, "g.V().out().cyclicPath().by('age').values('name')").await[0][0]["value"],
+        "b"
+    );
+    assert_eq!(
+        native(&mut e, "g.V().out().simplePath().by('age')").await,
+        json!([])
+    );
+    assert_eq!(
+        native(
+            &mut e,
+            "g.V().has('name','a').as('a').out().as('b').in().cyclicPath().from('a').to('b')"
+        )
+        .await,
+        json!([])
+    );
+    let row = native(&mut e, "g.inject(0).V().has('name','a').path()").await;
+    assert_eq!(row[0][0]["value"].as_array().unwrap().len(), 2);
+    assert_eq!(row[0][0]["value"][0]["value"], 0);
+    let row = native(
+        &mut e,
+        "g.V().has('name','a').as('a').out().as('b').in().path().by('name').from('a').to('b')",
+    )
+    .await;
+    assert_eq!(row[0][0]["value"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn union_barriers_consume_each_complete_arm_stream() {
+    let mut e = GraphEngine::in_memory().unwrap();
+    let rows = native(
+        &mut e,
+        "g.inject(1,2,3).union(__.count(),__.sum(),__.fold())",
+    )
+    .await;
+    assert_eq!(rows.as_array().unwrap().len(), 3);
+    assert_eq!(rows[0][0]["value"], 3);
+    assert_eq!(rows[1][0]["value"], 6);
+    assert_eq!(rows[2][0]["value"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn label_dedup_modulators_drop_unproductive_keys() {
+    let mut e = GraphEngine::in_memory().unwrap();
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node(
+        "person",
+        BTreeMap::from([
+            ("name".into(), GValue::String("a".into())),
+            ("age".into(), GValue::Int(1)),
+        ]),
+    );
+    let b = graph.insert_node(
+        "person",
+        BTreeMap::from([
+            ("name".into(), GValue::String("b".into())),
+            ("age".into(), GValue::Int(2)),
+        ]),
+    );
+    let c = graph.insert_node(
+        "person",
+        BTreeMap::from([("name".into(), GValue::String("c".into()))]),
+    );
+    graph.insert_edge("knows", &a, &b, BTreeMap::new()).unwrap();
+    graph.insert_edge("knows", &a, &c, BTreeMap::new()).unwrap();
+    e.replace_graph(graph).unwrap();
+    let rows = native(
+        &mut e,
+        "g.V().has('name','a').as('a').out().as('b').dedup('a','b').by('age').values('name')",
+    )
+    .await;
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    assert_eq!(rows[0][0]["value"], "b");
+    let rows = native(
+        &mut e,
+        "g.withStrategies(new ProductiveByStrategy()).V().order().by('age').values('name')",
+    )
+    .await;
+    assert_eq!(rows[0][0]["value"], "c");
+}

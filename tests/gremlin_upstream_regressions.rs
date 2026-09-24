@@ -633,12 +633,182 @@ async fn merge_edge_commits_real_graph_writes() {
 #[test]
 fn native_vertex_references_resolve_catalog_identity_without_string_spoofing() {
     let graph = PropertyGraph::new();
-    graph.insert_node("person", [("id".into(),Value::String("custom-a".into())),("name".into(),Value::String("marko".into()))].into());
-    graph.insert_node("person", [("id".into(),Value::String("custom-b".into())),("name".into(),Value::String("vadas".into()))].into());
-    assert_eq!(graph_values("g.V(new Vertex('custom-a','vertex')).values('name')", &graph), vec![Value::String("marko".into())]);
-    assert_eq!(graph_values("g.inject(new Vertex('custom-a','vertex')).values('name')", &graph), vec![Value::String("marko".into())]);
-    assert_eq!(graph_values("g.withSideEffect('v',new Vertex('custom-b','vertex')).inject(1).select('v').values('name')", &graph), vec![Value::String("vadas".into())]);
-    assert_eq!(graph_values("g.mergeE([(T.label):'knows',(Direction.OUT):new Vertex('custom-a','vertex'),(Direction.IN):new Vertex('custom-b','vertex')]).label()", &graph), vec![Value::String("knows".into())]);
-    assert_eq!(graph_values("g.V(new Vertex('custom-a','vertex')).out('knows').values('name')", &graph), vec![Value::String("vadas".into())]);
-    assert_eq!(graph_values("g.inject('new Vertex(1,vertex)')", &graph), vec![Value::String("new Vertex(1,vertex)".into())]);
+    graph.insert_node(
+        "person",
+        [
+            ("id".into(), Value::String("custom-a".into())),
+            ("name".into(), Value::String("marko".into())),
+        ]
+        .into(),
+    );
+    graph.insert_node(
+        "person",
+        [
+            ("id".into(), Value::String("custom-b".into())),
+            ("name".into(), Value::String("vadas".into())),
+        ]
+        .into(),
+    );
+    assert_eq!(
+        graph_values(
+            "g.V(new Vertex('custom-a','vertex')).values('name')",
+            &graph
+        ),
+        vec![Value::String("marko".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.inject(new Vertex('custom-a','vertex')).values('name')",
+            &graph
+        ),
+        vec![Value::String("marko".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('v',new Vertex('custom-b','vertex')).inject(1).select('v').values('name')",
+            &graph
+        ),
+        vec![Value::String("vadas".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.mergeE([(T.label):'knows',(Direction.OUT):new Vertex('custom-a','vertex'),(Direction.IN):new Vertex('custom-b','vertex')]).label()",
+            &graph
+        ),
+        vec![Value::String("knows".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.V(new Vertex('custom-a','vertex')).out('knows').values('name')",
+            &graph
+        ),
+        vec![Value::String("vadas".into())]
+    );
+    assert_eq!(
+        graph_values("g.inject('new Vertex(1,vertex)')", &graph),
+        vec![Value::String("new Vertex(1,vertex)".into())]
+    );
+}
+
+#[test]
+fn traversal_labels_and_edge_endpoints_create_real_elements_once() {
+    let graph = PropertyGraph::new();
+    graph_values(
+        "g.addV('p').property('name','a').addV('p').property('name','b').none()",
+        &graph,
+    );
+    assert_eq!(
+        graph_values(
+            "g.addE(__.constant('link')).from(__.V().has('name','a')).to(__.V().has('name','b')).label()",
+            &graph
+        ),
+        vec![Value::String("link".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.addE('native').from(new Vertex('p#0','vertex')).to(new Vertex('p#1','vertex')).label()",
+            &graph
+        ),
+        vec![Value::String("native".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('b',new Vertex('p#1','vertex')).V('p#0').addE('side').to('b').label()",
+            &graph
+        ),
+        vec![Value::String("side".into())]
+    );
+    assert_eq!(
+        graph_values("g.addV(__.constant('dynamic')).label()", &graph),
+        vec![Value::String("dynamic".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('key','name').addV().property(__.select('key'),'x').values('name')",
+            &graph
+        ),
+        vec![Value::String("x".into())]
+    );
+    assert_eq!(
+        graph_values("g.addV().property(T.label,'changed').label()", &graph),
+        vec![Value::String("changed".into())]
+    );
+}
+
+#[test]
+fn dynamic_merge_maps_and_options_preserve_typed_keys() {
+    let graph = PropertyGraph::new();
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('c',[(T.label):'p','name':'a']).withSideEffect('m',['age':19]).mergeV(__.select('c')).option(Merge.onCreate,__.select('m')).values('age')",
+            &graph
+        ),
+        vec![Value::Int(19)]
+    );
+    assert_eq!(
+        graph_values(
+            "g.inject([(T.label):'p','name':'a'],[(T.label):'p','name':'b']).mergeV().count()",
+            &graph
+        ),
+        vec![Value::Long(2)]
+    );
+    assert_eq!(
+        graph_values(
+            "g.V().as('v').mergeE([(T.label):'self',(Direction.OUT):Merge.outV,(Direction.IN):Merge.inV]).option(Merge.outV,__.select('v')).option(Merge.inV,__.select('v')).count()",
+            &graph
+        ),
+        vec![Value::Long(2)]
+    );
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('m',['updated':true]).mergeE([(T.label):'self']).option(Merge.onMatch,__.select('m')).values('updated')",
+            &graph
+        ),
+        vec![Value::Bool(true), Value::Bool(true)]
+    );
+    assert_eq!(graph_values("g.E().count()", &graph), vec![Value::Long(2)]);
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn dynamic_mutation_procedures_commit_once_and_roll_back_errors() {
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    engine
+        .gremlin("g.addV(__.constant('p')).none()")
+        .await
+        .unwrap();
+    assert!(
+        engine
+            .gremlin("g.addV('bad').as('x').addE(__.constant(1)).to('x')")
+            .await
+            .is_err()
+    );
+    let result = engine.gremlin("g.V().count()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], 1);
+}
+
+#[test]
+fn dynamic_mutations_preserve_repeat_labels_and_merge_original_input() {
+    let graph = PropertyGraph::new();
+    assert_eq!(
+        graph_values(
+            "g.addV().as('first').repeat(__.addE('next').to(__.addV()).inV()).times(2).addE('next').to(__.select('first')).count()",
+            &graph
+        ),
+        vec![Value::Long(1)]
+    );
+    assert_eq!(graph_values("g.V().count()", &graph), vec![Value::Long(3)]);
+    assert_eq!(graph_values("g.E().count()", &graph), vec![Value::Long(3)]);
+    graph_values("g.mergeV(['name':'a']).none()", &graph);
+    assert_eq!(
+        graph_values(
+            "g.inject(['name':'a'],['name':'a'],['updated':true]).fold().mergeV(__.limit(Scope.local,1)).option(Merge.onCreate,__.range(Scope.local,1,2)).option(Merge.onMatch,__.tail(Scope.local)).values('updated')",
+            &graph
+        ),
+        vec![Value::Bool(true)]
+    );
 }

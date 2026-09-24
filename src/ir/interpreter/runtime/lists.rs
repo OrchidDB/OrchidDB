@@ -104,6 +104,7 @@ fn numeric_type(value: &Value) -> bool {
 
 pub(super) fn cypher_list_type_name(value: &Value) -> String {
     match value {
+        Value::MapEntry(_) => "MAP_ENTRY".into(),
         Value::TypedMap(_) => "MAP".into(),
         Value::BulkSet(_) => "BULKSET".into(),
         Value::Token(_) => "TOKEN".into(),
@@ -340,6 +341,7 @@ pub(super) fn list_product_value(items: &[Value]) -> Value {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::MapEntry(entry) => format!("{}={}", display_for_list_to_string(&entry.0), display_for_list_to_string(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -715,4 +717,42 @@ pub(super) fn gremlin_local_tail(value: &Value, count: i64) -> Value {
         _ => return value.clone(),
     } as i64;
     gremlin_local_range(value, len.saturating_sub(count.max(0)), len)
+}
+
+pub(super) fn gremlin_merge(lhs: &Value, rhs: &Value, traversal: bool) -> IrResult<Value> {
+    let is_map = |value: &Value| matches!(value, Value::TypedMap(_) | Value::Map(_)) && crate::ir::value::as_gremlin_set(value).is_none();
+    if is_map(lhs) {
+        if !is_map(rhs) {
+            return Err(InterpretError::Runtime(format!("merge step expected provided argument to evaluate to a Map, encountered {}", rhs.type_name())));
+        }
+        let entries = |value: &Value| match value {
+            Value::TypedMap(items) => items.clone(),
+            Value::Map(items) => items.iter().filter(|(key,_)| key.as_str() != crate::ir::value::STRUCT_ORDER_KEY && key.as_str() != crate::ir::value::STRUCT_TYPES_KEY).map(|(key,value)|(Value::String(key.clone()),value.clone())).collect(),
+            _ => unreachable!(),
+        };
+        let mut merged = entries(lhs);
+        for (key,value) in entries(rhs) {
+            if let Some((_,existing)) = merged.iter_mut().find(|(existing,_)| *existing == key) { *existing = value; }
+            else { merged.push((key,value)); }
+        }
+        return Ok(Value::TypedMap(merged));
+    }
+    let iterable = |value: &Value| match value {
+        Value::List(items) | Value::Path(items) | Value::BulkSet(items) => Some(items.clone()),
+        other => crate::ir::value::as_gremlin_set(other).map(|items|items.to_vec()),
+    };
+    let lhs = iterable(lhs).ok_or_else(|| InterpretError::Runtime(if matches!(lhs,Value::Null) {
+        "Incoming traverser for merge step can't be null".into()
+    } else { format!("merge step can only take an array or an Iterable type for incoming traversers, encountered {}",lhs.type_name()) }))?;
+    if !traversal && is_map(rhs) {
+        return Err(InterpretError::Runtime("merge step type mismatch: expected argument to be Iterable but got Map".into()));
+    }
+    let rhs = iterable(rhs).ok_or_else(|| InterpretError::Runtime(if traversal {
+        if matches!(rhs,Value::Null) {"traversal argument for merge step must yield an iterable type, not null".into()}
+        else {format!("traversal argument for merge step must yield an iterable type, encountered {}",rhs.type_name())}
+    } else if matches!(rhs,Value::Null) {"Argument provided for merge step can't be null".into()}
+    else {format!("merge step can only take an array or an Iterable as an argument, encountered {}",rhs.type_name())}))?;
+    let mut out=Vec::new();
+    for item in lhs.into_iter().chain(rhs) {if !out.contains(&item) {out.push(item);}}
+    Ok(crate::ir::value::gremlin_set(out))
 }

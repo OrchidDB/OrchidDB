@@ -62,13 +62,72 @@ where
     })
 }
 
-pub(super) fn lower_dedup_labels(input: Node, labels: &[String]) -> Node {
-    Node::GraphDistinct {
-        keys: labels.to_vec(),
+pub(super) fn lower_dedup_labels<'a, I>(
+    mut input: Node,
+    labels: &[String],
+    steps: &mut Peekable<I>,
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node>
+where
+    I: Iterator<Item = &'a Step>,
+{
+    let mut keys = labels.to_vec();
+    if let Some(spec) = consume_by(steps) {
+        let saved = lo.fresh("dedup_current");
+        input = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![ProjectionItem {
+                alias: saved.clone(),
+                expr: IrExpr::Binding(CURRENT.into()),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: input.boxed(),
+        };
+        keys.clear();
+        for label in labels {
+            input = Node::GraphProject {
+                mode: ProjectMode::PreserveVisible,
+                items: vec![ProjectionItem {
+                    alias: CURRENT.into(),
+                    expr: IrExpr::Binding(label.clone()),
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: input.boxed(),
+            };
+            let (next, expr) = if let Some(expr) = simple_by_key_expr(&spec, lo) {
+                apply_unproductive_filter(input, expr, lo)
+            } else {
+                apply_by_spec(input, &spec, lo, ctx)?
+            };
+            let key = lo.fresh("dedup_label_key");
+            input = Node::GraphProject {
+                mode: ProjectMode::PreserveVisible,
+                items: vec![ProjectionItem {
+                    alias: key.clone(),
+                    expr,
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: next.boxed(),
+            };
+            keys.push(key);
+        }
+        input = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![ProjectionItem {
+                alias: CURRENT.into(),
+                expr: IrExpr::Binding(saved),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: input.boxed(),
+        };
+    }
+    Ok(Node::GraphDistinct {
+        keys,
         mode: DistinctMode::Traverser,
         bulk: DistinctBulk::ResetToOne,
         input: input.boxed(),
-    }
+    })
 }
 
 pub(super) fn lower_order<'a, I>(
@@ -105,8 +164,12 @@ where
         input = new_input;
         keys.push(SortKey {
             expr,
-            dir,
-            nulls: NullsOrder::ProviderDefined,
+            dir: dir.clone(),
+            nulls: if matches!(dir, SortDir::Desc) {
+                NullsOrder::Last
+            } else {
+                NullsOrder::First
+            },
         });
     }
     if keys.is_empty() {
@@ -116,7 +179,7 @@ where
                 args: vec![IrExpr::Binding(CURRENT.into())],
             },
             dir: SortDir::Asc,
-            nulls: NullsOrder::ProviderDefined,
+            nulls: NullsOrder::First,
         });
     }
     Ok(Node::GraphSort {
