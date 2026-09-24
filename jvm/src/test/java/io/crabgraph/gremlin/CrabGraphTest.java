@@ -105,6 +105,82 @@ public class CrabGraphTest {
             assertTrue(graph.vertices("before").hasNext()); assertFalse(graph.vertices("during").hasNext());
         }
     }
+    @Test public void cachedAndUncachedTraversalPreserveTypedIdsOrderAndMultiplicity() {
+        String key="crabgraph.native.adjacencyCacheSize",previous=System.getProperty(key);
+        List<Object> uncached=null;
+        try {
+            for(int limit:new int[]{0,4096}) {
+                System.setProperty(key,Integer.toString(limit));
+                try(CrabGraph graph=CrabGraph.open(executable)) {
+                    Vertex a=graph.addVertex(T.id,"a"),b=graph.addVertex(T.id,7L),c=graph.addVertex(T.id,9);
+                    a.addEdge("link",b); a.addEdge("loop",a); a.addEdge("link",b);
+                    b.addEdge("link",c); c.addEdge("link",a);
+                    List<Object> result=graph.traversal().V("a").repeat(org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.out()).times(4).id().toList();
+                    if(limit==0) uncached=result; else assertEquals(uncached,result);
+                    assertTrue(result.size()>5); assertTrue(result.contains(7L)); assertTrue(result.contains(9));
+                }
+            }
+        } finally { if(previous==null) System.clearProperty(key); else System.setProperty(key,previous); }
+    }
+    @Test public void cachedAdjacencyDoesNotHideNativeProcessDeath() throws Exception {
+        CrabGraph graph=CrabGraph.open(executable);
+        try {
+            Vertex a=graph.addVertex(),b=graph.addVertex(); a.addEdge("link",b);
+            assertTrue(a.edges(Direction.OUT).hasNext());
+            java.lang.reflect.Field sessionField=CrabGraph.class.getDeclaredField("session"); sessionField.setAccessible(true);
+            java.lang.reflect.Field processField=CrabSession.class.getDeclaredField("process"); processField.setAccessible(true);
+            Process process=(Process)processField.get(sessionField.get(graph));
+            process.destroyForcibly().waitFor();
+            try { a.edges(Direction.OUT); fail("Dead native session must not serve cached topology"); }
+            catch(IllegalStateException expected) { }
+        } finally { graph.abort(); }
+    }
+    @Test public void repeatedAdjacencyReadsTrackMutationsSelfLoopsAndRollback() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex a=graph.addVertex(T.id,"a"),b=graph.addVertex(T.id,"b"),c=graph.addVertex(T.id,"c");
+            Edge original=a.addEdge("base",b); graph.tx().commit();
+            for(int i=0;i<3;i++) {
+                assertEquals(Long.valueOf(1),graph.traversal().V(a).outE().count().next());
+                assertEquals(Long.valueOf(0),graph.traversal().V(a).inE().count().next());
+                assertEquals(Long.valueOf(0),graph.traversal().V(a).outE("new").count().next());
+            }
+            a.addEdge("loop",a);
+            assertEquals(Long.valueOf(3),graph.traversal().V(a).bothE().count().next());
+            a.addEdge("new",c);
+            assertEquals(Long.valueOf(1),graph.traversal().V(a).outE("new").count().next());
+            original.remove();
+            assertEquals(Long.valueOf(2),graph.traversal().V(a).outE().count().next());
+            c.remove();
+            assertEquals(Long.valueOf(1),graph.traversal().V(a).outE().count().next());
+            graph.tx().rollback();
+            assertEquals(Long.valueOf(1),graph.traversal().V(a).outE("base").count().next());
+            assertEquals(Long.valueOf(0),graph.traversal().V(a).outE("loop","new").count().next());
+            assertEquals(Long.valueOf(0),graph.traversal().V(a).inE().count().next());
+            try {
+                graph.atomicMutation(()->{
+                    a.addEdge("temporary",b);
+                    assertEquals(Long.valueOf(2),graph.traversal().V(a).outE().count().next());
+                    throw new IllegalStateException("undo");
+                }); fail();
+            } catch(IllegalStateException expected) { assertEquals("undo",expected.getMessage()); }
+            assertEquals(Long.valueOf(1),graph.traversal().V(a).outE().count().next());
+        }
+    }
+    @Test public void adjacencyCacheNeverHidesPoisonedAtomicBlockErrors() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex a=graph.addVertex(T.id,"a"),b=graph.addVertex(T.id,"b"); a.addEdge("link",b);
+            assertTrue(a.edges(Direction.OUT).hasNext());
+            try {
+                graph.atomicMutation(()->{
+                    assertTrue(a.edges(Direction.OUT).hasNext());
+                    try { graph.addVertex(T.id,"a"); fail(); } catch(IllegalArgumentException expected) { }
+                    a.edges(Direction.OUT);
+                    fail("Read in a poisoned native atomic block must fail");
+                }); fail();
+            } catch(IllegalArgumentException expected) { }
+            assertTrue(a.edges(Direction.OUT).hasNext());
+        }
+    }
     @Test public void nullPropertyKeySelectsNothingAndMixedKeysIgnoreNull() {
         try(CrabGraph graph=CrabGraph.open(executable)) {
             Vertex v=graph.addVertex("x",1);
