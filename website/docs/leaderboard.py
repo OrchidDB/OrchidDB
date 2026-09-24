@@ -17,7 +17,7 @@ def render(cases, get_result, runs, root, download):
         (download / 'parity-baseline.json').write_bytes(baseline_path.read_bytes())
     report = {'baseline_recorded_at': baseline.get('recorded_at'), 'suites': {}}
     html = ['<section id="leaderboard" class="leaderboard"><h2>Current leaderboard</h2>',
-            '<p>Ranked by passed upstream scenarios within each language. Peer-only passes are cases another compared engine passes that this engine has not passed. Changes are relative to the saved starting baseline.</p>',
+            '<p>Ranked by passed upstream scenarios within each language. Crabgraph uses the native Rust profile; JVM and GraphComputer results appear separately in the Gremlin matrix. Peer-only passes are cases another compared engine passes that this engine has not passed. Changes are relative to the saved starting baseline.</p>',
             '<div class="leaderboard-scroll"><table class="leaderboard-table"><thead><tr><th>Language</th><th>Rank</th><th>Engine</th><th>Passed / total</th><th>Change</th><th>Peer-only passes</th><th>Run (UTC)</th></tr></thead>']
     for suite, title, products in SUITES:
         subset = [case for case in cases if case['suite'] == suite]
