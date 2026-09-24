@@ -40,6 +40,11 @@ public final class CrabGraph implements Graph {
         new LinkedHashMap<Object,Object>(128,0.75f,true) {
             @Override protected boolean removeEldestEntry(Map.Entry<Object,Object> eldest) { return size()>adjacencyCacheSize; }
         });
+    private final int propertyCacheSize=Math.max(0,Integer.getInteger("crabgraph.native.propertyCacheSize",16384));
+    private final Map<Object,Object> propertyCache=Collections.synchronizedMap(
+        new LinkedHashMap<Object,Object>(128,0.75f,true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<Object,Object> eldest) { return size()>propertyCacheSize; }
+        });
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
     private final java.util.concurrent.locks.Condition writerFinished=lease.newCondition();
@@ -195,26 +200,29 @@ public final class CrabGraph implements Graph {
             if(op.equals("addVertex")||op.equals("addEdge")||op.equals("setVertexProperty")||op.equals("setProperty")||op.equals("remove")||op.equals("savepoint"))
                 transaction.claimWrite();
             boolean read=op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties")||op.equals("begin")||op.equals("hello");
-            if(!read) adjacencyCache.clear();
+            if(!read) clearReadCaches();
             if((op.equals("addVertex")||op.equals("addEdge"))&&!request.containsKey("id")) {
                 IdManager manager=op.equals("addVertex")?vertexIdManager:edgeIdManager;
                 if(manager!=IdManager.ANY) request.put("id",nextNumericId(manager));
             }
-            boolean cache=op.equals("adjacent")&&atomicMutationDepth==0&&adjacencyCacheSize>0;
-            if(cache) {
-                Object hit=adjacencyCache.get(request);
+            Map<Object,Object> cache=atomicMutationDepth!=0?null:
+                op.equals("adjacent")&&adjacencyCacheSize>0?adjacencyCache:
+                op.equals("properties")&&propertyCacheSize>0?propertyCache:null;
+            if(cache!=null) {
+                Object hit=cache.get(request);
                 if(hit!=null) return hit;
             }
             Object value=session.call(request);
-            if(cache) {
+            if(cache!=null) {
                 value=immutableRecord(value);
                 Object key=immutableRecord(request);
-                synchronized(adjacencyCache) { if(!closed) adjacencyCache.put(key,value); }
+                synchronized(cache) { if(!closed) cache.put(key,value); }
             }
             return value;
-        } catch(RuntimeException|Error failure) { adjacencyCache.clear(); throw failure; }
+        } catch(RuntimeException|Error failure) { clearReadCaches(); throw failure; }
         finally { lease.unlock(); }
     }
+    private void clearReadCaches() { adjacencyCache.clear(); propertyCache.clear(); }
     // Invoked under the session lease. The counter never rewinds on rollback; after
     // reopen, exact native identity lookups skip every surviving supplied/generated ID.
     private Object nextNumericId(IdManager manager) {
@@ -346,7 +354,7 @@ public final class CrabGraph implements Graph {
         return type.cast(computer);
     }
     /** Cancel pending I/O and discard this session. Safe to call from another thread. */
-    public void abort() { closed=true; adjacencyCache.clear(); session.abort(); services.close(); releaseRuntime(); }
+    public void abort() { closed=true; clearReadCaches(); session.abort(); services.close(); releaseRuntime(); }
     public void abortFamily() {
         List<CrabGraph> members;
         synchronized(runtime) { runtime.closed=true; members=new ArrayList<>(runtime.members); }
@@ -363,7 +371,7 @@ public final class CrabGraph implements Graph {
     @Override public void close() {
         if(closed) return;
         try { if(transaction.isOpen()) transaction.rollback(); }
-        finally { closed=true; adjacencyCache.clear(); session.close(); services.close(); releaseRuntime(); }
+        finally { closed=true; clearReadCaches(); session.close(); services.close(); releaseRuntime(); }
     }
     private final class NativeTransaction extends AbstractThreadLocalTransaction {
         private final ThreadLocal<Boolean> open=ThreadLocal.withInitial(()->false);
