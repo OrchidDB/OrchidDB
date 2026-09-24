@@ -1,0 +1,27 @@
+{
+  "cypher.trail": {
+    "state": "Documented dialect difference; other deviations need review",
+    "note": "The expectation uses relationship uniqueness within one MATCH. Ladybug documents walk semantics by default. An extra match under that dialect is not automatically a defect. Crabgraph deviations still need an explicit semantic decision.",
+    "source": "https://docs.ladybugdb.com/cypher/difference/"
+  },
+  "cypher.labels": {
+    "state": "Dialect spelling differs",
+    "note": "Ladybug documents label(node), whereas this probe uses Neo4j's labels(node). Query rejection here does not mean Ladybug has no label inspection.",
+    "source": "https://docs.ladybugdb.com/cypher/difference/"
+  },
+  "gremlin.empty_sum": {
+    "state": "Reproduced against reference; root cause open",
+    "note": "TinkerGraph 3.7.4 emits no result for this empty sum. SQLg 3.1.6 returned a NaN value, serialized as a string by the adapter. This is a reference-observed difference; investigate SQL aggregation and serialization before assigning a defect.",
+    "source": "https://tinkerpop.apache.org/docs/3.7.4/reference/#sum-step"
+  },
+  "gremlin.local": {
+    "state": "SQLg optimization divergence isolated",
+    "note": "The expected local sums are 3 and 3, corroborated by TinkerGraph 3.7.4. SQLg 3.1.6 returns one row containing 6. Disabling only SqlgLocalStepStrategy restores two rows containing 3 on the same graph and adapter. This isolates the observed divergence to that optimization path.",
+    "source": "/downloads/conformance/sqlg-investigation.json"
+  },
+  "gremlin.missing_order": {
+    "state": "Documented provider difference",
+    "note": "SQLg documents an error when order().by() refers to a nonexistent property, whereas TinkerGraph filters unproductive traversers. Treat this as a provider behavior difference.",
+    "source": "https://sqlg.org/docs/3.1.6/"
+  }
+}

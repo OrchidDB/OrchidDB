@@ -1,0 +1,6001 @@
+{
+  "schema_version": 2,
+  "execution_environment": {
+    "system": "Darwin",
+    "release": "25.5.0",
+    "architecture": "arm64",
+    "logical_cpus": 12,
+    "python": "3.12.7"
+  },
+  "engine": "neo4j",
+  "build": {
+    "version": "2026.09.0",
+    "edition": "Community",
+    "language": "Cypher 5 explicitly selected"
+  },
+  "started_at": "2026-09-24T00:31:23.801433+00:00",
+  "finished_at": "2026-09-24T00:31:24.660589+00:00",
+  "suite_sha256": "4b7bf9a95551c392ce78b19c0aa569e340b7982a7488c5db078e1af163b3ce37",
+  "results": [
+    {
+      "id": "cypher.node_scan",
+      "probe_sha256": "f5cca7b1a9c3ad12d9c84171a097c97545ecc167c44e732f1909bdfebdce4530",
+      "status": "pass",
+      "elapsed_ms": 4.22,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Dave"
+        ],
+        [
+          "Alice"
+        ],
+        [
+          "Bob"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          4.22,
+          2.88,
+          2.91
+        ],
+        "median_ms": 2.91,
+        "min_ms": 2.88,
+        "max_ms": 4.22,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 4.22,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Dave"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.88,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Dave"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.91,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Dave"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.all_nodes",
+      "probe_sha256": "29fd0f160762fd7c0b777ca03371101ffaf1d8169908be451adbf5c83d4e8895",
+      "status": "pass",
+      "elapsed_ms": 2.65,
+      "rows": [
+        [
+          4
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.65,
+          2.39,
+          2.34
+        ],
+        "median_ms": 2.39,
+        "min_ms": 2.34,
+        "max_ms": 2.65,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.65,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.39,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.34,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.property_pattern",
+      "probe_sha256": "c9409d66f80e1cf194fa942b55ae084098862485ebd41e3ae660337d4bd5ba7e",
+      "status": "pass",
+      "elapsed_ms": 2.9,
+      "rows": [
+        [
+          30
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.9,
+          2.41,
+          2.07
+        ],
+        "median_ms": 2.41,
+        "min_ms": 2.07,
+        "max_ms": 2.9,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.9,
+          "rows": [
+            [
+              30
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.41,
+          "rows": [
+            [
+              30
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.07,
+          "rows": [
+            [
+              30
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.directed",
+      "probe_sha256": "4fbc040d9ded523bda81f8488d018425c8943b627b6251d0533f0c8891169cb8",
+      "status": "pass",
+      "elapsed_ms": 2.96,
+      "rows": [
+        [
+          "Bob"
+        ],
+        [
+          "Carol"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.96,
+          1.98,
+          2.21
+        ],
+        "median_ms": 2.21,
+        "min_ms": 1.98,
+        "max_ms": 2.96,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.96,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.98,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.incoming",
+      "probe_sha256": "9504443ab6d592aa3c0024f32dace58ca3c54935fa957d6706fa9649183b93d4",
+      "status": "pass",
+      "elapsed_ms": 2.05,
+      "rows": [
+        [
+          "Carol"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.05,
+          2.99,
+          3.27
+        ],
+        "median_ms": 2.99,
+        "min_ms": 2.05,
+        "max_ms": 3.27,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.05,
+          "rows": [
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.99,
+          "rows": [
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.27,
+          "rows": [
+            [
+              "Carol"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.undirected",
+      "probe_sha256": "33d8e740fe11630ce671a706ebb79b94e72452d3f4c26f7abbd769f360e5eab7",
+      "status": "pass",
+      "elapsed_ms": 2.62,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Bob"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.62,
+          2.77,
+          2.19
+        ],
+        "median_ms": 2.62,
+        "min_ms": 2.19,
+        "max_ms": 2.77,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.62,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.77,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.19,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.edge_property",
+      "probe_sha256": "71050fcb1db5420d5ebaee48a207c1f2c1b262a2ac12166369ef8ec5f1690dd5",
+      "status": "pass",
+      "elapsed_ms": 2.66,
+      "rows": [
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          3
+        ],
+        [
+          4
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.66,
+          2.41,
+          2.22
+        ],
+        "median_ms": 2.41,
+        "min_ms": 2.22,
+        "max_ms": 2.66,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.66,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.41,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.22,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.edge_type",
+      "probe_sha256": "4a15ebc000678621c31df1a06c6fac5fd6d9abfca56697b776afcac9dd90f210",
+      "status": "pass",
+      "elapsed_ms": 2.3,
+      "rows": [
+        [
+          "KNOWS"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.3,
+          2.11,
+          2.06
+        ],
+        "median_ms": 2.11,
+        "min_ms": 2.06,
+        "max_ms": 2.3,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.3,
+          "rows": [
+            [
+              "KNOWS"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.11,
+          "rows": [
+            [
+              "KNOWS"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              "KNOWS"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.join",
+      "probe_sha256": "72d6234ae387f13623688d0cd29ad46b7dd484a3e6834e122d2d5dec164f99de",
+      "status": "pass",
+      "elapsed_ms": 2.56,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.56,
+          2.21,
+          2.6
+        ],
+        "median_ms": 2.56,
+        "min_ms": 2.21,
+        "max_ms": 2.6,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.56,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.6,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.cartesian",
+      "probe_sha256": "744aca690cf728870a349bf43be66e795f72e558a2951749e89321dde5e07e02",
+      "status": "pass",
+      "elapsed_ms": 2.52,
+      "rows": [
+        [
+          16
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.52,
+          1.79,
+          2.65
+        ],
+        "median_ms": 2.52,
+        "min_ms": 1.79,
+        "max_ms": 2.65,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.52,
+          "rows": [
+            [
+              16
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.79,
+          "rows": [
+            [
+              16
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.65,
+          "rows": [
+            [
+              16
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.optional",
+      "probe_sha256": "893b2b0bcb0db20a94e442352bb36b0cbc917f4752f93c0fc7b41f59a719f1c1",
+      "status": "pass",
+      "elapsed_ms": 2.94,
+      "rows": [
+        [
+          "Dave",
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.94,
+          2.54,
+          1.76
+        ],
+        "median_ms": 2.54,
+        "min_ms": 1.76,
+        "max_ms": 2.94,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.94,
+          "rows": [
+            [
+              "Dave",
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.54,
+          "rows": [
+            [
+              "Dave",
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.76,
+          "rows": [
+            [
+              "Dave",
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.optional_predicate",
+      "probe_sha256": "f5e5fea40dddb9aebc7b236d2b01d8e2fce12165cabc9e6614dda7191394d55d",
+      "status": "pass",
+      "elapsed_ms": 2.91,
+      "rows": [
+        [
+          "Alice",
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.91,
+          2.12,
+          1.8
+        ],
+        "median_ms": 2.12,
+        "min_ms": 1.8,
+        "max_ms": 2.91,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.91,
+          "rows": [
+            [
+              "Alice",
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.12,
+          "rows": [
+            [
+              "Alice",
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.8,
+          "rows": [
+            [
+              "Alice",
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.distinct",
+      "probe_sha256": "ea8031002dafd4d3c4a7682c1e99d66ebea1bc69263edb3f2324dd88bdc39723",
+      "status": "pass",
+      "elapsed_ms": 1.86,
+      "rows": [
+        [
+          "Bob"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.86,
+          1.68,
+          1.64
+        ],
+        "median_ms": 1.68,
+        "min_ms": 1.64,
+        "max_ms": 1.86,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.86,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.68,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.64,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.union",
+      "probe_sha256": "8f9e1db3c7d91e99bd4d80dd65112c73e220fc79f0f4f1ce234fba4a3044d7ac",
+      "status": "pass",
+      "elapsed_ms": 1.92,
+      "rows": [
+        [
+          "x"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.92,
+          2.13,
+          1.63
+        ],
+        "median_ms": 1.92,
+        "min_ms": 1.63,
+        "max_ms": 2.13,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.92,
+          "rows": [
+            [
+              "x"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.13,
+          "rows": [
+            [
+              "x"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.63,
+          "rows": [
+            [
+              "x"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.union_all",
+      "probe_sha256": "1e066d6b05934ea88eda2c053ff4a523b3fa77f69dfa9f932d6d31adb99486dc",
+      "status": "pass",
+      "elapsed_ms": 1.84,
+      "rows": [
+        [
+          "x"
+        ],
+        [
+          "x"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.84,
+          1.78,
+          1.73
+        ],
+        "median_ms": 1.78,
+        "min_ms": 1.73,
+        "max_ms": 1.84,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.84,
+          "rows": [
+            [
+              "x"
+            ],
+            [
+              "x"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.78,
+          "rows": [
+            [
+              "x"
+            ],
+            [
+              "x"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.73,
+          "rows": [
+            [
+              "x"
+            ],
+            [
+              "x"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.with",
+      "probe_sha256": "b6a7be99452e3b0a3e10da11193efbdfebf46e40ad314e66bf85759f72c8e9c5",
+      "status": "pass",
+      "elapsed_ms": 2.22,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.22,
+          2.16,
+          2.13
+        ],
+        "median_ms": 2.16,
+        "min_ms": 2.13,
+        "max_ms": 2.22,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.22,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.16,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.13,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.unwind",
+      "probe_sha256": "74c605d12e22f8be79872ea4727f7c83dfadf39e952be4e02ed94dfed2faa75b",
+      "status": "pass",
+      "elapsed_ms": 1.9,
+      "rows": [
+        [
+          1
+        ],
+        [
+          1
+        ],
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.9,
+          1.79,
+          2.51
+        ],
+        "median_ms": 1.9,
+        "min_ms": 1.79,
+        "max_ms": 2.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.9,
+          "rows": [
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.79,
+          "rows": [
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.51,
+          "rows": [
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.empty_unwind",
+      "probe_sha256": "9f2f1d88a611596d0ab558050c9b167c2a9477e4bacb223bcd6af747926759f1",
+      "status": "pass",
+      "elapsed_ms": 2.1,
+      "rows": [],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.1,
+          2.11,
+          2.21
+        ],
+        "median_ms": 2.11,
+        "min_ms": 2.1,
+        "max_ms": 2.21,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.1,
+          "rows": []
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.11,
+          "rows": []
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": []
+        }
+      ]
+    },
+    {
+      "id": "cypher.null_unwind",
+      "probe_sha256": "2253b530dafc7ea5e08862bcd5b3ba8053d69a7881308742a2a3798e962c8e75",
+      "status": "pass",
+      "elapsed_ms": 2.12,
+      "rows": [],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.12,
+          1.78,
+          1.57
+        ],
+        "median_ms": 1.78,
+        "min_ms": 1.57,
+        "max_ms": 2.12,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.12,
+          "rows": []
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.78,
+          "rows": []
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": []
+        }
+      ]
+    },
+    {
+      "id": "cypher.exists_subquery",
+      "probe_sha256": "08edcc7f266bedefe585e253397c9d8d11c5cec69943d49640299c9396523085",
+      "status": "pass",
+      "elapsed_ms": 2.5,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ],
+        [
+          "Bob"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.5,
+          2.19,
+          2.39
+        ],
+        "median_ms": 2.39,
+        "min_ms": 2.19,
+        "max_ms": 2.5,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.5,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.19,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.39,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.count_subquery",
+      "probe_sha256": "9fefeea6451a5ab8a3e47c797ae23e51f079464362653c8f7b7ab4072185c847",
+      "status": "pass",
+      "elapsed_ms": 2.17,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.17,
+          1.63,
+          1.57
+        ],
+        "median_ms": 1.63,
+        "min_ms": 1.57,
+        "max_ms": 2.17,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.17,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.63,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.call_subquery",
+      "probe_sha256": "886da1b949642c9aa27271233953436f059ed20eca12bb001cbfd73a647ce653",
+      "status": "pass",
+      "elapsed_ms": 2.72,
+      "rows": [
+        [
+          7
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.72,
+          2.34,
+          2.11
+        ],
+        "median_ms": 2.34,
+        "min_ms": 2.11,
+        "max_ms": 2.72,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.72,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.34,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.11,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.correlated_call",
+      "probe_sha256": "6e2e3fcb1c43ef0d05af2e02cf29631b65f3361c593e6a4d42af0c533a818268",
+      "status": "pass",
+      "elapsed_ms": 3.74,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Bob"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.74,
+          2.47,
+          3.2
+        ],
+        "median_ms": 3.2,
+        "min_ms": 2.47,
+        "max_ms": 3.74,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.74,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.47,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.2,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.list_subquery",
+      "probe_sha256": "da1ac28053ca491d040f89ebcf1177af9e34007a0856aec5216a6e812bf70b5c",
+      "status": "pass",
+      "elapsed_ms": 2.67,
+      "rows": [
+        [
+          [
+            "Alice",
+            "Bob",
+            "Carol",
+            "Dave"
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.67,
+          3.48,
+          3.15
+        ],
+        "median_ms": 3.15,
+        "min_ms": 2.67,
+        "max_ms": 3.48,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.67,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob",
+                "Carol",
+                "Dave"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.48,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob",
+                "Carol",
+                "Dave"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.15,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob",
+                "Carol",
+                "Dave"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.pattern_comprehension",
+      "probe_sha256": "e3e78ed94b76caaf68b0b4fa1da07c1505a53f7be273f7f9dbff195b11ea7344",
+      "status": "pass",
+      "elapsed_ms": 3.49,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.49,
+          2.64,
+          2.19
+        ],
+        "median_ms": 2.64,
+        "min_ms": 2.19,
+        "max_ms": 3.49,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.49,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.64,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.19,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.order",
+      "probe_sha256": "292bfd1882b05dfbc236a45a1059301e6746977f89a1492a66602ea6672bd9c5",
+      "status": "pass",
+      "elapsed_ms": 2.8,
+      "rows": [
+        [
+          "Dave"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ],
+        [
+          "Bob"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.8,
+          2.06,
+          2.09
+        ],
+        "median_ms": 2.09,
+        "min_ms": 2.06,
+        "max_ms": 2.8,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.8,
+          "rows": [
+            [
+              "Dave"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              "Dave"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.09,
+          "rows": [
+            [
+              "Dave"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ],
+            [
+              "Bob"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.pagination",
+      "probe_sha256": "9fee52bf6ceefd3ef1ddfb542a989ec8c899abb3631e3cdb19915e31b9278be0",
+      "status": "pass",
+      "elapsed_ms": 2.39,
+      "rows": [
+        [
+          "Bob"
+        ],
+        [
+          "Carol"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.39,
+          1.95,
+          2.4
+        ],
+        "median_ms": 2.39,
+        "min_ms": 1.95,
+        "max_ms": 2.4,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.39,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.4,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.bounded_path",
+      "probe_sha256": "d4d4af95165dceb03eb8ea5c152ff32f0dddbb43be538ec07dbb09036a88b115",
+      "status": "pass",
+      "elapsed_ms": 2.71,
+      "rows": [
+        [
+          "Bob"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.71,
+          5.78,
+          2.27
+        ],
+        "median_ms": 2.71,
+        "min_ms": 2.27,
+        "max_ms": 5.78,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.71,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 5.78,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.27,
+          "rows": [
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.zero_path",
+      "probe_sha256": "c472503561e43cafcbb671e429b6f37f6ad47deadb71dae9fc81e65119d02770",
+      "status": "pass",
+      "elapsed_ms": 2.12,
+      "rows": [
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.12,
+          1.92,
+          2.09
+        ],
+        "median_ms": 2.09,
+        "min_ms": 1.92,
+        "max_ms": 2.12,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.12,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.92,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.09,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.path_length",
+      "probe_sha256": "bbd535fb51aa82e32b09404c6da185a426a7e5309b3476a480be0cbe424ce43c",
+      "status": "pass",
+      "elapsed_ms": 3.14,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.14,
+          2.42,
+          2.65
+        ],
+        "median_ms": 2.65,
+        "min_ms": 2.42,
+        "max_ms": 3.14,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.14,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.42,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.65,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.path_nodes",
+      "probe_sha256": "949cc2e7cb9efda89856a02d9dba93ab61b5ca0259ffb4addbd59149505e4528",
+      "status": "pass",
+      "elapsed_ms": 2.9,
+      "rows": [
+        [
+          [
+            "Alice",
+            "Bob"
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.9,
+          1.96,
+          1.73
+        ],
+        "median_ms": 1.96,
+        "min_ms": 1.73,
+        "max_ms": 2.9,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.9,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.96,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.73,
+          "rows": [
+            [
+              [
+                "Alice",
+                "Bob"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.path_relationships",
+      "probe_sha256": "b03d7af4fed887d13de00fcd25fd438520ee1e9e0845f1df2c011696394941dd",
+      "status": "pass",
+      "elapsed_ms": 2.38,
+      "rows": [
+        [
+          [
+            1
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.38,
+          1.95,
+          2.29
+        ],
+        "median_ms": 2.29,
+        "min_ms": 1.95,
+        "max_ms": 2.38,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.38,
+          "rows": [
+            [
+              [
+                1
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              [
+                1
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.29,
+          "rows": [
+            [
+              [
+                1
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.trail",
+      "probe_sha256": "8a3e04680aaa24da96ae1da4427a96ab0c69dbafdeef71d51b0f1dc9a0d32ca2",
+      "status": "pass",
+      "elapsed_ms": 2.51,
+      "rows": [
+        [
+          0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.51,
+          2.21,
+          2.21
+        ],
+        "median_ms": 2.21,
+        "min_ms": 2.21,
+        "max_ms": 2.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.51,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.shortest",
+      "probe_sha256": "125306c592c57221fa67c4308cb673d630fac16ead657f559548a0ac0b55f939",
+      "status": "pass",
+      "elapsed_ms": 2.47,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.47,
+          2.21,
+          2.13
+        ],
+        "median_ms": 2.21,
+        "min_ms": 2.13,
+        "max_ms": 2.47,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.47,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.13,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.all_shortest",
+      "probe_sha256": "6d7f815f3a08941c600d8d72f828d140f1de7099df5db6690bad7677bd2ac419",
+      "status": "pass",
+      "elapsed_ms": 2.93,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.93,
+          2.52,
+          2.62
+        ],
+        "median_ms": 2.62,
+        "min_ms": 2.52,
+        "max_ms": 2.93,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.93,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.52,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.62,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.qpp",
+      "probe_sha256": "e59a45c07b7b001bde1a3a9154afcf61976bedb85c08b8a17f486c87a0622d44",
+      "status": "pass",
+      "elapsed_ms": 2.9,
+      "rows": [
+        [
+          "Carol"
+        ],
+        [
+          "Bob"
+        ],
+        [
+          "Carol"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.9,
+          2.4,
+          2.67
+        ],
+        "median_ms": 2.67,
+        "min_ms": 2.4,
+        "max_ms": 2.9,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.9,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.4,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.67,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.count_star",
+      "probe_sha256": "62b07228dcd6ed2f6b72ce9864a3c9a402deabc7f15495f5faa297b0cad9ecec",
+      "status": "pass",
+      "elapsed_ms": 1.87,
+      "rows": [
+        [
+          4
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.87,
+          2.42,
+          1.77
+        ],
+        "median_ms": 1.87,
+        "min_ms": 1.77,
+        "max_ms": 2.42,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.87,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.42,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.77,
+          "rows": [
+            [
+              4
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.count_property",
+      "probe_sha256": "83d6a87a7c1e97b687a8176069e7f35fe078c7dc0c340b6e0cabaacbd9b9123b",
+      "status": "pass",
+      "elapsed_ms": 2.44,
+      "rows": [
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.44,
+          2.15,
+          1.57
+        ],
+        "median_ms": 2.15,
+        "min_ms": 1.57,
+        "max_ms": 2.44,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.44,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.15,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.sum",
+      "probe_sha256": "d7c53b35fecc51e22f8c66c3f84e434e413439898fe86e96bcd32dc585e9df77",
+      "status": "pass",
+      "elapsed_ms": 2.26,
+      "rows": [
+        [
+          90
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.26,
+          1.8,
+          2.16
+        ],
+        "median_ms": 2.16,
+        "min_ms": 1.8,
+        "max_ms": 2.26,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.26,
+          "rows": [
+            [
+              90
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.8,
+          "rows": [
+            [
+              90
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.16,
+          "rows": [
+            [
+              90
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.avg",
+      "probe_sha256": "26504532b47697425129138009eb2a8fff1b9f0df74143e4a345775ae9482793",
+      "status": "pass",
+      "elapsed_ms": 1.94,
+      "rows": [
+        [
+          30.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.94,
+          2.21,
+          2.25
+        ],
+        "median_ms": 2.21,
+        "min_ms": 1.94,
+        "max_ms": 2.25,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.94,
+          "rows": [
+            [
+              30.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              30.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.25,
+          "rows": [
+            [
+              30.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.min_max",
+      "probe_sha256": "dbc0c8fb584cb30058d56c7f9e541f4dc991ca918e4446516df9449492398bda",
+      "status": "pass",
+      "elapsed_ms": 2.7,
+      "rows": [
+        [
+          20,
+          40
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.7,
+          2.53,
+          1.89
+        ],
+        "median_ms": 2.53,
+        "min_ms": 1.89,
+        "max_ms": 2.7,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.7,
+          "rows": [
+            [
+              20,
+              40
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.53,
+          "rows": [
+            [
+              20,
+              40
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.89,
+          "rows": [
+            [
+              20,
+              40
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.collect",
+      "probe_sha256": "026edbdba0a13d74eef310855ee54ecbb52d35856e5a7c7beb52ffcf8eb229fb",
+      "status": "pass",
+      "elapsed_ms": 2.68,
+      "rows": [
+        [
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.68,
+          1.78,
+          2.23
+        ],
+        "median_ms": 2.23,
+        "min_ms": 1.78,
+        "max_ms": 2.68,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.68,
+          "rows": [
+            [
+              [
+                20,
+                30,
+                40
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.78,
+          "rows": [
+            [
+              [
+                20,
+                30,
+                40
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.23,
+          "rows": [
+            [
+              [
+                20,
+                30,
+                40
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.empty_count",
+      "probe_sha256": "ef5255dc581cd21bc253ac76ac67cda855e4cd95eb969a9df15c47d1101dae0f",
+      "status": "pass",
+      "elapsed_ms": 2.39,
+      "rows": [
+        [
+          0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.39,
+          2.05,
+          2.1
+        ],
+        "median_ms": 2.1,
+        "min_ms": 2.05,
+        "max_ms": 2.39,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.39,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.05,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.1,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.empty_sum",
+      "probe_sha256": "b8889d76ec6fa42e4e9002dd020dfc231fc00e59de60866d88ec72e366199d41",
+      "status": "pass",
+      "elapsed_ms": 2.11,
+      "rows": [
+        [
+          0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.11,
+          2.17,
+          2.21
+        ],
+        "median_ms": 2.17,
+        "min_ms": 2.11,
+        "max_ms": 2.21,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.11,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.17,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.group",
+      "probe_sha256": "610fc03e0eaf49de2dbc9926a98a9f49db8d527e71374e201fc1895d82b66a0b",
+      "status": "pass",
+      "elapsed_ms": 2.8,
+      "rows": [
+        [
+          "Alice",
+          2
+        ],
+        [
+          "Bob",
+          1
+        ],
+        [
+          "Carol",
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.8,
+          1.76,
+          1.99
+        ],
+        "median_ms": 1.99,
+        "min_ms": 1.76,
+        "max_ms": 2.8,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.8,
+          "rows": [
+            [
+              "Alice",
+              2
+            ],
+            [
+              "Bob",
+              1
+            ],
+            [
+              "Carol",
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.76,
+          "rows": [
+            [
+              "Alice",
+              2
+            ],
+            [
+              "Bob",
+              1
+            ],
+            [
+              "Carol",
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.99,
+          "rows": [
+            [
+              "Alice",
+              2
+            ],
+            [
+              "Bob",
+              1
+            ],
+            [
+              "Carol",
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.post_aggregate_filter",
+      "probe_sha256": "6900c22f1e3fe5c790af3f86067e0cdbc07a525504b2aba1fac89d99ca22fb25",
+      "status": "pass",
+      "elapsed_ms": 1.91,
+      "rows": [
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.91,
+          2.45,
+          1.88
+        ],
+        "median_ms": 1.91,
+        "min_ms": 1.88,
+        "max_ms": 2.45,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.91,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.45,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.88,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.percentile_cont",
+      "probe_sha256": "2b36925dca3d47b245b7d3d3d7c7773fe01524a9a55151f52d2791f845bb1fac",
+      "status": "pass",
+      "elapsed_ms": 2.06,
+      "rows": [
+        [
+          2.5
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.06,
+          2.02,
+          1.96
+        ],
+        "median_ms": 2.02,
+        "min_ms": 1.96,
+        "max_ms": 2.06,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.02,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.96,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.percentile_disc",
+      "probe_sha256": "fac97b388be19ae3936d98899c96b2a64b655e412d15871541b712f0d6358b48",
+      "status": "pass",
+      "elapsed_ms": 2.45,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.45,
+          2.09,
+          1.91
+        ],
+        "median_ms": 2.09,
+        "min_ms": 1.91,
+        "max_ms": 2.45,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.45,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.09,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.91,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.stdev",
+      "probe_sha256": "79df3c13494ba648c1084974e6df935d6d5d71011d2b302f336bc578101fea3f",
+      "status": "pass",
+      "elapsed_ms": 1.58,
+      "rows": [
+        [
+          1.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.58,
+          1.74,
+          2.01
+        ],
+        "median_ms": 1.74,
+        "min_ms": 1.58,
+        "max_ms": 2.01,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.58,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.74,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.01,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.null_equal",
+      "probe_sha256": "765f2712f567371c0f364ceac455f28bfe5ac466d85f9ead46fab4343bd603a6",
+      "status": "pass",
+      "elapsed_ms": 1.54,
+      "rows": [
+        [
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.54,
+          1.85,
+          2.45
+        ],
+        "median_ms": 1.85,
+        "min_ms": 1.54,
+        "max_ms": 2.45,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.54,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.85,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.45,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.null_logic",
+      "probe_sha256": "628fc24f012356b000ffc38a8ad21c954185e7c0cb1ba33527c240486e834259",
+      "status": "pass",
+      "elapsed_ms": 1.72,
+      "rows": [
+        [
+          false,
+          true,
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.72,
+          2.0,
+          1.63
+        ],
+        "median_ms": 1.72,
+        "min_ms": 1.63,
+        "max_ms": 2.0,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.72,
+          "rows": [
+            [
+              false,
+              true,
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.0,
+          "rows": [
+            [
+              false,
+              true,
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.63,
+          "rows": [
+            [
+              false,
+              true,
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.null_in",
+      "probe_sha256": "e4c008d8f553c5f5a4f2faed82225c0057cdf491f6194667b1590d5b0c0c9589",
+      "status": "pass",
+      "elapsed_ms": 1.75,
+      "rows": [
+        [
+          null,
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.75,
+          2.23,
+          1.52
+        ],
+        "median_ms": 1.75,
+        "min_ms": 1.52,
+        "max_ms": 2.23,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.75,
+          "rows": [
+            [
+              null,
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.23,
+          "rows": [
+            [
+              null,
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.52,
+          "rows": [
+            [
+              null,
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.coalesce",
+      "probe_sha256": "44d3913834ee0b5d19bd043d34ded0e6e765846b9671125c22b2e0dc6a1754ef",
+      "status": "pass",
+      "elapsed_ms": 1.92,
+      "rows": [
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.92,
+          1.65,
+          2.02
+        ],
+        "median_ms": 1.92,
+        "min_ms": 1.65,
+        "max_ms": 2.02,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.92,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.65,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.02,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.case",
+      "probe_sha256": "ab63762de635670da5147d02c82c41c9d9e2c4723223bb9ef597ad544e75dd10",
+      "status": "pass",
+      "elapsed_ms": 2.06,
+      "rows": [
+        [
+          7
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.06,
+          1.85,
+          1.45
+        ],
+        "median_ms": 1.85,
+        "min_ms": 1.45,
+        "max_ms": 2.06,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.85,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.45,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.simple_case",
+      "probe_sha256": "0a3d6db38644e44aecca79c3d211d9e4ddeab35f669c4fef53570435c0ba385a",
+      "status": "pass",
+      "elapsed_ms": 1.95,
+      "rows": [
+        [
+          "yes"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.95,
+          1.58,
+          1.52
+        ],
+        "median_ms": 1.58,
+        "min_ms": 1.52,
+        "max_ms": 1.95,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              "yes"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.58,
+          "rows": [
+            [
+              "yes"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.52,
+          "rows": [
+            [
+              "yes"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.is_null",
+      "probe_sha256": "524c700657840a0d9a00b17f805a8eec91b99b702952cc35e776143f01fc66cd",
+      "status": "pass",
+      "elapsed_ms": 1.79,
+      "rows": [
+        [
+          "Dave"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.79,
+          1.85,
+          2.2
+        ],
+        "median_ms": 1.85,
+        "min_ms": 1.79,
+        "max_ms": 2.2,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.79,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.85,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.2,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.list_index",
+      "probe_sha256": "65b5ca6dd98c3066079e3a2ebb390e188f46ec5dd9b9fcf72d1bec63eadeac76",
+      "status": "pass",
+      "elapsed_ms": 1.76,
+      "rows": [
+        [
+          1,
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.76,
+          1.63,
+          1.57
+        ],
+        "median_ms": 1.63,
+        "min_ms": 1.57,
+        "max_ms": 1.76,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.76,
+          "rows": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.63,
+          "rows": [
+            [
+              1,
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": [
+            [
+              1,
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.list_slice",
+      "probe_sha256": "bf339c1269f8ef8ff4632a2e4d5ef534b34b7c34529f8ff51a8f97482c7c302b",
+      "status": "pass",
+      "elapsed_ms": 1.69,
+      "rows": [
+        [
+          [
+            2,
+            3
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.69,
+          1.86,
+          1.82
+        ],
+        "median_ms": 1.82,
+        "min_ms": 1.69,
+        "max_ms": 1.86,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.69,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.86,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.82,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.list_oob",
+      "probe_sha256": "7ba19c760964a192b19a93c9468c7034fa38e1420616fa66ddbce38a60eaca6e",
+      "status": "pass",
+      "elapsed_ms": 1.93,
+      "rows": [
+        [
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.93,
+          1.77,
+          1.87
+        ],
+        "median_ms": 1.87,
+        "min_ms": 1.77,
+        "max_ms": 1.93,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.93,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.77,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.87,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.list_comprehension",
+      "probe_sha256": "ac23c33bd59f4e7a7202b858ca3d1258a72ebf7a1fa5a338deb5ce523be179d4",
+      "status": "pass",
+      "elapsed_ms": 2.05,
+      "rows": [
+        [
+          [
+            4,
+            6
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.05,
+          1.86,
+          1.53
+        ],
+        "median_ms": 1.86,
+        "min_ms": 1.53,
+        "max_ms": 2.05,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.05,
+          "rows": [
+            [
+              [
+                4,
+                6
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.86,
+          "rows": [
+            [
+              [
+                4,
+                6
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.53,
+          "rows": [
+            [
+              [
+                4,
+                6
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.reduce",
+      "probe_sha256": "5dfa5a9795baaad3764206e723e3a41d54664a425d021f2a64a6636ad9429ff8",
+      "status": "pass",
+      "elapsed_ms": 2.01,
+      "rows": [
+        [
+          6
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.01,
+          1.44,
+          1.6
+        ],
+        "median_ms": 1.6,
+        "min_ms": 1.44,
+        "max_ms": 2.01,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.01,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.44,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.6,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.all",
+      "probe_sha256": "0e1ed62c887b1171aebfdaf9b9b1b69a8f712186e503490bfe4663e97035aa12",
+      "status": "pass",
+      "elapsed_ms": 1.75,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.75,
+          1.68,
+          1.66
+        ],
+        "median_ms": 1.68,
+        "min_ms": 1.66,
+        "max_ms": 1.75,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.75,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.68,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.66,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.any",
+      "probe_sha256": "6addf7ba675489b85a29007c6f0042b0f6d3f0bfd1e06103e30bda81922264e1",
+      "status": "pass",
+      "elapsed_ms": 1.87,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.87,
+          3.01,
+          2.17
+        ],
+        "median_ms": 2.17,
+        "min_ms": 1.87,
+        "max_ms": 3.01,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.87,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.01,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.17,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.none",
+      "probe_sha256": "f58fa63595dd872595730d3cbd067c2df0c34d987ee03e4a81b0fcdb52a9bec5",
+      "status": "pass",
+      "elapsed_ms": 1.68,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.68,
+          1.61,
+          1.7
+        ],
+        "median_ms": 1.68,
+        "min_ms": 1.61,
+        "max_ms": 1.7,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.68,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.61,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.7,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.single",
+      "probe_sha256": "ddc6979aad43bab22738d236e59ca7cef68bc4efb955dfbd7e32b3696f1d8a40",
+      "status": "pass",
+      "elapsed_ms": 1.77,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.77,
+          1.68,
+          1.81
+        ],
+        "median_ms": 1.77,
+        "min_ms": 1.68,
+        "max_ms": 1.81,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.77,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.68,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.81,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.empty_all",
+      "probe_sha256": "a2348c71bc54265d2a71379aa3c32039aa6242a8d548348778a1744a10f10200",
+      "status": "pass",
+      "elapsed_ms": 1.93,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.93,
+          2.1,
+          2.43
+        ],
+        "median_ms": 2.1,
+        "min_ms": 1.93,
+        "max_ms": 2.43,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.93,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.1,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.43,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.range",
+      "probe_sha256": "006d7a7bc9c451e54bfa97efee6563945e89bd65b0d773ebc74102a2595fe497",
+      "status": "pass",
+      "elapsed_ms": 1.44,
+      "rows": [
+        [
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.44,
+          1.42,
+          1.58
+        ],
+        "median_ms": 1.44,
+        "min_ms": 1.42,
+        "max_ms": 1.58,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.44,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.42,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.58,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.head_last",
+      "probe_sha256": "7745f67408c7f5517ac2ee88b49265e18147643744fdc960f4c990a682e10641",
+      "status": "pass",
+      "elapsed_ms": 1.56,
+      "rows": [
+        [
+          1,
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.56,
+          2.51,
+          2.09
+        ],
+        "median_ms": 2.09,
+        "min_ms": 1.56,
+        "max_ms": 2.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.56,
+          "rows": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.51,
+          "rows": [
+            [
+              1,
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.09,
+          "rows": [
+            [
+              1,
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.tail",
+      "probe_sha256": "fafc5ceb6f2c7d840353444302a6e44d0193cf5c3c033d7396b7a38b4e0e2cf4",
+      "status": "pass",
+      "elapsed_ms": 2.28,
+      "rows": [
+        [
+          [
+            2,
+            3
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.28,
+          1.57,
+          1.53
+        ],
+        "median_ms": 1.57,
+        "min_ms": 1.53,
+        "max_ms": 2.28,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.28,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.53,
+          "rows": [
+            [
+              [
+                2,
+                3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.reverse",
+      "probe_sha256": "90f95583f09c38aa57c12d50c9813beff996e7cd3c211cc7ed93d869b303f27d",
+      "status": "pass",
+      "elapsed_ms": 1.57,
+      "rows": [
+        [
+          [
+            3,
+            2,
+            1
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.57,
+          1.59,
+          1.92
+        ],
+        "median_ms": 1.59,
+        "min_ms": 1.57,
+        "max_ms": 1.92,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.57,
+          "rows": [
+            [
+              [
+                3,
+                2,
+                1
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.59,
+          "rows": [
+            [
+              [
+                3,
+                2,
+                1
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.92,
+          "rows": [
+            [
+              [
+                3,
+                2,
+                1
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.map_access",
+      "probe_sha256": "a54f95fb7147d0bdeeea461eb4373359d3e125a5eb0423a67191d3b55a819f01",
+      "status": "pass",
+      "elapsed_ms": 1.95,
+      "rows": [
+        [
+          7
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.95,
+          1.6,
+          2.05
+        ],
+        "median_ms": 1.95,
+        "min_ms": 1.6,
+        "max_ms": 2.05,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.6,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.05,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.mixed_list",
+      "probe_sha256": "72c65b9e2c9a615483fb6b9ed5ce036056351f1645d605002b347232e2d747f1",
+      "status": "pass",
+      "elapsed_ms": 2.1,
+      "rows": [
+        [
+          [
+            1,
+            "x",
+            true
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.1,
+          2.0,
+          1.59
+        ],
+        "median_ms": 2.0,
+        "min_ms": 1.59,
+        "max_ms": 2.1,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.1,
+          "rows": [
+            [
+              [
+                1,
+                "x",
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.0,
+          "rows": [
+            [
+              [
+                1,
+                "x",
+                true
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.59,
+          "rows": [
+            [
+              [
+                1,
+                "x",
+                true
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.map_projection",
+      "probe_sha256": "0e256b6d492adbb42131ecc657f4db07f1c69edfbd333e5055c53d875a0a86d8",
+      "status": "pass",
+      "elapsed_ms": 1.97,
+      "rows": [
+        [
+          "Alice",
+          30
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.97,
+          1.89,
+          2.12
+        ],
+        "median_ms": 1.97,
+        "min_ms": 1.89,
+        "max_ms": 2.12,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.97,
+          "rows": [
+            [
+              "Alice",
+              30
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.89,
+          "rows": [
+            [
+              "Alice",
+              30
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.12,
+          "rows": [
+            [
+              "Alice",
+              30
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.keys",
+      "probe_sha256": "b183a8e6c281f6bf5bcfcea3023fbde37b15b3714634fbc4ddcddad45e4d7c6d",
+      "status": "pass",
+      "elapsed_ms": 2.06,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.06,
+          6.8,
+          2.4
+        ],
+        "median_ms": 2.4,
+        "min_ms": 2.06,
+        "max_ms": 6.8,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 6.8,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.4,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.arithmetic",
+      "probe_sha256": "d187f57550c2b84504c90093342386262cb242591029a2383ace805ff6f91cb1",
+      "status": "pass",
+      "elapsed_ms": 1.72,
+      "rows": [
+        [
+          7,
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.72,
+          2.95,
+          2.37
+        ],
+        "median_ms": 2.37,
+        "min_ms": 1.72,
+        "max_ms": 2.95,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.72,
+          "rows": [
+            [
+              7,
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.95,
+          "rows": [
+            [
+              7,
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.37,
+          "rows": [
+            [
+              7,
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.integer_division",
+      "probe_sha256": "841ac8edb39a4055d4a88220693a168009807ce27fa46dfa5e404f815f3395f4",
+      "status": "pass",
+      "elapsed_ms": 1.7,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.7,
+          1.67,
+          1.52
+        ],
+        "median_ms": 1.67,
+        "min_ms": 1.52,
+        "max_ms": 1.7,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.7,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.67,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.52,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.float_division",
+      "probe_sha256": "1a39d66c0f996c2529936ee3a441d1989b2634f2dfcf2b0ba5e9899fc26d56b8",
+      "status": "pass",
+      "elapsed_ms": 1.59,
+      "rows": [
+        [
+          2.5
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.59,
+          2.48,
+          1.75
+        ],
+        "median_ms": 1.75,
+        "min_ms": 1.59,
+        "max_ms": 2.48,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.59,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.48,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.75,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.cast_integer",
+      "probe_sha256": "8e351fc0a9b98a635fb78bc8bdd47138c73297f41eb9597ec9d48e8f703a6f5f",
+      "status": "pass",
+      "elapsed_ms": 1.79,
+      "rows": [
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.79,
+          1.66,
+          1.67
+        ],
+        "median_ms": 1.67,
+        "min_ms": 1.66,
+        "max_ms": 1.79,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.79,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.66,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.67,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.cast_float",
+      "probe_sha256": "f6fa0ec1a9ca2f8846dcb9e8ebbbb78bb3a74f90ffef2af145d43f4016a7798a",
+      "status": "pass",
+      "elapsed_ms": 3.12,
+      "rows": [
+        [
+          2.5
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.12,
+          1.67,
+          1.95
+        ],
+        "median_ms": 1.95,
+        "min_ms": 1.67,
+        "max_ms": 3.12,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.12,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.67,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              2.5
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.cast_boolean",
+      "probe_sha256": "bf8cf86100b8d302b615de968e4f9ce8e9dd28b388279684d38d72beff7da250",
+      "status": "pass",
+      "elapsed_ms": 1.83,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.83,
+          1.53,
+          1.47
+        ],
+        "median_ms": 1.53,
+        "min_ms": 1.47,
+        "max_ms": 1.83,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.83,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.53,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.47,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.cast_string",
+      "probe_sha256": "156d634e47b738aee2e63bdc23000e23b3941bcce8af463c90300647884bcd3f",
+      "status": "pass",
+      "elapsed_ms": 1.6,
+      "rows": [
+        [
+          "42"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.6,
+          1.59,
+          1.48
+        ],
+        "median_ms": 1.59,
+        "min_ms": 1.48,
+        "max_ms": 1.6,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.6,
+          "rows": [
+            [
+              "42"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.59,
+          "rows": [
+            [
+              "42"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.48,
+          "rows": [
+            [
+              "42"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.labels",
+      "probe_sha256": "730d5320bcd94c4952b2f19d1cb1df5c2721cc7ba3467d24ef4f08988b0427df",
+      "status": "pass",
+      "elapsed_ms": 2.25,
+      "rows": [
+        [
+          [
+            "Person"
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.25,
+          1.95,
+          1.9
+        ],
+        "median_ms": 1.95,
+        "min_ms": 1.9,
+        "max_ms": 2.25,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.25,
+          "rows": [
+            [
+              [
+                "Person"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.95,
+          "rows": [
+            [
+              [
+                "Person"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.9,
+          "rows": [
+            [
+              [
+                "Person"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.string_case",
+      "probe_sha256": "5878868ce60174237dddcf23ecc6780781c356b64675e84c5779efff767d4dec",
+      "status": "pass",
+      "elapsed_ms": 2.13,
+      "rows": [
+        [
+          "AB",
+          "ab"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.13,
+          1.86,
+          2.02
+        ],
+        "median_ms": 2.02,
+        "min_ms": 1.86,
+        "max_ms": 2.13,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.13,
+          "rows": [
+            [
+              "AB",
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.86,
+          "rows": [
+            [
+              "AB",
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.02,
+          "rows": [
+            [
+              "AB",
+              "ab"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.string_trim",
+      "probe_sha256": "fb3b6b81a8e4a7d8da70ab85e07c21ba793a851f13c38e2594d7a00d8016d91d",
+      "status": "pass",
+      "elapsed_ms": 2.13,
+      "rows": [
+        [
+          "ab"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.13,
+          2.23,
+          1.82
+        ],
+        "median_ms": 2.13,
+        "min_ms": 1.82,
+        "max_ms": 2.23,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.13,
+          "rows": [
+            [
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.23,
+          "rows": [
+            [
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.82,
+          "rows": [
+            [
+              "ab"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.string_replace",
+      "probe_sha256": "110925bc50701cd055f907160f7feec5f1cad9dbd2d588ef66a0c7dfbe6b94d5",
+      "status": "pass",
+      "elapsed_ms": 2.5,
+      "rows": [
+        [
+          "aXc"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.5,
+          2.3,
+          2.38
+        ],
+        "median_ms": 2.38,
+        "min_ms": 2.3,
+        "max_ms": 2.5,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.5,
+          "rows": [
+            [
+              "aXc"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.3,
+          "rows": [
+            [
+              "aXc"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.38,
+          "rows": [
+            [
+              "aXc"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.string_split",
+      "probe_sha256": "0e1e56ad40de30b5778d9135db4791f78a66aa65e1810f04f83ffd9c1c0b977d",
+      "status": "pass",
+      "elapsed_ms": 2.33,
+      "rows": [
+        [
+          [
+            "a",
+            "b"
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.33,
+          2.51,
+          1.99
+        ],
+        "median_ms": 2.33,
+        "min_ms": 1.99,
+        "max_ms": 2.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.33,
+          "rows": [
+            [
+              [
+                "a",
+                "b"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.51,
+          "rows": [
+            [
+              [
+                "a",
+                "b"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.99,
+          "rows": [
+            [
+              [
+                "a",
+                "b"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.substring",
+      "probe_sha256": "222b86c092062a2cdf1adf4fb94e6c2165b54d60f5e26f13fb5af9dffae5e748",
+      "status": "pass",
+      "elapsed_ms": 2.38,
+      "rows": [
+        [
+          "bc"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.38,
+          1.65,
+          1.52
+        ],
+        "median_ms": 1.65,
+        "min_ms": 1.52,
+        "max_ms": 2.38,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.38,
+          "rows": [
+            [
+              "bc"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.65,
+          "rows": [
+            [
+              "bc"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.52,
+          "rows": [
+            [
+              "bc"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.starts_ends",
+      "probe_sha256": "e42ad34db4f33809677cf394ed55189944ecd5efbb65f0822bbcae2f72f2a401",
+      "status": "pass",
+      "elapsed_ms": 1.89,
+      "rows": [
+        [
+          true,
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.89,
+          1.62,
+          1.73
+        ],
+        "median_ms": 1.73,
+        "min_ms": 1.62,
+        "max_ms": 1.89,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.89,
+          "rows": [
+            [
+              true,
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.62,
+          "rows": [
+            [
+              true,
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.73,
+          "rows": [
+            [
+              true,
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.contains",
+      "probe_sha256": "8201fdc47762b45f6cc9b0a88b16bf844599057c6b98336978b3e308110e94bb",
+      "status": "pass",
+      "elapsed_ms": 1.8,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.8,
+          1.66,
+          2.29
+        ],
+        "median_ms": 1.8,
+        "min_ms": 1.66,
+        "max_ms": 2.29,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.8,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.66,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.29,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.regex",
+      "probe_sha256": "bee6f352943ba64e5cf98e23e0fee115dddc792ddbb0581de9b1cd23b0d843bd",
+      "status": "pass",
+      "elapsed_ms": 1.97,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.97,
+          1.56,
+          1.85
+        ],
+        "median_ms": 1.85,
+        "min_ms": 1.56,
+        "max_ms": 1.97,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.97,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.56,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.85,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.unicode_size",
+      "probe_sha256": "950ba4296fa99e12076e8e5543b371ef9855b582ddcfbfca42da6b67856c234b",
+      "status": "pass",
+      "elapsed_ms": 2.23,
+      "rows": [
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.23,
+          2.53,
+          1.81
+        ],
+        "median_ms": 2.23,
+        "min_ms": 1.81,
+        "max_ms": 2.53,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.23,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.53,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.81,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.math",
+      "probe_sha256": "925760ee05aecb2f02ff1ff6472e3411fafc5bf43cf686cf008838f6e1a131f9",
+      "status": "pass",
+      "elapsed_ms": 1.97,
+      "rows": [
+        [
+          3,
+          2.0,
+          1.0,
+          3.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.97,
+          1.82,
+          2.02
+        ],
+        "median_ms": 1.97,
+        "min_ms": 1.82,
+        "max_ms": 2.02,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.97,
+          "rows": [
+            [
+              3,
+              2.0,
+              1.0,
+              3.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.82,
+          "rows": [
+            [
+              3,
+              2.0,
+              1.0,
+              3.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.02,
+          "rows": [
+            [
+              3,
+              2.0,
+              1.0,
+              3.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.pi",
+      "probe_sha256": "5b009fe7693f7b83572a0702801693cd6e4882398fe2970814e6e156df4cc9c7",
+      "status": "pass",
+      "elapsed_ms": 2.16,
+      "rows": [
+        [
+          3142.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.16,
+          2.06,
+          2.55
+        ],
+        "median_ms": 2.16,
+        "min_ms": 2.06,
+        "max_ms": 2.55,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.16,
+          "rows": [
+            [
+              3142.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.06,
+          "rows": [
+            [
+              3142.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.55,
+          "rows": [
+            [
+              3142.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.date",
+      "probe_sha256": "50e16659d7b8c769b1a741eb063c5161386c44cb897fb7ec99570f52ce938bc4",
+      "status": "pass",
+      "elapsed_ms": 2.82,
+      "rows": [
+        [
+          2024
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.82,
+          2.21,
+          2.69
+        ],
+        "median_ms": 2.69,
+        "min_ms": 2.21,
+        "max_ms": 2.82,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.82,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.21,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.69,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.duration",
+      "probe_sha256": "02427ed9d23159ad63b0e9d9c3255ac6d2bb427c32c82e2aa72f3a4d42a2f0c0",
+      "status": "pass",
+      "elapsed_ms": 2.38,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.38,
+          2.22,
+          2.28
+        ],
+        "median_ms": 2.28,
+        "min_ms": 2.22,
+        "max_ms": 2.38,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.38,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.22,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.28,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.datetime",
+      "probe_sha256": "e8073b466e61f4a1eef329a237a1be987fb19edacf4a836a3b5047a74b0491e6",
+      "status": "pass",
+      "elapsed_ms": 2.33,
+      "rows": [
+        [
+          2024
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.33,
+          1.78,
+          1.83
+        ],
+        "median_ms": 1.83,
+        "min_ms": 1.78,
+        "max_ms": 2.33,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.33,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.78,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.83,
+          "rows": [
+            [
+              2024
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.point",
+      "probe_sha256": "695fd7592cf61fa19d85f05576e3b5bdd8885a63552046ce993ab6306cc0927a",
+      "status": "pass",
+      "elapsed_ms": 1.91,
+      "rows": [
+        [
+          1.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          1.91,
+          1.88,
+          1.8
+        ],
+        "median_ms": 1.88,
+        "min_ms": 1.8,
+        "max_ms": 1.91,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 1.91,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.88,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 1.8,
+          "rows": [
+            [
+              1.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.create",
+      "probe_sha256": "e732b3f50a09ba39d463bb5cc8c92463521ae31c4ee9a6b2a77edd12f6de0a49",
+      "status": "pass",
+      "elapsed_ms": 3.19,
+      "rows": [
+        [
+          "new"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.19,
+          3.29,
+          2.83
+        ],
+        "median_ms": 3.19,
+        "min_ms": 2.83,
+        "max_ms": 3.29,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.19,
+          "rows": [
+            [
+              "new"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 3.29,
+          "rows": [
+            [
+              "new"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.83,
+          "rows": [
+            [
+              "new"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.merge",
+      "probe_sha256": "c207f8978bfa2dcd18dac9f5daf4d8a82fc5d280c80a08b78521123b85d3c86c",
+      "status": "pass",
+      "elapsed_ms": 2.51,
+      "rows": [
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.51,
+          2.2,
+          2.28
+        ],
+        "median_ms": 2.28,
+        "min_ms": 2.2,
+        "max_ms": 2.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.51,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.2,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.28,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.set",
+      "probe_sha256": "0cd4f82c33f44932afa422049b2e4bdabe72c434d738c0fd2fb59972785c9a9e",
+      "status": "pass",
+      "elapsed_ms": 3.8,
+      "rows": [
+        [
+          7
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.8,
+          2.59,
+          2.45
+        ],
+        "median_ms": 2.59,
+        "min_ms": 2.45,
+        "max_ms": 3.8,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.8,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.59,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.45,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.set_map",
+      "probe_sha256": "0c55ac00954fa79b3b017e8d24e07398b1ecefbf4cca8bebea52fc7393a35dcf",
+      "status": "pass",
+      "elapsed_ms": 2.6,
+      "rows": [
+        [
+          7
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.6,
+          2.38,
+          2.22
+        ],
+        "median_ms": 2.38,
+        "min_ms": 2.22,
+        "max_ms": 2.6,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.6,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.38,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.22,
+          "rows": [
+            [
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.remove",
+      "probe_sha256": "20faebbd12af28f83d1c5391bc9cb9ba5c62cc9cafa7e3606fc1060d17440bfe",
+      "status": "pass",
+      "elapsed_ms": 2.77,
+      "rows": [
+        [
+          null
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.77,
+          2.66,
+          2.95
+        ],
+        "median_ms": 2.77,
+        "min_ms": 2.66,
+        "max_ms": 2.95,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.77,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.66,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.95,
+          "rows": [
+            [
+              null
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.foreach",
+      "probe_sha256": "8f72a79042b6d32015bd02e9a6d8567640a058351fef4b05efd2706442e1d605",
+      "status": "pass",
+      "elapsed_ms": 2.32,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.32,
+          2.46,
+          2.57
+        ],
+        "median_ms": 2.46,
+        "min_ms": 2.32,
+        "max_ms": 2.57,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.32,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.46,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.57,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.delete",
+      "probe_sha256": "3795375f5530ea0f02dafdf04e8e0a3916c589001677177f1b3376383b2ea61f",
+      "status": "pass",
+      "elapsed_ms": 3.0,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.0,
+          2.25,
+          2.99
+        ],
+        "median_ms": 2.99,
+        "min_ms": 2.25,
+        "max_ms": 3.0,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.0,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.25,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 2.99,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
