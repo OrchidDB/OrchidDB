@@ -70,7 +70,10 @@ deadline, but its native store is terminated and it cannot commit graph writes.
 
 Direct `CrabGraph` users control `tx().open()/commit()/rollback()`. Failed native
 operations restore their statement snapshot. `atomicMutation(Runnable)` provides
-a savepoint without discarding an enclosing caller transaction.
+a savepoint without discarding an enclosing caller transaction. Operations within
+that block share its checkpoint; a failed operation poisons the block until it
+is rolled back. `bulkLoad(Runnable)` additionally defers commits requested by
+upstream readers until the import completes, preserving any caller transaction.
 `executionLease()` reserves a graph during a multi-request operation; acquire
 and release it on the same executing thread. Separate graph instances own
 separate native processes. Concurrent traversal access to a single direct Graph
@@ -81,6 +84,21 @@ GraphComputer result graph must be closed by its owner and can outlive the sourc
 graph. Executor close/cancellation explicitly terminates its entire graph family,
 including intermediate compute results. Direct graph close affects that graph
 only.
+
+`CrabGraph.open(Configuration)` accepts `crabgraph.native.executable`, optional
+`crabgraph.native.path`, `crabgraph.vertex.defaultCardinality` (`single`, `list`
+or `set`), and `crabgraph.vertex.idManager`, `crabgraph.edge.idManager`,
+`crabgraph.vertexProperty.idManager` (`ANY`, `INTEGER` or `LONG`). `ANY` preserves
+supported numeric and string public ID types; it does not advertise support for
+arbitrary Java object IDs. Numeric ID lookup accepts string representations,
+preferring an exact stored string ID when both forms exist. Reader fixture
+configuration can therefore preserve multi-properties without changing the
+ordinary single-cardinality default.
+
+The JVM provider registers the compatible `tinker.search` and
+`tinker.degree.centrality` service names. These scan actual native properties and
+adjacency, including metadata, Java regular expressions, selected directions and
+traverser bulk; they do not load reference fixture results.
 
 The native protocol uses `{ "op": ..., "version": 1 }` requests and
 `{ "ok": true, "value": ... }` or `{ "ok": false, "error": ... }` replies.
