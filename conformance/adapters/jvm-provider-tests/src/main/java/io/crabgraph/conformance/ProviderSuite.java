@@ -53,6 +53,9 @@ public final class ProviderSuite {
         report.put("run_complete", false);
         report.put("native_rust_traversal_evidence", false);
         report.put("upstream_assertions_modified", false);
+        ObjectNode properties=report.putObject("effective_jvm_properties");
+        for(String key:List.of("is.testing","assertNonDeterministic","crabgraph.test.computer","build.dir"))
+            properties.put(key,System.getProperty(key,""));
         ArrayNode cases = report.putArray("cases");
         List<Request> requests = new ArrayList<>();
         Map<String,JsonNode> mappings = new HashMap<>();
