@@ -303,6 +303,7 @@ pub(super) fn with_distinct_ordinal(plan: LogicalPlan, ordinal: &str) -> RelResu
         _ => Vec::new(),
     };
     let window = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
         .order_by(order)
         .build()?
         .alias(ordinal);
@@ -353,6 +354,7 @@ pub(super) fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usi
         .alias(format!("__w_sql_cte_distinct_{barrier_id}"))?
         .build()?;
     let window = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
         .partition_by(partition)
         .order_by(vec![col_exact(&ordinal).sort(true, false)])
         .build()?
@@ -400,6 +402,7 @@ pub(super) fn partitioned_limit(
         );
     }
     let window = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
         .partition_by(partition_by)
         .build()?
         .alias(row_number.clone());
