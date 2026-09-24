@@ -22,6 +22,29 @@ pub(crate) fn choose_op(
 ) -> IrResult<Vec<Row>> {
     let _ = correlation;
     if let ChooseSelector::Predicates(conditions) = selector {
+        // BranchStep processes one incoming traverser at a time unless an
+        // option contains a barrier. Partitioning nonbarrier options first
+        // reorders outputs (and their observable side effects) by option.
+        if !arms.iter().any(|arm| contains_barrier(&arm.body))
+            && default.is_none_or(|body| !contains_barrier(body))
+        {
+            let mut out = Vec::new();
+            for row in rows {
+                let mut matched = false;
+                for (condition, arm) in conditions.iter().zip(arms) {
+                    if matches!(eval(condition, &row, graph)?, Value::Bool(true)) {
+                        out.extend(run_with_outer(&arm.body, &row, graph, ctx)?);
+                        matched = true;
+                    }
+                }
+                if !matched {
+                    if let Some(default) = default {
+                        out.extend(run_with_outer(default, &row, graph, ctx)?);
+                    }
+                }
+            }
+            return Ok(out);
+        }
         let mut streams = vec![Vec::new(); arms.len()];
         let mut unmatched = Vec::new();
         for row in rows {
@@ -87,4 +110,15 @@ pub(crate) fn choose_op(
         }
     }
     Ok(out)
+}
+
+pub(crate) fn contains_barrier(node: &Node) -> bool {
+    matches!(node,
+        Node::GraphAggregate { .. } | Node::GraphGroupMap { .. }
+        | Node::GraphDistinct { .. } | Node::GraphSort { .. }
+        | Node::GraphSlice { .. } | Node::GraphSliceExpr { .. }
+        | Node::GraphBarrier { .. } | Node::GraphCap { .. }
+        | Node::GraphSideEffect { eager: true, .. }
+        | Node::GraphSample { kind: crate::ir::plan::SampleKind::Global(_), .. }
+    ) || crate::ir::analysis::children(node).into_iter().any(contains_barrier)
 }

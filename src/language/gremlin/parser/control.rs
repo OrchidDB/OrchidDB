@@ -338,14 +338,17 @@ impl LoweringVisitor {
             self.steps.push(Step::Identity);
             return;
         };
-        if let Some(Step::Io { reader, read: false, .. }) = self.steps.last_mut() {
-            if matches!(key.as_str(), "IO.reader" | "~tinkerpop.io.reader") {
-                if let Some(GValue::String(value)) = value {
-                    *reader = Some(value.strip_prefix("IO.").unwrap_or(&value).to_string());
-                    return;
-                }
+        if let Some(Step::Io { reader, writer, .. }) = self.steps.last_mut() {
+            let option = match key.as_str() {
+                "IO.reader" | "~tinkerpop.io.reader" => Some(reader),
+                "IO.writer" | "~tinkerpop.io.writer" => Some(writer),
+                _ => None,
+            };
+            if let (Some(option), Some(GValue::String(value))) = (option, value) {
+                *option = Some(value.strip_prefix("IO.").unwrap_or(&value).to_string());
+                return;
             }
-            self.fail(GremlinError::Parse("io() requires a supported reader option".into()));
+            self.fail(GremlinError::Parse("io() requires a supported reader or writer option".into()));
             return;
         }
         if self.apply_value_map_with_option(&key, value.as_ref()) {

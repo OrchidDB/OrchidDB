@@ -351,28 +351,16 @@ pub(crate) fn display_node_name(label: &str, id: i64) -> String {
     }
 }
 
-/// Approximate `Predicate.regex` without pulling in a regex engine.
-/// Handles the literal patterns and `.` wildcards that appear in the
-/// conformance corpus; everything else returns `false` rather than
-/// failing the run. A real regex backend is a follow-up.
-pub(crate) fn regex_match_literal(haystack: &str, pattern: &str) -> bool {
-    // Strip the conventional `^...$` anchors if present.
-    let core = pattern
-        .strip_prefix('^')
-        .unwrap_or(pattern)
-        .strip_suffix('$')
-        .unwrap_or_else(|| pattern.strip_prefix('^').unwrap_or(pattern));
-    // If the trimmed pattern has no metacharacters, do a literal full match.
-    let metas = ['.', '*', '+', '?', '|', '[', ']', '(', ')', '{', '}', '\\'];
-    if !core.chars().any(|c| metas.contains(&c)) {
-        return haystack == core;
-    }
-    // Pure-`.` wildcard pass: every position matches any char of the same
-    // length. Anything more complex is out of scope.
-    if core.chars().all(|c| c == '.') {
-        return haystack.chars().count() == core.chars().count();
-    }
-    false
+/// Native TextP regex uses search semantics (Java Matcher.find), while the
+/// native search service deliberately uses full-match semantics. Unsupported
+/// backtracking constructs fail explicitly instead of producing a false match.
+pub(crate) fn regex_match_literal(haystack: &str, pattern: &str) -> crate::ir::interpreter::IrResult<bool> {
+    let regex = regex::Regex::new(pattern).map_err(|error| {
+        crate::ir::interpreter::InterpretError::Runtime(format!(
+            "Invalid native regex (lookaround and backreferences require the JVM execution profile): {error}"
+        ))
+    })?;
+    Ok(regex.is_match(haystack))
 }
 
 /// Gremlin string steps validate their input independently of Cypher functions.
