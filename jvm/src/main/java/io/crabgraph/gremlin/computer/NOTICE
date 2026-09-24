@@ -1,4 +1,4 @@
-CrabMemory, CrabMessageBoard, CrabMessenger, CrabMapEmitter, and
+CrabMemory, CrabWorkerMemory, CrabMessageBoard, CrabMessenger, CrabMapEmitter, and
 CrabReduceEmitter are adapted from Apache TinkerPop 3.7.4 (revision
 fa698ba2aba8967dcd17eb61cb13648b934fab5b), tinkergraph-gremlin module.
 Original Apache License 2.0 headers are retained. The implementation is a
