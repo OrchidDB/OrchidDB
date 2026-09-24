@@ -17,6 +17,8 @@ import static io.crabgraph.gremlin.CrabCodec.fields;
  * instances provide independent sessions. Closing rolls back uncommitted changes.
  */
 public final class CrabGraph implements Graph {
+    public static final String DEFAULT_CARDINALITY = "crabgraph.vertex.defaultCardinality";
+    private final VertexProperty.Cardinality defaultCardinality;
     private final String executable;
     private final CrabSession session;
     private final boolean persistent;
@@ -27,8 +29,9 @@ public final class CrabGraph implements Graph {
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
 
-    private CrabGraph(String executable,Path path) { this(executable,path,null); }
-    private CrabGraph(String executable,Path path,RuntimeValues family) {
+    private CrabGraph(String executable,Path path) { this(executable,path,null,VertexProperty.Cardinality.single); }
+    private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality) {
+        defaultCardinality=Objects.requireNonNull(cardinality,"default vertex-property cardinality");
         this.executable=Objects.requireNonNull(executable,"native executable");
         persistent=path!=null;
         session=new CrabSession(executable,path);
@@ -39,6 +42,7 @@ public final class CrabGraph implements Graph {
         }
         try { session.call(fields("op","hello","version",1)); } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
         configuration.setProperty(Graph.GRAPH,CrabGraph.class.getName());
+        configuration.setProperty(DEFAULT_CARDINALITY,defaultCardinality.name());
         configuration.setProperty("crabgraph.native.executable",executable);
         if(path!=null) configuration.setProperty("crabgraph.native.path",path.toString());
     }
@@ -52,11 +56,12 @@ public final class CrabGraph implements Graph {
     public static CrabGraph open(Configuration config) {
         String executable=config.getString("crabgraph.native.executable",System.getenv("CRABGRAPH_JVM_STORE"));
         String path=config.getString("crabgraph.native.path",null);
-        return new CrabGraph(executable,path==null?null:Path.of(path));
+        return new CrabGraph(executable,path==null?null:Path.of(path),null,
+            VertexProperty.Cardinality.valueOf(config.getString(DEFAULT_CARDINALITY,"single")));
     }
     public CrabGraph freshGraph() {
         if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
-        return new CrabGraph(executable,null,runtime);
+        return new CrabGraph(executable,null,runtime,defaultCardinality);
     }
     public Object encodeValue(Object value) { return CrabCodec.encode(value,this); }
     public Object decodeValue(Object value) { return CrabCodec.decode(value,this); }
@@ -137,7 +142,23 @@ public final class CrabGraph implements Graph {
         ElementHelper.validateLabel(label);
         Map<String,Object> request=fields("op","addVertex","label",label,"properties",props);
         ElementHelper.getIdValue(keyValues).ifPresent(id->request.put("id",CrabCodec.encode(id)));
-        transaction.readWrite(); return decode(call(request));
+        if(defaultCardinality==VertexProperty.Cardinality.single || props.isEmpty()) {
+            Map<Object,Object> lastValueByKey=new LinkedHashMap<>();
+            for(Object property:props) { List<?> pair=(List<?>)property; lastValueByKey.put(pair.get(0),pair.get(1)); }
+            List<Object> singleProperties=new ArrayList<>();
+            lastValueByKey.forEach((key,value)->singleProperties.add(Arrays.asList(key,value)));
+            request.put("properties",singleProperties);
+            transaction.readWrite(); return decode(call(request));
+        }
+        // Keep creation atomic while honoring a configured list/set default on older protocol-v1 stores.
+        request.put("properties",Collections.emptyList());
+        Vertex[] created=new Vertex[1];
+        atomicMutation(()->{
+            created[0]=decode(call(request));
+            for(int i=0;i<keyValues.length;i+=2) if(keyValues[i] instanceof String)
+                created[0].property(defaultCardinality,(String)keyValues[i],keyValues[i+1]);
+        });
+        return created[0];
     }
     @Override public Iterator<Vertex> vertices(Object... ids) { return records(request("vertices","ids",ids(ids))); }
     @Override public Iterator<Edge> edges(Object... ids) { return records(request("edges","ids",ids(ids))); }
@@ -187,7 +208,7 @@ public final class CrabGraph implements Graph {
         @Override protected void doRollback() { call(fields("op","rollback")); open=false; }
     }
     @Override public Features features() { return FEATURES; }
-    private static final Features FEATURES=new Features() {
+    private final Features FEATURES=new Features() {
         private final GraphFeatures graph=new GraphFeatures() {
             @Override public boolean supportsComputer() { try { Class.forName("io.crabgraph.gremlin.computer.CrabGraphComputer"); return true; } catch(ClassNotFoundException e) { return false; } }
             @Override public boolean supportsPersistence() { return true; }
@@ -197,7 +218,7 @@ public final class CrabGraph implements Graph {
         };
         private final VertexPropertyFeatures vp=new NativeVertexPropertyFeatures();
         private final VertexFeatures vertex=new VertexFeatures() {
-            @Override public VertexProperty.Cardinality getCardinality(String key) { return VertexProperty.Cardinality.single; }
+            @Override public VertexProperty.Cardinality getCardinality(String key) { return defaultCardinality; }
             @Override public boolean supportsNullPropertyValues() { return true; }
             @Override public boolean supportsUuidIds() { return false; }
             @Override public boolean supportsCustomIds() { return false; }

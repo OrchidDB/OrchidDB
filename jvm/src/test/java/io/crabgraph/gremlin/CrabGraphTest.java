@@ -13,6 +13,42 @@ public class CrabGraphTest {
         executable=System.getenv("CRABGRAPH_JVM_STORE");
         Assume.assumeTrue("CRABGRAPH_JVM_STORE is required for native integration",executable!=null);
     }
+    @Test public void configuredDefaultCardinalityAppliesToTraversalCreationAndFreshGraphs() {
+        org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+        config.setProperty("crabgraph.native.executable",executable);
+        config.setProperty(CrabGraph.DEFAULT_CARDINALITY,"list");
+        try(CrabGraph graph=CrabGraph.open(config); CrabGraph fresh=graph.freshGraph()) {
+            assertEquals(VertexProperty.Cardinality.list,graph.features().vertex().getCardinality("x"));
+            Vertex v=graph.traversal().addV().property("x",1).property("x",2).next();
+            assertEquals(Long.valueOf(2),graph.traversal().V(v).properties("x").count().next());
+            Vertex constructed=graph.addVertex("x",1,"x",2);
+            assertEquals(Long.valueOf(2),graph.traversal().V(constructed).properties("x").count().next());
+            assertEquals(VertexProperty.Cardinality.list,fresh.features().vertex().getCardinality("x"));
+            Vertex child=fresh.addVertex("x",1,"x",2);
+            assertEquals(Long.valueOf(2),fresh.traversal().V(child).properties("x").count().next());
+        }
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex v=graph.traversal().addV().property("x",1).property("x",2).next();
+            assertEquals(Long.valueOf(1),graph.traversal().V(v).properties("x").count().next());
+            assertEquals(Integer.valueOf(2),v.value("x"));
+        }
+    }
+    @Test public void nullPropertyKeySelectsNothingAndMixedKeysIgnoreNull() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex v=graph.addVertex("x",1);
+            VertexProperty<Object> vp=v.property("x"); vp.property("meta",2);
+            Edge edge=v.addEdge("self",v,"weight",3);
+            for(Element element:Arrays.asList(v,vp,edge)) {
+                assertFalse(element.properties((String)null).hasNext());
+                assertFalse(element.properties(null,null).hasNext());
+                assertTrue(element.properties((String[])null).hasNext());
+            }
+            assertEquals("x",v.properties(null,"x").next().key());
+            assertEquals("meta",vp.properties(null,"meta").next().key());
+            assertEquals("weight",edge.properties(null,"weight").next().key());
+            assertEquals(Long.valueOf(0),graph.traversal().V().has((String)null).count().next());
+        }
+    }
     @Test public void traversesAndMutatesNativeElementsWithTypedProperties() {
         try(CrabGraph graph=CrabGraph.open(executable)) {
             Vertex a=graph.addVertex(T.id,"a",T.label,"person","name","Ada","age",31);
