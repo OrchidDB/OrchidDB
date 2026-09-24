@@ -42,7 +42,7 @@ public final class ProviderSuite {
         String selection = args[0];
         Path upstream = Path.of(args[1]);
         boolean inventory = args.length > 3 && args[3].equals("inventory");
-        boolean computer = selection.equals("ProcessComputerSuite");
+        boolean computer = selection.equals("ProcessComputerSuite") || Boolean.getBoolean("crabgraph.test.computer");
         GraphManager.setTraversalEngineType(computer ? TraversalEngine.Type.COMPUTER : TraversalEngine.Type.STANDARD);
         GraphManager.setGraphProvider(new NativeGraphProvider(computer));
         ObjectNode report = JSON.createObjectNode();
@@ -50,6 +50,7 @@ public final class ProviderSuite {
         report.put("profile", computer ? "jvm-graphcomputer" : "jvm-provider");
         report.put("selection", selection);
         report.put("inventory_only", inventory);
+        report.put("run_complete", false);
         report.put("native_rust_traversal_evidence", false);
         report.put("upstream_assertions_modified", false);
         ArrayNode cases = report.putArray("cases");
@@ -71,6 +72,10 @@ public final class ProviderSuite {
             Class<?> klass = Class.forName(parts[0]);
             hashes.put(klass.getName(), sourceHash(klass, upstream));
             requests.add(Request.method(klass,parts[1]));
+        } else if (!selection.endsWith("Suite")) {
+            Class<?> klass = Class.forName(selection);
+            hashes.put(klass.getName(), sourceHash(klass, upstream));
+            requests.add(Request.aClass(klass));
         } else {
             for (Class<?> klass : suiteClasses(selection)) {
                 hashes.put(klass.getName(), sourceHash(klass, upstream));
@@ -110,6 +115,7 @@ public final class ProviderSuite {
                 junit.run(runner);
             }
         }
+        report.put("run_complete", true);
         ObjectNode counts = report.putObject("counts");
         for (JsonNode row : cases) {
             String status = row.get("status").asText();
