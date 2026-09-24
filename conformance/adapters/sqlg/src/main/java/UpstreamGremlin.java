@@ -3,6 +3,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
 import java.lang.reflect.*;
+import javax.script.*;
+import groovy.lang.Closure;
+import io.crabgraph.gremlin.CrabGraph;
+import io.crabgraph.gremlin.CrabJvmExecutor;
+import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngine;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import com.fasterxml.jackson.databind.*;
 import org.apache.commons.configuration2.BaseConfiguration;
 import org.apache.tinkerpop.gremlin.features.*;
@@ -26,6 +32,7 @@ import io.cucumber.datatable.DataTable;
 public class UpstreamGremlin {
  static ObjectMapper json=new ObjectMapper();
  static String backend;
+ static boolean jvmProfile(){return "crabgraph-jvm".equals(backend)||"crabgraph-computer".equals(backend);}
  static class Bridge {
   Process process; BufferedReader output; BufferedWriter input;
   Bridge() throws Exception {
@@ -189,6 +196,9 @@ public class UpstreamGremlin {
  }
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
+  boolean allowNullPropertyValues;
+  final Map<String,Object> typedParameters=new LinkedHashMap<>();
+  GremlinGroovyScriptEngine scriptEngine; CrabJvmExecutor executor;
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
   public GraphTraversalSource getGraphTraversalSource(GraphData data) {
    try {
@@ -198,6 +208,13 @@ public class UpstreamGremlin {
      case "GRATEFUL" -> TinkerFactory.createGratefulDead();default -> {var c=new BaseConfiguration();c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER,"LONG");yield TinkerGraph.open(c);}
     };
     if(backend.equals("reference")){fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerTextSearchFactory(fixture));fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerDegreeCentralityFactory(fixture));graph=fixture;return fixture.traversal();}
+    if(jvmProfile()){
+     graph=CrabGraph.open();
+     copyFixture(fixture,graph);fixture.close();
+     if(graph.features().graph().supportsTransactions())graph.tx().commit();
+     source=backend.equals("crabgraph-computer")?graph.traversal().withComputer():graph.traversal();
+     return source;
+    }
     if(backend.equals("sqlg")){
      String key=data==null?"empty":data.name();
      if(cachedSqlg!=null && key.equals(cachedFixture)){fixture.close();graph=cachedSqlg;return graph.traversal();}
@@ -213,7 +230,7 @@ public class UpstreamGremlin {
     List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
     fixture.vertices().forEachRemaining(v->nodes.add(fixtureNode(v,backend)));
     fixture.edges().forEachRemaining(e->edges.add(fixtureEdge(e)));
-    var response=bridge.send(Map.of("op","fixture","name",data==null?"empty":data.name().toLowerCase(),"nodes",nodes,"edges",edges));
+    var response=bridge.send(Map.of("op","fixture","name",data==null?"empty":data.name().toLowerCase(),"nodes",nodes,"edges",edges,"allow_null_property_values",allowNullPropertyValues));
     if(response.has("error"))throw new IOException("fixture-adapter: "+response.get("error").asText());
     fixture.close();
     if(backend.equals("puppygraph")){
@@ -239,8 +256,63 @@ public class UpstreamGremlin {
    if(id instanceof Number)return id.toString();
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
-  public void afterEachScenario(){try{if(graph!=null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
+  public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
   public String changePathToDataFile(String path){return new File("conformance/upstream/cache/tinkerpop",path).getAbsolutePath();}
+ }
+ /** Copy only upstream input data; all evaluated traversals use the native provider. */
+ static void copyFixture(Graph fixture,Graph target) {
+  Map<Object,Vertex> vertices=new HashMap<>();
+  fixture.vertices().forEachRemaining(v->{
+   Vertex copy=target.addVertex(T.id,v.id(),T.label,v.label());vertices.put(v.id(),copy);
+   v.properties().forEachRemaining(p->{
+    List<Object> meta=new ArrayList<>(List.of(T.id,p.id()));
+    p.properties().forEachRemaining(m->{meta.add(m.key());meta.add(m.value());});
+    copy.property(VertexProperty.Cardinality.list,p.key(),p.value(),meta.toArray());
+   });
+  });
+  fixture.edges().forEachRemaining(e->{
+   List<Object> properties=new ArrayList<>(List.of(T.id,e.id()));
+   e.properties().forEachRemaining(p->{properties.add(p.key());properties.add(p.value());});
+   vertices.get(e.outVertex().id()).addEdge(e.label(),vertices.get(e.inVertex().id()),properties.toArray());
+  });
+ }
+ static void setField(StepDefinition steps,String name,Object value)throws Exception{
+  var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);f.set(steps,value);
+ }
+ static Context context(StepDefinition steps)throws Exception{return (Context)field(steps,"world");}
+ static Bindings bindings(StepDefinition steps,boolean remote)throws Exception{
+  Context context=context(steps);Bindings bindings=new SimpleBindings();bindings.putAll(context.typedParameters);
+  Object source=field(steps,"g");
+  if(remote){
+   if(context.executor==null)context.executor=new CrabJvmExecutor((CrabGraph)context.graph);
+   source=org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource.traversal().withRemote(context.executor.remoteConnection());
+  }
+  bindings.put("g",source);return bindings;
+ }
+ static GremlinGroovyScriptEngine scriptEngine(StepDefinition steps)throws Exception{
+  Context context=context(steps);if(context.scriptEngine==null)context.scriptEngine=new GremlinGroovyScriptEngine();return context.scriptEngine;
+ }
+ static Object typedParameter(StepDefinition steps,String value)throws Exception{
+  if(value.startsWith("c[")&&value.endsWith("]")){
+   String body=value.substring(2,value.length()-1).trim();
+   if(body.startsWith("{")&&body.endsWith("}"))body=body.substring(1,body.length()-1);
+   Object closure=scriptEngine(steps).eval("return {"+body+"}",bindings(steps,false));
+   if(!(closure instanceof Closure))throw new IllegalArgumentException("Lambda parameter did not compile to a Closure");
+   return closure;
+  }
+  var converter=StepDefinition.class.getDeclaredMethod("convertToObject",Object.class);converter.setAccessible(true);
+  Object converted;
+  try{converted=converter.invoke(steps,value);}catch(InvocationTargetException error){throw (Exception)error.getCause();}
+  // Upstream uses immutable Collections.emptySet; side effect seeds are mutable.
+  return converted instanceof Set<?> set?new LinkedHashSet<>(set):converted;
+ }
+ static Traversal<?,?> jvmTraversal(StepDefinition steps,String script)throws Exception{
+  var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
+  String updated=(String)path.invoke(steps,script);boolean remote=hasInlineLambda(updated);
+  Object traversal=scriptEngine(steps).eval(updated,bindings(steps,remote));
+  if(!(traversal instanceof Traversal<?,?> result))throw new IllegalArgumentException("Script did not return a traversal");
+  context(steps).queryTransports.add(Map.of("step",context(steps).currentStep,"query",updated,"backend",backend,"submission",remote?"JVM remote bytecode":"JVM provider traversal","typed_parameters",true));
+  return result;
  }
  static Object field(StepDefinition steps,String name)throws Exception{var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);return f.get(steps);}
  static String unquote(String x)throws Exception{return json.readValue(x,String.class);}
@@ -251,6 +323,11 @@ public class UpstreamGremlin {
   return Pattern.compile("\\bLambda\\s*\\.\\s*\\w+\\s*\\(").matcher(code).find();
  }
  static void defineTraversal(StepDefinition def,String script)throws Exception {
+  if(jvmProfile()){
+   try{setField(def,"traversal",jvmTraversal(def,script));}
+   catch(Exception error){setField(def,"error",error);}
+   return;
+  }
   def.theTraversalOf(script);
   if(field(def,"traversal")==null&&field(def,"error")!=null&&hasInlineLambda(script))
    throw new AssumptionViolatedException("unsupported-feature: remote-lambda: the gremlin-language execution profile cannot compile inline Lambda expressions; compiler diagnostic: "+field(def,"error"), (Throwable)field(def,"error"));
@@ -265,9 +342,12 @@ public class UpstreamGremlin {
  static void step(StepDefinition def,JsonNode s)throws Exception{
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
-  else if(t.equals("the graph initializer of"))def.theGraphInitializerOf(doc);
-  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches())def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));
-  else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches())def.usingTheParameterXOfPX(m.group(1),m.group(2),unquote(m.group(3)));
+  else if(t.equals("the graph initializer of")){if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
+  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile())context(def).typedParameters.put(m.group(1),typedParameter(def,unquote(m.group(2))));else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
+  else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(jvmProfile()){
+   Bindings values=bindings(def,false);values.put("__value",typedParameter(def,unquote(m.group(3))));
+   context(def).typedParameters.put(m.group(1),scriptEngine(def).eval("P."+m.group(2)+"(__value)",values));
+  }else def.usingTheParameterXOfPX(m.group(1),m.group(2),unquote(m.group(3)));}
   else if(t.equals("the traversal of"))defineTraversal(def,doc);
   else if(t.equals("iterated to list"))iterate(def,false);else if(t.equals("iterated next"))iterate(def,true);
   else if(t.startsWith("the result should be ")&&s.has("table")){
@@ -282,11 +362,12 @@ public class UpstreamGremlin {
   else throw new IllegalArgumentException("Unmapped upstream step: "+t);
  }
  public static void main(String[]args)throws Exception{
-  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("reference"))bridge=new Bridge();
+  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("reference")&&!jvmProfile())bridge=new Bridge();
   var input=new BufferedReader(new InputStreamReader(System.in));String line;
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
-   try{for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")||t.equals("@AllowNullPropertyValues")||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
+   try{for(var tag:request.get("tags"))if(tag.asText().equals("@AllowNullPropertyValues"))context.allowNullPropertyValues=true;
+   for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("crabgraph-computer")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("crabgraph")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
    for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}
    catch(AssumptionViolatedException ex){status=ex.getMessage().startsWith("unsupported-feature:")?"unsupported":"skipped";error=ex.getMessage();}
    catch(AssertionError ex){status="fail";error=ex.toString();}
