@@ -85,6 +85,7 @@ class Neo4j:
    from gremlin_python.driver.client import Client
    self.gremlin=Client(os.environ.get('PUPPY_GREMLIN','ws://127.0.0.1:18182/gremlin'),'g',username='puppygraph',password='conformance-local-only')
  def query(self,test):
+  from neo4j.exceptions import ServiceUnavailable,SessionExpired
   try:
    if test['language']=='gremlin':
     results=self.gremlin.submit(test['query']).all().result(timeout=20)
@@ -93,6 +94,7 @@ class Neo4j:
     if self.puppy:return {'rows':s.run(test['query']).values()}
     with s.begin_transaction(timeout=15) as tx:
      r=tx.run('CYPHER 5 '+test['query']).values();tx.rollback();return {'rows':r}
+  except (ServiceUnavailable,SessionExpired,OSError,TimeoutError):raise
   except Exception as e:return {'error':str(e)}
  def close(self):
   self.driver.close()

@@ -78,19 +78,17 @@ relative and absolute tolerance 1e-9. Graph elements and unsupported Arrow value
 are not silently coerced to primitive matches. A killed/timed-out adapter cannot
 supply delayed output to a later probe.
 
-## Continuous updates
+## Updating the published comparison
 
-`Refresh conformance evidence` runs weekly, on relevant main-branch commits and
-manually. It uses pinned Neo4j/PuppyGraph images and pinned library versions, saves
-90-day artifacts, validates evidence, commits results, then explicitly deploys the
-static sites. GitHub token commits do not trigger another workflow; the explicit
-publication job handles that. AWS uses the existing personal credential secrets.
+Run the suite locally using the commands above. Review result differences, then
+commit the result JSON and any accompanying investigation notes. GitHub Actions
+only builds and publishes the static sites from committed evidence; it does not
+run the conformance engines. Publication uses the existing personal AWS secrets.
 
-The published branch currently predates the local GraphEngine API. Until those
-engine commits land, automation reruns competitors and keeps the dated Crabgraph
-snapshot. It never fabricates a fresh Crabgraph result. Once the API is present,
-its runner builds and executes automatically; build failures block publication.
-Changed probes invalidate old snapshots and must be rerun before publishing.
+The Crabgraph snapshot records a local modified build and its binary hash. Do not
+relabel it as a released build. Changed probes invalidate old snapshots and must
+be rerun locally before publishing. Run `python conformance/investigate.py` to
+reproduce the SQLg optimizer investigation against the disposable local database.
 
 Add an independently justified expectation with each new test. Check Gremlin
 against the reference; use standards examples or manually derived Cypher/SPARQL
