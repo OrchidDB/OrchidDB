@@ -746,6 +746,10 @@ pub(crate) struct GroupAccumulator {
     rows: Vec<Row>,
     reducer: GroupValue,
     cached: Option<Value>,
+    finalizer: Option<Box<crate::ir::plan::Node>>,
+    finalizer_reducer: Option<AggKind>,
+    finalized_seed: Option<Value>,
+    finalizing: bool,
 }
 
 const GROUP_MEMBERS: &str = "__gremlin_group_members";
@@ -761,6 +765,11 @@ pub(crate) fn group_side_effect_write(
     rows: &[Row],
     graph: &PropertyGraph,
 ) -> IrResult<()> {
+    if ctx.group_side_effects.get(label).is_some_and(|state| state.finalizing) {
+        return Err(InterpretError::Unsupported("a group finalizer cannot update its own side effect".into()));
+    }
+    let mut finalizer = None;
+    let mut finalizer_reducer = None;
     let (prefix, reducer, reducing) = match value {
         GroupValue::Traversal { traversal, .. } => {
             let mut suffix = traversal.as_ref().clone();
@@ -769,10 +778,11 @@ pub(crate) fn group_side_effect_write(
             let prefix =
                 prefix.unwrap_or_else(|| std::mem::replace(&mut suffix, group_members_source()));
             if !group_suffix_is_pure(&suffix) {
-                return Err(InterpretError::Unsupported(
-                    "group side-effect value traversal has a writer after its reducing barrier"
-                        .into(),
-                ));
+                let (barrier, kind) = split_writer_finalizer(&mut suffix).ok_or_else(||
+                    InterpretError::Unsupported("group writers after a barrier currently require count() or fold() as the first barrier".into()))?;
+                finalizer = Some(suffix.boxed());
+                finalizer_reducer = Some(kind);
+                suffix = barrier;
             }
             (
                 Some(prefix),
@@ -801,6 +811,10 @@ pub(crate) fn group_side_effect_write(
             rows: Vec::new(),
             reducer,
             cached: None,
+            finalizer,
+            finalizer_reducer,
+            finalized_seed: None,
+            finalizing: false,
         });
     let rows = run_group_traversal(key_input, rows.to_vec(), graph, ctx)?;
     let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
@@ -918,7 +932,9 @@ pub(crate) fn group_side_effect_value(
             let value = rows.pop()
                 .and_then(|mut row| row.bindings.remove("current"))
                 .unwrap_or(Value::Map(BTreeMap::new()));
-            if matches!(state.reducer, GroupValue::CountBulk) {
+            if let Some(kind) = state.finalizer_reducer {
+                merge_finalized_group(state.finalized_seed.as_ref(), value, kind)
+            } else if matches!(state.reducer, GroupValue::CountBulk) {
                 merge_group_count_seed(ctx.side_effects.get(label), value)
             } else {
                 Ok(value)
@@ -930,6 +946,103 @@ pub(crate) fn group_side_effect_value(
     }
     ctx.group_side_effects.insert(label.to_string(), state);
     result.map(Some)
+}
+
+/// Only cap executes a group's post-barrier writer. Select reads the pending
+/// barrier value. An explicit second cap deliberately executes the finalizer
+/// again, as TinkerPop's SideEffectCapStep does; ordinary cache reads never do.
+pub(crate) fn group_side_effect_finalize(
+    ctx: &mut super::super::run::ExecutionContext,
+    label: &str,
+    graph: &PropertyGraph,
+) -> IrResult<Option<Value>> {
+    let Some(value) = group_side_effect_value(ctx, label, graph)? else { return Ok(None) };
+    let Some(finalizer) = ctx.group_side_effects.get(label).and_then(|state| state.finalizer.clone()) else {
+        return Ok(Some(value));
+    };
+    let state = ctx.group_side_effects.get_mut(label).expect("group exists");
+    if state.finalizing {
+        return Err(InterpretError::Unsupported("recursive group finalization".into()));
+    }
+    state.finalizing = true;
+    let result = (|| {
+        let mut entries = group_map_entries(&value)?;
+        for (_, value) in &mut entries {
+            let rows = run_group_traversal(&finalizer, vec![Row::new().with("current", value.clone())], graph, ctx)?;
+            if let Some(result) = rows.into_iter().next().and_then(|mut row| row.bindings.remove("current")) {
+                *value = result;
+            }
+        }
+        Ok(Value::map_from_entries(entries))
+    })();
+    let state = ctx.group_side_effects.get_mut(label).expect("group exists");
+    state.finalizing = false;
+    if let Ok(value) = &result {
+        // Subsequent contributions reduce into the actual published map,
+        // including any value transformation performed by the finalizer.
+        state.rows.clear();
+        state.finalized_seed = Some(value.clone());
+        state.cached = Some(value.clone());
+    }
+    result.map(Some)
+}
+
+fn group_map_entries(value: &Value) -> IrResult<Vec<(Value, Value)>> {
+    match value {
+        Value::Map(entries) => Ok(entries.iter().map(|(key, value)| (Value::String(key.clone()), value.clone())).collect()),
+        Value::TypedMap(entries) => Ok(entries.clone()),
+        _ => Err(InterpretError::Type("group side effect must be a map".into())),
+    }
+}
+
+fn merge_finalized_group(seed: Option<&Value>, value: Value, kind: AggKind) -> IrResult<Value> {
+    let Some(seed) = seed else { return Ok(value) };
+    let mut entries = group_map_entries(seed)?;
+    for (key, incoming) in group_map_entries(&value)? {
+        if let Some((_, existing)) = entries.iter_mut().find(|(candidate, _)| candidate == &key) {
+            match (kind, existing, incoming) {
+                (AggKind::CountBulk, Value::Long(previous), Value::Long(count)) => *previous = previous.wrapping_add(count),
+                (AggKind::CollectTraversers, Value::List(previous), Value::List(values)) => previous.extend(values),
+                _ => return Err(InterpretError::Type("published group value is incompatible with its barrier reducer".into())),
+            }
+        } else {
+            entries.push((key, incoming));
+        }
+    }
+    Ok(Value::map_from_entries(entries))
+}
+
+/// Detach the first supported reducing barrier from its post-processing
+/// traversal. Its prefix has already been captured at contribution insertion.
+fn split_writer_finalizer(node: &mut crate::ir::plan::Node) -> Option<(crate::ir::plan::Node, AggKind)> {
+    use crate::ir::plan::Node;
+    if let Node::GraphAggregate { group, aggs, input, .. } = node {
+        if group.is_empty() && aggs.len() == 1 && aggs[0].alias == "current"
+            && matches!(aggs[0].kind, AggKind::CountBulk | AggKind::CollectTraversers)
+            && matches!(input.as_ref(), Node::GraphCorrelate { bindings } if bindings == &[GROUP_MEMBERS])
+        {
+            let kind = aggs[0].kind;
+            return Some((std::mem::replace(node, group_members_source()), kind));
+        }
+    }
+    let input = match node {
+        Node::GraphFilter { input, .. } | Node::GraphProject { input, .. }
+        | Node::GraphCurrentProject { input, .. } | Node::GraphBind { input, .. }
+        | Node::GraphExpand { input, .. } | Node::GraphUnwind { input, .. }
+        | Node::GraphSelect { input, .. } | Node::GraphSideEffect { input, .. }
+        | Node::GraphReadSideEffect { input, .. } | Node::GraphGroupSideEffect { input, .. }
+        | Node::GraphGroupCountSideEffect { input, .. } | Node::GraphChoose { input, .. }
+        | Node::GraphCoalesce { input, .. } | Node::GraphPathFilter { input, .. }
+        | Node::GraphSetProperty { input, .. } | Node::GraphCreate { input, .. }
+        | Node::GraphDelete { input, .. } | Node::GraphAggregate { input, .. }
+        | Node::GraphGroupMap { input, .. } | Node::GraphDistinct { input, .. }
+        | Node::GraphSort { input, .. } | Node::GraphSlice { input, .. }
+        | Node::GraphSliceExpr { input, .. } | Node::GraphBarrier { input, .. } => input,
+        Node::GraphApply { left, .. } => left,
+        Node::GraphProcedureCall { input: Some(input), .. } => input,
+        _ => return None,
+    };
+    split_writer_finalizer(input)
 }
 
 /// The registered map is the initial reducer value. Merge it with accumulated
@@ -1056,6 +1169,7 @@ fn split_group_prefix(node: &mut crate::ir::plan::Node) -> Option<crate::ir::pla
         | Node::GraphCreate { input, .. }
         | Node::GraphDelete { input, .. } => input,
         Node::GraphApply { left, .. } => left,
+        Node::GraphProcedureCall { input: Some(input), .. } => input,
         _ => return None,
     };
     if let Some(prefix) = split_group_prefix(input) {

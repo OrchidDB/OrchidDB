@@ -214,3 +214,14 @@ async fn lazy_pipeline_preserves_barriers_and_executes_only_consumed_writes() {
     .await;
     assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 4);
 }
+
+#[tokio::test]
+async fn lazy_range_does_not_move_before_an_unproductive_projection() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    native(&mut engine, "g.addV('item').property('p',1)").await;
+    native(&mut engine, "g.addV('item')").await;
+    native(&mut engine, "g.addV('item').property('p',2)").await;
+    native(&mut engine, "g.addV('item').property('p',3)").await;
+    let rows = native(&mut engine, "g.V().as('a').store('x').select('a').by('p').limit(2).cap('x')").await;
+    assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 4);
+}
