@@ -38,3 +38,30 @@ fn partition_writes_are_visible_only_in_selected_partitions() {
     assert_eq!(values("g.V().has('name','bob').count()", &graph),vec![Value::Long(2)]);
     assert_eq!(values(&format!("{source}.V().has('name','bob').count()"), &graph),vec![Value::Long(1)]);
 }
+
+#[test]
+fn mixed_decimal_predicates_use_numberhelper_promotion() {
+    let graph = PropertyGraph::new();
+    for weight in [0.2, 0.4, 0.8] {
+        graph.insert_node(
+            "measurement",
+            [("weight".into(), Value::Float(weight))].into(),
+        );
+    }
+    for query in [
+        "g.V().has('weight',eq(0.4M)).values('weight')",
+        "g.withStrategies(new SubgraphStrategy(vertices:__.has('weight',eq(0.4M)))).V().values('weight')",
+        "g.V().has('weight',within(0.4M)).values('weight')",
+        "g.V().has('weight',between(0.4M,0.8M)).values('weight')",
+    ] {
+        assert_eq!(values(query, &graph), vec![Value::Float(0.4)], "{query}");
+    }
+    assert_eq!(
+        values("g.inject(0.4M,0.2D,0.4D).order()", &graph),
+        vec![
+            Value::Float(0.2),
+            Value::BigDecimal("0.4".parse().unwrap()),
+            Value::Float(0.4),
+        ]
+    );
+}

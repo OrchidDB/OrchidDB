@@ -663,9 +663,9 @@ pub(super) fn select_binding_by_pop(binding: &Value, history: &Value, pop: &str)
 
 pub(super) fn gremlin_within(needle: &Value, candidates: &Value) -> bool {
     if let Some(items) = runtime_list(candidates) {
-        return items.iter().any(|item| list_semantic_eq(needle, item));
+        return items.iter().any(|item| crate::ir::gremlin_semantics::equals(needle, item));
     }
-    list_semantic_eq(needle, candidates)
+    crate::ir::gremlin_semantics::equals(needle, candidates)
 }
 
 pub(super) fn gremlin_math_bin(op: &str, lhs: &Value, rhs: &Value) -> Value {

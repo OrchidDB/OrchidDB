@@ -1544,7 +1544,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if let Some(c) = ctx.traversalPredicate_between() {
-            self.lower_range_predicate(c.genericArgument_all(), true, true, "between");
+            self.lower_range_predicate(c.genericArgument_all(), true, false, "between");
             return;
         }
         if let Some(c) = ctx.traversalPredicate_outside() {
