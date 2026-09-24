@@ -294,7 +294,7 @@ pub(crate) fn write(graph: &PropertyGraph, path: &str, writer: &str) -> IrResult
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "ExportGraph",
+                "io.crabgraph.gremlin.codec.ExportGraph",
                 writer,
             ])
             .arg(&source.path)
