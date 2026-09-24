@@ -43,7 +43,7 @@ def execution_profile(engine):
          'execution':'GraphComputer' if engine=='crabgraph-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='crabgraph' else 'provider default',
          'executor':'Crabgraph JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by DuckDB and DataFusion, including JVM compute operators' if engine=='crabgraph' else engine,
-         'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg')}
+         'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('CRABGRAPH_JVM_STORE',str(REPO/'target/debug/crabgraph-jvm-store')))
  artifacts=[Path(entry) for entry in classpath.split(os.pathsep) if Path(entry).name=='crabgraph-jvm-0.1.0.jar']
@@ -91,7 +91,7 @@ class Gremlin:
  def close(self):
   if self.process:self.process.close()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','janusgraph','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
  if args.resume and args.engine=='crabgraph' and args.suite=='tinkerpop':p.error('Crabgraph Gremlin conformance requires one uninterrupted instance; resume is not permitted')
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
@@ -122,7 +122,7 @@ def main():
   build=jvm_build(adapter.classpath)
  elif args.engine=='crabgraph':
   binary=crabgraph_binary();build={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
- else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
+ else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','janusgraph':'1.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
  if args.engine=='crabgraph' and args.suite=='tinkerpop':
   def classpath_identity(classpath):
    artifacts=[]

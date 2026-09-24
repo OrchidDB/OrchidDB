@@ -18,9 +18,9 @@ def main():
     assert catalog['sources'] == sources, 'Catalog source pins changed'
     cases = {case['id']: case for case in catalog['cases']}
     assert len(cases) == len(catalog['cases']), 'Duplicate catalog IDs'
-    for engine in ('crabgraph', 'sqlg', 'puppygraph', 'reference', 'crabgraph-jvm', 'crabgraph-computer'):
+    for engine in ('crabgraph', 'sqlg', 'puppygraph', 'reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph'):
         for suite in sources:
-            if engine in ('reference', 'crabgraph-jvm', 'crabgraph-computer') and suite != 'tinkerpop':
+            if engine in ('reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph') and suite != 'tinkerpop':
                 continue
             path = ROOT / 'upstream-results' / f'{engine}-{suite}.json'
             run = json.loads(path.read_text())

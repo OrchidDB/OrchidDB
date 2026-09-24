@@ -4,8 +4,8 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from html import escape as e
 ROOT=Path(__file__).resolve().parents[2]/'conformance'
-PRODUCTS={'crabgraph':'Crabgraph','sqlg':'SQLg','puppygraph':'PuppyGraph'}
-SUITE_PRODUCTS={'opencypher':('crabgraph','puppygraph'),'tinkerpop':('crabgraph','sqlg','puppygraph'),'rdf':('crabgraph',)}
+PRODUCTS={'crabgraph':'Crabgraph','sqlg':'SQLg','puppygraph':'PuppyGraph','janusgraph':'JanusGraph'}
+SUITE_PRODUCTS={'opencypher':('crabgraph','puppygraph'),'tinkerpop':('crabgraph','sqlg','puppygraph','janusgraph'),'rdf':('crabgraph',)}
 COLUMNS=PRODUCTS
 SUITE_COLUMNS=SUITE_PRODUCTS
 def column_name(key,suite):return COLUMNS[key]
@@ -49,7 +49,7 @@ def render(out):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
   if result.get('case_sha256') and result['case_sha256']!=result_fingerprint(c):return {**result,'status':'stale'}
   return result
- html=['<div class="report-meta"><span>6,533 upstream scenarios · 3 products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
+ html=['<div class="report-meta"><span>6,533 upstream scenarios · 4 products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
  from leaderboard import render as render_leaderboard
  html.append(render_leaderboard(cases,get,runs,ROOT,download))
  html.append('<nav class="language-tabs" aria-label="Query languages">'+''.join('<a href="#language-'+suite+'" data-language-tab="'+suite+'">'+label+'<span>'+str(len({c['feature'] for c in cases if c['suite']==suite}))+' features</span></a>' for suite,label in [('tinkerpop','Gremlin'),('opencypher','Cypher'),('rdf','SPARQL')])+'</nav>')
@@ -91,8 +91,8 @@ def render(out):
    if any(s in ['fail','timeout'] for s in statuses):flags.append('failures')
    if any(r['status'] in ['adapter-error','stale','not-run'] for r in results.values()):flags.append('adapter')
    if any(r['status'] in ['skipped','unsupported'] for r in results.values()):flags.append('unexecuted')
-   if results['crabgraph']['status']=='pass' and any(p in results and results[p]['status']=='fail' for p in ['sqlg','puppygraph']):flags.append('crab-wins')
-   if results['crabgraph']['status']=='fail' and any(p in results and results[p]['status']=='pass' for p in ['sqlg','puppygraph']):flags.append('peer-wins')
+   if results['crabgraph']['status']=='pass' and any(p in results and results[p]['status']=='fail' for p in ['sqlg','puppygraph','janusgraph']):flags.append('crab-wins')
+   if results['crabgraph']['status']=='fail' and any(p in results and results[p]['status']=='pass' for p in ['sqlg','puppygraph','janusgraph']):flags.append('peer-wins')
    anchor='case-'+hashlib.sha256(c['id'].encode()).hexdigest()[:16]
    html.append('<tr class="comparison-row" id="'+anchor+'" data-language="'+suite+'" data-flags="'+' '.join(flags)+'"><th scope="row"><a href="#'+anchor+'">'+e(c['name'])+'</a><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="upstream"><summary>Scenario and expectation</summary><a href="'+e(c['source'])+'">Pinned upstream source ↗</a> · <a href="'+evidence_url+'">Evidence JSON</a><div class="evidence-content"></div></details></th>')
    for p,r in results.items():

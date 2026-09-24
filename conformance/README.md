@@ -2,13 +2,13 @@
 
 Published report: https://docs.crabgraph.net/conformance.html
 
-Compare **Crabgraph, SQLg and PuppyGraph**, using free editions. The primary
+Compare **Crabgraph, SQLg, PuppyGraph and JanusGraph**, using free editions. The primary
 corpus is the original upstream test data and assertions:
 
 | Suite | Pinned version | Scenarios | Compared interfaces |
 | --- | --- | ---: | --- |
 | openCypher TCK | 2024.3 | 3,897 | Crabgraph, PuppyGraph |
-| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | All three |
+| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | All four |
 | W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | Crabgraph |
 
 Every one of the 6,533 scenarios has a recorded outcome for every product.
@@ -183,3 +183,19 @@ and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
 runs the original JUnit methods locally. It records per-test timings, assertion
 source and native/provider binary provenance. Failed assertions, assumptions,
 and incomplete runs never become passing results. The production report counts each scenario once from its single engine run.
+
+## JanusGraph Gremlin comparison
+
+JanusGraph 1.1.0 runs locally with its free in-memory storage backend and TinkerPop
+3.7.4. The same pinned Gherkin assertions are used, plus the 15 original Java
+assertions for upstream placeholders. Fixtures retain property cardinality and
+metadata; JanusGraph assigns its own element identifiers. The recorded execution
+profile identifies language/profile exclusions separately from failures.
+
+```sh
+mvn -q -f conformance/adapters/sqlg/pom.xml -Pjanusgraph package dependency:build-classpath -Dmdep.outputFile=target/janusgraph-classpath.txt
+export CONFORMANCE_GREMLIN_CLASSPATH="$PWD/conformance/adapters/sqlg/target/classes:$(cat conformance/adapters/sqlg/target/janusgraph-classpath.txt)"
+python conformance/run.py --engine janusgraph --suite tinkerpop
+```
+
+Backend reference: https://docs.janusgraph.org/storage-backend/inmemorybackend/
