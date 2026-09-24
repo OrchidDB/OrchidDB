@@ -2,7 +2,7 @@
 //!
 //! Extracted from `interpreter.rs` lines 1120..1361.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::{AggCall, AggKind, IrExpr};
@@ -94,6 +94,7 @@ pub(crate) fn group_map_op(
     output: &str,
     rows: Vec<Row>,
     graph: &PropertyGraph,
+    ctx: &mut super::super::run::ExecutionContext,
 ) -> IrResult<Vec<Row>> {
     let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
     for row in rows {
@@ -104,12 +105,54 @@ pub(crate) fn group_map_op(
             groups.push((key_value, vec![row]));
         }
     }
+    // Java HashMap bucket order determines which group consumes the shared RNG first.
+    super::java_hashmap::java_hashmap_order(&mut groups);
     let mut entries = Vec::new();
-    for (key, group_rows) in groups {
+    for (key, mut group_rows) in groups {
+        // A named group can have a key but no productive prefix members;
+        // count/fold still receive the genuine empty stream.
+        group_rows.retain(|row| !row.bindings.contains_key("__gremlin_group_empty"));
         let value = match value {
             GroupValue::CountBulk => {
-                let total: u64 = group_rows.iter().map(|row| row.bulk).sum();
+                let total = checked_bulk_total(&group_rows)?;
                 Value::Long(total as i64)
+            }
+            GroupValue::Traversal {
+                traversal,
+                bulk_current,
+            } => {
+                let group_rows = if *bulk_current && group_suffix_is_pure(traversal) {
+                    compact_group_current(group_rows)?
+                } else {
+                    group_rows
+                };
+                let mut probe = traversal.as_ref().clone();
+                let value = if split_group_prefix(&mut probe).is_some() {
+                    // The final reduction can have a post-processing suffix;
+                    // group takes its first result, just like Traversal.next().
+                    run_group_traversal(traversal, group_rows, graph, ctx)?
+                        .into_iter()
+                        .next()
+                        .and_then(|mut row| row.bindings.remove("current"))
+                } else {
+                    // Without a barrier the map reducer assigns the first
+                    // result of each member, retaining the last productive one.
+                    let mut value = None;
+                    for row in group_rows {
+                        if let Some(result) = run_group_traversal(traversal, vec![row], graph, ctx)?
+                            .into_iter()
+                            .next()
+                            .and_then(|mut row| row.bindings.remove("current"))
+                        {
+                            value = Some(result);
+                        }
+                    }
+                    value
+                };
+                let Some(value) = value else {
+                    continue;
+                };
+                value
             }
             GroupValue::Aggregate(agg) => {
                 let value = compute_aggregate(agg, &group_rows, graph)?;
@@ -128,11 +171,7 @@ pub(crate) fn group_map_op(
         };
         entries.push((key, value));
     }
-    let ordered_members = matches!(value, GroupValue::Aggregate(agg) if agg.alias == "__group_stream_members");
-    let map = if ordered_members {
-        super::java_hashmap::java_hashmap_order(&mut entries);
-        Value::TypedMap(entries)
-    } else if entries
+    let map = if entries
         .iter()
         .all(|(key, _)| matches!(key, Value::String(_)))
     {
@@ -202,7 +241,7 @@ pub(crate) fn compute_aggregate(
             Ok(Value::Long(count))
         }
         AggKind::CountBulk => {
-            let total: u64 = rows.iter().map(|r| r.bulk).sum();
+            let total = checked_bulk_total(rows)?;
             Ok(Value::Long(total as i64))
         }
         AggKind::CountDistinct => {
@@ -261,26 +300,28 @@ pub(crate) fn compute_aggregate(
             let mut have_bigint = false;
             let mut have_decimal = false;
             let mut have_float = false;
-            for value in aggregate_values(expr, rows, graph, agg.distinct)? {
+            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
                 match value {
-                    Value::Byte(n) => int_sum += n as i64,
-                    Value::Short(n) => int_sum += n as i64,
-                    Value::Int(n) | Value::Long(n) => int_sum += n,
+                    Value::Byte(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
+                    Value::Short(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
+                    Value::Int(n) | Value::Long(n) => {
+                        int_sum = add_weighted_integer(int_sum, n, weight)?
+                    }
                     Value::Float32(f) => {
                         have_float = true;
-                        float_sum += f as f64;
+                        float_sum += f as f64 * weight as f64;
                     }
                     Value::Float(f) => {
                         have_float = true;
-                        float_sum += f;
+                        float_sum += f * weight as f64;
                     }
                     Value::BigInt(n) => {
                         have_bigint = true;
-                        bigint_sum += n;
+                        bigint_sum += n * BigInt::from(weight);
                     }
                     Value::BigDecimal(d) => {
                         have_decimal = true;
-                        decimal_sum += d;
+                        decimal_sum += d * BigDecimal::from(weight);
                     }
                     // Non-numeric inputs (Node/Edge/List/Map/Path) are
                     // ignored rather than failing; this matches the
@@ -309,28 +350,38 @@ pub(crate) fn compute_aggregate(
                 .as_ref()
                 .ok_or_else(|| InterpretError::Type("avg requires an argument".into()))?;
             let mut sum = 0.0_f64;
-            let mut count = 0_i64;
-            for value in aggregate_values(expr, rows, graph, agg.distinct)? {
+            let mut count = 0_u64;
+            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
                 match value {
                     Value::Byte(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Short(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Int(n) | Value::Long(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Float32(f) => {
-                        sum += f as f64;
-                        count += 1;
+                        sum += f as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Float(f) => {
-                        sum += f;
-                        count += 1;
+                        sum += f * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     _ => {}
                 }
@@ -475,15 +526,44 @@ pub(crate) fn compute_aggregate(
     }
 }
 
+fn checked_bulk_total(rows: &[Row]) -> IrResult<u64> {
+    rows.iter().try_fold(0u64, |total, row| {
+        total.checked_add(row.bulk).ok_or_else(|| {
+            InterpretError::ExecutionLimit("aggregate traverser bulk overflow".into())
+        })
+    })
+}
+
+fn add_weighted_integer(total: i64, value: i64, weight: u64) -> IrResult<i64> {
+    i64::try_from(i128::from(total) + i128::from(value) * i128::from(weight))
+        .map_err(|_| InterpretError::Runtime("integer sum overflow".into()))
+}
+
 fn aggregate_values(
     expr: &IrExpr,
     rows: &[Row],
     graph: &PropertyGraph,
     distinct: bool,
 ) -> IrResult<Vec<Value>> {
+    Ok(aggregate_weighted_values(expr, rows, graph, distinct)?
+        .into_iter()
+        .map(|(value, _)| value)
+        .collect())
+}
+
+/// Keep bulk as a weight rather than expanding potentially huge frontiers.
+fn aggregate_weighted_values(
+    expr: &IrExpr,
+    rows: &[Row],
+    graph: &PropertyGraph,
+    distinct: bool,
+) -> IrResult<Vec<(Value, u64)>> {
     let mut values = Vec::new();
     let mut seen = BTreeSet::new();
     for row in rows {
+        if row.bulk == 0 {
+            continue;
+        }
         let value = eval(expr, row, graph)?;
         if matches!(value, Value::Null) {
             continue;
@@ -491,7 +571,7 @@ fn aggregate_values(
         if distinct && !seen.insert(encode_value(&value)) {
             continue;
         }
-        values.push(value);
+        values.push((value, if distinct { 1 } else { row.bulk }));
     }
     Ok(values)
 }
@@ -608,6 +688,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sum_and_mean_weight_bulk_without_expanding_rows() {
+        let graph = PropertyGraph::new();
+        let mut first = Row::new().with("current", Value::Int(2));
+        first.bulk = 1_000_000_000;
+        let mut second = Row::new().with("current", Value::Int(8));
+        second.bulk = 3_000_000_000;
+        let rows = [first, second];
+        let mut agg = AggCall {
+            kind: AggKind::Sum,
+            alias: "sum".into(),
+            arg: Some(IrExpr::Binding("current".into())),
+            distinct: false,
+        };
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Int(26_000_000_000)
+        );
+        agg.kind = AggKind::Avg;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Float(6.5)
+        );
+        agg.distinct = true;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Float(5.0)
+        );
+        agg.kind = AggKind::Sum;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Int(10)
+        );
+    }
+
+    #[test]
     fn count_if_truthiness_includes_unsigned_numbers() {
         assert!(aggregate_truthy(&Value::UInt8(1)));
         assert!(aggregate_truthy(&Value::UInt16(1)));
@@ -621,4 +736,300 @@ mod tests {
         assert!(!aggregate_truthy(&Value::UInt64(0)));
         assert!(!aggregate_truthy(&Value::UInt128(BigInt::from(0))));
     }
+}
+
+/// Named groups retain contributions at their first barrier. Prefix steps,
+/// including graph and side-effect writers, execute exactly once at insertion.
+/// The pure reducing suffix can then be reevaluated after new contributions.
+#[derive(Debug)]
+pub(crate) struct GroupAccumulator {
+    rows: Vec<Row>,
+    reducer: GroupValue,
+    cached: Option<Value>,
+}
+
+const GROUP_MEMBERS: &str = "__gremlin_group_members";
+const GROUP_KEY: &str = "__gremlin_group_key";
+const GROUP_VALUE: &str = "__gremlin_group_value";
+
+pub(crate) fn group_side_effect_write(
+    ctx: &mut super::super::run::ExecutionContext,
+    label: &str,
+    key: &IrExpr,
+    value: &GroupValue,
+    key_input: &crate::ir::plan::Node,
+    rows: &[Row],
+    graph: &PropertyGraph,
+) -> IrResult<()> {
+    let (prefix, reducer, reducing) = match value {
+        GroupValue::Traversal { traversal, .. } => {
+            let mut suffix = traversal.as_ref().clone();
+            let prefix = split_group_prefix(&mut suffix);
+            let reducing = prefix.is_some();
+            let prefix =
+                prefix.unwrap_or_else(|| std::mem::replace(&mut suffix, group_members_source()));
+            if !group_suffix_is_pure(&suffix) {
+                return Err(InterpretError::Unsupported(
+                    "group side-effect value traversal has a writer after its reducing barrier"
+                        .into(),
+                ));
+            }
+            (
+                Some(prefix),
+                GroupValue::Traversal {
+                    traversal: suffix.boxed(),
+                    // Prefix evaluation may introduce bindings used by the
+                    // reducer (for example a nested group's computed key).
+                    bulk_current: false,
+                },
+                reducing,
+            )
+        }
+        GroupValue::Aggregate(agg) => {
+            let mut reducer = agg.clone();
+            if reducer.arg.is_some() {
+                reducer.arg = Some(IrExpr::Binding(GROUP_VALUE.into()));
+            }
+            (None, GroupValue::Aggregate(reducer), true)
+        }
+        other => (None, other.clone(), true),
+    };
+    // Register even on an empty stream: cap must return an empty map.
+    ctx.group_side_effects
+        .entry(label.to_string())
+        .or_insert_with(|| GroupAccumulator {
+            rows: Vec::new(),
+            reducer,
+            cached: None,
+        });
+    let rows = run_group_traversal(key_input, rows.to_vec(), graph, ctx)?;
+    let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
+    for row in &rows {
+        let key_value = eval(key, row, graph)?;
+        if let Some((_, members)) = groups
+            .iter_mut()
+            .find(|(existing, _)| existing == &key_value)
+        {
+            members.push(row.clone());
+        } else {
+            groups.push((key_value, vec![row.clone()]));
+        }
+    }
+    for (key, members) in groups {
+        let members = if matches!(
+            value,
+            GroupValue::Traversal {
+                bulk_current: true,
+                ..
+            }
+        ) && prefix.as_ref().is_none_or(group_suffix_is_pure)
+        {
+            compact_group_current(members)?
+        } else {
+            members
+        };
+        let contributions = match &prefix {
+            Some(prefix) if reducing => run_group_traversal(prefix, members, graph, ctx)?,
+            Some(prefix) => {
+                let mut results = Vec::new();
+                for member in members {
+                    if let Some(row) = run_group_traversal(prefix, vec![member], graph, ctx)?
+                        .into_iter()
+                        .next()
+                    {
+                        results.push(row);
+                    }
+                }
+                results
+            }
+            None => {
+                let mut members = members;
+                if let GroupValue::Aggregate(agg) = value {
+                    if let Some(arg) = &agg.arg {
+                        for member in &mut members {
+                            let captured = eval(arg, member, graph)?;
+                            member.bindings.insert(GROUP_VALUE.into(), captured);
+                        }
+                    }
+                }
+                members
+            }
+        };
+        let state = ctx
+            .group_side_effects
+            .get_mut(label)
+            .expect("group registered");
+        state.cached = None;
+        if matches!(state.reducer, GroupValue::CountBulk) {
+            let bulk = checked_bulk_total(&contributions)?;
+            if let Some(existing) = state
+                .rows
+                .iter_mut()
+                .find(|row| row.bindings.get(GROUP_KEY) == Some(&key))
+            {
+                existing.bulk = existing.bulk.checked_add(bulk).ok_or_else(|| {
+                    InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+                })?;
+            } else {
+                let mut row = Row::new().with(GROUP_KEY, key);
+                row.bulk = bulk;
+                state.rows.push(row);
+            }
+            continue;
+        }
+        // Empty inputs to count/fold still define a productive group. Keep
+        // its key separately from the contribution rows below.
+        if contributions.is_empty() {
+            state.rows.push(
+                Row::new()
+                    .with(GROUP_KEY, key)
+                    .with("__gremlin_group_empty", Value::Bool(true)),
+            );
+        } else {
+            state.rows.extend(contributions.into_iter().map(|mut row| {
+                row.bindings.insert(GROUP_KEY.into(), key.clone());
+                row
+            }));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn group_side_effect_value(
+    ctx: &mut super::super::run::ExecutionContext,
+    label: &str,
+    graph: &PropertyGraph,
+) -> IrResult<Option<Value>> {
+    let Some(mut state) = ctx.group_side_effects.remove(label) else {
+        return Ok(None);
+    };
+    let result = if let Some(value) = &state.cached {
+        Ok(value.clone())
+    } else {
+        group_map_op(
+            &IrExpr::Binding(GROUP_KEY.into()),
+            &state.reducer,
+            "current",
+            state.rows.clone(),
+            graph,
+            ctx,
+        )
+        .map(|mut rows| {
+            rows.pop()
+                .and_then(|mut row| row.bindings.remove("current"))
+                .unwrap_or(Value::Map(BTreeMap::new()))
+        })
+    };
+    if let Ok(value) = &result {
+        state.cached = Some(value.clone());
+    }
+    ctx.group_side_effects.insert(label.to_string(), state);
+    result.map(Some)
+}
+
+/// Called only after the planner proves the value traversal cannot observe
+/// member order or inherited labels/path/sack/loop state. Preserve multiplicity
+/// in bulk; weighted reducers and graph expansion consume that bulk directly.
+fn compact_group_current(rows: Vec<Row>) -> IrResult<Vec<Row>> {
+    if rows.iter().any(|row| {
+        row.bindings.contains_key("__sack")
+            || row.bindings.get("__bulk_enabled") == Some(&Value::Bool(false))
+    }) {
+        return Ok(rows);
+    }
+    let mut compacted: Vec<Row> = Vec::new();
+    let mut positions = BTreeMap::<Vec<u8>, usize>::new();
+    for mut row in rows {
+        let key = encode_value(row.bindings.get("current").unwrap_or(&Value::Null));
+        if let Some(index) = positions.get(&key) {
+            let previous = &mut compacted[*index];
+            previous.bulk = previous.bulk.checked_add(row.bulk).ok_or_else(|| {
+                InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+            })?;
+        } else {
+            row.bindings.retain(|binding, _| {
+                binding == "current"
+                    || binding == "__bulk_enabled"
+                    || binding == "__gremlin_bulk_safe"
+            });
+            positions.insert(key, compacted.len());
+            compacted.push(row);
+        }
+    }
+    Ok(compacted)
+}
+
+fn run_group_traversal(
+    traversal: &crate::ir::plan::Node,
+    rows: Vec<Row>,
+    graph: &PropertyGraph,
+    ctx: &mut super::super::run::ExecutionContext,
+) -> IrResult<Vec<Row>> {
+    // A group's local barriers must not borrow persistent dedup state from
+    // an enclosing repeat or from a different group.
+    ctx.push_step_state_frame();
+    let result = super::repeat::run_body_with_frontier(traversal, rows, graph, ctx);
+    ctx.pop_step_state_frame();
+    result
+}
+
+fn group_members_source() -> crate::ir::plan::Node {
+    crate::ir::plan::Node::GraphCorrelate {
+        bindings: vec![GROUP_MEMBERS.into()],
+    }
+}
+
+/// Find the first barrier on the main value traversal, excluding barriers
+/// in per-traverser child traversals. Replace its input with stored members.
+fn split_group_prefix(node: &mut crate::ir::plan::Node) -> Option<crate::ir::plan::Node> {
+    use crate::ir::plan::Node;
+    let barrier = matches!(
+        node,
+        Node::GraphAggregate { .. }
+            | Node::GraphGroupMap { .. }
+            | Node::GraphDistinct { .. }
+            | Node::GraphSort { .. }
+            | Node::GraphSlice { .. }
+            | Node::GraphSliceExpr { .. }
+            | Node::GraphBarrier { .. }
+            | Node::GraphSample { kind: crate::ir::plan::SampleKind::Global(_), .. }
+    );
+    let input = match node {
+        Node::GraphAggregate { input, .. }
+        | Node::GraphGroupMap { input, .. }
+        | Node::GraphDistinct { input, .. }
+        | Node::GraphSort { input, .. }
+        | Node::GraphSample { input, .. }
+        | Node::GraphSlice { input, .. }
+        | Node::GraphSliceExpr { input, .. }
+        | Node::GraphBarrier { input, .. }
+        | Node::GraphFilter { input, .. }
+        | Node::GraphProject { input, .. }
+        | Node::GraphCurrentProject { input, .. }
+        | Node::GraphBind { input, .. }
+        | Node::GraphExpand { input, .. }
+        | Node::GraphUnwind { input, .. }
+        | Node::GraphSelect { input, .. }
+        | Node::GraphSideEffect { input, .. }
+        | Node::GraphReadSideEffect { input, .. }
+        | Node::GraphGroupSideEffect { input, .. }
+        | Node::GraphGroupCountSideEffect { input, .. }
+        | Node::GraphChoose { input, .. }
+        | Node::GraphCoalesce { input, .. }
+        | Node::GraphPathFilter { input, .. }
+        | Node::GraphSetProperty { input, .. }
+        | Node::GraphCreate { input, .. }
+        | Node::GraphDelete { input, .. } => input,
+        Node::GraphApply { left, .. } => left,
+        _ => return None,
+    };
+    if let Some(prefix) = split_group_prefix(input) {
+        return Some(prefix);
+    }
+    barrier.then(|| *std::mem::replace(input, group_members_source().boxed()))
+}
+
+fn group_suffix_is_pure(node: &crate::ir::plan::Node) -> bool {
+    use crate::ir::analysis::{Effect, children, node_effect};
+    node_effect(node) == Effect::Pure && children(node).into_iter().all(group_suffix_is_pure)
 }

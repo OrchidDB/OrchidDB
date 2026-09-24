@@ -2,11 +2,10 @@
 
 use std::iter::Peekable;
 
-use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
+use super::context::{ChildTraversalKind, Lowerer, TraversalContext};
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::IrExpr;
-use crate::ir::plan::{ApplyKind, EmitMode, Node, PathObjects, UnionAlign};
-use crate::ir::policy::OptionalMissing;
+use crate::ir::plan::{EmitMode, Node, PathObjects};
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 
@@ -59,7 +58,15 @@ where
         Some(n) => Some(n as u32),
         None => None,
     };
+    let inherited_labels = lo.live_labels.clone();
+    // RepeatUnrollStrategy precedes PathRetractionStrategy. Fixed repeats
+    // must retain child references across the logical unrolled copies.
+    // Multiple repeat children (until/emit/body) also share their keepers.
+    if times.is_some() || until.is_some() || emit.is_some() {
+        lo.live_labels.extend(super::label_liveness::references_iter(body.iter()));
+    }
     let body_node = lower_child_traversal(body, lo, ctx, ChildTraversalKind::RepeatBody)?;
+    lo.live_labels = inherited_labels;
 
     // Postfix `repeat(...).emit(...)`. None inner = emit() always, Some
     // inner = emit(P) or emit(<traversal>) — try a row-level expression
@@ -111,63 +118,19 @@ where
         },
         None => (None, None),
     };
-    // `until(p).repeat(body)` is while-do: a seed traverser that already
-    // satisfies `p` leaves the loop without running the body (TinkerPop's
-    // `untilFirst`), and is never emit-split. Every later check happens at
-    // the same loop count as the IR's post-step `until`, so only the seed
-    // needs splitting: exiting seeds are emitted directly, the rest loop.
-    let seed_matches =
-        |kind: ApplyKind, negate: bool, seed: Node| match (&until_expr, &until_traversal) {
-            (Some(expr), _) => Node::GraphFilter {
-                condition: if negate {
-                    IrExpr::Case {
-                        arms: vec![(expr.clone(), IrExpr::lit_bool(false))],
-                        otherwise: Some(Box::new(IrExpr::lit_bool(true))),
-                    }
-                } else {
-                    expr.clone()
-                },
-                input: seed.boxed(),
-            },
-            (None, Some(probe)) => Node::GraphApply {
-                kind,
-                correlation: vec![CURRENT.into()],
-                outputs: Vec::new(),
-                optional_missing: OptionalMissing::Null,
-                left: seed.boxed(),
-                right: probe.clone(),
-            },
-            (None, None) => seed,
-        };
-    let (exiting, seed) = if until_first && (until_expr.is_some() || until_traversal.is_some()) {
-        (
-            Some(seed_matches(ApplyKind::Semi, false, input.clone())),
-            seed_matches(ApplyKind::Anti, true, input),
-        )
-    } else {
-        (None, input)
-    };
-    let repeat = Node::GraphRepeat {
+    Ok(Node::GraphRepeat {
         loop_name: name.map(str::to_string),
         times: repeat_times,
         emit: emit_mode,
+        until_first,
         until: until_expr,
         until_traversal,
         path: None,
         path_objects: PathObjects::VerticesOnly,
         prefix_predicate,
         prefix_traversal,
-        seed: seed.boxed(),
+        seed: input.boxed(),
         body: body_node.boxed(),
-    };
-    Ok(match exiting {
-        Some(exiting) => Node::GraphUnion {
-            all: true,
-            align: UnionAlign::ByVariableName,
-            left: exiting.boxed(),
-            right: repeat.boxed(),
-        },
-        None => repeat,
     })
 }
 
@@ -177,7 +140,6 @@ where
 /// a sub-traversal probe (for emit) or `lit(false)` (for until).
 fn try_until_steps_to_expr(steps: &[Step]) -> GremlinPlanResult<Option<crate::ir::expr::IrExpr>> {
     use super::predicates::predicate_to_expr;
-    use crate::ir::expr::IrExpr;
     use crate::ir::policy::PropertyMissing;
     let cur = || IrExpr::Binding("current".into());
     Ok(Some(match steps {

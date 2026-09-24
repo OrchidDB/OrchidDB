@@ -93,7 +93,33 @@ impl<'a> LoweringContext<'a> {
             let filtered = LogicalPlanBuilder::from(input.plan.clone())
                 .filter(condition.clone())?
                 .build()?;
-            branches.push(self.lower_with_correlate(filtered, &arm.body)?);
+            if !matches!(arm.body, Node::GraphEmpty) {
+                let mut branch = self.lower_with_correlate(filtered.clone(), &arm.body)?;
+                if matches!(selector, ChooseSelector::Predicates(_)) {
+                    // A reducer must not manufacture a row for an empty routed
+                    // arm. Gate against the saved stream, preserving any outer
+                    // Apply occurrence keys rather than testing globally.
+                    let keys = apply_correlation_key_columns(&filtered);
+                    let mut projections = Vec::new();
+                    let mut conditions = Vec::new();
+                    for (index, key) in keys.iter().enumerate() {
+                        let gate_key = format!("__branch_gate_{index}");
+                        projections.push(col_exact(key).alias(&gate_key));
+                        conditions.push(binary(col_exact(key), BinaryOp::Eq, col_exact(&gate_key)));
+                    }
+                    if projections.is_empty() {
+                        projections.push(lit(true).alias("__branch_gate"));
+                        conditions.push(lit(true));
+                    }
+                    let gate = LogicalPlanBuilder::from(filtered)
+                        .project(projections)?
+                        .build()?;
+                    branch.plan = LogicalPlanBuilder::from(branch.plan)
+                        .join_on(gate, JoinType::LeftSemi, conditions)?
+                        .build()?;
+                }
+                branches.push(branch);
+            }
             unmatched_condition = Some(match unmatched_condition {
                 Some(acc) => Expr::or(acc, condition.clone()),
                 None => condition.clone(),
@@ -109,7 +135,9 @@ impl<'a> LoweringContext<'a> {
                     .build()?,
                 None => input.plan.clone(),
             };
-            branches.push(self.lower_with_correlate(default_input, default)?);
+            if !matches!(default, Node::GraphEmpty) {
+                branches.push(self.lower_with_correlate(default_input, default)?);
+            }
         } else if unmatched == ChooseUnmatched::PassThrough {
             let pass_input = match unmatched_filter {
                 Some(condition) => LogicalPlanBuilder::from(input.plan.clone())
@@ -130,8 +158,37 @@ impl<'a> LoweringContext<'a> {
         }
 
         let Some(first) = branches.first().cloned() else {
-            return Ok(input);
+            return Ok(LoweredNode {
+                plan: LogicalPlanBuilder::from(input.plan)
+                    .filter(lit(false))?
+                    .build()?,
+                islands: input.islands,
+                fields: input.fields,
+                result_form: input.result_form,
+            });
         };
+        if self.language == Language::Gremlin {
+            // SQL UNION coerces a mixed scalar column (for example name/age)
+            // to one physical type. Preserve each traverser's value type by
+            // using the native runtime for such choices.
+            let mut current_type = None;
+            for branch in &branches {
+                if let Some(ty) = plan_column_type(&branch.plan, "current") {
+                    if ty != DataType::Null {
+                        if current_type
+                            .as_ref()
+                            .is_some_and(|previous| previous != &ty)
+                        {
+                            return Err(RelError::Unsupported(
+                                "Gremlin heterogeneous choice values require native runtime types"
+                                    .into(),
+                            ));
+                        }
+                        current_type = Some(ty);
+                    }
+                }
+            }
+        }
         let mut plan = first.plan;
         let mut islands = input.islands;
         islands.merge(first.islands);
@@ -156,6 +213,10 @@ impl<'a> LoweringContext<'a> {
         arms: &[ChooseArm],
     ) -> RelResult<Vec<Expr>> {
         match selector {
+            ChooseSelector::Predicates(conditions) => conditions
+                .iter()
+                .map(|condition| self.lower_expr(plan, condition))
+                .collect(),
             ChooseSelector::Boolean(condition) => {
                 let condition = self.lower_expr(plan, condition)?;
                 let mut out = Vec::with_capacity(arms.len());
@@ -185,11 +246,14 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    pub(super) fn lower_with_correlate(&mut self, plan: LogicalPlan, node: &Node) -> RelResult<LoweredNode> {
+    pub(super) fn lower_with_correlate(
+        &mut self,
+        plan: LogicalPlan,
+        node: &Node,
+    ) -> RelResult<LoweredNode> {
         let previous = self.correlate_plan.replace(plan);
         let lowered = self.lower_node(node);
         self.correlate_plan = previous;
         lowered
     }
-
 }

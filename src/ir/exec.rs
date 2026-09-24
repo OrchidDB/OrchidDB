@@ -350,6 +350,23 @@ enum Decline {
     Reason(String),
 }
 
+/// Recursive SQL materializes every walk. For a repeat explicitly proven
+/// independent of path history, the interpreter can retain multiplicities
+/// in a compact frontier. Prefer that execution path whenever the proof holds;
+/// even a short repeat can otherwise expand a high-degree graph enormously.
+fn prefers_bulk_repeat(node: &Node) -> bool {
+    fn marked(node: &Node) -> bool {
+        if let Node::GraphProject { items, .. } = node {
+            if items.iter().any(|item| item.alias == "__gremlin_bulk_safe" && item.expr == crate::ir::expr::IrExpr::lit_bool(true)) { return true; }
+        }
+        children(node).into_iter().any(marked)
+    }
+    if let Node::GraphRepeat { seed, .. } = node {
+        if marked(seed) { return true; }
+    }
+    children(node).into_iter().any(prefers_bulk_repeat)
+}
+
 /// Execute `node` on the target engine and materialize the result.
 async fn try_island(
     node: &Node,
@@ -363,7 +380,7 @@ async fn try_island(
     if children_count(node) == 0 {
         return Err(Decline::Ineligible);
     }
-    if contains_mutation(node) {
+    if contains_mutation(node) || prefers_bulk_repeat(node) {
         return Err(Decline::Ineligible);
     }
     // `GraphReturn` is result shaping, not query work: it names the output
@@ -706,6 +723,21 @@ fn children_count(node: &Node) -> usize {
 fn children(node: &Node) -> Vec<&Node> {
     use Node::*;
     match node {
+        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
+        GraphGroupSideEffect { input, key_input, value, .. } => {
+            let mut nodes = vec![input.as_ref(), key_input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_ref());
+            }
+            nodes
+        }
+        GraphGroupMap { input, value, .. } => {
+            let mut nodes = vec![input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_ref());
+            }
+            nodes
+        }
         GraphMerge {
             input,
             match_arm,
@@ -725,8 +757,8 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
-        | GraphGroupMap { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
@@ -788,6 +820,21 @@ fn children(node: &Node) -> Vec<&Node> {
 fn children_mut(node: &mut Node) -> Vec<&mut Node> {
     use Node::*;
     match node {
+        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
+        GraphGroupSideEffect { input, key_input, value, .. } => {
+            let mut nodes = vec![input.as_mut(), key_input.as_mut()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_mut());
+            }
+            nodes
+        }
+        GraphGroupMap { input, value, .. } => {
+            let mut nodes = vec![input.as_mut()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_mut());
+            }
+            nodes
+        }
         GraphMerge {
             input,
             match_arm,
@@ -807,8 +854,8 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
-        | GraphGroupMap { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }

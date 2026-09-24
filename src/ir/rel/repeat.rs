@@ -52,6 +52,7 @@ pub(super) struct RepeatSpec<'n> {
     pub loop_name: Option<&'n str>,
     pub times: Option<u32>,
     pub emit: &'n EmitMode,
+    pub until_first: bool,
     pub until: Option<&'n IrExpr>,
     pub until_traversal: Option<&'n Node>,
     pub path: Option<&'n str>,
@@ -155,9 +156,23 @@ impl LoweringContext<'_> {
         let depth_col = format!("__rep_{uniq}_depth");
         let stop_col = format!("__rep_{uniq}_stop");
         let has_until = spec.until.is_some() || spec.until_traversal.is_some();
-        let seed_input = LogicalPlanBuilder::from(seed_plan)
+        let mut seed_input = LogicalPlanBuilder::from(seed_plan)
             .alias(format!("__rep_{uniq}_seed"))?
             .build()?;
+
+        let mut seed_islands = seed.islands.clone();
+        let seed_stop = if spec.until_first {
+            let mut fields = output_fields(&seed_input).iter().map(col_exact).collect::<Vec<_>>();
+            for column in &loop_columns { fields.push(lit(0_i64).alias(column)); }
+            seed_input = LogicalPlanBuilder::from(seed_input).project(fields)?.build()?;
+            if let Some(probe) = spec.until_traversal {
+                let (joined, matched) = self.probe_match(seed_input, probe, &mut seed_islands)?;
+                seed_input = joined;
+                Some(matched)
+            } else if let Some(predicate) = spec.until {
+                Some(case_when(self.lower_expr(&seed_input, predicate)?, lit(true), lit(false)))
+            } else { None }
+        } else { None };
 
         // At most two passes: the first discovers the types of bindings the
         // body introduces but the seed lacks (e.g. Gremlin's `__path`), the
@@ -171,6 +186,7 @@ impl LoweringContext<'_> {
                 &state,
                 &depth_col,
                 has_until.then_some(stop_col.as_str()),
+                seed_stop.as_ref(),
             )?;
             let work_schema = Arc::new(static_term.schema().as_arrow().clone());
             let work_table = Arc::new(CteWorkTable::new(&cte_name, work_schema));
@@ -321,7 +337,10 @@ impl LoweringContext<'_> {
         let depth = || col_exact(&depth_col);
         let structural = if emit_each {
             (spec.prefix_predicate.is_none() && spec.prefix_traversal.is_none())
-                .then(|| binary(depth(), BinaryOp::Gte, lit(1_i64)))
+                .then(|| {
+                    let advanced = binary(depth(), BinaryOp::Gte, lit(1_i64));
+                    if spec.until_first && has_until { Expr::or(advanced, col_exact(&stop_col)) } else { advanced }
+                })
         } else if has_until {
             Some(binary(col_exact(&stop_col), BinaryOp::Eq, lit(true)))
         } else if let Some(times) = spec.times {
@@ -356,7 +375,7 @@ impl LoweringContext<'_> {
         let selected = LogicalPlanBuilder::from(selected)
             .project(with_loops)?
             .build()?;
-        let mut islands = seed.islands.clone();
+        let mut islands = seed_islands;
         islands.merge(body_islands);
         let mut output = self.repeat_rehydrate(selected, &state, &mut islands)?;
 
@@ -402,6 +421,7 @@ impl LoweringContext<'_> {
                 ),
                 None => iteration_rows,
             };
+            let condition = if has_until { Expr::or(condition, col_exact(&stop_col)) } else { condition };
             output = LogicalPlanBuilder::from(output)
                 .filter(condition)?
                 .build()?;
@@ -819,6 +839,7 @@ fn build_static_term(
     state: &[StateCol],
     depth_col: &str,
     stop_col: Option<&str>,
+    seed_stop: Option<&Expr>,
 ) -> RelResult<LogicalPlan> {
     let mut projection = Vec::new();
     for col in state {
@@ -851,7 +872,7 @@ fn build_static_term(
     }
     projection.push(lit(0_i64).alias(depth_col));
     if let Some(stop_col) = stop_col {
-        projection.push(lit(false).alias(stop_col));
+        projection.push(seed_stop.cloned().unwrap_or_else(|| lit(false)).alias(stop_col));
     }
     Ok(LogicalPlanBuilder::from(seed.clone())
         .project(projection)?

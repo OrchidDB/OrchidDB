@@ -298,6 +298,8 @@ pub enum BarrierBulkPolicy {
     /// Discard bulk; emit traversers with bulk=1.
     ResetToOne,
     ProviderDefined,
+    /// Gremlin barrier: optionally normalize sacks after traverser merging.
+    Gremlin { normalize_sack: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +327,9 @@ pub enum ChooseSelector {
     Boolean(IrExpr),
     /// Value dispatch — each arm's `key` is matched against this value.
     Value(IrExpr),
+    /// Route each row to every matching arm, then execute each arm once on
+    /// its nonempty stream. Input is evaluated once, including side effects.
+    Predicates(Vec<IrExpr>),
 }
 
 /// One arm of a `GraphChoose` switch.
@@ -352,6 +357,12 @@ pub enum ChooseUnmatched {
 pub enum GroupValue {
     CountBulk,
     Aggregate(AggCall),
+    /// Evaluate a Gremlin value traversal over the complete correlated group.
+    Traversal {
+        traversal: Box<Node>,
+        /// Proven current-only, pure, order-independent reduction.
+        bulk_current: bool,
+    },
 }
 
 /// `GraphPathPattern` selector — spec §5.6, §5.7, §5.8.
@@ -713,6 +724,8 @@ pub enum Node {
         loop_name: Option<String>,
         times: Option<u32>,
         emit: EmitMode,
+        /// Check termination on incoming seeds before the first body iteration.
+        until_first: bool,
         until: Option<IrExpr>,
         until_traversal: Option<Box<Node>>,
         /// Optional path binding that accumulates visited objects across
@@ -807,12 +820,36 @@ pub enum Node {
         output: BindingId,
         input: Box<Node>,
     },
+    /// Accumulate a named group without consuming or replaying its input.
+    GraphGroupSideEffect {
+        label: BindingId,
+        key: IrExpr,
+        value: GroupValue,
+        key_input: Box<Node>,
+        input: Box<Node>,
+    },
     /// `GraphGroupCountSideEffect(label, key)` — Gremlin
     /// `groupCount(label).by(key)`. Updates the named side-effect map and
     /// passes the input traverser stream through unchanged.
     GraphGroupCountSideEffect {
         label: BindingId,
         key: IrExpr,
+        input: Box<Node>,
+    },
+    /// Traversal-scoped collection/reducer update. The input is executed once;
+    /// registered seed/reducer state survives child traversals and empty streams.
+    GraphSideEffect {
+        value_input: Box<Node>,
+        label: BindingId,
+        value: IrExpr,
+        seed: Value,
+        reducer: String,
+        eager: bool,
+        input: Box<Node>,
+    },
+    /// Read a named side effect for each input traverser, preserving its labels.
+    GraphReadSideEffect {
+        label: BindingId,
         input: Box<Node>,
     },
     /// `GraphCap(labels)` — read named Gremlin side effects back into the

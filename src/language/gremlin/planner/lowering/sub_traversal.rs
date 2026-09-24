@@ -31,6 +31,24 @@ pub(super) fn lower_source_traversal_with_context(
         .split_first()
         .ok_or_else(|| GremlinPlanError::Parse("empty traversal".to_string()))?;
     let node = source_node(first, lo, ctx)?;
+    let mut config = vec![
+        ProjectionItem { alias: "__bulk_enabled".into(), expr: IrExpr::lit_bool(lo.bulk_enabled) },
+        ProjectionItem { alias: "__gremlin_bulk_safe".into(), expr: IrExpr::lit_bool(lo.bulk_safe) },
+    ];
+    if let Some(op) = lo.sack_merge {
+        config.push(ProjectionItem { alias: "__sack_merge".into(),
+            expr: IrExpr::lit_str(super::side_effects::sack_op_name(op)) });
+    }
+    let mut node = Node::GraphProject { mode: ProjectMode::PreserveVisible,
+        items: config, error_policy: ProjectErrorPolicy::PropagateError, input: node.boxed() };
+    for label in lo.side_effect_bags.keys() {
+        let seed = lo.side_effect_seeds.get(label).and_then(super::literals::gvalue_to_value)
+            .unwrap_or_else(|| crate::ir::value::Value::BulkSet(Vec::new()));
+        node = Node::GraphSideEffect { label: label.clone(),
+            value_input: Node::GraphCorrelate { bindings: vec!["__gremlin_group_members".into()] }.boxed(),
+            value: IrExpr::Binding(CURRENT.into()), seed, reducer: "register".into(), eager: true, input: node.boxed() };
+    }
+
     lower_remaining_steps(node, rest, lo, ctx)
 }
 
@@ -156,10 +174,28 @@ fn lower_remaining_steps(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    let inherited = lo.live_labels.clone();
+    let was_repeat = lo.in_repeat;
+    lo.in_repeat |= matches!(ctx.scope(), super::context::TraversalScopeKind::Child(ChildTraversalKind::RepeatBody));
+    let mut keep = inherited.clone();
+    if lo.in_repeat {
+        keep.extend(super::label_liveness::direct_references(steps));
+    }
     let mut iter = steps.iter().peekable();
     while let Some(step) = iter.next() {
+        // A child may need labels read by the parent step and by later steps.
+        lo.live_labels = keep.clone();
+        lo.live_labels.extend(super::label_liveness::references_iter(iter.clone()));
+        lo.live_labels.extend(super::label_liveness::direct_references(std::slice::from_ref(step)));
         node = lower_step_with_context(node, step, &mut iter, lo, ctx)?;
+        if lo.retract_labels && matches!(step, Step::Select(..) | Step::SelectMulti(..)) {
+            let mut live = keep.clone();
+            live.extend(super::label_liveness::references_iter(iter.clone()));
+            node = super::label_liveness::retract(node, &lo.path_labels, &live);
+        }
     }
+    lo.live_labels = inherited;
+    lo.in_repeat = was_repeat;
     Ok(node)
 }
 
@@ -188,7 +224,7 @@ fn collect_step_refs(step: &Step, bindings: &mut Vec<String>) {
             push_binding(bindings, label);
             push_select_history_binding(bindings, label);
         }
-        Step::Select(label, _) => {
+        Step::Select(label, _) | Step::SelectMapValueBy(label) => {
             push_binding(bindings, label);
             push_select_history_binding(bindings, label);
         }
@@ -327,7 +363,7 @@ fn collect_math_refs(expr: &MathExpr, bindings: &mut Vec<String>) {
     }
 }
 
-fn collect_predicate_binding_refs(predicate: &Predicate, bindings: &mut Vec<String>) {
+pub(super) fn collect_predicate_binding_refs(predicate: &Predicate, bindings: &mut Vec<String>) {
     match predicate {
         Predicate::Compare {
             value: GValue::String(label),

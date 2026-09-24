@@ -363,6 +363,20 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             }
             Ok(Value::Map(map))
         }
+        ("make_project_map_productive", entries) if entries.len() % 3 == 0 => {
+            let mut map = std::collections::BTreeMap::new();
+            for chunk in entries.chunks_exact(3) {
+                if !matches!(chunk[2], Value::Bool(true)) {
+                    continue;
+                }
+                let key = match &chunk[0] {
+                    Value::String(s) => s.clone(),
+                    other => display_for_concat(other),
+                };
+                map.insert(key, chunk[1].clone());
+            }
+            Ok(Value::Map(map))
+        }
         // ----- select(Column.keys|values) on a map-shaped traverser -----
         ("map_keys", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(key, _)| key.clone()).collect())),
         ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),
@@ -488,6 +502,34 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("edge_src" | "edge_dst", [other]) => Ok(other.clone()),
         ("edge_both", [other]) => Ok(Value::List(vec![other.clone()])),
         // ----- path() and slicing variants -----
+        ("path_extend_after", [history, previous, item]) => {
+            let mut path = match history {
+                Value::Path(items) => items.clone(),
+                _ => vec![previous.clone()],
+            };
+            path.push(item.clone());
+            Ok(Value::Path(path))
+        }
+        ("path_attach_label", [labels, history, Value::String(label)]) => {
+            let len = match history { Value::Path(items) => items.len(), _ => 1 };
+            let mut positions = match labels { Value::List(items) => items.clone(), _ => Vec::new() };
+            positions.resize(len, crate::ir::value::gremlin_set(Vec::new()));
+            if let Some(last) = positions.last_mut() {
+                let mut set = crate::ir::value::as_gremlin_set(last).unwrap_or(&[]).to_vec();
+                let label = Value::String(label.clone());
+                if !set.contains(&label) { set.push(label); }
+                *last = crate::ir::value::gremlin_set(set);
+            }
+            Ok(Value::List(positions))
+        }
+        ("gremlin_column_keys", [Value::Path(items), labels]) => {
+            let mut labels = match labels { Value::List(labels) => labels.clone(), _ => Vec::new() };
+            labels.resize(items.len(), crate::ir::value::gremlin_set(Vec::new()));
+            Ok(Value::List(labels))
+        }
+        ("gremlin_column_values", [Value::Path(items), _]) => Ok(Value::List(items.clone())),
+        ("gremlin_column_keys", [value, _]) => eval_call("map_keys", vec![value.clone()], graph),
+        ("gremlin_column_values", [value, _]) => eval_call("map_values", vec![value.clone()], graph),
         ("path_or_self", [Value::Path(items), _]) => Ok(Value::Path(items.clone())),
         ("path_or_self", [Value::Null, fallback])
         | ("path_or_self", [Value::List(_), fallback])

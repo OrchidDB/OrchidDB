@@ -20,7 +20,7 @@ pub(crate) mod mutations;
 mod numeric;
 mod path;
 mod property_object;
-mod reductions;
+pub(crate) mod reductions;
 mod registry;
 pub(crate) use registry::is_known_function;
 mod string_functions;

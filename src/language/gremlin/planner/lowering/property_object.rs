@@ -98,14 +98,14 @@ where
             error_policy: ProjectErrorPolicy::PropagateError,
             input: entries.boxed(),
         };
-        // Optional scalar application preserves the entry key while a failed
-        // traversal yields null; the result helper removes that entry.
-        let (projected, value) = apply_project_by_spec(values, spec, lo, ctx)?;
+        // Preserve the entry key and distinguish an absent result from a
+        // productive null, using the shared by-modulator contract.
+        let (projected, value, productive) = apply_project_by_spec(values, spec, lo, ctx)?;
         branches.push(Node::GraphProject {
             mode: ProjectMode::ReplaceScope,
             items: vec![ProjectionItem {
                 alias: CURRENT.into(),
-                expr: IrExpr::List(vec![entry_field("key"), value]),
+                expr: IrExpr::List(vec![entry_field("key"), value, productive]),
             }],
             error_policy: ProjectErrorPolicy::PropagateError,
             input: projected.boxed(),

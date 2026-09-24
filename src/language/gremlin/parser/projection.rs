@@ -273,7 +273,7 @@ impl LoweringVisitor {
             TraversalMethod_barrierContextAll::TraversalMethod_barrier_EmptyContext(_)
             | TraversalMethod_barrierContextAll::TraversalMethod_barrier_intContext(_)
             | TraversalMethod_barrierContextAll::TraversalMethod_barrier_ConsumerContext(_) => {
-                self.steps.push(Step::Barrier);
+                self.steps.push(if ctx.get_text().contains("normSack") { Step::NormSackBarrier } else { Step::Barrier });
             }
             TraversalMethod_barrierContextAll::Error(_) => {
                 self.fail(GremlinError::Parse("barrier() failed to parse".to_string()));

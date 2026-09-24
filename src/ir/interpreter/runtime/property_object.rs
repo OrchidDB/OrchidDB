@@ -298,7 +298,7 @@ pub(super) fn value_map_modulator_result(args: &[Value]) -> Value {
     let [original, Value::List(results)] = args else { return Value::Null; };
     let entries = ordered_value_map_entries(original).into_iter().filter_map(|(key, _)| {
         results.iter().find_map(|result| match result {
-            Value::List(pair) if pair.len() == 2 && pair[0] == key && !matches!(pair[1], Value::Null) =>
+            Value::List(pair) if pair.len() == 3 && pair[0] == key && pair[2] == Value::Bool(true) =>
                 Some((key.clone(), pair[1].clone())),
             _ => None,
         })

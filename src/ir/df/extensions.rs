@@ -283,6 +283,7 @@ ir_extension! {
         loop_name: Option<String>,
         times: Option<u32>,
         emit: EmitMode,
+        until_first: bool,
         until: Option<IrExpr>,
         until_traversal: Option<Box<Node>>,
         path: Option<String>,
@@ -298,6 +299,7 @@ ir_extension! {
             loop_name: s.loop_name.clone(),
             times: s.times,
             emit: s.emit.clone(),
+            until_first: s.until_first,
             until: s.until.clone(),
             until_traversal: s.until_traversal.clone(),
             path: s.path.clone(),
@@ -448,6 +450,14 @@ ir_extension! {
 }
 
 ir_extension! {
+    GraphGroupSideEffect { label: String, key: IrExpr, value: GroupValue, key_input: Box<Node>, }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphGroupSideEffect { label: s.label.clone(), key: s.key.clone(), value: s.value.clone(), key_input: s.key_input.clone(), input: Box::new(c.remove(0)) }
+    },
+}
+
+ir_extension! {
     GraphGroupCountSideEffect {
         label: String,
         key: IrExpr,
@@ -459,6 +469,28 @@ ir_extension! {
             key: s.key.clone(),
             input: Box::new(c.remove(0)),
         }
+    },
+}
+
+ir_extension! {
+    GraphSideEffect {
+        value_input: Box<Node>,
+        label: String,
+        value: IrExpr,
+        seed: Value,
+        reducer: String,
+        eager: bool,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphSideEffect { value_input: s.value_input.clone(), label: s.label.clone(), value: s.value.clone(), seed: s.seed.clone(), reducer: s.reducer.clone(), eager: s.eager, input: Box::new(c.remove(0)) }
+    },
+}
+ir_extension! {
+    GraphReadSideEffect { label: String, }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphReadSideEffect { label: s.label.clone(), input: Box::new(c.remove(0)) }
     },
 }
 

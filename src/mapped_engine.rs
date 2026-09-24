@@ -252,7 +252,10 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupMap { input, .. }
+        | GraphGroupSideEffect { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }

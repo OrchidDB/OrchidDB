@@ -122,7 +122,12 @@ impl<'a> LoweringContext<'a> {
                 // such as `UNWIND ... MATCH ...` or a comma-separated match —
                 // the left is a genuine cross-product factor, and dropping it
                 // loses both its multiplicity and its bindings.
-                let keyed = if absorbed_correlation(&left.plan, &right.plan) {
+                // Gremlin by()/probe children may replace their own current
+                // value while returning only an auxiliary output. Equal
+                // column names do not prove the original current survived.
+                let preserve_current = self.language == Language::Gremlin
+                    && !outputs.iter().any(|output| output == "current");
+                let keyed = if absorbed_correlation(&left.plan, &right.plan) && !preserve_current {
                     None
                 } else {
                     gremlin::keyed_apply_join(
@@ -134,6 +139,11 @@ impl<'a> LoweringContext<'a> {
                         &mut cleanup,
                     )?
                 };
+                if preserve_current && keyed.is_none() {
+                    return Err(RelError::Unsupported(
+                        "Gremlin probe apply requires an explicit parent traverser join".into(),
+                    ));
+                }
                 if let Some(plan) = keyed {
                     right.plan = plan;
                 } else if !absorbed_correlation(&left.plan, &right.plan) {

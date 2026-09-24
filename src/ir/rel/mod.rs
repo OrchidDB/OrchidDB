@@ -388,8 +388,11 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphCurrentProject { input, .. }
             | Node::GraphAggregate { input, .. }
             | Node::GraphGroupMap { input, .. }
-            | Node::GraphGroupCountSideEffect { input, .. }
-            | Node::GraphCap { input, .. }
+            | Node::GraphGroupSideEffect { input, .. }
+        | Node::GraphGroupCountSideEffect { input, .. }
+            | Node::GraphSideEffect { input, .. }
+        | Node::GraphReadSideEffect { input, .. }
+        | Node::GraphCap { input, .. }
             | Node::GraphShortestPath { input, .. }
             | Node::GraphDistinct { input, .. }
             | Node::GraphSort { input, .. }

@@ -49,8 +49,11 @@ pub(crate) fn barrier_op(
                 row.bulk = 1;
             }
         }
-        BarrierBulkPolicy::PreserveAndMerge => merge_equal_traversers(&mut out),
+        BarrierBulkPolicy::PreserveAndMerge => merge_equal_traversers(&mut out)?,
         BarrierBulkPolicy::ProviderDefined => {}
+        BarrierBulkPolicy::Gremlin { normalize_sack } => {
+            out = gremlin_barrier(out, normalize_sack, graph)?;
+        }
     }
     Ok(out)
 }
@@ -78,7 +81,7 @@ fn partition_rows(partition: &[String], rows: Vec<Row>) -> Vec<Vec<Row>> {
         .collect()
 }
 
-fn merge_equal_traversers(rows: &mut Vec<Row>) {
+fn merge_equal_traversers(rows: &mut Vec<Row>) -> IrResult<()> {
     use std::collections::BTreeMap;
     let signatures: Vec<Vec<u8>> = rows
         .iter()
@@ -99,7 +102,9 @@ fn merge_equal_traversers(rows: &mut Vec<Row>) {
         match sigs.get(&sig).copied() {
             Some(prev) => {
                 let bulk = rows[idx].bulk;
-                rows[prev].bulk = rows[prev].bulk.saturating_add(bulk);
+                rows[prev].bulk = rows[prev].bulk.checked_add(bulk).ok_or_else(|| {
+                    super::super::InterpretError::ExecutionLimit("traverser bulk overflow".into())
+                })?;
                 keep[idx] = false;
             }
             None => {
@@ -109,6 +114,7 @@ fn merge_equal_traversers(rows: &mut Vec<Row>) {
     }
     let mut iter = keep.into_iter();
     rows.retain(|_| iter.next().unwrap_or(true));
+    Ok(())
 }
 
 /// Helper used when the planner emits a barrier with everything default
@@ -116,4 +122,148 @@ fn merge_equal_traversers(rows: &mut Vec<Row>) {
 /// stream is unchanged.
 pub(crate) fn passthrough_barrier(rows: Vec<Row>) -> Vec<Row> {
     rows
+}
+
+/// Remove compiler temporaries once a complete Gremlin step has finished.
+/// Actual labels are identified by their select-history register. Path elision
+/// is permitted only by the planner's whole-traversal proof.
+pub(crate) fn compact_gremlin_row(row: &mut Row) {
+    let labels = row
+        .bindings
+        .keys()
+        .filter_map(|key| {
+            key.strip_prefix("__gremlin_select_history_")
+                .map(str::to_owned)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let keep_path = row.bindings.get("__gremlin_bulk_safe") != Some(&Value::Bool(true));
+    let on_edge = matches!(row.bindings.get("current"), Some(Value::Edge { .. }));
+    row.bindings.retain(|key, _| {
+        key == "current"
+            || labels.contains(key)
+            || (key.starts_with("__")
+                && (keep_path || (key != "__path" && key != "__path_labels"))
+                && (on_edge || key != "__edge_other"))
+    });
+}
+
+pub(crate) fn compact_repeat_frontier(mut rows: Vec<Row>) -> IrResult<Vec<Row>> {
+    if rows.first().is_none_or(|row| {
+        row.bindings.get("__gremlin_bulk_safe") != Some(&Value::Bool(true))
+            || row.bindings.get("__bulk_enabled") == Some(&Value::Bool(false))
+            || row.bindings.contains_key("__sack")
+    }) {
+        return Ok(rows);
+    }
+    for row in &mut rows {
+        compact_gremlin_row(row);
+    }
+    merge_equal_traversers(&mut rows)?;
+    Ok(rows)
+}
+
+fn gremlin_barrier(rows: Vec<Row>, normalize: bool, graph: &PropertyGraph) -> IrResult<Vec<Row>> {
+    use super::super::runtime::eval_call;
+    let mut out: Vec<Row> = Vec::new();
+    let mut seen = std::collections::BTreeMap::new();
+    for mut row in rows {
+        compact_gremlin_row(&mut row);
+        let sack = row.bindings.get("__sack").cloned();
+        let merge = match row.bindings.get("__sack_merge") {
+            Some(Value::String(op)) => Some(op.clone()),
+            _ => None,
+        };
+        // Without a sack merger, sacks prohibit bulking even when equal.
+        if merge.is_none()
+            && (sack.is_some() || row.bindings.get("__bulk_enabled") == Some(&Value::Bool(false)))
+        {
+            out.push(row);
+            continue;
+        }
+        let mut key_row = row.clone();
+        if merge.is_some() {
+            key_row.bindings.remove("__sack");
+        }
+        let key = super::distinct::row_signature(&key_row);
+        if let Some(&index) = seen.get(&key) {
+            let previous: &mut Row = &mut out[index];
+            if let (Some(sack), Some(op)) = (sack, merge) {
+                let old = previous
+                    .bindings
+                    .get("__sack")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                previous.bindings.insert(
+                    "__sack".into(),
+                    eval_call("sack_apply", vec![old, sack, Value::String(op)], graph)?,
+                );
+            }
+            if row.bindings.get("__bulk_enabled") != Some(&Value::Bool(false)) {
+                previous.bulk = previous.bulk.checked_add(row.bulk).ok_or_else(|| {
+                    super::super::InterpretError::ExecutionLimit("traverser bulk overflow".into())
+                })?;
+            }
+        } else {
+            seen.insert(key, out.len());
+            out.push(row);
+        }
+    }
+    if normalize {
+        let mut total = Value::Float(0.0);
+        for row in &out {
+            let sack = row.bindings.get("__sack").cloned().unwrap_or(Value::Null);
+            let weighted = eval_call(
+                "sack_apply",
+                vec![
+                    sack,
+                    Value::Long(row.bulk as i64),
+                    Value::String("mult".into()),
+                ],
+                graph,
+            )?;
+            total = eval_call(
+                "sack_apply",
+                vec![total, weighted, Value::String("sum".into())],
+                graph,
+            )?;
+        }
+        for row in &mut out {
+            let sack = row.bindings.get("__sack").cloned().unwrap_or(Value::Null);
+            let weighted = eval_call(
+                "sack_apply",
+                vec![
+                    sack,
+                    Value::Long(row.bulk as i64),
+                    Value::String("mult".into()),
+                ],
+                graph,
+            )?;
+            let sack = eval_call(
+                "sack_apply",
+                vec![weighted, total.clone(), Value::String("div".into())],
+                graph,
+            )?;
+            row.bindings.insert("__sack".into(), sack);
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod bulk_tests {
+    use super::*;
+
+    #[test]
+    fn compaction_rejects_bulk_overflow() {
+        let mut row = Row::new()
+            .with("current", Value::Int(1))
+            .with("__gremlin_bulk_safe", Value::Bool(true));
+        row.bulk = u64::MAX;
+        let mut other = row.clone();
+        other.bulk = 1;
+        assert!(matches!(
+            compact_repeat_frontier(vec![row, other]),
+            Err(super::super::super::InterpretError::ExecutionLimit(_))
+        ));
+    }
 }

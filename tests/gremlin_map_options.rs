@@ -261,3 +261,14 @@ async fn multi_key_values_preserve_native_types_through_graph_engine() {
         .collect::<Vec<_>>();
     assert_eq!(types, vec!["string", "int", "string"]);
 }
+
+#[test]
+fn value_map_keeps_productive_null_modulator_results() {
+    for query in [
+        "g.V().hasLabel('person').valueMap('name').by(__.constant(null))",
+        "g.withStrategies(ProductiveByStrategy).V().hasLabel('person').valueMap('name').by(__.values('missing'))",
+    ] {
+        let values = evaluate(query, &graph());
+        assert_eq!(property_entries(&values[0]), vec![(Value::String("name".into()), Value::Null)]);
+    }
+}

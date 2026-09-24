@@ -39,6 +39,12 @@ pub(crate) fn finalize_return(
 
     let expand_elements = matches!(policy.language, Language::Cypher);
     let gremlin_elements = matches!(policy.language, Language::Gremlin);
+    // Bulk remains compressed through operators and reducers. Expand it only
+    // when the public Gremlin traverser stream is materialized for a client.
+    let expand_bulk = gremlin_elements && matches!(result_form, ResultForm::TraverserStream);
+    let logical_rows = || rows.iter().flat_map(|row| {
+        std::iter::repeat_n(row, if expand_bulk { row.bulk as usize } else { 1 })
+    });
     let return_fields = plan_return_fields(fields, &rows, expand_elements);
     let output_fields = return_fields
         .iter()
@@ -49,7 +55,7 @@ pub(crate) fn finalize_return(
         .map(|_| ColumnBuilder::new(expand_elements))
         .collect();
 
-    for row in &rows {
+    for row in logical_rows() {
         let mut column_idx = 0;
         for field in &return_fields {
             match field {
@@ -101,8 +107,7 @@ pub(crate) fn finalize_return(
             serde_json::to_string(fields)
                 .map_err(|err| InterpretError::Type(format!("typed result columns: {err}")))?,
         );
-        let typed_rows: Vec<Vec<serde_json::Value>> = rows
-            .iter()
+        let typed_rows: Vec<Vec<serde_json::Value>> = logical_rows()
             .map(|row| {
                 fields
                     .iter()
@@ -1090,5 +1095,27 @@ mod bulkset_native_tests {
         assert_eq!(payload["value"].as_array().unwrap().len(), 3);
         assert_eq!(payload["value"][0]["type"], "int");
         assert_eq!(payload["value"][2]["type"], "long");
+    }
+}
+
+#[cfg(test)]
+mod traverser_bulk_tests {
+    use super::*;
+
+    #[test]
+    fn gremlin_output_and_native_metadata_expand_bulk_at_return_boundary() {
+        let graph = PropertyGraph::new();
+        let mut row = Row::new().with("current", Value::Int(7));
+        row.bulk = 3;
+        let returned = finalize_return(&["current".into()], ResultForm::TraverserStream,
+            vec![row.clone()], &graph, &GraphPlanPolicy::gremlin()).unwrap();
+        assert_eq!(returned.batch.num_rows(), 3);
+        let native: serde_json::Value = serde_json::from_str(
+            &returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]
+        ).unwrap();
+        assert_eq!(native.as_array().unwrap().len(), 3);
+        let returned = finalize_return(&["current".into()], ResultForm::RowSet,
+            vec![row], &graph, &GraphPlanPolicy::cypher()).unwrap();
+        assert_eq!(returned.batch.num_rows(), 1);
     }
 }

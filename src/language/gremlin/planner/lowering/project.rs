@@ -136,10 +136,11 @@ pub(super) fn lower_constant(input: Node, value: &GValue) -> GremlinPlanResult<N
     let expr = gvalue_to_expr(value)?;
     Ok(Node::GraphProject {
         mode: ProjectMode::ReplaceCurrent,
-        items: vec![ProjectionItem {
-            alias: CURRENT.into(),
-            expr,
-        }],
+        items: vec![ProjectionItem { alias: CURRENT.into(), expr: expr.clone() },
+            ProjectionItem { alias: PATH.into(), expr: IrExpr::Call {
+                name: "path_extend_after".into(),
+                args: vec![IrExpr::Binding(PATH.into()), IrExpr::Binding(CURRENT.into()), expr],
+            }}],
         error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),
     })
@@ -152,8 +153,8 @@ pub(super) fn lower_constant(input: Node, value: &GValue) -> GremlinPlanResult<N
 ///
 /// Each `by(__.t)` lowers via `apply_by_spec` to a fresh probe binding
 /// joined onto the input via `Apply Optional`. Once all keys resolve,
-/// we emit a `CurrentProject` whose expression is `make_map(label_0,
-/// key_0, label_1, key_1, ...)`.
+/// each child also returns a productivity flag. This distinguishes a valid
+/// null result from an absent result when building the projected map.
 pub(super) fn lower_project<'a, I>(
     input: Node,
     labels: &[String],
@@ -165,24 +166,21 @@ where
     I: Iterator<Item = &'a Step>,
 {
     let mut input = input;
-    let mut entries: Vec<IrExpr> = Vec::with_capacity(labels.len() * 2);
+    let mut entries: Vec<IrExpr> = Vec::with_capacity(labels.len() * 3);
     for label in labels {
         let spec = consume_by(steps);
-        let (next_input, value_expr) = match spec {
+        let (next_input, value_expr, productive) = match spec {
             Some(spec) => apply_project_by_spec(input, &spec, lo, ctx)?,
-            None => (input, IrExpr::Binding(CURRENT.into())),
+            None => (input, IrExpr::Binding(CURRENT.into()), IrExpr::lit_bool(true)),
         };
         input = next_input;
         entries.push(IrExpr::Lit(Lit::String(label.clone())));
         entries.push(value_expr);
+        entries.push(productive);
     }
     Ok(Node::GraphCurrentProject {
         expr: IrExpr::Call {
-            name: if lo.productive_by {
-                "make_map".into()
-            } else {
-                "make_project_map".into()
-            },
+            name: "make_project_map_productive".into(),
             args: entries,
         },
         fields: vec![CURRENT.to_string()],

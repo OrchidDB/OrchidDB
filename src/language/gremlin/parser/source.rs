@@ -35,6 +35,16 @@ impl LoweringVisitor {
         // an integer literal that overflows i64; without this guard the
         // whole traversal fails to parse).
         let errors_before = self.errors.len();
+        if let Some(c) = ctx.traversalSourceSelfMethod_withoutStrategies() {
+            if c.get_text().split(|c: char| !c.is_alphanumeric()).any(|s| s == "PathRetractionStrategy") {
+                self.steps.push(Step::WithoutPathRetraction);
+            }
+            return;
+        }
+        if let Some(c) = ctx.traversalSourceSelfMethod_withBulk() {
+            self.steps.push(Step::WithBulk(!c.get_text().contains("false")));
+            return;
+        }
         if let Some(c) = ctx.traversalSourceSelfMethod_withSack() {
             let Some(lit) = c.genericLiteral() else {
                 return;
@@ -185,7 +195,9 @@ impl LoweringVisitor {
                             vertex_filter: Some(filter.clone()),
                             edge_filter: Some(filter),
                             vertex_property_filter: None,
-                            check_adjacent_vertices: true,
+                            // Partition visibility is checked on each returned element;
+                            // an edge may connect to a vertex outside the read partitions.
+                            check_adjacent_vertices: false,
                         });
                     }
                     if let Some(value) = write_partition {

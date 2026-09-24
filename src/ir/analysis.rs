@@ -139,7 +139,7 @@ pub fn node_effect(node: &Node) -> Effect {
             ..
         } => Effect::ReadProcedure,
         Node::GraphService { .. } => Effect::ExternalRead,
-        Node::GraphGroupCountSideEffect { .. } | Node::GraphCap { .. } | Node::GraphSample { .. } => Effect::QueryLocalState,
+        Node::GraphGroupSideEffect { .. } | Node::GraphGroupCountSideEffect { .. } | Node::GraphSideEffect { .. } | Node::GraphReadSideEffect { .. } | Node::GraphCap { .. } | Node::GraphSample { .. } => Effect::QueryLocalState,
         Node::GraphExtension { .. } => Effect::OpaqueExtension,
         _ => Effect::Pure,
     }
@@ -160,7 +160,10 @@ fn operator_name(node: &Node) -> &'static str {
         Node::GraphSetProperty { .. } => "GraphSetProperty",
         Node::GraphDelete { .. } => "GraphDelete",
         Node::GraphProcedureCall { .. } => "GraphProcedureCall",
+        Node::GraphGroupSideEffect { .. } => "GraphGroupSideEffect",
         Node::GraphGroupCountSideEffect { .. } => "GraphGroupCountSideEffect",
+        Node::GraphSideEffect { .. } => "GraphSideEffect",
+        Node::GraphReadSideEffect { .. } => "GraphReadSideEffect",
         Node::GraphCap { .. } => "GraphCap",
         Node::GraphSample { .. } => "GraphSample",
         Node::GraphService { .. } => "GraphService",
@@ -171,9 +174,20 @@ fn operator_name(node: &Node) -> &'static str {
 
 /// Exhaustive child traversal. New node variants must be classified here,
 /// so a newly added branch cannot silently bypass the read contract.
-fn children(node: &Node) -> Vec<&Node> {
+pub(crate) fn children(node: &Node) -> Vec<&Node> {
     use Node::*;
     match node {
+        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
+        GraphGroupSideEffect { input, key_input, value, .. } => {
+            let mut nodes = vec![input.as_ref(), key_input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value { nodes.push(traversal); }
+            nodes
+        }
+        GraphGroupMap { input, value, .. } => {
+            let mut nodes = vec![input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value { nodes.push(traversal); }
+            nodes
+        }
         GraphMerge {
             input,
             match_arm,
@@ -193,8 +207,8 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
-        | GraphGroupMap { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
@@ -346,6 +360,7 @@ mod tests {
             loop_name: None,
             times: Some(1),
             emit: EmitMode::AfterLoop,
+            until_first: false,
             until: None,
             until_traversal: None,
             path: None,
