@@ -77,7 +77,7 @@ def main():
     if revision != REVISION:
         parser.error(f'Expected pinned upstream {REVISION}; found {revision}')
     manifest = json.loads(args.runtime_manifest.read_text())
-    expected_jar = manifest.get('files', {}).get('jvm/target/crabgraph-jvm-0.1.0.jar')
+    expected_jar = manifest.get('jar_sha256') or manifest.get('files', {}).get('jvm/target/crabgraph-jvm-0.1.0.jar')
     if expected_jar != digest(args.runtime_jar):
         parser.error('Frozen runtime jar does not match its source manifest')
     out = args.output.resolve()
