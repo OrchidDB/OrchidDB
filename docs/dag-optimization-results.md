@@ -1,5 +1,20 @@
 # SQL IR DAG optimization results
 
+## Full-suite result
+
+Both revisions passed **1,511 / 1,511** pinned Apache TinkerPop scenarios, each through one uninterrupted Crabgraph instance with unchanged upstream assertions. The same dev profile (`debug=0`) was used, without concurrent compilation. These are recorded local suite measurements, including fixture setup and assertions.
+
+| Metric | Baseline (7729f95) | Optimized (bcfad49) |
+| --- | ---: | ---: |
+| Suite wall time | 361.76 s | 189.31 s |
+| Passed scenario total | 360.03 s | 187.76 s |
+| Mean scenario time | 238.27 ms | 124.26 ms |
+| Median scenario time | 61.58 ms | 28.69 ms |
+
+Passed scenario time fell **47.8%**; the median fell **53.4%**. **1,447 of 1,511 scenarios were faster.** The existing leaderboard displays the 187.76-second passed total for Crabgraph only. [Per-scenario before/after measurements](performance/gremlin-suite-before-after.json) retain every timing and binary identity.
+
+Intermediate runs exposed an invalid generated window frame and a deadline-sensitive large traversal. Explicit ROWS frames restored valid optimization; subsequent shared-overhead work retained the unchanged deadline. Only the final complete passing run replaces published conformance evidence.
+
 ## Changes
 
 - Run DataFusion logical optimization before partitioning the SQL IR DAG into DuckDB regions.
@@ -37,4 +52,5 @@ Reproduce with `scripts/benchmark-dag.py --binary baseline=PATH --binary optimiz
 
 - 38 mapped-write, mapped-read, and relational-execution tests pass.
 - Three leaderboard aggregation tests pass.
-- Full upstream Gremlin run: pending final verification on the committed optimized source.
+- Full upstream Gremlin run: 1,511 passed on clean source bcfad49, one engine instance (49020).
+- SQL smoke checks: 14 passed, including the new multi-partition source/buffer-sharing check. Seven existing direct-lowering checks stop at unchanged capability guards (six Cypher relationship-history cases and one Gremlin native-scalar case); they do not reach the changed preparation/execution code.
