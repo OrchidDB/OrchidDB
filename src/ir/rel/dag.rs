@@ -36,6 +36,30 @@ pub struct DagStats {
     pub physical_plan: String,
 }
 
+/// Execution resources owned by one graph engine, never shared between engines.
+/// SQL source tables are content-addressed by DuckDbExecutor; logical plans and
+/// graph snapshots are rebuilt for every query.
+pub(crate) struct DagSession {
+    session: SessionContext,
+    #[cfg(feature = "duckdb")]
+    executor: Arc<Mutex<sql::DuckDbExecutor>>,
+}
+impl DagSession {
+    pub(crate) fn new(timeout: Option<std::time::Duration>) -> Self {
+        Self {
+            session: SessionContext::new_with_config(
+                SessionConfig::new().with_target_partitions(1),
+            ),
+            #[cfg(feature = "duckdb")]
+            executor: Arc::new(Mutex::new(
+                timeout
+                    .map(sql::DuckDbExecutor::with_timeout)
+                    .unwrap_or_default(),
+            )),
+        }
+    }
+}
+
 /// A planned DuckDB region has no DataFusion inputs: its native relational scans
 /// and their Arrow sources are captured by PreparedSql. Its schema remains the
 /// original relational schema, including column qualifiers used by consumers.
@@ -304,33 +328,43 @@ impl ExecutionPlan for DuckDbExec {
 /// Execute the lowered relational DAG. DataFusion is the scheduler and executor;
 /// eligible DuckDB regions are explicit physical nodes within that same plan.
 pub async fn execute(lowered: LoweredPlan) -> RelResult<(ReturnedBatches, DagStats)> {
-    execute_with_extensions(lowered, vec![], None).await
+    execute_with_extensions(lowered, vec![], None, None).await
 }
 
 pub(crate) async fn execute_with_extensions(
     lowered: LoweredPlan,
     mut extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     timeout: Option<std::time::Duration>,
+    resources: Option<&DagSession>,
 ) -> RelResult<(ReturnedBatches, DagStats)> {
+    let started = std::time::Instant::now();
+    let owned;
+    let resources = match resources {
+        Some(resources) => resources,
+        None => {
+            owned = DagSession::new(timeout);
+            &owned
+        }
+    };
+    let session = &resources.session;
+    // Optimize while relational scans and expressions remain visible, before
+    // DuckDB placement turns each region into an opaque physical source.
+    let optimized = session.state().optimize(&lowered.plan)?;
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
-    let plan = partition(&lowered.plan, &mut stats).await?;
+    let plan = partition(&optimized, &mut stats).await?;
     #[cfg(not(feature = "duckdb"))]
     let plan = {
-        let _ = lowered.plan.apply(|_| {
+        let _ = optimized.apply(|_| {
             stats.datafusion_operators += 1;
             Ok(TreeNodeRecursion::Continue)
         });
-        lowered.plan.clone()
+        optimized.clone()
     };
-    let session = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
+    let prepared_at = std::time::Instant::now();
     #[cfg(feature = "duckdb")]
     extensions.push(Arc::new(RegionPlanner {
-        executor: Arc::new(Mutex::new(
-            timeout
-                .map(sql::DuckDbExecutor::with_timeout)
-                .unwrap_or_default(),
-        )),
+        executor: resources.executor.clone(),
     }));
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
@@ -339,9 +373,21 @@ pub(crate) async fn execute_with_extensions(
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
         .to_string();
+    let planned_at = std::time::Instant::now();
     let schema = physical.schema();
     let batches = datafusion::physical_plan::collect(physical, session.task_ctx()).await?;
     let batch = arrow_select::concat::concat_batches(&schema, batches.iter())?;
+    if std::env::var_os("CRABGRAPH_PROFILE_DAG").is_some() {
+        eprintln!(
+            "dag-profile {}",
+            serde_json::json!({
+                "prepare_ms": (prepared_at-started).as_secs_f64()*1000.0,
+                "physical_plan_ms": (planned_at-prepared_at).as_secs_f64()*1000.0,
+                "execute_ms": planned_at.elapsed().as_secs_f64()*1000.0,
+                "regions":stats.duckdb_regions,"residuals":stats.datafusion_operators,
+            })
+        );
+    }
     Ok((
         ReturnedBatches {
             fields: lowered.fields,

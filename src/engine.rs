@@ -58,6 +58,7 @@ pub struct GraphEngine {
     backend: RelBackend,
     sql_timeout: Option<Duration>,
     strict_executor: sql::DuckDbExecutor,
+    dag_session: crate::ir::rel::dag::DagSession,
 }
 
 impl GraphEngine {
@@ -148,6 +149,7 @@ impl GraphEngine {
             backend: RelBackend::new(),
             sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
+            dag_session: crate::ir::rel::dag::DagSession::new(None),
         };
         engine.refresh()?;
         Ok(engine)
@@ -162,6 +164,7 @@ impl GraphEngine {
     pub fn set_sql_timeout(&mut self, timeout: Duration) {
         self.sql_timeout = Some(timeout);
         self.strict_executor = sql::DuckDbExecutor::with_timeout(timeout);
+        self.dag_session = crate::ir::rel::dag::DagSession::new(Some(timeout));
     }
 
     pub fn in_transaction(&self) -> bool {
@@ -457,6 +460,15 @@ impl GraphEngine {
         self.execute_plan(&plan).await
     }
 
+    async fn execute_dag(&mut self, plan: &GraphPlan) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+        let result = crate::ir::rel::runtime::execute_with_session(plan, &self.graph, self.sql_timeout, Some(&self.dag_session)).await;
+        if result.is_err() {
+            // Interruptions or failed SQL must not poison the next query.
+            self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
+        }
+        result
+    }
+
     pub async fn execute_plan(&mut self, plan: &GraphPlan) -> EngineResult<QueryResult> {
         if self.failed_transaction {
             return Err("transaction failed; roll it back".into());
@@ -469,7 +481,7 @@ impl GraphEngine {
             // A failed statement cannot leave partially applied CREATE/SET/DELETE.
             let before = self.graph.clone();
             let (returned, dag_stats) =
-                match crate::ir::rel::runtime::execute(plan, &self.graph, self.sql_timeout).await {
+                match self.execute_dag(plan).await {
                     Ok(result) => result,
                     Err(error) => {
                         self.graph = before;
@@ -505,7 +517,7 @@ impl GraphEngine {
         let (returned, stats) = match self.read_mode {
             ReadMode::Hybrid => {
                 let (returned, stats) =
-                    crate::ir::rel::runtime::execute(plan, &self.graph, self.sql_timeout).await?;
+                    self.execute_dag(plan).await?;
                 (returned, stats.into())
             }
             ReadMode::SqlOnly => {

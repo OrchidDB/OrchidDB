@@ -113,6 +113,8 @@ pub(crate) struct RowKernel {
     schema: DFSchemaRef,
     kernel: Arc<Kernel>,
     relational_input: Option<Vec<String>>,
+    /// Adjacent unary kernels may retain rows in memory without reordering evaluation.
+    fuse_unary: bool,
 }
 impl fmt::Debug for RowKernel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -193,9 +195,39 @@ fn kernel(
             ),
             kernel: Arc::new(operation),
             relational_input: None,
+            fuse_unary: matches!(name, "Bind" | "Filter" | "Project" | "CurrentProject" | "Return"),
         }),
     })
 }
+/// Fuse only adjacent unary scalar kernels. This does not move predicates,
+/// change evaluation order, share branches, or cross SQL/JVM/write boundaries.
+/// Every original operator keeps its cancellation and work-budget check.
+fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
+    use datafusion::common::tree_node::{TreeNode, Transformed};
+    Ok(plan.transform_up(|plan| {
+        let LogicalPlan::Extension(extension) = &plan else { return Ok(Transformed::no(plan)); };
+        let Some(parent) = extension.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
+        if !parent.fuse_unary || parent.inputs.len()!=1 { return Ok(Transformed::no(plan)); }
+        let LogicalPlan::Extension(input) = &parent.inputs[0] else { return Ok(Transformed::no(plan)); };
+        let Some(child) = input.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
+        if !child.fuse_unary || child.inputs.len()!=1 || child.relational_input.is_some() || parent.relational_input.is_some() {
+            return Ok(Transformed::no(plan));
+        }
+        let mut fused=parent.clone();
+        fused.id=NEXT_ID.fetch_add(1,Ordering::Relaxed);
+        fused.name=format!("Fused({} -> {})",child.name,parent.name);
+        fused.inputs=child.inputs.clone();
+        let before=child.kernel.clone();let after=parent.kernel.clone();
+        fused.kernel=Arc::new(move |inputs,state| {
+            let rows=before(inputs,state)?;
+            state.context.jvm.check()?;
+            state.context.charge(1)?;
+            after(vec![rows],state)
+        });
+        Ok(Transformed::yes(LogicalPlan::Extension(Extension{node:Arc::new(fused)})))
+    })?.data)
+}
+
 #[derive(Debug)]
 pub(crate) struct KernelPlanner {
     pub state: Arc<Mutex<State>>,
@@ -408,7 +440,7 @@ pub async fn execute_rows_with_jvm(
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local=graph.clone();
-    let result=execute_rows_inner(plan, &local, jvm, None).await?;
+    let result=execute_rows_inner(plan, &local, jvm, None, None).await?;
     if !crate::ir::jvm::contains_computer(&plan.root) {graph.restore_execution_overlay(&local);}
     Ok(result)
 }
@@ -417,13 +449,14 @@ async fn execute_rows_inner(
     graph: &PropertyGraph,
     jvm: JvmExecution,
     timeout: Option<std::time::Duration>,
+    resources: Option<&super::dag::DagSession>,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),
         sql: !has_mutating_branches(&plan.root),
     };
-    let logical = compiler.lower(&plan.root).map_err(|e| e.to_string())?;
+    let logical = fuse_unary_kernels(compiler.lower(&plan.root).map_err(|e| e.to_string())?).map_err(|e|e.to_string())?;
     let mut context = ExecutionContext::default();
     context.jvm = jvm;
     context.sql_timeout = timeout;
@@ -444,6 +477,7 @@ async fn execute_rows_inner(
             state: state.clone(),
         })],
         timeout,
+        resources,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -1352,9 +1386,18 @@ pub async fn execute(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
+    execute_with_session(plan, graph, timeout, None).await
+}
+
+pub(crate) async fn execute_with_session(
+    plan: &GraphPlan,
+    graph: &PropertyGraph,
+    timeout: Option<std::time::Duration>,
+    resources: Option<&super::dag::DagSession>,
+) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
-    let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout).await?;
+    let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources).await?;
     let (fields, form) = match plan.root.as_ref() {
         Node::GraphReturn {
             fields,
