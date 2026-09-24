@@ -189,29 +189,20 @@ pub(crate) fn expand_op(
                     // can still request stricter path classes when a
                     // planner emits TRAIL/SIMPLE/ACYCLIC explicitly.
                     //
-                    // Relationship uniqueness is scoped to a single
-                    // variable-length expansion (trail within one
-                    // recursive relationship); separate single-hop
-                    // relationship patterns may bind the same edge, so a
-                    // 1..1 expansion never prunes on reuse.
-                    let multi_hop = max_hops > 1;
-                    let enforces_trail = multi_hop
-                        && (matches!(
+                    // Cypher history spans every segment of one MATCH
+                    // clause, including fixed and zero-or-one expansions.
+                    // Explicit repeatable/WALK traversal remains unaffected.
+                    let enforces_history = history_binding.is_some()
+                        && matches!(match_mode, MatchMode::DifferentRelationships);
+                    let enforces_path = max_hops > 1
+                        && matches!(
                             (path_mode, match_mode),
                             (PathMode::Trail | PathMode::Simple | PathMode::Acyclic, _)
                                 | (_, MatchMode::DifferentRelationships)
-                        ) || (history_binding.is_some()
-                            && !matches!(match_mode, MatchMode::RepeatableElements))
-                            || (path_binding.is_some_and(|binding| binding != "__path")
-                                && !matches!(path_mode, PathMode::Walk)));
-                    // NOTE: openCypher expects clause-wide relationship
-                    // uniqueness even across single-hop patterns
-                    // (tck/match/match8), but Kuzu allows distinct rel
-                    // variables to bind the same edge and the Kuzu-derived
-                    // suites (match/*) encode that. The corpus follows
-                    // Kuzu here, so 1..1 expansions never prune on reuse.
-                    let history_contains =
-                        enforces_trail && path_contains_edge(&path, &rel_type, edge_row);
+                        );
+                    let history_contains = (enforces_history
+                        && path_contains_edge(&history, &rel_type, edge_row))
+                        || (enforces_path && path_contains_edge(&path, &rel_type, edge_row));
                     if history_contains {
                         continue;
                     }

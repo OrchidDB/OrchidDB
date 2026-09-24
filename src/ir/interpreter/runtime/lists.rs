@@ -1,9 +1,5 @@
 //! List comparison, literals, display, and indexing.
 
-use crate::ir::catalog::PropertyGraph;
-use crate::ir::interpreter::{InterpretError, IrResult};
-use crate::ir::interpreter::expr::compare_values;
-use crate::ir::value::Value;
 use super::datetime::normalize_interval_spec;
 use super::graph::graph_element_property;
 use super::maps::{
@@ -11,7 +7,11 @@ use super::maps::{
     visible_map_keys, visible_map_len,
 };
 use super::numeric::{value_as_bigint, value_as_f64};
-use super::string_functions::string_index_1_based;
+use super::string_functions::string_index;
+use crate::ir::catalog::PropertyGraph;
+use crate::ir::interpreter::expr::compare_values;
+use crate::ir::interpreter::{InterpretError, IrResult};
+use crate::ir::value::Value;
 
 pub(super) fn list_semantic_eq(left: &Value, right: &Value) -> bool {
     match (left, right) {
@@ -104,6 +104,10 @@ fn numeric_type(value: &Value) -> bool {
 
 pub(super) fn cypher_list_type_name(value: &Value) -> String {
     match value {
+        Value::TypedMap(_) => "MAP".into(),
+        Value::BulkSet(_) => "BULKSET".into(),
+        Value::Token(_) => "TOKEN".into(),
+        Value::Direction(_) => "DIRECTION".into(),
         Value::Null => "NULL".to_string(),
         Value::Bool(_) => "BOOL".to_string(),
         Value::Byte(_) => "INT8".to_string(),
@@ -336,6 +340,21 @@ pub(super) fn list_product_value(items: &[Value]) -> Value {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_list_to_string(key),
+                    display_for_list_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => String::new(),
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
@@ -353,7 +372,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::BigDecimal(n) => n.to_string(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
-        Value::List(items) | Value::Path(items) => {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_list_to_string)
@@ -535,17 +554,21 @@ pub(super) fn list_element_1_based(items: &[Value], index: i64) -> Option<Value>
     }
 }
 
-pub(super) fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> IrResult<Value> {
+pub(super) fn cypher_subscript(
+    target: &Value,
+    index: &Value,
+    graph: &PropertyGraph,
+) -> IrResult<Value> {
     if let Some(items) = runtime_list(target) {
         return match index.as_i64() {
-            Some(index) => Ok(list_index_1_based(&items, index)),
+            Some(index) => Ok(list_index(&items, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),
             None => Err(list_extract_type_error()),
         };
     }
     match (target, index) {
         (Value::String(text), index) => match index.as_i64() {
-            Some(index) => Ok(string_index_1_based(text, index)),
+            Some(index) => Ok(string_index(text, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),
             None => Err(list_extract_type_error()),
         },

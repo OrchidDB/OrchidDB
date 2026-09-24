@@ -54,6 +54,8 @@ mod literals;
 mod local_scope;
 mod match_step;
 mod math;
+mod mutations;
+mod merge;
 mod path;
 mod predicates;
 mod procedures;

@@ -6,7 +6,7 @@ from rdflib import Graph,URIRef,BNode,Literal
 from rdflib.query import Result
 from rdflib.compare import isomorphic
 from fetch import CACHE
-from run import Process,ROOT,REPO
+from run import Process,ROOT,REPO,crabgraph_binary
 rdflib.NORMALIZE_LITERALS=False
 XSD='http://www.w3.org/2001/XMLSchema#'
 RS=rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/result-set#')
@@ -65,7 +65,7 @@ class Sparql:
   if case.get('result_file','') and case['result_file'].endswith(('.tsv','.csv')):return {'status':'not-applicable','reason':'Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms'}
   path=base/case['query_file'];query=path.read_text()
   if re.search(r'\bSERVICE\b',query,re.I):return {'status':'skipped','reason':'Upstream federated SERVICE fixture endpoint is not installed locally','query':query}
-  if self.process is None or self.process.p.poll() is not None:self.process=Process([str(REPO/'target/debug/upstream')],ROOT/'upstream-crabgraph-rdf.log')
+  if self.process is None or self.process.p.poll() is not None:self.process=Process([str(crabgraph_binary())],ROOT/'upstream-crabgraph-rdf.log')
   negative=any('Negative' in t for t in types);syntax=any('Syntax' in t for t in types)
   if syntax:
    before=time.monotonic();actual=self.process.send({'op':'sparql-syntax','query':query,'base':path.resolve().as_uri()})

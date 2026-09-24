@@ -17,6 +17,7 @@ use super::{
     ProjectionBody, ProjectionItem, SortKey, UnaryOp, invalid_order_scope,
     order_expr_after_cardinality_projection, sort_key,
 };
+use crate::language::cypher::planner::CypherSemanticError;
 pub(super) fn lower_aggregate(
     lowerer: &mut Lowerer,
     input: Node,
@@ -152,7 +153,7 @@ pub(super) fn rewrite_aggregate_projection_expr(
                     return Err(CypherPlanError::Invalid(format!(
                         "aggregate function `{name}` may not reference variables local to a scoped expression: {}",
                         local_refs.join(", ")
-                    )));
+                    )).classified(CypherSemanticError::InvalidAggregation));
                 }
             }
             let alias = preferred_alias
@@ -1112,6 +1113,7 @@ pub(super) fn nested_aggregate_error(name: &str, args: &[Expr]) -> CypherPlanErr
             .collect::<Vec<_>>()
             .join(",")
     ))
+    .classified(CypherSemanticError::NestedAggregation)
 }
 
 pub(super) fn contains_aggregate(expr: &Expr) -> bool {

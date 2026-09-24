@@ -1,13 +1,13 @@
 //! Scalar casts, timestamp parsing, and cast modes.
 
-use crate::ir::interpreter::{InterpretError, IrResult};
-use crate::ir::value::Value;
 use super::cast_conversion::{
     cast_bigint_range_error, cast_conversion_error, cast_conversion_to_type_error,
     cast_negative_int128_to_uint128_error, cast_negative_unsigned_error, cast_overflow_error,
     cast_range_error, parse_strict_integerish,
 };
 use super::casts::{cast_to_date, cast_to_string};
+use crate::ir::interpreter::{InterpretError, IrResult};
+use crate::ir::value::Value;
 
 pub(super) fn value_type_name(value: &Value) -> &'static str {
     match value {
@@ -32,7 +32,10 @@ pub(super) fn value_type_name(value: &Value) -> &'static str {
         Value::Node { .. } => "NODE",
         Value::Edge { .. } => "REL",
         Value::List(_) => "LIST",
-        Value::Map(_) => "STRUCT",
+        Value::BulkSet(_) => "BULKSET",
+        Value::Map(_) | Value::TypedMap(_) => "STRUCT",
+        Value::Token(_) => "TOKEN",
+        Value::Direction(_) => "DIRECTION",
         Value::Path(_) => "RECURSIVE_REL",
     }
 }
@@ -376,7 +379,12 @@ fn timestamp_civil_from_days(days_since_epoch: i64) -> Option<(i64, u32, u32)> {
 /// scalar / list / struct / union machinery regardless of which surface
 /// syntax (`CAST(... AS ...)`, `cast(v, "type")`, `to_int32(v)`, ...)
 /// produced the call.
-pub(super) fn strict_cast_i64(value: &Value, min: i128, max: i128, target_type: &str) -> IrResult<i64> {
+pub(super) fn strict_cast_i64(
+    value: &Value,
+    min: i128,
+    max: i128,
+    target_type: &str,
+) -> IrResult<i64> {
     let string_input = matches!(value, Value::String(_));
     let int128_input = matches!(value, Value::BigInt(_));
     let unsigned_target = min == 0 && target_type.starts_with("UINT");

@@ -1,9 +1,9 @@
 //! Value and text hashing.
 
+use super::maps::is_visible_map_key;
+use super::temporal;
 use crate::ir::value::Value;
 use std::collections::BTreeMap;
-use super::temporal;
-use super::maps::is_visible_map_key;
 
 pub(super) fn hash_function_value(value: &Value) -> Value {
     Value::BigInt(num_bigint::BigInt::from(hash_value_u64(value)))
@@ -65,7 +65,36 @@ fn hash_value_u64(value: &Value) -> u64 {
         Value::List(items) | Value::Path(items) => items.iter().fold(u64::MAX, |hash, item| {
             combine_hash_scalar(hash, hash_value_u64(item))
         }),
+        Value::BulkSet(items) => {
+            let mut hashes = items.iter().map(hash_value_u64).collect::<Vec<_>>();
+            hashes.sort_unstable();
+            hashes
+                .into_iter()
+                .fold(murmurhash64(26), combine_hash_scalar)
+        }
         Value::Map(map) => hash_struct_map_u64(map),
+        Value::Token(value) => combine_hash_scalar(murmurhash64(24), hash_string_u64(value)),
+        Value::Direction(value) => combine_hash_scalar(murmurhash64(25), hash_string_u64(value)),
+        Value::TypedMap(entries) => {
+            let strings: Option<BTreeMap<String, Value>> = entries
+                .iter()
+                .map(|(key, value)| match key {
+                    Value::String(key) => Some((key.clone(), value.clone())),
+                    _ => None,
+                })
+                .collect();
+            if let Some(map) = strings.filter(|m| m.len() == entries.len()) {
+                return hash_struct_map_u64(&map);
+            }
+            let mut hashes = entries
+                .iter()
+                .map(|(key, value)| combine_hash_scalar(hash_value_u64(key), hash_value_u64(value)))
+                .collect::<Vec<_>>();
+            hashes.sort_unstable();
+            hashes
+                .into_iter()
+                .fold(murmurhash64(23), combine_hash_scalar)
+        }
     }
 }
 
@@ -151,4 +180,33 @@ fn bytes_to_lower_hex(bytes: &[u8]) -> String {
         out.push(HEX[(byte & 0x0f) as usize] as char);
     }
     out
+}
+
+#[cfg(test)]
+mod typed_map_tests {
+    use super::*;
+    #[test]
+    fn typed_map_hash_is_order_independent_and_preserves_tokens() {
+        let entries = vec![
+            (Value::Token("id".into()), Value::Int(1)),
+            (Value::String("id".into()), Value::Int(2)),
+        ];
+        let mut reversed = entries.clone();
+        reversed.reverse();
+        assert_eq!(
+            hash_value_u64(&Value::TypedMap(entries)),
+            hash_value_u64(&Value::TypedMap(reversed))
+        );
+        assert_ne!(
+            hash_value_u64(&Value::Token("id".into())),
+            hash_value_u64(&Value::String("id".into()))
+        );
+        assert_eq!(
+            hash_value_u64(&Value::TypedMap(vec![(
+                Value::String("a".into()),
+                Value::Int(1)
+            )])),
+            hash_value_u64(&Value::Map(BTreeMap::from([("a".into(), Value::Int(1))])))
+        );
+    }
 }

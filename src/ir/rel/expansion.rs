@@ -205,8 +205,10 @@ impl<'a> LoweringContext<'a> {
         let to_label = format!("{rel}__traverse_to_label");
         let orient = |reverse: bool| -> RelResult<LogicalPlan> {
             let mut builder = LogicalPlanBuilder::from(edge_scan.plan.clone());
-            if reverse {
-                // The old OR join emitted a physical self-loop only once.
+            if reverse && self.language != Language::Gremlin {
+                // Cypher undirected matching emits a physical self-loop once.
+                // Gremlin both()/bothE() concatenate outgoing and incoming
+                // traversers, so the same self-loop participates twice.
                 builder = builder.filter(
                     col_exact(src_id_col(&rel))
                         .not_eq(col_exact(dst_id_col(&rel)))

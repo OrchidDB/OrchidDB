@@ -234,7 +234,19 @@ impl RelBackend {
         Self { options }
     }
 
+    pub(crate) fn preserving_traverser_state(&self) -> Self {
+        let mut backend = self.clone();
+        backend.options.tolerate_internal_path_state = false;
+        backend
+    }
+
     pub fn lower(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
+        // Deep scalar collections also recurse through backend expression typing.
+        // Grow only around synchronous lowering, never across an async boundary.
+        stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || self.lower_inner(plan, graph))
+    }
+
+    fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
         validate_read_capabilities(plan, ReadCapabilities::LOCAL_DUCKDB)?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin

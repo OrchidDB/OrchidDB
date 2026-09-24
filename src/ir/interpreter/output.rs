@@ -87,7 +87,43 @@ pub(crate) fn finalize_return(
         arrow_fields.push(Field::new(name.as_str(), data_type, true));
         arrays.push(array);
     }
-    let schema: SchemaRef = Arc::new(Schema::new(arrow_fields));
+    // Keep the established Arrow display columns, and retain the actual typed
+    // Gremlin values at the result boundary for lossless protocol adapters.
+    let mut schema = Schema::new(arrow_fields);
+    if gremlin_elements || expand_elements {
+        schema.metadata.insert(
+            if gremlin_elements {
+                "crabgraph.gremlin.typed_columns.v1"
+            } else {
+                "crabgraph.cypher.typed_columns.v1"
+            }
+            .into(),
+            serde_json::to_string(fields)
+                .map_err(|err| InterpretError::Type(format!("typed result columns: {err}")))?,
+        );
+        let typed_rows: Vec<Vec<serde_json::Value>> = rows
+            .iter()
+            .map(|row| {
+                fields
+                    .iter()
+                    .map(|field| {
+                        gremlin_typed_value(row.bindings.get(field).unwrap_or(&Value::Null), graph)
+                    })
+                    .collect()
+            })
+            .collect();
+        schema.metadata.insert(
+            if gremlin_elements {
+                "crabgraph.gremlin.typed_rows.v1"
+            } else {
+                "crabgraph.cypher.typed_rows.v1"
+            }
+            .into(),
+            serde_json::to_string(&typed_rows)
+                .map_err(|err| InterpretError::Type(format!("typed Gremlin results: {err}")))?,
+        );
+    }
+    let schema: SchemaRef = Arc::new(schema);
     let batch = RecordBatch::try_new(schema, arrays)
         .map_err(|err| InterpretError::Type(format!("record batch: {err}")))?;
     Ok(ReturnedBatches {
@@ -383,6 +419,12 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
             dst_id,
             projected_properties.as_deref(),
         )),
+        Value::BulkSet(items) => Value::BulkSet(
+            items
+                .into_iter()
+                .map(|item| expand_element(item, graph))
+                .collect(),
+        ),
         Value::List(items) => Value::List(
             items
                 .into_iter()
@@ -404,6 +446,151 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
     }
 }
 
+/// Versioned, tagged transport for values before display formatting. Strings
+/// remain strings even when they resemble the textual graph notation.
+fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Value {
+    use serde_json::json;
+    let tagged = |kind: &str, value: serde_json::Value| json!({"type": kind, "value": value});
+    let id = |label: &str, row: i64, edge: bool| {
+        let property = if edge {
+            graph.edge_property(label, row, "id")
+        } else {
+            graph.node_property(label, row, "id")
+        };
+        let user_id = if property == Value::Null {
+            Value::String(format!("{label}#{row}"))
+        } else {
+            property
+        };
+        gremlin_typed_value(&user_id, graph)
+    };
+    match value {
+        Value::Null => tagged("null", json!(null)),
+        Value::Bool(v) => tagged("boolean", json!(v)),
+        Value::Byte(v) => tagged("byte", json!(v)),
+        Value::UInt8(v) => tagged("uint8", json!(v)),
+        Value::Short(v) => tagged("short", json!(v)),
+        Value::UInt16(v) => tagged("uint16", json!(v)),
+        Value::Int(v) => tagged("int", json!(v)),
+        Value::UInt32(v) => tagged("uint32", json!(v)),
+        Value::Long(v) => tagged("long", json!(v)),
+        Value::UInt64(v) => tagged("uint64", json!(v.to_string())),
+        Value::Float32(v) => tagged("float", json!(v.to_string())),
+        Value::Float(v) => tagged("double", json!(v.to_string())),
+        Value::BigInt(v) => tagged("bigint", json!(v.to_string())),
+        Value::UInt128(v) => tagged("uint128", json!(v.to_string())),
+        Value::BigDecimal(v) => tagged("bigdecimal", json!(v.to_string())),
+        Value::DateTime(v) => tagged("datetime", json!(v)),
+        Value::String(v) => tagged("string", json!(v)),
+        Value::InternalId { table, offset } => {
+            tagged("internal_id", json!({"table":table,"offset":offset}))
+        }
+        Value::Node { label, id: row } => {
+            let props: serde_json::Map<String, serde_json::Value> = graph
+                .node_property_keys_with_id(label)
+                .into_iter()
+                .filter(|key| is_visible_map_key(key))
+                .filter_map(|key| {
+                    let value = graph.node_property(label, *row, &key);
+                    (value != Value::Null).then(|| (key, gremlin_typed_value(&value, graph)))
+                })
+                .collect();
+            json!({"type":"vertex", "id":id(label,*row,false), "internal_id":format!("{label}#{row}"),
+                "label":label, "properties":props})
+        }
+        Value::Edge {
+            rel_type,
+            id: row,
+            src_label,
+            src_id,
+            dst_label,
+            dst_id,
+            ..
+        } => {
+            let props: serde_json::Map<String, serde_json::Value> = graph
+                .edge_property_keys(rel_type)
+                .into_iter()
+                .filter(|key| is_visible_map_key(key))
+                .filter_map(|key| {
+                    let value = graph.edge_property(rel_type, *row, &key);
+                    (value != Value::Null).then(|| (key, gremlin_typed_value(&value, graph)))
+                })
+                .collect();
+            json!({"type":"edge", "id":id(rel_type,*row,true), "internal_id":format!("{rel_type}#{row}"),
+                "label":rel_type, "outV":id(src_label,*src_id,false), "outVLabel":src_label,
+                "inV":id(dst_label,*dst_id,false), "inVLabel":dst_label, "properties":props})
+        }
+        Value::List(items) => tagged(
+            "list",
+            json!(
+                items
+                    .iter()
+                    .map(|v| gremlin_typed_value(v, graph))
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        Value::Path(items) => tagged(
+            "path",
+            json!(
+                items
+                    .iter()
+                    .map(|v| gremlin_typed_value(v, graph))
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        Value::BulkSet(items) => tagged(
+            "bulkset",
+            json!(
+                items
+                    .iter()
+                    .map(|v| gremlin_typed_value(v, graph))
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        Value::TypedMap(entries) => tagged(
+            "map",
+            json!(
+                entries
+                    .iter()
+                    .map(|(key, value)| json!([
+                        gremlin_typed_value(key, graph),
+                        gremlin_typed_value(value, graph)
+                    ]))
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        Value::Token(token) => tagged("token", json!(token)),
+        Value::Direction(direction) => tagged("direction", json!(direction)),
+        Value::Map(map) => {
+            if let Some(items) = crate::ir::value::as_gremlin_set(value) {
+                return tagged(
+                    "set",
+                    json!(
+                        items
+                            .iter()
+                            .map(|v| gremlin_typed_value(v, graph))
+                            .collect::<Vec<_>>()
+                    ),
+                );
+            }
+            tagged(
+                "map",
+                json!(
+                    visible_map_keys(map)
+                        .iter()
+                        .map(|key| {
+                            json!([
+                                tagged("string", json!(key)),
+                                gremlin_typed_value(&map[key], graph)
+                            ])
+                        })
+                        .collect::<Vec<_>>()
+                ),
+            )
+        }
+    }
+}
+
 fn gremlin_display_element(value: Value, graph: &PropertyGraph) -> Value {
     match value {
         Value::Node { label, id } => {
@@ -422,6 +609,12 @@ fn gremlin_display_element(value: Value, graph: &PropertyGraph) -> Value {
             rel_type,
             gremlin_node_name(graph, &dst_label, dst_id)
         )),
+        Value::BulkSet(items) => Value::BulkSet(
+            items
+                .into_iter()
+                .map(|item| gremlin_display_element(item, graph))
+                .collect(),
+        ),
         Value::List(items) => Value::List(
             items
                 .into_iter()
@@ -505,6 +698,21 @@ fn format_edge(
 /// keep their decimal point, lists/maps recurse.
 fn format_property_value(value: &Value) -> String {
     match value {
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    format_property_value(key),
+                    format_property_value(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => String::new(),
         Value::String(s) => format_bytea_display(s).unwrap_or_else(|| unescape_display_quotes(s)),
         Value::Bool(true) => "True".into(),
@@ -523,7 +731,7 @@ fn format_property_value(value: &Value) -> String {
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let body: Vec<String> = items.iter().map(format_property_value).collect();
             format!("[{}]", body.join(","))
         }
@@ -810,5 +1018,77 @@ mod tests {
             format_property_value(&Value::String("\\xAA\\xBB".into())),
             "\\xAA\\xBB"
         );
+    }
+}
+
+#[cfg(test)]
+mod typed_transport_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn typed_transport_preserves_graph_identity_and_literal_lookalikes() {
+        let graph = PropertyGraph::new();
+        let vertex = graph.insert_node(
+            "person",
+            BTreeMap::from([
+                ("name".into(), Value::String("same".into())),
+                ("id".into(), Value::Long(91)),
+            ]),
+        );
+        let encoded = gremlin_typed_value(&vertex, &graph);
+        assert_eq!(encoded["type"], "vertex");
+        assert_eq!(encoded["id"]["type"], "long");
+        assert_eq!(encoded["id"]["value"], 91);
+        assert_eq!(encoded["properties"]["name"]["value"], "same");
+        let literal = gremlin_typed_value(&Value::String("v[same]".into()), &graph);
+        assert_eq!(literal["type"], "string");
+        assert_eq!(literal["value"], "v[same]");
+    }
+
+    #[test]
+    fn typed_transport_retains_mixed_numeric_values_before_arrow_coercion() {
+        let mut row = Row::new();
+        row.bindings.insert(
+            "result".into(),
+            Value::List(vec![
+                Value::Int(2),
+                Value::Long(2),
+                Value::String("2".into()),
+                Value::Float(f64::NAN),
+            ]),
+        );
+        let returned = finalize_return(
+            &["result".into()],
+            ResultForm::RowSet,
+            vec![row],
+            &PropertyGraph::new(),
+            &GraphPlanPolicy::gremlin(),
+        )
+        .unwrap();
+        let metadata = returned.batch.schema();
+        let rows: serde_json::Value =
+            serde_json::from_str(&metadata.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+        assert_eq!(rows[0][0]["value"][0]["type"], "int");
+        assert_eq!(rows[0][0]["value"][1]["type"], "long");
+        assert_eq!(rows[0][0]["value"][2]["type"], "string");
+        assert_eq!(rows[0][0]["value"][3]["value"], "NaN");
+        assert_eq!(returned.batch.num_rows(), 1);
+    }
+}
+
+#[cfg(test)]
+mod bulkset_native_tests {
+    use super::*;
+    #[test]
+    fn bulkset_native_payload_preserves_runtime_kind_and_duplicates() {
+        let payload = gremlin_typed_value(
+            &Value::BulkSet(vec![Value::Int(7), Value::Int(7), Value::Long(7)]),
+            &PropertyGraph::new(),
+        );
+        assert_eq!(payload["type"], "bulkset");
+        assert_eq!(payload["value"].as_array().unwrap().len(), 3);
+        assert_eq!(payload["value"][0]["type"], "int");
+        assert_eq!(payload["value"][2]["type"], "long");
     }
 }

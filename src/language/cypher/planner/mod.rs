@@ -1,7 +1,7 @@
 pub mod error;
 pub mod lowering;
 
-pub use error::{CypherPlanError, CypherPlanResult};
+pub use error::{CypherPlanError, CypherPlanResult, CypherSemanticError};
 pub use lowering::lower_query;
 
 use crate::ir::plan::GraphPlan;

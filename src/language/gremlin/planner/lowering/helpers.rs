@@ -177,7 +177,10 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
     if ids.is_empty() {
         return input;
     }
-    let id_target = IrExpr::Id(CURRENT.into());
+    let id_target = IrExpr::Call {
+        name: "gremlin_id".into(),
+        args: vec![IrExpr::Binding(CURRENT.into())],
+    };
     let parts = ids
         .iter()
         .flat_map(|v| id_filter_parts(v, &id_target))
@@ -194,10 +197,10 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
 
 fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
     match value {
-        GValue::Int(n) => vec![IrExpr::Binary {
+        GValue::Int(_) | GValue::Long(_) | GValue::Byte(_) | GValue::Short(_) | GValue::BigInt(_) => vec![IrExpr::Binary {
             op: BinaryOp::Eq,
             lhs: Box::new(id_target.clone()),
-            rhs: Box::new(IrExpr::lit_int(*n)),
+            rhs: Box::new(super::literals::gvalue_to_expr(value).expect("numeric literal")),
         }],
         GValue::String(s) => {
             vec![

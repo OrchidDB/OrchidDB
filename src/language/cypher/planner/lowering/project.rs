@@ -440,22 +440,92 @@ fn order_expr_after_cardinality_projection(
         }
     }
 
-    if contains_aggregate(expr) {
+    // ORDER BY may compose already projected grouping keys and aggregates.
+    // Rewrite each matching subexpression to its output binding before
+    // checking scope; an unprojected aggregate must still be rejected.
+    let rewritten = rewrite_projected_sort_expr(body, fields, expr);
+    if contains_aggregate(&rewritten) || requires_scoped_materialization(&rewritten) {
         return Ok(None);
     }
-    if requires_scoped_materialization(expr) {
-        return Ok(None);
-    }
-
     let mut refs = BTreeSet::new();
-    collect_free_variables(expr, &mut BTreeSet::new(), &mut refs);
-    if refs
-        .iter()
-        .all(|name| fields.iter().any(|field| field == name))
-    {
-        return Ok(Some(lower_expr(lowerer, expr)?));
+    collect_free_variables(&rewritten, &mut BTreeSet::new(), &mut refs);
+    if refs.iter().all(|name| fields.contains(name)) {
+        return Ok(Some(lower_expr(lowerer, &rewritten)?));
     }
     Ok(None)
+}
+
+fn rewrite_projected_sort_expr(body: &ProjectionBody, fields: &[String], expr: &Expr) -> Expr {
+    if let Expr::Variable(name) = expr {
+        if fields.contains(name) {
+            return expr.clone();
+        }
+    }
+    let offset = fields.len().saturating_sub(body.items.len());
+    for (index, item) in body.items.iter().enumerate() {
+        if item.expr == *expr {
+            if let Some(field) = fields.get(offset + index) {
+                return Expr::Variable(field.clone());
+            }
+        }
+    }
+    let rewrite = |expr: &Expr| rewrite_projected_sort_expr(body, fields, expr);
+    let boxed = |expr: &Expr| Box::new(rewrite(expr));
+    match expr {
+        Expr::Binary { op, lhs, rhs } => Expr::Binary {
+            op: *op,
+            lhs: boxed(lhs),
+            rhs: boxed(rhs),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: *op,
+            expr: boxed(expr),
+        },
+        Expr::Property { target, key } => Expr::Property {
+            target: boxed(target),
+            key: key.clone(),
+        },
+        Expr::IsNull(expr) => Expr::IsNull(boxed(expr)),
+        Expr::IsNotNull(expr) => Expr::IsNotNull(boxed(expr)),
+        Expr::StringPredicate {
+            op,
+            target,
+            pattern,
+        } => Expr::StringPredicate {
+            op: *op,
+            target: boxed(target),
+            pattern: boxed(pattern),
+        },
+        Expr::Function {
+            name,
+            distinct,
+            args,
+        } => Expr::Function {
+            name: name.clone(),
+            distinct: *distinct,
+            args: args.iter().map(rewrite).collect(),
+        },
+        Expr::List(items) => Expr::List(items.iter().map(rewrite).collect()),
+        Expr::Map(items) => Expr::Map(
+            items
+                .iter()
+                .map(|(key, value)| (key.clone(), rewrite(value)))
+                .collect(),
+        ),
+        Expr::Case {
+            case,
+            arms,
+            otherwise,
+        } => Expr::Case {
+            case: case.as_ref().map(|value| boxed(value)),
+            arms: arms
+                .iter()
+                .map(|(when, then)| (rewrite(when), rewrite(then)))
+                .collect(),
+            otherwise: otherwise.as_ref().map(|value| boxed(value)),
+        },
+        _ => expr.clone(),
+    }
 }
 
 fn invalid_order_scope() -> CypherPlanError {

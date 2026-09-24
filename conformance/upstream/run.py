@@ -3,6 +3,8 @@
 import argparse,datetime,hashlib,json,os,platform,select,signal,subprocess,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];REPO=ROOT.parent
+def crabgraph_binary():
+ return Path(os.environ.get('CONFORMANCE_CRABGRAPH_BINARY',str(REPO/'target/debug/upstream'))).resolve()
 class Process:
  def __init__(self,command,log,ready=False):
   self.log=open(log,'a');self.p=subprocess.Popen(command,cwd=REPO,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.log,text=True,bufsize=1,start_new_session=True,env={**os.environ,'CONFORMANCE_PYTHON':os.environ.get('CONFORMANCE_PYTHON',os.sys.executable)})
@@ -64,7 +66,7 @@ def main():
   if adapter:adapter.close()
  content={'schema_version':3,'engine':args.engine,'suite':args.suite,'source':catalog['sources'][args.suite],'started_at':started,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'environment':{'system':platform.system(),'architecture':platform.machine(),'python':platform.python_version(),'logical_cpus':os.cpu_count()},'coverage':{'catalog_cases':len([c for c in catalog['cases'] if c['suite']==args.suite]),'recorded_cases':len(results),'filtered':bool(args.limit or args.filter)},'results':results}
  if args.engine=='crabgraph':
-  binary=REPO/'target/debug/upstream';content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':True}
+  binary=crabgraph_binary();content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':True}
  else:content['build']={'version':{'sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
  output.write_text(json.dumps(content,indent=2)+'\n')
  from collections import Counter

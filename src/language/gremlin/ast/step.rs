@@ -6,6 +6,10 @@ use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    MergeV { criteria: Option<MergeVertexMap>, on_create: Option<Option<MergeVertexMap>>, on_match: Option<Option<MergeVertexMap>> },
+    AddV { label: String },
+    AddE { label: String, from: Option<String>, to: Option<String> },
+    Property { key: String, value: GValue },
     V {
         ids: Vec<GValue>,
     },
@@ -406,4 +410,13 @@ pub enum Step {
         value: Option<GValue>,
         traversal: Option<Vec<Step>>,
     },
+}
+
+/// Static merge criteria retain token identity separately from property keys.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MergeVertexMap {
+    pub label: Option<GValue>,
+    pub id: Option<GValue>,
+    pub properties: std::collections::BTreeMap<String, GValue>,
+    pub single_properties: std::collections::BTreeSet<String>,
 }

@@ -9,7 +9,12 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
     Ok(match value {
         GValue::Null => Lit::Null,
         GValue::Bool(b) => Lit::Bool(*b),
-        GValue::Int(n) => Lit::Int(*n),
+        GValue::Int(n) | GValue::Long(n) => Lit::Int(*n),
+        GValue::Byte(n) => Lit::Int(*n as i64),
+        GValue::Short(n) => Lit::Int(*n as i64),
+        GValue::Float32(n) => Lit::Float(*n as f64),
+        GValue::BigInt(n) => Lit::String(n.to_string()),
+        GValue::BigDecimal(n) => Lit::String(n.to_string()),
         GValue::Float(f) => Lit::Float(*f),
         GValue::String(s) => Lit::String(s.clone()),
         GValue::DateTime(_) => Lit::Null,
@@ -26,6 +31,16 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
 
 pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     Ok(match value {
+        GValue::Byte(_) | GValue::Short(_) | GValue::Long(_) |
+        GValue::BigInt(_) | GValue::Float32(_) | GValue::BigDecimal(_) => IrExpr::Call {
+            name: match value {
+                GValue::Byte(_) => "cast_byte", GValue::Short(_) => "cast_short",
+                GValue::Long(_) => "cast_long", GValue::BigInt(_) => "cast_bigint",
+                GValue::Float32(_) => "cast_float", GValue::BigDecimal(_) => "cast_bigdecimal",
+                _ => unreachable!(),
+            }.into(),
+            args: vec![IrExpr::Lit(gvalue_to_lit(value)?)],
+        },
         GValue::DateTime(s) => IrExpr::Call {
             name: "datetime_literal".into(),
             args: vec![IrExpr::Lit(Lit::String(s.clone()))],
@@ -70,6 +85,12 @@ pub(super) fn gvalue_to_value(value: &GValue) -> Value {
         GValue::Null => Value::Null,
         GValue::Bool(b) => Value::Bool(*b),
         GValue::Int(n) => Value::Int(*n),
+        GValue::Byte(n) => Value::Byte(*n),
+        GValue::Short(n) => Value::Short(*n),
+        GValue::Long(n) => Value::Long(*n),
+        GValue::BigInt(n) => Value::BigInt(n.clone()),
+        GValue::Float32(n) => Value::Float32(*n),
+        GValue::BigDecimal(n) => Value::BigDecimal(n.clone()),
         GValue::Float(f) => Value::Float(*f),
         GValue::DateTime(s) => Value::DateTime(s.clone()),
         GValue::String(s) => Value::String(s.clone()),

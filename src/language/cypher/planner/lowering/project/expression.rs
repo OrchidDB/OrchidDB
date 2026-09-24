@@ -5,6 +5,7 @@ use super::{
     BinaryOp, CypherPlanError, CypherPlanResult, Expr, IrBinaryOp, IrExpr, IrQuantifierKind, Lit,
     Literal, Lowerer, PropertyMissing, QuantifierKind, StringOp, UnaryOp,
 };
+use crate::language::cypher::planner::CypherSemanticError;
 pub(super) fn lower_binary_op(op: BinaryOp) -> IrBinaryOp {
     match op {
         BinaryOp::Or => IrBinaryOp::Or,
@@ -113,10 +114,25 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             args: vec![lower_expr(lowerer, target)?],
         },
         Expr::Property { target, key } => match target.as_ref() {
-            Expr::Variable(binding) => IrExpr::Property {
-                binding: binding.clone(),
-                name: key.clone(),
-                policy: PropertyMissing::NullOnMissing,
+            Expr::Variable(binding)
+                if matches!(lowerer.binding_kind(binding), Some(
+                    crate::language::cypher::semantics::BindingKind::Node
+                    | crate::language::cypher::semantics::BindingKind::Relationship
+                    | crate::language::cypher::semantics::BindingKind::RecursiveRelationship
+                )) =>
+            {
+                IrExpr::Property {
+                    binding: binding.clone(),
+                    name: key.clone(),
+                    policy: PropertyMissing::NullOnMissing,
+                }
+            }
+            Expr::Variable(binding) => IrExpr::Call {
+                name: "cypher_subscript".to_string(),
+                args: vec![
+                    IrExpr::Binding(binding.clone()),
+                    IrExpr::Lit(Lit::String(key.clone())),
+                ],
             },
             other => IrExpr::Call {
                 name: "property".to_string(),
@@ -256,7 +272,8 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             if aggregate_kind(name).is_some() {
                 return Err(CypherPlanError::Unsupported(
                     "aggregate functions must be lowered through aggregate projection".to_string(),
-                ));
+                )
+                .classified(CypherSemanticError::InvalidAggregation));
             }
             if *distinct {
                 return Err(CypherPlanError::Invalid(format!(
@@ -274,7 +291,8 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
         Expr::CountStar => {
             return Err(CypherPlanError::Unsupported(
                 "count(*) must be lowered through aggregate projection".to_string(),
-            ));
+            )
+            .classified(CypherSemanticError::InvalidAggregation));
         }
         Expr::Case {
             case,

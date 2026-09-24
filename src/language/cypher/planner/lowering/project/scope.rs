@@ -4,6 +4,7 @@ use super::{
     BTreeSet, Clause, CypherPlanError, CypherPlanResult, Expr, Lowerer, PatternPart,
     ProjectionBody, Query,
 };
+use crate::language::cypher::planner::CypherSemanticError;
 pub(super) fn free_variable_names(expr: &Expr) -> BTreeSet<String> {
     let mut refs = BTreeSet::new();
     collect_free_variables(expr, &mut BTreeSet::new(), &mut refs);
@@ -78,7 +79,8 @@ pub(crate) fn validate_expression_refs(
         Err(CypherPlanError::Invalid(format!(
             "{clause} references variables that are not in scope: {}",
             missing.join(", ")
-        )))
+        ))
+        .classified(CypherSemanticError::UndefinedVariable))
     }
 }
 

@@ -12,7 +12,10 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         .trim_start_matches("java.math.")
         .to_ascii_lowercase();
     match value {
+        Value::BulkSet(_) => matches!(normalised.as_str(), "bulkset" | "set" | "collection"),
         Value::Null => normalised == "null",
+        Value::Token(_) => normalised == "token",
+        Value::Direction(_) => normalised == "direction",
         Value::Bool(_) => matches!(normalised.as_str(), "boolean" | "bool"),
         Value::Byte(_) => normalised == "byte",
         Value::UInt8(_) => matches!(normalised.as_str(), "uint8" | "byte"),
@@ -47,7 +50,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::Map(_) if crate::ir::value::as_gremlin_set(value).is_some() => {
             matches!(normalised.as_str(), "set" | "bulkset" | "collection")
         }
-        Value::Map(_) => matches!(
+        Value::Map(_) | Value::TypedMap(_) => matches!(
             normalised.as_str(),
             "map" | "tree" | "graph" | "bulkset" | "traverser"
         ),

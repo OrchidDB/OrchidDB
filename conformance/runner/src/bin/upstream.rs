@@ -28,6 +28,48 @@ fn typed_cell(a:&dyn Array,i:usize)->Value {
  }
 }
 fn param(v:&Value)->GValue{match v{Value::Null=>GValue::Null,Value::Bool(x)=>GValue::Bool(*x),Value::Number(x)=>if let Some(i)=x.as_i64(){GValue::Int(i)}else{GValue::Float(x.as_f64().unwrap())},Value::String(s)=>GValue::String(s.clone()),Value::Array(a)=>GValue::List(a.iter().map(param).collect()),Value::Object(m)=>GValue::Map(m.iter().map(|(k,v)|(k.clone(),param(v))).collect())}}
+fn fixture_property(value:&Value,declared:Option<&str>)->Result<GValue,String>{
+ let invalid=||format!("Fixture value {value} does not match declared type {declared:?}");
+ match declared {
+  None=>Ok(param(value)),
+  Some("Integer")=>value.as_i64().filter(|v|i32::try_from(*v).is_ok()).map(GValue::Int).ok_or_else(invalid),
+  Some("Long")=>value.as_i64().map(GValue::Long).ok_or_else(invalid),
+  Some("Byte")=>value.as_i64().and_then(|v|i8::try_from(v).ok()).map(GValue::Byte).ok_or_else(invalid),
+  Some("Short")=>value.as_i64().and_then(|v|i16::try_from(v).ok()).map(GValue::Short).ok_or_else(invalid),
+  Some("Float")=>value.as_f64().map(|v|GValue::Float32(v as f32)).ok_or_else(invalid),
+  Some("Double")=>value.as_f64().map(GValue::Float).ok_or_else(invalid),
+  Some("String")=>value.as_str().map(|v|GValue::String(v.to_owned())).ok_or_else(invalid),
+  Some("Boolean")=>value.as_bool().map(GValue::Bool).ok_or_else(invalid),
+  Some(other)=>Err(format!("Unmapped fixture property type {other}")),
+ }
+}
+fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
+ fn properties(item:&Value)->Result<BTreeMap<String,GValue>,String>{
+  item["properties"].as_object().ok_or("Fixture properties must be an object")?.iter()
+   .map(|(key,value)|fixture_property(value,item["property_types"][key].as_str()).map(|v|(key.clone(),v))).collect()
+ }
+ let graph=PropertyGraph::new();let mut nodes=BTreeMap::new();
+ for n in req["nodes"].as_array().ok_or("Fixture nodes must be an array")?{
+  nodes.insert(n["id"].to_string(),graph.insert_node(n["label"].as_str().ok_or("Fixture node label missing")?,properties(n)?));
+ }
+ for e in req["edges"].as_array().ok_or("Fixture edges must be an array")?{
+  let src=nodes.get(&e["src"].to_string()).ok_or("Fixture edge source missing")?;
+  let dst=nodes.get(&e["dst"].to_string()).ok_or("Fixture edge target missing")?;
+  graph.insert_edge(e["label"].as_str().ok_or("Fixture edge label missing")?,src,dst,properties(e)?).map_err(|e|e.to_string())?;
+ }
+ Ok(graph)
+}
+// Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.
+// Capture typed planner diagnostics before its public String error boundary.
+fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>)->Result<new_graph::ir::plan::GraphPlan,(String,Option<Value>)>{
+ use new_graph::language::cypher;
+ let mut parsed=cypher::parser::parse_query(query).map_err(|e|(e.to_string(),None))?;
+ cypher::parameters::bind_parameters(&mut parsed,params).map_err(|e|(e,None))?;
+ cypher::planner::CypherPlanner::new().plan(&parsed).map_err(|e|{
+  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
+  (e.to_string(),classification)
+ })
+}
 fn term(t:RdfTermValue)->Value{match t{RdfTermValue::Iri(v)=>json!({"type":"uri","value":v}),RdfTermValue::BlankNode(v)=>json!({"type":"bnode","value":v}),RdfTermValue::Literal{lexical,datatype,language}=>json!({"type":"literal","value":lexical,"datatype":datatype,"lang":language})}}
 async fn rdf(req:&Value)->Result<Value,String>{
  let fields=["g","s","s_kind","s_dt","s_lang","p","p_kind","p_dt","p_lang","o","o_kind","o_dt","o_lang"];
@@ -56,22 +98,32 @@ async fn main(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
  let op=req["op"].as_str().unwrap_or("cypher");
  let result:Result<Value,String>=match op{
- "fixture"=>{
- let graph=PropertyGraph::new();let mut nodes=BTreeMap::new();
- for n in req["nodes"].as_array().unwrap(){let props=n["properties"].as_object().unwrap().iter().map(|(k,v)|(k.clone(),param(v))).collect();nodes.insert(n["id"].to_string(),graph.insert_node(n["label"].as_str().unwrap(),props));}
- let mut error=None;
- for e in req["edges"].as_array().unwrap(){let props=e["properties"].as_object().unwrap().iter().map(|(k,v)|(k.clone(),param(v))).collect();if let Err(err)=graph.insert_edge(e["label"].as_str().unwrap(),&nodes[&e["src"].to_string()],&nodes[&e["dst"].to_string()],props){error=Some(err.to_string());break;}}
- if let Some(err)=error{Err(err)}else{engine.replace_graph(graph).map(|_|json!({"ok":true}))}
- },
+ "fixture"=>fixture_graph(&req).and_then(|graph|engine.replace_graph(graph).map(|_|json!({"ok":true}))),
  "reset"=>engine.replace_graph(PropertyGraph::new()).map(|_|json!({"ok":true})),
  "rdf"=>rdf(&req).await,
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())},
  _=>{
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");
- let r=if op=="gremlin"{engine.gremlin(q).await}else{engine.cypher_with_params(q,&params).await};
- r.map(|r|{let b=r.returned.batch;json!({"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"backend":format!("{:?}",r.backend)})})
+ let mut classification=None;
+ let r=if op=="gremlin"{engine.gremlin(q).await}else{match cypher_plan(q,&params){
+  Ok(plan)=>engine.execute_plan(&plan).await,
+  Err((message,detail))=>{classification=detail;Err(message)}
+ }};
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("crabgraph.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("crabgraph.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
  let output=result.unwrap_or_else(|e|json!({"error":e}));println!("{output}");io::stdout().flush().unwrap();
+ }
+}
+
+#[cfg(test)] mod adapter_tests {
+ use super::*;
+ #[test] fn fixture_width_comes_from_declared_type(){
+  assert!(matches!(fixture_property(&json!(7),Some("Integer")).unwrap(),GValue::Int(7)));
+  assert!(matches!(fixture_property(&json!(7),Some("Long")).unwrap(),GValue::Long(7)));
+  assert!(matches!(fixture_property(&json!(0.5),Some("Float")).unwrap(),GValue::Float32(_)));
+  assert!(fixture_property(&json!(2147483648_i64),Some("Integer")).is_err());
+  assert!(fixture_property(&json!(true),Some("Integer")).is_err());
+  assert!(fixture_property(&json!(1),Some("Unknown")).is_err());
  }
 }

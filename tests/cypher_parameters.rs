@@ -108,7 +108,7 @@ fn binds_list_parameter() {
     let Some(Expr::Function { name, args, .. }) = &m.predicate else {
         panic!("expected IN function");
     };
-    assert_eq!(name, "in");
+    assert_eq!(name, "cypher_in");
     let Expr::List(items) = &args[1] else {
         panic!("expected list literal");
     };

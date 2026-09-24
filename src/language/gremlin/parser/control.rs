@@ -252,6 +252,10 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalMethod_optionContextAll<'input>,
     ) {
+        if matches!(self.steps.last(), Some(Step::MergeV { .. })) {
+            self.lower_merge_vertex_option(ctx);
+            return;
+        }
         let option = match self.lower_option(ctx) {
             Some(option) => option,
             None => {

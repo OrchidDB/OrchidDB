@@ -133,7 +133,13 @@ pub(super) fn lower_has_id_predicate(
                 crate::language::gremlin::semantics::CompareOp::Neq => {
                     IrExpr::Not(Box::new(condition))
                 }
-                _ => predicate_to_expr(IrExpr::Id(CURRENT.into()), predicate)?,
+                _ => predicate_to_expr(
+                    IrExpr::Call {
+                        name: "gremlin_id".into(),
+                        args: vec![IrExpr::Binding(CURRENT.into())],
+                    },
+                    predicate,
+                )?,
             };
             return Ok(Node::GraphFilter {
                 condition,
@@ -142,7 +148,13 @@ pub(super) fn lower_has_id_predicate(
         }
     }
     Ok(Node::GraphFilter {
-        condition: predicate_to_expr(IrExpr::Id(CURRENT.into()), predicate)?,
+        condition: predicate_to_expr(
+                    IrExpr::Call {
+                        name: "gremlin_id".into(),
+                        args: vec![IrExpr::Binding(CURRENT.into())],
+                    },
+                    predicate,
+                )?,
         input: input.boxed(),
     })
 }

@@ -34,7 +34,7 @@ use super::{InterpretError, IrResult, Row};
 
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
-    pub(crate) group_counts: BTreeMap<String, BTreeMap<String, u64>>,
+    pub(crate) group_counts: BTreeMap<String, Vec<(Value, u64)>>,
     pub(crate) step_state: Vec<StepStateFrame>,
     step_limit: Option<u64>,
     steps: u64,
@@ -445,8 +445,9 @@ pub(crate) fn run_with_context(
             let counts = ctx.group_counts.entry(label.clone()).or_default();
             for row in &rows {
                 let key_value = eval(key, row, graph)?;
-                let key = super::ops::aggregate::map_key(&key_value);
-                *counts.entry(key).or_insert(0) += row.bulk;
+                if let Some((_, count)) = counts.iter_mut().find(|(key, _)| key == &key_value) {
+                    *count += row.bulk;
+                } else { counts.push((key_value, row.bulk)); }
             }
             Ok(rows)
         }
@@ -656,11 +657,11 @@ fn group_count_map_value(ctx: &ExecutionContext, label: &str) -> Value {
         .map(|counts| {
             counts
                 .iter()
-                .map(|(key, count)| (key.clone(), Value::String(format!("d[{count}].l"))))
+                .map(|(key, count)| (key.clone(), Value::Long(*count as i64)))
                 .collect()
         })
         .unwrap_or_default();
-    Value::Map(map)
+    Value::map_from_entries(map)
 }
 
 fn shortest_path_op(

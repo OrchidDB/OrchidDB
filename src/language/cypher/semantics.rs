@@ -1,5 +1,6 @@
 //! Cypher semantic defaults and AST analysis used before Graph IR lowering.
 
+use crate::language::cypher::planner::CypherSemanticError;
 mod expression_types;
 use expression_types::{
     projected_expr_kind, unwind_element_kind, validate_expr_kinds, validate_list_source,
@@ -10,8 +11,7 @@ use validation::{
     ProcedureMode, is_variable_length, pattern_binding_names, procedure_mode, procedure_yields,
     validate_node_binding, validate_order_by_supported, validate_path_binding,
     validate_pattern_predicate_scope, validate_relationship_binding, validate_union_outputs,
-    validate_unique, validate_with_order_by_requires_skip_or_limit,
-    validate_with_projection_aliases,
+    validate_unique, validate_with_projection_aliases,
 };
 mod references;
 use references::{collect_free_variables, remove_local_exists_bindings, scope_from_candidates};
@@ -225,7 +225,8 @@ impl SemanticAnalyzer {
                         return Err(CypherPlanError::Invalid(format!(
                             "Binder exception: Variable {} already exists.",
                             clause.alias
-                        )));
+                        ))
+                        .classified(CypherSemanticError::VariableAlreadyBound));
                     }
                     scope.insert(
                         clause.alias.clone(),
@@ -309,7 +310,8 @@ impl SemanticAnalyzer {
                                 if !scope.contains(variable) {
                                     return Err(CypherPlanError::Invalid(format!(
                                         "SET references variables that are not in scope: {variable}"
-                                    )));
+                                    ))
+                                    .classified(CypherSemanticError::UndefinedVariable));
                                 }
                                 self.validate_expr_scope(value, scope, "SET value")?;
                             }
@@ -317,7 +319,8 @@ impl SemanticAnalyzer {
                                 if !scope.contains(variable) {
                                     return Err(CypherPlanError::Invalid(format!(
                                         "SET references variables that are not in scope: {variable}"
-                                    )));
+                                    ))
+                                    .classified(CypherSemanticError::UndefinedVariable));
                                 }
                             }
                         }
@@ -330,7 +333,6 @@ impl SemanticAnalyzer {
                 }
                 Clause::With(clause) => {
                     validate_with_projection_aliases(&clause.projection)?;
-                    validate_with_order_by_requires_skip_or_limit(&clause.projection)?;
                     let outputs = self.analyze_projection_body(&clause.projection, scope)?;
                     if let Some(predicate) = &clause.predicate {
                         self.validate_with_predicate(
@@ -606,12 +608,14 @@ impl SemanticAnalyzer {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: Variable {} is not in scope.",
                 missing[0]
-            )))
+            ))
+            .classified(CypherSemanticError::UndefinedVariable))
         } else {
             Err(CypherPlanError::Invalid(format!(
                 "{clause} references variables that are not in scope: {}",
                 missing.join(", ")
-            )))
+            ))
+            .classified(CypherSemanticError::UndefinedVariable))
         }
     }
 
@@ -854,11 +858,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_with_order_by_without_skip_or_limit() {
-        let err = analyze_error("MATCH (a:person) WITH a.age AS k ORDER BY k RETURN k");
-        assert!(err.contains(
-            "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT."
-        ));
+    fn accepts_with_order_by_without_skip_or_limit() {
+        assert!(analyze_outputs("MATCH (a:person) WITH a.age AS k ORDER BY k RETURN k").is_ok());
     }
 
     #[test]

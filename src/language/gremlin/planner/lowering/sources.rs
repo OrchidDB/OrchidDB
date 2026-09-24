@@ -22,6 +22,12 @@ pub(super) fn source_node(
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
     let node = match step {
+        Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(Node::GraphValues {
+            bindings: vec![], rows: vec![vec![]], bulk: None,
+        }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref()),
+        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(Node::GraphValues {
+            bindings: vec![], rows: vec![vec![]], bulk: None,
+        }, label)),
         Step::V { ids } if ids.is_empty() => {
             let scan = vertex_scan();
             apply_vertex_subgraph(scan, lo, ctx)

@@ -8,6 +8,7 @@ use crate::language::cypher::ast::{
     Expr, Literal, NodePattern, PatternPart, QuantifierKind, RangeLiteral,
     RecursiveRelationshipPattern, RelationshipPattern,
 };
+use crate::language::cypher::planner::CypherSemanticError;
 use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
 use crate::language::cypher::planner::lowering::{
     Lowerer,
@@ -153,12 +154,9 @@ pub fn lower_pattern_part(
                     &chain.node,
                     path_binding.clone(),
                     history.map(ToString::to_string),
-                    // Kuzu variable-length relationships default to WALK
-                    // semantics (edges may repeat within one recursive
-                    // expansion) — recursive_join/* encodes that. The
-                    // openCypher TCK expects trail semantics here, but
-                    // the corpus ground truth is Kuzu's output.
-                    variable_length,
+                    // Cypher MATCH never reuses a relationship within one
+                    // pattern, including across variable-length segments.
+                    false,
                 );
                 if variable_length {
                     if let (Some(recursive), Some(path)) =
@@ -353,9 +351,10 @@ fn validate_path_binding(
         return Ok(());
     };
     if outer_visible.contains(path) || pattern_element_declares(&part.element, path) {
-        return Err(CypherPlanError::Invalid(
-            "SyntaxError: VariableAlreadyBound".to_string(),
-        ));
+        return Err(
+            CypherPlanError::Invalid("SyntaxError: VariableAlreadyBound".to_string())
+                .classified(CypherSemanticError::VariableAlreadyBound),
+        );
     }
     Ok(())
 }
@@ -368,7 +367,8 @@ fn validate_node_binding(
         Some(kind) if !matches!(kind, BindingKind::Unknown | BindingKind::Node) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: Cannot bind {binding} as node pattern."
-            )))
+            ))
+            .classified(CypherSemanticError::VariableTypeConflict))
         }
         _ => Ok(()),
     }
@@ -385,7 +385,8 @@ fn validate_relationship_binding(
                 "Binder exception: {binding} has data type {} but {} was expected.",
                 kind.cypher_type_name(),
                 expected.cypher_type_name()
-            )))
+            ))
+            .classified(CypherSemanticError::VariableTypeConflict))
         }
         _ => Ok(()),
     }

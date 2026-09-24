@@ -18,6 +18,12 @@ use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult}
 use context::{BindingKind, CypherTraversalContext, CypherTraversalKind, ScopeFrame};
 
 pub fn lower_query(query: &Query) -> CypherPlanResult<GraphPlan> {
+    // Parsing permits nested literals; semantic validation and lowering must
+    // support the same depth even on small worker thread stacks.
+    stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || lower_query_inner(query))
+}
+
+fn lower_query_inner(query: &Query) -> CypherPlanResult<GraphPlan> {
     let analyzed = crate::language::cypher::semantics::analyze_query(query)?;
     let (root, _) = lower_query_node(analyzed.query)?;
     Ok(GraphPlan::new(GraphPlanPolicy::cypher(), root))

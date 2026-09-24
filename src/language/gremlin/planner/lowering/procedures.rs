@@ -404,7 +404,10 @@ fn predicate_eq_value(predicate: &Predicate) -> Option<&GValue> {
 
 fn shortest_path_distance(value: Option<&GValue>) -> Option<f64> {
     match value {
-        Some(GValue::Int(value)) => Some(*value as f64),
+        Some(GValue::Int(value) | GValue::Long(value)) => Some(*value as f64),
+        Some(GValue::Byte(value)) => Some(*value as f64),
+        Some(GValue::Short(value)) => Some(*value as f64),
+        Some(GValue::Float32(value)) => Some(*value as f64),
         Some(GValue::Float(value)) => Some(*value),
         _ => None,
     }

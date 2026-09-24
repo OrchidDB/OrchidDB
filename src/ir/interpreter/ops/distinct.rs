@@ -108,6 +108,46 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
                 buf.push(0xff);
             }
         }
+        Value::Token(value) | Value::Direction(value) => {
+            buf.push(if matches!(v, Value::Token(_)) { 24 } else { 25 });
+            buf.extend_from_slice(&(value.len() as u64).to_be_bytes());
+            buf.extend_from_slice(value.as_bytes());
+        }
+        Value::TypedMap(entries) => {
+            let strings: Option<std::collections::BTreeMap<String, Value>> = entries
+                .iter()
+                .map(|(key, value)| match key {
+                    Value::String(key) => Some((key.clone(), value.clone())),
+                    _ => None,
+                })
+                .collect();
+            if let Some(map) = strings.filter(|m| m.len() == entries.len()) {
+                return encode_value(&Value::Map(map));
+            }
+            buf.push(23);
+            let mut encoded = entries
+                .iter()
+                .map(|(key, value)| (encode_value(key), encode_value(value)))
+                .collect::<Vec<_>>();
+            encoded.sort();
+            buf.extend_from_slice(&(encoded.len() as u64).to_be_bytes());
+            for (key, value) in encoded {
+                buf.extend_from_slice(&(key.len() as u64).to_be_bytes());
+                buf.extend(key);
+                buf.extend_from_slice(&(value.len() as u64).to_be_bytes());
+                buf.extend(value);
+            }
+        }
+        Value::BulkSet(items) => {
+            buf.push(26);
+            let mut encoded = items.iter().map(encode_value).collect::<Vec<_>>();
+            encoded.sort();
+            buf.extend_from_slice(&(encoded.len() as u64).to_be_bytes());
+            for item in encoded {
+                buf.extend_from_slice(&(item.len() as u64).to_be_bytes());
+                buf.extend(item);
+            }
+        }
         Value::Path(items) => {
             buf.push(9);
             for item in items {
@@ -179,4 +219,63 @@ pub(crate) fn row_signature(row: &Row) -> Vec<u8> {
         sig.push(0xff);
     }
     sig
+}
+
+#[cfg(test)]
+mod typed_map_tests {
+    use super::*;
+    #[test]
+    fn typed_map_distinct_is_order_independent_and_key_typed() {
+        let entries = vec![
+            (Value::Token("id".into()), Value::Int(1)),
+            (Value::String("id".into()), Value::Int(2)),
+        ];
+        let mut reverse = entries.clone();
+        reverse.reverse();
+        assert_eq!(
+            encode_value(&Value::TypedMap(entries)),
+            encode_value(&Value::TypedMap(reverse))
+        );
+        assert_ne!(
+            encode_value(&Value::Token("id".into())),
+            encode_value(&Value::String("id".into()))
+        );
+        assert_ne!(
+            encode_value(&Value::TypedMap(vec![(Value::Int(1), Value::Null)])),
+            encode_value(&Value::TypedMap(vec![(Value::Long(1), Value::Null)]))
+        );
+        assert_eq!(
+            encode_value(&Value::TypedMap(vec![(
+                Value::String("a".into()),
+                Value::Int(1)
+            )])),
+            encode_value(&Value::Map(std::collections::BTreeMap::from([(
+                "a".into(),
+                Value::Int(1)
+            )])))
+        );
+    }
+}
+
+#[cfg(test)]
+mod bulkset_tests {
+    use super::*;
+    #[test]
+    fn bulkset_distinct_retains_multiplicity_and_ignores_order() {
+        let a = Value::BulkSet(vec![Value::Int(1), Value::Int(2), Value::Int(1)]);
+        let b = Value::BulkSet(vec![Value::Int(2), Value::Int(1), Value::Int(1)]);
+        assert_eq!(encode_value(&a), encode_value(&b));
+        assert_eq!(a.three_valued_eq(&b), Some(true));
+        assert_ne!(
+            encode_value(&a),
+            encode_value(&Value::BulkSet(vec![Value::Int(1), Value::Int(2)]))
+        );
+        assert!(
+            !crate::ir::interpreter::compare_values(
+                &Value::BulkSet(vec![Value::Int(1)]),
+                &Value::BulkSet(vec![Value::Long(1)])
+            )
+            .is_eq()
+        );
+    }
 }
