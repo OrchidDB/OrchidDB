@@ -166,8 +166,12 @@ pub enum Step {
     ValueMap(Vec<String>),
     /// `elementMap(keys...)`: like `valueMap` but also includes id/label.
     ElementMap(Vec<String>),
-    /// `barrier()`: traverser-barrier marker; compile-time no-op.
+    /// `barrier()`: merge compatible traversers at a materialization boundary.
     Barrier,
+    /// `barrier(Barrier.normSack)`: normalize sacks before merging.
+    NormSackBarrier,
+    /// Traversal source bulk policy.
+    WithBulk(bool),
     /// `simplePath()` / `cyclicPath()`: traverser-state filters; compile-time
     /// no-op since we don't track per-traverser paths.
     SimplePath,

@@ -37,6 +37,25 @@ impl<'input, S: TokenSource<'input, TF = CommonTokenFactory>> TokenSource<'input
             .pending
             .pop_front()
             .unwrap_or_else(|| self.source.next_token());
+        // The bytecode translator spells the enum's enclosing class, while
+        // the grammar accepts Barrier.normSack. Strip only the exact token
+        // prefix, leaving quoted text and unrelated identifiers untouched.
+        if token.text == "SackFunctions" {
+            while self.pending.iter().filter(|t| t.channel == TOKEN_DEFAULT_CHANNEL).count() < 4 {
+                let next = self.source.next_token();
+                let eof = next.token_type == TOKEN_EOF;
+                self.pending.push_back(next);
+                if eof { break; }
+            }
+            let parts: Vec<_> = self.pending.iter().enumerate()
+                .filter(|(_, t)| t.channel == TOKEN_DEFAULT_CHANNEL)
+                .take(4).map(|(i, t)| (i, t.text.to_string())).collect();
+            if parts.len() == 4 && parts[0].1 == "." && parts[1].1 == "Barrier"
+                && parts[2].1 == "." && parts[3].1 == "normSack" {
+                for _ in 0..=parts[0].0 { self.pending.pop_front(); }
+                return self.next_token();
+            }
+        }
         // A native constructor is a typed lexical atom. Preserve its source
         // position in a side table; ordinary string values are never interpreted
         // as vertices. The generated grammar sees a literal-shaped token.

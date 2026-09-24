@@ -86,6 +86,7 @@ pub fn lower_traversal(traversal: &Traversal) -> GremlinPlanResult<GraphPlan> {
     consume_leading_config(&mut steps, &mut lo);
     let remaining = steps.cloned().collect::<Vec<_>>();
 
+    lo.bulk_safe = permits_path_elision(&traversal.steps);
     let ctx = lo.root_context();
     let node = lo.enter_context(ctx, |lo, ctx| {
         lower_source_traversal_with_context(&remaining, lo, ctx)
@@ -140,8 +141,13 @@ where
                 lo.productive_by = true;
                 steps.next();
             }
-            Step::WithSack { initial, .. } => {
+            Step::WithBulk(enabled) => {
+                lo.bulk_enabled = *enabled;
+                steps.next();
+            }
+            Step::WithSack { initial, op } => {
                 lo.sack_initial = Some(initial.clone());
+                lo.sack_merge = *op;
                 steps.next();
             }
             Step::WithSideEffect { label, initial, op } => {
@@ -158,4 +164,23 @@ where
             _ => break,
         }
     }
+}
+
+/// Prove that no step can observe the complete path. Unknown steps retain it.
+/// Labels still participate in traverser identity and are never discarded.
+fn permits_path_elision(steps: &[Step]) -> bool {
+    steps.iter().all(|step| match step {
+        Step::V { .. } | Step::E { .. } | Step::Inject(_) | Step::ExpandVertex { .. }
+        | Step::ExpandEdge { .. } | Step::EndpointVertex { .. } | Step::OtherVertex
+        | Step::Has { .. } | Step::HasLabel(_) | Step::HasId { .. } | Step::HasIdPredicate { .. }
+        | Step::HasNot { .. } | Step::Identity | Step::Is { .. } | Step::Values(_)
+        | Step::Id | Step::Label | Step::As(_) | Step::Select(_, _) | Step::SelectMulti(_, _)
+        | Step::Count | Step::Dedup | Step::Times(_) | Step::Loops(_)
+        | Step::Limit(_) | Step::Range { .. } | Step::Skip(_) | Step::Tail(_)
+        | Step::WithBulk(_) | Step::WithSack { .. } | Step::Sack | Step::SackOp(_)
+        | Step::Barrier | Step::NormSackBarrier | Step::Constant(_) => true,
+        Step::Repeat(_, body) | Step::Until(body) | Step::Local(body) => permits_path_elision(body),
+        Step::Emit(body) => body.as_ref().is_none_or(|body| permits_path_elision(body)),
+        _ => false,
+    })
 }
