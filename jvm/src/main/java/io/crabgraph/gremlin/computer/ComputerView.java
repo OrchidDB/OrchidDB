@@ -161,8 +161,14 @@ public final class ComputerView implements Graph {
                 }));
                 if (persist == GraphComputer.Persist.EDGES) edges().forEachRemaining(edge -> {
                     interrupted();
-                    Edge copy = vertices.get(edge.outVertex().id()).addEdge(edge.label(), vertices.get(edge.inVertex().id()), T.id, edge.id());
-                    edge.properties().forEachRemaining(property -> copy.property(property.key(), property.value()));
+                    List<Object> keyValues = new ArrayList<>();
+                    keyValues.add(T.id);
+                    keyValues.add(edge.id());
+                    edge.properties().forEachRemaining(property -> {
+                        keyValues.add(property.key());
+                        keyValues.add(property.value());
+                    });
+                    vertices.get(edge.outVertex().id()).addEdge(edge.label(), vertices.get(edge.inVertex().id()), keyValues.toArray());
                 });
             }
             };
@@ -230,10 +236,16 @@ public final class ComputerView implements Graph {
         // Computation-local IDs are not provider IDs. Let the native graph allocate
         // generated property identity according to its configured ID manager.
         boolean generated = generatedPropertyId(property);
-        VertexProperty<?> copy = generated
-                ? target.property(VertexProperty.Cardinality.list, property.key(), property.value())
-                : target.property(VertexProperty.Cardinality.list, property.key(), property.value(), T.id, property.id());
-        property.properties().forEachRemaining(meta -> copy.property(meta.key(), meta.value()));
+        List<Object> keyValues = new ArrayList<>();
+        if (!generated) {
+            keyValues.add(T.id);
+            keyValues.add(property.id());
+        }
+        property.properties().forEachRemaining(meta -> {
+            keyValues.add(meta.key());
+            keyValues.add(meta.value());
+        });
+        target.property(VertexProperty.Cardinality.list, property.key(), property.value(), keyValues.toArray());
     }
 
     private abstract class ViewElement implements Element {
