@@ -3,6 +3,7 @@
 import argparse
 import collections
 import copy
+import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -55,9 +56,36 @@ def main():
                   counts=dict(collections.Counter(row['status'] for row in cases)),
                   unique_case_ids=len({row['id'] for row in cases}), cases=cases)
     report['duplicate_declared_occurrences'] = len(cases) - report['unique_case_ids']
+    unique_outcomes = collections.defaultdict(set)
+    for row in cases:
+        unique_outcomes[row['id']].add(row['status'])
+    report['unique_case_counts'] = dict(collections.Counter(
+        next(iter(statuses)) if len(statuses) == 1 else 'mixed'
+        for statuses in unique_outcomes.values()))
+    report['mixed_repeat_outcomes'] = {case_id: sorted(statuses)
+                                       for case_id, statuses in unique_outcomes.items() if len(statuses) > 1}
+    exclusions = collections.Counter()
+    for row in cases:
+        if row['status'] != 'skipped':
+            continue
+        reason = row.get('reason', '')
+        if reason == 'JUnit @Ignore':
+            category = 'upstream_junit_ignore'
+        elif 'is ignored for COMPUTER' in reason:
+            category = 'upstream_computer_guard'
+        elif 'apply to TinkerGraph only' in reason:
+            category = 'upstream_tinkergraph_only_guard'
+        elif 'feature' in reason.lower():
+            category = 'feature_requirement'
+        else:
+            category = 'other_upstream_assumption'
+        exclusions[category] += 1
+    report['exclusion_occurrence_counts'] = dict(exclusions)
     report['component_reports'] = [
         {'path': str(path.resolve()), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'occurrences': count}
         for path, count in ((args.broad, 837), (args.algorithms, 31))]
+    report['combined_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    report['timing_scope'] = 'started_at and finished_at describe the broad component; algorithm execution is independently recorded'
     report['algorithm_component_provenance'] = {key: value for key, value in algorithms.items() if key not in ('cases', 'counts')}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
