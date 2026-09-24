@@ -185,6 +185,13 @@ impl<'a> LoweringContext<'a> {
                     } else {
                         left.plan.clone()
                     };
+                    let left_plan = if self.options.mapping.is_some() && self.language == Language::Gremlin {
+                        let replaced = left_plan.schema().fields().iter()
+                            .filter(|field| outputs.iter().any(|output| is_binding_column(field.name(), output)))
+                            .map(|field|field.name().clone()).collect::<BTreeSet<_>>();
+                        let columns=existing_columns_by_name(&left_plan, &replaced);
+                        LogicalPlanBuilder::from(left_plan).project(columns)?.build()?
+                    } else { left_plan };
                     right.plan = LogicalPlanBuilder::from(left_plan)
                         .cross_join(right_input)?
                         .build()?;

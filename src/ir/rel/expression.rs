@@ -63,7 +63,7 @@ impl<'a> LoweringContext<'a> {
                 } else if let Some(shape) = has_binding_shape(plan, binding) {
                     if self.language == Language::Gremlin {
                         gremlin_element_display_expr(plan, binding)
-                    } else if self.language == Language::Cypher {
+                    } else if self.language == Language::Cypher && self.options.mapping.is_none() {
                         // A scalar SQL string cannot preserve graph identity
                         // inside lists, maps or grouping keys. Keep the real
                         // element in the runtime value channel.
@@ -727,6 +727,37 @@ impl<'a> LoweringContext<'a> {
                     Ok(if op == "neq" { Expr::Not(Box::new(equal)) } else { equal })
                 } else { Ok(binary(lhs, operator, rhs)) }
             }
+            IrExpr::ListFilter { list, item, predicate } if self.options.mapping.is_some() => {
+                let IrExpr::Call { name, args } = list.as_ref() else {
+                    return Err(RelError::Unsupported("Mapped list filter requires property values".into()));
+                };
+                let [IrExpr::Binding(binding), IrExpr::List(keys)] = args.as_slice() else {
+                    return Err(RelError::Unsupported("Mapped list filter requires named properties".into()));
+                };
+                if name != "requested_property_values" { return Err(RelError::Unsupported("Mapped list filter source".into())); }
+                use datafusion::common::tree_node::{TreeNode, Transformed};
+                use datafusion::functions_nested::expr_fn::{make_array, array_concat};
+                let mut result: Option<Expr> = None;
+                for key in keys {
+                    let IrExpr::Lit(Lit::String(key)) = key else { return Err(RelError::Unsupported("Dynamic mapped property key".into())); };
+                    let column = prop_col(binding, key);
+                    if !has_exact_col(plan, &column) { continue; }
+                    let value = col_exact(&column);
+                    // Introduce the iterator only for type/name resolution, then
+                    // substitute its scalar column into the SQL predicate.
+                    let mut fields = plan.schema().fields().iter().map(|f|col_exact(f.name())).collect::<Vec<_>>();
+                    fields.push(value.clone().alias(item));
+                    let scope = LogicalPlanBuilder::from(plan.clone()).project(fields)?.build()?;
+                    let condition = self.lower_expr(&scope, predicate)?.transform_up(|expr| {
+                        if matches!(&expr, Expr::Column(c) if &c.name == item) {
+                            Ok(Transformed::yes(value.clone()))
+                        } else { Ok(Transformed::no(expr)) }
+                    })?.data;
+                    let selected = datafusion::logical_expr::when(value.clone().is_not_null().and(condition), make_array(vec![value])).otherwise(make_array(vec![]))?;
+                    result = Some(match result { Some(previous) => array_concat(vec![previous, selected]), None => selected });
+                }
+                Ok(result.unwrap_or_else(||make_array(vec![])))
+            }
             IrExpr::Call { name, args } if name == "requested_property_values" && self.options.mapping.is_some() => {
                 let [IrExpr::Binding(binding), IrExpr::List(keys)] = args.as_slice() else {
                     return Err(RelError::Unsupported("Mapped property projection requires literal keys".into()));
@@ -745,12 +776,12 @@ impl<'a> LoweringContext<'a> {
                 let types = columns.iter().map(|c|c.get_type(plan.schema())).collect::<datafusion::common::Result<Vec<_>>>()?;
                 if types.windows(2).any(|pair|pair[0]!=pair[1]) { return Err(RelError::Unsupported("Mapped property values have incompatible SQL types".into())); }
                 use datafusion::functions_nested::expr_fn::{make_array, array_concat};
-                let mut result = make_array(vec![]);
+                let mut result: Option<Expr> = None;
                 for column in columns {
-                    let item = datafusion::logical_expr::when(column.clone().is_null(),make_array(vec![])).otherwise(make_array(vec![column]))?;
-                    result = array_concat(vec![result,item]);
+                    let item = datafusion::logical_expr::when(column.clone().is_not_null(),make_array(vec![column])).otherwise(make_array(vec![]))?;
+                    result = Some(match result { Some(previous) => array_concat(vec![previous,item]), None => item });
                 }
-                Ok(result)
+                Ok(result.unwrap_or_else(||make_array(vec![])))
             }
             IrExpr::Call { name, .. } if name == "requested_property_values" => {
                 Err(RelError::Unsupported(
