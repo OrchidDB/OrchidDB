@@ -56,6 +56,15 @@ public final class ProviderSuite {
         if (!Files.isRegularFile(source)) throw new IllegalArgumentException("Missing pinned source: " + source);
         return sha(Files.readAllBytes(source));
     }
+    private static String sourceHash(Description description, Path upstream, Map<String,String> hashes) {
+        // JUnit reports selection/initialization errors against its own Filter
+        // class. Such failures have no corresponding original upstream source.
+        if (description.getClassName() == null || !description.getClassName().startsWith("org.apache.tinkerpop.")) return null;
+        return hashes.computeIfAbsent(description.getClassName(), name -> {
+            try { return sourceHash(Class.forName(name), upstream); }
+            catch (Exception e) { throw new IllegalStateException("Cannot hash original test source: " + name, e); }
+        });
+    }
     public static void main(String[] args) throws Exception {
         if (args.length < 3) throw new IllegalArgumentException("ProviderSuite <placeholders.json|SuiteName|class#method> <upstream-root> <output.json> [inventory]");
         String selection = args[0];
@@ -110,7 +119,7 @@ public final class ProviderSuite {
                 return active.computeIfAbsent(d, key -> {
                     ObjectNode row = cases.addObject();
                     row.put("id",d.getClassName()+"#"+d.getMethodName());
-                    row.put("source_sha256",hashes.get(d.getClassName()));
+                    row.put("source_sha256",sourceHash(d,upstream,hashes));
                     row.set("annotations", annotations(d));
                     row.set("feature_requirements",requirements(d));
                     row.put("status","running");
@@ -144,7 +153,7 @@ public final class ProviderSuite {
         };
         for (Request request : requests) {
             Runner runner = request.getRunner();
-            if (inventory) describe(runner.getDescription(), cases, hashes);
+            if (inventory) describe(runner.getDescription(), cases, hashes, upstream);
             else {
                 JUnitCore junit = new JUnitCore();
                 junit.addListener(listener);
@@ -161,14 +170,14 @@ public final class ProviderSuite {
         System.err.println(counts);
         if (counts.path("fail").asInt() > 0) System.exit(1);
     }
-    private static void describe(Description d, ArrayNode cases, Map<String,String> hashes) {
+    private static void describe(Description d, ArrayNode cases, Map<String,String> hashes, Path upstream) {
         if (d.isTest()) {
             ObjectNode row = cases.addObject();
             row.put("id",d.getClassName()+"#"+d.getMethodName());
-            row.put("source_sha256",hashes.get(d.getClassName()));
+            row.put("source_sha256",sourceHash(d,upstream,hashes));
             row.put("status","not-run");
             row.set("annotations",annotations(d));
             row.set("feature_requirements",requirements(d));
-        } else for (Description child : d.getChildren()) describe(child,cases,hashes);
+        } else for (Description child : d.getChildren()) describe(child,cases,hashes,upstream);
     }
 }
