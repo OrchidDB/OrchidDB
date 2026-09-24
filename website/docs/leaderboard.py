@@ -10,13 +10,41 @@ SUITES = [('tinkerpop', 'Gremlin', tuple(PRODUCTS)),
           ('rdf', 'SPARQL', ('crabgraph',))]
 
 
+def render_gremlin_progress(cases, get_result, runs, baseline, report):
+    subset = [case for case in cases if case['suite'] == 'tinkerpop']
+    profiles = [('crabgraph', 'Native Rust'), ('crabgraph-jvm', 'JVM OLTP'),
+                ('crabgraph-computer', 'GraphComputer')]
+    passing = {key: {case['id'] for case in subset if get_result(key, case)['status'] == 'pass'}
+               for key, _ in profiles}
+    union = set().union(*passing.values())
+    before = baseline.get('suites', {}).get('tinkerpop', {}).get('crabgraph', {}).get('counts', {}).get('pass')
+    report['gremlin_profiles'] = {
+        'distinct_passed': len(union), 'catalog_total': len(subset),
+        'starting_native_passed': before, 'passed_case_ids': sorted(union),
+        'profiles': {key: {'passed': len(passing[key]),
+                          'recorded': len(runs.get((key, 'tinkerpop'), {}).get('results', []))}
+                     for key, _ in profiles},
+    }
+    html = ['<section id="gremlin-progress" class="leaderboard"><h2>Crabgraph Gremlin results</h2>',
+            f'<p><strong>{len(union):,} distinct upstream scenarios pass across the three execution profiles.</strong> '
+            + (f'The starting native Rust run passed {before:,}. ' if before is not None else '')
+            + 'Each scenario is counted once in this combined total; it is not a single-profile run.</p>',
+            '<div class="leaderboard-scroll"><table class="leaderboard-table"><thead><tr><th>Execution profile</th><th>Passed / recorded</th><th>Evidence</th></tr></thead><tbody>']
+    for key, label in profiles:
+        count = len(runs.get((key, 'tinkerpop'), {}).get('results', []))
+        html.append(f'<tr class="crabgraph-standing"><th scope="row">{label}</th><td><strong>{len(passing[key]):,}</strong> / {count:,}</td><td><a href="/downloads/conformance/{key}-tinkerpop.json">Recorded results</a></td></tr>')
+    html.append('</tbody></table></div><p>The profiles overlap and use different execution capabilities and null-property policies. GraphComputer records its selected scenarios only. Original Java tests corresponding to Gherkin placeholders are reported separately in <a href="#java-provider">Java provider tests</a>. See the <a href="/downloads/conformance/gremlin-final-gap-evidence.json">case-by-case resolution of the original gaps</a>.</p></section>')
+    return html
+
+
 def render(cases, get_result, runs, root, download):
     baseline_path = root / 'data/parity-baseline.json'
     baseline = json.loads(baseline_path.read_text()) if baseline_path.exists() else {'suites': {}}
     if baseline_path.exists():
         (download / 'parity-baseline.json').write_bytes(baseline_path.read_bytes())
     report = {'baseline_recorded_at': baseline.get('recorded_at'), 'suites': {}}
-    html = ['<section id="leaderboard" class="leaderboard"><h2>Current leaderboard</h2>',
+    html = render_gremlin_progress(cases, get_result, runs, baseline, report)
+    html += ['<section id="leaderboard" class="leaderboard"><h2>Current leaderboard</h2>',
             '<p>Ranked by passed upstream scenarios within each language. Crabgraph uses the native Rust profile; JVM and GraphComputer results appear separately in the Gremlin matrix. Peer-only passes are cases another compared engine passes that this engine has not passed. Changes are relative to the saved starting baseline.</p>',
             '<div class="leaderboard-scroll"><table class="leaderboard-table"><thead><tr><th>Language</th><th>Rank</th><th>Engine</th><th>Passed / total</th><th>Change</th><th>Peer-only passes</th><th>Run (UTC)</th></tr></thead>']
     for suite, title, products in SUITES:
