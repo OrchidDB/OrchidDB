@@ -32,6 +32,7 @@ const V_DIRECTION: u8 = 25;
 const V_BULK_SET: u8 = 26;
 const V_MAP_ENTRY: u8 = 27;
 const V_SET: u8 = 28;
+const V_CARDINALITY: u8 = 29;
 
 // ---------------- primitive writers ----------------
 
@@ -218,6 +219,7 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_u8(out, V_MAP);
             put_map(out, map);
         }
+        Value::CardinalityValue {cardinality,value} => {put_u8(out,V_CARDINALITY);put_str(out,cardinality);encode_value(out,value);}
         Value::MapEntry(pair) => { put_u8(out, V_MAP_ENTRY); encode_value(out, &pair.0); encode_value(out, &pair.1); }
         Value::TypedMap(entries) => {
             put_u8(out, V_TYPED_MAP);
@@ -298,6 +300,7 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
         V_LIST => Value::List(decode_values(r)?),
         V_MAP => Value::Map(decode_map(r)?),
         V_PATH => Value::Path(decode_values(r)?),
+        V_CARDINALITY => {let cardinality=r.str()?;if !matches!(cardinality.as_str(),"single"|"list"|"set"){return Err("invalid snapshot cardinality".into());}Value::CardinalityValue{cardinality,value:Box::new(decode_value(r)?)}},
         V_MAP_ENTRY => Value::MapEntry(Box::new((decode_value(r)?,decode_value(r)?))),
         V_TYPED_MAP => {
             let count = r.count()?;
@@ -570,5 +573,28 @@ mod entry_codec_tests {
         let entry=Value::MapEntry(Box::new((Value::Token("id".into()),Value::Long(42))));
         assert_eq!(decode_value_bytes(&encode_value_bytes(&entry)).unwrap(),entry);
         assert_ne!(encode_value_bytes(&entry),encode_value_bytes(&Value::TypedMap(vec![(Value::Token("id".into()),Value::Long(42))])));
+    }
+}
+
+#[cfg(test)]
+mod cardinality_value_tests {
+    use super::*;
+
+    #[test]
+    fn cardinality_value_codec_preserves_kind_payload_width_and_null() {
+        for cardinality in ["single", "list", "set"] {
+            for value in [Value::Null, Value::Long(7), Value::BigDecimal("1.2300".parse().unwrap()), Value::List(vec![Value::Float(f64::NAN), Value::Int(7)])] {
+                let wrapper = Value::CardinalityValue { cardinality:cardinality.into(), value:Box::new(value) };
+                let bytes = encode_value_bytes(&wrapper);
+                assert_eq!(bytes[0], V_CARDINALITY);
+                let restored = decode_value_bytes(&bytes).unwrap();
+                assert_eq!(wrapper, restored);
+                assert_eq!(crate::ir::value::set_member_key(&wrapper), crate::ir::value::set_member_key(&restored));
+                let mut tail = bytes; tail.push(0);
+                assert!(decode_value_bytes(&tail).is_err());
+            }
+        }
+        let invalid=Value::CardinalityValue {cardinality:"bogus".into(),value:Box::new(Value::Null)};
+        assert!(decode_value_bytes(&encode_value_bytes(&invalid)).is_err());
     }
 }

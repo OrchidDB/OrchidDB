@@ -200,6 +200,9 @@ impl PropertyGraph {
         cardinality: Cardinality,
         meta: BTreeMap<String, Value>,
     ) -> CatalogResult<Value> {
+        if value.contains_cardinality_value() || meta.values().any(Value::contains_cardinality_value) {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         let Value::Node { label, id } = owner else {
             return Err(CatalogError::Schema(
                 "Vertex property requires a vertex".into(),
@@ -272,6 +275,9 @@ impl PropertyGraph {
     }
 
     pub fn set_meta_property(&self, target: &Value, key: &str, value: Value) -> CatalogResult<()> {
+        if value.contains_cardinality_value() {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         let Value::VertexProperty {
             id,
             owner,

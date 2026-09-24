@@ -652,7 +652,8 @@ impl ValueKind {
             | Value::MapEntry(_)
             | Value::BulkSet(_)
             | Value::Token(_)
-            | Value::Direction(_) => Self::Value,
+            | Value::Direction(_)
+            | Value::CardinalityValue { .. } => Self::Value,
         }
     }
 }

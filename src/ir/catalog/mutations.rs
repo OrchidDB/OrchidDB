@@ -11,6 +11,9 @@ impl PropertyGraph {
         dst: &Value,
         properties: BTreeMap<String, Value>,
     ) -> CatalogResult<Value> {
+        if properties.values().any(Value::contains_cardinality_value) {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         let rel_type = rel_type.into();
         let (src_label, src_id) = node_ref(src, &rel_type, "source")?;
         let (dst_label, dst_id) = node_ref(dst, &rel_type, "destination")?;
@@ -117,6 +120,9 @@ impl PropertyGraph {
     }
 
     pub fn set_property(&self, target: &Value, key: impl Into<String>, value: Value) -> CatalogResult<()> {
+        if value.contains_cardinality_value() {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         let key = key.into();
         if matches!(target, Value::VertexProperty { .. }) { return self.set_meta_property(target, &key, value); }
         if let Value::Node {label,id} = target {
@@ -134,6 +140,9 @@ impl PropertyGraph {
         key: impl Into<String>,
         value: Value,
     ) -> CatalogResult<()> {
+        if value.contains_cardinality_value() {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         let key = key.into();
         match target {
             Value::Node { label, id } => {
@@ -215,6 +224,9 @@ impl PropertyGraph {
         properties: BTreeMap<String, Value>,
         replace: bool,
     ) -> CatalogResult<()> {
+        if properties.values().any(Value::contains_cardinality_value) {
+            return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
+        }
         if let Value::Node{label,id}=target {
             let mut overlay=self.overlay.borrow_mut();
             if replace {overlay.vertex_properties.remove(&(label.clone(),*id));}

@@ -23,6 +23,7 @@ fn display_for_as_string(v: &Value) -> String {
     match v {
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_as_string(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_as_string(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_as_string(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_as_string(&entry.0), display_for_as_string(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),

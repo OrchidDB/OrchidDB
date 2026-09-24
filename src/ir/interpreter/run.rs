@@ -125,12 +125,19 @@ impl ExecutionContext {
     }
 
     pub(crate) fn cap_side_effects(&mut self, labels: &[String], graph: &PropertyGraph) -> IrResult<Vec<Row>> {
-        let value = if labels.len() == 1 { self.side_effect_value(&labels[0], graph)? } else {
+        let value = if labels.len() == 1 { self.finalized_side_effect_value(&labels[0], graph)? } else {
             let mut entries = BTreeMap::new();
-            for label in labels { entries.insert(label.clone(), self.side_effect_value(label, graph)?); }
+            for label in labels { entries.insert(label.clone(), self.finalized_side_effect_value(label, graph)?); }
             Value::Map(entries)
         };
         Ok(vec![Row::new().with("current", value)])
+    }
+
+    fn finalized_side_effect_value(&mut self, label: &str, graph: &PropertyGraph) -> IrResult<Value> {
+        if let Some(value) = super::ops::aggregate::group_side_effect_finalize(self, label, graph)? {
+            return Ok(value);
+        }
+        self.side_effect_value(label, graph)
     }
 
     const STEP_LIMIT_ENV: &'static str = "NEW_GRAPH_INTERPRETER_MAX_STEPS";

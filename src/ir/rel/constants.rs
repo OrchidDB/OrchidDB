@@ -546,6 +546,7 @@ pub(super) fn tagged_value(value: &Value) -> String {
     match value {
         Value::VertexProperty { key, value, .. } => format!("vp[{key}->{}]", tagged_value(value)),
         Value::Property { key, value, .. } => format!("p[{key}->{}]", tagged_value(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", tagged_value(value)),
         Value::MapEntry(pair) => format!("{}={}", tagged_value(&pair.0), tagged_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -616,6 +617,7 @@ pub(super) fn cypher_plain_value(value: &Value) -> String {
             format!("vp[{key}->{}]", cypher_plain_value(value))
         }
         Value::Property { key, value, .. } => format!("p[{key}->{}]", cypher_plain_value(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", cypher_plain_value(value)),
         Value::MapEntry(pair) => format!(
             "{}={}",
             cypher_plain_value(&pair.0),
@@ -752,6 +754,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::Property { key, value, .. } => {
             format!("p[{key}->{}]", display_for_list_to_string(value))
         }
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_list_to_string(value)),
         Value::MapEntry(pair) => format!(
             "{}={}",
             display_for_list_to_string(&pair.0),

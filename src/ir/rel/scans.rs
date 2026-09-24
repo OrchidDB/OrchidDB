@@ -147,7 +147,7 @@ impl<'a> LoweringContext<'a> {
         }
         fn typed_key_value(value: &Value) -> bool {
             match value {
-                Value::TypedMap(_) | Value::MapEntry(_) | Value::Token(_) | Value::Direction(_) => {
+                Value::TypedMap(_) | Value::MapEntry(_) | Value::CardinalityValue {..} | Value::Token(_) | Value::Direction(_) => {
                     true
                 }
                 Value::List(items) | Value::Path(items) => items.iter().any(typed_key_value),
@@ -1341,7 +1341,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
                     | Value::Property { .. }
                     | Value::Map(_)
                     | Value::TypedMap(_)
-                    | Value::MapEntry(_)
+                    | Value::MapEntry(_) | Value::CardinalityValue {..}
                     | Value::BulkSet(_)
             | Value::Set(_)
                     | Value::Token(_)
@@ -1390,7 +1390,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
             | Value::List(_)
             | Value::Map(_)
             | Value::TypedMap(_)
-            | Value::MapEntry(_)
+            | Value::MapEntry(_) | Value::CardinalityValue {..}
             | Value::BulkSet(_)
             | Value::Set(_)
             | Value::Token(_)
