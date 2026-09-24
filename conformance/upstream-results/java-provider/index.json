@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "label": "Original Java tests corresponding to the 15 Gherkin placeholders",
+      "file": "placeholder-java-tests.json",
+      "counts": {
+        "pass": 15
+      },
+      "run_complete": true,
+      "upstream_assertions": true
+    },
+    {
+      "label": "Supplemental provider checks",
+      "file": "provider-supplemental.json",
+      "counts": {
+        "pass": 13
+      },
+      "run_complete": true,
+      "upstream_assertions": false
+    },
+    {
+      "label": "JVM product contracts (including GraphComputer supplemental checks)",
+      "file": "jvm-executor-contracts.json",
+      "counts": {
+        "pass": 60
+      },
+      "run_complete": true,
+      "upstream_assertions": false
+    }
+  ]
+}

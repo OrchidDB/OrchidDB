@@ -17,6 +17,21 @@ contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
 certification or a claim to cover every product feature.
 
+## Gremlin execution profiles
+
+The Gremlin matrix separates the native Rust planner, JVM OLTP execution over
+Crabgraph native storage, and native-provider GraphComputer execution. Their
+results are recorded independently; a JVM pass does not change a native result.
+The product leaderboard uses the native profile for Crabgraph.
+
+The final gap inventory has passing evidence for its 69 executable scenarios
+and the 15 corresponding original Java tests for literal Gherkin placeholders.
+The placeholders remain skipped in the unchanged Gherkin corpus. See
+[implementation results](../docs/gremlin-final-results.md),
+[case-to-evidence mapping](upstream-results/gremlin-final-gap-evidence.json),
+[JVM executor](../docs/gremlin-jvm-executor.md), and
+[GraphComputer](../docs/gremlin-graphcomputer.md).
+
 ## Run locally
 
 **Tests run only on the local workstation. GitHub Actions only builds and

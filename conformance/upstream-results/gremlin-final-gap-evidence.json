@@ -1,0 +1,1683 @@
+{
+  "schema_version": 1,
+  "baseline_revision": "a299ee2",
+  "upstream_catalog_unchanged": true,
+  "remaining_at_baseline": 84,
+  "executable_scenarios_with_passing_original_assertions": 69,
+  "literal_gherkin_placeholders_with_passing_original_java_tests": 15,
+  "cases": [
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/branch/Branch.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/branch/Choose.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/branch/Repeat.feature:215",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Dedup.feature:95",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:31",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:48",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:61",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:72",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:85",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:98",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:111",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Filter.feature:121",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/filter/Has.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/AddEdge.feature:422",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "pass",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/AddVertex.feature:532",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "pass",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/AddVertex.feature:543",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "pass",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ConnectedComponent.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ConnectedComponent.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ConnectedComponent.feature:53",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ConnectedComponent.feature:65",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:34",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:49",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:66",
+      "baseline_status": "unsupported",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "unsupported",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:80",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Map.feature:97",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/MergeEdge.feature:953",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "pass",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/MergeVertex.feature:1054",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "pass",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Order.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Order.feature:103",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Order.feature:172",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Order.feature:388",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:51",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:67",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:79",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:95",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:109",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:121",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PageRank.feature:135",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PeerPressure.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PeerPressure.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/PeerPressure.feature:48",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Properties.feature:111",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesTest$Traversals#g_injectXg_VX1X_propertiesXnameX_nextX_value",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Properties.feature:118",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesTest$Traversals#g_V_hasXageX_properties_hasXid_nameIdX_value",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Properties.feature:125",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesTest$Traversals#g_V_hasXageX_properties_hasXid_nameIdAsStringX_value",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:67",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:113",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:159",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:182",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:205",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:230",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:246",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:262",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:278",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:290",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:304",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:318",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:334",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/ShortestPath.feature:348",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-computer",
+          "status": "pass",
+          "file": "crabgraph-computer-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Unfold.feature:37",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Vertex.feature:190",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Vertex.feature:202",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Vertex.feature:216",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Aggregate.feature:175",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Group.feature:118",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Group.feature:151",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupTest$Traversals#g_V_repeatXunionXoutXknowsX_groupXaX_byXageX__outXcreatedX_groupXbX_byXnameX_byXcountXX_groupXaX_byXnameXX_timesX2X_capXa_bX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Group.feature:158",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupTest$Traversals#g_V_group_byXbothE_countX_byXgroup_byXlabelXX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Inject.feature:39",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Sack.feature:115",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SackTest$Traversals#g_withSackXBigInteger_TEN_powX1000X_assignX_V_localXoutXknowsX_barrierXnormSackXX_inXknowsX_barrier_sack",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Sack.feature:122",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SackTest$Traversals#g_withSackXmap__map_cloneX_V_out_out_sackXmap_a_nameX_sack",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Sack.feature:130",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SackTest$Traversals#g_withSackX2X_V_sackXdivX_byXconstantX3_0XX_sack",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/SideEffectCap.feature:100",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/SideEffectCap.feature:156",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SideEffectCapTest$Traversals#g_V_chooseXlabel_person__age_groupCountXaX__name_groupCountXbXX_capXa_bX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Store.feature:52",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "pass",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": []
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:21",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_writeXkryoX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:28",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_write_withXwrite_gryoX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:35",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_writeXjsonX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:42",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_write_withXwriter_graphsonX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:49",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_writeXxmlX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    },
+    {
+      "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Write.feature:56",
+      "baseline_status": "skipped",
+      "gherkin_evidence": [
+        {
+          "profile": "crabgraph",
+          "status": "skipped",
+          "file": "crabgraph-tinkerpop.json"
+        },
+        {
+          "profile": "crabgraph-jvm",
+          "status": "skipped",
+          "file": "crabgraph-jvm-tinkerpop.json"
+        }
+      ],
+      "java_evidence": [
+        {
+          "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals#g_io_write_withXwriter_graphmlX",
+          "status": "pass",
+          "file": "java-provider/placeholder-java-tests.json"
+        }
+      ]
+    }
+  ]
+}
