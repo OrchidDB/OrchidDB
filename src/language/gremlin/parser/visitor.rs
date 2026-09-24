@@ -174,7 +174,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         }
         if let Some(c) = ctx.traversalSourceSpawnMethod_io() {
             match extract_first_string_arg(&c.get_text()) {
-                Some(path) => self.steps.push(Step::Io { path, reader: None, read: false }),
+                Some(path) => self.steps.push(Step::Io { path, reader: None, writer: None, read: false, write: false }),
                 None => self.fail(GremlinError::Parse("io requires a file path".into())),
             }
             return;
@@ -789,8 +789,15 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         }
         if ctx.traversalMethod_read().is_some() {
             match self.steps.last_mut() {
-                Some(Step::Io { read, .. }) if !*read => *read = true,
+                Some(Step::Io { read, write: false, .. }) if !*read => *read = true,
                 _ => self.fail(GremlinError::Parse("read() requires io(path)".into())),
+            }
+            return;
+        }
+        if ctx.traversalMethod_write().is_some() {
+            match self.steps.last_mut() {
+                Some(Step::Io { write, read: false, .. }) if !*write => *write = true,
+                _ => self.fail(GremlinError::Parse("write() requires io(path)".into())),
             }
             return;
         }
