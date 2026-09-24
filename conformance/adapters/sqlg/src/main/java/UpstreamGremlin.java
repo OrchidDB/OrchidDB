@@ -29,7 +29,10 @@ public class UpstreamGremlin {
  static class Bridge {
   Process process; BufferedReader output; BufferedWriter input;
   Bridge() throws Exception {
-   process=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+   var builder=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT);
+   builder.environment().put("CRABGRAPH_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
+   builder.environment().put("CRABGRAPH_GREMLIN_IO_CLASSPATH",System.getProperty("java.class.path"));
+   process=builder.start();
    output=new BufferedReader(new InputStreamReader(process.getInputStream()));input=new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
   }
   synchronized JsonNode send(Object request) throws Exception {
@@ -39,6 +42,33 @@ public class UpstreamGremlin {
  }
  static Map<String,String> propertyTypes(Map<String,Object> props) {
   Map<String,String> types=new LinkedHashMap<>();props.forEach((key,value)->types.put(key,value.getClass().getSimpleName()));return types;
+ }
+ /** Preserve the fixture's property records instead of flattening cardinality or metadata. */
+ static Map<String,Object> fixtureNode(Vertex vertex,String targetBackend) {
+  Map<String,Object> properties=new LinkedHashMap<>();
+  List<Object> records=new ArrayList<>();
+  vertex.properties().forEachRemaining(property->{
+   Map<String,Object> meta=new LinkedHashMap<>();
+   property.properties().forEachRemaining(p->meta.put(p.key(),p.value()));
+   if(targetBackend.equals("puppygraph")&&(properties.containsKey(property.key())||!meta.isEmpty()))
+    throw new AssumptionViolatedException("adapter-skip: PuppyGraph fixture mapping cannot preserve multi/meta-properties");
+   properties.putIfAbsent(property.key(),property.value());
+   if(targetBackend.equals("crabgraph"))records.add(Map.of(
+    "id",property.id(),"id_type",property.id().getClass().getSimpleName(),
+    "key",property.key(),"value",property.value(),"type",property.value().getClass().getSimpleName(),
+    "meta",meta,"meta_types",propertyTypes(meta)));
+  });
+  Map<String,Object> result=new LinkedHashMap<>();
+  result.put("id",vertex.id());result.put("id_type",vertex.id().getClass().getSimpleName());
+  result.put("label",vertex.label());result.put("properties",properties);result.put("property_types",propertyTypes(properties));
+  if(targetBackend.equals("crabgraph"))result.put("property_records",records);
+  return result;
+ }
+ static Map<String,Object> fixtureEdge(Edge edge) {
+  Map<String,Object> properties=new LinkedHashMap<>();
+  edge.properties().forEachRemaining(property->properties.put(property.key(),property.value()));
+  return Map.of("id",edge.id(),"id_type",edge.id().getClass().getSimpleName(),"label",edge.label(),
+   "src",edge.outVertex().id(),"dst",edge.inVertex().id(),"properties",properties,"property_types",propertyTypes(properties));
  }
  static Object typedValue(JsonNode value) {
   if(value.isNull())return null;
@@ -118,9 +148,31 @@ public class UpstreamGremlin {
    case "map" -> {Map<Object,Object> values=new LinkedHashMap<>();x.forEach(pair->values.put(nativeValue(pair.get(0)),nativeValue(pair.get(1))));yield values;}
    case "vertex" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("id")),v.get("label").asText());
    case "edge" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceEdge(nativeValue(v.get("id")),v.get("label").asText(),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("inV")),v.get("inVLabel").asText()),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("outV")),v.get("outVLabel").asText()));
+   case "vertex_property" -> nativeVertexProperty(v);
+   case "property" -> nativeProperty(v);
    case "path" -> {var path=org.apache.tinkerpop.gremlin.process.traversal.step.util.MutablePath.make();x.forEach(item->path.extend(nativeValue(item),Set.of()));yield path;}
    default -> throw new IllegalArgumentException("Unmapped native result type "+v);
   };
+ }
+ /** Native properties retain their owners; maps with similar fields are still maps. */
+ static VertexProperty<Object> nativeVertexProperty(JsonNode value) {
+  Object owner=nativeValue(value.get("owner"));
+  if(!(owner instanceof Vertex vertex))throw new IllegalArgumentException("Vertex property owner must be a vertex: "+value);
+  Map<String,Object> properties=new LinkedHashMap<>();
+  for(JsonNode property:value.path("properties")) {
+   if(property.has("type")&&!property.path("type").asText().equals("property"))throw new IllegalArgumentException("Invalid native meta-property: "+property);
+   // The enclosing vertex property supplies the owner. This also avoids
+   // requiring an infinitely recursive owner->properties->owner wire value.
+   properties.put(property.get("key").asText(),nativeValue(property.get("value")));
+  }
+  return new org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertexProperty<>(
+   nativeValue(value.get("id")),value.get("key").asText(),nativeValue(value.get("value")),properties,vertex);
+ }
+ static Property<Object> nativeProperty(JsonNode value) {
+  Object owner=nativeValue(value.get("owner"));
+  if(!(owner instanceof Edge)&&!(owner instanceof VertexProperty<?>))throw new IllegalArgumentException("Property owner must be an edge or vertex property: "+value);
+  return new org.apache.tinkerpop.gremlin.structure.util.detached.DetachedProperty<>(
+   value.get("key").asText(),nativeValue(value.get("value")),(Element)owner);
  }
  static Bridge bridge;
  // Rows already carry the engine's expanded multiplicity and ordered sequence.
@@ -159,8 +211,8 @@ public class UpstreamGremlin {
      graph.tx().commit();cachedSqlg=(SqlgGraph)graph;cachedFixture=key;fixture.close();source=graph.traversal();return source;
     }
     List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
-    fixture.vertices().forEachRemaining(v->{Map<String,Object> props=new LinkedHashMap<>();v.properties().forEachRemaining(p->{if(props.containsKey(p.key())||p.properties().hasNext())throw new AssumptionViolatedException("adapter-skip: fixture has multi/meta-properties that the mapping bridge cannot preserve");props.put(p.key(),p.value());});nodes.add(Map.of("id",v.id(),"label",v.label(),"properties",props,"property_types",propertyTypes(props)));});
-    fixture.edges().forEachRemaining(e->{Map<String,Object> props=new LinkedHashMap<>();e.properties().forEachRemaining(p->props.put(p.key(),p.value()));edges.add(Map.of("id",e.id(),"label",e.label(),"src",e.outVertex().id(),"dst",e.inVertex().id(),"properties",props,"property_types",propertyTypes(props)));});
+    fixture.vertices().forEachRemaining(v->nodes.add(fixtureNode(v,backend)));
+    fixture.edges().forEachRemaining(e->edges.add(fixtureEdge(e)));
     var response=bridge.send(Map.of("op","fixture","name",data==null?"empty":data.name().toLowerCase(),"nodes",nodes,"edges",edges));
     if(response.has("error"))throw new IOException("fixture-adapter: "+response.get("error").asText());
     fixture.close();
@@ -188,7 +240,7 @@ public class UpstreamGremlin {
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
   public void afterEachScenario(){try{if(graph!=null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
-  public String changePathToDataFile(String path){return "conformance/upstream/cache/tinkerpop/"+path;}
+  public String changePathToDataFile(String path){return new File("conformance/upstream/cache/tinkerpop",path).getAbsolutePath();}
  }
  static Object field(StepDefinition steps,String name)throws Exception{var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);return f.get(steps);}
  static String unquote(String x)throws Exception{return json.readValue(x,String.class);}

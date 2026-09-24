@@ -6,9 +6,12 @@ use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    /// File import; only executable after the read() modulator.
+    Io { path: String, reader: Option<String>, read: bool },
     DynamicMerge { edge: bool, criteria: MutationArgument, options: std::collections::BTreeMap<String,MutationArgument> },
     AddDynamicV { label: MutationArgument },
     AddDynamicE { label: MutationArgument, from: Option<MutationArgument>, to: Option<MutationArgument> },
+    PropertyNative { cardinality: String, key: MutationArgument, value: MutationArgument, meta: Vec<(String, GValue)> },
     PropertyDynamic { key: MutationArgument, value: MutationArgument },
     MergeE {
         criteria: Option<MergeVertexMap>,
@@ -73,6 +76,10 @@ pub enum Step {
     /// current edge was reached.
     OtherVertex,
     Values(Vec<String>),
+    /// `value()` reads a Property value, distinct from values("value") meta-properties.
+    PropertyValue,
+    /// `key()` reads a Property or Map.Entry key.
+    PropertyKey,
     /// `id()`: project the current element's id as a scalar.
     Id,
     /// `label()`: project the current element's label as a scalar string.
@@ -462,6 +469,8 @@ pub struct MergeVertexMap {
     pub out_vertex: Option<GValue>,
     pub in_vertex: Option<GValue>,
     pub properties: std::collections::BTreeMap<String, GValue>,
+    pub cardinalities: std::collections::BTreeMap<String,String>,
+    pub default_cardinality: Option<String>,
     pub single_properties: std::collections::BTreeSet<String>,
 }
 

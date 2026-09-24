@@ -286,7 +286,7 @@ fn register_side_effects(steps: &[Step], lo: &mut Lowerer) {
                 register_argument(label, lo);
                 for argument in [from, to].into_iter().flatten() { register_argument(argument, lo); }
             }
-            Step::PropertyDynamic { key, value } => {
+            Step::PropertyDynamic { key, value } | Step::PropertyNative { key, value, .. } => {
                 register_argument(key, lo);
                 register_argument(value, lo);
             }

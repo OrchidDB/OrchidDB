@@ -342,8 +342,8 @@ impl LoweringVisitor {
                     let projection = match token.as_str() {
                         "label" => Step::Label,
                         "id" => Step::Id,
-                        "key" => Step::Values(vec!["key".into()]),
-                        "value" => Step::Values(vec!["value".into()]),
+                        "key" => Step::PropertyKey,
+                        "value" => Step::PropertyValue,
                         _ => { self.fail(GremlinError::Parse("unknown element token".into())); return; }
                     };
                     let mut child = vec![projection];

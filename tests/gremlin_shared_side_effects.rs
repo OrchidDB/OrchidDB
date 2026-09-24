@@ -110,3 +110,13 @@ async fn label_retraction_keeps_dynamic_mutation_endpoint_bindings() {
     assert_eq!(rows[0][0]["value"], 4);
     assert_eq!(native(&mut engine, "g.E().count()").await[0][0]["value"], 4);
 }
+
+#[tokio::test]
+async fn native_property_children_keep_labels_and_register_forward_side_effects() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let rows = native(&mut engine, "g.addV('item').as('a').constant('value').as('b').select('a').local(__.property(single,'p',__.select('b'))).values('p')").await;
+    assert_eq!(rows[0][0]["value"], "value");
+    let rows = native(&mut engine, "g.addV('registered').where(P.without('x')).property(single,'p',__.constant(1).aggregate('x')).cap('x')").await;
+    assert_eq!(rows[0][0]["value"], json!([{"type":"int","value":1}]));
+    assert_eq!(native(&mut engine, "g.V().hasLabel('registered').values('p')").await[0][0]["value"], 1);
+}

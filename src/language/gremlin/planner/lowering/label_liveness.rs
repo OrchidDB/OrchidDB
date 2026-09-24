@@ -58,7 +58,7 @@ pub(super) fn direct_references(steps: &[Step]) -> Labels {
             Step::AddDynamicV { label } => {
                 if let MutationArgument::Label(label) = label { labels.insert(label.clone()); }
             }
-            Step::PropertyDynamic { key, value } => {
+            Step::PropertyDynamic { key, value } | Step::PropertyNative { key, value, .. } => {
                 for argument in [key, value] {
                     if let MutationArgument::Label(label) = argument { labels.insert(label.clone()); }
                 }
@@ -152,7 +152,7 @@ fn children(step: &Step) -> Vec<&[Step]> {
         Step::AddDynamicE { label, from, to } => {
             for arg in std::iter::once(label).chain(from).chain(to) { argument_child(arg, &mut out); }
         }
-        Step::PropertyDynamic { key, value } => { argument_child(key, &mut out); argument_child(value, &mut out); }
+        Step::PropertyDynamic { key, value } | Step::PropertyNative { key, value, .. } => { argument_child(key, &mut out); argument_child(value, &mut out); }
         Step::LocalScoped(inner) => out.push(std::slice::from_ref(inner.as_ref())),
         _ => {}
     }

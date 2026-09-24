@@ -169,17 +169,11 @@ fn value_map_ring_includes_tokens_and_preserves_first_productive_scalar() {
         ]
     );
     let graph = PropertyGraph::new();
-    graph.insert_node(
-        "person",
-        [(
-            "names".into(),
-            Value::List(vec![
-                Value::String("first".into()),
-                Value::String("second".into()),
-            ]),
-        )]
-        .into(),
-    );
+    let vertex = graph.insert_node("person", Default::default());
+    for name in ["first", "second"] {
+        graph.set_vertex_property(&vertex, "names", Value::String(name.into()),
+            new_graph::ir::catalog::Cardinality::List, Default::default()).unwrap();
+    }
     let result = evaluate("g.V().valueMap('names').by(__.unfold())", &graph);
     assert_eq!(
         property_entries(&result[0]),
@@ -271,4 +265,24 @@ fn value_map_keeps_productive_null_modulator_results() {
         let values = evaluate(query, &graph());
         assert_eq!(property_entries(&values[0]), vec![(Value::String("name".into()), Value::Null)]);
     }
+}
+
+#[test]
+fn native_multi_properties_keep_requested_modulator_order() {
+    use new_graph::ir::catalog::Cardinality;
+    let g = PropertyGraph::new();
+    let vertex = g.insert_node("person", Default::default());
+    g.set_vertex_property(&vertex, "name", Value::String("marko".into()), Cardinality::Single, Default::default()).unwrap();
+    let locations = ["san diego", "santa cruz", "brussels", "santa fe"];
+    for location in locations {
+        g.set_vertex_property(&vertex, "location", Value::String(location.into()), Cardinality::List, Default::default()).unwrap();
+    }
+    let result = evaluate("g.V().valueMap('name','location').by(__.unfold()).by()", &g);
+    let entries = property_entries(&result[0]);
+    assert!(entries.contains(&(Value::String("name".into()), Value::String("marko".into()))));
+    assert!(entries.contains(&(Value::String("location".into()), Value::List(locations.into_iter().map(|s| Value::String(s.into())).collect()))));
+    let result = evaluate("g.V().valueMap('location','name').by(__.unfold()).by()", &g);
+    let entries = property_entries(&result[0]);
+    assert!(entries.contains(&(Value::String("location".into()), Value::String("san diego".into()))));
+    assert!(entries.contains(&(Value::String("name".into()), Value::List(vec![Value::String("marko".into())]))));
 }

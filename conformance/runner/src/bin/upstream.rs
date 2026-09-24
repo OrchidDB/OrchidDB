@@ -50,13 +50,25 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
  }
  let graph=PropertyGraph::new();let mut nodes=BTreeMap::new();
  for n in req["nodes"].as_array().ok_or("Fixture nodes must be an array")?{
-  nodes.insert(n["id"].to_string(),graph.insert_node(n["label"].as_str().ok_or("Fixture node label missing")?,properties(n)?));
+  let v=graph.insert_node(n["label"].as_str().ok_or("Fixture node label missing")?,if n["property_records"].is_array(){BTreeMap::new()}else{properties(n)?});
+  graph.set_element_public_id(&v,fixture_property(&n["id"],n["id_type"].as_str())?).map_err(|e|e.to_string())?;
+  if let Some(records)=n["property_records"].as_array(){for record in records {
+    let key=record["key"].as_str().ok_or("Fixture property key missing")?;
+    let value=fixture_property(&record["value"],record["type"].as_str())?;
+    let mut meta=BTreeMap::new();
+    if let Some(entries)=record["meta"].as_object(){for (key,value) in entries{meta.insert(key.clone(),fixture_property(value,record["meta_types"][key].as_str())?);}}
+    let property=graph.set_vertex_property(&v,key,value,new_graph::ir::catalog::Cardinality::List,meta).map_err(|e|e.to_string())?;
+    if !record["id"].is_null(){graph.set_vertex_property_public_id(&property,fixture_property(&record["id"],record["id_type"].as_str())?).map_err(|e|e.to_string())?;}
+  }}
+  nodes.insert(n["id"].to_string(),v);
  }
  for e in req["edges"].as_array().ok_or("Fixture edges must be an array")?{
   let src=nodes.get(&e["src"].to_string()).ok_or("Fixture edge source missing")?;
   let dst=nodes.get(&e["dst"].to_string()).ok_or("Fixture edge target missing")?;
-  graph.insert_edge(e["label"].as_str().ok_or("Fixture edge label missing")?,src,dst,properties(e)?).map_err(|e|e.to_string())?;
+  let edge=graph.insert_edge(e["label"].as_str().ok_or("Fixture edge label missing")?,src,dst,properties(e)?).map_err(|e|e.to_string())?;
+  graph.set_element_public_id(&edge,fixture_property(&e["id"],e["id_type"].as_str())?).map_err(|e|e.to_string())?;
  }
+
  Ok(graph)
 }
 // Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.

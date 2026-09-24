@@ -17,7 +17,7 @@ use super::datetime::{date_add_value, date_diff_value};
 use super::graph::{
     eval_algorithm_property_object, format_placeholder, graph_element_property, gremlin_math_bin,
     gremlin_order_key, gremlin_scan_order, gremlin_user_id,
-    gremlin_visible_vertex_property_values, gremlin_within, local_order_by_key, path_last_label,
+    gremlin_within, local_order_by_key, path_last_label,
     path_last_value, revive_value_map_entry, select_binding_by_pop, tree_value,
 };
 use super::lists::display_for_list_to_string;
@@ -36,7 +36,15 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    if name == "tinker_search" {
+        return super::search::search(&args, graph);
+    }
     match (name, args.as_slice()) {
+        ("property_value", [Value::VertexProperty {value,..} | Value::Property {value,..}]) => return Ok(value.as_ref().clone()),
+        ("property_key", [Value::VertexProperty {key,..} | Value::Property {key,..}]) => return Ok(Value::String(key.clone())),
+        ("property_value", [Value::MapEntry(pair)]) => return Ok(pair.1.clone()),
+        ("property_key", [Value::MapEntry(pair)]) => return Ok(pair.0.clone()),
+        ("property_value" | "property_key", [_]) => return Err(InterpretError::Runtime("key()/value() requires a Property or Map.Entry".into())),
         ("local_limit", [value,count])=>return Ok(super::lists::gremlin_local_range(value,0,count.as_i64().unwrap_or(0))),
         ("gremlin_merge_matches",[element,criteria,out,input])=>return Ok(Value::Bool(super::mutations::matches(element,criteria,out,input,graph)?)),
         ("gremlin_token_literal", [Value::String(token)]) => return Ok(Value::Token(token.clone())),
@@ -104,7 +112,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
     match (canonical.as_ref(), args.as_slice()) {
         ("element_kind", [Value::Node { .. }]) => Ok(Value::String("Vertex".into())),
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
-        ("element_kind", [_]) => Ok(Value::String("VertexProperty".into())),
+        ("element_kind", [Value::VertexProperty { .. }]) => Ok(Value::String("VertexProperty".into())),
+        ("element_kind", [_]) => Ok(Value::String("Property".into())),
         ("gremlin_id", [value]) => Ok(gremlin_user_id(graph, value)),
         // Projection modulators return the same identity as id().
         ("gremlin_id_token", [value]) => Ok(gremlin_user_id(graph, value)),
@@ -115,21 +124,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Ok(Value::Bool(gremlin_within(needle, candidates)))
         }
         ("gremlin_math_bin", [Value::String(op), lhs, rhs]) => Ok(gremlin_math_bin(op, lhs, rhs)),
-        ("gremlin_visible_vertex_property_values", [target, Value::String(key)]) => Ok(
-            Value::List(gremlin_visible_vertex_property_values(graph, target, key)),
-        ),
-        ("gremlin_visible_vertex_properties", [target, Value::String(key)]) => Ok(Value::List(
-            gremlin_visible_vertex_property_values(graph, target, key)
-                .into_iter()
-                .map(|value| {
-                    let mut map = BTreeMap::new();
-                    map.insert("key".to_string(), Value::String(key.clone()));
-                    map.insert("value".to_string(), value);
-                    map.insert("element".to_string(), target.clone());
-                    Value::Map(map)
-                })
-                .collect(),
-        )),
         ("tinker_degree_centrality", [Value::Node { label, id }, Value::String(direction)]) => {
             let edges = if direction == "OUT" {
                 graph.out_edges(label, *id, &[])
@@ -298,45 +292,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             }
         }
         ("any_property", _) => Ok(Value::Null),
-        // Preserve heterogeneous values and requested-key order in one pass.
-        ("requested_property_values", [element, Value::List(keys)]) if keys.is_empty() => eval_call("all_property_values", vec![element.clone()], graph),
-        ("requested_property_values", [element, Value::List(keys)]) => Ok(Value::List(
-            keys.iter().filter_map(|key| {
-                let Value::String(key) = key else { return None; };
-                let value = graph_element_property(graph, element, key);
-                (!matches!(value, Value::Null)).then_some(value)
-            }).collect(),
-        )),
-        // ----- values() with no keys — list of all property values -----
-        ("all_property_values", [Value::Node { label, id }]) => Ok(Value::List(
-            graph
-                .node_property_keys(label)
-                .into_iter()
-                .filter_map(|k| {
-                    let v = graph.node_property(label, *id, &k);
-                    if matches!(v, Value::Null) {
-                        None
-                    } else {
-                        Some(v)
-                    }
-                })
-                .collect(),
-        )),
-        ("all_property_values", [Value::Edge { rel_type, id, .. }]) => Ok(Value::List(
-            graph
-                .edge_property_keys(rel_type)
-                .into_iter()
-                .filter_map(|k| {
-                    let v = graph.edge_property(rel_type, *id, &k);
-                    if matches!(v, Value::Null) {
-                        None
-                    } else {
-                        Some(v)
-                    }
-                })
-                .collect(),
-        )),
-        ("all_property_values", _) => Ok(Value::List(Vec::new())),
         // ----- project(...) — make_map(label0, value0, label1, value1, ...) -----
         ("make_map", entries) if entries.len() % 2 == 0 => {
             let mut map = std::collections::BTreeMap::new();
@@ -382,6 +337,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),
         ("map_get_display", [Value::TypedMap(entries), key]) => Ok(entries.iter().find(|(candidate, _)| candidate == key).map(|(_, value)| value.clone()).unwrap_or(Value::Null)),
         ("local_count", [Value::TypedMap(entries)]) => Ok(Value::Long(entries.len() as i64)),
+        ("requested_property_values", [target, Value::List(keys)]) => Ok(super::property_object::requested_property_values(target,&keys.iter().filter_map(|k|if let Value::String(k)=k {Some(k.clone())}else{None}).collect::<Vec<_>>(),graph)),
         ("map_keys", [Value::MapEntry(pair)]) => Ok(pair.0.clone()),
         ("map_values", [Value::MapEntry(pair)]) => Ok(pair.1.clone()),
         ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
@@ -1095,8 +1051,9 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         // is best-effort: an inconvertible input yields `null` rather
         // than a hard error so the surrounding chain still produces a
         // row stream the harness can compare.
+        ("gremlin_cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,false)),
         ("cast_string", [v]) => Ok(cast_to_string(v)),
-        ("local_cast_string", [v]) => Ok(cast_list_to_string(v)),
+        ("local_cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,true)),
         ("local_cast_number", [Value::List(items)]) => {
             Ok(Value::List(items.iter().map(cast_to_number).collect()))
         }

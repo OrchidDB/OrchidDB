@@ -56,6 +56,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     }
                 }
                 Value::Edge { rel_type, id, .. } => graph.edge_property(&rel_type, id, name),
+                Value::VertexProperty { .. } | Value::Property { .. } => super::runtime::graph_element_property(graph, &value, name),
                 Value::MapEntry(pair) => match name.as_str() { "key" => pair.0.clone(), "value" => pair.1.clone(), _ => Value::Null },
                 Value::Map(map) => match map.get(name) {
                     Some(v) => v.clone(),
@@ -106,6 +107,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             _ => Ok(Value::Null),
         },
         IrExpr::Label(binding) => match row.bindings.get(binding) {
+            Some(Value::VertexProperty {key,..}) => Ok(Value::String(key.clone())),
             Some(Value::Node { label, .. }) => Ok(Value::String(label.clone())),
             Some(Value::Edge { rel_type, .. }) => Ok(Value::String(rel_type.clone())),
             _ => Ok(Value::Null),

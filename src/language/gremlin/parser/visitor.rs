@@ -172,7 +172,14 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             self.steps.push(Step::Call(name, args));
             return;
         }
-        // Unknown spawn methods (`io`, `call`, etc.) lower to a best-effort
+        if let Some(c) = ctx.traversalSourceSpawnMethod_io() {
+            match extract_first_string_arg(&c.get_text()) {
+                Some(path) => self.steps.push(Step::Io { path, reader: None, read: false }),
+                None => self.fail(GremlinError::Parse("io requires a file path".into())),
+            }
+            return;
+        }
+        // Unknown spawn methods (`call`, etc.) lower to a best-effort
         // empty vertex scan so the rest of the chain still compiles. The
         // result row count will be wrong; the alternative is refusing to
         // compile a large class of scenarios.
@@ -781,7 +788,10 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if ctx.traversalMethod_read().is_some() {
-            self.steps.push(Step::Identity);
+            match self.steps.last_mut() {
+                Some(Step::Io { read, .. }) if !*read => *read = true,
+                _ => self.fail(GremlinError::Parse("read() requires io(path)".into())),
+            }
             return;
         }
         if let Some(c) = ctx.traversalMethod_subgraph() {
@@ -934,9 +944,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if ctx.traversalMethod_key().is_some() {
-            // key() projects the `key` field of the property-object map
-            // produced by `properties()`.
-            self.steps.push(Step::Values(vec!["key".into()]));
+            self.steps.push(Step::PropertyKey);
             return;
         }
         if ctx.traversalMethod_profile().is_some() {
@@ -1308,9 +1316,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_traversalMethod_value(&mut self, _ctx: &TraversalMethod_valueContext<'input>) {
-        // `value()` — pull the value out of the property-object map
-        // produced by `properties()`.
-        self.steps.push(Step::Values(vec!["value".into()]));
+        self.steps.push(Step::PropertyValue);
     }
 
     fn visit_traversalMethod_math(&mut self, ctx: &TraversalMethod_mathContext<'input>) {

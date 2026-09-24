@@ -451,16 +451,8 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
     use serde_json::json;
     let tagged = |kind: &str, value: serde_json::Value| json!({"type": kind, "value": value});
     let id = |label: &str, row: i64, edge: bool| {
-        let property = if edge {
-            graph.edge_property(label, row, "id")
-        } else {
-            graph.node_property(label, row, "id")
-        };
-        let user_id = if property == Value::Null {
-            Value::String(format!("{label}#{row}"))
-        } else {
-            property
-        };
+        let element=if edge {let (src_label,src_id,dst_label,dst_id)=graph.edge_endpoints(label,row).unwrap_or_default();Value::Edge{rel_type:label.into(),id:row,src_label,src_id,dst_label,dst_id,projected_properties:None}} else {Value::Node{label:label.into(),id:row}};
+        let user_id=graph.element_public_id(&element);
         gremlin_typed_value(&user_id, graph)
     };
     match value {
@@ -547,6 +539,8 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                     .collect::<Vec<_>>()
             ),
         ),
+        Value::VertexProperty {id,owner,key,value:property_value} => json!({"type":"vertex_property","id":gremlin_typed_value(&graph.element_public_id(value),graph),"owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(property_value,graph),"properties":graph.properties(value,&[]).iter().filter_map(|p|if let Value::Property{key,value,..}=p {Some(json!({"key":key,"value":gremlin_typed_value(value,graph)}))}else{None}).collect::<Vec<_>>()}),
+        Value::Property {owner,key,value} => json!({"type":"property","owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(value,graph)}),
         Value::MapEntry(pair) => tagged("entry", json!([gremlin_typed_value(&pair.0, graph), gremlin_typed_value(&pair.1, graph)])),
         Value::TypedMap(entries) => tagged(
             "map",
@@ -689,6 +683,8 @@ fn format_edge(
 /// keep their decimal point, lists/maps recurse.
 fn format_property_value(value: &Value) -> String {
     match value {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",format_property_value(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",format_property_value(value)),
         Value::MapEntry(pair) => format!("{}={}", format_property_value(&pair.0), format_property_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),

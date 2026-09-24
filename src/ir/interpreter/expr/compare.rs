@@ -36,6 +36,8 @@ fn orderability_tag(v: &Value) -> u8 {
         Value::BulkSet(_) => 13,
         Value::Set(_) => 15,
         Value::MapEntry(_) => 14,
+        Value::VertexProperty {..} => 16,
+        Value::Property {..} => 17,
         Value::Node { .. } => 8,
         Value::Edge { .. } => 9,
         Value::Path(_) => 10,
@@ -99,12 +101,9 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
                 .find(|order| !order.is_eq())
                 .unwrap_or_else(|| x.len().cmp(&y.len()))
         }
-        (Value::Map(x), Value::Map(y)) => {
-            if let Some(ordering) = property_object_ordering(x, y) {
-                return ordering;
-            }
-            compare_maps(x, y)
-        }
+        (Value::VertexProperty{id:a,..},Value::VertexProperty{id:b,..})=>a.cmp(b),
+        (Value::Property{key:a,value:x,..},Value::Property{key:b,value:y,..})=>a.cmp(b).then_with(||compare_values(x,y)),
+        (Value::Map(x), Value::Map(y)) => compare_maps(x,y),
         (Value::MapEntry(x), Value::MapEntry(y)) => compare_values(&x.0, &y.0).then_with(||compare_values(&x.1,&y.1)),
         (Value::TypedMap(x), Value::TypedMap(y)) => compare_typed_maps(x, y),
         (Value::Map(x), Value::TypedMap(y)) => compare_typed_maps(&map_entries(x), y),
@@ -138,44 +137,6 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         (_, Value::Null) => Ordering::Greater,
         _ => Ordering::Equal,
     }
-}
-
-/// TinkerPop property orderability: `Property` (edge / meta property)
-/// orders by (key, value); `VertexProperty` orders by id. Property-object
-/// traversers are `{element, key, value, __id, __order}` maps built by the
-/// gremlin `properties()` projection.
-fn property_object_ordering(
-    x: &std::collections::BTreeMap<String, Value>,
-    y: &std::collections::BTreeMap<String, Value>,
-) -> Option<std::cmp::Ordering> {
-    let is_prop = |m: &std::collections::BTreeMap<String, Value>| {
-        m.contains_key("element") && m.contains_key("key") && m.contains_key("value")
-    };
-    if !is_prop(x) || !is_prop(y) {
-        return None;
-    }
-    let vertex_owned = |m: &std::collections::BTreeMap<String, Value>| {
-        matches!(m.get("element"), Some(Value::Node { .. }))
-            || matches!(m.get("element"), Some(Value::String(s)) if !s.contains("->"))
-    };
-    if vertex_owned(x) && vertex_owned(y) {
-        let idx = x.get("__order").or_else(|| x.get("__id"));
-        let idy = y.get("__order").or_else(|| y.get("__id"));
-        if let (Some(a), Some(b)) = (idx, idy) {
-            return Some(compare_values(a, b));
-        }
-    }
-    let key_ord = compare_values(
-        x.get("key").unwrap_or(&Value::Null),
-        y.get("key").unwrap_or(&Value::Null),
-    );
-    if key_ord != std::cmp::Ordering::Equal {
-        return Some(key_ord);
-    }
-    Some(compare_values(
-        x.get("value").unwrap_or(&Value::Null),
-        y.get("value").unwrap_or(&Value::Null),
-    ))
 }
 
 fn blob_string_ordering(left: &str, right: &str) -> Option<std::cmp::Ordering> {

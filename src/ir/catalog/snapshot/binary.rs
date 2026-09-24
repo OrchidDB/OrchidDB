@@ -109,6 +109,8 @@ pub(super) fn write_section(out: &mut Vec<u8>, tag: u8, payload: &[u8]) {
 
 fn encode_value(out: &mut Vec<u8>, value: &Value) {
     match value {
+        Value::VertexProperty {id,owner,key,value} => {put_u8(out, 0x40);put_i64(out,*id);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
+        Value::Property {owner,key,value} => {put_u8(out, 0x41);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
         Value::Null => put_u8(out, V_NULL),
         Value::Bool(b) => {
             put_u8(out, V_BOOL);
@@ -247,6 +249,8 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
 fn decode_value(r: &mut Reader) -> Result<Value, String> {
     let tag = r.u8()?;
     Ok(match tag {
+        0x40 => Value::VertexProperty {id:r.i64()?,owner:Box::new(decode_value(r)?),key:r.str()?,value:Box::new(decode_value(r)?)},
+        0x41 => Value::Property {owner:Box::new(decode_value(r)?),key:r.str()?,value:Box::new(decode_value(r)?)},
         V_NULL => Value::Null,
         V_BOOL => Value::Bool(r.u8()? != 0),
         V_BYTE => Value::Byte(r.u8()? as i8),
@@ -350,7 +354,6 @@ pub(super) fn encode_str_list(list: &[String]) -> Vec<u8> {
 /// Encode a single [`Value`] into a standalone byte buffer using the
 /// snapshot value codec. Exposed to the incremental overlay codec so it can
 /// reuse the exact same tag-complete (including NaN bit patterns) encoding.
-#[cfg(any(feature = "duckdb", test))]
 pub(in crate::ir::catalog) fn encode_value_bytes(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
     encode_value(&mut out, value);
@@ -359,7 +362,6 @@ pub(in crate::ir::catalog) fn encode_value_bytes(value: &Value) -> Vec<u8> {
 
 /// Decode exactly one [`Value`] from `data`, rejecting any trailing bytes.
 /// Exposed to the incremental overlay codec.
-#[cfg(any(feature = "duckdb", test))]
 pub(in crate::ir::catalog) fn decode_value_bytes(data: &[u8]) -> Result<Value, String> {
     let mut r = Reader::new(data);
     let value = decode_value(&mut r)?;

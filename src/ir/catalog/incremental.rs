@@ -59,8 +59,10 @@ const T_COUNT: i64 = 1;
 const T_INSERTED_KEYS: i64 = 2;
 const T_OVERRIDE_KEYS: i64 = 3;
 
-const ENTITY_TAGS: [i64; 4] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED];
-const EDGE_TAGS: [i64; 6] = [
+const T_NATIVE: i64 = 7;
+const ENTITY_TAGS: [i64; 5] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE];
+const EDGE_TAGS: [i64; 7] = [
+    T_NATIVE,
     T_INSERTED,
     T_OVERRIDES,
     T_DELETED,
@@ -374,12 +376,13 @@ impl PropertyGraph {
             }
         }
         rebuild_inserted_adjacency(&mut ov, &outgoing, &incoming);
+        ov.rebuild_public_id_lookup();
         Ok(())
     }
 }
 
 fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
-    let mut fields = Vec::new();
+    let mut fields = vec![field(T_NATIVE, ov.native_node_state(key))];
     if let Some(props) = ov.inserted_nodes.get(key) {
         fields.push(field(T_INSERTED, Value::Map(props.clone())));
     }
@@ -396,7 +399,7 @@ fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
 }
 
 fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
-    let mut fields = Vec::new();
+    let mut fields = vec![field(T_NATIVE, ov.public_ids.get(&(true,key.0.clone(),key.1)).cloned().unwrap_or(Value::Null))];
     if let Some(edge) = ov.inserted_edges.get(key) {
         let inserted = Value::List(vec![
             Value::String(edge.src_label.clone()),
@@ -519,6 +522,7 @@ fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let fields = decode_fields(&body, &ENTITY_TAGS)?;
     let key = (record.name.clone(), record.id);
 
+    if let Some(state) = fields.get(&T_NATIVE) {ov.restore_native_node_state(key.clone(),state)?;}
     ov.inserted_nodes.remove(&key);
     ov.node_property_overrides.remove(&key);
     ov.deleted_nodes.remove(&key);
@@ -549,6 +553,8 @@ fn apply_edge(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let fields = decode_fields(&body, &EDGE_TAGS)?;
     let key = (record.name.clone(), record.id);
 
+    ov.public_ids.remove(&(true,key.0.clone(),key.1));
+    if let Some(value) = fields.get(&T_NATIVE).filter(|v| ***v != Value::Null) {ov.public_ids.insert((true,key.0.clone(),key.1),(*value).clone());}
     ov.inserted_edges.remove(&key);
     ov.edge_property_overrides.remove(&key);
     ov.deleted_edges.remove(&key);
