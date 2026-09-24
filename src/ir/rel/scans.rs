@@ -134,7 +134,10 @@ impl<'a> LoweringContext<'a> {
             // nested collections and arbitrary-precision numbers must remain native;
             // rendering them as text loses identity, ordering and numeric equality.
             for index in 0..bindings.len() {
-                let values = rows.iter().filter_map(|row| row.get(index)).collect::<Vec<_>>();
+                let values = rows
+                    .iter()
+                    .filter_map(|row| row.get(index))
+                    .collect::<Vec<_>>();
                 if homogeneous_scalar_type(values.iter().copied()).is_none() {
                     return Err(RelError::Unsupported(
                         "Gremlin heterogeneous values require native runtime types".into(),
@@ -144,7 +147,9 @@ impl<'a> LoweringContext<'a> {
         }
         fn typed_key_value(value: &Value) -> bool {
             match value {
-                Value::TypedMap(_) | Value::MapEntry(_) | Value::Token(_) | Value::Direction(_) => true,
+                Value::TypedMap(_) | Value::MapEntry(_) | Value::Token(_) | Value::Direction(_) => {
+                    true
+                }
                 Value::List(items) | Value::Path(items) => items.iter().any(typed_key_value),
                 Value::Map(items) => items.values().any(typed_key_value),
                 _ => false,
@@ -1332,9 +1337,11 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
                     | Value::InternalId { .. }
                     | Value::Node { .. }
                     | Value::Edge { .. }
+                    | Value::VertexProperty { .. }
+                    | Value::Property { .. }
                     | Value::Map(_)
                     | Value::TypedMap(_)
-            | Value::MapEntry(_)
+                    | Value::MapEntry(_)
                     | Value::BulkSet(_)
                     | Value::Token(_)
                     | Value::Direction(_)
@@ -1377,6 +1384,8 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
             | Value::InternalId { .. }
             | Value::Node { .. }
             | Value::Edge { .. }
+            | Value::VertexProperty { .. }
+            | Value::Property { .. }
             | Value::List(_)
             | Value::Map(_)
             | Value::TypedMap(_)
