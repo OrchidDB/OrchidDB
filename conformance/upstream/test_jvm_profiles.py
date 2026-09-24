@@ -1,4 +1,7 @@
-import unittest
+import unittest,json,tempfile
+from pathlib import Path
+from unittest.mock import patch
+import run
 from run import execution_profile, gremlin_capability
 
 class JvmProfileTests(unittest.TestCase):
@@ -8,6 +11,26 @@ class JvmProfileTests(unittest.TestCase):
   self.assertEqual(execution_profile('crabgraph-jvm')['execution'],'OLTP')
   self.assertEqual(execution_profile('crabgraph-jvm')['traversal_language'],'gremlin-groovy')
   self.assertEqual(execution_profile('crabgraph-computer')['execution'],'GraphComputer')
+ def test_build_identity_is_captured_before_any_scenario_runs(self):
+  events=[]
+  class Adapter:
+   classpath='frozen-classes:frozen-crabgraph-jvm.jar'
+   def __init__(self,engine):pass
+   def run(self,case):events.append('scenario');return {'status':'pass'}
+   def close(self):events.append('close')
+  def capture(classpath):
+   events.append('build')
+   return {'revision':'source-at-launch','classpath':classpath}
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);(root/'upstream').mkdir();output=root/'result.json'
+   (root/'upstream/catalog.json').write_text(json.dumps({'sources':{'tinkerpop':{'revision':'pinned'}},'cases':[{'id':'case','suite':'tinkerpop','tags':[],'steps':[]}]}))
+   with patch.object(run,'ROOT',root),patch.object(run,'Gremlin',Adapter),patch.object(run,'jvm_build',side_effect=capture),patch('sys.argv',['run.py','--engine','crabgraph-jvm','--suite','tinkerpop','--output',str(output)]):
+    run.main()
+   recorded=json.loads(output.read_text())
+   self.assertEqual(events,['build','scenario','close'])
+   self.assertEqual(recorded['build']['revision'],'source-at-launch')
+   self.assertEqual(recorded['build']['capture_phase'],'before-scenarios')
+   self.assertIn('captured_at',recorded['build'])
  def test_null_policy_exclusion_is_explicit(self):
   self.assertEqual(gremlin_capability({'status':'skipped','error':'Upstream execution profile excludes @DisallowNullPropertyValues'})['name'],'null-as-removal')
 
