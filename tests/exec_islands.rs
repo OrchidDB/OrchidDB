@@ -96,7 +96,7 @@ fn a_fully_lowerable_plan_becomes_a_single_island() {
 }
 
 #[test]
-fn complete_reads_return_target_batches_without_a_residual_plan() {
+fn complete_reads_push_down_query_work_and_preserve_result_shaping() {
     let graph = fixture();
     let query = "MATCH (p:person) WHERE p.age > 35 RETURN p.name";
     let parsed = parse_query(query).expect("parse");
@@ -113,7 +113,8 @@ fn complete_reads_return_target_batches_without_a_residual_plan() {
         ))
         .expect("direct SQL read");
     assert!(stats.fully_pushed_down());
-    assert_eq!(stats.residual_ops, 0);
+    assert_eq!(stats.interpreted_ops, 0);
+    assert!(returned.batch.schema().metadata().contains_key("crabgraph.cypher.typed_rows.v1"));
     assert_eq!(render(returned), rows_of(&graph, query));
 }
 

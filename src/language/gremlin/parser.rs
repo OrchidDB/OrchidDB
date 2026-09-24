@@ -2,6 +2,9 @@ mod collections;
 mod control;
 mod filters;
 mod literals;
+mod mutations;
+mod merge;
+mod legacy_tokens;
 mod predicates;
 mod projection;
 mod source;
@@ -81,7 +84,7 @@ pub fn parse_traversal_with_bindings(
     lexer.remove_error_listeners();
     lexer.add_error_listener(Box::new(errors.listener()));
 
-    let token_stream = CommonTokenStream::new(lexer);
+    let token_stream = CommonTokenStream::new(legacy_tokens::LegacyTokens::new(lexer));
     let mut parser = GremlinParser::new(token_stream);
     parser.remove_error_listeners();
     parser.add_error_listener(Box::new(errors.listener()));

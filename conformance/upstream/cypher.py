@@ -7,7 +7,7 @@ from neo4j import GraphDatabase
 from neo4j.graph import Node,Relationship,Path
 from fetch import CACHE
 from bridge import PuppyFixture
-from run import Process,ROOT,REPO
+from run import Process,ROOT,REPO,crabgraph_binary
 GRAMMAR=r'''
 ?start: value
 ?value: STRING -> string
@@ -18,7 +18,7 @@ GRAMMAR=r'''
  | "NaN" -> nan
  | "Inf" -> inf
  | "-Inf" -> ninf
- | list | map | node | relationship
+ | list | map | node | relationship | path
 list: "[" [value ("," value)*] "]"
 map: "{" [pair ("," pair)*] "}"
 pair: key ":" value
@@ -26,6 +26,9 @@ pair: key ":" value
 node: "(" label* [map] ")"
 label: ":" key
 relationship: "[" label [map] "]"
+path: "<" node path_segment* ">"
+path_segment: "-" relationship "->" node -> forward
+ | "<-" relationship "-" node -> backward
 STRING: /'(?:\\.|[^'\\])*'/ | /"(?:\\.|[^"\\])*"/
 BACKTICK: /`(?:``|[^`])*`/
 NAME: /[A-Za-z_][A-Za-z_0-9]*/
@@ -34,7 +37,16 @@ NAME: /[A-Za-z_][A-Za-z_0-9]*/
 %ignore WS
 '''
 class Values(Transformer):
- def string(self,x):return ast.literal_eval(str(x[0]))
+ def string(self,x):
+  # TCK strings may contain literal newlines, which Python source literals reject.
+  text=str(x[0])[1:-1]
+  escapes={'b':'\b','f':'\f','n':'\n','r':'\r','t':'\t',"'":"'",'"':'"','\\':'\\'}
+  def decode(m):
+   token=m.group(1)
+   if token.startswith(('u','U')):return chr(int(token[1:],16))
+   if token not in escapes:raise ValueError('Unknown TCK string escape: '+token)
+   return escapes[token]
+  return re.sub(r'\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)',decode,text)
  def tick(self,x):return str(x[0])[1:-1].replace('``','`')
  def number(self,x):
   s=str(x[0]);return float(s) if any(c in s.lower() for c in '.e') else int(s)
@@ -49,21 +61,53 @@ class Values(Transformer):
  def map(self,x):return dict(x)
  def label(self,x):return str(x[0])
  def node(self,x):return {'$node':{'labels':sorted(v for v in x if isinstance(v,str)),'properties':next((v for v in x if isinstance(v,dict)),{})}}
+ def forward(self,x):return {'direction':'forward','relationship':x[0],'node':x[1]}
+ def backward(self,x):return {'direction':'backward','relationship':x[0],'node':x[1]}
+ def path(self,x):return {'$path':{'start':x[0],'segments':x[1:]}}
  def relationship(self,x):return {'$relationship':{'type':x[0],'properties':x[1] if len(x)>1 else {}}}
 PARSE=Lark(GRAMMAR,parser='lalr',transformer=Values(),maybe_placeholders=False)
 def value(text):return PARSE.parse(text)
 def normalize(v):
  if isinstance(v,Node):return {'$node':{'labels':sorted(v.labels),'properties':{k:normalize(x) for k,x in dict(v).items() if x is not None}}}
  if isinstance(v,Relationship):return {'$relationship':{'type':v.type,'properties':{k:normalize(x) for k,x in dict(v).items() if x is not None}}}
- if isinstance(v,Path):raise ValueError('Typed path comparison adapter not implemented')
+ if isinstance(v,Path):
+  return {'$path':{'start':normalize(v.start_node),'segments':[{'direction':'forward' if rel.start_node.element_id==node.element_id else 'backward','relationship':normalize(rel),'node':normalize(v.nodes[i+1])} for i,(node,rel) in enumerate(zip(v.nodes,v.relationships))]}}
  if isinstance(v,(tuple,list)):return [normalize(x) for x in v]
  if isinstance(v,dict):return {k:normalize(x) for k,x in v.items()}
  if isinstance(v,float) and not math.isfinite(v):return {'$float':'NaN' if math.isnan(v) else 'Infinity' if v>0 else '-Infinity'}
  if v is None or isinstance(v,(str,int,float,bool)):return v
  raise ValueError('Unsupported driver result type '+type(v).__name__)
+def classified_error_matches(assertion,classification):
+ """Match original TCK constraints; unknown diagnostics never establish a pass."""
+ expected=re.fullmatch(r'a (\w+) should be raised at (compile time|runtime|any time): (\w+|\*)',assertion)
+ if not expected:raise ValueError('Unmapped TCK error assertion: '+assertion)
+ if not isinstance(classification,dict) or not all(classification.get(k) for k in ('type','detail','phase')):return None
+ kind,phase,detail=expected.groups()
+ return classification['type']==kind and (phase=='any time' or classification['phase']==phase) and (detail=='*' or classification['detail']==detail)
+def native_value(v):
+ kind=v['type'];x=v.get('value')
+ if kind=='null':return None
+ if kind=='internal_id':return {'$internal_id':{'table':x['table'],'offset':x['offset']}}
+ if kind in ('boolean','string'):return x
+ if kind in ('byte','uint8','short','uint16','int','uint32','long','uint64','uint128','bigint'):return int(x)
+ if kind in ('float','double'):return normalize(float(x))
+ if kind in ('list','set'):return [native_value(i) for i in x]
+ if kind=='map':return {native_value(k):native_value(item) for k,item in x}
+ if kind=='vertex':return {'$node':{'labels':[v['label']],'properties':{k:native_value(item) for k,item in v['properties'].items()}}}
+ if kind=='edge':return {'$relationship':{'type':v['label'],'properties':{k:native_value(item) for k,item in v['properties'].items()}}}
+ if kind=='path':
+  if not x or len(x)%2!=1 or any(n['type']!='vertex' for n in x[::2]) or any(e['type']!='edge' for e in x[1::2]):raise ValueError('Native path must contain alternating vertices and relationships')
+  segments=[]
+  for i in range(1,len(x),2):
+   edge=x[i];node=x[i-1]
+   forward=edge['outVLabel']==node['label'] and edge['outV']==node['id']
+   segments.append({'direction':'forward' if forward else 'backward','relationship':native_value(edge),'node':native_value(x[i+1])})
+  return {'$path':{'start':native_value(x[0]),'segments':segments}}
+ raise ValueError('Unmapped native Cypher result type '+kind)
 def equal(a,b,unordered_lists=False):
  if a is None or b is None:return a is b
  if isinstance(a,bool) or isinstance(b,bool):return type(a)==type(b) and a==b
+ if isinstance(a,int) and isinstance(b,int):return a==b
  if isinstance(a,(int,float)) and isinstance(b,(int,float)):return math.isclose(a,b,rel_tol=1e-9,abs_tol=1e-9)
  if isinstance(a,list) and isinstance(b,list):return rows_equal(a,b,not unordered_lists,unordered_lists)
  if isinstance(a,dict) and isinstance(b,dict):return a.keys()==b.keys() and all(equal(a[k],b[k],unordered_lists) for k in a)
@@ -86,7 +130,12 @@ class Cypher:
    self.seed=GraphDatabase.driver('bolt://127.0.0.1:17687',auth=('neo4j','conformance-local-only'))
    self.fixture=PuppyFixture()
  def query(self,q,params=None):
-  if self.engine=='crabgraph':return self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
+  if self.engine=='crabgraph':
+   result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
+   if result.get('native_rows') is not None:
+    result['rows']=[[native_value(v) for v in row] for row in result['native_rows']]
+    if result.get('native_columns') is not None:result['columns']=result['native_columns']
+   return result
   from neo4j.exceptions import ServiceUnavailable,SessionExpired
   try:
    with self.driver.session() as s:
@@ -113,7 +162,7 @@ class Cypher:
    if re.fullmatch(r'the binary-tree-[12] graph',s['text']):
     name=s['text'].split()[1];setup.append((CACHE/'opencypher/tck/graphs'/name/(name+'.cypher')).read_text())
   if self.engine=='crabgraph':
-   if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(REPO/'target/debug/upstream')],ROOT/'upstream-crabgraph-cypher.log')
+   if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(crabgraph_binary())],ROOT/'upstream-crabgraph-cypher.log')
    self.rust.send({'op':'reset'})
    for q in setup:
     result=self.query(q,params)
@@ -139,6 +188,8 @@ class Cypher:
      start=time.monotonic();actual=self.query(s['doc'],params);query_ms.append(round((time.monotonic()-start)*1000,3));continue
     if 'should be raised' in text:
      if 'error' not in actual:return {'status':'fail','query':original,'expected_error':text,'actual':actual,'query_ms':query_ms}
+     matched=classified_error_matches(text,actual.get('classification'))
+     if matched is not None:return {'status':'pass' if matched else 'fail','query':original,'expected_error':text,'actual':actual,'query_ms':query_ms,'assertions':[text] if matched else []}
      return {'status':'adapter-error','reason':'Error observed, but TCK error type/detail/phase cannot be authoritatively classified by this adapter','query':original,'expected_error':text,'actual':actual,'query_ms':query_ms}
     if text.startswith('the result should be'):
      if actual is None:raise ValueError('Result assertion has no query')

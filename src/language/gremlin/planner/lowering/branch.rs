@@ -509,6 +509,8 @@ fn lower_first_pick(
 }
 
 fn productive_default(dispatch_key: &str, none: Option<Node>, unproductive: Option<Node>) -> Node {
+    // An option traversal without a matching key drops the traverser. It
+    // does not have the identity fallback of choose(predicate, trueBranch).
     match (none, unproductive) {
         (Some(none), Some(unproductive)) => boolean_choose_correlated(
             productive_condition(dispatch_key),
@@ -517,21 +519,15 @@ fn productive_default(dispatch_key: &str, none: Option<Node>, unproductive: Opti
             correlate_current_and(dispatch_key),
             vec![CURRENT.into(), dispatch_key.to_string()],
         ),
-        (Some(none), None) => boolean_choose_correlated(
-            productive_condition(dispatch_key),
-            none,
-            correlate_current(),
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        ),
+        (Some(none), None) => none,
         (None, Some(unproductive)) => boolean_choose_correlated(
             productive_condition(dispatch_key),
-            correlate_current(),
+            Node::GraphEmpty,
             unproductive,
             correlate_current_and(dispatch_key),
             vec![CURRENT.into(), dispatch_key.to_string()],
         ),
-        (None, None) => correlate_current_and(dispatch_key),
+        (None, None) => Node::GraphEmpty,
     }
 }
 

@@ -427,6 +427,50 @@ pub(super) fn parse_integer_literal_signed_unsigned<'input>(
     Ok(parsed as u64)
 }
 
+pub(super) fn parse_typed_integer_literal(raw: &str) -> Result<GValue> {
+    let suffix = raw.chars().last().unwrap_or(' ').to_ascii_lowercase();
+    let text = strip_numeric_suffix(raw, "bBsSnNiIlL").replace('_', "");
+    if suffix == 'n' {
+        return text.parse::<num_bigint::BigInt>().map(GValue::BigInt)
+            .map_err(|err| GremlinError::Parse(format!("invalid bigint literal `{raw}`: {err}")));
+    }
+    let number = match parse_integer_literal(raw) {
+        Ok(number) => number,
+        Err(error) if !matches!(suffix, 'b' | 's' | 'i' | 'l') => {
+            let (negative, digits) = if let Some(digits) = text.strip_prefix('-') {
+                (true, digits)
+            } else { (false, text.strip_prefix('+').unwrap_or(&text)) };
+            let (radix, digits) = if let Some(digits) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+                (16, digits)
+            } else if digits.starts_with('0') && digits.len() > 1 { (8, digits) }
+            else { (10, digits) };
+            return num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix)
+                .map(|number| GValue::BigInt(if negative { -number } else { number }))
+                .ok_or(error);
+        }
+        Err(error) => return Err(error),
+    };
+    let range_error = || GremlinError::Parse(format!("integer literal `{raw}` is out of range"));
+    match suffix {
+        'b' => i8::try_from(number).map(GValue::Byte).map_err(|_| range_error()),
+        's' => i16::try_from(number).map(GValue::Short).map_err(|_| range_error()),
+        'i' => i32::try_from(number).map(|n| GValue::Int(n as i64)).map_err(|_| range_error()),
+        'l' => Ok(GValue::Long(number)),
+        _ if i32::try_from(number).is_ok() => Ok(GValue::Int(number)),
+        _ => Ok(GValue::Long(number)),
+    }
+}
+
+pub(super) fn parse_typed_float_literal(raw: &str) -> Result<GValue> {
+    match raw.chars().last().unwrap_or(' ').to_ascii_lowercase() {
+        'f' => parse_float_literal(raw).map(|value| GValue::Float32(value as f32)),
+        'm' => strip_numeric_suffix(raw, "mM").replace('_', "")
+            .parse::<bigdecimal::BigDecimal>().map(GValue::BigDecimal)
+            .map_err(|err| GremlinError::Parse(format!("invalid decimal literal `{raw}`: {err}"))),
+        _ => parse_float_literal(raw).map(GValue::Float),
+    }
+}
+
 pub(super) fn parse_integer_literal(raw: &str) -> Result<i64> {
     let mut value = strip_numeric_suffix(raw, "bBsSnNiIlL").replace('_', "");
     let sign = if let Some(rest) = value.strip_prefix('-') {
@@ -450,8 +494,9 @@ pub(super) fn parse_integer_literal(raw: &str) -> Result<i64> {
         (10, value.as_str())
     };
 
-    i64::from_str_radix(digits, radix)
-        .map(|parsed| parsed * sign)
+    let parsed = i128::from_str_radix(digits, radix)
+        .map_err(|err| GremlinError::Parse(format!("invalid integer literal `{raw}`: {err}")))?;
+    i64::try_from(parsed * sign as i128)
         .map_err(|err| GremlinError::Parse(format!("invalid integer literal `{raw}`: {err}")))
 }
 

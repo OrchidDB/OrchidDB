@@ -271,6 +271,10 @@ impl<'a> LoweringContext<'a> {
     /// map text (`m[{"age":"[29]","name":"[marko]"}]`) that the harness
     /// comparator normalizes identically to the interpreter's output.
     pub(super) fn lower_value_map(&self, plan: &LogicalPlan, name: &str, args: &[IrExpr]) -> RelResult<Expr> {
+        if self.language == Language::Gremlin {
+            return Err(RelError::Unsupported("Gremlin map requires native runtime values".into()));
+        }
+
         let IrExpr::Binding(binding) = &args[0] else {
             return Err(RelError::Unsupported(
                 "value_map over a non-binding target".into(),
@@ -420,6 +424,10 @@ impl<'a> LoweringContext<'a> {
     }
 
     pub(super) fn lower_make_map(&self, plan: &LogicalPlan, args: &[IrExpr]) -> RelResult<Expr> {
+        if self.language == Language::Gremlin {
+            return Err(RelError::Unsupported("Gremlin map requires native runtime values".into()));
+        }
+
         if args.len() % 2 != 0 {
             return Err(RelError::Unsupported("make_map arity".into()));
         }

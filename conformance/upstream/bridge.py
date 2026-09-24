@@ -5,8 +5,11 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 class Rust:
  def __init__(self):
-  self.p=subprocess.Popen([str(ROOT/'target/debug/upstream')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
+  self.p=subprocess.Popen([os.environ.get('CONFORMANCE_CRABGRAPH_BINARY',str(ROOT/'target/debug/upstream'))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
  def send(self,req):
+  if self.p.poll() is not None:
+   if req.get('op')!='fixture':raise RuntimeError('Crabgraph adapter exited; fixture reload required')
+   self.__init__()
   self.p.stdin.write(json.dumps(req)+'\n');self.p.stdin.flush()
   if not select.select([self.p.stdout],[],[],15)[0]:self.p.kill();raise TimeoutError('Crabgraph adapter deadline')
   line=self.p.stdout.readline()
@@ -104,7 +107,7 @@ def main():
   for line in sys.stdin:
    try:
     req=json.loads(line);result=adapter.send(req) if backend=='crabgraph' else adapter.setup(req)
-   except Exception as e:result={'error':str(e)}
+   except Exception as e:result={'error':str(e),'adapter_error':True,'timeout':isinstance(e,TimeoutError)}
    print(json.dumps(result),flush=True)
  finally:adapter.close()
 if __name__=='__main__':main()

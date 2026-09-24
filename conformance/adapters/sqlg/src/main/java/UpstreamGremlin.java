@@ -48,10 +48,60 @@ public class UpstreamGremlin {
   if(value.isObject()){Map<String,Object> result=new LinkedHashMap<>();value.fields().forEachRemaining(entry->result.put(entry.getKey(),typedValue(entry.getValue())));return result;}
   return json.convertValue(value,Object.class);
  }
+ /** Keep upstream literal translation; omit Groovy's inject(null) overload cast. */
+ static class GrammarTypeTranslator extends GroovyTranslator.LanguageTypeTranslator {
+  GrammarTypeTranslator(){super(false);}
+  @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(Map<?,?> value) {
+   // The upstream Groovy renderer emits [] for both empty maps and lists.
+   // Gremlin-language needs the map literal [:]; use actual Java type identity.
+   return value.isEmpty()?script.append("[:]"):super.produceScript(value);
+  }
+  @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(String traversalSource,Bytecode bytecode) {
+   script.append(traversalSource);
+   for(Bytecode.Instruction instruction:bytecode.getInstructions()) {
+    script.append(".").append(instruction.getOperator()).append("(");
+    if(instruction.getOperator().equals(GraphTraversalSource.Symbols.tx)&&instruction.getArguments().length>0) {
+     script.append(").").append(instruction.getArguments()[0].toString()).append("(");
+    } else {
+     Object[] args=instruction.getArguments();
+     for(int i=0;i<args.length;i++){if(i>0)script.append(",");convertToScript(args[i]);}
+    }
+    script.append(")");
+   }
+   return script;
+  }
+ }
+ static String nativeFloatingLiteral(JsonNode value) {
+  return switch(value.asText()) {
+   case "inf", "+inf", "+Infinity" -> "Infinity";
+   case "-inf" -> "-Infinity";
+   case "nan", "NaN" -> "NaN";
+   default -> value.asText();
+  };
+ }
+ static Object nativeValue(JsonNode v) {
+  String type=v.path("type").asText();JsonNode x=v.get("value");
+  return switch(type) {
+   case "token" -> T.valueOf(x.asText());case "direction" -> Direction.valueOf(x.asText());
+   case "null" -> null;case "boolean" -> x.asBoolean();case "string" -> x.asText();
+   case "byte" -> (byte)x.asInt();case "short" -> (short)x.asInt();case "int" -> {long n=x.longValue();if(n<Integer.MIN_VALUE||n>Integer.MAX_VALUE)throw new IllegalArgumentException("Unmapped out-of-range native int: "+v);yield (int)n;}case "long" -> x.longValue();
+   case "float" -> Float.valueOf(nativeFloatingLiteral(x));case "double" -> Double.valueOf(nativeFloatingLiteral(x));
+   case "bigint","uint64","uint128" -> new java.math.BigInteger(x.asText());case "bigdecimal" -> new java.math.BigDecimal(x.asText());
+   case "uint8","uint16" -> x.intValue();case "uint32" -> x.longValue();
+   case "datetime" -> org.apache.tinkerpop.gremlin.util.DatetimeHelper.parse(x.asText());
+   case "bulkset" -> {var values=new org.apache.tinkerpop.gremlin.process.traversal.step.util.BulkSet<Object>();x.forEach(item->values.add(nativeValue(item)));yield values;}
+   case "list","set" -> {List<Object> values=new ArrayList<>();x.forEach(item->values.add(nativeValue(item)));yield type.equals("set")?new LinkedHashSet<>(values):values;}
+   case "map" -> {Map<Object,Object> values=new LinkedHashMap<>();x.forEach(pair->values.put(nativeValue(pair.get(0)),nativeValue(pair.get(1))));yield values;}
+   case "vertex" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("id")),v.get("label").asText());
+   case "edge" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceEdge(nativeValue(v.get("id")),v.get("label").asText(),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("inV")),v.get("inVLabel").asText()),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("outV")),v.get("outVLabel").asText()));
+   case "path" -> {var path=org.apache.tinkerpop.gremlin.process.traversal.step.util.MutablePath.make();x.forEach(item->path.extend(nativeValue(item),Set.of()));yield path;}
+   default -> throw new IllegalArgumentException("Unmapped native result type "+v);
+  };
+ }
  static Bridge bridge;
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
-  Graph graph; Cluster cluster; GraphTraversalSource source;
+  Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
   public GraphTraversalSource getGraphTraversalSource(GraphData data) {
    try {
     TinkerGraph fixture=switch(data==null?"EMPTY":data.name()) {
@@ -76,7 +126,7 @@ public class UpstreamGremlin {
     fixture.vertices().forEachRemaining(v->{Map<String,Object> props=new LinkedHashMap<>();v.properties().forEachRemaining(p->{if(props.containsKey(p.key())||p.properties().hasNext())throw new AssumptionViolatedException("adapter-skip: fixture has multi/meta-properties that the mapping bridge cannot preserve");props.put(p.key(),p.value());});nodes.add(Map.of("id",v.id(),"label",v.label(),"properties",props,"property_types",propertyTypes(props)));});
     fixture.edges().forEachRemaining(e->{Map<String,Object> props=new LinkedHashMap<>();e.properties().forEachRemaining(p->props.put(p.key(),p.value()));edges.add(Map.of("id",e.id(),"label",e.label(),"src",e.outVertex().id(),"dst",e.inVertex().id(),"properties",props,"property_types",propertyTypes(props)));});
     var response=bridge.send(Map.of("op","fixture","name",data==null?"empty":data.name().toLowerCase(),"nodes",nodes,"edges",edges));
-    if(response.has("error"))throw new AssumptionViolatedException("adapter-skip: "+response.get("error").asText());
+    if(response.has("error"))throw new IOException("fixture-adapter: "+response.get("error").asText());
     fixture.close();
     if(backend.equals("puppygraph")){
      cluster=Cluster.build("127.0.0.1").port(18182).credentials("puppygraph","conformance-local-only").create();
@@ -85,10 +135,11 @@ public class UpstreamGremlin {
     source=org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource.traversal().withRemote(new RemoteConnection(){
      public <E> CompletableFuture<RemoteTraversal<?,E>> submitAsync(Bytecode bytecode) throws RemoteConnectionException {
       try{
-       String script=GroovyTranslator.of("g").translate(bytecode).getScript();
+       String script=GroovyTranslator.of("g", new GrammarTypeTranslator()).translate(bytecode).getScript();
        var response=bridge.send(Map.of("op","gremlin","query",script));
-       if(response.has("error"))throw new RemoteConnectionException(response.get("error").asText());
-       List<Object> values=new ArrayList<>();for(var row:response.get("typed_rows")){values.add(typedValue(row.get(0)));}
+       queryTransports.add(Map.of("step",currentStep,"query",script,"backend",response.path("backend").asText(""),"native_rows",response.hasNonNull("native_rows"),"error",response.path("error").asText("")));
+       if(response.has("error"))throw new RemoteConnectionException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
+       boolean nativeRows=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();for(var row:response.get(nativeRows?"native_rows":"typed_rows")){values.add(nativeRows?nativeValue(row.get(0)):typedValue(row.get(0)));}
        return CompletableFuture.completedFuture(new EmbeddedRemoteTraversal<>(__.inject((E[])values.toArray())));
       }catch(Exception e){throw new RemoteConnectionException(e);}
      }
@@ -130,22 +181,18 @@ public class UpstreamGremlin {
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
    try{for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")||t.equals("@AllowNullPropertyValues")||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
-   for(var s:request.get("steps")){failedStep=s.get("text").asText();long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}
+   for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}
    catch(AssumptionViolatedException ex){status=ex.getMessage().startsWith("unsupported-feature:")?"unsupported":"skipped";error=ex.getMessage();}
    catch(AssertionError ex){status="fail";error=ex.toString();}
    catch(LinkageError ex){status="adapter-error";error=ex.toString();}
    catch(Throwable ex){status=failedStep.matches("the \\w+ graph")||ex.getMessage()!=null&&ex.getMessage().startsWith("Unmapped")?"adapter-error":"fail";error=ex.toString();}
    Object actual=field(def,"result");String actualJson;
    try{actualJson=GraphSONMapper.build().version(GraphSONVersion.V3_0).create().createMapper().writeValueAsString(actual);}catch(Exception ex){actualJson=String.valueOf(actual);}
-   if(backend.equals("crabgraph")&&status.equals("fail")&&actual!=null){
-    String raw=String.valueOf(actual);String original=request.toString();
-    if((raw.contains("v[")&&original.contains("v["))||(raw.contains("e[")&&original.contains("e["))||(raw.startsWith("[[")&&actual instanceof String)){
-     status="adapter-error";error="Typed graph value identity is unavailable in the Crabgraph formatted-text result transport. Upstream assertion: "+error;
-    }
-   }
    Object queryError=field(def,"error");
+   if(String.valueOf(queryError).contains("adapter-timeout: "))status="timeout";
+   else if(String.valueOf(queryError).contains("adapter-error: "))status="adapter-error";
    try{context.afterEachScenario();}catch(Exception ex){status="adapter-error";error+=" cleanup: "+ex;}
-   System.out.println(json.writeValueAsString(Map.of("id",request.get("id").asText(),"status",status,"error",error,"failed_step",status.equals("pass")?"":failedStep,"actual_graphson",actualJson,"query_error",String.valueOf(queryError),"elapsed_ms",(System.nanoTime()-start)/1e6,"step_timings",timings,"assertion_engine","Apache gremlin-test 3.7.4 StepDefinition (unmodified)")));System.out.flush();
+   System.out.println(json.writeValueAsString(Map.of("id",request.get("id").asText(),"status",status,"error",error,"failed_step",status.equals("pass")?"":failedStep,"actual_graphson",actualJson,"query_error",String.valueOf(queryError),"elapsed_ms",(System.nanoTime()-start)/1e6,"step_timings",timings,"query_transports",context.queryTransports,"assertion_engine","Apache gremlin-test 3.7.4 StepDefinition (unmodified)")));System.out.flush();
   }
   if(bridge!=null)bridge.process.destroy();if(cachedSqlg!=null)cachedSqlg.close();
  }

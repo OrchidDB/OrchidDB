@@ -1,16 +1,16 @@
 //! Graph properties, Gremlin ordering, and shortest paths.
 
+use super::lists::list_semantic_eq;
+use super::maps::{runtime_list, visible_map_keys};
+use super::numeric::value_as_f64;
+use super::property_object::eval_property_object;
+use super::strings::display_for_concat;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::element_id::element_internal_id;
 use crate::ir::interpreter::expr::compare_values;
 use crate::ir::plan::Direction;
 use crate::ir::value::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use super::lists::list_semantic_eq;
-use super::maps::{runtime_list, visible_map_keys};
-use super::numeric::value_as_f64;
-use super::property_object::eval_property_object;
-use super::strings::display_for_concat;
 
 fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
     let name = match graph.node_property(label, id, "name") {
@@ -109,6 +109,11 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
         .unwrap_or(Value::Null),
         (Value::Node { label, id }, _) => graph.node_property(label, *id, key),
         (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, *id, key),
+        (Value::TypedMap(entries), _) => entries
+            .iter()
+            .find(|(candidate, _)| candidate == &Value::String(key.to_string()))
+            .map(|(_, value)| value.clone())
+            .unwrap_or(Value::Null),
         (Value::Map(map), _) => map.get(key).cloned().unwrap_or(Value::Null),
         _ => Value::Null,
     }
@@ -117,11 +122,11 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
 pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
     match value {
         Value::Node { label, id } => match graph.node_property(label, *id, "id") {
-            Value::Null => Value::Int(*id),
+            Value::Null => Value::String(format!("{label}#{id}")),
             value => value,
         },
         Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
-            Value::Null => Value::Int(*id),
+            Value::Null => Value::String(format!("{rel_type}#{id}")),
             value => value,
         },
         Value::Map(map) => map.get("__id").cloned().unwrap_or(Value::Null),
@@ -130,6 +135,19 @@ pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
 }
 
 pub(super) fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
+    // Default identity includes the label, while scan order retains the
+    // catalog's row ordinal. Changing identity must not reorder traversers.
+    match value {
+        Value::Node { label, id } if graph.node_property(label, *id, "id") == Value::Null => {
+            return Value::Long(*id);
+        }
+        Value::Edge { rel_type, id, .. }
+            if graph.edge_property(rel_type, *id, "id") == Value::Null =>
+        {
+            return Value::Long(*id);
+        }
+        _ => {}
+    }
     match gremlin_user_id(graph, value) {
         Value::Int(id) | Value::Long(id) => Value::Long(id),
         Value::String(text) => Value::String(text),
@@ -155,6 +173,8 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         return (11, Value::List(items.to_vec()));
     }
     match value {
+        Value::TypedMap(_) => (13, value.clone()),
+        Value::Token(_) | Value::Direction(_) => (14, value.clone()),
         Value::Null => (0, Value::Null),
         Value::Bool(_) => (1, value.clone()),
         Value::Byte(_)
@@ -199,10 +219,16 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         }
         Value::Path(_) => (10, value.clone()),
         Value::List(_) => (12, value.clone()),
+        Value::BulkSet(_) => (11, value.clone()),
     }
 }
 
-pub(super) fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str, dir: &str) -> Value {
+pub(super) fn local_order_by_key(
+    graph: &PropertyGraph,
+    value: &Value,
+    key: &str,
+    dir: &str,
+) -> Value {
     let desc = dir.eq_ignore_ascii_case("desc");
     if let Some(items) = runtime_list(value) {
         let mut keyed = items
@@ -306,7 +332,11 @@ pub(super) fn gremlin_visible_vertex_property_values(
         .collect()
 }
 
-pub(super) fn eval_algorithm_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
+pub(super) fn eval_algorithm_property_object(
+    name: &str,
+    args: &[Value],
+    graph: &PropertyGraph,
+) -> Value {
     let mut value = eval_property_object(name, args, graph);
     if !matches!(
         name,
@@ -717,7 +747,12 @@ pub(super) fn path_last_label(value: &Value) -> Option<&str> {
     }
 }
 
-pub(super) fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &PropertyGraph) -> Value {
+pub(super) fn format_placeholder(
+    current: &Value,
+    binding: &Value,
+    key: &str,
+    graph: &PropertyGraph,
+) -> Value {
     let resolved = graph_element_property(graph, current, key);
     if matches!(resolved, Value::Null) {
         binding.clone()

@@ -27,17 +27,30 @@ pub(crate) fn unwind_op(
             None => value,
         };
         match value {
-            Value::List(items) if items.is_empty() => {
+            Value::List(items) | Value::BulkSet(items) if items.is_empty() => {
                 if outer_flag {
                     let mut new_row = row.clone();
                     new_row.bindings.insert(bind.to_string(), Value::Null);
                     out.push(new_row);
                 }
             }
-            Value::List(items) => {
+            Value::List(items) | Value::BulkSet(items) => {
                 for item in items {
                     let mut new_row = row.clone();
                     new_row.bindings.insert(bind.to_string(), item);
+                    out.push(new_row);
+                }
+            }
+            Value::TypedMap(items) => {
+                for (key, value) in items {
+                    let mut new_row = row.clone();
+                    new_row.bindings.insert(
+                        bind.to_string(),
+                        Value::Map(BTreeMap::from([
+                            ("key".into(), key),
+                            ("value".into(), value),
+                        ])),
+                    );
                     out.push(new_row);
                 }
             }

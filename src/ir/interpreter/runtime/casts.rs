@@ -21,6 +21,21 @@ pub(crate) fn cast_list_to_string(v: &Value) -> Value {
 
 fn display_for_as_string(v: &Value) -> String {
     match v {
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_as_string(key),
+                    display_for_as_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => "null".to_string(),
         Value::String(s) => normalize_collection_string(s),
         Value::Bool(b) => b.to_string(),
@@ -55,7 +70,7 @@ fn display_for_as_string(v: &Value) -> String {
             rel_type,
             tinker_node_id(dst_label, *dst_id)
         ),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)
@@ -71,7 +86,7 @@ fn display_for_as_string_container(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => display_string_for_as_string_container(s),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)

@@ -6,6 +6,7 @@ use super::literals::{
     date_diff_traversal_arg, date_unit_from_text, decode_string_literal, direction_from_to_arg,
     extract_first_string_arg, extract_top_level_string_args, parse_date_literal_ctx,
     parse_float_literal, parse_integer_literal, parse_integer_literal_signed_unsigned,
+    parse_typed_integer_literal, parse_typed_float_literal,
     parse_math_expr, sack_op_from_text,
 };
 use super::{
@@ -109,6 +110,29 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         &mut self,
         ctx: &TraversalSourceSpawnMethodContext<'input>,
     ) {
+        if let Some(c) = ctx.traversalSourceSpawnMethod_mergeV() {
+            match &*c {
+                TraversalSourceSpawnMethod_mergeVContextAll::TraversalSourceSpawnMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
+                _ => self.fail(GremlinError::Unsupported("mergeV traversal criteria".into())),
+            }
+            return;
+        }
+        if ctx.traversalSourceSpawnMethod_addE().is_some() {
+            self.fail(GremlinError::Unsupported("source addE requires traversal endpoints".into()));
+            return;
+        }
+        if let Some(c) = ctx.traversalSourceSpawnMethod_addV() {
+            if c.nestedTraversal().is_some() {
+                self.fail(GremlinError::Unsupported("addV traversal label".into()));
+                return;
+            }
+            let label = match c.stringArgument() {
+                Some(arg) => match self.string_argument_text(&arg) { Some(label) => label, None => return },
+                None => "vertex".into(),
+            };
+            self.steps.push(Step::AddV { label });
+            return;
+        }
         if let Some(c) = ctx.traversalSourceSpawnMethod_V() {
             self.visit_traversalSourceSpawnMethod_V(&c);
             return;
@@ -197,6 +221,25 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     // ---- traversalMethod dispatch ----
 
     fn visit_traversalMethod(&mut self, ctx: &TraversalMethodContext<'input>) {
+        if let Some(c) = ctx.traversalMethod_mergeV() {
+            match &*c {
+                TraversalMethod_mergeVContextAll::TraversalMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
+                _ => self.fail(GremlinError::Unsupported("mergeV dynamic criteria".into())),
+            }
+            return;
+        }
+        if let Some(c) = ctx.traversalMethod_addE() {
+            self.lower_add_edge(&c);
+            return;
+        }
+        if let Some(c) = ctx.traversalMethod_addV() {
+            self.lower_add_vertex(&c);
+            return;
+        }
+        if let Some(c) = ctx.traversalMethod_property() {
+            self.lower_property_write(&c);
+            return;
+        }
         if let Some(c) = ctx.traversalMethod_V() {
             self.visit_traversalMethod_V(&c);
             return;
@@ -685,6 +728,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         // sub-traversal — those go with addE) fall back to Identity since
         // we don't model the addE side.
         if let Some(c) = ctx.traversalMethod_from() {
+            if self.lower_edge_endpoint(&c.get_text(), true) { return; }
             match extract_first_string_arg(&c.get_text()) {
                 Some(label) => self.steps.push(Step::PathFrom(label)),
                 None => self.steps.push(Step::Identity),
@@ -693,6 +737,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         }
         if let Some(c) = ctx.traversalMethod_to() {
             let raw = c.get_text();
+            if self.lower_edge_endpoint(&raw, false) { return; }
             if let Some(direction) = direction_from_to_arg(&raw) {
                 self.steps.push(Step::ExpandVertex {
                     direction,
@@ -1627,15 +1672,15 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     fn visit_genericLiteral(&mut self, ctx: &GenericLiteralContext<'input>) {
         if let Some(num) = ctx.numericLiteral() {
             if let Some(int_lit) = num.integerLiteral() {
-                match parse_integer_literal(&int_lit.get_text()) {
-                    Ok(n) => self.value_stack.push(GValue::Int(n)),
+                match parse_typed_integer_literal(&int_lit.get_text()) {
+                    Ok(n) => self.value_stack.push(n),
                     Err(err) => self.fail(err),
                 }
                 return;
             }
             if let Some(float_lit) = num.floatLiteral() {
-                match parse_float_literal(&float_lit.get_text()) {
-                    Ok(f) => self.value_stack.push(GValue::Float(f)),
+                match parse_typed_float_literal(&float_lit.get_text()) {
+                    Ok(f) => self.value_stack.push(f),
                     Err(err) => self.fail(err),
                 }
                 return;
@@ -1808,7 +1853,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             // available; otherwise default to 0 so the chain compiles.
             let name = var.get_text();
             let resolved = match self.binding_value(&name) {
-                Some(GValue::Int(n)) if n >= 0 => n as u64,
+                Some(GValue::Int(n) | GValue::Long(n)) if n >= 0 => n as u64,
                 _ => 0,
             };
             self.integer_stack.push(resolved);

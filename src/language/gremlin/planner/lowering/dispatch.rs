@@ -64,6 +64,10 @@ where
     I: Iterator<Item = &'a Step>,
 {
     match step {
+        Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref()),
+        Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref())),
+        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label)),
+        Step::Property { key, value } => super::mutations::lower_property(input, key, value),
         // ----- filters that don't fit the simple scalar predicate path -----
         Step::HasLabel(labels) => lower_has_label(input, labels),
         Step::Has { key, predicate } => lower_has(input, key, predicate),
@@ -379,29 +383,7 @@ where
             ))
         }
         Step::AggregateAs(label) => lower_aggregate_as(input, label, steps, lo, ctx),
-        Step::Cap(label) if cap_feeds_local_collection_step(steps.peek().copied()) => {
-            Ok(lower_side_effect_bag_as_list(input.clone(), label, lo)
-                .unwrap_or_else(|| lower_cap(input, label, lo)))
-        }
-        Step::Cap(label) => {
-            // `cap(x).is(P.typeOf(SET))`: a cap over an aggregate bag is
-            // always a BulkSet (a Set subtype) in TinkerPop, but our cap
-            // approximation streams the bag entries. Consume the always-true
-            // type check instead of applying it per entry.
-            if let Some(Step::Is {
-                predicate: crate::language::gremlin::semantics::Predicate::TypeOf(name),
-            }) = steps.peek()
-            {
-                let tag = name
-                    .trim()
-                    .trim_start_matches("GType.")
-                    .to_ascii_lowercase();
-                if matches!(tag.as_str(), "set" | "bulkset" | "collection") {
-                    steps.next();
-                }
-            }
-            Ok(lower_cap(input, label, lo))
-        }
+        Step::Cap(label) => Ok(lower_cap(input, label, lo)),
         Step::CapMulti(labels) => Ok(lower_cap_multi(input, labels, lo)),
         Step::Sack => Ok(lower_sack_read(input)),
         Step::SackOp(op) => lower_sack_op(input, *op, steps, lo, ctx),

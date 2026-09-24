@@ -760,6 +760,30 @@ pub(super) fn materialize_list_comprehension(
     predicate_expr: Option<&Expr>,
     map: &Expr,
 ) -> CypherPlanResult<(Node, Expr)> {
+    // Pure collection expressions preserve their values and local variable
+    // scope directly. A correlated aggregate would otherwise discard a
+    // preceding quantified expression's temporary binding.
+    if !requires_scoped_materialization(collection)
+        && !predicate_expr.is_some_and(requires_scoped_materialization)
+        && !requires_scoped_materialization(map)
+    {
+        let collection = match predicate_expr {
+            Some(predicate) => Expr::ListFilter {
+                variable: variable.to_string(),
+                collection: Box::new(collection.clone()),
+                predicate: Box::new(predicate.clone()),
+            },
+            None => collection.clone(),
+        };
+        return Ok((
+            input,
+            Expr::ListTransform {
+                variable: variable.to_string(),
+                collection: Box::new(collection),
+                map: Box::new(map.clone()),
+            },
+        ));
+    }
     let alias = lowerer.synthetic("list");
     let collection_alias = lowerer.synthetic("list_collection");
     let collection_is_null = lowerer.synthetic("list_collection_null");

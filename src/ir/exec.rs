@@ -245,6 +245,16 @@ pub async fn plan_with_islands(
     backend: &RelBackend,
     target: &dyn IslandTarget,
 ) -> (GraphPlan, ExecStats) {
+    fn observes_path(node: &Node) -> bool {
+        matches!(node, Node::GraphPathFilter { .. })
+            || matches!(node, Node::GraphCurrentProject { expr: crate::ir::expr::IrExpr::Call { name, .. }, .. } if name == "path_or_self")
+            || children(node).into_iter().any(observes_path)
+    }
+    let preserving_backend;
+    let backend = if observes_path(&plan.root) {
+        preserving_backend = backend.preserving_traverser_state();
+        &preserving_backend
+    } else { backend };
     let mut root = (*plan.root).clone();
     let mut stats = ExecStats::default();
     islandize(&mut root, &plan.policy, graph, backend, target, &mut stats).await;
@@ -264,17 +274,21 @@ pub async fn plan_with_islands(
 /// partition it into hybrid islands and invoke the interpreter for the
 /// residual.
 ///
-/// This is the direct-read boundary: fully supported reads return the
-/// target's [`ReturnedBatches`] without a `GraphValues` round trip. Callers
-/// should keep the hybrid path as their default until SQL result shaping
-/// reaches parity for every advertised result form.
+/// Fully supported reads push query work into the target. Language result
+/// shaping remains at the interpreter boundary so graph identities and
+/// nested value types survive the SQL result conversion.
 pub async fn execute_with_islands(
     plan: &GraphPlan,
     graph: &PropertyGraph,
     backend: &RelBackend,
     target: &dyn IslandTarget,
 ) -> Result<(ReturnedBatches, ExecStats), String> {
-    if !contains_mutation(&plan.root)
+    // GraphReturn owns language-specific result shaping. Returning the SQL
+    // batch directly erases graph identities and nested value types. Its
+    // input can still execute as one complete SQL island; only the final
+    // result boundary must reconstruct the typed values.
+    if !matches!(plan.root.as_ref(), Node::GraphReturn { .. })
+        && !contains_mutation(&plan.root)
         && let Ok(lowered) = backend.lower(plan, graph)
         && let Ok(returned) = target.execute(lowered).await
     {
@@ -589,25 +603,23 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
         DataType::Null => Some(Value::Null),
         DataType::Boolean
         | DataType::Int32
-        | DataType::Int64
         | DataType::Float64
         | DataType::Utf8 => Some(array_value(array, row, field)),
-        // Narrower and unsigned widths carry the same values; widen rather
-        // than decline, since the graph value model has one integer type.
-        DataType::Int8 => widen_int::<arrow::array::Int8Array>(array, row),
-        DataType::Int16 => widen_int::<arrow::array::Int16Array>(array, row),
-        DataType::UInt8 => widen_int::<arrow::array::UInt8Array>(array, row),
-        DataType::UInt16 => widen_int::<arrow::array::UInt16Array>(array, row),
-        DataType::UInt32 => widen_int::<arrow::array::UInt32Array>(array, row),
-        // Values above `i64::MAX` keep their unsigned type, exactly as a
-        // UINT64 property reads back through the catalog.
-        DataType::UInt64 => array
-            .as_any()
-            .downcast_ref::<arrow::array::UInt64Array>()
-            .map(|typed| {
-                let value = typed.value(row);
-                i64::try_from(value).map_or(Value::UInt64(value), Value::Long)
-            }),
+        // Preserve the declared Arrow widths at the language boundary.
+        DataType::Int8 => array.as_any().downcast_ref::<arrow::array::Int8Array>()
+            .map(|typed| Value::Byte(typed.value(row))),
+        DataType::Int16 => array.as_any().downcast_ref::<arrow::array::Int16Array>()
+            .map(|typed| Value::Short(typed.value(row))),
+        DataType::Int64 => array.as_any().downcast_ref::<arrow::array::Int64Array>()
+            .map(|typed| Value::Long(typed.value(row))),
+        DataType::UInt8 => array.as_any().downcast_ref::<arrow::array::UInt8Array>()
+            .map(|typed| Value::UInt8(typed.value(row))),
+        DataType::UInt16 => array.as_any().downcast_ref::<arrow::array::UInt16Array>()
+            .map(|typed| Value::UInt16(typed.value(row))),
+        DataType::UInt32 => array.as_any().downcast_ref::<arrow::array::UInt32Array>()
+            .map(|typed| Value::UInt32(typed.value(row))),
+        DataType::UInt64 => array.as_any().downcast_ref::<arrow::array::UInt64Array>()
+            .map(|typed| Value::UInt64(typed.value(row))),
         // The lowering uses zero-scale decimals for 128-bit integers and
         // scaled decimals for `DECIMAL(p, s)`; the interpreter holds those as
         // `BigInt` and a `BigDecimal` carrying the declared scale.
@@ -630,7 +642,7 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
         DataType::Float32 => array
             .as_any()
             .downcast_ref::<arrow::array::Float32Array>()
-            .map(|typed| Value::Float(f64::from(typed.value(row)))),
+            .map(|typed| Value::Float32(typed.value(row))),
         DataType::LargeUtf8 => array
             .as_any()
             .downcast_ref::<arrow::array::LargeStringArray>()
@@ -653,18 +665,6 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
         }
         _ => None,
     }
-}
-
-fn widen_int<T>(array: &dyn Array, row: usize) -> Option<Value>
-where
-    T: arrow::array::Array + 'static,
-    for<'a> &'a T: arrow::array::ArrayAccessor,
-    for<'a> <&'a T as arrow::array::ArrayAccessor>::Item: Into<i64>,
-{
-    let typed = array.as_any().downcast_ref::<T>()?;
-    Some(Value::Long(
-        arrow::array::ArrayAccessor::value(&typed, row).into(),
-    ))
 }
 
 fn decode_list(items: &dyn Array, inner: &Field) -> Option<Value> {

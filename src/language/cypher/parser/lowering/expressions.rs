@@ -194,7 +194,7 @@ pub(crate) fn lower_string_list_null_predicate_expression(
                 pattern: Box::new(rhs),
             },
             PredicatePostfix::In(rhs) => Expr::Function {
-                name: "in".to_string(),
+                name: "cypher_in".to_string(),
                 distinct: false,
                 args: vec![expr, rhs],
             },
@@ -443,14 +443,14 @@ fn lower_list_operator_parts(
         .find(|expr| expr.start().get_token_index() < dot_index)
         .map(|expr| lower_expression(expr.as_ref()))
         .transpose()?
-        .unwrap_or(Expr::Literal(Literal::Null));
+        .unwrap_or(Expr::Literal(Literal::Integer("0".to_string())));
     let end = expressions
         .iter()
         .find(|expr| expr.start().get_token_index() > dot_index)
         .map(|expr| lower_expression(expr.as_ref()))
         .transpose()?
-        .unwrap_or(Expr::Literal(Literal::Null));
-    Ok(("list_slice".to_string(), vec![start, end]))
+        .unwrap_or(Expr::Literal(Literal::Integer(i64::MAX.to_string())));
+    Ok(("cypher_slice".to_string(), vec![start, end]))
 }
 
 fn lower_node_labels(ctx: &OC_NodeLabelsContext<'_>) -> Result<Vec<String>> {

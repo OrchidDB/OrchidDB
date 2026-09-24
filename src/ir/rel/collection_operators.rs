@@ -48,6 +48,9 @@ impl<'a> LoweringContext<'a> {
         output: &str,
         input: &Node,
     ) -> RelResult<LoweredNode> {
+        if self.language == Language::Gremlin {
+            return Err(RelError::Unsupported("Gremlin group map requires native runtime values".into()));
+        }
         use crate::ir::plan::GroupValue;
         let input = self.lower_node(input)?;
         let key_expr = self.lower_expr(&input.plan, key)?;
@@ -306,6 +309,15 @@ impl<'a> LoweringContext<'a> {
         output: &str,
         input: &Node,
     ) -> RelResult<LoweredNode> {
+        // Quantifier SQL currently loses the earlier result binding when
+        // multiple quantified expressions share one projection. Preserve
+        // Cypher three-valued semantics in the runtime until that lowering
+        // can carry every correlated result faithfully.
+        if self.language == Language::Cypher {
+            return Err(RelError::Unsupported(
+                "Cypher quantifier requires runtime evaluation".into(),
+            ));
+        }
         let input = self.lower_node(input)?;
         let original_columns = output_fields(&input.plan);
         let suffix = self.scan_counter;
@@ -348,9 +360,8 @@ impl<'a> LoweringContext<'a> {
 
         let mut expanded_projection =
             existing_columns(&base, &BTreeSet::from([item_binding.into()]));
-        expanded_projection.push(
-            collections::outer_list(col_exact(&list_col), &list_type)?.alias(item_binding),
-        );
+        expanded_projection
+            .push(collections::outer_list(col_exact(&list_col), &list_type)?.alias(item_binding));
         let mut options = datafusion::common::UnnestOptions::default();
         options.preserve_nulls = true;
         let expanded_input = LogicalPlanBuilder::from(base.clone())
@@ -364,10 +375,8 @@ impl<'a> LoweringContext<'a> {
         let expanded = LogicalPlanBuilder::from(expanded_input)
             .unnest_column_with_options(Column::new_unqualified(item_binding), options)?
             .build()?;
-        let expanded = collections::unnest_scope(
-            expanded,
-            format!("__w_sql_cte_quantifier_items_{suffix}"),
-        )?;
+        let expanded =
+            collections::unnest_scope(expanded, format!("__w_sql_cte_quantifier_items_{suffix}"))?;
         let predicate = self.lower_expr(&expanded, predicate)?;
         let has_item = binary(col_exact(&total), BinaryOp::Gt, lit(0_i64));
         let true_value = Expr::and(has_item.clone(), Expr::IsTrue(Box::new(predicate.clone())));
@@ -546,7 +555,8 @@ impl<'a> LoweringContext<'a> {
         let plan = LogicalPlanBuilder::from(input.plan.clone())
             .project(projections)?
             .build()?;
-        let plan = collections::unnest_scope(plan, format!("__w_sql_cte_unwind_input_{barrier_id}"))?;
+        let plan =
+            collections::unnest_scope(plan, format!("__w_sql_cte_unwind_input_{barrier_id}"))?;
         let plan = collections::unnest_input(plan)?;
         let plan = LogicalPlanBuilder::from(plan)
             .unnest_column_with_options(Column::new_unqualified(bind), options)?
@@ -554,5 +564,4 @@ impl<'a> LoweringContext<'a> {
         let plan = collections::unnest_scope(plan, format!("__w_sql_cte_unwind_{barrier_id}"))?;
         Ok(input.with_plan(plan))
     }
-
 }

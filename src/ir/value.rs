@@ -92,12 +92,38 @@ pub enum Value {
     },
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    /// Gremlin maps may use graph objects, numbers, and tokens as keys.
+    TypedMap(Vec<(Value, Value)>),
+    /// Gremlin multiset, preserving repeated values and a distinct runtime type.
+    BulkSet(Vec<Value>),
+    Token(String),
+    Direction(String),
     /// Path objects produced by `pathMaterialization=NodesAndRelationships`.
     /// The first element is always a node; nodes and edges alternate.
     Path(Vec<Value>),
 }
 
 impl Value {
+    pub fn map_from_entries(entries: Vec<(Value, Value)>) -> Self {
+        if entries
+            .iter()
+            .all(|(key, _)| matches!(key, Self::String(_)))
+        {
+            Self::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        let Self::String(key) = key else {
+                            unreachable!()
+                        };
+                        (key, value)
+                    })
+                    .collect(),
+            )
+        } else {
+            Self::TypedMap(entries)
+        }
+    }
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Null => "null",
@@ -122,6 +148,10 @@ impl Value {
             Self::Edge { .. } => "edge",
             Self::List(_) => "list",
             Self::Map(_) => "map",
+            Self::TypedMap(_) => "map",
+            Self::BulkSet(_) => "bulkset",
+            Self::Token(_) => "token",
+            Self::Direction(_) => "direction",
             Self::Path(_) => "path",
         }
     }
@@ -276,7 +306,37 @@ impl Value {
             (Self::List(a), Self::List(b)) | (Self::Path(a), Self::Path(b)) => {
                 semantic_slice_eq(a, b)
             }
+            (Self::BulkSet(a), Self::BulkSet(b)) => {
+                let mut remaining = b.iter().collect::<Vec<_>>();
+                a.len() == b.len()
+                    && a.iter().all(|item| {
+                        if let Some(index) = remaining.iter().position(|other| item == *other) {
+                            remaining.remove(index);
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
             (Self::Map(a), Self::Map(b)) => semantic_map_eq(a, b),
+            (Self::Token(a), Self::Token(b)) | (Self::Direction(a), Self::Direction(b)) => a == b,
+            (Self::TypedMap(a), Self::TypedMap(b)) => {
+                a.len() == b.len()
+                    && a.iter().all(|(key, value)| {
+                        b.iter().any(|(other_key, other_value)| {
+                            key == other_key && value.three_valued_eq(other_value) == Some(true)
+                        })
+                    })
+            }
+            (Self::TypedMap(a), Self::Map(b)) | (Self::Map(b), Self::TypedMap(a)) => {
+                a.len() == b.len()
+                    && a.iter().all(|(key, value)| match key {
+                        Self::String(key) => b
+                            .get(key)
+                            .is_some_and(|other| value.three_valued_eq(other) == Some(true)),
+                        _ => false,
+                    })
+            }
             _ => false,
         })
     }

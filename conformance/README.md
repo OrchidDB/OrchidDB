@@ -80,7 +80,8 @@ are ignored. The static site renders these artifacts without starting engines.
   their assertions. Fixtures come from `TinkerFactory`. The TinkerGraph
   reference run checks the same harness. Standard non-GraphComputer/non-null
   profiles and upstream skips are preserved. PuppyGraph fixture mappings retain
-  upstream integer widths; Crabgraph result transport retains Arrow numeric widths. The JVM structure and
+  upstream integer widths; Crabgraph transports native graph objects, paths, numeric widths,
+  typed map keys, sets and bulk sets. The JVM structure and
   GraphComputer test suites are outside this Gherkin comparison.
 - **Cypher:** the adapter executes original GIVEN/WHEN/THEN steps, result
   tables and side-effect assertions. It preserves duplicates and ordered-result
@@ -134,3 +135,12 @@ cross-product performance rankings.
 The one-page report supports outcome/suite/search filters and deep links.
 Individual evidence panels fetch static JSON files; all rows, source links and
 JSON downloads remain available without JavaScript.
+
+## Leaderboard and progress
+
+The static report ranks recorded passes separately for each language, with only
+engines that expose that language. `data/parity-baseline.json` preserves the
+starting results. The leaderboard shows the change in passes and the exact cases
+passed by a peer but not by the current engine; its JSON download includes those
+case IDs. Updating complete local result artifacts updates the leaderboard during
+the next documentation publication. No test suite runs in GitHub Actions.
