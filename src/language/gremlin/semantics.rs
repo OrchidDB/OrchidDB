@@ -27,10 +27,20 @@ pub enum CompareOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GValue {
+    Token(String),
+    DirectionToken(String),
+    TypedMap(Vec<(GValue,GValue)>),
+    VertexRef { id: Box<GValue>, label: String },
     Null,
     Bool(bool),
     Int(i64),
+    Byte(i8),
+    Short(i16),
+    Long(i64),
+    BigInt(num_bigint::BigInt),
+    Float32(f32),
     Float(f64),
+    BigDecimal(bigdecimal::BigDecimal),
     DateTime(String),
     String(String),
     List(Vec<GValue>),
@@ -44,9 +54,17 @@ pub enum GValue {
 impl GValue {
     pub fn as_sql_literal_debug(&self) -> String {
         match self {
+            Self::Token(token) | Self::DirectionToken(token) => token.clone(),
+            Self::TypedMap(_) => "<typed-map>".into(),
+            Self::VertexRef { id, label } => format!("new Vertex({}, {:?})", id.as_sql_literal_debug(), label),
             Self::Null => "NULL".to_owned(),
             Self::Bool(value) => value.to_string(),
-            Self::Int(value) => value.to_string(),
+            Self::Int(value) | Self::Long(value) => value.to_string(),
+            Self::Byte(value) => value.to_string(),
+            Self::Short(value) => value.to_string(),
+            Self::BigInt(value) => value.to_string(),
+            Self::Float32(value) => value.to_string(),
+            Self::BigDecimal(value) => value.to_string(),
             Self::Float(value) => value.to_string(),
             Self::DateTime(value) => format!("datetime('{}')", value.replace('\'', "''")),
             Self::String(value) => format!("'{}'", value.replace('\'', "''")),

@@ -40,18 +40,16 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
         .collect::<Vec<_>>();
 
     let mut map = std::collections::BTreeMap::new();
+    let mut tokens = Vec::new();
     if name == "element_map" || name == "value_map_tokens" {
         if include_id {
-            map.insert(
-                "t[id]".to_string(),
-                Value::String(element_id_token(&target, graph)),
-            );
+            tokens.push((Value::Token("id".into()), super::graph::gremlin_user_id(graph, &target)));
         }
         if include_label {
-            map.insert("t[label]".to_string(), Value::String(label.clone()));
+            tokens.push((Value::Token("label".into()), Value::String(label.clone())));
         }
         if name == "element_map" {
-            add_endpoint_tokens(&mut map, &target, graph);
+            add_endpoint_tokens(&mut tokens, &target, graph);
         }
     }
     let target_is_edge = matches!(&target, Value::Edge { .. });
@@ -65,21 +63,24 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
             continue;
         }
         let entry = match name {
-            // `valueMap` wraps each scalar in a 1-element list (Gremlin's
-            // multi-property convention). `valueMapTokens`/`elementMap`/
-            // `propertyMap` use the raw scalar/property-object shape.
-            "value_map" if target_is_edge => map_property_value(&value),
-            "value_map" if matches!(value, Value::List(_)) => value,
-            "value_map" => Value::String(format!("[{}]", plain_property_value(&value))),
-            "value_map_tokens" if unfold_values => map_property_value(&value),
-            "value_map_tokens" => Value::String(format!("[{}]", plain_property_value(&value))),
-            "element_map" => map_property_value(&value),
+            // Vertex value maps contain lists (one value per vertex
+            // property), while edge value maps contain scalar values.
+            "value_map" | "value_map_tokens" if target_is_edge || unfold_values => value,
+            "value_map" | "value_map_tokens" if matches!(value, Value::List(_)) => value,
+            "value_map" | "value_map_tokens" => Value::List(vec![value]),
+            "element_map" => match value {
+                Value::List(items) if !target_is_edge => items.into_iter().next().unwrap_or(Value::Null),
+                other => other,
+            },
             "property_map" => {
-                let mut prop = std::collections::BTreeMap::new();
-                prop.insert("key".to_string(), Value::String(key.clone()));
-                prop.insert("value".to_string(), value);
-                prop.insert("element".to_string(), target.clone());
-                Value::Map(prop)
+                let properties = match value {
+                    Value::List(items) if !target_is_edge => items,
+                    other => vec![other],
+                };
+                let mut pairs: Vec<Value> = properties.into_iter().enumerate().map(|(index, value)| {
+                    property_pair(&target, key.clone(), value, property_order(graph, &target, index))
+                }).collect();
+                if target_is_edge { pairs.pop().unwrap_or(Value::Null) } else { Value::List(pairs) }
             }
             _ => value,
         };
@@ -130,7 +131,10 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
         }
         return Value::List(pairs);
     }
-    Value::Map(map)
+    if name == "element_map" || name == "value_map_tokens" {
+        tokens.extend(map.into_iter().map(|(key, value)| (Value::String(key), value)));
+        Value::TypedMap(tokens)
+    } else { Value::Map(map) }
 }
 
 fn property_pair(target: &Value, key: String, value: Value, order: i64) -> Value {
@@ -155,26 +159,6 @@ pub(crate) fn eval_property_element(args: &[Value]) -> Value {
         Some(Value::Map(map)) => map.get("element").cloned().unwrap_or(Value::Null),
         Some(value) => value.clone(),
         None => Value::Null,
-    }
-}
-
-fn map_property_value(value: &Value) -> Value {
-    match value {
-        Value::Int(n) | Value::Long(n) => Value::String(n.to_string()),
-        Value::Float(f) => Value::String(format!("d[{f}].d")),
-        Value::Float32(f) => Value::String(format!("d[{f}].f")),
-        other => other.clone(),
-    }
-}
-
-fn plain_property_value(value: &Value) -> String {
-    match value {
-        Value::String(s) => format!("\"{s}\""),
-        Value::Int(n) | Value::Long(n) => n.to_string(),
-        Value::Float(f) => format!("d[{f}].d"),
-        Value::Float32(f) => format!("d[{f}].f"),
-        Value::Bool(b) => b.to_string(),
-        other => format!("{other:?}"),
     }
 }
 
@@ -238,26 +222,6 @@ fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str)
     }
 }
 
-pub(crate) fn element_id_token(value: &Value, graph: &PropertyGraph) -> String {
-    match value {
-        Value::Node { label, id } => format!("v[{}].id", node_name(graph, label, *id)),
-        Value::Edge {
-            rel_type,
-            src_label,
-            src_id,
-            dst_label,
-            dst_id,
-            ..
-        } => format!(
-            "e[{}-{}->{}].id",
-            node_name(graph, src_label, *src_id),
-            rel_type,
-            node_name(graph, dst_label, *dst_id)
-        ),
-        _ => "null".to_string(),
-    }
-}
-
 fn property_order(graph: &PropertyGraph, value: &Value, key_idx: usize) -> i64 {
     let base = match value {
         Value::Node { label, id } => match graph.node_property(label, *id, "id") {
@@ -273,42 +237,17 @@ fn property_order(graph: &PropertyGraph, value: &Value, key_idx: usize) -> i64 {
     base.saturating_sub(1).saturating_mul(2) + key_idx as i64
 }
 
-fn add_endpoint_tokens(
-    map: &mut std::collections::BTreeMap<String, Value>,
-    value: &Value,
-    graph: &PropertyGraph,
-) {
-    let Value::Edge {
-        src_label,
-        src_id,
-        dst_label,
-        dst_id,
-        ..
-    } = value
-    else {
-        return;
-    };
-    map.insert(
-        "D[OUT]".to_string(),
-        Value::String(endpoint_token(graph, src_label, *src_id)),
-    );
-    map.insert(
-        "D[IN]".to_string(),
-        Value::String(endpoint_token(graph, dst_label, *dst_id)),
-    );
-}
-
-fn endpoint_token(graph: &PropertyGraph, label: &str, id: i64) -> String {
-    format!(
-        "m[{{\\\"t[id]\\\": \\\"v[{}].id\\\", \\\"t[label]\\\": \\\"{}\\\"}}]",
-        node_name(graph, label, id),
-        label
-    )
-}
-
-fn node_name(graph: &PropertyGraph, label: &str, id: i64) -> String {
-    match graph.node_property(label, id, "name") {
-        Value::String(name) => name,
-        _ => format!("{label}#{id}"),
+fn add_endpoint_tokens(entries: &mut Vec<(Value, Value)>, value: &Value, graph: &PropertyGraph) {
+    if let Value::Edge { src_label, src_id, dst_label, dst_id, .. } = value {
+        entries.push((Value::Direction("OUT".into()), endpoint_token(graph, src_label, *src_id)));
+        entries.push((Value::Direction("IN".into()), endpoint_token(graph, dst_label, *dst_id)));
     }
+}
+
+fn endpoint_token(graph: &PropertyGraph, label: &str, id: i64) -> Value {
+    let node = Value::Node { label: label.to_string(), id };
+    Value::TypedMap(vec![
+        (Value::Token("id".into()), super::graph::gremlin_user_id(graph, &node)),
+        (Value::Token("label".into()), Value::String(label.to_string())),
+    ])
 }

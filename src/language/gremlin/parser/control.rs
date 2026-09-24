@@ -252,6 +252,13 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalMethod_optionContextAll<'input>,
     ) {
+        if matches!(
+            self.steps.last(),
+            Some(Step::MergeV { .. } | Step::MergeE { .. } | Step::DynamicMerge { .. })
+        ) {
+            self.lower_merge_vertex_option(ctx);
+            return;
+        }
         let option = match self.lower_option(ctx) {
             Some(option) => option,
             None => {
@@ -282,7 +289,11 @@ impl LoweringVisitor {
                 .unwrap_or_default(),
             _ => String::new(),
         };
-        self.steps.push(Step::AggregateAs(label));
+        if ctx.get_text().starts_with("aggregate_local(") {
+            self.steps.push(Step::AggregateLocal(label));
+        } else {
+            self.steps.push(Step::AggregateAs(label));
+        }
     }
 
     pub(super) fn dispatch_traversalMethod_with<'input>(

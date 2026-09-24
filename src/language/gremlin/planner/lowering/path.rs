@@ -23,17 +23,25 @@ where
     I: Iterator<Item = &'a Step>,
 {
     let mut slices = Vec::new();
-    while let Some(Step::PathFrom(_) | Step::PathTo(_)) = steps.peek() {
-        match steps.next() {
-            Some(Step::PathFrom(label)) => slices.push(("path_from", label.clone())),
-            Some(Step::PathTo(label)) => slices.push(("path_to", label.clone())),
-            _ => break,
-        }
-    }
     let mut by_keys = Vec::new();
-    while let Some(Step::By(_)) = steps.peek() {
-        if let Some(Step::By(spec)) = steps.next() {
-            by_keys.push(path_by_token(spec));
+    loop {
+        match steps.peek() {
+            Some(Step::PathFrom(_)) => {
+                if let Some(Step::PathFrom(label)) = steps.next() {
+                    slices.push(("path_from", label.clone()));
+                }
+            }
+            Some(Step::PathTo(_)) => {
+                if let Some(Step::PathTo(label)) = steps.next() {
+                    slices.push(("path_to", label.clone()));
+                }
+            }
+            Some(Step::By(_)) => {
+                if let Some(Step::By(spec)) = steps.next() {
+                    by_keys.push(path_by_token(spec));
+                }
+            }
+            _ => break,
         }
     }
     let path = Node::GraphCurrentProject {
@@ -120,5 +128,45 @@ fn slice_path(input: Node, helper: &str, label: &str) -> Node {
         },
         fields: vec![CURRENT.to_string()],
         input: input.boxed(),
+    }
+}
+
+/// Path filter modulators apply to a temporary projection of the path;
+/// the surviving traverser retains its original current object and history.
+pub(super) fn lower_path_filter<'a, I>(
+    input: Node,
+    steps: &mut Peekable<I>,
+    lo: &mut Lowerer,
+    cyclic: bool,
+) -> Node
+where
+    I: Iterator<Item = &'a Step>,
+{
+    use crate::ir::plan::{PathFilterScope, ProjectErrorPolicy, ProjectMode, ProjectionItem};
+    let saved = lo.fresh("path_filter_current");
+    let input = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem {
+            alias: saved.clone(),
+            expr: IrExpr::Binding(CURRENT.into()),
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    };
+    let projected = lower_path(input, steps, lo);
+    let simple = IrExpr::SimplePath(CURRENT.into());
+    let filtered = Node::GraphPathFilter {
+        condition: if cyclic {
+            IrExpr::Not(Box::new(simple))
+        } else {
+            simple
+        },
+        scope: PathFilterScope::FinalPath,
+        input: projected.boxed(),
+    };
+    Node::GraphCurrentProject {
+        expr: IrExpr::Binding(saved),
+        fields: vec![CURRENT.into()],
+        input: filtered.boxed(),
     }
 }

@@ -95,17 +95,21 @@ pub(crate) fn group_map_op(
     rows: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
-    let mut groups: BTreeMap<String, Vec<Row>> = BTreeMap::new();
+    let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
     for row in rows {
         let key_value = eval(key, &row, graph)?;
-        groups.entry(map_key(&key_value)).or_default().push(row);
+        if let Some((_, rows)) = groups.iter_mut().find(|(key, _)| key == &key_value) {
+            rows.push(row);
+        } else {
+            groups.push((key_value, vec![row]));
+        }
     }
-    let mut map = BTreeMap::new();
+    let mut entries = Vec::new();
     for (key, group_rows) in groups {
         let value = match value {
             GroupValue::CountBulk => {
                 let total: u64 = group_rows.iter().map(|row| row.bulk).sum();
-                Value::String(format!("d[{total}].l"))
+                Value::Long(total as i64)
             }
             GroupValue::Aggregate(agg) => {
                 let value = compute_aggregate(agg, &group_rows, graph)?;
@@ -122,9 +126,27 @@ pub(crate) fn group_map_op(
                 }
             }
         };
-        map.insert(key, value);
+        entries.push((key, value));
     }
-    Ok(vec![Row::new().with(output, Value::Map(map))])
+    let map = if entries
+        .iter()
+        .all(|(key, _)| matches!(key, Value::String(_)))
+    {
+        Value::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let Value::String(key) = key else {
+                        unreachable!()
+                    };
+                    (key, value)
+                })
+                .collect(),
+        )
+    } else {
+        Value::TypedMap(entries)
+    };
+    Ok(vec![Row::new().with(output, map)])
 }
 
 pub(crate) fn map_key(value: &Value) -> String {
@@ -414,7 +436,16 @@ pub(crate) fn compute_aggregate(
             for row in rows {
                 let v = eval(expr, row, graph)?;
                 evaluated += 1;
-                if matches!(v, Value::Null) {
+                if matches!(v, Value::Null)
+                    && (matches!(agg.kind, AggKind::CollectRows)
+                        || matches!(
+                            expr,
+                            IrExpr::Property {
+                                policy: crate::ir::policy::PropertyMissing::DropUnproductive,
+                                ..
+                            }
+                        ))
+                {
                     continue;
                 }
                 if agg.distinct && !seen.insert(encode_value(&v)) {

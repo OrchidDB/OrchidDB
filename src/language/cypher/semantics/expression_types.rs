@@ -641,11 +641,14 @@ pub(super) fn validate_literal_list_types(items: &[Expr]) -> CypherPlanResult<()
 }
 
 pub(super) fn infer_literal_list_type(items: &[Expr]) -> CypherPlanResult<Option<LiteralListType>> {
-    let mut expected = preferred_literal_list_type(items)?;
-    for item in items {
-        let Some(actual) = literal_list_type(item)? else {
-            continue;
-        };
+    // Infer each child once: repeating inference for preference and validation
+    // makes deeply nested collection literals take exponential time.
+    let inferred = items
+        .iter()
+        .map(literal_list_type)
+        .collect::<CypherPlanResult<Vec<_>>>()?;
+    let mut expected = preferred_literal_list_type(&inferred);
+    for actual in inferred.into_iter().flatten() {
         let Some(expected_type) = expected.as_ref() else {
             expected = Some(actual.clone());
             continue;
@@ -658,26 +661,20 @@ pub(super) fn infer_literal_list_type(items: &[Expr]) -> CypherPlanResult<Option
             }
             continue;
         }
-        return Err(CypherPlanError::Invalid(format!(
-            "Binder exception: Expression {} has data type {} but expected {}. Implicit cast is not supported.",
-            display_literal_expr(item),
-            actual.cypher_name(),
-            expected_type.cypher_name()
-        )));
+        // Cypher collections contain arbitrary values. Keep a heterogeneous
+        // element type instead of rejecting a valid list at bind time.
+        expected = Some(LiteralListType::Any);
     }
     Ok(expected)
 }
 
-pub(super) fn preferred_literal_list_type(
-    items: &[Expr],
-) -> CypherPlanResult<Option<LiteralListType>> {
+fn preferred_literal_list_type(
+    items: &[Option<LiteralListType>],
+) -> Option<LiteralListType> {
     let mut first = None;
     let mut first_numeric = None;
     let mut first_list = None;
-    for item in items {
-        let Some(actual) = literal_list_type(item)? else {
-            continue;
-        };
+    for actual in items.iter().flatten() {
         if first.is_none() {
             first = Some(actual.clone());
         }
@@ -690,15 +687,16 @@ pub(super) fn preferred_literal_list_type(
             actual,
             LiteralListType::List(_) | LiteralListType::EmptyList
         ) {
-            first_list = Some(actual);
+            first_list = Some(actual.clone());
             break;
         }
     }
-    Ok(first_list.or(first_numeric).or(first))
+    first_list.or(first_numeric).or(first)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum LiteralListType {
+    Any,
     Bool,
     Int,
     Float,
@@ -711,6 +709,7 @@ pub(super) enum LiteralListType {
 impl LiteralListType {
     fn cypher_name(&self) -> String {
         match self {
+            LiteralListType::Any => "ANY".to_string(),
             LiteralListType::Bool => "BOOL".to_string(),
             LiteralListType::Int => "INT64".to_string(),
             LiteralListType::Float => "DOUBLE".to_string(),
@@ -722,7 +721,11 @@ impl LiteralListType {
     }
 
     fn compatible_with(&self, other: &Self) -> bool {
-        self == other || self.numeric_compatible(other) || self.list_compatible(other)
+        matches!(self, LiteralListType::Any)
+            || matches!(other, LiteralListType::Any)
+            || self == other
+            || self.numeric_compatible(other)
+            || self.list_compatible(other)
     }
 
     fn numeric_compatible(&self, other: &Self) -> bool {

@@ -110,6 +110,7 @@ impl LoweringVisitor {
                 if class_name == "PartitionStrategy" {
                     let mut partition_key = "_partition".to_string();
                     let mut read_partitions: Vec<GValue> = Vec::new();
+                    let mut write_partition = None;
                     for cfg in strat.configuration_all() {
                         let key_text = cfg
                             .keyword()
@@ -134,6 +135,14 @@ impl LoweringVisitor {
                                     partition_key = key;
                                 }
                             }
+                            "writePartition" => {
+                                self.visit_genericLiteral(&lit);
+                                write_partition = self.pop_value();
+                            }
+                            "includeMetaProperties" if lit.get_text() == "true" => {
+                                self.errors.push(super::GremlinError::Unsupported("PartitionStrategy includeMetaProperties requires meta-property storage".into()));
+                                return;
+                            }
                             "readPartitions" => {
                                 self.visit_genericLiteral(&lit);
                                 if self.errors.len() != errors_before {
@@ -150,9 +159,9 @@ impl LoweringVisitor {
                             _ => {}
                         }
                     }
-                    if !read_partitions.is_empty() {
+                    {
                         let filter = vec![Step::Has {
-                            key: partition_key,
+                            key: partition_key.clone(),
                             predicate: Predicate::Within(read_partitions),
                         }];
                         self.steps.push(Step::WithStrategy {
@@ -161,6 +170,9 @@ impl LoweringVisitor {
                             vertex_property_filter: None,
                             check_adjacent_vertices: true,
                         });
+                    }
+                    if let Some(value) = write_partition {
+                        self.steps.push(Step::WithPartitionWrite { key: partition_key, value });
                     }
                     continue;
                 }

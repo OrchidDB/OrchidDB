@@ -151,7 +151,7 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
             match op {
                 SackOp::AddAll => {
                     projected.insert(0, seed_values(seed));
-                    return union_all(projected);
+                    return fold_expr(union_all(projected), IrExpr::Binding(CURRENT.into()));
                 }
                 SackOp::Assign => {
                     // `assign` replaces the seed with the aggregated
@@ -169,7 +169,7 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                             input: union_all(projected).boxed(),
                         };
                     }
-                    return union_all(projected);
+                    return bulk_set_fold(union_all(projected));
                 }
                 _ => {
                     if let Ok(seed) = gvalue_to_expr(seed) {
@@ -195,26 +195,26 @@ pub(super) fn lower_cap(input: Node, label: &str, lo: &Lowerer) -> Node {
                 }
             }
         }
-        return union_all(projected);
+        return bulk_set_fold(union_all(projected));
     }
     // Approximate as `fold()` — collect the current stream into one row.
     lower_fold(input)
 }
 
-fn seed_values(seed: &crate::language::gremlin::semantics::GValue) -> Node {
-    let rows = match seed {
-        crate::language::gremlin::semantics::GValue::List(items)
-        | crate::language::gremlin::semantics::GValue::Set(items) => items
-            .iter()
-            .map(|value| vec![gvalue_to_value(value)])
-            .collect(),
-        other => vec![vec![gvalue_to_value(other)]],
-    };
-    Node::GraphValues {
-        bindings: vec![CURRENT.into()],
-        rows,
-        bulk: None,
+fn bulk_set_fold(input: Node) -> Node {
+    Node::GraphCurrentProject {
+        expr: IrExpr::Call { name: "bulk_set".into(), args: vec![IrExpr::Binding(CURRENT.into())] },
+        fields: vec![CURRENT.into()],
+        input: fold_expr(input, IrExpr::Binding(CURRENT.into())).boxed(),
     }
+}
+
+fn seed_values(seed: &crate::language::gremlin::semantics::GValue) -> Node {
+    let values = match seed {
+        crate::language::gremlin::semantics::GValue::List(items) | crate::language::gremlin::semantics::GValue::Set(items) => items.clone(),
+        other => vec![other.clone()],
+    };
+    super::sources::values_node(&values).expect("validated side effect literals")
 }
 
 pub(super) fn lower_side_effect_bag_as_list(

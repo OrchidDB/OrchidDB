@@ -99,9 +99,25 @@ impl LoweringContext<'_> {
                 dir,
                 length,
                 path,
+                history,
+                match_mode,
                 input,
                 ..
             } => {
+                if self.language == Language::Cypher
+                    && history.is_some()
+                    && matches!(
+                        match_mode,
+                        crate::ir::policy::MatchMode::DifferentRelationships
+                    )
+                {
+                    // SQL expansion does not carry relationship-history
+                    // state across pattern segments. Use the runtime rather
+                    // than silently count walks that reuse a relationship.
+                    return Err(RelError::Unsupported(
+                        "Cypher relationship-history expansion requires runtime".into(),
+                    ));
+                }
                 if length.is_variable_length() {
                     // Cypher represents a variable relationship through its
                     // synthetic path binding, then projects the user-visible
@@ -136,7 +152,15 @@ impl LoweringContext<'_> {
             GraphFilter { condition, input } => {
                 let input = self.lower_node(input)?;
                 let condition = self.lower_expr(&input.plan, condition)?;
-                let plan = LogicalPlanBuilder::from(input.plan.clone())
+                // The filter reads projection outputs. SQL WHERE reads input
+                // columns, so flattening an alias that shadows an input name
+                // changes its meaning (e.g. edge current -> vertex current).
+                let filter_input = if matches!(input.plan, LogicalPlan::Projection(_)) {
+                    let alias = format!("__graph_filter_input_{}", self.scan_counter);
+                    self.scan_counter += 1;
+                    LogicalPlanBuilder::from(input.plan.clone()).alias(alias)?.build()?
+                } else { input.plan.clone() };
+                let plan = LogicalPlanBuilder::from(filter_input)
                     .filter(condition)?
                     .build()?;
                 input.with_plan(plan)
@@ -152,6 +176,9 @@ impl LoweringContext<'_> {
             GraphAggregate {
                 group, aggs, input, ..
             } => {
+                if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Sum | AggKind::Avg)) {
+                    return Err(RelError::Unsupported("Gremlin aggregate requires native values and empty-stream semantics".into()));
+                }
                 let input = self.lower_node(input)?;
                 if input
                     .plan

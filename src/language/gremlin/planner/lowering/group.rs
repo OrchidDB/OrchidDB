@@ -185,8 +185,18 @@ fn lower_group_stream_value(
         input: Node::GraphSlice {
             slice: crate::ir::plan::Slice {
                 offset: 0,
-                fetch: Some(1),
-                tail: None,
+                fetch: if matches!(value_steps,[Step::Values(keys)] if keys.len()==1) {
+                    None
+                } else {
+                    Some(1)
+                },
+                // A non-reducing single-property traversal assigns the last
+                // productive member's value; string by('key') instead folds.
+                tail: if matches!(value_steps,[Step::Values(keys)] if keys.len()==1) {
+                    Some(1)
+                } else {
+                    None
+                },
             },
             input: right.boxed(),
         }

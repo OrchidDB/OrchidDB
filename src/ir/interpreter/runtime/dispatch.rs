@@ -28,7 +28,7 @@ use super::path::{
     apply_path_by_keys, apply_path_by_keys_keep_nulls, path_intermediate_pairs, path_pairs,
     project_path_edges, slice_path_at, slice_path_at_value,
 };
-use super::property_object::{self, eval_property_element};
+use super::property_object::eval_property_element;
 use super::reductions::{
     apply_sack_op, fold_reduce_op, reduce_list_numeric, reduce_list_orderable,
 };
@@ -36,6 +36,48 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    match (name, args.as_slice()) {
+        ("local_limit", [value,count])=>return Ok(super::lists::gremlin_local_range(value,0,count.as_i64().unwrap_or(0))),
+        ("gremlin_merge_matches",[element,criteria,out,input])=>return Ok(Value::Bool(super::mutations::matches(element,criteria,out,input,graph)?)),
+        ("gremlin_token_literal", [Value::String(token)]) => return Ok(Value::Token(token.clone())),
+        ("gremlin_direction_literal", [Value::String(token)]) => return Ok(Value::Direction(token.clone())),
+        ("list_merge" | "gremlin_traversal_list_merge", [lhs,rhs]) => return super::lists::gremlin_merge(lhs,rhs,name.starts_with("gremlin_traversal")),
+        ("local_order", [value]) if crate::ir::value::as_gremlin_set(value).is_some() => {
+            let mut items = crate::ir::value::as_gremlin_set(value).unwrap().to_vec();
+            items.sort_by(compare_values);
+            return Ok(Value::List(items));
+        }
+        ("local_mean", [value]) if !matches!(value, Value::List(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(value).is_none() => {
+            return Ok(reduce_list_numeric(&[value.clone()], "mean"));
+        }
+        ("gremlin_sum_result", [sum, count]) => return Ok(if count.as_i64() == Some(0) { Value::Null } else { match sum { Value::Int(n) => Value::Long(*n), other => other.clone() } }),
+        ("gremlin_vertex_ref", [id, Value::String(_label)]) => return super::graph::resolve_gremlin_vertex_reference(graph, id),
+        ("local_tail", [value, count]) => return Ok(super::lists::gremlin_local_tail(value, count.as_i64().unwrap_or(0))),
+        ("local_range", [value, low, high]) => return Ok(super::lists::gremlin_local_range(value, low.as_i64().unwrap_or(0), high.as_i64().unwrap_or(-1))),
+        _ => {}
+    }
+    if let Some(inner) = name.strip_prefix("gremlin_traversal_list_") {
+        // Validate the incoming traverser before evaluating the argument type,
+        // matching TinkerPop's collection-step validation order.
+        if let Some(lhs) = args.first() {
+            if !matches!(lhs, Value::List(_) | Value::Path(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(lhs).is_none() && !(inner == "merge" && matches!(lhs, Value::Map(_) | Value::TypedMap(_))) {
+                return Err(InterpretError::Runtime(if matches!(lhs, Value::Null) {
+                    format!("Incoming traverser for {inner} step can't be null")
+                } else { format!("{inner} step can only take an array or an Iterable type for incoming traversers, encountered {}", lhs.type_name()) }));
+            }
+        }
+        if let Some(rhs) = args.get(1) {
+            if !matches!(rhs, Value::List(_) | Value::Path(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(rhs).is_none() && !(inner == "merge" && matches!(rhs, Value::Map(_) | Value::TypedMap(_))) {
+                return Err(InterpretError::Runtime(if matches!(rhs, Value::Null) {
+                    format!("traversal argument for {inner} step must yield an iterable type, not null")
+                } else { format!("traversal argument for {inner} step must yield an iterable type, encountered {}", rhs.type_name()) }));
+            }
+        }
+        return eval_call(&format!("list_{inner}"), args, graph);
+    }
+    if let Some(op) = name.strip_prefix("gremlin_string_") {
+        return super::strings::gremlin_string_call(op, &args);
+    }
     // Property-object helpers need catalog access; route them before
     // the value-only dispatch table.
     if matches!(
@@ -58,12 +100,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
         ("element_kind", [_]) => Ok(Value::String("VertexProperty".into())),
         ("gremlin_id", [value]) => Ok(gremlin_user_id(graph, value)),
-        // Display-context id (`select(..).by(T.id)`): elements render as
-        // their harness token (`v[lop].id`); non-elements fall back to
-        // the user id.
-        ("gremlin_id_token", [value @ (Value::Node { .. } | Value::Edge { .. })]) => Ok(
-            Value::String(property_object::element_id_token(value, graph)),
-        ),
+        // Projection modulators return the same identity as id().
         ("gremlin_id_token", [value]) => Ok(gremlin_user_id(graph, value)),
         ("gremlin_scan_order", [value]) => Ok(gremlin_scan_order(graph, value)),
         ("gremlin_order_key", [value]) => Ok(gremlin_order_key(graph, value)),
@@ -314,6 +351,12 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Ok(Value::Map(map))
         }
         // ----- select(Column.keys|values) on a map-shaped traverser -----
+        ("map_keys", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(key, _)| key.clone()).collect())),
+        ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),
+        ("map_get_display", [Value::TypedMap(entries), key]) => Ok(entries.iter().find(|(candidate, _)| candidate == key).map(|(_, value)| value.clone()).unwrap_or(Value::Null)),
+        ("local_count", [Value::TypedMap(entries)]) => Ok(Value::Long(entries.len() as i64)),
+        ("map_keys", [Value::MapEntry(pair)]) => Ok(pair.0.clone()),
+        ("map_values", [Value::MapEntry(pair)]) => Ok(pair.1.clone()),
         ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
             map.get("key").cloned().unwrap_or(Value::Null),
         ])),
@@ -328,13 +371,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         )),
         ("map_values", [Value::Map(map)]) => Ok(Value::List(visible_map_values(map))),
         ("map_literal", [Value::List(keys), Value::List(values)]) => {
-            let mut map = std::collections::BTreeMap::new();
-            for (key, value) in keys.iter().zip(values.iter()) {
-                if let Value::String(key) = key {
-                    map.insert(key.clone(), value.clone());
-                }
-            }
-            Ok(Value::Map(map))
+            Ok(Value::map_from_entries(keys.iter().cloned().zip(values.iter().cloned()).collect()))
         }
         ("map_keys" | "map_values", [Value::Null]) => Ok(Value::Null),
         ("map_keys" | "map_values", [_]) => Ok(Value::List(Vec::new())),
@@ -352,6 +389,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("select_key_or_binding", [_, binding, _]) => Ok(binding.clone()),
         // `map_has_key(map, key)` — true iff `map` is a Map containing the
         // given key. Used by lowering to decide whether to keep a row.
+        ("map_has_key", [Value::TypedMap(entries),key]) => Ok(Value::Bool(entries.iter().any(|(candidate,_)|candidate==key))),
         ("map_has_key", [Value::Map(map), Value::String(key)]) => {
             Ok(Value::Bool(map.contains_key(key)))
         }
@@ -377,6 +415,9 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ) => {
             if !matches!(binding, Value::Null) || !matches!(history, Value::Null) {
                 return Ok(select_binding_by_pop(binding, history, pop));
+            }
+            if let Value::TypedMap(entries)=source {
+                return Ok(entries.iter().find(|(candidate,_)|candidate==&Value::String(key.clone())).map(|(_,value)|value.clone()).unwrap_or(Value::Null));
             }
             if let Value::Map(map) = source {
                 return Ok(revive_value_map_entry(
@@ -565,24 +606,34 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         }
         ("map_get_display", [_, _]) => Ok(Value::Null),
         ("local_order_merge_map", [original, ordered]) => {
-            if matches!(original, Value::Map(_)) {
+            if matches!(original, Value::Map(_) | Value::TypedMap(_)) && crate::ir::value::as_gremlin_set(original).is_none() {
                 if let Value::List(items) = ordered {
-                    let mut merged = BTreeMap::new();
+                    let mut merged: Vec<(Value, Value)> = Vec::new();
                     for item in items {
-                        if let Value::Map(entry) = item {
-                            for (k, v) in entry {
-                                merged.insert(k.clone(), v.clone());
-                            }
+                        let entries = match item {
+                            Value::MapEntry(entry) => vec![(entry.0.clone(), entry.1.clone())],
+                            // Legacy ordering produced one-entry maps. Preserve their
+                            // actual entries without interpreting key/value field names.
+                            Value::Map(entry) => entry.iter().map(|(k,v)|(Value::String(k.clone()),v.clone())).collect(),
+                            Value::TypedMap(entries) => entries.clone(),
+                            _ => continue,
+                        };
+                        for (key, value) in entries {
+                            if let Some((_, existing)) = merged.iter_mut().find(|(existing, _)| *existing == key) { *existing = value; }
+                            else { merged.push((key, value)); }
                         }
                     }
-                    return Ok(Value::Map(merged));
+                    return Ok(Value::TypedMap(merged));
                 }
             }
             Ok(ordered.clone())
         }
         ("gremlin_unfold_items", [value]) => Ok(match value {
             Value::Null => Value::List(vec![Value::Null]),
-            Value::List(items) => Value::List(items.clone()),
+            Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Value::List(items.clone()),
+            Value::TypedMap(entries) => Value::List(entries.iter().map(|(key, value)|
+                Value::MapEntry(Box::new((key.clone(), value.clone())))
+            ).collect()),
             // Gremlin Set marker maps unfold to their items.
             set if crate::ir::value::as_gremlin_set(set).is_some() => {
                 Value::List(crate::ir::value::as_gremlin_set(set).unwrap().to_vec())
@@ -591,10 +642,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 entries
                     .iter()
                     .map(|(k, v)| {
-                        let mut entry = std::collections::BTreeMap::new();
-                        entry.insert("key".to_string(), Value::String(k.clone()));
-                        entry.insert("value".to_string(), v.clone());
-                        Value::Map(entry)
+                        Value::MapEntry(Box::new((Value::String(k.clone()), v.clone())))
                     })
                     .collect(),
             ),
@@ -685,16 +733,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Ok(project_path_edges(&[other.clone()], keys))
         }
         // ----- LocalScoped(<step>) — per-list-element variants -----
-        ("local_tail", [Value::List(items), Value::Int(n)]) => {
-            let n = (*n).max(0) as usize;
-            let start = items.len().saturating_sub(n);
-            Ok(Value::List(items[start..].to_vec()))
-        }
-        ("local_tail", [Value::Map(items), Value::Int(n)]) => {
-            let n = (*n).max(0) as usize;
-            let start = items.len().saturating_sub(n);
-            Ok(Value::Map(slice_map_entries(items, start, items.len())))
-        }
         ("local_limit", [Value::List(items), Value::Int(n)]) => {
             let n = (*n).max(0) as usize;
             Ok(Value::List(items.iter().take(n).cloned().collect()))
@@ -715,18 +753,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 items.len(),
             )))
         }
-        ("local_range", [Value::List(items), Value::Int(low), Value::Int(high)]) => {
-            let low = (*low).max(0) as usize;
-            let high = (*high).max(low as i64) as usize;
-            let end = high.min(items.len());
-            Ok(Value::List(items[low.min(end)..end].to_vec()))
-        }
-        ("local_range", [Value::Map(items), Value::Int(low), Value::Int(high)]) => {
-            let low = (*low).max(0) as usize;
-            let high = (*high).max(low as i64) as usize;
-            let end = high.min(items.len());
-            Ok(Value::Map(slice_map_entries(items, low.min(end), end)))
-        }
         ("local_order", [Value::List(items)]) => {
             let mut sorted = items.clone();
             sorted.sort_by(compare_values);
@@ -744,12 +770,12 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             }
             Ok(Value::List(out))
         }
-        ("local_count", [Value::List(items)]) => Ok(Value::Long(items.len() as i64)),
+        ("local_count", [value]) if runtime_list(value).is_some() => Ok(Value::Long(runtime_list(value).unwrap().len() as i64)),
         ("local_count", [Value::Map(items)]) => Ok(Value::Long(items.len() as i64)),
-        ("local_sum", [Value::List(items)]) => Ok(reduce_list_numeric(items, "sum")),
-        ("local_min", [Value::List(items)]) => Ok(reduce_list_orderable(items, "min")),
-        ("local_max", [Value::List(items)]) => Ok(reduce_list_orderable(items, "max")),
-        ("local_mean", [Value::List(items)]) => Ok(reduce_list_numeric(items, "mean")),
+        ("local_sum", [value]) if runtime_list(value).is_some() => Ok(reduce_list_numeric(&runtime_list(value).unwrap(), "sum")),
+        ("local_min", [value]) if runtime_list(value).is_some() => Ok(reduce_list_orderable(&runtime_list(value).unwrap(), "min")),
+        ("local_max", [value]) if runtime_list(value).is_some() => Ok(reduce_list_orderable(&runtime_list(value).unwrap(), "max")),
+        ("local_mean", [value]) if runtime_list(value).is_some() => Ok(reduce_list_numeric(&runtime_list(value).unwrap(), "mean")),
         ("local_lcase", [Value::List(items)]) => Ok(Value::List(
             items
                 .iter()
@@ -931,127 +957,57 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 .collect(),
         )),
         // Local-scoped on non-list inputs degrades to the global handler.
-        ("local_tail" | "local_limit" | "local_skip", [other, Value::Int(_n)]) => Ok(other.clone()),
-        ("local_range", [other, Value::Int(_), Value::Int(_)]) => Ok(other.clone()),
+        ("local_limit" | "local_skip", [other, Value::Int(_n)]) => Ok(other.clone()),
         ("local_order" | "local_dedup", [other]) => Ok(other.clone()),
         ("local_count", [_]) => Ok(Value::Long(1)),
         ("local_sum" | "local_min" | "local_max" | "local_mean", [scalar]) => Ok(scalar.clone()),
-        // ----- list / set operators against a folded list traverser -----
-        ("list_combine", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            let mut out = runtime_list(a).unwrap_or_default();
-            out.extend(runtime_list(b).unwrap_or_default());
-            Ok(Value::List(out))
-        }
-        ("list_merge", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            // Set union: dedup'd concat preserving left-then-right order.
-            let mut out = runtime_list(a).unwrap_or_default();
-            for item in runtime_list(b).unwrap_or_default() {
-                if !out.iter().any(|seen| list_semantic_eq(seen, &item)) {
-                    out.push(item);
-                }
-            }
-            Ok(Value::List(out))
-        }
-        ("list_merge", [Value::Map(a), Value::Map(b)]) => {
+        // TinkerPop list functions accept iterable values and preserve Set results.
+        ("bulk_set", [Value::List(items)]) => Ok(Value::BulkSet(items.clone())),
+        ("list_merge", [Value::Map(a), Value::Map(b)])
+            if crate::ir::value::as_gremlin_set(&args[0]).is_none()
+                && crate::ir::value::as_gremlin_set(&args[1]).is_none() => {
             let mut out = a.clone();
-            for (key, value) in b {
-                out.insert(key.clone(), value.clone());
-            }
+            out.extend(b.clone());
             Ok(Value::Map(out))
         }
-        ("list_intersect", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            let rhs = runtime_list(b).unwrap_or_default();
-            Ok(Value::List(
-                runtime_list(a)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|item| rhs.iter().any(|right| list_semantic_eq(item, right)))
-                    .collect(),
-            ))
-        }
-        ("list_difference", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            let rhs = runtime_list(b).unwrap_or_default();
-            Ok(Value::List(
-                runtime_list(a)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|item| !rhs.iter().any(|right| list_semantic_eq(item, right)))
-                    .collect(),
-            ))
-        }
-        ("list_disjunct", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            let lhs = runtime_list(a).unwrap_or_default();
-            let rhs = runtime_list(b).unwrap_or_default();
-            let mut out: Vec<Value> = lhs
-                .iter()
-                .filter(|item| !rhs.iter().any(|right| list_semantic_eq(item, right)))
-                .cloned()
-                .collect();
-            for item in &rhs {
-                if !lhs.iter().any(|left| list_semantic_eq(left, item)) {
-                    out.push(item.clone());
+        ("list_combine" | "list_merge" | "list_intersect" | "list_difference"
+            | "list_disjunct" | "list_product", [a, b]) => {
+            let step = name.strip_prefix("list_").unwrap_or(name);
+            let iterable = |value: &Value, incoming: bool| -> IrResult<Vec<Value>> {
+                if let Some(items) = crate::ir::value::as_gremlin_set(value) {
+                    return Ok(items.to_vec());
                 }
-            }
-            Ok(Value::List(out))
-        }
-        ("list_product", [a, b]) if runtime_list(a).is_some() && runtime_list(b).is_some() => {
-            let a = runtime_list(a).unwrap_or_default();
-            let b = runtime_list(b).unwrap_or_default();
-            let mut out = Vec::with_capacity(a.len() * b.len());
-            for left in &a {
-                for right in &b {
-                    out.push(Value::List(vec![left.clone(), right.clone()]));
+                match value {
+                    Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Ok(items.clone()),
+                    Value::Null => Err(InterpretError::Runtime(if incoming {
+                        format!("Incoming traverser for {step} step can't be null")
+                    } else { format!("Argument provided for {step} step can't be null") })),
+                    _ => Err(InterpretError::Runtime(if incoming {
+                        format!("{step} step can only take an array or an Iterable type for incoming traversers, encountered {}", value.type_name())
+                    } else { format!("{step} step can only take an array or an Iterable as an argument, encountered {}", value.type_name()) })),
                 }
-            }
-            Ok(Value::List(out))
-        }
-        // Non-list LHS degrades to wrapping: TinkerPop's behavior is
-        // "best-effort iterable coercion", we approximate as singleton.
-        (
-            "list_combine" | "list_merge" | "list_intersect" | "list_difference" | "list_disjunct"
-            | "list_product",
-            [a, b],
-        ) => {
-            let lhs = match a {
-                value if runtime_list(value).is_some() => {
-                    Value::List(runtime_list(value).unwrap_or_default())
-                }
-                Value::List(_) => a.clone(),
-                // A `path()` traverser is a sequence of items; the
-                // list/set operators treat it as the underlying list.
-                Value::Path(items) => Value::List(items.clone()),
-                // A `Map` (e.g. from `elementMap` / `valueMap`) flattens
-                // to its key/value entries the way TinkerPop's `merge`
-                // does for `Map` inputs.
-                Value::Map(map) => {
-                    let mut entries = Vec::with_capacity(map.len() * 2);
-                    for (k, v) in map {
-                        entries.push(Value::String(k.clone()));
-                        entries.push(v.clone());
-                    }
-                    Value::List(entries)
-                }
-                Value::Null => Value::List(Vec::new()),
-                other => Value::List(vec![other.clone()]),
             };
-            let rhs = match b {
-                value if runtime_list(value).is_some() => {
-                    Value::List(runtime_list(value).unwrap_or_default())
-                }
-                Value::List(_) => b.clone(),
-                Value::Path(items) => Value::List(items.clone()),
-                Value::Map(map) => {
-                    let mut entries = Vec::with_capacity(map.len() * 2);
-                    for (k, v) in map {
-                        entries.push(Value::String(k.clone()));
-                        entries.push(v.clone());
-                    }
-                    Value::List(entries)
-                }
-                Value::Null => Value::List(Vec::new()),
-                other => Value::List(vec![other.clone()]),
-            };
-            eval_call(name, vec![lhs, rhs], graph)
+            let lhs = iterable(a, true)?;
+            let rhs = iterable(b, false)?;
+            if step == "combine" {
+                return Ok(Value::List(lhs.into_iter().chain(rhs).collect()));
+            }
+            if step == "product" {
+                return Ok(Value::List(lhs.iter().flat_map(|left| rhs.iter().map(move |right|
+                    Value::List(vec![left.clone(), right.clone()]))).collect()));
+            }
+            let mut out = Vec::new();
+            for item in lhs.iter().chain(if matches!(step, "merge" | "disjunct") { rhs.iter() } else { [].iter() }) {
+                let include = match step {
+                    "merge" => true,
+                    "intersect" => rhs.contains(item),
+                    "difference" => !rhs.contains(item),
+                    "disjunct" => lhs.contains(item) != rhs.contains(item),
+                    _ => unreachable!(),
+                };
+                if include && !out.contains(item) { out.push(item.clone()); }
+            }
+            Ok(crate::ir::value::gremlin_set(out))
         }
         // ----- fold(seed, op) reducer-fold -----
         ("fold_reduce", [Value::List(items), seed, Value::String(op)]) => {
@@ -1149,7 +1105,10 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("cast_bigdecimal", [v]) => Ok(cast_to_bigdecimal(v)),
         ("cast_bool", [v]) => Ok(cast_to_bool(v)),
         ("cast_date", [v]) => Ok(cast_to_date(v)),
-        ("gremlin_cast_date", [v]) => Ok(cast_to_gremlin_date(v)),
+        ("gremlin_cast_date", [v]) => match cast_to_gremlin_date(v) {
+            Value::Null => Err(InterpretError::Runtime("Can't parse value as date".into())),
+            value => Ok(value),
+        },
         ("datetime_literal", [Value::String(s)]) => Ok(parse_datetime_string(s)
             .map(Value::DateTime)
             .unwrap_or(Value::Null)),

@@ -34,7 +34,7 @@ use super::{InterpretError, IrResult, Row};
 
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
-    pub(crate) group_counts: BTreeMap<String, BTreeMap<String, u64>>,
+    pub(crate) group_counts: BTreeMap<String, Vec<(Value, u64)>>,
     pub(crate) step_state: Vec<StepStateFrame>,
     step_limit: Option<u64>,
     steps: u64,
@@ -445,8 +445,9 @@ pub(crate) fn run_with_context(
             let counts = ctx.group_counts.entry(label.clone()).or_default();
             for row in &rows {
                 let key_value = eval(key, row, graph)?;
-                let key = super::ops::aggregate::map_key(&key_value);
-                *counts.entry(key).or_insert(0) += row.bulk;
+                if let Some((_, count)) = counts.iter_mut().find(|(key, _)| key == &key_value) {
+                    *count += row.bulk;
+                } else { counts.push((key_value, row.bulk)); }
             }
             Ok(rows)
         }
@@ -588,13 +589,23 @@ pub(crate) fn run_with_context(
 /// Unknown procedure names return a single empty row per upstream row
 /// rather than failing — that lets a query whose `YIELD` columns are
 /// only used as scalars still produce a result rather than aborting.
-fn procedure_call_op(
+pub(crate) fn procedure_call_op(
     name: &str,
     args: &[crate::ir::plan::ProcedureArg],
     yields: &[String],
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if name.starts_with("gremlin.mutation.") {
+        let mut result=Vec::with_capacity(upstream.len());
+        for mut row in upstream {
+            let values=args.iter().map(|arg|eval(&arg.value,&row,graph)).collect::<IrResult<Vec<_>>>()?;
+            let value=super::runtime::mutations::call(name,&values,graph)?;
+            if let Some(binding)=yields.first(){row.bindings.insert(binding.clone(),value);}
+            result.push(row);
+        }
+        return Ok(result);
+    }
     let _ = args;
     let normalized = name.to_ascii_lowercase();
     if yields.is_empty() {
@@ -656,11 +667,11 @@ fn group_count_map_value(ctx: &ExecutionContext, label: &str) -> Value {
         .map(|counts| {
             counts
                 .iter()
-                .map(|(key, count)| (key.clone(), Value::String(format!("d[{count}].l"))))
+                .map(|(key, count)| (key.clone(), Value::Long(*count as i64)))
                 .collect()
         })
         .unwrap_or_default();
-    Value::Map(map)
+    Value::map_from_entries(map)
 }
 
 fn shortest_path_op(

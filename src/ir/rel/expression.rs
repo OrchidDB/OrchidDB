@@ -4,6 +4,9 @@ use super::*;
 
 impl<'a> LoweringContext<'a> {
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if matches!(expr, IrExpr::Call { name, .. } if name.starts_with("gremlin_string_") || name == "gremlin_cast_date") {
+            return Err(RelError::Unsupported("Gremlin scalar semantics require native values".into()));
+        }
         if matches!(
             expr,
             IrExpr::Binary { .. }
@@ -23,7 +26,36 @@ impl<'a> LoweringContext<'a> {
             }
         }
         match expr {
+            IrExpr::Lit(Lit::Int(value))
+                if self.language == Language::Gremlin && i32::try_from(*value).is_ok() =>
+            {
+                Ok(lit(ScalarValue::Int32(Some(*value as i32))))
+            }
             IrExpr::Lit(lit_value) => Ok(lit_to_expr(lit_value)),
+            IrExpr::List(_) if self.language == Language::Gremlin => Err(RelError::Unsupported(
+                "Gremlin list literal requires native values".into(),
+            )),
+            IrExpr::List(items) if self.language == Language::Cypher => {
+                let values = items
+                    .iter()
+                    .map(|item| self.lower_expr(plan, item))
+                    .collect::<RelResult<Vec<_>>>()?;
+                // SQL arrays must not silently coerce mixed Cypher values to
+                // strings. Unsupported heterogeneous shapes use the runtime.
+                let types = values
+                    .iter()
+                    .map(|value| value.get_type(plan.schema()))
+                    .collect::<datafusion::common::Result<Vec<_>>>()?;
+                let mut concrete = types.iter().filter(|kind| **kind != DataType::Null);
+                if let Some(first) = concrete.next() {
+                    if concrete.any(|kind| kind != first) {
+                        return Err(RelError::Unsupported(
+                            "heterogeneous Cypher collection requires runtime values".into(),
+                        ));
+                    }
+                }
+                Ok(datafusion::functions_nested::expr_fn::make_array(values))
+            }
             IrExpr::List(items) => self.lower_collection_expr(plan, items),
             IrExpr::Binding(binding) => {
                 if let Some(column) = resolve_column_name(plan, binding) {
@@ -31,6 +63,13 @@ impl<'a> LoweringContext<'a> {
                 } else if let Some(shape) = has_binding_shape(plan, binding) {
                     if self.language == Language::Gremlin {
                         gremlin_element_display_expr(plan, binding)
+                    } else if self.language == Language::Cypher {
+                        // A scalar SQL string cannot preserve graph identity
+                        // inside lists, maps or grouping keys. Keep the real
+                        // element in the runtime value channel.
+                        Err(RelError::Unsupported(
+                            "Cypher graph value requires runtime identity".into(),
+                        ))
                     } else {
                         self.cypher_element_display_expr(plan, binding, shape)
                     }
@@ -158,6 +197,9 @@ impl<'a> LoweringContext<'a> {
                 Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
             }
             IrExpr::Call { name, args } if name == "path_or_self" => {
+                if self.language == Language::Gremlin {
+                    return Err(RelError::Unsupported("Gremlin path requires native runtime values".into()));
+                }
                 let Some(fallback) = args.get(1) else {
                     return Err(RelError::Unsupported("path_or_self arity".into()));
                 };
@@ -169,6 +211,60 @@ impl<'a> LoweringContext<'a> {
                     &Value::List(values),
                     self.language,
                     literal_collection_context(self.language),
+                )))
+            }
+            IrExpr::Call { name, args } if name == "cypher_slice" && args.len() == 3 => {
+                let array = if matches!(&args[0], IrExpr::List(_)) {
+                    self.lower_native_list(plan, &args[0])?
+                } else {
+                    self.lower_list_operand(plan, &args[0])?
+                };
+                if !matches!(
+                    array.get_type(plan.schema())?,
+                    DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)
+                ) {
+                    return Err(RelError::Unsupported(
+                        "Cypher slice requires a native collection".into(),
+                    ));
+                }
+                let length = datafusion::functions_nested::expr_fn::array_length(array.clone());
+                let bound = |value: Expr| {
+                    let relative = Expr::Case(Case::new(
+                        None,
+                        vec![(
+                            Box::new(binary(value.clone(), BinaryOp::Lt, lit(0_i64))),
+                            Box::new(binary(length.clone(), BinaryOp::Add, value.clone())),
+                        )],
+                        Some(Box::new(value)),
+                    ));
+                    Expr::Case(Case::new(
+                        None,
+                        vec![
+                            (
+                                Box::new(binary(relative.clone(), BinaryOp::Lt, lit(0_i64))),
+                                Box::new(lit(0_i64)),
+                            ),
+                            (
+                                Box::new(binary(relative.clone(), BinaryOp::Gt, length.clone())),
+                                Box::new(length.clone()),
+                            ),
+                        ],
+                        Some(Box::new(relative)),
+                    ))
+                };
+                let start = self.lower_expr(plan, &args[1])?;
+                let end = self.lower_expr(plan, &args[2])?;
+                let null_bound = Expr::or(start.clone().is_null(), end.clone().is_null());
+                let sliced = datafusion::functions_nested::expr_fn::array_slice(
+                    array,
+                    binary(bound(start), BinaryOp::Add, lit(1_i64)),
+                    bound(end),
+                    None,
+                );
+                Ok(Expr::Case(Case::new(
+                    None,
+                    vec![(Box::new(null_bound), Box::new(lit(ScalarValue::Null)))],
+                    Some(Box::new(sliced)),
                 )))
             }
             IrExpr::Call { name, args } if name == "list_slice" && args.len() == 3 => {
@@ -266,7 +362,19 @@ impl<'a> LoweringContext<'a> {
                     // that text; `casts.rs` proves the rewrite per value.
                     return self.lower_list_cast(plan, name, args, target);
                 }
-                let (value, data_type, lenient) = self.cast_parts(plan, name, args)?;
+                let (mut value, data_type, lenient) = self.cast_parts(plan, name, args)?;
+                if name.eq_ignore_ascii_case("tointeger")
+                    && matches!(
+                        value.get_type(plan.schema())?,
+                        DataType::Float16
+                            | DataType::Float32
+                            | DataType::Float64
+                            | DataType::Decimal128(_, _)
+                            | DataType::Decimal256(_, _)
+                    )
+                {
+                    value = df_math::trunc(vec![value]);
+                }
                 let cast = if lenient {
                     Expr::TryCast(TryCast::new(Box::new(value), data_type))
                 } else {
@@ -393,8 +501,8 @@ impl<'a> LoweringContext<'a> {
                 let lhs = self.lower_expr(plan, &args[0])?;
                 let rhs = self.lower_expr(plan, &args[1])?;
                 Ok(Expr::or(
-                    Expr::and(lhs.clone(), Expr::IsNotTrue(Box::new(rhs.clone()))),
-                    Expr::and(Expr::IsNotTrue(Box::new(lhs)), rhs),
+                    Expr::and(lhs.clone(), Expr::Not(Box::new(rhs.clone()))),
+                    Expr::and(Expr::Not(Box::new(lhs)), rhs),
                 ))
             }
             IrExpr::Call { name, args } if is_exists_function(name) && args.len() == 1 => {
@@ -544,6 +652,11 @@ impl<'a> LoweringContext<'a> {
                     "list_combine" | "list_merge" | "list_intersect"
                 ) && args.len() == 2 =>
             {
+                if self.language == Language::Gremlin && name != "list_combine" {
+                    return Err(RelError::Unsupported(
+                        "Gremlin set result requires typed runtime shaping".into(),
+                    ));
+                }
                 let lhs = self.lower_native_list(plan, &args[0])?;
                 let rhs = self.lower_native_list(plan, &args[1])?;
                 Ok(match name.as_str() {
@@ -617,6 +730,57 @@ impl<'a> LoweringContext<'a> {
     pub(super) fn try_constant_fold(&self, expr: &IrExpr) -> RelResult<Option<Expr>> {
         let row = InterpreterRow::new();
         match interpreter_eval(expr, &row, self.graph) {
+            Ok(Value::Map(_)) if self.language == Language::Cypher => {
+                // Rendering a map here destroys its key/value types before
+                // later WITH expressions can read them. Keep it in runtime
+                // form until a faithful native representation is available.
+                Err(RelError::Unsupported(
+                    "Cypher map requires runtime values".into(),
+                ))
+            }
+            Ok(Value::List(items)) if self.language == Language::Cypher => {
+                fn native(value: &Value) -> RelResult<Expr> {
+                    match value {
+                        Value::List(items) => {
+                            let values = items.iter().map(native).collect::<RelResult<Vec<_>>>()?;
+                            // Constant values carry exact types before SQL
+                            // planning; heterogeneous lists remain runtime data.
+                            let schema = datafusion::common::DFSchema::empty();
+                            let types = values
+                                .iter()
+                                .map(|value| value.get_type(&schema))
+                                .collect::<datafusion::common::Result<Vec<_>>>()?;
+                            let mut concrete = types.iter().filter(|kind| **kind != DataType::Null);
+                            if let Some(first) = concrete.next() {
+                                if concrete.any(|kind| kind != first) {
+                                    return Err(RelError::Unsupported(
+                                        "heterogeneous Cypher constant requires runtime values"
+                                            .into(),
+                                    ));
+                                }
+                            }
+                            Ok(datafusion::functions_nested::expr_fn::make_array(values))
+                        }
+                        _ => value_literal_expr(value),
+                    }
+                }
+                native(&Value::List(items)).map(Some)
+            }
+            Ok(
+                Value::List(_)
+                | Value::Map(_)
+                | Value::TypedMap(_) | Value::Token(_) | Value::Direction(_)
+                | Value::Path(_)
+                | Value::BigInt(_)
+                | Value::BigDecimal(_),
+            ) if self.language == Language::Gremlin => {
+                // The relational display renderer serializes these values to
+                // text (or bounded decimals). Preserve native Gremlin types
+                // by evaluating this expression at the runtime boundary.
+                Err(RelError::Unsupported(
+                    "Gremlin constant requires native values".into(),
+                ))
+            }
             Ok(value) => Ok(Some(constant_fold_result_expr(&value, self.language))),
             Err(err) => {
                 let message = err.to_string();
@@ -740,15 +904,29 @@ impl<'a> LoweringContext<'a> {
             DataType::Int64,
         ));
         match data_type {
-            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => Ok(
-                datafusion::functions_nested::expr_fn::array_element(target_expr, index),
-            ),
+            DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+                let position = Expr::Case(Case::new(
+                    None,
+                    vec![(
+                        Box::new(binary(index.clone(), BinaryOp::Gte, lit(0_i64))),
+                        Box::new(binary(index.clone(), BinaryOp::Add, lit(1_i64))),
+                    )],
+                    Some(Box::new(index)),
+                ));
+                Ok(datafusion::functions_nested::expr_fn::array_element(
+                    target_expr,
+                    position,
+                ))
+            }
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
                 let length = df_unicode::length(cast_utf8(target_expr.clone()));
-                let absolute = df_math::abs(index.clone());
                 let valid = Expr::and(
-                    binary(index.clone(), BinaryOp::Neq, lit(0_i64)),
-                    binary(absolute, BinaryOp::Lte, length.clone()),
+                    binary(
+                        index.clone(),
+                        BinaryOp::Gte,
+                        binary(lit(0_i64), BinaryOp::Sub, length.clone()),
+                    ),
+                    binary(index.clone(), BinaryOp::Lt, length.clone()),
                 );
                 let position = Expr::Case(Case::new(
                     None,
@@ -760,7 +938,7 @@ impl<'a> LoweringContext<'a> {
                             lit(1_i64),
                         )),
                     )],
-                    Some(Box::new(index.clone())),
+                    Some(Box::new(binary(index.clone(), BinaryOp::Add, lit(1_i64)))),
                 ));
                 Ok(Expr::Case(Case::new(
                     None,

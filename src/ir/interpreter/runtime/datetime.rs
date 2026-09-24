@@ -49,7 +49,7 @@ pub(super) fn date_diff_value(lhs: &str, rhs: &Value) -> Value {
     };
     lhs_ms
         .checked_sub(rhs_ms)
-        .map(Value::Long)
+        .map(|milliseconds| Value::Long(milliseconds / 1_000))
         .unwrap_or(Value::Null)
 }
 

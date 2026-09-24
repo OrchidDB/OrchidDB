@@ -41,9 +41,15 @@ fn lower_match(
     }
 
     let history = pattern_history_binding(lowerer, &clause.patterns);
-    for part in &clause.patterns {
-        input =
-            pattern::lower_pattern_part(lowerer, input, part, false, history.as_deref(), false)?;
+    for (index, part) in clause.patterns.iter().enumerate() {
+        input = pattern::lower_pattern_part(
+            lowerer,
+            input,
+            part,
+            false,
+            history.as_deref(),
+            index > 0,
+        )?;
     }
     if let Some(predicate) = &clause.predicate {
         input = lowerer.with_child_traversal(CypherTraversalKind::WherePredicate, |lowerer| {
@@ -660,8 +666,15 @@ fn pattern_history_binding(
     lowerer: &mut Lowerer,
     patterns: &[crate::language::cypher::ast::PatternPart],
 ) -> Option<String> {
-    patterns
+    let relationships = patterns
         .iter()
-        .any(|part| !part.element.chains.is_empty())
-        .then(|| lowerer.synthetic("match_history"))
+        .flat_map(|part| &part.element.chains)
+        .collect::<Vec<_>>();
+    // One fixed hop cannot repeat an edge. Only allocate history when
+    // multiple segments or a multi-hop relationship can reuse one.
+    (relationships.len() > 1
+        || relationships
+            .iter()
+            .any(|chain| chain.relationship.range.max.is_none_or(|max| max > 1)))
+    .then(|| lowerer.synthetic("match_history"))
 }

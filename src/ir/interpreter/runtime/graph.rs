@@ -1,16 +1,16 @@
 //! Graph properties, Gremlin ordering, and shortest paths.
 
+use super::lists::list_semantic_eq;
+use super::maps::{runtime_list, visible_map_keys};
+use super::numeric::value_as_f64;
+use super::property_object::eval_property_object;
+use super::strings::display_for_concat;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::element_id::element_internal_id;
 use crate::ir::interpreter::expr::compare_values;
 use crate::ir::plan::Direction;
 use crate::ir::value::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use super::lists::list_semantic_eq;
-use super::maps::{runtime_list, visible_map_keys};
-use super::numeric::value_as_f64;
-use super::property_object::eval_property_object;
-use super::strings::display_for_concat;
 
 fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
     let name = match graph.node_property(label, id, "name") {
@@ -109,6 +109,11 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
         .unwrap_or(Value::Null),
         (Value::Node { label, id }, _) => graph.node_property(label, *id, key),
         (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, *id, key),
+        (Value::TypedMap(entries), _) => entries
+            .iter()
+            .find(|(candidate, _)| candidate == &Value::String(key.to_string()))
+            .map(|(_, value)| value.clone())
+            .unwrap_or(Value::Null),
         (Value::Map(map), _) => map.get(key).cloned().unwrap_or(Value::Null),
         _ => Value::Null,
     }
@@ -117,11 +122,11 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
 pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
     match value {
         Value::Node { label, id } => match graph.node_property(label, *id, "id") {
-            Value::Null => Value::Int(*id),
+            Value::Null => Value::String(format!("{label}#{id}")),
             value => value,
         },
         Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
-            Value::Null => Value::Int(*id),
+            Value::Null => Value::String(format!("{rel_type}#{id}")),
             value => value,
         },
         Value::Map(map) => map.get("__id").cloned().unwrap_or(Value::Null),
@@ -130,6 +135,19 @@ pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
 }
 
 pub(super) fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
+    // Default identity includes the label, while scan order retains the
+    // catalog's row ordinal. Changing identity must not reorder traversers.
+    match value {
+        Value::Node { label, id } if graph.node_property(label, *id, "id") == Value::Null => {
+            return Value::Long(*id);
+        }
+        Value::Edge { rel_type, id, .. }
+            if graph.edge_property(rel_type, *id, "id") == Value::Null =>
+        {
+            return Value::Long(*id);
+        }
+        _ => {}
+    }
     match gremlin_user_id(graph, value) {
         Value::Int(id) | Value::Long(id) => Value::Long(id),
         Value::String(text) => Value::String(text),
@@ -155,6 +173,9 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         return (11, Value::List(items.to_vec()));
     }
     match value {
+        Value::TypedMap(_) => (13, value.clone()),
+        Value::MapEntry(_) => (14, value.clone()),
+        Value::Token(_) | Value::Direction(_) => (14, value.clone()),
         Value::Null => (0, Value::Null),
         Value::Bool(_) => (1, value.clone()),
         Value::Byte(_)
@@ -199,10 +220,16 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         }
         Value::Path(_) => (10, value.clone()),
         Value::List(_) => (12, value.clone()),
+        Value::BulkSet(_) => (11, value.clone()),
     }
 }
 
-pub(super) fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str, dir: &str) -> Value {
+pub(super) fn local_order_by_key(
+    graph: &PropertyGraph,
+    value: &Value,
+    key: &str,
+    dir: &str,
+) -> Value {
     let desc = dir.eq_ignore_ascii_case("desc");
     if let Some(items) = runtime_list(value) {
         let mut keyed = items
@@ -222,34 +249,19 @@ pub(super) fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str
         }
         return Value::List(keyed.into_iter().map(|(item, _)| item).collect());
     }
-    if let Value::Map(map) = value {
-        let mut entries = visible_map_keys(map)
-            .into_iter()
-            .filter_map(|entry_key| {
-                let entry_value = map.get(&entry_key)?.clone();
-                // `t[id]` / `t[label]` display keys sort by their token
-                // name (`id` / `label`), matching TinkerPop's T-token
-                // ordering among plain string keys.
-                let sort_key_text = entry_key
-                    .strip_prefix("t[")
-                    .and_then(|s| s.strip_suffix(']'))
-                    .unwrap_or(entry_key.as_str())
-                    .to_string();
-                let sort_value = match key {
-                    "key" | "keys" => Value::String(sort_key_text.clone()),
-                    "value" | "values" => entry_value.clone(),
-                    _ => Value::String(sort_key_text),
-                };
-                let mut single = BTreeMap::new();
-                single.insert(entry_key, entry_value);
-                Some((Value::Map(single), sort_value))
-            })
-            .collect::<Vec<_>>();
-        entries.sort_by(|(_, a), (_, b)| compare_values(a, b));
-        if desc {
-            entries.reverse();
-        }
-        return Value::List(entries.into_iter().map(|(entry, _)| entry).collect());
+    let entries = match value {
+        Value::TypedMap(entries) => Some(entries.clone()),
+        Value::Map(map) => Some(visible_map_keys(map).into_iter().filter_map(|key| map.get(&key).cloned().map(|value|(Value::String(key),value))).collect()),
+        _ => None,
+    };
+    if let Some(entries) = entries {
+        let mut keyed = entries.into_iter().map(|(entry_key, entry_value)| {
+            let sort_value = match key { "value" | "values" => entry_value.clone(), _ => entry_key.clone() };
+            (Value::MapEntry(Box::new((entry_key,entry_value))),sort_value)
+        }).collect::<Vec<_>>();
+        keyed.sort_by(|(_,a),(_,b)| compare_values(a,b));
+        if desc { keyed.reverse(); }
+        return Value::List(keyed.into_iter().map(|(entry,_)|entry).collect());
     }
     value.clone()
 }
@@ -263,10 +275,12 @@ fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value
             _ => Value::Null,
         },
         "key" | "keys" => match item {
+            Value::MapEntry(entry) => entry.0.clone(),
             Value::Map(map) => map.get("key").cloned().unwrap_or(Value::Null),
             _ => Value::Null,
         },
         "value" | "values" => match item {
+            Value::MapEntry(entry) => entry.1.clone(),
             Value::Map(map) => map.get("value").cloned().unwrap_or(Value::Null),
             _ => item.clone(),
         },
@@ -306,7 +320,11 @@ pub(super) fn gremlin_visible_vertex_property_values(
         .collect()
 }
 
-pub(super) fn eval_algorithm_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
+pub(super) fn eval_algorithm_property_object(
+    name: &str,
+    args: &[Value],
+    graph: &PropertyGraph,
+) -> Value {
     let mut value = eval_property_object(name, args, graph);
     if !matches!(
         name,
@@ -629,12 +647,13 @@ fn shortest_path_between(
 pub(super) fn select_binding_by_pop(binding: &Value, history: &Value, pop: &str) -> Value {
     let values = match history {
         Value::List(values) if !values.is_empty() => values.as_slice(),
-        _ if !matches!(binding, Value::Null) => return binding.clone(),
+        _ if !matches!(binding, Value::Null) => return if pop == "all" {
+            Value::List(vec![binding.clone()])
+        } else { binding.clone() },
         _ => return Value::Null,
     };
     match pop {
         "first" => values.first().cloned().unwrap_or(Value::Null),
-        "all" if values.len() == 1 => values[0].clone(),
         "all" => Value::List(values.to_vec()),
         "mixed" if values.len() == 1 => values[0].clone(),
         "mixed" => Value::List(values.to_vec()),
@@ -717,7 +736,12 @@ pub(super) fn path_last_label(value: &Value) -> Option<&str> {
     }
 }
 
-pub(super) fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &PropertyGraph) -> Value {
+pub(super) fn format_placeholder(
+    current: &Value,
+    binding: &Value,
+    key: &str,
+    graph: &PropertyGraph,
+) -> Value {
     let resolved = graph_element_property(graph, current, key);
     if matches!(resolved, Value::Null) {
         binding.clone()
@@ -748,4 +772,16 @@ pub(super) fn is_acyclic_path(items: &[Value]) -> bool {
         }
     }
     true
+}
+
+/// Resolve a native reference by the catalog's public element identity. The
+/// reference label is descriptive; it does not change vertex identity.
+pub(super) fn resolve_gremlin_vertex_reference(graph: &PropertyGraph, id: &Value) -> crate::ir::interpreter::IrResult<Value> {
+    for label in graph.labels() {
+        for row in graph.node_ids(&label)? {
+            let vertex = Value::Node { label: label.clone(), id: row };
+            if gremlin_user_id(graph, &vertex).three_valued_eq(id) == Some(true) { return Ok(vertex); }
+        }
+    }
+    Err(crate::ir::interpreter::InterpretError::Runtime(format!("Vertex with id {id:?} does not exist")))
 }
