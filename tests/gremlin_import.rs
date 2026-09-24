@@ -134,6 +134,10 @@ mod durable {
         {
             let mut engine = GraphEngine::open(&database.0).unwrap();
             assert_eq!(count(&mut engine).await, 2);
+            // This fails after the importer has inserted its first vertex.
+            // Statement rollback must remove that partial write.
+            assert!(engine.gremlin(&source.query("")).await.is_err());
+            assert_eq!(count(&mut engine).await, 2);
             engine.begin().unwrap();
             // A different graph proves rollback without requiring duplicate IDs.
             let second = File::new("json", r#"{"id":"new","label":"other"}"#);
@@ -148,4 +152,22 @@ mod durable {
         let mut engine = GraphEngine::open(&database.0).unwrap();
         assert_eq!(count(&mut engine).await, 2);
     }
+}
+
+#[test]
+fn native_import_preserves_public_ids_and_property_record_owners() {
+    let file = File::new("json", r#"{"id":"account","label":"person","properties":{"tags":[{"id":"tag-1","value":"one","properties":{"since":{"@type":"g:Int32","@value":2020}}},{"id":"tag-2","value":"two"}],"items":[{"id":"items-1","value":{"@type":"g:List","@value":["a","b"]}}]}}"#);
+    let graph = PropertyGraph::new();
+    execute_rows(&plan(&file.query("")), &graph).unwrap();
+    let vertices = values(&graph, "g.V()");
+    assert_eq!(graph.element_public_id(&vertices[0]), Value::String("account".into()));
+    let tags = graph.properties(&vertices[0], &["tags".into()]);
+    assert_eq!(tags.len(), 2);
+    assert_eq!(graph.element_public_id(&tags[0]), Value::String("tag-1".into()));
+    assert_eq!(graph.element_public_id(&tags[1]), Value::String("tag-2".into()));
+    let meta = graph.properties(&tags[0], &["since".into()]);
+    assert!(matches!(&meta[0], Value::Property { owner, value, .. } if **owner == tags[0] && **value == Value::Int(2020)));
+    let items = graph.properties(&vertices[0], &["items".into()]);
+    assert_eq!(items.len(), 1);
+    assert!(matches!(&items[0], Value::VertexProperty { value, .. } if matches!(value.as_ref(), Value::List(v) if v.len()==2)));
 }
