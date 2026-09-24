@@ -257,7 +257,7 @@ public class UpstreamGremlin {
    if(id instanceof Number)return id.toString();
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
-  public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
+  public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(graph instanceof CrabGraph nativeGraph)nativeGraph.closeFamily();else if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
   public String changePathToDataFile(String path){return new File("conformance/upstream/cache/tinkerpop",path).getAbsolutePath();}
  }
  /** Copy only upstream input data; all evaluated traversals use the native provider. */
