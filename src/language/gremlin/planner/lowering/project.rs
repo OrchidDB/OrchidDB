@@ -127,10 +127,11 @@ pub(super) fn lower_constant(input: Node, value: &GValue) -> GremlinPlanResult<N
     let expr = gvalue_to_expr(value)?;
     Ok(Node::GraphProject {
         mode: ProjectMode::ReplaceCurrent,
-        items: vec![ProjectionItem {
-            alias: CURRENT.into(),
-            expr,
-        }],
+        items: vec![ProjectionItem { alias: CURRENT.into(), expr: expr.clone() },
+            ProjectionItem { alias: PATH.into(), expr: IrExpr::Call {
+                name: "path_extend_after".into(),
+                args: vec![IrExpr::Binding(PATH.into()), IrExpr::Binding(CURRENT.into()), expr],
+            }}],
         error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),
     })

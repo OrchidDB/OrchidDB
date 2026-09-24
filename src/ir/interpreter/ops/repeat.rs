@@ -2,7 +2,7 @@
 //!
 //! Extracted from `interpreter.rs` lines 713..1035.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::IrExpr;
@@ -41,8 +41,23 @@ pub(crate) fn repeat_op(
     graph: &PropertyGraph,
     ctx: &mut ExecutionContext,
 ) -> IrResult<Vec<Row>> {
+    let nested = !ctx.step_state.is_empty();
+    let seed_rows = if nested {
+        seed_rows.into_iter().map(|mut row| {
+            let mut stack = match row.bindings.remove("__repeat_loop_stack") {
+                Some(Value::List(stack)) => stack, _ => Vec::new(),
+            };
+            let mut saved = std::collections::BTreeMap::new();
+            for key in std::iter::once("__loops".to_string()).chain(loop_name.map(|name| format!("__loops:{name}"))) {
+                saved.insert(key.clone(), row.bindings.get(&key).cloned().unwrap_or(Value::Null));
+            }
+            stack.push(Value::Map(saved));
+            row.bindings.insert("__repeat_loop_stack".into(), Value::List(stack));
+            row
+        }).collect()
+    } else { seed_rows };
     ctx.push_step_state_frame();
-    let result = repeat_op_inner(
+    let mut result = repeat_op_inner(
         loop_name,
         times,
         emit_each_iteration,
@@ -58,6 +73,21 @@ pub(crate) fn repeat_op(
         ctx,
     );
     ctx.pop_step_state_frame();
+    if nested {
+        if let Ok(rows) = &mut result {
+            for row in rows {
+                if let Some(Value::List(mut stack)) = row.bindings.remove("__repeat_loop_stack") {
+                    if let Some(Value::Map(saved)) = stack.pop() {
+                        for (key, value) in saved {
+                            if matches!(value, Value::Null) { row.bindings.remove(&key); }
+                            else { row.bindings.insert(key, value); }
+                        }
+                    }
+                    if !stack.is_empty() { row.bindings.insert("__repeat_loop_stack".into(), Value::List(stack)); }
+                }
+            }
+        }
+    }
     result
 }
 
@@ -83,8 +113,16 @@ fn repeat_op_inner(
     //   3. Otherwise — stop when the frontier becomes empty.
     // A resource ceiling is an error, never a successful truncated result.
     const MAX_REPEAT_ITERATIONS: u32 = 10_000;
-    let mut frontier = seed_rows;
+    let trace_metrics = ctx.step_state.len() == 1 && std::env::var_os("CRABGRAPH_REPEAT_METRICS").is_some();
+    let mut peak_expanded = seed_rows.len();
+    let mut frontier = super::barrier::compact_repeat_frontier(seed_rows)?;
+    let mut peak_compacted = frontier.len();
+    let mut peak_bulk = 0_u64;
     let mut out = Vec::new();
+    for row in &mut frontier {
+        row.bindings.insert("__loops".into(), Value::Int(0));
+        if let Some(name) = loop_name { row.bindings.insert(format!("__loops:{name}"), Value::Int(0)); }
+    }
     if emit_each_iteration {
         if let Some(seed_predicate) = emit_seed_predicate {
             emit_matching(&frontier, Some(seed_predicate), &mut out, graph)?;
@@ -94,6 +132,7 @@ fn repeat_op_inner(
     }
     let mut iteration: u32 = 0;
     loop {
+        if frontier.is_empty() { break; }
         ctx.charge(1)?;
         if let Some(n) = times {
             if iteration >= n {
@@ -121,6 +160,12 @@ fn repeat_op_inner(
         let stepped = run_body_with_frontier(body, body_frontier, graph, ctx);
         ctx.deactivate_step_state_frame();
         let stepped = stepped?;
+        peak_expanded = peak_expanded.max(stepped.len());
+        let stepped = super::barrier::compact_repeat_frontier(stepped)?;
+        peak_compacted = peak_compacted.max(stepped.len());
+        if trace_metrics {
+            peak_bulk = peak_bulk.max(stepped.iter().fold(0_u64, |total, row| total.saturating_add(row.bulk)));
+        }
         let stepped = stepped
             .into_iter()
             .map(|mut row| {
@@ -135,53 +180,39 @@ fn repeat_op_inner(
                 row
             })
             .collect::<Vec<_>>();
+        // Until/times exits take precedence over emit splitting: a terminal
+        // traverser is returned once even when the emit predicate rejects it.
+        let at_bound = times.is_some_and(|n| iteration + 1 >= n);
+        let mut continuing = Vec::new();
+        for row in stepped {
+            let done = if at_bound {
+                true
+            } else if let Some(predicate) = until {
+                matches!(eval(predicate, &row, graph)?, Value::Bool(true))
+            } else if let Some(probe) = until_traversal {
+                !run_body_with_frontier(probe, vec![row.clone()], graph, ctx)?.is_empty()
+            } else {
+                false
+            };
+            if done { out.push(row); } else { continuing.push(row); }
+        }
         if emit_each_iteration {
             match emit_mode {
-                EmitMode::AfterEachIteration => emit_matching(&stepped, None, &mut out, graph)?,
-                EmitMode::AfterEachIfPredicate(p) => {
-                    emit_matching(&stepped, Some(p), &mut out, graph)?
-                }
-                EmitMode::AfterEachIfTraversal(probe) => {
-                    emit_matching_traversal(&stepped, probe, &mut out, graph, ctx)?
-                }
-                EmitMode::AfterLoop => {} // not active when emit_each_iteration
+                EmitMode::AfterEachIteration => emit_matching(&continuing, None, &mut out, graph)?,
+                EmitMode::AfterEachIfPredicate(p) => emit_matching(&continuing, Some(p), &mut out, graph)?,
+                EmitMode::AfterEachIfTraversal(probe) => emit_matching_traversal(&continuing, probe, &mut out, graph, ctx)?,
+                EmitMode::AfterLoop => {}
             }
         }
-        if until.is_some() || until_traversal.is_some() {
-            // When `until` matches, that row is emitted and not advanced.
-            let mut matched = Vec::new();
-            let mut continuing = Vec::new();
-            for row in stepped {
-                let done = if let Some(predicate) = until {
-                    matches!(eval(predicate, &row, graph)?, Value::Bool(true))
-                } else if let Some(probe) = until_traversal {
-                    !run_body_with_frontier(probe, vec![row.clone()], graph, ctx)?.is_empty()
-                } else {
-                    false
-                };
-                if done {
-                    matched.push(row);
-                } else {
-                    continuing.push(row);
-                }
-            }
-            if !emit_each_iteration {
-                out.extend(matched.clone());
-            }
-            frontier = continuing;
-            if frontier.is_empty() {
-                break;
-            }
-        } else {
-            frontier = stepped;
-            if frontier.is_empty() {
-                break;
-            }
-        }
+        frontier = continuing;
+        if frontier.is_empty() { break; }
         iteration += 1;
     }
     if !emit_each_iteration && until.is_none() && until_traversal.is_none() {
         out.extend(frontier);
+    }
+    if trace_metrics {
+        eprintln!("repeat metrics: iterations={} peak_expanded={} peak_compacted={} peak_logical_bulk={}", iteration + 1, peak_expanded, peak_compacted, peak_bulk);
     }
     Ok(out)
 }
@@ -277,6 +308,9 @@ pub(crate) fn run_with_frontier(
     ctx.charge(1)?;
     match node {
         Node::GraphCorrelate { bindings } => {
+            if bindings == &["__gremlin_group_members"] {
+                return Ok(frontier.to_vec());
+            }
             let mut rows = Vec::with_capacity(frontier.len());
             for outer in frontier {
                 let mut row = Row::new();
@@ -289,7 +323,7 @@ pub(crate) fn run_with_frontier(
                 // friends) are not enumerated by the explicit correlation
                 // list but must thread through the body so `path()` reflects
                 // the full traverser history across loop iterations.
-                for implicit in ["__path", "__edge_other", "__loops"].iter() {
+                for implicit in ["__path", "__path_labels", "__edge_other", "__loops", "__sack", "__sack_merge", "__bulk_enabled", "__gremlin_bulk_safe", "__repeat_loop_stack"].iter() {
                     if !row.bindings.contains_key(*implicit) {
                         if let Some(value) = outer.bindings.get(*implicit) {
                             row.bindings.insert((*implicit).to_string(), value.clone());
@@ -385,7 +419,7 @@ pub(crate) fn run_with_frontier(
             input,
         } => {
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
-            group_map_op(key, value, output, rows, graph)
+            group_map_op(key, value, output, rows, graph, ctx)
         }
         Node::GraphShortestPath { input, .. } => run_with_frontier(input, frontier, graph, ctx),
         Node::GraphSort { keys, input } => {
@@ -561,6 +595,11 @@ pub(crate) fn run_with_frontier(
                 graph,
             )
         }
+        Node::GraphGroupSideEffect { label, key, value, key_input, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::aggregate::group_side_effect_write(ctx, label, key, value, key_input, &rows, graph)?;
+            Ok(rows)
+        }
         Node::GraphGroupCountSideEffect { label, key, input } => {
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             let counts = ctx.group_counts.entry(label.clone()).or_default();
@@ -572,19 +611,21 @@ pub(crate) fn run_with_frontier(
             }
             Ok(rows)
         }
+        Node::GraphSideEffect { label, value_input, value, seed, reducer, eager, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            ctx.write_side_effect(label, value_input, value, seed, reducer, *eager, rows, graph)
+        }
+        Node::GraphReadSideEffect { label, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            ctx.read_side_effect(label, rows, graph)
+        }
         Node::GraphCap { labels, input } => {
             let _ = run_with_frontier(input, frontier, graph, ctx)?;
-            if labels.len() == 1 {
-                Ok(vec![
-                    Row::new().with("current", group_count_map_value(ctx, &labels[0])),
-                ])
-            } else {
-                let mut map = BTreeMap::new();
-                for label in labels {
-                    map.insert(label.clone(), group_count_map_value(ctx, label));
-                }
-                Ok(vec![Row::new().with("current", Value::Map(map))])
-            }
+            ctx.cap_side_effects(labels, graph)
+        }
+        Node::GraphBarrier { partition, order, slice, materialize, bulk_policy, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            super::barrier::barrier_op(partition, order, slice, *materialize, *bulk_policy, rows, graph)
         }
         // Mutations inside a correlated arm (MERGE's create arm, a
         // CREATE under an Apply) must see the outer bindings their
@@ -627,18 +668,4 @@ pub(crate) fn run_with_frontier(
         // Sources without correlation behave normally.
         other => run_with_context(other, graph, ctx),
     }
-}
-
-fn group_count_map_value(ctx: &ExecutionContext, label: &str) -> Value {
-    let map = ctx
-        .group_counts
-        .get(label)
-        .map(|counts| {
-            counts
-                .iter()
-                .map(|(key, count)| (key.clone(), Value::Long(*count as i64)))
-                .collect()
-        })
-        .unwrap_or_default();
-    Value::map_from_entries(map)
 }

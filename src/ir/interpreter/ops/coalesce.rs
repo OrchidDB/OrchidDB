@@ -30,7 +30,7 @@ pub(crate) fn coalesce_op(
                         new_row.bindings.insert(output.to_string(), value.clone());
                     }
                     for (binding, value) in &arm_row.bindings {
-                        if binding == "__path"
+                        if (binding == "__path" || binding == "__path_labels" || binding == "__sack")
                             || binding.starts_with("__gremlin_select_history_")
                             || arm_row
                                 .bindings
