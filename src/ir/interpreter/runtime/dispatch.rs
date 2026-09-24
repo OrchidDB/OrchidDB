@@ -1130,12 +1130,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         // `typeof_matches(target, name)` resolves Gremlin's
         // `P.typeOf("GType.INT")` against the runtime value's type.
         ("typeof_matches", [v, Value::String(name)]) => Ok(Value::Bool(typeof_matches(v, name))),
-        // `regex_match(target, pattern)` is shape-only: full Java regex
-        // semantics need a regex engine; for the harness we approximate
-        // with a literal-match test so simple `^...$`-anchored alphabet
-        // patterns work and the rest produce false rather than panic.
         ("regex_match", [Value::String(haystack), Value::String(pattern)]) => {
-            Ok(Value::Bool(regex_match_literal(haystack, pattern)))
+            Ok(Value::Bool(regex_match_literal(haystack, pattern)?))
         }
         ("regex_match", [Value::Null, _]) | ("regex_match", [_, Value::Null]) => Ok(Value::Null),
         // Generic fallbacks: any string-style helper called with Null

@@ -43,7 +43,7 @@ pub(super) fn search(args: &[Value], graph: &PropertyGraph) -> IrResult<Value> {
     // Java Matcher.matches() requires the entire string to match, including
     // for the explicit regex parameter. is_match() alone would search substrings.
     let regex = Regex::new(&format!("\\A(?:{pattern})\\z"))
-        .map_err(|err| error(&format!("Invalid search regex: {err}")))?;
+        .map_err(|err| error(&format!("Invalid search regex (native profile excludes lookaround and backreferences): {err}")))?;
     let mut matches = Vec::new();
     if kind != Some("Edge") {
         for label in graph.labels() {

@@ -251,51 +251,8 @@ pub(super) fn predicate_to_expr_with_bindings(
 }
 
 fn regex_to_expr(target: IrExpr, pattern: &str) -> IrExpr {
-    let metas = [
-        '.', '*', '+', '?', '|', '[', ']', '(', ')', '{', '}', '\\', '^', '$',
-    ];
-    if let Some(suffix) = pattern.strip_prefix('^') {
-        if !suffix.chars().any(|c| metas.contains(&c)) {
-            return IrExpr::StringPredicate {
-                op: StringOp::StartsWith,
-                target: Box::new(target),
-                pattern: Box::new(IrExpr::lit_str(suffix.to_string())),
-            };
-        }
-    }
-    if let Some(prefix) = pattern.strip_suffix('$') {
-        if !prefix.chars().any(|c| metas.contains(&c)) {
-            return IrExpr::StringPredicate {
-                op: StringOp::EndsWith,
-                target: Box::new(target),
-                pattern: Box::new(IrExpr::lit_str(prefix.to_string())),
-            };
-        }
-    }
-    let literal_chunks = pattern
-        .split(".*")
-        .filter(|part| !part.is_empty())
-        .filter(|part| !part.chars().any(|c| metas.contains(&c)))
-        .collect::<Vec<_>>();
-    if !literal_chunks.is_empty() {
-        return IrExpr::and(
-            literal_chunks
-                .into_iter()
-                .map(|part| IrExpr::StringPredicate {
-                    op: StringOp::Contains,
-                    target: Box::new(target.clone()),
-                    pattern: Box::new(IrExpr::lit_str(part.to_string())),
-                })
-                .collect(),
-        );
-    }
-    if !pattern.chars().any(|c| metas.contains(&c)) {
-        return IrExpr::StringPredicate {
-            op: StringOp::Contains,
-            target: Box::new(target),
-            pattern: Box::new(IrExpr::lit_str(pattern.to_string())),
-        };
-    }
+    // Preserve the complete expression and its ordering/anchors. Splitting at
+    // `.*` into independent contains predicates changes regex semantics.
     IrExpr::Call {
         name: "regex_match".into(),
         args: vec![target, IrExpr::lit_str(pattern.to_string())],
