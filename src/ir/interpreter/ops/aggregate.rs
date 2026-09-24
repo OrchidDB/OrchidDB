@@ -94,6 +94,7 @@ pub(crate) fn group_map_op(
     output: &str,
     rows: Vec<Row>,
     graph: &PropertyGraph,
+    ctx: &mut super::super::run::ExecutionContext,
 ) -> IrResult<Vec<Row>> {
     let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
     for row in rows {
@@ -105,11 +106,43 @@ pub(crate) fn group_map_op(
         }
     }
     let mut entries = Vec::new();
-    for (key, group_rows) in groups {
+    for (key, mut group_rows) in groups {
+        // A named group can have a key but no productive prefix members;
+        // count/fold still receive the genuine empty stream.
+        group_rows.retain(|row| !row.bindings.contains_key("__gremlin_group_empty"));
         let value = match value {
             GroupValue::CountBulk => {
                 let total: u64 = group_rows.iter().map(|row| row.bulk).sum();
                 Value::Long(total as i64)
+            }
+            GroupValue::Traversal { traversal } => {
+                let mut probe = traversal.as_ref().clone();
+                let value = if split_group_prefix(&mut probe).is_some() {
+                    // The final reduction can have a post-processing suffix;
+                    // group takes its first result, just like Traversal.next().
+                    run_group_traversal(traversal, group_rows, graph, ctx)?
+                        .into_iter()
+                        .next()
+                        .and_then(|mut row| row.bindings.remove("current"))
+                } else {
+                    // Without a barrier the map reducer assigns the first
+                    // result of each member, retaining the last productive one.
+                    let mut value = None;
+                    for row in group_rows {
+                        if let Some(result) = run_group_traversal(traversal, vec![row], graph, ctx)?
+                            .into_iter()
+                            .next()
+                            .and_then(|mut row| row.bindings.remove("current"))
+                        {
+                            value = Some(result);
+                        }
+                    }
+                    value
+                };
+                let Some(value) = value else {
+                    continue;
+                };
+                value
             }
             GroupValue::Aggregate(agg) => {
                 let value = compute_aggregate(agg, &group_rows, graph)?;
@@ -617,4 +650,249 @@ mod tests {
         assert!(!aggregate_truthy(&Value::UInt64(0)));
         assert!(!aggregate_truthy(&Value::UInt128(BigInt::from(0))));
     }
+}
+
+/// Named groups retain contributions at their first barrier. Prefix steps,
+/// including graph and side-effect writers, execute exactly once at insertion.
+/// The pure reducing suffix can then be reevaluated after new contributions.
+#[derive(Debug)]
+pub(crate) struct GroupAccumulator {
+    rows: Vec<Row>,
+    reducer: GroupValue,
+    cached: Option<Value>,
+}
+
+const GROUP_MEMBERS: &str = "__gremlin_group_members";
+const GROUP_KEY: &str = "__gremlin_group_key";
+const GROUP_VALUE: &str = "__gremlin_group_value";
+
+pub(crate) fn group_side_effect_write(
+    ctx: &mut super::super::run::ExecutionContext,
+    label: &str,
+    key: &IrExpr,
+    value: &GroupValue,
+    key_input: &crate::ir::plan::Node,
+    rows: &[Row],
+    graph: &PropertyGraph,
+) -> IrResult<()> {
+    let (prefix, reducer, reducing) = match value {
+        GroupValue::Traversal { traversal } => {
+            let mut suffix = traversal.as_ref().clone();
+            let prefix = split_group_prefix(&mut suffix);
+            let reducing = prefix.is_some();
+            let prefix =
+                prefix.unwrap_or_else(|| std::mem::replace(&mut suffix, group_members_source()));
+            if !group_suffix_is_pure(&suffix) {
+                return Err(InterpretError::Unsupported(
+                    "group side-effect value traversal has a writer after its reducing barrier"
+                        .into(),
+                ));
+            }
+            (
+                Some(prefix),
+                GroupValue::Traversal {
+                    traversal: suffix.boxed(),
+                },
+                reducing,
+            )
+        }
+        GroupValue::Aggregate(agg) => {
+            let mut reducer = agg.clone();
+            if reducer.arg.is_some() {
+                reducer.arg = Some(IrExpr::Binding(GROUP_VALUE.into()));
+            }
+            (None, GroupValue::Aggregate(reducer), true)
+        }
+        other => (None, other.clone(), true),
+    };
+    // Register even on an empty stream: cap must return an empty map.
+    ctx.group_side_effects
+        .entry(label.to_string())
+        .or_insert_with(|| GroupAccumulator {
+            rows: Vec::new(),
+            reducer,
+            cached: None,
+        });
+    let rows = run_group_traversal(key_input, rows.to_vec(), graph, ctx)?;
+    let mut groups: Vec<(Value, Vec<Row>)> = Vec::new();
+    for row in &rows {
+        let key_value = eval(key, row, graph)?;
+        if let Some((_, members)) = groups
+            .iter_mut()
+            .find(|(existing, _)| existing == &key_value)
+        {
+            members.push(row.clone());
+        } else {
+            groups.push((key_value, vec![row.clone()]));
+        }
+    }
+    for (key, members) in groups {
+        let contributions = match &prefix {
+            Some(prefix) if reducing => run_group_traversal(prefix, members, graph, ctx)?,
+            Some(prefix) => {
+                let mut results = Vec::new();
+                for member in members {
+                    if let Some(row) = run_group_traversal(prefix, vec![member], graph, ctx)?
+                        .into_iter()
+                        .next()
+                    {
+                        results.push(row);
+                    }
+                }
+                results
+            }
+            None => {
+                let mut members = members;
+                if let GroupValue::Aggregate(agg) = value {
+                    if let Some(arg) = &agg.arg {
+                        for member in &mut members {
+                            let captured = eval(arg, member, graph)?;
+                            member.bindings.insert(GROUP_VALUE.into(), captured);
+                        }
+                    }
+                }
+                members
+            }
+        };
+        let state = ctx
+            .group_side_effects
+            .get_mut(label)
+            .expect("group registered");
+        state.cached = None;
+        if matches!(state.reducer, GroupValue::CountBulk) {
+            let bulk = contributions.iter().map(|row| row.bulk).sum::<u64>();
+            if let Some(existing) = state
+                .rows
+                .iter_mut()
+                .find(|row| row.bindings.get(GROUP_KEY) == Some(&key))
+            {
+                existing.bulk += bulk;
+            } else {
+                let mut row = Row::new().with(GROUP_KEY, key);
+                row.bulk = bulk;
+                state.rows.push(row);
+            }
+            continue;
+        }
+        // Empty inputs to count/fold still define a productive group. Keep
+        // its key separately from the contribution rows below.
+        if contributions.is_empty() {
+            state.rows.push(
+                Row::new()
+                    .with(GROUP_KEY, key)
+                    .with("__gremlin_group_empty", Value::Bool(true)),
+            );
+        } else {
+            state.rows.extend(contributions.into_iter().map(|mut row| {
+                row.bindings.insert(GROUP_KEY.into(), key.clone());
+                row
+            }));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn group_side_effect_value(
+    ctx: &mut super::super::run::ExecutionContext,
+    label: &str,
+    graph: &PropertyGraph,
+) -> IrResult<Option<Value>> {
+    let Some(mut state) = ctx.group_side_effects.remove(label) else {
+        return Ok(None);
+    };
+    let result = if let Some(value) = &state.cached {
+        Ok(value.clone())
+    } else {
+        group_map_op(
+            &IrExpr::Binding(GROUP_KEY.into()),
+            &state.reducer,
+            "current",
+            state.rows.clone(),
+            graph,
+            ctx,
+        )
+        .map(|mut rows| {
+            rows.pop()
+                .and_then(|mut row| row.bindings.remove("current"))
+                .unwrap_or(Value::Map(BTreeMap::new()))
+        })
+    };
+    if let Ok(value) = &result {
+        state.cached = Some(value.clone());
+    }
+    ctx.group_side_effects.insert(label.to_string(), state);
+    result.map(Some)
+}
+
+fn run_group_traversal(
+    traversal: &crate::ir::plan::Node,
+    rows: Vec<Row>,
+    graph: &PropertyGraph,
+    ctx: &mut super::super::run::ExecutionContext,
+) -> IrResult<Vec<Row>> {
+    // A group's local barriers must not borrow persistent dedup state from
+    // an enclosing repeat or from a different group.
+    ctx.push_step_state_frame();
+    let result = super::repeat::run_body_with_frontier(traversal, rows, graph, ctx);
+    ctx.pop_step_state_frame();
+    result
+}
+
+fn group_members_source() -> crate::ir::plan::Node {
+    crate::ir::plan::Node::GraphCorrelate {
+        bindings: vec![GROUP_MEMBERS.into()],
+    }
+}
+
+/// Find the first barrier on the main value traversal, excluding barriers
+/// in per-traverser child traversals. Replace its input with stored members.
+fn split_group_prefix(node: &mut crate::ir::plan::Node) -> Option<crate::ir::plan::Node> {
+    use crate::ir::plan::Node;
+    let barrier = matches!(
+        node,
+        Node::GraphAggregate { .. }
+            | Node::GraphGroupMap { .. }
+            | Node::GraphDistinct { .. }
+            | Node::GraphSort { .. }
+            | Node::GraphSlice { .. }
+            | Node::GraphSliceExpr { .. }
+            | Node::GraphBarrier { .. }
+    );
+    let input = match node {
+        Node::GraphAggregate { input, .. }
+        | Node::GraphGroupMap { input, .. }
+        | Node::GraphDistinct { input, .. }
+        | Node::GraphSort { input, .. }
+        | Node::GraphSlice { input, .. }
+        | Node::GraphSliceExpr { input, .. }
+        | Node::GraphBarrier { input, .. }
+        | Node::GraphFilter { input, .. }
+        | Node::GraphProject { input, .. }
+        | Node::GraphCurrentProject { input, .. }
+        | Node::GraphBind { input, .. }
+        | Node::GraphExpand { input, .. }
+        | Node::GraphUnwind { input, .. }
+        | Node::GraphSelect { input, .. }
+        | Node::GraphSideEffect { input, .. }
+        | Node::GraphReadSideEffect { input, .. }
+        | Node::GraphGroupSideEffect { input, .. }
+        | Node::GraphGroupCountSideEffect { input, .. }
+        | Node::GraphChoose { input, .. }
+        | Node::GraphCoalesce { input, .. }
+        | Node::GraphPathFilter { input, .. }
+        | Node::GraphSetProperty { input, .. }
+        | Node::GraphCreate { input, .. }
+        | Node::GraphDelete { input, .. } => input,
+        Node::GraphApply { left, .. } => left,
+        _ => return None,
+    };
+    if let Some(prefix) = split_group_prefix(input) {
+        return Some(prefix);
+    }
+    barrier.then(|| *std::mem::replace(input, group_members_source().boxed()))
+}
+
+fn group_suffix_is_pure(node: &crate::ir::plan::Node) -> bool {
+    use crate::ir::analysis::{Effect, children, node_effect};
+    node_effect(node) == Effect::Pure && children(node).into_iter().all(group_suffix_is_pure)
 }
