@@ -317,7 +317,7 @@ impl Store {
                 }
                 for (key, value) in properties {
                     self.graph
-                        .set_vertex_property(
+                        .set_jvm_vertex_property(
                             &vertex,
                             &key,
                             value,
@@ -354,7 +354,7 @@ impl Store {
             "properties" => {
                 let owner = self.resolve(field(r, "owner")?)?;
                 let keys = strings(r, "keys")?;
-                self.encode_many(self.graph.properties(&owner, &keys))
+                self.encode_many(self.graph.jvm_properties(&owner, &keys))
             }
             "setVertexProperty" => {
                 let owner = self.resolve(field(r, "owner")?)?;
@@ -377,7 +377,7 @@ impl Store {
                 let id = r.get("id").map(|id| self.decode_id(id)).transpose()?;
                 let p = self
                     .graph
-                    .set_vertex_property(&owner, key, value, cardinality, meta)
+                    .set_jvm_vertex_property(&owner, key, value, cardinality, meta)
                     .map_err(err)?;
                 if let Some(id) = id {
                     self.graph
@@ -411,7 +411,7 @@ impl Store {
                     .map_err(err)?;
                 let p = self
                     .graph
-                    .properties(&owner, &[key.into()])
+                    .jvm_properties(&owner, &[key.into()])
                     .into_iter()
                     .next()
                     .ok_or("property was not stored")?;
@@ -618,7 +618,7 @@ impl Store {
                     None
                 };
                 self.graph
-                    .properties(&owner, &[key.into()])
+                    .jvm_properties(&owner, &[key.into()])
                     .into_iter()
                     .find(|v| match (v, row) {
                         (Value::VertexProperty { id, .. }, Some(row)) => *id == row,
@@ -716,7 +716,7 @@ impl Store {
             let id = self.decode_id(field(j, "id")?)?;
             return self
                 .graph
-                .properties(&owner, &[])
+                .jvm_properties(&owner, &[])
                 .into_iter()
                 .find(|p| self.graph.element_public_id(p).three_valued_eq(&id) == Some(true))
                 .ok_or_else(|| "referenced vertex property does not exist".into());
@@ -867,8 +867,8 @@ fn strings(j: &Json, key: &str) -> Result<Vec<String>> {
         .collect()
 }
 fn validate_name(s: &str) -> Result<()> {
-    if s.is_empty() || s.starts_with('~') || s.starts_with("__") {
-        Err("empty, hidden, or reserved name".into())
+    if s.is_empty() || s.starts_with('~') {
+        Err("empty or hidden name".into())
     } else {
         Ok(())
     }
@@ -1458,3 +1458,7 @@ mod tests {
         std::fs::remove_file(path.with_extension("ngsp.lock")).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "jvm_bridge/user_keys_tests.rs"]
+mod user_keys_tests;
