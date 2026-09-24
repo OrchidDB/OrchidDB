@@ -30,7 +30,17 @@ pub(super) fn lower_source_traversal_with_context(
     let (first, rest) = steps
         .split_first()
         .ok_or_else(|| GremlinPlanError::Parse("empty traversal".to_string()))?;
-    let node = source_node(first, lo, ctx)?;
+    let mut rest = rest;
+    let mut call_options = Vec::new();
+    if matches!(first, Step::Call(name, _) if name == "tinker.search") {
+        while let Some((Step::WithOption { key, value, traversal }, tail)) = rest.split_first() {
+            call_options.push(super::procedures::CallOption {
+                key: key.clone(), value: value.clone(), traversal: traversal.clone(),
+            });
+            rest = tail;
+        }
+    }
+    let node = source_node(first, lo, ctx, &call_options)?;
     lower_remaining_steps(node, rest, lo, ctx)
 }
 

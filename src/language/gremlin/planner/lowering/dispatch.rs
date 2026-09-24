@@ -109,6 +109,14 @@ where
 
         // ----- value projection -----
         Step::Values(keys) => lower_values(input, keys, lo),
+        Step::PropertyKey | Step::PropertyValue => Ok(Node::GraphCurrentProject {
+            expr: crate::ir::expr::IrExpr::Call {
+                name: if matches!(step, Step::PropertyKey) { "property_key" } else { "property_value" }.into(),
+                args: vec![crate::ir::expr::IrExpr::Binding("current".into())],
+            },
+            fields: vec!["current".into()],
+            input: input.boxed(),
+        }),
         Step::Id => Ok(lower_id(input)),
         Step::Label => Ok(lower_label(input)),
         Step::Identity => Ok(input),

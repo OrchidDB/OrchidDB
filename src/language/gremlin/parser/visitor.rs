@@ -934,9 +934,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
             return;
         }
         if ctx.traversalMethod_key().is_some() {
-            // key() projects the `key` field of the property-object map
-            // produced by `properties()`.
-            self.steps.push(Step::Values(vec!["key".into()]));
+            self.steps.push(Step::PropertyKey);
             return;
         }
         if ctx.traversalMethod_profile().is_some() {
@@ -1308,9 +1306,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_traversalMethod_value(&mut self, _ctx: &TraversalMethod_valueContext<'input>) {
-        // `value()` — pull the value out of the property-object map
-        // produced by `properties()`.
-        self.steps.push(Step::Values(vec!["value".into()]));
+        self.steps.push(Step::PropertyValue);
     }
 
     fn visit_traversalMethod_math(&mut self, ctx: &TraversalMethod_mathContext<'input>) {
