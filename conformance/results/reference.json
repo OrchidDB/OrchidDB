@@ -1,19 +1,26 @@
 {
   "schema_version": 2,
+  "execution_environment": {
+    "system": "Darwin",
+    "release": "25.5.0",
+    "architecture": "arm64",
+    "logical_cpus": 12,
+    "python": "3.12.7"
+  },
   "engine": "reference",
   "build": {
     "version": "3.7.4",
     "edition": "TinkerGraph reference"
   },
-  "started_at": "2026-09-24T00:25:14.542154+00:00",
-  "finished_at": "2026-09-24T00:25:16.656206+00:00",
+  "started_at": "2026-09-24T00:31:15.417114+00:00",
+  "finished_at": "2026-09-24T00:31:17.137751+00:00",
   "suite_sha256": "4b7bf9a95551c392ce78b19c0aa569e340b7982a7488c5db078e1af163b3ce37",
   "results": [
     {
       "id": "gremlin.v",
       "probe_sha256": "f8602a84de1be8e7493d84595f50439fb9323b9c762131424e4dbffe7d52c7ab",
       "status": "pass",
-      "elapsed_ms": 451.26,
+      "elapsed_ms": 365.85,
       "rows": [
         [
           4
@@ -22,19 +29,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          451.26,
-          1.82,
-          0.8
+          365.85,
+          2.04,
+          0.73
         ],
-        "median_ms": 1.82,
-        "min_ms": 0.8,
-        "max_ms": 451.26,
+        "median_ms": 2.04,
+        "min_ms": 0.73,
+        "max_ms": 365.85,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 451.26,
+          "elapsed_ms": 365.85,
           "rows": [
             [
               4
@@ -43,7 +50,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.82,
+          "elapsed_ms": 2.04,
           "rows": [
             [
               4
@@ -52,7 +59,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.8,
+          "elapsed_ms": 0.73,
           "rows": [
             [
               4
@@ -65,7 +72,7 @@
       "id": "gremlin.e",
       "probe_sha256": "8aca89bd3d038afbd472117a48964a735a138f3dc231201032e52dbfcac749c5",
       "status": "pass",
-      "elapsed_ms": 6.04,
+      "elapsed_ms": 5.82,
       "rows": [
         [
           4
@@ -74,19 +81,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.04,
-          0.64,
-          0.48
+          5.82,
+          0.65,
+          0.61
         ],
-        "median_ms": 0.64,
-        "min_ms": 0.48,
-        "max_ms": 6.04,
+        "median_ms": 0.65,
+        "min_ms": 0.61,
+        "max_ms": 5.82,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.04,
+          "elapsed_ms": 5.82,
           "rows": [
             [
               4
@@ -95,7 +102,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.65,
           "rows": [
             [
               4
@@ -104,7 +111,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.48,
+          "elapsed_ms": 0.61,
           "rows": [
             [
               4
@@ -117,7 +124,7 @@
       "id": "gremlin.has",
       "probe_sha256": "a025f8072ff62f68f64abd1654ad87f525ce3c1159b0c9b9a3d312990f2d7f5d",
       "status": "pass",
-      "elapsed_ms": 11.61,
+      "elapsed_ms": 11.78,
       "rows": [
         [
           30
@@ -126,19 +133,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          11.61,
-          0.88,
-          0.59
+          11.78,
+          0.75,
+          0.62
         ],
-        "median_ms": 0.88,
-        "min_ms": 0.59,
-        "max_ms": 11.61,
+        "median_ms": 0.75,
+        "min_ms": 0.62,
+        "max_ms": 11.78,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 11.61,
+          "elapsed_ms": 11.78,
           "rows": [
             [
               30
@@ -147,7 +154,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.88,
+          "elapsed_ms": 0.75,
           "rows": [
             [
               30
@@ -156,7 +163,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.59,
+          "elapsed_ms": 0.62,
           "rows": [
             [
               30
@@ -169,7 +176,7 @@
       "id": "gremlin.has_label",
       "probe_sha256": "ab776e0c03ed0c4f4f082b35704348468461068dcf090d61b0558842880b1725",
       "status": "pass",
-      "elapsed_ms": 5.43,
+      "elapsed_ms": 5.15,
       "rows": [
         [
           "Alice"
@@ -187,19 +194,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.43,
-          0.69,
-          0.52
+          5.15,
+          0.59,
+          0.51
         ],
-        "median_ms": 0.69,
-        "min_ms": 0.52,
-        "max_ms": 5.43,
+        "median_ms": 0.59,
+        "min_ms": 0.51,
+        "max_ms": 5.15,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.43,
+          "elapsed_ms": 5.15,
           "rows": [
             [
               "Alice"
@@ -217,7 +224,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.69,
+          "elapsed_ms": 0.59,
           "rows": [
             [
               "Alice"
@@ -235,7 +242,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.52,
+          "elapsed_ms": 0.51,
           "rows": [
             [
               "Alice"
@@ -257,7 +264,7 @@
       "id": "gremlin.has_not",
       "probe_sha256": "e93ace4b670f5dd560cd9bd230aca8ace45fd18a9caf132b9763c9e3322319b8",
       "status": "pass",
-      "elapsed_ms": 6.52,
+      "elapsed_ms": 6.8,
       "rows": [
         [
           "Dave"
@@ -266,19 +273,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.52,
-          0.86,
-          0.57
+          6.8,
+          0.8,
+          0.81
         ],
-        "median_ms": 0.86,
-        "min_ms": 0.57,
-        "max_ms": 6.52,
+        "median_ms": 0.81,
+        "min_ms": 0.8,
+        "max_ms": 6.8,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.52,
+          "elapsed_ms": 6.8,
           "rows": [
             [
               "Dave"
@@ -287,7 +294,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.86,
+          "elapsed_ms": 0.8,
           "rows": [
             [
               "Dave"
@@ -296,7 +303,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.57,
+          "elapsed_ms": 0.81,
           "rows": [
             [
               "Dave"
@@ -309,7 +316,7 @@
       "id": "gremlin.out",
       "probe_sha256": "b26c791ee7cce591346d5e1a756cc62e87e93c730c4e5790bc39192ae3ea1e42",
       "status": "pass",
-      "elapsed_ms": 6.4,
+      "elapsed_ms": 6.07,
       "rows": [
         [
           "Carol"
@@ -321,19 +328,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.4,
-          0.99,
-          1.19
+          6.07,
+          0.58,
+          0.68
         ],
-        "median_ms": 1.19,
-        "min_ms": 0.99,
-        "max_ms": 6.4,
+        "median_ms": 0.68,
+        "min_ms": 0.58,
+        "max_ms": 6.07,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.4,
+          "elapsed_ms": 6.07,
           "rows": [
             [
               "Carol"
@@ -345,7 +352,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.99,
+          "elapsed_ms": 0.58,
           "rows": [
             [
               "Carol"
@@ -357,7 +364,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.19,
+          "elapsed_ms": 0.68,
           "rows": [
             [
               "Carol"
@@ -373,7 +380,7 @@
       "id": "gremlin.in",
       "probe_sha256": "d30c79748495f360be0f753326a6cf597fde5767ef8b223299814a77e8d9a525",
       "status": "pass",
-      "elapsed_ms": 9.04,
+      "elapsed_ms": 7.13,
       "rows": [
         [
           "Carol"
@@ -382,19 +389,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          9.04,
-          0.6,
-          0.49
+          7.13,
+          0.55,
+          0.5
         ],
-        "median_ms": 0.6,
-        "min_ms": 0.49,
-        "max_ms": 9.04,
+        "median_ms": 0.55,
+        "min_ms": 0.5,
+        "max_ms": 7.13,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 9.04,
+          "elapsed_ms": 7.13,
           "rows": [
             [
               "Carol"
@@ -403,7 +410,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.6,
+          "elapsed_ms": 0.55,
           "rows": [
             [
               "Carol"
@@ -412,7 +419,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.49,
+          "elapsed_ms": 0.5,
           "rows": [
             [
               "Carol"
@@ -425,7 +432,7 @@
       "id": "gremlin.both",
       "probe_sha256": "c5b380785c112c53472b288694235db6e0bec10785e403eb8fc2cb64a07b490a",
       "status": "pass",
-      "elapsed_ms": 5.16,
+      "elapsed_ms": 5.35,
       "rows": [
         [
           "Carol"
@@ -440,19 +447,34 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.16,
-          0.58,
-          0.53
+          5.35,
+          0.56,
+          0.58
         ],
         "median_ms": 0.58,
-        "min_ms": 0.53,
-        "max_ms": 5.16,
+        "min_ms": 0.56,
+        "max_ms": 5.35,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.16,
+          "elapsed_ms": 5.35,
+          "rows": [
+            [
+              "Carol"
+            ],
+            [
+              "Bob"
+            ],
+            [
+              "Carol"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.56,
           "rows": [
             [
               "Carol"
@@ -468,21 +490,6 @@
         {
           "status": "pass",
           "elapsed_ms": 0.58,
-          "rows": [
-            [
-              "Carol"
-            ],
-            [
-              "Bob"
-            ],
-            [
-              "Carol"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.53,
           "rows": [
             [
               "Carol"
@@ -501,7 +508,7 @@
       "id": "gremlin.out_e",
       "probe_sha256": "0494d4b317f9b73663304413712bc0edd17d8ef7ecd79ccbc8579c785929d69d",
       "status": "pass",
-      "elapsed_ms": 5.58,
+      "elapsed_ms": 4.75,
       "rows": [
         [
           3
@@ -513,19 +520,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.58,
-          0.77,
-          0.47
+          4.75,
+          0.91,
+          0.64
         ],
-        "median_ms": 0.77,
-        "min_ms": 0.47,
-        "max_ms": 5.58,
+        "median_ms": 0.91,
+        "min_ms": 0.64,
+        "max_ms": 4.75,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.58,
+          "elapsed_ms": 4.75,
           "rows": [
             [
               3
@@ -537,7 +544,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.77,
+          "elapsed_ms": 0.91,
           "rows": [
             [
               3
@@ -549,7 +556,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.47,
+          "elapsed_ms": 0.64,
           "rows": [
             [
               3
@@ -565,7 +572,7 @@
       "id": "gremlin.in_v",
       "probe_sha256": "c0018d9abe87f14e7469534159ce73c1d0caa956aba36c49b02ffcbfba34bc5a",
       "status": "pass",
-      "elapsed_ms": 6.21,
+      "elapsed_ms": 5.22,
       "rows": [
         [
           "Carol"
@@ -577,19 +584,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.21,
-          1.03,
-          0.98
+          5.22,
+          0.64,
+          0.55
         ],
-        "median_ms": 1.03,
-        "min_ms": 0.98,
-        "max_ms": 6.21,
+        "median_ms": 0.64,
+        "min_ms": 0.55,
+        "max_ms": 5.22,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.21,
+          "elapsed_ms": 5.22,
           "rows": [
             [
               "Carol"
@@ -601,7 +608,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.03,
+          "elapsed_ms": 0.64,
           "rows": [
             [
               "Carol"
@@ -613,7 +620,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.98,
+          "elapsed_ms": 0.55,
           "rows": [
             [
               "Carol"
@@ -629,7 +636,7 @@
       "id": "gremlin.other_v",
       "probe_sha256": "7e7036e62fca8cdc64efd8b8e2b52dc6764944ef73227a5f2a8f5259377aa643",
       "status": "pass",
-      "elapsed_ms": 9.63,
+      "elapsed_ms": 7.9,
       "rows": [
         [
           "Carol"
@@ -641,19 +648,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          9.63,
-          0.93,
-          0.71
+          7.9,
+          0.85,
+          0.58
         ],
-        "median_ms": 0.93,
-        "min_ms": 0.71,
-        "max_ms": 9.63,
+        "median_ms": 0.85,
+        "min_ms": 0.58,
+        "max_ms": 7.9,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 9.63,
+          "elapsed_ms": 7.9,
           "rows": [
             [
               "Carol"
@@ -665,7 +672,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.93,
+          "elapsed_ms": 0.85,
           "rows": [
             [
               "Carol"
@@ -677,7 +684,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.71,
+          "elapsed_ms": 0.58,
           "rows": [
             [
               "Carol"
@@ -693,7 +700,7 @@
       "id": "gremlin.both_v",
       "probe_sha256": "3b729fa99a592700c96f4cee7327cf63873aeba4e36c55aea9078d140d051cd5",
       "status": "pass",
-      "elapsed_ms": 8.53,
+      "elapsed_ms": 7.33,
       "rows": [
         [
           "Alice"
@@ -705,19 +712,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          8.53,
-          1.03,
-          0.66
+          7.33,
+          0.69,
+          0.52
         ],
-        "median_ms": 1.03,
-        "min_ms": 0.66,
-        "max_ms": 8.53,
+        "median_ms": 0.69,
+        "min_ms": 0.52,
+        "max_ms": 7.33,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 8.53,
+          "elapsed_ms": 7.33,
           "rows": [
             [
               "Alice"
@@ -729,7 +736,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.03,
+          "elapsed_ms": 0.69,
           "rows": [
             [
               "Alice"
@@ -741,7 +748,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.66,
+          "elapsed_ms": 0.52,
           "rows": [
             [
               "Alice"
@@ -757,7 +764,7 @@
       "id": "gremlin.label",
       "probe_sha256": "76fc759773c89a1759fb89dbe802533cbacfcf415b9c072217d24b033a3996e6",
       "status": "pass",
-      "elapsed_ms": 5.37,
+      "elapsed_ms": 5.11,
       "rows": [
         [
           "Person"
@@ -766,19 +773,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.37,
+          5.11,
           0.57,
-          0.7
+          0.46
         ],
-        "median_ms": 0.7,
-        "min_ms": 0.57,
-        "max_ms": 5.37,
+        "median_ms": 0.57,
+        "min_ms": 0.46,
+        "max_ms": 5.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.37,
+          "elapsed_ms": 5.11,
           "rows": [
             [
               "Person"
@@ -796,7 +803,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.7,
+          "elapsed_ms": 0.46,
           "rows": [
             [
               "Person"
@@ -809,7 +816,7 @@
       "id": "gremlin.identity",
       "probe_sha256": "8c03d493c7d1bf18d19c3acbab78f52bad3e27901e1a61b833456831819f6a5b",
       "status": "pass",
-      "elapsed_ms": 11.91,
+      "elapsed_ms": 10.71,
       "rows": [
         [
           1
@@ -821,19 +828,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          11.91,
-          0.9,
-          0.5
+          10.71,
+          0.64,
+          0.43
         ],
-        "median_ms": 0.9,
-        "min_ms": 0.5,
-        "max_ms": 11.91,
+        "median_ms": 0.64,
+        "min_ms": 0.43,
+        "max_ms": 10.71,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 11.91,
+          "elapsed_ms": 10.71,
           "rows": [
             [
               1
@@ -845,7 +852,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.9,
+          "elapsed_ms": 0.64,
           "rows": [
             [
               1
@@ -857,7 +864,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.5,
+          "elapsed_ms": 0.43,
           "rows": [
             [
               1
@@ -873,7 +880,7 @@
       "id": "gremlin.constant",
       "probe_sha256": "8beb2946f46e0d01440462fa4fd32e74f3abdd9cb9b555837dec4ac42f79f7b4",
       "status": "pass",
-      "elapsed_ms": 5.22,
+      "elapsed_ms": 5.63,
       "rows": [
         [
           7
@@ -885,19 +892,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.22,
-          0.53,
-          0.49
+          5.63,
+          0.61,
+          0.57
         ],
-        "median_ms": 0.53,
-        "min_ms": 0.49,
-        "max_ms": 5.22,
+        "median_ms": 0.61,
+        "min_ms": 0.57,
+        "max_ms": 5.63,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.22,
+          "elapsed_ms": 5.63,
           "rows": [
             [
               7
@@ -909,7 +916,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.53,
+          "elapsed_ms": 0.61,
           "rows": [
             [
               7
@@ -921,7 +928,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.49,
+          "elapsed_ms": 0.57,
           "rows": [
             [
               7
@@ -937,7 +944,7 @@
       "id": "gremlin.inject",
       "probe_sha256": "a2f41647595bf0bc942c069dd6779d3822455c7ddd24f9475c1466c7bb19d98f",
       "status": "pass",
-      "elapsed_ms": 5.41,
+      "elapsed_ms": 5.43,
       "rows": [
         [
           1
@@ -952,34 +959,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.41,
-          0.54,
-          0.44
+          5.43,
+          0.44,
+          0.35
         ],
-        "median_ms": 0.54,
-        "min_ms": 0.44,
-        "max_ms": 5.41,
+        "median_ms": 0.44,
+        "min_ms": 0.35,
+        "max_ms": 5.43,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.41,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.54,
+          "elapsed_ms": 5.43,
           "rows": [
             [
               1
@@ -995,6 +987,21 @@
         {
           "status": "pass",
           "elapsed_ms": 0.44,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.35,
           "rows": [
             [
               1
@@ -1013,7 +1020,7 @@
       "id": "gremlin.values",
       "probe_sha256": "ba970bc224acd1d841a63fb7c0193348f818e76eab5580139acc96a7e9202354",
       "status": "pass",
-      "elapsed_ms": 4.99,
+      "elapsed_ms": 3.74,
       "rows": [
         [
           30
@@ -1028,19 +1035,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.99,
-          0.68,
-          0.66
+          3.74,
+          0.52,
+          0.44
         ],
-        "median_ms": 0.68,
-        "min_ms": 0.66,
-        "max_ms": 4.99,
+        "median_ms": 0.52,
+        "min_ms": 0.44,
+        "max_ms": 3.74,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.99,
+          "elapsed_ms": 3.74,
           "rows": [
             [
               30
@@ -1055,7 +1062,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.68,
+          "elapsed_ms": 0.52,
           "rows": [
             [
               30
@@ -1070,7 +1077,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.66,
+          "elapsed_ms": 0.44,
           "rows": [
             [
               30
@@ -1089,7 +1096,7 @@
       "id": "gremlin.count",
       "probe_sha256": "e081bcc6a7ad6899914664403df9619582def4ee3ce44e9da99d441b90b4dde7",
       "status": "pass",
-      "elapsed_ms": 4.6,
+      "elapsed_ms": 3.64,
       "rows": [
         [
           0
@@ -1098,28 +1105,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.6,
-          0.72,
-          0.52
+          3.64,
+          0.52,
+          0.38
         ],
-        "median_ms": 0.72,
-        "min_ms": 0.52,
-        "max_ms": 4.6,
+        "median_ms": 0.52,
+        "min_ms": 0.38,
+        "max_ms": 3.64,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.6,
-          "rows": [
-            [
-              0
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.72,
+          "elapsed_ms": 3.64,
           "rows": [
             [
               0
@@ -1129,6 +1127,15 @@
         {
           "status": "pass",
           "elapsed_ms": 0.52,
+          "rows": [
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.38,
           "rows": [
             [
               0
@@ -1141,7 +1148,7 @@
       "id": "gremlin.dedup",
       "probe_sha256": "f1a744e5ea79821c7e17d65d15fa337ed96a519a0b59fbe40365df10dd08a452",
       "status": "pass",
-      "elapsed_ms": 4.52,
+      "elapsed_ms": 3.75,
       "rows": [
         [
           1
@@ -1153,95 +1160,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.52,
-          0.53,
-          0.51
+          3.75,
+          0.49,
+          0.38
         ],
-        "median_ms": 0.53,
-        "min_ms": 0.51,
-        "max_ms": 4.52,
+        "median_ms": 0.49,
+        "min_ms": 0.38,
+        "max_ms": 3.75,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.52,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.53,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.51,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.limit",
-      "probe_sha256": "0272cb185a5580baa541ac45ab2a52fc25e7ba75e7d6675389af4ddfe0d6ae62",
-      "status": "pass",
-      "elapsed_ms": 9.8,
-      "rows": [
-        [
-          1
-        ],
-        [
-          2
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          9.8,
-          0.7,
-          0.49
-        ],
-        "median_ms": 0.7,
-        "min_ms": 0.49,
-        "max_ms": 9.8,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 9.8,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.7,
+          "elapsed_ms": 3.75,
           "rows": [
             [
               1
@@ -1254,886 +1185,6 @@
         {
           "status": "pass",
           "elapsed_ms": 0.49,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.range",
-      "probe_sha256": "93ae8ac226736cefc15518731e4757237248318352cfeccd9f3eb2059409e439",
-      "status": "pass",
-      "elapsed_ms": 5.32,
-      "rows": [
-        [
-          2
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.32,
-          0.66,
-          0.65
-        ],
-        "median_ms": 0.66,
-        "min_ms": 0.65,
-        "max_ms": 5.32,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.32,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.66,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.65,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.tail",
-      "probe_sha256": "58d42ad81868fcc24f893f0da11b0b0f14174f72e5d81a5492221272fb773265",
-      "status": "pass",
-      "elapsed_ms": 5.56,
-      "rows": [
-        [
-          2
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.56,
-          0.75,
-          0.59
-        ],
-        "median_ms": 0.75,
-        "min_ms": 0.59,
-        "max_ms": 5.56,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.56,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.75,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.59,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.skip",
-      "probe_sha256": "9b6ec7b843eba488aa83ef5f51b3de8910b224b7cf67fa5fe0a3be3c47419c30",
-      "status": "pass",
-      "elapsed_ms": 6.34,
-      "rows": [
-        [
-          2
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          6.34,
-          0.77,
-          0.53
-        ],
-        "median_ms": 0.77,
-        "min_ms": 0.53,
-        "max_ms": 6.34,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 6.34,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.77,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.53,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.fold",
-      "probe_sha256": "de5c2b436d542aebb2b59bbaa9764b9cdc1f476a6d2623fc56db54b2b1dbed64",
-      "status": "pass",
-      "elapsed_ms": 4.87,
-      "rows": [
-        [
-          [
-            1,
-            2,
-            3
-          ]
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          4.87,
-          0.55,
-          0.47
-        ],
-        "median_ms": 0.55,
-        "min_ms": 0.47,
-        "max_ms": 4.87,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 4.87,
-          "rows": [
-            [
-              [
-                1,
-                2,
-                3
-              ]
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.55,
-          "rows": [
-            [
-              [
-                1,
-                2,
-                3
-              ]
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.47,
-          "rows": [
-            [
-              [
-                1,
-                2,
-                3
-              ]
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.unfold",
-      "probe_sha256": "f8082028155ba79482c39ada63fa52e95f1568b0efe007fe27a3fd9f64f32bb9",
-      "status": "pass",
-      "elapsed_ms": 7.47,
-      "rows": [
-        [
-          1
-        ],
-        [
-          2
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          7.47,
-          0.52,
-          0.35
-        ],
-        "median_ms": 0.52,
-        "min_ms": 0.35,
-        "max_ms": 7.47,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 7.47,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.52,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.35,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.sum",
-      "probe_sha256": "0977a39c804cbf1181bd7a12e085bf7c7ed5afb6d34e16b7a559e1c83c4579e1",
-      "status": "pass",
-      "elapsed_ms": 4.36,
-      "rows": [
-        [
-          6
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          4.36,
-          0.81,
-          0.44
-        ],
-        "median_ms": 0.81,
-        "min_ms": 0.44,
-        "max_ms": 4.36,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 4.36,
-          "rows": [
-            [
-              6
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.81,
-          "rows": [
-            [
-              6
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.44,
-          "rows": [
-            [
-              6
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.mean",
-      "probe_sha256": "50a49673c2166b1905196d265c418adfb66ce4247c6771f68bf3d03e29b7d5c2",
-      "status": "pass",
-      "elapsed_ms": 8.29,
-      "rows": [
-        [
-          2.0
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          8.29,
-          0.71,
-          0.35
-        ],
-        "median_ms": 0.71,
-        "min_ms": 0.35,
-        "max_ms": 8.29,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 8.29,
-          "rows": [
-            [
-              2.0
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.71,
-          "rows": [
-            [
-              2.0
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.35,
-          "rows": [
-            [
-              2.0
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.min",
-      "probe_sha256": "e9a6beea1a1f01e33b16599fd0e945a1691c56908d46881b211a6a5348f56254",
-      "status": "pass",
-      "elapsed_ms": 5.7,
-      "rows": [
-        [
-          1
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.7,
-          1.22,
-          0.98
-        ],
-        "median_ms": 1.22,
-        "min_ms": 0.98,
-        "max_ms": 5.7,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.7,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 1.22,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.98,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.max",
-      "probe_sha256": "a9c1634a120575d0f2b4d217f7977fcb4a7b4dd7529f5f7fc7d70e217fa69c85",
-      "status": "pass",
-      "elapsed_ms": 5.0,
-      "rows": [
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.0,
-          0.59,
-          0.33
-        ],
-        "median_ms": 0.59,
-        "min_ms": 0.33,
-        "max_ms": 5.0,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.0,
-          "rows": [
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.59,
-          "rows": [
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.33,
-          "rows": [
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.group_count",
-      "probe_sha256": "4cb5c84dcdf2d64b71f2a6c8aeca14afa360d5dbed2f81c70ac8b9f775696a73",
-      "status": "pass",
-      "elapsed_ms": 12.7,
-      "rows": [
-        [
-          2
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          12.7,
-          0.66,
-          0.45
-        ],
-        "median_ms": 0.66,
-        "min_ms": 0.45,
-        "max_ms": 12.7,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 12.7,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.66,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.45,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.group",
-      "probe_sha256": "27780c8458329425dce21ed411e89ee7a74b962adb2600c0119f9bb2293b08d4",
-      "status": "pass",
-      "elapsed_ms": 14.68,
-      "rows": [
-        [
-          1
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          14.68,
-          0.71,
-          0.58
-        ],
-        "median_ms": 0.71,
-        "min_ms": 0.58,
-        "max_ms": 14.68,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 14.68,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.71,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.58,
-          "rows": [
-            [
-              1
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.is",
-      "probe_sha256": "62f6b0d6b019337792603f28474218244a662cf2d6479ce2af3b5a55fcf0d2e2",
-      "status": "pass",
-      "elapsed_ms": 7.94,
-      "rows": [
-        [
-          2
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          7.94,
-          0.52,
-          0.46
-        ],
-        "median_ms": 0.52,
-        "min_ms": 0.46,
-        "max_ms": 7.94,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 7.94,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.52,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.46,
-          "rows": [
-            [
-              2
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.within",
-      "probe_sha256": "e94c3479af77567415c831b7e6d684c438c332a90246eb929514e24d6aff263b",
-      "status": "pass",
-      "elapsed_ms": 5.55,
-      "rows": [
-        [
-          1
-        ],
-        [
-          3
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.55,
-          0.68,
-          0.3
-        ],
-        "median_ms": 0.68,
-        "min_ms": 0.3,
-        "max_ms": 5.55,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.55,
-          "rows": [
-            [
-              1
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.68,
-          "rows": [
-            [
-              1
-            ],
-            [
-              3
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.3,
-          "rows": [
-            [
-              1
-            ],
-            [
-              3
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.without",
-      "probe_sha256": "f3e1cd6fdaea23356ea0091ba4d0817008d19ba7ca5a05ad6ab9bf698d31aaeb",
-      "status": "pass",
-      "elapsed_ms": 3.73,
-      "rows": [
-        [
-          2
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          3.73,
-          0.56,
-          0.39
-        ],
-        "median_ms": 0.56,
-        "min_ms": 0.39,
-        "max_ms": 3.73,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 3.73,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.56,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.39,
-          "rows": [
-            [
-              2
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.between",
-      "probe_sha256": "3e4b33e6a6771b65160182d3ec07c341c33278edb6c256d19544fbb2332ac80a",
-      "status": "pass",
-      "elapsed_ms": 5.87,
-      "rows": [
-        [
-          1
-        ],
-        [
-          2
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          5.87,
-          0.63,
-          0.38
-        ],
-        "median_ms": 0.63,
-        "min_ms": 0.38,
-        "max_ms": 5.87,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 5.87,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.63,
           "rows": [
             [
               1
@@ -2158,10 +1209,618 @@
       ]
     },
     {
-      "id": "gremlin.inside",
-      "probe_sha256": "be682c9fbcd45e15d5491a4466484b38074d6565e979727e3f0ed39e28e8aa04",
+      "id": "gremlin.limit",
+      "probe_sha256": "0272cb185a5580baa541ac45ab2a52fc25e7ba75e7d6675389af4ddfe0d6ae62",
       "status": "pass",
-      "elapsed_ms": 4.45,
+      "elapsed_ms": 8.04,
+      "rows": [
+        [
+          1
+        ],
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          8.04,
+          0.67,
+          0.5
+        ],
+        "median_ms": 0.67,
+        "min_ms": 0.5,
+        "max_ms": 8.04,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 8.04,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.67,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.5,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.range",
+      "probe_sha256": "93ae8ac226736cefc15518731e4757237248318352cfeccd9f3eb2059409e439",
+      "status": "pass",
+      "elapsed_ms": 4.95,
+      "rows": [
+        [
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          4.95,
+          0.64,
+          0.49
+        ],
+        "median_ms": 0.64,
+        "min_ms": 0.49,
+        "max_ms": 4.95,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 4.95,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.64,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.49,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.tail",
+      "probe_sha256": "58d42ad81868fcc24f893f0da11b0b0f14174f72e5d81a5492221272fb773265",
+      "status": "pass",
+      "elapsed_ms": 4.49,
+      "rows": [
+        [
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          4.49,
+          0.56,
+          0.43
+        ],
+        "median_ms": 0.56,
+        "min_ms": 0.43,
+        "max_ms": 4.49,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 4.49,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.56,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.43,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.skip",
+      "probe_sha256": "9b6ec7b843eba488aa83ef5f51b3de8910b224b7cf67fa5fe0a3be3c47419c30",
+      "status": "pass",
+      "elapsed_ms": 3.54,
+      "rows": [
+        [
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.54,
+          0.47,
+          0.44
+        ],
+        "median_ms": 0.47,
+        "min_ms": 0.44,
+        "max_ms": 3.54,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.54,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.47,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.44,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.fold",
+      "probe_sha256": "de5c2b436d542aebb2b59bbaa9764b9cdc1f476a6d2623fc56db54b2b1dbed64",
+      "status": "pass",
+      "elapsed_ms": 3.47,
+      "rows": [
+        [
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.47,
+          0.45,
+          0.4
+        ],
+        "median_ms": 0.45,
+        "min_ms": 0.4,
+        "max_ms": 3.47,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.47,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.45,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.4,
+          "rows": [
+            [
+              [
+                1,
+                2,
+                3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.unfold",
+      "probe_sha256": "f8082028155ba79482c39ada63fa52e95f1568b0efe007fe27a3fd9f64f32bb9",
+      "status": "pass",
+      "elapsed_ms": 5.93,
+      "rows": [
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          5.93,
+          0.38,
+          0.34
+        ],
+        "median_ms": 0.38,
+        "min_ms": 0.34,
+        "max_ms": 5.93,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 5.93,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.38,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.34,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.sum",
+      "probe_sha256": "0977a39c804cbf1181bd7a12e085bf7c7ed5afb6d34e16b7a559e1c83c4579e1",
+      "status": "pass",
+      "elapsed_ms": 3.23,
+      "rows": [
+        [
+          6
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.23,
+          0.36,
+          0.36
+        ],
+        "median_ms": 0.36,
+        "min_ms": 0.36,
+        "max_ms": 3.23,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.23,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.36,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.36,
+          "rows": [
+            [
+              6
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.mean",
+      "probe_sha256": "50a49673c2166b1905196d265c418adfb66ce4247c6771f68bf3d03e29b7d5c2",
+      "status": "pass",
+      "elapsed_ms": 6.27,
+      "rows": [
+        [
+          2.0
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          6.27,
+          0.6,
+          0.34
+        ],
+        "median_ms": 0.6,
+        "min_ms": 0.34,
+        "max_ms": 6.27,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 6.27,
+          "rows": [
+            [
+              2.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.6,
+          "rows": [
+            [
+              2.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.34,
+          "rows": [
+            [
+              2.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.min",
+      "probe_sha256": "e9a6beea1a1f01e33b16599fd0e945a1691c56908d46881b211a6a5348f56254",
+      "status": "pass",
+      "elapsed_ms": 3.71,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.71,
+          0.47,
+          0.29
+        ],
+        "median_ms": 0.47,
+        "min_ms": 0.29,
+        "max_ms": 3.71,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.71,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.47,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.29,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.max",
+      "probe_sha256": "a9c1634a120575d0f2b4d217f7977fcb4a7b4dd7529f5f7fc7d70e217fa69c85",
+      "status": "pass",
+      "elapsed_ms": 3.33,
+      "rows": [
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.33,
+          0.41,
+          0.34
+        ],
+        "median_ms": 0.41,
+        "min_ms": 0.34,
+        "max_ms": 3.33,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.33,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.41,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.34,
+          "rows": [
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.group_count",
+      "probe_sha256": "4cb5c84dcdf2d64b71f2a6c8aeca14afa360d5dbed2f81c70ac8b9f775696a73",
+      "status": "pass",
+      "elapsed_ms": 5.95,
       "rows": [
         [
           2
@@ -2170,19 +1829,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.45,
-          0.45,
-          0.36
+          5.95,
+          0.51,
+          0.44
         ],
-        "median_ms": 0.45,
-        "min_ms": 0.36,
-        "max_ms": 4.45,
+        "median_ms": 0.51,
+        "min_ms": 0.44,
+        "max_ms": 5.95,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.45,
+          "elapsed_ms": 5.95,
           "rows": [
             [
               2
@@ -2191,7 +1850,355 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.45,
+          "elapsed_ms": 0.51,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.44,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.group",
+      "probe_sha256": "27780c8458329425dce21ed411e89ee7a74b962adb2600c0119f9bb2293b08d4",
+      "status": "pass",
+      "elapsed_ms": 11.99,
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          11.99,
+          0.9,
+          0.73
+        ],
+        "median_ms": 0.9,
+        "min_ms": 0.73,
+        "max_ms": 11.99,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 11.99,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.9,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.73,
+          "rows": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.is",
+      "probe_sha256": "62f6b0d6b019337792603f28474218244a662cf2d6479ce2af3b5a55fcf0d2e2",
+      "status": "pass",
+      "elapsed_ms": 7.77,
+      "rows": [
+        [
+          2
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          7.77,
+          0.54,
+          0.43
+        ],
+        "median_ms": 0.54,
+        "min_ms": 0.43,
+        "max_ms": 7.77,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 7.77,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.54,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.43,
+          "rows": [
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.within",
+      "probe_sha256": "e94c3479af77567415c831b7e6d684c438c332a90246eb929514e24d6aff263b",
+      "status": "pass",
+      "elapsed_ms": 5.06,
+      "rows": [
+        [
+          1
+        ],
+        [
+          3
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          5.06,
+          0.42,
+          0.27
+        ],
+        "median_ms": 0.42,
+        "min_ms": 0.27,
+        "max_ms": 5.06,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 5.06,
+          "rows": [
+            [
+              1
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.42,
+          "rows": [
+            [
+              1
+            ],
+            [
+              3
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.27,
+          "rows": [
+            [
+              1
+            ],
+            [
+              3
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.without",
+      "probe_sha256": "f3e1cd6fdaea23356ea0091ba4d0817008d19ba7ca5a05ad6ab9bf698d31aaeb",
+      "status": "pass",
+      "elapsed_ms": 3.05,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.05,
+          0.33,
+          0.36
+        ],
+        "median_ms": 0.36,
+        "min_ms": 0.33,
+        "max_ms": 3.05,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.05,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.33,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.36,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.between",
+      "probe_sha256": "3e4b33e6a6771b65160182d3ec07c341c33278edb6c256d19544fbb2332ac80a",
+      "status": "pass",
+      "elapsed_ms": 4.31,
+      "rows": [
+        [
+          1
+        ],
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          4.31,
+          0.44,
+          0.37
+        ],
+        "median_ms": 0.44,
+        "min_ms": 0.37,
+        "max_ms": 4.31,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 4.31,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.44,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.37,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.inside",
+      "probe_sha256": "be682c9fbcd45e15d5491a4466484b38074d6565e979727e3f0ed39e28e8aa04",
+      "status": "pass",
+      "elapsed_ms": 3.31,
+      "rows": [
+        [
+          2
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.31,
+          0.39,
+          0.36
+        ],
+        "median_ms": 0.39,
+        "min_ms": 0.36,
+        "max_ms": 3.31,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.31,
+          "rows": [
+            [
+              2
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.39,
           "rows": [
             [
               2
@@ -2213,7 +2220,7 @@
       "id": "gremlin.and",
       "probe_sha256": "6eb757d51ffad47cf5bca362f7553f80463d0c61b54ece50482a019cb2f87c2e",
       "status": "pass",
-      "elapsed_ms": 9.62,
+      "elapsed_ms": 6.14,
       "rows": [
         [
           "Alice"
@@ -2222,303 +2229,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          9.62,
-          0.76,
-          0.5
-        ],
-        "median_ms": 0.76,
-        "min_ms": 0.5,
-        "max_ms": 9.62,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 9.62,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.76,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.5,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.or",
-      "probe_sha256": "501b8eec12bb39f45fa5108d28677d0e5ee5a4b00c0f872fafe8250a7e7fcbc4",
-      "status": "pass",
-      "elapsed_ms": 4.91,
-      "rows": [
-        [
-          "Alice"
-        ],
-        [
-          "Dave"
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          4.91,
-          0.62,
-          0.42
-        ],
-        "median_ms": 0.62,
-        "min_ms": 0.42,
-        "max_ms": 4.91,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 4.91,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Dave"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.62,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Dave"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.42,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Dave"
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.not",
-      "probe_sha256": "a751986ab31854092e3c9f494aa2718f97d4a81fe5e0069b80e90aaf7a44970d",
-      "status": "pass",
-      "elapsed_ms": 4.73,
-      "rows": [
-        [
-          "Dave"
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          4.73,
-          0.79,
-          0.64
-        ],
-        "median_ms": 0.79,
-        "min_ms": 0.64,
-        "max_ms": 4.73,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 4.73,
-          "rows": [
-            [
-              "Dave"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.79,
-          "rows": [
-            [
-              "Dave"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.64,
-          "rows": [
-            [
-              "Dave"
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.where",
-      "probe_sha256": "c29d1bbfa002cdd88d7fc23ccc8af0f2313e9bb87f53d850d644e55672d7ca3a",
-      "status": "pass",
-      "elapsed_ms": 8.07,
-      "rows": [
-        [
-          "Alice"
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          8.07,
-          0.59,
-          0.42
-        ],
-        "median_ms": 0.59,
-        "min_ms": 0.42,
-        "max_ms": 8.07,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 8.07,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.59,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.42,
-          "rows": [
-            [
-              "Alice"
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.select",
-      "probe_sha256": "95bf33728b96dba72b46c2b26486cea414777989ad9919297f689b567698b15b",
-      "status": "pass",
-      "elapsed_ms": 6.11,
-      "rows": [
-        [
-          "Alice"
-        ],
-        [
-          "Alice"
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          6.11,
-          0.72,
-          0.95
-        ],
-        "median_ms": 0.95,
-        "min_ms": 0.72,
-        "max_ms": 6.11,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 6.11,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.72,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Alice"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.95,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Alice"
-            ]
-          ]
-        }
-      ]
-    },
-    {
-      "id": "gremlin.project",
-      "probe_sha256": "dd178f6229d1830382280339f78b3985537cd6ab6a47bb5db75eccd9a86bc56a",
-      "status": "pass",
-      "elapsed_ms": 4.52,
-      "rows": [
-        [
-          "Alice"
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          4.52,
-          0.64,
+          6.14,
+          0.48,
           0.48
         ],
-        "median_ms": 0.64,
+        "median_ms": 0.48,
         "min_ms": 0.48,
-        "max_ms": 4.52,
+        "max_ms": 6.14,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.52,
+          "elapsed_ms": 6.14,
           "rows": [
             [
               "Alice"
@@ -2527,7 +2250,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.48,
           "rows": [
             [
               "Alice"
@@ -2546,70 +2269,126 @@
       ]
     },
     {
-      "id": "gremlin.value_map",
-      "probe_sha256": "7d0d2cf97ca55e66230a09644e35159a01393238ce1ac5e42a90868fc6de2269",
+      "id": "gremlin.or",
+      "probe_sha256": "501b8eec12bb39f45fa5108d28677d0e5ee5a4b00c0f872fafe8250a7e7fcbc4",
       "status": "pass",
-      "elapsed_ms": 6.03,
+      "elapsed_ms": 4.49,
       "rows": [
         [
-          [
-            "Alice"
-          ]
+          "Alice"
+        ],
+        [
+          "Dave"
         ]
       ],
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.03,
-          0.89,
-          0.64
+          4.49,
+          0.5,
+          0.52
         ],
-        "median_ms": 0.89,
-        "min_ms": 0.64,
-        "max_ms": 6.03,
+        "median_ms": 0.52,
+        "min_ms": 0.5,
+        "max_ms": 4.49,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.03,
+          "elapsed_ms": 4.49,
           "rows": [
             [
-              [
-                "Alice"
-              ]
+              "Alice"
+            ],
+            [
+              "Dave"
             ]
           ]
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.89,
+          "elapsed_ms": 0.5,
           "rows": [
             [
-              [
-                "Alice"
-              ]
+              "Alice"
+            ],
+            [
+              "Dave"
             ]
           ]
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.52,
           "rows": [
             [
-              [
-                "Alice"
-              ]
+              "Alice"
+            ],
+            [
+              "Dave"
             ]
           ]
         }
       ]
     },
     {
-      "id": "gremlin.element_map",
-      "probe_sha256": "d4a98ea0e94da52b6b2b82f6d639d8290562c06a128d66d7d849f8ad1ce06bbb",
+      "id": "gremlin.not",
+      "probe_sha256": "a751986ab31854092e3c9f494aa2718f97d4a81fe5e0069b80e90aaf7a44970d",
       "status": "pass",
-      "elapsed_ms": 4.42,
+      "elapsed_ms": 3.91,
+      "rows": [
+        [
+          "Dave"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.91,
+          0.43,
+          0.41
+        ],
+        "median_ms": 0.43,
+        "min_ms": 0.41,
+        "max_ms": 3.91,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.91,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.43,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.41,
+          "rows": [
+            [
+              "Dave"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.where",
+      "probe_sha256": "c29d1bbfa002cdd88d7fc23ccc8af0f2313e9bb87f53d850d644e55672d7ca3a",
+      "status": "pass",
+      "elapsed_ms": 4.79,
       "rows": [
         [
           "Alice"
@@ -2618,19 +2397,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.42,
+          4.79,
           0.52,
-          0.39
+          0.43
         ],
         "median_ms": 0.52,
-        "min_ms": 0.39,
-        "max_ms": 4.42,
+        "min_ms": 0.43,
+        "max_ms": 4.79,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.42,
+          "elapsed_ms": 4.79,
           "rows": [
             [
               "Alice"
@@ -2648,7 +2427,235 @@
         },
         {
           "status": "pass",
+          "elapsed_ms": 0.43,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.select",
+      "probe_sha256": "95bf33728b96dba72b46c2b26486cea414777989ad9919297f689b567698b15b",
+      "status": "pass",
+      "elapsed_ms": 5.22,
+      "rows": [
+        [
+          "Alice"
+        ],
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          5.22,
+          0.49,
+          0.51
+        ],
+        "median_ms": 0.51,
+        "min_ms": 0.49,
+        "max_ms": 5.22,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 5.22,
+          "rows": [
+            [
+              "Alice"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.49,
+          "rows": [
+            [
+              "Alice"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.51,
+          "rows": [
+            [
+              "Alice"
+            ],
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.project",
+      "probe_sha256": "dd178f6229d1830382280339f78b3985537cd6ab6a47bb5db75eccd9a86bc56a",
+      "status": "pass",
+      "elapsed_ms": 3.97,
+      "rows": [
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.97,
+          0.5,
+          0.4
+        ],
+        "median_ms": 0.5,
+        "min_ms": 0.4,
+        "max_ms": 3.97,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.97,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.5,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.4,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.value_map",
+      "probe_sha256": "7d0d2cf97ca55e66230a09644e35159a01393238ce1ac5e42a90868fc6de2269",
+      "status": "pass",
+      "elapsed_ms": 3.51,
+      "rows": [
+        [
+          [
+            "Alice"
+          ]
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.51,
+          0.61,
+          0.39
+        ],
+        "median_ms": 0.61,
+        "min_ms": 0.39,
+        "max_ms": 3.51,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.51,
+          "rows": [
+            [
+              [
+                "Alice"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.61,
+          "rows": [
+            [
+              [
+                "Alice"
+              ]
+            ]
+          ]
+        },
+        {
+          "status": "pass",
           "elapsed_ms": 0.39,
+          "rows": [
+            [
+              [
+                "Alice"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gremlin.element_map",
+      "probe_sha256": "d4a98ea0e94da52b6b2b82f6d639d8290562c06a128d66d7d849f8ad1ce06bbb",
+      "status": "pass",
+      "elapsed_ms": 3.0,
+      "rows": [
+        [
+          "Alice"
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          3.0,
+          0.36,
+          0.33
+        ],
+        "median_ms": 0.36,
+        "min_ms": 0.33,
+        "max_ms": 3.0,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 3.0,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.36,
+          "rows": [
+            [
+              "Alice"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.33,
           "rows": [
             [
               "Alice"
@@ -2661,7 +2668,7 @@
       "id": "gremlin.union",
       "probe_sha256": "d7a96fedc93102aabc2cce851987024e2427cec5379e7c0e4fa8341d18345136",
       "status": "pass",
-      "elapsed_ms": 7.08,
+      "elapsed_ms": 5.46,
       "rows": [
         [
           1
@@ -2673,19 +2680,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          7.08,
-          0.82,
-          0.65
+          5.46,
+          0.78,
+          0.91
         ],
-        "median_ms": 0.82,
-        "min_ms": 0.65,
-        "max_ms": 7.08,
+        "median_ms": 0.91,
+        "min_ms": 0.78,
+        "max_ms": 5.46,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 7.08,
+          "elapsed_ms": 5.46,
           "rows": [
             [
               1
@@ -2697,7 +2704,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.82,
+          "elapsed_ms": 0.78,
           "rows": [
             [
               1
@@ -2709,7 +2716,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.65,
+          "elapsed_ms": 0.91,
           "rows": [
             [
               1
@@ -2725,7 +2732,7 @@
       "id": "gremlin.coalesce",
       "probe_sha256": "89f82e52941ad156126cba5546d5a4cbdc0995c59492958d7a830da9453a204d",
       "status": "pass",
-      "elapsed_ms": 6.01,
+      "elapsed_ms": 4.99,
       "rows": [
         [
           7
@@ -2734,19 +2741,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.01,
-          0.76,
-          0.47
+          4.99,
+          0.46,
+          0.34
         ],
-        "median_ms": 0.76,
-        "min_ms": 0.47,
-        "max_ms": 6.01,
+        "median_ms": 0.46,
+        "min_ms": 0.34,
+        "max_ms": 4.99,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.01,
+          "elapsed_ms": 4.99,
           "rows": [
             [
               7
@@ -2755,7 +2762,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.76,
+          "elapsed_ms": 0.46,
           "rows": [
             [
               7
@@ -2764,7 +2771,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.47,
+          "elapsed_ms": 0.34,
           "rows": [
             [
               7
@@ -2777,7 +2784,7 @@
       "id": "gremlin.choose",
       "probe_sha256": "c41dc8120c3d16ba1e2246ef9dca3fa9f98f42bc87b153e3ddb69900b763407b",
       "status": "pass",
-      "elapsed_ms": 5.08,
+      "elapsed_ms": 4.22,
       "rows": [
         [
           7
@@ -2789,19 +2796,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.08,
-          0.91,
-          1.18
+          4.22,
+          0.78,
+          0.66
         ],
-        "median_ms": 1.18,
-        "min_ms": 0.91,
-        "max_ms": 5.08,
+        "median_ms": 0.78,
+        "min_ms": 0.66,
+        "max_ms": 4.22,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.08,
+          "elapsed_ms": 4.22,
           "rows": [
             [
               7
@@ -2813,7 +2820,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.91,
+          "elapsed_ms": 0.78,
           "rows": [
             [
               7
@@ -2825,7 +2832,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.18,
+          "elapsed_ms": 0.66,
           "rows": [
             [
               7
@@ -2841,7 +2848,7 @@
       "id": "gremlin.optional",
       "probe_sha256": "b6901e47b6efc2f2c783c057bee3913c38e3f978bfc46a977e1f8a81faf271dc",
       "status": "pass",
-      "elapsed_ms": 5.35,
+      "elapsed_ms": 3.77,
       "rows": [
         [
           "Dave"
@@ -2850,19 +2857,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.35,
-          0.62,
-          0.42
+          3.77,
+          0.4,
+          0.35
         ],
-        "median_ms": 0.62,
-        "min_ms": 0.42,
-        "max_ms": 5.35,
+        "median_ms": 0.4,
+        "min_ms": 0.35,
+        "max_ms": 3.77,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.35,
+          "elapsed_ms": 3.77,
           "rows": [
             [
               "Dave"
@@ -2871,7 +2878,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.62,
+          "elapsed_ms": 0.4,
           "rows": [
             [
               "Dave"
@@ -2880,7 +2887,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.42,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "Dave"
@@ -2893,7 +2900,7 @@
       "id": "gremlin.local",
       "probe_sha256": "01385ad63c5db333b7c371676af96d0f8b964556dad8aabb5c07509ea0926cb1",
       "status": "pass",
-      "elapsed_ms": 13.36,
+      "elapsed_ms": 10.78,
       "rows": [
         [
           3
@@ -2905,19 +2912,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          13.36,
-          0.6,
-          0.45
+          10.78,
+          0.42,
+          0.33
         ],
-        "median_ms": 0.6,
-        "min_ms": 0.45,
-        "max_ms": 13.36,
+        "median_ms": 0.42,
+        "min_ms": 0.33,
+        "max_ms": 10.78,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 13.36,
+          "elapsed_ms": 10.78,
           "rows": [
             [
               3
@@ -2929,7 +2936,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.6,
+          "elapsed_ms": 0.42,
           "rows": [
             [
               3
@@ -2941,7 +2948,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.45,
+          "elapsed_ms": 0.33,
           "rows": [
             [
               3
@@ -2957,7 +2964,7 @@
       "id": "gremlin.repeat",
       "probe_sha256": "c3933ffe15f3f601a707fd9912620161ddc94c842dcabaeeb8bafb25fc1476b6",
       "status": "pass",
-      "elapsed_ms": 5.83,
+      "elapsed_ms": 3.96,
       "rows": [
         [
           "Alice"
@@ -2969,19 +2976,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.83,
-          0.64,
-          0.45
+          3.96,
+          0.51,
+          0.57
         ],
-        "median_ms": 0.64,
-        "min_ms": 0.45,
-        "max_ms": 5.83,
+        "median_ms": 0.57,
+        "min_ms": 0.51,
+        "max_ms": 3.96,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.83,
+          "elapsed_ms": 3.96,
           "rows": [
             [
               "Alice"
@@ -2993,7 +3000,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.51,
           "rows": [
             [
               "Alice"
@@ -3005,7 +3012,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.45,
+          "elapsed_ms": 0.57,
           "rows": [
             [
               "Alice"
@@ -3021,7 +3028,7 @@
       "id": "gremlin.emit",
       "probe_sha256": "c865537fda090d9d84ea275d48209a158f81189de336b9776df96f9e12947930",
       "status": "pass",
-      "elapsed_ms": 4.91,
+      "elapsed_ms": 3.6,
       "rows": [
         [
           "Carol"
@@ -3039,19 +3046,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.91,
-          0.64,
-          0.45
+          3.6,
+          0.5,
+          0.55
         ],
-        "median_ms": 0.64,
-        "min_ms": 0.45,
-        "max_ms": 4.91,
+        "median_ms": 0.55,
+        "min_ms": 0.5,
+        "max_ms": 3.6,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.91,
+          "elapsed_ms": 3.6,
           "rows": [
             [
               "Carol"
@@ -3069,7 +3076,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.5,
           "rows": [
             [
               "Carol"
@@ -3087,7 +3094,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.45,
+          "elapsed_ms": 0.55,
           "rows": [
             [
               "Carol"
@@ -3109,7 +3116,7 @@
       "id": "gremlin.until",
       "probe_sha256": "511095cc2e9cf0cf3c33b6d023720a13f22ec28f7a36179a350e1ef36bf1bf4e",
       "status": "pass",
-      "elapsed_ms": 4.05,
+      "elapsed_ms": 3.8,
       "rows": [
         [
           "Alice"
@@ -3118,19 +3125,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.05,
-          0.62,
-          0.64
+          3.8,
+          0.47,
+          0.42
         ],
-        "median_ms": 0.64,
-        "min_ms": 0.62,
-        "max_ms": 4.05,
+        "median_ms": 0.47,
+        "min_ms": 0.42,
+        "max_ms": 3.8,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.05,
+          "elapsed_ms": 3.8,
           "rows": [
             [
               "Alice"
@@ -3139,7 +3146,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.62,
+          "elapsed_ms": 0.47,
           "rows": [
             [
               "Alice"
@@ -3148,7 +3155,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.64,
+          "elapsed_ms": 0.42,
           "rows": [
             [
               "Alice"
@@ -3161,7 +3168,7 @@
       "id": "gremlin.loops",
       "probe_sha256": "a0ce239f067c24672d8c4208910905424320b5f44fafaa41de1b144af649a72f",
       "status": "pass",
-      "elapsed_ms": 4.18,
+      "elapsed_ms": 3.73,
       "rows": [
         [
           "Alice"
@@ -3170,19 +3177,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.18,
-          0.6,
-          0.45
+          3.73,
+          0.52,
+          0.43
         ],
-        "median_ms": 0.6,
-        "min_ms": 0.45,
-        "max_ms": 4.18,
+        "median_ms": 0.52,
+        "min_ms": 0.43,
+        "max_ms": 3.73,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.18,
+          "elapsed_ms": 3.73,
           "rows": [
             [
               "Alice"
@@ -3191,7 +3198,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.6,
+          "elapsed_ms": 0.52,
           "rows": [
             [
               "Alice"
@@ -3200,7 +3207,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.45,
+          "elapsed_ms": 0.43,
           "rows": [
             [
               "Alice"
@@ -3213,7 +3220,7 @@
       "id": "gremlin.simple_path",
       "probe_sha256": "f25bfea511dd6df1d4466dca22be0f98c510989488e8aba6145bfaaacbc7de69",
       "status": "pass",
-      "elapsed_ms": 6.39,
+      "elapsed_ms": 4.48,
       "rows": [
         [
           "Carol"
@@ -3222,19 +3229,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.39,
-          0.74,
-          0.53
+          4.48,
+          0.46,
+          0.36
         ],
-        "median_ms": 0.74,
-        "min_ms": 0.53,
-        "max_ms": 6.39,
+        "median_ms": 0.46,
+        "min_ms": 0.36,
+        "max_ms": 4.48,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.39,
+          "elapsed_ms": 4.48,
           "rows": [
             [
               "Carol"
@@ -3243,7 +3250,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.74,
+          "elapsed_ms": 0.46,
           "rows": [
             [
               "Carol"
@@ -3252,7 +3259,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.53,
+          "elapsed_ms": 0.36,
           "rows": [
             [
               "Carol"
@@ -3265,7 +3272,7 @@
       "id": "gremlin.cyclic_path",
       "probe_sha256": "5be572925f3ca7c826d7dd5b0bc19dcc36b07eb59a219d469a0797fa5499c927",
       "status": "pass",
-      "elapsed_ms": 3.79,
+      "elapsed_ms": 3.5,
       "rows": [
         [
           "Alice"
@@ -3274,19 +3281,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.79,
+          3.5,
           0.51,
-          0.41
+          0.56
         ],
-        "median_ms": 0.51,
-        "min_ms": 0.41,
-        "max_ms": 3.79,
+        "median_ms": 0.56,
+        "min_ms": 0.51,
+        "max_ms": 3.5,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.79,
+          "elapsed_ms": 3.5,
           "rows": [
             [
               "Alice"
@@ -3304,7 +3311,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.56,
           "rows": [
             [
               "Alice"
@@ -3317,7 +3324,7 @@
       "id": "gremlin.path",
       "probe_sha256": "c02cafa67976e4d6235a96fe8ff69d0a81bb1fbd942d31e959afaea731e4e363",
       "status": "pass",
-      "elapsed_ms": 3.8,
+      "elapsed_ms": 3.18,
       "rows": [
         [
           "Alice"
@@ -3329,19 +3336,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.8,
-          0.41,
-          0.32
+          3.18,
+          0.35,
+          0.35
         ],
-        "median_ms": 0.41,
-        "min_ms": 0.32,
-        "max_ms": 3.8,
+        "median_ms": 0.35,
+        "min_ms": 0.35,
+        "max_ms": 3.18,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.8,
+          "elapsed_ms": 3.18,
           "rows": [
             [
               "Alice"
@@ -3353,7 +3360,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "Alice"
@@ -3365,7 +3372,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.32,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "Alice"
@@ -3381,7 +3388,7 @@
       "id": "gremlin.aggregate",
       "probe_sha256": "83f2e978567a1bb8ad474b26551fe98fede139a8ac76b220c9062997654e05a0",
       "status": "pass",
-      "elapsed_ms": 5.28,
+      "elapsed_ms": 4.15,
       "rows": [
         [
           1
@@ -3393,31 +3400,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.28,
-          0.55,
-          0.49
+          4.15,
+          0.49,
+          0.33
         ],
-        "median_ms": 0.55,
-        "min_ms": 0.49,
-        "max_ms": 5.28,
+        "median_ms": 0.49,
+        "min_ms": 0.33,
+        "max_ms": 4.15,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.28,
-          "rows": [
-            [
-              1
-            ],
-            [
-              2
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.55,
+          "elapsed_ms": 4.15,
           "rows": [
             [
               1
@@ -3438,6 +3433,18 @@
               2
             ]
           ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.33,
+          "rows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ]
         }
       ]
     },
@@ -3445,7 +3452,7 @@
       "id": "gremlin.store",
       "probe_sha256": "06a66e374aef1b21cb29b8930f98bacc07288aaaf8ae54e88fb96d926880a84b",
       "status": "pass",
-      "elapsed_ms": 4.09,
+      "elapsed_ms": 2.98,
       "rows": [
         [
           1
@@ -3457,19 +3464,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.09,
-          0.41,
-          0.36
+          2.98,
+          0.29,
+          0.31
         ],
-        "median_ms": 0.41,
-        "min_ms": 0.36,
-        "max_ms": 4.09,
+        "median_ms": 0.31,
+        "min_ms": 0.29,
+        "max_ms": 2.98,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.09,
+          "elapsed_ms": 2.98,
           "rows": [
             [
               1
@@ -3481,7 +3488,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.29,
           "rows": [
             [
               1
@@ -3493,7 +3500,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.36,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               1
@@ -3509,7 +3516,7 @@
       "id": "gremlin.sack",
       "probe_sha256": "ad40bc0a2d8c99a51c64074f8538a3d1f244d45f77b4869a86efedb0884b43a3",
       "status": "pass",
-      "elapsed_ms": 7.7,
+      "elapsed_ms": 5.73,
       "rows": [
         [
           4
@@ -3518,19 +3525,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          7.7,
-          0.67,
-          0.53
+          5.73,
+          0.55,
+          0.44
         ],
-        "median_ms": 0.67,
-        "min_ms": 0.53,
-        "max_ms": 7.7,
+        "median_ms": 0.55,
+        "min_ms": 0.44,
+        "max_ms": 5.73,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 7.7,
+          "elapsed_ms": 5.73,
           "rows": [
             [
               4
@@ -3539,7 +3546,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.67,
+          "elapsed_ms": 0.55,
           "rows": [
             [
               4
@@ -3548,7 +3555,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.53,
+          "elapsed_ms": 0.44,
           "rows": [
             [
               4
@@ -3561,7 +3568,7 @@
       "id": "gremlin.barrier",
       "probe_sha256": "af3d6f345d5e8c2eb7dd789e18157b41f317c8c708086b9f31a86d3691cd1d35",
       "status": "pass",
-      "elapsed_ms": 3.54,
+      "elapsed_ms": 2.93,
       "rows": [
         [
           3
@@ -3570,19 +3577,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.54,
-          0.34,
-          0.24
+          2.93,
+          0.3,
+          0.26
         ],
-        "median_ms": 0.34,
-        "min_ms": 0.24,
-        "max_ms": 3.54,
+        "median_ms": 0.3,
+        "min_ms": 0.26,
+        "max_ms": 2.93,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.54,
+          "elapsed_ms": 2.93,
           "rows": [
             [
               3
@@ -3591,7 +3598,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.34,
+          "elapsed_ms": 0.3,
           "rows": [
             [
               3
@@ -3600,7 +3607,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.26,
           "rows": [
             [
               3
@@ -3613,7 +3620,7 @@
       "id": "gremlin.empty_fold",
       "probe_sha256": "7d2560a29f7f19b162f643e9385f5670c34b5e648d4f594744012c41979d1e07",
       "status": "pass",
-      "elapsed_ms": 3.08,
+      "elapsed_ms": 2.79,
       "rows": [
         [
           []
@@ -3622,19 +3629,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.08,
-          0.36,
-          0.26
+          2.79,
+          0.31,
+          0.29
         ],
-        "median_ms": 0.36,
-        "min_ms": 0.26,
-        "max_ms": 3.08,
+        "median_ms": 0.31,
+        "min_ms": 0.29,
+        "max_ms": 2.79,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.08,
+          "elapsed_ms": 2.79,
           "rows": [
             [
               []
@@ -3643,7 +3650,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.36,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               []
@@ -3652,7 +3659,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.29,
           "rows": [
             [
               []
@@ -3665,34 +3672,34 @@
       "id": "gremlin.empty_sum",
       "probe_sha256": "9b24bfb4cf40b0d954aefc70c8367cc9554e74a83ea77b98f6484cb950fd631b",
       "status": "pass",
-      "elapsed_ms": 3.13,
+      "elapsed_ms": 2.51,
       "rows": [],
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.13,
-          0.28,
-          0.29
+          2.51,
+          0.3,
+          0.25
         ],
-        "median_ms": 0.29,
-        "min_ms": 0.28,
-        "max_ms": 3.13,
+        "median_ms": 0.3,
+        "min_ms": 0.25,
+        "max_ms": 2.51,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.13,
+          "elapsed_ms": 2.51,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.28,
+          "elapsed_ms": 0.3,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.29,
+          "elapsed_ms": 0.25,
           "rows": []
         }
       ]
@@ -3701,7 +3708,7 @@
       "id": "gremlin.null",
       "probe_sha256": "5c58c42cb3708c3cbfbbe03d6b127d149193d56f3bc4f92f4ab2754d541f4992",
       "status": "pass",
-      "elapsed_ms": 3.57,
+      "elapsed_ms": 2.85,
       "rows": [
         [
           1
@@ -3710,19 +3717,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.57,
-          0.37,
+          2.85,
+          0.25,
           0.25
         ],
-        "median_ms": 0.37,
+        "median_ms": 0.25,
         "min_ms": 0.25,
-        "max_ms": 3.57,
+        "max_ms": 2.85,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.57,
+          "elapsed_ms": 2.85,
           "rows": [
             [
               1
@@ -3731,7 +3738,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.37,
+          "elapsed_ms": 0.25,
           "rows": [
             [
               1
@@ -3753,7 +3760,7 @@
       "id": "gremlin.missing_order",
       "probe_sha256": "9539abc0e330133fa1a2e0627004ea2c781816ae2ebde87941f7317e397350da",
       "status": "pass",
-      "elapsed_ms": 8.13,
+      "elapsed_ms": 7.39,
       "rows": [
         [
           0
@@ -3762,19 +3769,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          8.13,
-          0.44,
-          0.39
+          7.39,
+          0.45,
+          0.81
         ],
-        "median_ms": 0.44,
-        "min_ms": 0.39,
-        "max_ms": 8.13,
+        "median_ms": 0.81,
+        "min_ms": 0.45,
+        "max_ms": 7.39,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 8.13,
+          "elapsed_ms": 7.39,
           "rows": [
             [
               0
@@ -3783,7 +3790,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.44,
+          "elapsed_ms": 0.45,
           "rows": [
             [
               0
@@ -3792,7 +3799,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.39,
+          "elapsed_ms": 0.81,
           "rows": [
             [
               0
@@ -3805,7 +3812,7 @@
       "id": "gremlin.text_predicate",
       "probe_sha256": "8831749a017570e193c9c2d9c6a6d67646ea91148cb05ce18898b3077d1ad210",
       "status": "pass",
-      "elapsed_ms": 6.14,
+      "elapsed_ms": 5.19,
       "rows": [
         [
           "Alice"
@@ -3814,19 +3821,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.14,
-          0.57,
-          0.3
+          5.19,
+          0.39,
+          0.31
         ],
-        "median_ms": 0.57,
-        "min_ms": 0.3,
-        "max_ms": 6.14,
+        "median_ms": 0.39,
+        "min_ms": 0.31,
+        "max_ms": 5.19,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.14,
+          "elapsed_ms": 5.19,
           "rows": [
             [
               "Alice"
@@ -3835,7 +3842,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.57,
+          "elapsed_ms": 0.39,
           "rows": [
             [
               "Alice"
@@ -3844,7 +3851,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.3,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               "Alice"
@@ -3857,7 +3864,7 @@
       "id": "gremlin.math",
       "probe_sha256": "24d03b6fa9b53af23cc80f0838cf6418e4be6194c3182c476845d5554f52d07f",
       "status": "pass",
-      "elapsed_ms": 8.67,
+      "elapsed_ms": 7.03,
       "rows": [
         [
           6.0
@@ -3866,19 +3873,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          8.67,
-          0.8,
-          0.49
+          7.03,
+          0.53,
+          0.34
         ],
-        "median_ms": 0.8,
-        "min_ms": 0.49,
-        "max_ms": 8.67,
+        "median_ms": 0.53,
+        "min_ms": 0.34,
+        "max_ms": 7.03,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 8.67,
+          "elapsed_ms": 7.03,
           "rows": [
             [
               6.0
@@ -3887,7 +3894,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.8,
+          "elapsed_ms": 0.53,
           "rows": [
             [
               6.0
@@ -3896,7 +3903,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.49,
+          "elapsed_ms": 0.34,
           "rows": [
             [
               6.0
@@ -3909,7 +3916,7 @@
       "id": "gremlin.match",
       "probe_sha256": "199e65d93a332ed7f9fbbb1bd2b163eccee63ef8e09f76fa860c090bb586900c",
       "status": "pass",
-      "elapsed_ms": 10.22,
+      "elapsed_ms": 9.83,
       "rows": [
         [
           "Carol"
@@ -3921,19 +3928,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          10.22,
-          0.63,
-          0.41
+          9.83,
+          0.72,
+          0.5
         ],
-        "median_ms": 0.63,
-        "min_ms": 0.41,
-        "max_ms": 10.22,
+        "median_ms": 0.72,
+        "min_ms": 0.5,
+        "max_ms": 9.83,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 10.22,
+          "elapsed_ms": 9.83,
           "rows": [
             [
               "Carol"
@@ -3945,7 +3952,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.63,
+          "elapsed_ms": 0.72,
           "rows": [
             [
               "Carol"
@@ -3957,7 +3964,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.5,
           "rows": [
             [
               "Carol"
@@ -3973,7 +3980,7 @@
       "id": "gremlin.order",
       "probe_sha256": "ef95e74e9d53926ba60c7e61594aa266b9bb9bd8e55fbc0cba0a96c83376d594",
       "status": "pass",
-      "elapsed_ms": 3.44,
+      "elapsed_ms": 3.07,
       "rows": [
         [
           1
@@ -3988,19 +3995,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.44,
-          1.03,
-          0.58
+          3.07,
+          0.36,
+          0.35
         ],
-        "median_ms": 1.03,
-        "min_ms": 0.58,
-        "max_ms": 3.44,
+        "median_ms": 0.36,
+        "min_ms": 0.35,
+        "max_ms": 3.07,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.44,
+          "elapsed_ms": 3.07,
           "rows": [
             [
               1
@@ -4015,7 +4022,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.03,
+          "elapsed_ms": 0.36,
           "rows": [
             [
               1
@@ -4030,7 +4037,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.58,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               1
@@ -4049,7 +4056,7 @@
       "id": "gremlin.order_desc",
       "probe_sha256": "a2ba517417cfc6827fbb3b22badc6a397e436aaa107271e3adce6489e5ae1e03",
       "status": "pass",
-      "elapsed_ms": 5.5,
+      "elapsed_ms": 4.52,
       "rows": [
         [
           3
@@ -4064,19 +4071,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.5,
-          0.43,
-          0.31
+          4.52,
+          0.48,
+          0.44
         ],
-        "median_ms": 0.43,
-        "min_ms": 0.31,
-        "max_ms": 5.5,
+        "median_ms": 0.48,
+        "min_ms": 0.44,
+        "max_ms": 4.52,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.5,
+          "elapsed_ms": 4.52,
           "rows": [
             [
               3
@@ -4091,7 +4098,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.43,
+          "elapsed_ms": 0.48,
           "rows": [
             [
               3
@@ -4106,7 +4113,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.44,
           "rows": [
             [
               3
@@ -4125,7 +4132,7 @@
       "id": "gremlin.add_v",
       "probe_sha256": "c62464913ce3e669a04d59a2859a66ec22034dae13e198a756f463775c4949b7",
       "status": "pass",
-      "elapsed_ms": 4.88,
+      "elapsed_ms": 4.86,
       "rows": [
         [
           "new"
@@ -4134,19 +4141,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.88,
-          0.39,
-          0.31
+          4.86,
+          0.38,
+          0.3
         ],
-        "median_ms": 0.39,
-        "min_ms": 0.31,
-        "max_ms": 4.88,
+        "median_ms": 0.38,
+        "min_ms": 0.3,
+        "max_ms": 4.86,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.88,
+          "elapsed_ms": 4.86,
           "rows": [
             [
               "new"
@@ -4155,7 +4162,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.39,
+          "elapsed_ms": 0.38,
           "rows": [
             [
               "new"
@@ -4164,7 +4171,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.3,
           "rows": [
             [
               "new"
@@ -4177,7 +4184,7 @@
       "id": "gremlin.property",
       "probe_sha256": "e9567d825596000ae76d7303292d7d5379806c36e4ca59d977a2768fe0b6d41a",
       "status": "pass",
-      "elapsed_ms": 7.26,
+      "elapsed_ms": 4.58,
       "rows": [
         [
           7
@@ -4186,19 +4193,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          7.26,
-          0.47,
-          0.26
+          4.58,
+          0.4,
+          0.56
         ],
-        "median_ms": 0.47,
-        "min_ms": 0.26,
-        "max_ms": 7.26,
+        "median_ms": 0.56,
+        "min_ms": 0.4,
+        "max_ms": 4.58,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 7.26,
+          "elapsed_ms": 4.58,
           "rows": [
             [
               7
@@ -4207,7 +4214,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.47,
+          "elapsed_ms": 0.4,
           "rows": [
             [
               7
@@ -4216,7 +4223,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.56,
           "rows": [
             [
               7
@@ -4229,7 +4236,7 @@
       "id": "gremlin.multi_property",
       "probe_sha256": "117c8b157f387aa5ab101aa01b2a66be6f1e20edea48ab47b56c0542f3739e35",
       "status": "pass",
-      "elapsed_ms": 5.18,
+      "elapsed_ms": 5.5,
       "rows": [
         [
           "a"
@@ -4241,19 +4248,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.18,
-          0.42,
-          0.34
+          5.5,
+          0.46,
+          0.33
         ],
-        "median_ms": 0.42,
-        "min_ms": 0.34,
-        "max_ms": 5.18,
+        "median_ms": 0.46,
+        "min_ms": 0.33,
+        "max_ms": 5.5,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.18,
+          "elapsed_ms": 5.5,
           "rows": [
             [
               "a"
@@ -4265,7 +4272,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.42,
+          "elapsed_ms": 0.46,
           "rows": [
             [
               "a"
@@ -4277,7 +4284,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.34,
+          "elapsed_ms": 0.33,
           "rows": [
             [
               "a"
@@ -4293,7 +4300,7 @@
       "id": "gremlin.meta_property",
       "probe_sha256": "fd73df2557f48971ef9f10afa5838d036ff587607ee83db4bcba27624029b3a7",
       "status": "pass",
-      "elapsed_ms": 5.11,
+      "elapsed_ms": 4.48,
       "rows": [
         [
           2020
@@ -4302,19 +4309,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.11,
-          0.42,
-          0.37
+          4.48,
+          0.35,
+          0.59
         ],
-        "median_ms": 0.42,
-        "min_ms": 0.37,
-        "max_ms": 5.11,
+        "median_ms": 0.59,
+        "min_ms": 0.35,
+        "max_ms": 4.48,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.11,
+          "elapsed_ms": 4.48,
           "rows": [
             [
               2020
@@ -4323,7 +4330,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.42,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               2020
@@ -4332,7 +4339,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.37,
+          "elapsed_ms": 0.59,
           "rows": [
             [
               2020
@@ -4341,12 +4348,5 @@
         }
       ]
     }
-  ],
-  "execution_environment": {
-    "system": "Darwin",
-    "release": "25.5.0",
-    "architecture": "arm64",
-    "logical_cpus": 12,
-    "python": "3.12.7"
-  }
+  ]
 }

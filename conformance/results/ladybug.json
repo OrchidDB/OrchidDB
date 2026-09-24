@@ -1,5 +1,12 @@
 {
   "schema_version": 2,
+  "execution_environment": {
+    "system": "Darwin",
+    "release": "25.5.0",
+    "architecture": "arm64",
+    "logical_cpus": 12,
+    "python": "3.12.7"
+  },
   "engine": "ladybug",
   "build": {
     "version": "0.20.4",
@@ -7,15 +14,15 @@
     "storage": "in-memory",
     "default_path_mode": "walk"
   },
-  "started_at": "2026-09-24T00:25:45.392227+00:00",
-  "finished_at": "2026-09-24T00:25:45.772928+00:00",
+  "started_at": "2026-09-24T00:31:23.556426+00:00",
+  "finished_at": "2026-09-24T00:31:23.757454+00:00",
   "suite_sha256": "4b7bf9a95551c392ce78b19c0aa569e340b7982a7488c5db078e1af163b3ce37",
   "results": [
     {
       "id": "cypher.node_scan",
       "probe_sha256": "f5cca7b1a9c3ad12d9c84171a097c97545ecc167c44e732f1909bdfebdce4530",
       "status": "pass",
-      "elapsed_ms": 1.66,
+      "elapsed_ms": 1.37,
       "rows": [
         [
           "Alice"
@@ -33,19 +40,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.66,
-          0.16,
-          0.23
+          1.37,
+          0.11,
+          0.08
         ],
-        "median_ms": 0.23,
-        "min_ms": 0.16,
-        "max_ms": 1.66,
+        "median_ms": 0.11,
+        "min_ms": 0.08,
+        "max_ms": 1.37,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.66,
+          "elapsed_ms": 1.37,
           "rows": [
             [
               "Alice"
@@ -63,7 +70,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               "Alice"
@@ -81,7 +88,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.23,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               "Alice"
@@ -103,7 +110,7 @@
       "id": "cypher.all_nodes",
       "probe_sha256": "29fd0f160762fd7c0b777ca03371101ffaf1d8169908be451adbf5c83d4e8895",
       "status": "pass",
-      "elapsed_ms": 4.73,
+      "elapsed_ms": 1.67,
       "rows": [
         [
           4
@@ -112,19 +119,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.73,
-          0.25,
-          0.14
+          1.67,
+          0.16,
+          0.12
         ],
-        "median_ms": 0.25,
-        "min_ms": 0.14,
-        "max_ms": 4.73,
+        "median_ms": 0.16,
+        "min_ms": 0.12,
+        "max_ms": 1.67,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.73,
+          "elapsed_ms": 1.67,
           "rows": [
             [
               4
@@ -133,7 +140,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.25,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               4
@@ -142,7 +149,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               4
@@ -155,7 +162,7 @@
       "id": "cypher.property_pattern",
       "probe_sha256": "c9409d66f80e1cf194fa942b55ae084098862485ebd41e3ae660337d4bd5ba7e",
       "status": "pass",
-      "elapsed_ms": 0.68,
+      "elapsed_ms": 0.45,
       "rows": [
         [
           30
@@ -164,19 +171,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.68,
-          0.24,
-          0.16
+          0.45,
+          0.11,
+          0.1
         ],
-        "median_ms": 0.24,
-        "min_ms": 0.16,
-        "max_ms": 0.68,
+        "median_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 0.45,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.68,
+          "elapsed_ms": 0.45,
           "rows": [
             [
               30
@@ -185,7 +192,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               30
@@ -194,7 +201,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.1,
           "rows": [
             [
               30
@@ -207,7 +214,7 @@
       "id": "cypher.directed",
       "probe_sha256": "4fbc040d9ded523bda81f8488d018425c8943b627b6251d0533f0c8891169cb8",
       "status": "pass",
-      "elapsed_ms": 1.19,
+      "elapsed_ms": 0.57,
       "rows": [
         [
           "Bob"
@@ -219,19 +226,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.19,
-          0.42,
-          0.31
+          0.57,
+          0.25,
+          0.22
         ],
-        "median_ms": 0.42,
-        "min_ms": 0.31,
-        "max_ms": 1.19,
+        "median_ms": 0.25,
+        "min_ms": 0.22,
+        "max_ms": 0.57,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.19,
+          "elapsed_ms": 0.57,
           "rows": [
             [
               "Bob"
@@ -243,7 +250,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.42,
+          "elapsed_ms": 0.25,
           "rows": [
             [
               "Bob"
@@ -255,7 +262,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.22,
           "rows": [
             [
               "Bob"
@@ -271,7 +278,7 @@
       "id": "cypher.incoming",
       "probe_sha256": "9504443ab6d592aa3c0024f32dace58ca3c54935fa957d6706fa9649183b93d4",
       "status": "pass",
-      "elapsed_ms": 0.4,
+      "elapsed_ms": 0.31,
       "rows": [
         [
           "Carol"
@@ -280,19 +287,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.4,
-          0.3,
-          0.38
+          0.31,
+          0.21,
+          0.2
         ],
-        "median_ms": 0.38,
-        "min_ms": 0.3,
-        "max_ms": 0.4,
+        "median_ms": 0.21,
+        "min_ms": 0.2,
+        "max_ms": 0.31,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.4,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               "Carol"
@@ -301,7 +308,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.3,
+          "elapsed_ms": 0.21,
           "rows": [
             [
               "Carol"
@@ -310,7 +317,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.38,
+          "elapsed_ms": 0.2,
           "rows": [
             [
               "Carol"
@@ -323,7 +330,7 @@
       "id": "cypher.undirected",
       "probe_sha256": "33d8e740fe11630ce671a706ebb79b94e72452d3f4c26f7abbd769f360e5eab7",
       "status": "pass",
-      "elapsed_ms": 0.49,
+      "elapsed_ms": 0.34,
       "rows": [
         [
           "Carol"
@@ -338,19 +345,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.49,
-          0.43,
-          0.33
+          0.34,
+          0.27,
+          0.31
         ],
-        "median_ms": 0.43,
-        "min_ms": 0.33,
-        "max_ms": 0.49,
+        "median_ms": 0.31,
+        "min_ms": 0.27,
+        "max_ms": 0.34,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.49,
+          "elapsed_ms": 0.34,
           "rows": [
             [
               "Carol"
@@ -365,7 +372,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.43,
+          "elapsed_ms": 0.27,
           "rows": [
             [
               "Bob"
@@ -380,7 +387,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.33,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               "Bob"
@@ -399,7 +406,7 @@
       "id": "cypher.edge_property",
       "probe_sha256": "71050fcb1db5420d5ebaee48a207c1f2c1b262a2ac12166369ef8ec5f1690dd5",
       "status": "pass",
-      "elapsed_ms": 0.35,
+      "elapsed_ms": 0.26,
       "rows": [
         [
           1
@@ -417,19 +424,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.35,
-          0.18,
-          0.16
+          0.26,
+          0.13,
+          0.12
         ],
-        "median_ms": 0.18,
-        "min_ms": 0.16,
-        "max_ms": 0.35,
+        "median_ms": 0.13,
+        "min_ms": 0.12,
+        "max_ms": 0.26,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.35,
+          "elapsed_ms": 0.26,
           "rows": [
             [
               1
@@ -447,7 +454,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               1
@@ -465,7 +472,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               1
@@ -487,34 +494,34 @@
       "id": "cypher.edge_type",
       "probe_sha256": "4a15ebc000678621c31df1a06c6fac5fd6d9abfca56697b776afcac9dd90f210",
       "status": "query-error",
-      "elapsed_ms": 2.44,
+      "elapsed_ms": 1.86,
       "error": "Catalog exception: function TYPE does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.44,
-          0.37,
-          0.26
+          1.86,
+          0.09,
+          0.08
         ],
-        "median_ms": 0.37,
-        "min_ms": 0.26,
-        "max_ms": 2.44,
+        "median_ms": 0.09,
+        "min_ms": 0.08,
+        "max_ms": 1.86,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 2.44,
+          "elapsed_ms": 1.86,
           "error": "Catalog exception: function TYPE does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.37,
+          "elapsed_ms": 0.09,
           "error": "Catalog exception: function TYPE does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.08,
           "error": "Catalog exception: function TYPE does not exist."
         }
       ]
@@ -523,7 +530,7 @@
       "id": "cypher.join",
       "probe_sha256": "72d6234ae387f13623688d0cd29ad46b7dd484a3e6834e122d2d5dec164f99de",
       "status": "pass",
-      "elapsed_ms": 1.28,
+      "elapsed_ms": 0.52,
       "rows": [
         [
           "Alice"
@@ -535,31 +542,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.28,
-          0.63,
-          0.47
+          0.52,
+          0.47,
+          0.46
         ],
-        "median_ms": 0.63,
-        "min_ms": 0.47,
-        "max_ms": 1.28,
+        "median_ms": 0.47,
+        "min_ms": 0.46,
+        "max_ms": 0.52,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.28,
-          "rows": [
-            [
-              "Alice"
-            ],
-            [
-              "Carol"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.63,
+          "elapsed_ms": 0.52,
           "rows": [
             [
               "Alice"
@@ -580,6 +575,18 @@
               "Carol"
             ]
           ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.46,
+          "rows": [
+            [
+              "Alice"
+            ],
+            [
+              "Carol"
+            ]
+          ]
         }
       ]
     },
@@ -587,7 +594,7 @@
       "id": "cypher.cartesian",
       "probe_sha256": "744aca690cf728870a349bf43be66e795f72e558a2951749e89321dde5e07e02",
       "status": "pass",
-      "elapsed_ms": 0.54,
+      "elapsed_ms": 0.44,
       "rows": [
         [
           16
@@ -596,19 +603,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.54,
-          0.22,
-          0.2
+          0.44,
+          0.18,
+          0.17
         ],
-        "median_ms": 0.22,
-        "min_ms": 0.2,
-        "max_ms": 0.54,
+        "median_ms": 0.18,
+        "min_ms": 0.17,
+        "max_ms": 0.44,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.54,
+          "elapsed_ms": 0.44,
           "rows": [
             [
               16
@@ -617,7 +624,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.22,
+          "elapsed_ms": 0.18,
           "rows": [
             [
               16
@@ -626,7 +633,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               16
@@ -639,7 +646,7 @@
       "id": "cypher.optional",
       "probe_sha256": "893b2b0bcb0db20a94e442352bb36b0cbc917f4752f93c0fc7b41f59a719f1c1",
       "status": "pass",
-      "elapsed_ms": 1.2,
+      "elapsed_ms": 0.78,
       "rows": [
         [
           "Dave",
@@ -649,19 +656,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.2,
-          0.67,
-          0.58
+          0.78,
+          0.48,
+          0.45
         ],
-        "median_ms": 0.67,
-        "min_ms": 0.58,
-        "max_ms": 1.2,
+        "median_ms": 0.48,
+        "min_ms": 0.45,
+        "max_ms": 0.78,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.2,
+          "elapsed_ms": 0.78,
           "rows": [
             [
               "Dave",
@@ -671,7 +678,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.67,
+          "elapsed_ms": 0.48,
           "rows": [
             [
               "Dave",
@@ -681,7 +688,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.58,
+          "elapsed_ms": 0.45,
           "rows": [
             [
               "Dave",
@@ -695,7 +702,7 @@
       "id": "cypher.optional_predicate",
       "probe_sha256": "f5e5fea40dddb9aebc7b236d2b01d8e2fce12165cabc9e6614dda7191394d55d",
       "status": "pass",
-      "elapsed_ms": 2.92,
+      "elapsed_ms": 2.45,
       "rows": [
         [
           "Alice",
@@ -705,19 +712,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.92,
-          1.21,
-          1.68
+          2.45,
+          0.54,
+          0.54
         ],
-        "median_ms": 1.68,
-        "min_ms": 1.21,
-        "max_ms": 2.92,
+        "median_ms": 0.54,
+        "min_ms": 0.54,
+        "max_ms": 2.45,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.92,
+          "elapsed_ms": 2.45,
           "rows": [
             [
               "Alice",
@@ -727,7 +734,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.21,
+          "elapsed_ms": 0.54,
           "rows": [
             [
               "Alice",
@@ -737,7 +744,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.68,
+          "elapsed_ms": 0.54,
           "rows": [
             [
               "Alice",
@@ -751,7 +758,7 @@
       "id": "cypher.distinct",
       "probe_sha256": "ea8031002dafd4d3c4a7682c1e99d66ebea1bc69263edb3f2324dd88bdc39723",
       "status": "pass",
-      "elapsed_ms": 0.51,
+      "elapsed_ms": 0.28,
       "rows": [
         [
           "Bob"
@@ -766,19 +773,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.51,
-          0.67,
-          1.16
+          0.28,
+          0.28,
+          0.26
         ],
-        "median_ms": 0.67,
-        "min_ms": 0.51,
-        "max_ms": 1.16,
+        "median_ms": 0.28,
+        "min_ms": 0.26,
+        "max_ms": 0.28,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.51,
+          "elapsed_ms": 0.28,
           "rows": [
             [
               "Bob"
@@ -793,7 +800,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.67,
+          "elapsed_ms": 0.28,
           "rows": [
             [
               "Bob"
@@ -808,7 +815,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.16,
+          "elapsed_ms": 0.26,
           "rows": [
             [
               "Bob"
@@ -827,7 +834,7 @@
       "id": "cypher.union",
       "probe_sha256": "8f9e1db3c7d91e99bd4d80dd65112c73e220fc79f0f4f1ce234fba4a3044d7ac",
       "status": "pass",
-      "elapsed_ms": 1.11,
+      "elapsed_ms": 0.8,
       "rows": [
         [
           "x"
@@ -836,19 +843,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.11,
-          0.26,
-          0.41
+          0.8,
+          0.18,
+          0.17
         ],
-        "median_ms": 0.41,
-        "min_ms": 0.26,
-        "max_ms": 1.11,
+        "median_ms": 0.18,
+        "min_ms": 0.17,
+        "max_ms": 0.8,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.11,
+          "elapsed_ms": 0.8,
           "rows": [
             [
               "x"
@@ -857,7 +864,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.18,
           "rows": [
             [
               "x"
@@ -866,7 +873,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               "x"
@@ -879,7 +886,7 @@
       "id": "cypher.union_all",
       "probe_sha256": "1e066d6b05934ea88eda2c053ff4a523b3fa77f69dfa9f932d6d31adb99486dc",
       "status": "pass",
-      "elapsed_ms": 0.61,
+      "elapsed_ms": 0.13,
       "rows": [
         [
           "x"
@@ -891,19 +898,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.61,
-          0.17,
-          0.51
+          0.13,
+          0.11,
+          0.1
         ],
-        "median_ms": 0.51,
-        "min_ms": 0.17,
-        "max_ms": 0.61,
+        "median_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 0.13,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.61,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               "x"
@@ -915,7 +922,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               "x"
@@ -927,7 +934,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.51,
+          "elapsed_ms": 0.1,
           "rows": [
             [
               "x"
@@ -943,7 +950,7 @@
       "id": "cypher.with",
       "probe_sha256": "b6a7be99452e3b0a3e10da11193efbdfebf46e40ad314e66bf85759f72c8e9c5",
       "status": "pass",
-      "elapsed_ms": 0.87,
+      "elapsed_ms": 0.63,
       "rows": [
         [
           "Alice"
@@ -955,19 +962,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.87,
-          0.22,
-          0.18
+          0.63,
+          0.13,
+          0.12
         ],
-        "median_ms": 0.22,
-        "min_ms": 0.18,
-        "max_ms": 0.87,
+        "median_ms": 0.13,
+        "min_ms": 0.12,
+        "max_ms": 0.63,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.87,
+          "elapsed_ms": 0.63,
           "rows": [
             [
               "Alice"
@@ -979,7 +986,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.22,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               "Alice"
@@ -991,7 +998,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               "Alice"
@@ -1007,7 +1014,7 @@
       "id": "cypher.unwind",
       "probe_sha256": "74c605d12e22f8be79872ea4727f7c83dfadf39e952be4e02ed94dfed2faa75b",
       "status": "pass",
-      "elapsed_ms": 2.28,
+      "elapsed_ms": 1.85,
       "rows": [
         [
           1
@@ -1022,19 +1029,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.28,
-          0.38,
-          0.18
+          1.85,
+          0.1,
+          0.09
         ],
-        "median_ms": 0.38,
-        "min_ms": 0.18,
-        "max_ms": 2.28,
+        "median_ms": 0.1,
+        "min_ms": 0.09,
+        "max_ms": 1.85,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.28,
+          "elapsed_ms": 1.85,
           "rows": [
             [
               1
@@ -1049,7 +1056,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.38,
+          "elapsed_ms": 0.1,
           "rows": [
             [
               1
@@ -1064,7 +1071,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               1
@@ -1083,34 +1090,34 @@
       "id": "cypher.empty_unwind",
       "probe_sha256": "9f2f1d88a611596d0ab558050c9b167c2a9477e4bacb223bcd6af747926759f1",
       "status": "pass",
-      "elapsed_ms": 0.36,
+      "elapsed_ms": 0.24,
       "rows": [],
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.36,
-          0.08,
-          0.15
+          0.24,
+          0.06,
+          0.06
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.08,
-        "max_ms": 0.36,
+        "median_ms": 0.06,
+        "min_ms": 0.06,
+        "max_ms": 0.24,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.36,
+          "elapsed_ms": 0.24,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.06,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.06,
           "rows": []
         }
       ]
@@ -1119,34 +1126,34 @@
       "id": "cypher.null_unwind",
       "probe_sha256": "2253b530dafc7ea5e08862bcd5b3ba8053d69a7881308742a2a3798e962c8e75",
       "status": "pass",
-      "elapsed_ms": 0.31,
+      "elapsed_ms": 0.23,
       "rows": [],
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.31,
-          0.09,
-          0.09
+          0.23,
+          0.06,
+          0.07
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.09,
-        "max_ms": 0.31,
+        "median_ms": 0.07,
+        "min_ms": 0.06,
+        "max_ms": 0.23,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.23,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.06,
           "rows": []
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.07,
           "rows": []
         }
       ]
@@ -1155,7 +1162,7 @@
       "id": "cypher.exists_subquery",
       "probe_sha256": "08edcc7f266bedefe585e253397c9d8d11c5cec69943d49640299c9396523085",
       "status": "pass",
-      "elapsed_ms": 1.42,
+      "elapsed_ms": 0.88,
       "rows": [
         [
           "Alice"
@@ -1170,19 +1177,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.42,
-          0.59,
-          0.98
+          0.88,
+          0.26,
+          0.24
         ],
-        "median_ms": 0.98,
-        "min_ms": 0.59,
-        "max_ms": 1.42,
+        "median_ms": 0.26,
+        "min_ms": 0.24,
+        "max_ms": 0.88,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.42,
+          "elapsed_ms": 0.88,
           "rows": [
             [
               "Alice"
@@ -1197,7 +1204,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.59,
+          "elapsed_ms": 0.26,
           "rows": [
             [
               "Alice"
@@ -1212,7 +1219,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.98,
+          "elapsed_ms": 0.24,
           "rows": [
             [
               "Alice"
@@ -1231,7 +1238,7 @@
       "id": "cypher.count_subquery",
       "probe_sha256": "9fefeea6451a5ab8a3e47c797ae23e51f079464362653c8f7b7ab4072185c847",
       "status": "pass",
-      "elapsed_ms": 3.14,
+      "elapsed_ms": 0.92,
       "rows": [
         [
           2
@@ -1240,19 +1247,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.14,
-          1.94,
-          1.5
+          0.92,
+          0.45,
+          0.45
         ],
-        "median_ms": 1.94,
-        "min_ms": 1.5,
-        "max_ms": 3.14,
+        "median_ms": 0.45,
+        "min_ms": 0.45,
+        "max_ms": 0.92,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 3.14,
+          "elapsed_ms": 0.92,
           "rows": [
             [
               2
@@ -1261,7 +1268,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.94,
+          "elapsed_ms": 0.45,
           "rows": [
             [
               2
@@ -1270,7 +1277,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.5,
+          "elapsed_ms": 0.45,
           "rows": [
             [
               2
@@ -1283,29 +1290,29 @@
       "id": "cypher.call_subquery",
       "probe_sha256": "886da1b949642c9aa27271233953436f059ed20eca12bb001cbfd73a647ce653",
       "status": "query-error",
-      "elapsed_ms": 0.92,
+      "elapsed_ms": 0.22,
       "error": "Parser exception: Invalid input <CALL {>: expected rule oC_Statement (line: 1, offset: 5)\n\"CALL { RETURN 7 AS x } RETURN x\"\n      ^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.92,
-          0.08,
+          0.22,
+          0.05,
           0.05
         ],
-        "median_ms": 0.08,
+        "median_ms": 0.05,
         "min_ms": 0.05,
-        "max_ms": 0.92,
+        "max_ms": 0.22,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.92,
+          "elapsed_ms": 0.22,
           "error": "Parser exception: Invalid input <CALL {>: expected rule oC_Statement (line: 1, offset: 5)\n\"CALL { RETURN 7 AS x } RETURN x\"\n      ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.05,
           "error": "Parser exception: Invalid input <CALL {>: expected rule oC_Statement (line: 1, offset: 5)\n\"CALL { RETURN 7 AS x } RETURN x\"\n      ^"
         },
         {
@@ -1319,34 +1326,34 @@
       "id": "cypher.correlated_call",
       "probe_sha256": "6e2e3fcb1c43ef0d05af2e02cf29631b65f3361c593e6a4d42af0c533a818268",
       "status": "query-error",
-      "elapsed_ms": 0.29,
+      "elapsed_ms": 0.08,
       "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.29,
-          0.12,
-          0.08
+          0.08,
+          0.06,
+          0.06
         ],
-        "median_ms": 0.12,
-        "min_ms": 0.08,
-        "max_ms": 0.29,
+        "median_ms": 0.06,
+        "min_ms": 0.06,
+        "max_ms": 0.08,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.29,
-          "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^"
-        },
-        {
-          "status": "query-error",
-          "elapsed_ms": 0.12,
-          "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^"
-        },
-        {
-          "status": "query-error",
           "elapsed_ms": 0.08,
+          "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^"
+        },
+        {
+          "status": "query-error",
+          "elapsed_ms": 0.06,
+          "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^"
+        },
+        {
+          "status": "query-error",
+          "elapsed_ms": 0.06,
           "error": "Parser exception: Invalid input <MATCH (p:Person {name:'Alice'}) CALL {>: expected rule oC_SingleQuery (line: 1, offset: 37)\n\"MATCH (p:Person {name:'Alice'}) CALL { WITH p MATCH (p)-[:KNOWS]->(q) RETURN q.name AS name } RETURN name\"\n                                      ^"
         }
       ]
@@ -1355,29 +1362,29 @@
       "id": "cypher.list_subquery",
       "probe_sha256": "da1ac28053ca491d040f89ebcf1177af9e34007a0856aec5216a6e812bf70b5c",
       "status": "query-error",
-      "elapsed_ms": 0.62,
+      "elapsed_ms": 0.48,
       "error": "Parser exception: Invalid input < {>: expected rule iC_Statements (line: 1, offset: 15)\n\"RETURN COLLECT { MATCH (p:Person) RETURN p.name ORDER BY p.name }\"\n                ^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.62,
-          0.16,
+          0.48,
+          0.15,
           0.15
         ],
-        "median_ms": 0.16,
+        "median_ms": 0.15,
         "min_ms": 0.15,
-        "max_ms": 0.62,
+        "max_ms": 0.48,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.62,
+          "elapsed_ms": 0.48,
           "error": "Parser exception: Invalid input < {>: expected rule iC_Statements (line: 1, offset: 15)\n\"RETURN COLLECT { MATCH (p:Person) RETURN p.name ORDER BY p.name }\"\n                ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.15,
           "error": "Parser exception: Invalid input < {>: expected rule iC_Statements (line: 1, offset: 15)\n\"RETURN COLLECT { MATCH (p:Person) RETURN p.name ORDER BY p.name }\"\n                ^"
         },
         {
@@ -1391,34 +1398,34 @@
       "id": "cypher.pattern_comprehension",
       "probe_sha256": "e3e78ed94b76caaf68b0b4fa1da07c1505a53f7be273f7f9dbff195b11ea7344",
       "status": "query-error",
-      "elapsed_ms": 4.68,
+      "elapsed_ms": 3.98,
       "error": "Binder exception: Variable q is not in scope.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.68,
-          0.21,
-          0.16
+          3.98,
+          0.15,
+          0.14
         ],
-        "median_ms": 0.21,
-        "min_ms": 0.16,
-        "max_ms": 4.68,
+        "median_ms": 0.15,
+        "min_ms": 0.14,
+        "max_ms": 3.98,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 4.68,
+          "elapsed_ms": 3.98,
           "error": "Binder exception: Variable q is not in scope."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.21,
+          "elapsed_ms": 0.15,
           "error": "Binder exception: Variable q is not in scope."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.14,
           "error": "Binder exception: Variable q is not in scope."
         }
       ]
@@ -1427,7 +1434,7 @@
       "id": "cypher.order",
       "probe_sha256": "292bfd1882b05dfbc236a45a1059301e6746977f89a1492a66602ea6672bd9c5",
       "status": "pass",
-      "elapsed_ms": 0.65,
+      "elapsed_ms": 0.4,
       "rows": [
         [
           "Dave"
@@ -1445,19 +1452,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.65,
-          0.38,
-          0.56
+          0.4,
+          0.17,
+          0.17
         ],
-        "median_ms": 0.56,
-        "min_ms": 0.38,
-        "max_ms": 0.65,
+        "median_ms": 0.17,
+        "min_ms": 0.17,
+        "max_ms": 0.4,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.65,
+          "elapsed_ms": 0.4,
           "rows": [
             [
               "Dave"
@@ -1475,7 +1482,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.38,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               "Dave"
@@ -1493,7 +1500,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.56,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               "Dave"
@@ -1515,7 +1522,7 @@
       "id": "cypher.pagination",
       "probe_sha256": "9fee52bf6ceefd3ef1ddfb542a989ec8c899abb3631e3cdb19915e31b9278be0",
       "status": "pass",
-      "elapsed_ms": 0.75,
+      "elapsed_ms": 0.21,
       "rows": [
         [
           "Bob"
@@ -1527,19 +1534,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.75,
-          0.65,
-          0.49
+          0.21,
+          0.17,
+          0.15
         ],
-        "median_ms": 0.65,
-        "min_ms": 0.49,
-        "max_ms": 0.75,
+        "median_ms": 0.17,
+        "min_ms": 0.15,
+        "max_ms": 0.21,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.75,
+          "elapsed_ms": 0.21,
           "rows": [
             [
               "Bob"
@@ -1551,7 +1558,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.65,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               "Bob"
@@ -1563,7 +1570,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.49,
+          "elapsed_ms": 0.15,
           "rows": [
             [
               "Bob"
@@ -1579,7 +1586,7 @@
       "id": "cypher.bounded_path",
       "probe_sha256": "d4d4af95165dceb03eb8ea5c152ff32f0dddbb43be538ec07dbb09036a88b115",
       "status": "pass",
-      "elapsed_ms": 2.89,
+      "elapsed_ms": 1.12,
       "rows": [
         [
           "Alice"
@@ -1597,19 +1604,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.89,
-          1.32,
-          0.89
+          1.12,
+          0.43,
+          0.41
         ],
-        "median_ms": 1.32,
-        "min_ms": 0.89,
-        "max_ms": 2.89,
+        "median_ms": 0.43,
+        "min_ms": 0.41,
+        "max_ms": 1.12,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.89,
+          "elapsed_ms": 1.12,
           "rows": [
             [
               "Alice"
@@ -1627,7 +1634,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 1.32,
+          "elapsed_ms": 0.43,
           "rows": [
             [
               "Alice"
@@ -1645,7 +1652,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.89,
+          "elapsed_ms": 0.41,
           "rows": [
             [
               "Alice"
@@ -1667,7 +1674,7 @@
       "id": "cypher.zero_path",
       "probe_sha256": "c472503561e43cafcbb671e429b6f37f6ad47deadb71dae9fc81e65119d02770",
       "status": "pass",
-      "elapsed_ms": 0.83,
+      "elapsed_ms": 0.38,
       "rows": [
         [
           "Alice"
@@ -1676,19 +1683,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.83,
-          0.58,
-          0.54
+          0.38,
+          0.35,
+          0.35
         ],
-        "median_ms": 0.58,
-        "min_ms": 0.54,
-        "max_ms": 0.83,
+        "median_ms": 0.35,
+        "min_ms": 0.35,
+        "max_ms": 0.38,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.83,
+          "elapsed_ms": 0.38,
           "rows": [
             [
               "Alice"
@@ -1697,7 +1704,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.58,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "Alice"
@@ -1706,7 +1713,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.54,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "Alice"
@@ -1719,7 +1726,7 @@
       "id": "cypher.path_length",
       "probe_sha256": "bbd535fb51aa82e32b09404c6da185a426a7e5309b3476a480be0cbe424ce43c",
       "status": "pass",
-      "elapsed_ms": 1.32,
+      "elapsed_ms": 1.05,
       "rows": [
         [
           1
@@ -1728,19 +1735,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.32,
-          0.38,
-          0.35
+          1.05,
+          0.25,
+          0.24
         ],
-        "median_ms": 0.38,
-        "min_ms": 0.35,
-        "max_ms": 1.32,
+        "median_ms": 0.25,
+        "min_ms": 0.24,
+        "max_ms": 1.05,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.32,
+          "elapsed_ms": 1.05,
           "rows": [
             [
               1
@@ -1749,7 +1756,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.38,
+          "elapsed_ms": 0.25,
           "rows": [
             [
               1
@@ -1758,7 +1765,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.35,
+          "elapsed_ms": 0.24,
           "rows": [
             [
               1
@@ -1771,34 +1778,34 @@
       "id": "cypher.path_nodes",
       "probe_sha256": "949cc2e7cb9efda89856a02d9dba93ab61b5ca0259ffb4addbd59149505e4528",
       "status": "query-error",
-      "elapsed_ms": 2.23,
+      "elapsed_ms": 1.83,
       "error": "Binder exception: Variable n is not in scope.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.23,
-          0.23,
-          0.18
+          1.83,
+          0.15,
+          0.14
         ],
-        "median_ms": 0.23,
-        "min_ms": 0.18,
-        "max_ms": 2.23,
+        "median_ms": 0.15,
+        "min_ms": 0.14,
+        "max_ms": 1.83,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 2.23,
+          "elapsed_ms": 1.83,
           "error": "Binder exception: Variable n is not in scope."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.23,
+          "elapsed_ms": 0.15,
           "error": "Binder exception: Variable n is not in scope."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.14,
           "error": "Binder exception: Variable n is not in scope."
         }
       ]
@@ -1807,34 +1814,34 @@
       "id": "cypher.path_relationships",
       "probe_sha256": "b03d7af4fed887d13de00fcd25fd438520ee1e9e0845f1df2c011696394941dd",
       "status": "query-error",
-      "elapsed_ms": 0.18,
+      "elapsed_ms": 0.15,
       "error": "Binder exception: Variable r is not in scope.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.18,
           0.15,
-          0.15
+          0.14,
+          0.14
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.15,
-        "max_ms": 0.18,
+        "median_ms": 0.14,
+        "min_ms": 0.14,
+        "max_ms": 0.15,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.18,
-          "error": "Binder exception: Variable r is not in scope."
-        },
-        {
-          "status": "query-error",
           "elapsed_ms": 0.15,
           "error": "Binder exception: Variable r is not in scope."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.14,
+          "error": "Binder exception: Variable r is not in scope."
+        },
+        {
+          "status": "query-error",
+          "elapsed_ms": 0.14,
           "error": "Binder exception: Variable r is not in scope."
         }
       ]
@@ -1843,7 +1850,7 @@
       "id": "cypher.trail",
       "probe_sha256": "8a3e04680aaa24da96ae1da4427a96ab0c69dbafdeef71d51b0f1dc9a0d32ca2",
       "status": "mismatch",
-      "elapsed_ms": 0.6,
+      "elapsed_ms": 0.4,
       "rows": [
         [
           2
@@ -1852,19 +1859,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.6,
-          0.39,
-          0.36
+          0.4,
+          0.33,
+          0.33
         ],
-        "median_ms": 0.39,
-        "min_ms": 0.36,
-        "max_ms": 0.6,
+        "median_ms": 0.33,
+        "min_ms": 0.33,
+        "max_ms": 0.4,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.6,
+          "elapsed_ms": 0.4,
           "rows": [
             [
               2
@@ -1873,7 +1880,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.39,
+          "elapsed_ms": 0.33,
           "rows": [
             [
               2
@@ -1882,7 +1889,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.36,
+          "elapsed_ms": 0.33,
           "rows": [
             [
               2
@@ -1895,24 +1902,24 @@
       "id": "cypher.shortest",
       "probe_sha256": "125306c592c57221fa67c4308cb673d630fac16ead657f559548a0ac0b55f939",
       "status": "query-error",
-      "elapsed_ms": 0.2,
+      "elapsed_ms": 0.16,
       "error": "Parser exception: Invalid input <MATCH (a:Person {name:'Alice'}),(b:Person {name:'Carol'}),p=shortestPath>: expected rule oC_SingleQuery (line: 1, offset: 60)\n\"MATCH (a:Person {name:'Alice'}),(b:Person {name:'Carol'}),p=shortestPath((a)-[:KNOWS*1..5]->(b)) RETURN length(p)\"\n                                                             ^^^^^^^^^^^^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.2,
+          0.16,
           0.07,
           0.06
         ],
         "median_ms": 0.07,
         "min_ms": 0.06,
-        "max_ms": 0.2,
+        "max_ms": 0.16,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.16,
           "error": "Parser exception: Invalid input <MATCH (a:Person {name:'Alice'}),(b:Person {name:'Carol'}),p=shortestPath>: expected rule oC_SingleQuery (line: 1, offset: 60)\n\"MATCH (a:Person {name:'Alice'}),(b:Person {name:'Carol'}),p=shortestPath((a)-[:KNOWS*1..5]->(b)) RETURN length(p)\"\n                                                             ^^^^^^^^^^^^"
         },
         {
@@ -2003,7 +2010,7 @@
       "id": "cypher.count_star",
       "probe_sha256": "62b07228dcd6ed2f6b72ce9864a3c9a402deabc7f15495f5faa297b0cad9ecec",
       "status": "pass",
-      "elapsed_ms": 0.2,
+      "elapsed_ms": 0.11,
       "rows": [
         [
           4
@@ -2012,19 +2019,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.2,
-          0.15,
-          0.12
+          0.11,
+          0.11,
+          0.11
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.12,
-        "max_ms": 0.2,
+        "median_ms": 0.11,
+        "min_ms": 0.11,
+        "max_ms": 0.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               4
@@ -2033,7 +2040,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               4
@@ -2042,7 +2049,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.12,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               4
@@ -2055,7 +2062,7 @@
       "id": "cypher.count_property",
       "probe_sha256": "83d6a87a7c1e97b687a8176069e7f35fe078c7dc0c340b6e0cabaacbd9b9123b",
       "status": "pass",
-      "elapsed_ms": 0.26,
+      "elapsed_ms": 0.23,
       "rows": [
         [
           3
@@ -2064,19 +2071,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.26,
+          0.23,
           0.12,
-          0.14
+          0.11
         ],
-        "median_ms": 0.14,
-        "min_ms": 0.12,
-        "max_ms": 0.26,
+        "median_ms": 0.12,
+        "min_ms": 0.11,
+        "max_ms": 0.23,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.23,
           "rows": [
             [
               3
@@ -2094,7 +2101,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               3
@@ -2107,7 +2114,7 @@
       "id": "cypher.sum",
       "probe_sha256": "d7c53b35fecc51e22f8c66c3f84e434e413439898fe86e96bcd32dc585e9df77",
       "status": "mismatch",
-      "elapsed_ms": 0.67,
+      "elapsed_ms": 0.42,
       "rows": [
         [
           "90"
@@ -2116,19 +2123,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.67,
-          0.23,
-          0.26
+          0.42,
+          0.13,
+          0.12
         ],
-        "median_ms": 0.26,
-        "min_ms": 0.23,
-        "max_ms": 0.67,
+        "median_ms": 0.13,
+        "min_ms": 0.12,
+        "max_ms": 0.42,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.67,
+          "elapsed_ms": 0.42,
           "rows": [
             [
               "90"
@@ -2137,7 +2144,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.23,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               "90"
@@ -2146,7 +2153,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               "90"
@@ -2159,7 +2166,7 @@
       "id": "cypher.avg",
       "probe_sha256": "26504532b47697425129138009eb2a8fff1b9f0df74143e4a345775ae9482793",
       "status": "pass",
-      "elapsed_ms": 0.18,
+      "elapsed_ms": 0.12,
       "rows": [
         [
           30.0
@@ -2168,37 +2175,37 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.18,
-          0.14,
-          0.12
+          0.12,
+          0.11,
+          0.11
         ],
-        "median_ms": 0.14,
-        "min_ms": 0.12,
-        "max_ms": 0.18,
+        "median_ms": 0.11,
+        "min_ms": 0.11,
+        "max_ms": 0.12,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
-          "rows": [
-            [
-              30.0
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.14,
-          "rows": [
-            [
-              30.0
-            ]
-          ]
-        },
-        {
-          "status": "pass",
           "elapsed_ms": 0.12,
+          "rows": [
+            [
+              30.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.11,
+          "rows": [
+            [
+              30.0
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.11,
           "rows": [
             [
               30.0
@@ -2211,7 +2218,7 @@
       "id": "cypher.min_max",
       "probe_sha256": "dbc0c8fb584cb30058d56c7f9e541f4dc991ca918e4446516df9449492398bda",
       "status": "pass",
-      "elapsed_ms": 0.41,
+      "elapsed_ms": 0.35,
       "rows": [
         [
           20,
@@ -2221,19 +2228,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.41,
-          0.25,
-          0.2
+          0.35,
+          0.13,
+          0.13
         ],
-        "median_ms": 0.25,
-        "min_ms": 0.2,
-        "max_ms": 0.41,
+        "median_ms": 0.13,
+        "min_ms": 0.13,
+        "max_ms": 0.35,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.41,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               20,
@@ -2243,7 +2250,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.25,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               20,
@@ -2253,7 +2260,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               20,
@@ -2267,29 +2274,29 @@
       "id": "cypher.collect",
       "probe_sha256": "026edbdba0a13d74eef310855ee54ecbb52d35856e5a7c7beb52ffcf8eb229fb",
       "status": "query-error",
-      "elapsed_ms": 0.17,
+      "elapsed_ms": 0.11,
       "error": "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.17,
-          0.09,
+          0.11,
+          0.08,
           0.08
         ],
-        "median_ms": 0.09,
+        "median_ms": 0.08,
         "min_ms": 0.08,
-        "max_ms": 0.17,
+        "max_ms": 0.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.11,
           "error": "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.08,
           "error": "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT."
         },
         {
@@ -2303,7 +2310,7 @@
       "id": "cypher.empty_count",
       "probe_sha256": "ef5255dc581cd21bc253ac76ac67cda855e4cd95eb969a9df15c47d1101dae0f",
       "status": "pass",
-      "elapsed_ms": 0.46,
+      "elapsed_ms": 0.33,
       "rows": [
         [
           0
@@ -2312,19 +2319,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.46,
-          0.19,
-          0.17
+          0.33,
+          0.13,
+          0.12
         ],
-        "median_ms": 0.19,
-        "min_ms": 0.17,
-        "max_ms": 0.46,
+        "median_ms": 0.13,
+        "min_ms": 0.12,
+        "max_ms": 0.33,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.46,
+          "elapsed_ms": 0.33,
           "rows": [
             [
               0
@@ -2333,7 +2340,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.19,
+          "elapsed_ms": 0.13,
           "rows": [
             [
               0
@@ -2342,7 +2349,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               0
@@ -2355,7 +2362,7 @@
       "id": "cypher.empty_sum",
       "probe_sha256": "b8889d76ec6fa42e4e9002dd020dfc231fc00e59de60866d88ec72e366199d41",
       "status": "mismatch",
-      "elapsed_ms": 0.18,
+      "elapsed_ms": 0.14,
       "rows": [
         [
           null
@@ -2364,19 +2371,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.18,
-          0.17,
-          0.16
+          0.14,
+          0.15,
+          0.14
         ],
-        "median_ms": 0.17,
-        "min_ms": 0.16,
-        "max_ms": 0.18,
+        "median_ms": 0.14,
+        "min_ms": 0.14,
+        "max_ms": 0.15,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.14,
           "rows": [
             [
               null
@@ -2385,7 +2392,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.15,
           "rows": [
             [
               null
@@ -2394,7 +2401,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.14,
           "rows": [
             [
               null
@@ -2407,7 +2414,7 @@
       "id": "cypher.group",
       "probe_sha256": "610fc03e0eaf49de2dbc9926a98a9f49db8d527e71374e201fc1895d82b66a0b",
       "status": "pass",
-      "elapsed_ms": 0.43,
+      "elapsed_ms": 0.25,
       "rows": [
         [
           "Alice",
@@ -2425,19 +2432,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.43,
-          0.27,
-          0.31
+          0.25,
+          0.24,
+          0.21
         ],
-        "median_ms": 0.31,
-        "min_ms": 0.27,
-        "max_ms": 0.43,
+        "median_ms": 0.24,
+        "min_ms": 0.21,
+        "max_ms": 0.25,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.43,
+          "elapsed_ms": 0.25,
           "rows": [
             [
               "Alice",
@@ -2455,7 +2462,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.27,
+          "elapsed_ms": 0.24,
           "rows": [
             [
               "Alice",
@@ -2473,7 +2480,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.21,
           "rows": [
             [
               "Alice",
@@ -2495,7 +2502,7 @@
       "id": "cypher.post_aggregate_filter",
       "probe_sha256": "6900c22f1e3fe5c790af3f86067e0cdbc07a525504b2aba1fac89d99ca22fb25",
       "status": "pass",
-      "elapsed_ms": 0.43,
+      "elapsed_ms": 0.25,
       "rows": [
         [
           "Alice"
@@ -2504,19 +2511,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.43,
-          0.32,
-          0.47
+          0.25,
+          0.24,
+          0.23
         ],
-        "median_ms": 0.43,
-        "min_ms": 0.32,
-        "max_ms": 0.47,
+        "median_ms": 0.24,
+        "min_ms": 0.23,
+        "max_ms": 0.25,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.43,
+          "elapsed_ms": 0.25,
           "rows": [
             [
               "Alice"
@@ -2525,7 +2532,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.32,
+          "elapsed_ms": 0.24,
           "rows": [
             [
               "Alice"
@@ -2534,7 +2541,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.47,
+          "elapsed_ms": 0.23,
           "rows": [
             [
               "Alice"
@@ -2547,7 +2554,7 @@
       "id": "cypher.percentile_cont",
       "probe_sha256": "2b36925dca3d47b245b7d3d3d7c7773fe01524a9a55151f52d2791f845bb1fac",
       "status": "pass",
-      "elapsed_ms": 1.27,
+      "elapsed_ms": 0.9,
       "rows": [
         [
           2.5
@@ -2556,19 +2563,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.27,
-          0.24,
-          0.97
+          0.9,
+          0.17,
+          0.16
         ],
-        "median_ms": 0.97,
-        "min_ms": 0.24,
-        "max_ms": 1.27,
+        "median_ms": 0.17,
+        "min_ms": 0.16,
+        "max_ms": 0.9,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.27,
+          "elapsed_ms": 0.9,
           "rows": [
             [
               2.5
@@ -2577,7 +2584,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               2.5
@@ -2586,7 +2593,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.97,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               2.5
@@ -2599,7 +2606,7 @@
       "id": "cypher.percentile_disc",
       "probe_sha256": "fac97b388be19ae3936d98899c96b2a64b655e412d15871541b712f0d6358b48",
       "status": "pass",
-      "elapsed_ms": 0.27,
+      "elapsed_ms": 0.16,
       "rows": [
         [
           2
@@ -2608,19 +2615,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.27,
-          0.19,
-          0.17
+          0.16,
+          0.16,
+          0.16
         ],
-        "median_ms": 0.19,
-        "min_ms": 0.17,
-        "max_ms": 0.27,
+        "median_ms": 0.16,
+        "min_ms": 0.16,
+        "max_ms": 0.16,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.27,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               2
@@ -2629,7 +2636,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.19,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               2
@@ -2638,7 +2645,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               2
@@ -2651,24 +2658,24 @@
       "id": "cypher.stdev",
       "probe_sha256": "79df3c13494ba648c1084974e6df935d6d5d71011d2b302f336bc578101fea3f",
       "status": "query-error",
-      "elapsed_ms": 0.13,
+      "elapsed_ms": 0.1,
       "error": "Catalog exception: function STDEV does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.13,
+          0.1,
           0.09,
-          0.09
+          0.08
         ],
         "median_ms": 0.09,
-        "min_ms": 0.09,
-        "max_ms": 0.13,
+        "min_ms": 0.08,
+        "max_ms": 0.1,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.13,
+          "elapsed_ms": 0.1,
           "error": "Catalog exception: function STDEV does not exist."
         },
         {
@@ -2678,7 +2685,7 @@
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.08,
           "error": "Catalog exception: function STDEV does not exist."
         }
       ]
@@ -2687,7 +2694,7 @@
       "id": "cypher.null_equal",
       "probe_sha256": "765f2712f567371c0f364ceac455f28bfe5ac466d85f9ead46fab4343bd603a6",
       "status": "pass",
-      "elapsed_ms": 0.86,
+      "elapsed_ms": 0.62,
       "rows": [
         [
           null
@@ -2696,19 +2703,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.86,
-          0.09,
-          0.08
+          0.62,
+          0.07,
+          0.07
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.08,
-        "max_ms": 0.86,
+        "median_ms": 0.07,
+        "min_ms": 0.07,
+        "max_ms": 0.62,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.86,
+          "elapsed_ms": 0.62,
           "rows": [
             [
               null
@@ -2717,7 +2724,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               null
@@ -2726,7 +2733,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               null
@@ -2739,7 +2746,7 @@
       "id": "cypher.null_logic",
       "probe_sha256": "628fc24f012356b000ffc38a8ad21c954185e7c0cb1ba33527c240486e834259",
       "status": "pass",
-      "elapsed_ms": 1.95,
+      "elapsed_ms": 1.63,
       "rows": [
         [
           false,
@@ -2750,19 +2757,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.95,
-          0.16,
-          0.14
+          1.63,
+          0.08,
+          0.08
         ],
-        "median_ms": 0.16,
-        "min_ms": 0.14,
-        "max_ms": 1.95,
+        "median_ms": 0.08,
+        "min_ms": 0.08,
+        "max_ms": 1.63,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.95,
+          "elapsed_ms": 1.63,
           "rows": [
             [
               false,
@@ -2773,7 +2780,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               false,
@@ -2784,7 +2791,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               false,
@@ -2799,7 +2806,7 @@
       "id": "cypher.null_in",
       "probe_sha256": "e4c008d8f553c5f5a4f2faed82225c0057cdf491f6194667b1590d5b0c0c9589",
       "status": "mismatch",
-      "elapsed_ms": 2.21,
+      "elapsed_ms": 1.8,
       "rows": [
         [
           false,
@@ -2809,19 +2816,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.21,
-          0.17,
-          0.13
+          1.8,
+          0.12,
+          0.11
         ],
-        "median_ms": 0.17,
-        "min_ms": 0.13,
-        "max_ms": 2.21,
+        "median_ms": 0.12,
+        "min_ms": 0.11,
+        "max_ms": 1.8,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 2.21,
+          "elapsed_ms": 1.8,
           "rows": [
             [
               false,
@@ -2831,7 +2838,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               false,
@@ -2841,7 +2848,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.13,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               false,
@@ -2855,7 +2862,7 @@
       "id": "cypher.coalesce",
       "probe_sha256": "44d3913834ee0b5d19bd043d34ded0e6e765846b9671125c22b2e0dc6a1754ef",
       "status": "pass",
-      "elapsed_ms": 0.85,
+      "elapsed_ms": 0.63,
       "rows": [
         [
           3
@@ -2864,19 +2871,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.85,
-          0.09,
-          0.08
+          0.63,
+          0.07,
+          0.07
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.08,
-        "max_ms": 0.85,
+        "median_ms": 0.07,
+        "min_ms": 0.07,
+        "max_ms": 0.63,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.85,
+          "elapsed_ms": 0.63,
           "rows": [
             [
               3
@@ -2885,7 +2892,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               3
@@ -2894,7 +2901,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               3
@@ -2907,7 +2914,7 @@
       "id": "cypher.case",
       "probe_sha256": "ab63762de635670da5147d02c82c41c9d9e2c4723223bb9ef597ad544e75dd10",
       "status": "pass",
-      "elapsed_ms": 5.98,
+      "elapsed_ms": 3.05,
       "rows": [
         [
           7
@@ -2916,19 +2923,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.98,
-          0.24,
-          0.34
+          3.05,
+          0.09,
+          0.09
         ],
-        "median_ms": 0.34,
-        "min_ms": 0.24,
-        "max_ms": 5.98,
+        "median_ms": 0.09,
+        "min_ms": 0.09,
+        "max_ms": 3.05,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.98,
+          "elapsed_ms": 3.05,
           "rows": [
             [
               7
@@ -2937,7 +2944,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               7
@@ -2946,7 +2953,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.34,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               7
@@ -2959,7 +2966,7 @@
       "id": "cypher.simple_case",
       "probe_sha256": "0a3d6db38644e44aecca79c3d211d9e4ddeab35f669c4fef53570435c0ba385a",
       "status": "pass",
-      "elapsed_ms": 5.1,
+      "elapsed_ms": 1.78,
       "rows": [
         [
           "yes"
@@ -2968,19 +2975,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          5.1,
-          0.2,
-          0.14
+          1.78,
+          0.09,
+          0.08
         ],
-        "median_ms": 0.2,
-        "min_ms": 0.14,
-        "max_ms": 5.1,
+        "median_ms": 0.09,
+        "min_ms": 0.08,
+        "max_ms": 1.78,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 5.1,
+          "elapsed_ms": 1.78,
           "rows": [
             [
               "yes"
@@ -2989,7 +2996,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               "yes"
@@ -2998,7 +3005,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               "yes"
@@ -3011,7 +3018,7 @@
       "id": "cypher.is_null",
       "probe_sha256": "524c700657840a0d9a00b17f805a8eec91b99b702952cc35e776143f01fc66cd",
       "status": "pass",
-      "elapsed_ms": 0.7,
+      "elapsed_ms": 0.4,
       "rows": [
         [
           "Dave"
@@ -3020,19 +3027,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.7,
-          0.18,
-          0.15
+          0.4,
+          0.1,
+          0.09
         ],
-        "median_ms": 0.18,
-        "min_ms": 0.15,
-        "max_ms": 0.7,
+        "median_ms": 0.1,
+        "min_ms": 0.09,
+        "max_ms": 0.4,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.7,
+          "elapsed_ms": 0.4,
           "rows": [
             [
               "Dave"
@@ -3041,7 +3048,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.1,
           "rows": [
             [
               "Dave"
@@ -3050,7 +3057,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               "Dave"
@@ -3063,34 +3070,34 @@
       "id": "cypher.list_index",
       "probe_sha256": "65b5ca6dd98c3066079e3a2ebb390e188f46ec5dd9b9fcf72d1bec63eadeac76",
       "status": "query-error",
-      "elapsed_ms": 3.35,
+      "elapsed_ms": 2.58,
       "error": "Runtime exception: List extract takes 1-based position.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.35,
-          0.16,
-          0.12
+          2.58,
+          0.11,
+          0.1
         ],
-        "median_ms": 0.16,
-        "min_ms": 0.12,
-        "max_ms": 3.35,
+        "median_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 2.58,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 3.35,
+          "elapsed_ms": 2.58,
           "error": "Runtime exception: List extract takes 1-based position."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.11,
           "error": "Runtime exception: List extract takes 1-based position."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.12,
+          "elapsed_ms": 0.1,
           "error": "Runtime exception: List extract takes 1-based position."
         }
       ]
@@ -3099,7 +3106,7 @@
       "id": "cypher.list_slice",
       "probe_sha256": "bf339c1269f8ef8ff4632a2e4d5ef534b34b7c34529f8ff51a8f97482c7c302b",
       "status": "mismatch",
-      "elapsed_ms": 0.96,
+      "elapsed_ms": 0.73,
       "rows": [
         [
           [
@@ -3112,19 +3119,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.96,
+          0.73,
           0.12,
-          0.24
+          0.12
         ],
-        "median_ms": 0.24,
+        "median_ms": 0.12,
         "min_ms": 0.12,
-        "max_ms": 0.96,
+        "max_ms": 0.73,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.96,
+          "elapsed_ms": 0.73,
           "rows": [
             [
               [
@@ -3150,7 +3157,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               [
@@ -3167,29 +3174,29 @@
       "id": "cypher.list_oob",
       "probe_sha256": "7ba19c760964a192b19a93c9468c7034fa38e1420616fa66ddbce38a60eaca6e",
       "status": "query-error",
-      "elapsed_ms": 0.4,
+      "elapsed_ms": 0.32,
       "error": "Runtime exception: list_extract(list, index): index=9 is out of range.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.4,
-          0.08,
+          0.32,
+          0.07,
           0.07
         ],
-        "median_ms": 0.08,
+        "median_ms": 0.07,
         "min_ms": 0.07,
-        "max_ms": 0.4,
+        "max_ms": 0.32,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.4,
+          "elapsed_ms": 0.32,
           "error": "Runtime exception: list_extract(list, index): index=9 is out of range."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.07,
           "error": "Runtime exception: list_extract(list, index): index=9 is out of range."
         },
         {
@@ -3203,24 +3210,24 @@
       "id": "cypher.list_comprehension",
       "probe_sha256": "ac23c33bd59f4e7a7202b858ca3d1258a72ebf7a1fa5a338deb5ce523be179d4",
       "status": "query-error",
-      "elapsed_ms": 0.54,
+      "elapsed_ms": 0.45,
       "error": "Parser exception: Invalid input <RETURN [x IN [1,2,3] WHERE>: expected rule oC_RegularQuery (line: 1, offset: 21)\n\"RETURN [x IN [1,2,3] WHERE x>1 | x*2]\"\n                      ^^^^^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.54,
+          0.45,
           0.06,
           0.06
         ],
         "median_ms": 0.06,
         "min_ms": 0.06,
-        "max_ms": 0.54,
+        "max_ms": 0.45,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.54,
+          "elapsed_ms": 0.45,
           "error": "Parser exception: Invalid input <RETURN [x IN [1,2,3] WHERE>: expected rule oC_RegularQuery (line: 1, offset: 21)\n\"RETURN [x IN [1,2,3] WHERE x>1 | x*2]\"\n                      ^^^^^"
         },
         {
@@ -3239,34 +3246,34 @@
       "id": "cypher.reduce",
       "probe_sha256": "5dfa5a9795baaad3764206e723e3a41d54664a425d021f2a64a6636ad9429ff8",
       "status": "query-error",
-      "elapsed_ms": 3.77,
+      "elapsed_ms": 3.28,
       "error": "Catalog exception: function REDUCE does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          3.77,
-          0.16,
-          0.11
+          3.28,
+          0.1,
+          0.1
         ],
-        "median_ms": 0.16,
-        "min_ms": 0.11,
-        "max_ms": 3.77,
+        "median_ms": 0.1,
+        "min_ms": 0.1,
+        "max_ms": 3.28,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 3.77,
+          "elapsed_ms": 3.28,
           "error": "Catalog exception: function REDUCE does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.1,
           "error": "Catalog exception: function REDUCE does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.11,
+          "elapsed_ms": 0.1,
           "error": "Catalog exception: function REDUCE does not exist."
         }
       ]
@@ -3275,7 +3282,7 @@
       "id": "cypher.all",
       "probe_sha256": "0e1ed62c887b1171aebfdaf9b9b1b69a8f712186e503490bfe4663e97035aa12",
       "status": "pass",
-      "elapsed_ms": 2.83,
+      "elapsed_ms": 2.3,
       "rows": [
         [
           true
@@ -3284,19 +3291,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.83,
-          0.2,
-          0.13
+          2.3,
+          0.12,
+          0.11
         ],
-        "median_ms": 0.2,
-        "min_ms": 0.13,
-        "max_ms": 2.83,
+        "median_ms": 0.12,
+        "min_ms": 0.11,
+        "max_ms": 2.3,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.83,
+          "elapsed_ms": 2.3,
           "rows": [
             [
               true
@@ -3305,7 +3312,59 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.12,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.11,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cypher.any",
+      "probe_sha256": "6addf7ba675489b85a29007c6f0042b0f6d3f0bfd1e06103e30bda81922264e1",
+      "status": "pass",
+      "elapsed_ms": 2.31,
+      "rows": [
+        [
+          true
+        ]
+      ],
+      "unstable": false,
+      "timing": {
+        "samples_ms": [
+          2.31,
+          0.13,
+          0.13
+        ],
+        "median_ms": 0.13,
+        "min_ms": 0.13,
+        "max_ms": 2.31,
+        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
+      },
+      "trials": [
+        {
+          "status": "pass",
+          "elapsed_ms": 2.31,
+          "rows": [
+            [
+              true
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.13,
           "rows": [
             [
               true
@@ -3324,10 +3383,10 @@
       ]
     },
     {
-      "id": "cypher.any",
-      "probe_sha256": "6addf7ba675489b85a29007c6f0042b0f6d3f0bfd1e06103e30bda81922264e1",
+      "id": "cypher.none",
+      "probe_sha256": "f58fa63595dd872595730d3cbd067c2df0c34d987ee03e4a81b0fcdb52a9bec5",
       "status": "pass",
-      "elapsed_ms": 2.74,
+      "elapsed_ms": 2.56,
       "rows": [
         [
           true
@@ -3336,19 +3395,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.74,
-          0.15,
+          2.56,
+          0.12,
           0.12
         ],
-        "median_ms": 0.15,
+        "median_ms": 0.12,
         "min_ms": 0.12,
-        "max_ms": 2.74,
+        "max_ms": 2.56,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.74,
+          "elapsed_ms": 2.56,
           "rows": [
             [
               true
@@ -3357,7 +3416,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               true
@@ -3376,62 +3435,10 @@
       ]
     },
     {
-      "id": "cypher.none",
-      "probe_sha256": "f58fa63595dd872595730d3cbd067c2df0c34d987ee03e4a81b0fcdb52a9bec5",
-      "status": "pass",
-      "elapsed_ms": 3.04,
-      "rows": [
-        [
-          true
-        ]
-      ],
-      "unstable": false,
-      "timing": {
-        "samples_ms": [
-          3.04,
-          0.18,
-          0.19
-        ],
-        "median_ms": 0.19,
-        "min_ms": 0.18,
-        "max_ms": 3.04,
-        "scope": "client wall time; three consecutive executions by default; first included; no warmup"
-      },
-      "trials": [
-        {
-          "status": "pass",
-          "elapsed_ms": 3.04,
-          "rows": [
-            [
-              true
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.18,
-          "rows": [
-            [
-              true
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.19,
-          "rows": [
-            [
-              true
-            ]
-          ]
-        }
-      ]
-    },
-    {
       "id": "cypher.single",
       "probe_sha256": "ddc6979aad43bab22738d236e59ca7cef68bc4efb955dfbd7e32b3696f1d8a40",
       "status": "pass",
-      "elapsed_ms": 2.9,
+      "elapsed_ms": 2.26,
       "rows": [
         [
           true
@@ -3440,19 +3447,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.9,
-          0.17,
-          0.13
+          2.26,
+          0.11,
+          0.11
         ],
-        "median_ms": 0.17,
-        "min_ms": 0.13,
-        "max_ms": 2.9,
+        "median_ms": 0.11,
+        "min_ms": 0.11,
+        "max_ms": 2.26,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.9,
+          "elapsed_ms": 2.26,
           "rows": [
             [
               true
@@ -3461,7 +3468,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               true
@@ -3470,7 +3477,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.13,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               true
@@ -3483,7 +3490,7 @@
       "id": "cypher.empty_all",
       "probe_sha256": "a2348c71bc54265d2a71379aa3c32039aa6242a8d548348778a1744a10f10200",
       "status": "pass",
-      "elapsed_ms": 0.22,
+      "elapsed_ms": 0.17,
       "rows": [
         [
           true
@@ -3492,19 +3499,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.22,
+          0.17,
           0.1,
-          0.08
+          0.09
         ],
         "median_ms": 0.1,
-        "min_ms": 0.08,
-        "max_ms": 0.22,
+        "min_ms": 0.09,
+        "max_ms": 0.17,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.22,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               true
@@ -3522,7 +3529,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               true
@@ -3535,7 +3542,7 @@
       "id": "cypher.range",
       "probe_sha256": "006d7a7bc9c451e54bfa97efee6563945e89bd65b0d773ebc74102a2595fe497",
       "status": "pass",
-      "elapsed_ms": 0.93,
+      "elapsed_ms": 0.79,
       "rows": [
         [
           [
@@ -3548,19 +3555,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.93,
-          0.15,
-          0.11
+          0.79,
+          0.07,
+          0.07
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.11,
-        "max_ms": 0.93,
+        "median_ms": 0.07,
+        "min_ms": 0.07,
+        "max_ms": 0.79,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.93,
+          "elapsed_ms": 0.79,
           "rows": [
             [
               [
@@ -3573,7 +3580,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               [
@@ -3586,7 +3593,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.11,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               [
@@ -3603,34 +3610,34 @@
       "id": "cypher.head_last",
       "probe_sha256": "7745f67408c7f5517ac2ee88b49265e18147643744fdc960f4c990a682e10641",
       "status": "query-error",
-      "elapsed_ms": 4.32,
+      "elapsed_ms": 1.33,
       "error": "Catalog exception: function HEAD does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.32,
-          0.16,
-          0.43
+          1.33,
+          0.1,
+          0.09
         ],
-        "median_ms": 0.43,
-        "min_ms": 0.16,
-        "max_ms": 4.32,
+        "median_ms": 0.1,
+        "min_ms": 0.09,
+        "max_ms": 1.33,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 4.32,
+          "elapsed_ms": 1.33,
           "error": "Catalog exception: function HEAD does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.1,
           "error": "Catalog exception: function HEAD does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.43,
+          "elapsed_ms": 0.09,
           "error": "Catalog exception: function HEAD does not exist."
         }
       ]
@@ -3639,34 +3646,34 @@
       "id": "cypher.tail",
       "probe_sha256": "fafc5ceb6f2c7d840353444302a6e44d0193cf5c3c033d7396b7a38b4e0e2cf4",
       "status": "query-error",
-      "elapsed_ms": 0.51,
+      "elapsed_ms": 0.32,
       "error": "Catalog exception: function TAIL does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.51,
-          0.09,
-          0.08
+          0.32,
+          0.07,
+          0.07
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.08,
-        "max_ms": 0.51,
+        "median_ms": 0.07,
+        "min_ms": 0.07,
+        "max_ms": 0.32,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.51,
+          "elapsed_ms": 0.32,
           "error": "Catalog exception: function TAIL does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.07,
           "error": "Catalog exception: function TAIL does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.07,
           "error": "Catalog exception: function TAIL does not exist."
         }
       ]
@@ -3675,7 +3682,7 @@
       "id": "cypher.reverse",
       "probe_sha256": "90f95583f09c38aa57c12d50c9813beff996e7cd3c211cc7ed93d869b303f27d",
       "status": "mismatch",
-      "elapsed_ms": 2.45,
+      "elapsed_ms": 0.35,
       "rows": [
         [
           "]3,2,1["
@@ -3684,19 +3691,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.45,
-          1.11,
-          2.19
+          0.35,
+          0.09,
+          0.08
         ],
-        "median_ms": 2.19,
-        "min_ms": 1.11,
-        "max_ms": 2.45,
+        "median_ms": 0.09,
+        "min_ms": 0.08,
+        "max_ms": 0.35,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 2.45,
+          "elapsed_ms": 0.35,
           "rows": [
             [
               "]3,2,1["
@@ -3705,7 +3712,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 1.11,
+          "elapsed_ms": 0.09,
           "rows": [
             [
               "]3,2,1["
@@ -3714,7 +3721,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 2.19,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               "]3,2,1["
@@ -3727,7 +3734,7 @@
       "id": "cypher.map_access",
       "probe_sha256": "a54f95fb7147d0bdeeea461eb4373359d3e125a5eb0423a67191d3b55a819f01",
       "status": "pass",
-      "elapsed_ms": 4.3,
+      "elapsed_ms": 0.8,
       "rows": [
         [
           7
@@ -3736,19 +3743,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          4.3,
-          0.21,
-          0.1
+          0.8,
+          0.08,
+          0.07
         ],
-        "median_ms": 0.21,
-        "min_ms": 0.1,
-        "max_ms": 4.3,
+        "median_ms": 0.08,
+        "min_ms": 0.07,
+        "max_ms": 0.8,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 4.3,
+          "elapsed_ms": 0.8,
           "rows": [
             [
               7
@@ -3757,7 +3764,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.21,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               7
@@ -3766,7 +3773,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.1,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               7
@@ -3779,7 +3786,7 @@
       "id": "cypher.mixed_list",
       "probe_sha256": "72c65b9e2c9a615483fb6b9ed5ce036056351f1645d605002b347232e2d747f1",
       "status": "mismatch",
-      "elapsed_ms": 0.86,
+      "elapsed_ms": 0.27,
       "rows": [
         [
           [
@@ -3792,19 +3799,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.86,
-          0.14,
-          0.1
+          0.27,
+          0.08,
+          0.08
         ],
-        "median_ms": 0.14,
-        "min_ms": 0.1,
-        "max_ms": 0.86,
+        "median_ms": 0.08,
+        "min_ms": 0.08,
+        "max_ms": 0.27,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.86,
+          "elapsed_ms": 0.27,
           "rows": [
             [
               [
@@ -3817,7 +3824,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               [
@@ -3830,7 +3837,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.1,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               [
@@ -3847,34 +3854,34 @@
       "id": "cypher.map_projection",
       "probe_sha256": "0e256b6d492adbb42131ecc657f4db07f1c69edfbd333e5055c53d875a0a86d8",
       "status": "query-error",
-      "elapsed_ms": 0.39,
+      "elapsed_ms": 0.28,
       "error": "Parser exception: mismatched input '{' expecting {CALL, CREATE, DELETE, DETACH, LOAD, MATCH, MERGE, OPTIONAL, RETURN, SET, UNWIND, WITH, SP} (line: 1, offset: 38)\n\"MATCH (p:Person {name:'Alice'}) WITH p{.name,.age} AS m RETURN m.name,m.age\"\n                                       ^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.39,
-          0.24,
-          0.24
+          0.28,
+          0.23,
+          0.22
         ],
-        "median_ms": 0.24,
-        "min_ms": 0.24,
-        "max_ms": 0.39,
+        "median_ms": 0.23,
+        "min_ms": 0.22,
+        "max_ms": 0.28,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.39,
+          "elapsed_ms": 0.28,
           "error": "Parser exception: mismatched input '{' expecting {CALL, CREATE, DELETE, DETACH, LOAD, MATCH, MERGE, OPTIONAL, RETURN, SET, UNWIND, WITH, SP} (line: 1, offset: 38)\n\"MATCH (p:Person {name:'Alice'}) WITH p{.name,.age} AS m RETURN m.name,m.age\"\n                                       ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.23,
           "error": "Parser exception: mismatched input '{' expecting {CALL, CREATE, DELETE, DETACH, LOAD, MATCH, MERGE, OPTIONAL, RETURN, SET, UNWIND, WITH, SP} (line: 1, offset: 38)\n\"MATCH (p:Person {name:'Alice'}) WITH p{.name,.age} AS m RETURN m.name,m.age\"\n                                       ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.22,
           "error": "Parser exception: mismatched input '{' expecting {CALL, CREATE, DELETE, DETACH, LOAD, MATCH, MERGE, OPTIONAL, RETURN, SET, UNWIND, WITH, SP} (line: 1, offset: 38)\n\"MATCH (p:Person {name:'Alice'}) WITH p{.name,.age} AS m RETURN m.name,m.age\"\n                                       ^"
         }
       ]
@@ -3883,34 +3890,34 @@
       "id": "cypher.keys",
       "probe_sha256": "b183a8e6c281f6bf5bcfcea3023fbde37b15b3714634fbc4ddcddad45e4d7c6d",
       "status": "query-error",
-      "elapsed_ms": 2.55,
+      "elapsed_ms": 2.12,
       "error": "Binder exception: Function KEYS did not receive correct arguments:\nActual:   (STRUCT(x INT64, y INT64))\nExpected: (NODE)\n          (REL)\n\n",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.55,
-          0.13,
-          0.11
+          2.12,
+          0.1,
+          0.1
         ],
-        "median_ms": 0.13,
-        "min_ms": 0.11,
-        "max_ms": 2.55,
+        "median_ms": 0.1,
+        "min_ms": 0.1,
+        "max_ms": 2.12,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 2.55,
+          "elapsed_ms": 2.12,
           "error": "Binder exception: Function KEYS did not receive correct arguments:\nActual:   (STRUCT(x INT64, y INT64))\nExpected: (NODE)\n          (REL)\n\n"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.13,
+          "elapsed_ms": 0.1,
           "error": "Binder exception: Function KEYS did not receive correct arguments:\nActual:   (STRUCT(x INT64, y INT64))\nExpected: (NODE)\n          (REL)\n\n"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.11,
+          "elapsed_ms": 0.1,
           "error": "Binder exception: Function KEYS did not receive correct arguments:\nActual:   (STRUCT(x INT64, y INT64))\nExpected: (NODE)\n          (REL)\n\n"
         }
       ]
@@ -3919,7 +3926,7 @@
       "id": "cypher.arithmetic",
       "probe_sha256": "d187f57550c2b84504c90093342386262cb242591029a2383ace805ff6f91cb1",
       "status": "pass",
-      "elapsed_ms": 2.19,
+      "elapsed_ms": 1.48,
       "rows": [
         [
           7,
@@ -3929,19 +3936,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.19,
-          0.15,
-          0.1
+          1.48,
+          0.08,
+          0.07
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.1,
-        "max_ms": 2.19,
+        "median_ms": 0.08,
+        "min_ms": 0.07,
+        "max_ms": 1.48,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 2.19,
+          "elapsed_ms": 1.48,
           "rows": [
             [
               7,
@@ -3951,7 +3958,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               7,
@@ -3961,7 +3968,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.1,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               7,
@@ -3975,7 +3982,7 @@
       "id": "cypher.integer_division",
       "probe_sha256": "841ac8edb39a4055d4a88220693a168009807ce27fa46dfa5e404f815f3395f4",
       "status": "pass",
-      "elapsed_ms": 0.31,
+      "elapsed_ms": 0.2,
       "rows": [
         [
           2
@@ -3984,19 +3991,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.31,
-          0.07,
-          0.06
+          0.2,
+          0.05,
+          0.05
         ],
-        "median_ms": 0.07,
-        "min_ms": 0.06,
-        "max_ms": 0.31,
+        "median_ms": 0.05,
+        "min_ms": 0.05,
+        "max_ms": 0.2,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.31,
+          "elapsed_ms": 0.2,
           "rows": [
             [
               2
@@ -4005,7 +4012,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.07,
+          "elapsed_ms": 0.05,
           "rows": [
             [
               2
@@ -4014,7 +4021,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "rows": [
             [
               2
@@ -4027,7 +4034,7 @@
       "id": "cypher.float_division",
       "probe_sha256": "1a39d66c0f996c2529936ee3a441d1989b2634f2dfcf2b0ba5e9899fc26d56b8",
       "status": "pass",
-      "elapsed_ms": 0.24,
+      "elapsed_ms": 0.19,
       "rows": [
         [
           2.5
@@ -4036,19 +4043,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.24,
-          0.09,
-          0.07
+          0.19,
+          0.06,
+          0.05
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.07,
-        "max_ms": 0.24,
+        "median_ms": 0.06,
+        "min_ms": 0.05,
+        "max_ms": 0.19,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.19,
           "rows": [
             [
               2.5
@@ -4057,7 +4064,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.06,
           "rows": [
             [
               2.5
@@ -4066,7 +4073,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.07,
+          "elapsed_ms": 0.05,
           "rows": [
             [
               2.5
@@ -4079,34 +4086,34 @@
       "id": "cypher.cast_integer",
       "probe_sha256": "8e351fc0a9b98a635fb78bc8bdd47138c73297f41eb9597ec9d48e8f703a6f5f",
       "status": "query-error",
-      "elapsed_ms": 0.22,
+      "elapsed_ms": 0.14,
       "error": "Catalog exception: function TOINTEGER does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.22,
-          0.06,
-          0.06
+          0.14,
+          0.05,
+          0.05
         ],
-        "median_ms": 0.06,
-        "min_ms": 0.06,
-        "max_ms": 0.22,
+        "median_ms": 0.05,
+        "min_ms": 0.05,
+        "max_ms": 0.14,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.22,
+          "elapsed_ms": 0.14,
           "error": "Catalog exception: function TOINTEGER does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "error": "Catalog exception: function TOINTEGER does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "error": "Catalog exception: function TOINTEGER does not exist."
         }
       ]
@@ -4115,34 +4122,34 @@
       "id": "cypher.cast_float",
       "probe_sha256": "f6fa0ec1a9ca2f8846dcb9e8ebbbb78bb3a74f90ffef2af145d43f4016a7798a",
       "status": "query-error",
-      "elapsed_ms": 0.15,
+      "elapsed_ms": 0.14,
       "error": "Catalog exception: function TOFLOAT does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.15,
-          0.06,
-          0.06
+          0.14,
+          0.05,
+          0.05
         ],
-        "median_ms": 0.06,
-        "min_ms": 0.06,
-        "max_ms": 0.15,
+        "median_ms": 0.05,
+        "min_ms": 0.05,
+        "max_ms": 0.14,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.14,
           "error": "Catalog exception: function TOFLOAT does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "error": "Catalog exception: function TOFLOAT does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "error": "Catalog exception: function TOFLOAT does not exist."
         }
       ]
@@ -4194,9 +4201,9 @@
         "samples_ms": [
           0.07,
           0.05,
-          0.06
+          0.05
         ],
-        "median_ms": 0.06,
+        "median_ms": 0.05,
         "min_ms": 0.05,
         "max_ms": 0.07,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
@@ -4214,7 +4221,7 @@
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.06,
+          "elapsed_ms": 0.05,
           "error": "Catalog exception: function TOSTRING does not exist."
         }
       ]
@@ -4223,7 +4230,7 @@
       "id": "cypher.labels",
       "probe_sha256": "730d5320bcd94c4952b2f19d1cb1df5c2721cc7ba3467d24ef4f08988b0427df",
       "status": "mismatch",
-      "elapsed_ms": 0.22,
+      "elapsed_ms": 0.13,
       "rows": [
         [
           "Person"
@@ -4232,25 +4239,16 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.22,
           0.13,
-          0.12
+          0.1,
+          0.09
         ],
-        "median_ms": 0.13,
-        "min_ms": 0.12,
-        "max_ms": 0.22,
+        "median_ms": 0.1,
+        "min_ms": 0.09,
+        "max_ms": 0.13,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
-        {
-          "status": "mismatch",
-          "elapsed_ms": 0.22,
-          "rows": [
-            [
-              "Person"
-            ]
-          ]
-        },
         {
           "status": "mismatch",
           "elapsed_ms": 0.13,
@@ -4262,7 +4260,16 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.12,
+          "elapsed_ms": 0.1,
+          "rows": [
+            [
+              "Person"
+            ]
+          ]
+        },
+        {
+          "status": "mismatch",
+          "elapsed_ms": 0.09,
           "rows": [
             [
               "Person"
@@ -4275,7 +4282,7 @@
       "id": "cypher.string_case",
       "probe_sha256": "5878868ce60174237dddcf23ecc6780781c356b64675e84c5779efff767d4dec",
       "status": "pass",
-      "elapsed_ms": 0.18,
+      "elapsed_ms": 0.11,
       "rows": [
         [
           "AB",
@@ -4285,39 +4292,39 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.18,
-          0.1,
-          0.11
+          0.11,
+          0.07,
+          0.07
         ],
-        "median_ms": 0.11,
-        "min_ms": 0.1,
-        "max_ms": 0.18,
+        "median_ms": 0.07,
+        "min_ms": 0.07,
+        "max_ms": 0.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.18,
-          "rows": [
-            [
-              "AB",
-              "ab"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.1,
-          "rows": [
-            [
-              "AB",
-              "ab"
-            ]
-          ]
-        },
-        {
-          "status": "pass",
           "elapsed_ms": 0.11,
+          "rows": [
+            [
+              "AB",
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.07,
+          "rows": [
+            [
+              "AB",
+              "ab"
+            ]
+          ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.07,
           "rows": [
             [
               "AB",
@@ -4331,7 +4338,7 @@
       "id": "cypher.string_trim",
       "probe_sha256": "fb3b6b81a8e4a7d8da70ab85e07c21ba793a851f13c38e2594d7a00d8016d91d",
       "status": "pass",
-      "elapsed_ms": 0.11,
+      "elapsed_ms": 0.06,
       "rows": [
         [
           "ab"
@@ -4340,19 +4347,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.11,
-          0.07,
+          0.06,
+          0.06,
           0.06
         ],
-        "median_ms": 0.07,
+        "median_ms": 0.06,
         "min_ms": 0.06,
-        "max_ms": 0.11,
+        "max_ms": 0.06,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.11,
+          "elapsed_ms": 0.06,
           "rows": [
             [
               "ab"
@@ -4361,7 +4368,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.07,
+          "elapsed_ms": 0.06,
           "rows": [
             [
               "ab"
@@ -4383,7 +4390,7 @@
       "id": "cypher.string_replace",
       "probe_sha256": "110925bc50701cd055f907160f7feec5f1cad9dbd2d588ef66a0c7dfbe6b94d5",
       "status": "pass",
-      "elapsed_ms": 0.88,
+      "elapsed_ms": 0.46,
       "rows": [
         [
           "aXc"
@@ -4392,19 +4399,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.88,
-          0.08,
+          0.46,
+          0.07,
           0.07
         ],
-        "median_ms": 0.08,
+        "median_ms": 0.07,
         "min_ms": 0.07,
-        "max_ms": 0.88,
+        "max_ms": 0.46,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.88,
+          "elapsed_ms": 0.46,
           "rows": [
             [
               "aXc"
@@ -4413,7 +4420,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.08,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               "aXc"
@@ -4435,24 +4442,24 @@
       "id": "cypher.string_split",
       "probe_sha256": "0e1e56ad40de30b5778d9135db4791f78a66aa65e1810f04f83ffd9c1c0b977d",
       "status": "query-error",
-      "elapsed_ms": 0.1,
+      "elapsed_ms": 0.08,
       "error": "Catalog exception: function SPLIT does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.1,
+          0.08,
           0.06,
           0.06
         ],
         "median_ms": 0.06,
         "min_ms": 0.06,
-        "max_ms": 0.1,
+        "max_ms": 0.08,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.1,
+          "elapsed_ms": 0.08,
           "error": "Catalog exception: function SPLIT does not exist."
         },
         {
@@ -4471,7 +4478,7 @@
       "id": "cypher.substring",
       "probe_sha256": "222b86c092062a2cdf1adf4fb94e6c2165b54d60f5e26f13fb5af9dffae5e748",
       "status": "mismatch",
-      "elapsed_ms": 0.14,
+      "elapsed_ms": 0.29,
       "rows": [
         [
           "ab"
@@ -4480,19 +4487,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.14,
-          0.09,
+          0.29,
+          0.07,
           0.07
         ],
-        "median_ms": 0.09,
+        "median_ms": 0.07,
         "min_ms": 0.07,
-        "max_ms": 0.14,
+        "max_ms": 0.29,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "mismatch",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.29,
           "rows": [
             [
               "ab"
@@ -4501,7 +4508,7 @@
         },
         {
           "status": "mismatch",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.07,
           "rows": [
             [
               "ab"
@@ -4523,7 +4530,7 @@
       "id": "cypher.starts_ends",
       "probe_sha256": "e42ad34db4f33809677cf394ed55189944ecd5efbb65f0822bbcae2f72f2a401",
       "status": "pass",
-      "elapsed_ms": 1.03,
+      "elapsed_ms": 0.81,
       "rows": [
         [
           true,
@@ -4533,19 +4540,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.03,
-          0.09,
-          0.07
+          0.81,
+          0.08,
+          0.08
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.07,
-        "max_ms": 1.03,
+        "median_ms": 0.08,
+        "min_ms": 0.08,
+        "max_ms": 0.81,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.03,
+          "elapsed_ms": 0.81,
           "rows": [
             [
               true,
@@ -4555,7 +4562,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               true,
@@ -4565,7 +4572,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.07,
+          "elapsed_ms": 0.08,
           "rows": [
             [
               true,
@@ -4579,7 +4586,7 @@
       "id": "cypher.contains",
       "probe_sha256": "8201fdc47762b45f6cc9b0a88b16bf844599057c6b98336978b3e308110e94bb",
       "status": "pass",
-      "elapsed_ms": 0.16,
+      "elapsed_ms": 0.14,
       "rows": [
         [
           true
@@ -4588,19 +4595,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.16,
-          0.09,
+          0.14,
+          0.05,
           0.06
         ],
-        "median_ms": 0.09,
-        "min_ms": 0.06,
-        "max_ms": 0.16,
+        "median_ms": 0.06,
+        "min_ms": 0.05,
+        "max_ms": 0.14,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.16,
+          "elapsed_ms": 0.14,
           "rows": [
             [
               true
@@ -4609,7 +4616,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.05,
           "rows": [
             [
               true
@@ -4631,7 +4638,7 @@
       "id": "cypher.regex",
       "probe_sha256": "bee6f352943ba64e5cf98e23e0fee115dddc792ddbb0581de9b1cd23b0d843bd",
       "status": "pass",
-      "elapsed_ms": 1.18,
+      "elapsed_ms": 0.75,
       "rows": [
         [
           true
@@ -4640,28 +4647,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.18,
-          0.11,
-          0.07
+          0.75,
+          0.07,
+          0.06
         ],
-        "median_ms": 0.11,
-        "min_ms": 0.07,
-        "max_ms": 1.18,
+        "median_ms": 0.07,
+        "min_ms": 0.06,
+        "max_ms": 0.75,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.18,
-          "rows": [
-            [
-              true
-            ]
-          ]
-        },
-        {
-          "status": "pass",
-          "elapsed_ms": 0.11,
+          "elapsed_ms": 0.75,
           "rows": [
             [
               true
@@ -4676,6 +4674,15 @@
               true
             ]
           ]
+        },
+        {
+          "status": "pass",
+          "elapsed_ms": 0.06,
+          "rows": [
+            [
+              true
+            ]
+          ]
         }
       ]
     },
@@ -4683,7 +4690,7 @@
       "id": "cypher.unicode_size",
       "probe_sha256": "950ba4296fa99e12076e8e5543b371ef9855b582ddcfbfca42da6b67856c234b",
       "status": "pass",
-      "elapsed_ms": 0.92,
+      "elapsed_ms": 0.75,
       "rows": [
         [
           3
@@ -4692,19 +4699,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.92,
-          0.09,
+          0.75,
+          0.06,
           0.06
         ],
-        "median_ms": 0.09,
+        "median_ms": 0.06,
         "min_ms": 0.06,
-        "max_ms": 0.92,
+        "max_ms": 0.75,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.92,
+          "elapsed_ms": 0.75,
           "rows": [
             [
               3
@@ -4713,7 +4720,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.09,
+          "elapsed_ms": 0.06,
           "rows": [
             [
               3
@@ -4735,7 +4742,7 @@
       "id": "cypher.math",
       "probe_sha256": "925760ee05aecb2f02ff1ff6472e3411fafc5bf43cf686cf008838f6e1a131f9",
       "status": "pass",
-      "elapsed_ms": 1.17,
+      "elapsed_ms": 0.86,
       "rows": [
         [
           3,
@@ -4747,19 +4754,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.17,
-          0.19,
-          0.17
+          0.86,
+          0.12,
+          0.12
         ],
-        "median_ms": 0.19,
-        "min_ms": 0.17,
-        "max_ms": 1.17,
+        "median_ms": 0.12,
+        "min_ms": 0.12,
+        "max_ms": 0.86,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.17,
+          "elapsed_ms": 0.86,
           "rows": [
             [
               3,
@@ -4771,7 +4778,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.19,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               3,
@@ -4783,7 +4790,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               3,
@@ -4799,34 +4806,34 @@
       "id": "cypher.pi",
       "probe_sha256": "5b009fe7693f7b83572a0702801693cd6e4882398fe2970814e6e156df4cc9c7",
       "status": "query-error",
-      "elapsed_ms": 2.02,
+      "elapsed_ms": 0.71,
       "error": "Binder exception: Function ROUND did not receive correct arguments:\nActual:   (DOUBLE)\nExpected: (DOUBLE,INT64) -> DOUBLE\n\n",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.02,
-          0.24,
-          0.2
+          0.71,
+          0.08,
+          0.07
         ],
-        "median_ms": 0.24,
-        "min_ms": 0.2,
-        "max_ms": 2.02,
+        "median_ms": 0.08,
+        "min_ms": 0.07,
+        "max_ms": 0.71,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 2.02,
+          "elapsed_ms": 0.71,
           "error": "Binder exception: Function ROUND did not receive correct arguments:\nActual:   (DOUBLE)\nExpected: (DOUBLE,INT64) -> DOUBLE\n\n"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.24,
+          "elapsed_ms": 0.08,
           "error": "Binder exception: Function ROUND did not receive correct arguments:\nActual:   (DOUBLE)\nExpected: (DOUBLE,INT64) -> DOUBLE\n\n"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.2,
+          "elapsed_ms": 0.07,
           "error": "Binder exception: Function ROUND did not receive correct arguments:\nActual:   (DOUBLE)\nExpected: (DOUBLE,INT64) -> DOUBLE\n\n"
         }
       ]
@@ -4835,34 +4842,34 @@
       "id": "cypher.date",
       "probe_sha256": "50e16659d7b8c769b1a741eb063c5161386c44cb897fb7ec99570f52ce938bc4",
       "status": "query-error",
-      "elapsed_ms": 0.29,
+      "elapsed_ms": 0.09,
       "error": "Binder exception: TO_DATE(2024-02-29) has data type DATE but (NODE,REL,STRUCT,ANY) was expected.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.29,
-          0.15,
-          0.15
+          0.09,
+          0.06,
+          0.06
         ],
-        "median_ms": 0.15,
-        "min_ms": 0.15,
-        "max_ms": 0.29,
+        "median_ms": 0.06,
+        "min_ms": 0.06,
+        "max_ms": 0.09,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.29,
+          "elapsed_ms": 0.09,
           "error": "Binder exception: TO_DATE(2024-02-29) has data type DATE but (NODE,REL,STRUCT,ANY) was expected."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.06,
           "error": "Binder exception: TO_DATE(2024-02-29) has data type DATE but (NODE,REL,STRUCT,ANY) was expected."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.06,
           "error": "Binder exception: TO_DATE(2024-02-29) has data type DATE but (NODE,REL,STRUCT,ANY) was expected."
         }
       ]
@@ -4871,34 +4878,34 @@
       "id": "cypher.duration",
       "probe_sha256": "02427ed9d23159ad63b0e9d9c3255ac6d2bb427c32c82e2aa72f3a4d42a2f0c0",
       "status": "query-error",
-      "elapsed_ms": 0.3,
+      "elapsed_ms": 0.11,
       "error": "Conversion exception: Error occurred during parsing interval. Given: \"P2D\".",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.3,
-          0.17,
-          0.15
+          0.11,
+          0.07,
+          0.06
         ],
-        "median_ms": 0.17,
-        "min_ms": 0.15,
-        "max_ms": 0.3,
+        "median_ms": 0.07,
+        "min_ms": 0.06,
+        "max_ms": 0.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.3,
+          "elapsed_ms": 0.11,
           "error": "Conversion exception: Error occurred during parsing interval. Given: \"P2D\"."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.07,
           "error": "Conversion exception: Error occurred during parsing interval. Given: \"P2D\"."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.15,
+          "elapsed_ms": 0.06,
           "error": "Conversion exception: Error occurred during parsing interval. Given: \"P2D\"."
         }
       ]
@@ -4907,34 +4914,34 @@
       "id": "cypher.datetime",
       "probe_sha256": "e8073b466e61f4a1eef329a237a1be987fb19edacf4a836a3b5047a74b0491e6",
       "status": "query-error",
-      "elapsed_ms": 0.17,
+      "elapsed_ms": 0.06,
       "error": "Catalog exception: function DATETIME does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.17,
-          0.14,
-          0.14
+          0.06,
+          0.06,
+          0.06
         ],
-        "median_ms": 0.14,
-        "min_ms": 0.14,
-        "max_ms": 0.17,
+        "median_ms": 0.06,
+        "min_ms": 0.06,
+        "max_ms": 0.06,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.17,
+          "elapsed_ms": 0.06,
           "error": "Catalog exception: function DATETIME does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.06,
           "error": "Catalog exception: function DATETIME does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.06,
           "error": "Catalog exception: function DATETIME does not exist."
         }
       ]
@@ -4943,34 +4950,34 @@
       "id": "cypher.point",
       "probe_sha256": "695fd7592cf61fa19d85f05576e3b5bdd8885a63552046ce993ab6306cc0927a",
       "status": "query-error",
-      "elapsed_ms": 2.18,
+      "elapsed_ms": 0.71,
       "error": "Catalog exception: function POINT does not exist.",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          2.18,
-          0.26,
-          0.18
+          0.71,
+          0.08,
+          0.07
         ],
-        "median_ms": 0.26,
-        "min_ms": 0.18,
-        "max_ms": 2.18,
+        "median_ms": 0.08,
+        "min_ms": 0.07,
+        "max_ms": 0.71,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 2.18,
+          "elapsed_ms": 0.71,
           "error": "Catalog exception: function POINT does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.08,
           "error": "Catalog exception: function POINT does not exist."
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.07,
           "error": "Catalog exception: function POINT does not exist."
         }
       ]
@@ -4979,7 +4986,7 @@
       "id": "cypher.create",
       "probe_sha256": "e732b3f50a09ba39d463bb5cc8c92463521ae31c4ee9a6b2a77edd12f6de0a49",
       "status": "pass",
-      "elapsed_ms": 1.17,
+      "elapsed_ms": 0.31,
       "rows": [
         [
           "new"
@@ -4988,19 +4995,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.17,
-          0.19,
-          0.14
+          0.31,
+          0.12,
+          0.11
         ],
-        "median_ms": 0.19,
-        "min_ms": 0.14,
-        "max_ms": 1.17,
+        "median_ms": 0.12,
+        "min_ms": 0.11,
+        "max_ms": 0.31,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.17,
+          "elapsed_ms": 0.31,
           "rows": [
             [
               "new"
@@ -5009,7 +5016,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.19,
+          "elapsed_ms": 0.12,
           "rows": [
             [
               "new"
@@ -5018,7 +5025,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.14,
+          "elapsed_ms": 0.11,
           "rows": [
             [
               "new"
@@ -5031,7 +5038,7 @@
       "id": "cypher.merge",
       "probe_sha256": "c207f8978bfa2dcd18dac9f5daf4d8a82fc5d280c80a08b78521123b85d3c86c",
       "status": "pass",
-      "elapsed_ms": 0.68,
+      "elapsed_ms": 0.5,
       "rows": [
         [
           "Alice"
@@ -5040,19 +5047,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.68,
-          0.26,
-          0.21
+          0.5,
+          0.19,
+          0.19
         ],
-        "median_ms": 0.26,
-        "min_ms": 0.21,
-        "max_ms": 0.68,
+        "median_ms": 0.19,
+        "min_ms": 0.19,
+        "max_ms": 0.5,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 0.68,
+          "elapsed_ms": 0.5,
           "rows": [
             [
               "Alice"
@@ -5061,7 +5068,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.19,
           "rows": [
             [
               "Alice"
@@ -5070,7 +5077,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.21,
+          "elapsed_ms": 0.19,
           "rows": [
             [
               "Alice"
@@ -5083,7 +5090,7 @@
       "id": "cypher.set",
       "probe_sha256": "0cd4f82c33f44932afa422049b2e4bdabe72c434d738c0fd2fb59972785c9a9e",
       "status": "pass",
-      "elapsed_ms": 6.56,
+      "elapsed_ms": 0.61,
       "rows": [
         [
           7
@@ -5092,19 +5099,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          6.56,
-          0.36,
-          0.27
+          0.61,
+          0.17,
+          0.16
         ],
-        "median_ms": 0.36,
-        "min_ms": 0.27,
-        "max_ms": 6.56,
+        "median_ms": 0.17,
+        "min_ms": 0.16,
+        "max_ms": 0.61,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 6.56,
+          "elapsed_ms": 0.61,
           "rows": [
             [
               7
@@ -5113,7 +5120,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.36,
+          "elapsed_ms": 0.17,
           "rows": [
             [
               7
@@ -5122,7 +5129,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.27,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               7
@@ -5135,34 +5142,34 @@
       "id": "cypher.set_map",
       "probe_sha256": "0c55ac00954fa79b3b017e8d24e07398b1ecefbf4cca8bebea52fc7393a35dcf",
       "status": "query-error",
-      "elapsed_ms": 0.18,
+      "elapsed_ms": 0.11,
       "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) SET p +>: expected rule oC_SingleQuery (line: 1, offset: 31)\n\"MATCH (p:Person {uid:1}) SET p += {score:7} RETURN p.score\"\n                                ^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.18,
-          0.26,
-          0.18
+          0.11,
+          0.1,
+          0.13
         ],
-        "median_ms": 0.18,
-        "min_ms": 0.18,
-        "max_ms": 0.26,
+        "median_ms": 0.11,
+        "min_ms": 0.1,
+        "max_ms": 0.13,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.11,
           "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) SET p +>: expected rule oC_SingleQuery (line: 1, offset: 31)\n\"MATCH (p:Person {uid:1}) SET p += {score:7} RETURN p.score\"\n                                ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.26,
+          "elapsed_ms": 0.1,
           "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) SET p +>: expected rule oC_SingleQuery (line: 1, offset: 31)\n\"MATCH (p:Person {uid:1}) SET p += {score:7} RETURN p.score\"\n                                ^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.18,
+          "elapsed_ms": 0.13,
           "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) SET p +>: expected rule oC_SingleQuery (line: 1, offset: 31)\n\"MATCH (p:Person {uid:1}) SET p += {score:7} RETURN p.score\"\n                                ^"
         }
       ]
@@ -5171,34 +5178,34 @@
       "id": "cypher.remove",
       "probe_sha256": "20faebbd12af28f83d1c5391bc9cb9ba5c62cc9cafa7e3606fc1060d17440bfe",
       "status": "query-error",
-      "elapsed_ms": 0.32,
+      "elapsed_ms": 0.22,
       "error": "Parser exception: Invalid input < REMOVE>: expected rule iC_Statements (line: 1, offset: 39)\n\"MATCH (p:Person {uid:1}) SET p.score=7 REMOVE p.score RETURN p.score\"\n                                        ^^^^^^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.32,
-          0.21,
-          0.23
+          0.22,
+          0.18,
+          0.17
         ],
-        "median_ms": 0.23,
-        "min_ms": 0.21,
-        "max_ms": 0.32,
+        "median_ms": 0.18,
+        "min_ms": 0.17,
+        "max_ms": 0.22,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.32,
+          "elapsed_ms": 0.22,
           "error": "Parser exception: Invalid input < REMOVE>: expected rule iC_Statements (line: 1, offset: 39)\n\"MATCH (p:Person {uid:1}) SET p.score=7 REMOVE p.score RETURN p.score\"\n                                        ^^^^^^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.21,
+          "elapsed_ms": 0.18,
           "error": "Parser exception: Invalid input < REMOVE>: expected rule iC_Statements (line: 1, offset: 39)\n\"MATCH (p:Person {uid:1}) SET p.score=7 REMOVE p.score RETURN p.score\"\n                                        ^^^^^^"
         },
         {
           "status": "query-error",
-          "elapsed_ms": 0.23,
+          "elapsed_ms": 0.17,
           "error": "Parser exception: Invalid input < REMOVE>: expected rule iC_Statements (line: 1, offset: 39)\n\"MATCH (p:Person {uid:1}) SET p.score=7 REMOVE p.score RETURN p.score\"\n                                        ^^^^^^"
         }
       ]
@@ -5207,34 +5214,34 @@
       "id": "cypher.foreach",
       "probe_sha256": "8f72a79042b6d32015bd02e9a6d8567640a058351fef4b05efd2706442e1d605",
       "status": "query-error",
-      "elapsed_ms": 0.13,
+      "elapsed_ms": 0.11,
       "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^",
       "unstable": false,
       "timing": {
         "samples_ms": [
-          0.13,
-          0.12,
-          0.11
+          0.11,
+          0.1,
+          0.1
         ],
-        "median_ms": 0.12,
-        "min_ms": 0.11,
-        "max_ms": 0.13,
+        "median_ms": 0.1,
+        "min_ms": 0.1,
+        "max_ms": 0.11,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "query-error",
-          "elapsed_ms": 0.13,
-          "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^"
-        },
-        {
-          "status": "query-error",
-          "elapsed_ms": 0.12,
-          "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^"
-        },
-        {
-          "status": "query-error",
           "elapsed_ms": 0.11,
+          "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^"
+        },
+        {
+          "status": "query-error",
+          "elapsed_ms": 0.1,
+          "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^"
+        },
+        {
+          "status": "query-error",
+          "elapsed_ms": 0.1,
           "error": "Parser exception: Invalid input <MATCH (p:Person {uid:1}) FOREACH>: expected rule oC_SingleQuery (line: 1, offset: 25)\n\"MATCH (p:Person {uid:1}) FOREACH (x IN [1,2] | SET p.score=x) RETURN p.score\"\n                          ^^^^^^^"
         }
       ]
@@ -5243,7 +5250,7 @@
       "id": "cypher.delete",
       "probe_sha256": "3795375f5530ea0f02dafdf04e8e0a3916c589001677177f1b3376383b2ea61f",
       "status": "pass",
-      "elapsed_ms": 1.57,
+      "elapsed_ms": 1.04,
       "rows": [
         [
           1
@@ -5252,19 +5259,19 @@
       "unstable": false,
       "timing": {
         "samples_ms": [
-          1.57,
-          0.38,
-          0.22
+          1.04,
+          0.18,
+          0.16
         ],
-        "median_ms": 0.38,
-        "min_ms": 0.22,
-        "max_ms": 1.57,
+        "median_ms": 0.18,
+        "min_ms": 0.16,
+        "max_ms": 1.04,
         "scope": "client wall time; three consecutive executions by default; first included; no warmup"
       },
       "trials": [
         {
           "status": "pass",
-          "elapsed_ms": 1.57,
+          "elapsed_ms": 1.04,
           "rows": [
             [
               1
@@ -5273,7 +5280,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.38,
+          "elapsed_ms": 0.18,
           "rows": [
             [
               1
@@ -5282,7 +5289,7 @@
         },
         {
           "status": "pass",
-          "elapsed_ms": 0.22,
+          "elapsed_ms": 0.16,
           "rows": [
             [
               1
@@ -5291,12 +5298,5 @@
         }
       ]
     }
-  ],
-  "execution_environment": {
-    "system": "Darwin",
-    "release": "25.5.0",
-    "architecture": "arm64",
-    "logical_cpus": 12,
-    "python": "3.12.7"
-  }
+  ]
 }
