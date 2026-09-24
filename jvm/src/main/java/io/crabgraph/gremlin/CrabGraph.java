@@ -27,11 +27,16 @@ public final class CrabGraph implements Graph {
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
 
-    private CrabGraph(String executable,Path path) {
+    private CrabGraph(String executable,Path path) { this(executable,path,null); }
+    private CrabGraph(String executable,Path path,RuntimeValues family) {
         this.executable=Objects.requireNonNull(executable,"native executable");
         persistent=path!=null;
         session=new CrabSession(executable,path);
-        runtime.members.add(this);
+        if(family!=null) runtime=family;
+        synchronized(runtime) {
+            if(runtime.closed) { session.abort(); throw new IllegalStateException("Graph family is closed"); }
+            runtime.members.add(this);
+        }
         try { session.call(fields("op","hello","version",1)); } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
         configuration.setProperty(Graph.GRAPH,CrabGraph.class.getName());
         configuration.setProperty("crabgraph.native.executable",executable);
@@ -50,8 +55,8 @@ public final class CrabGraph implements Graph {
         return new CrabGraph(executable,path==null?null:Path.of(path));
     }
     public CrabGraph freshGraph() {
-        if(closed) throw new IllegalStateException("Graph is closed");
-        CrabGraph child=open(executable); child.runtime.members.remove(child); child.runtime=runtime; runtime.members.add(child); return child;
+        if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
+        return new CrabGraph(executable,null,runtime);
     }
     public Object encodeValue(Object value) { return CrabCodec.encode(value,this); }
     public Object decodeValue(Object value) { return CrabCodec.decode(value,this); }
@@ -59,8 +64,11 @@ public final class CrabGraph implements Graph {
         if (!(value instanceof org.apache.tinkerpop.gremlin.process.traversal.Traverser) &&
             !(value instanceof org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet)) return null;
         if(persistent) throw new IllegalArgumentException("Traversal runtime objects cannot be persisted");
-        long id=runtime.nextId.getAndIncrement(); runtime.values.put(id,value);
-        return fields("type","jvm_runtime","session",runtime.namespace,"id",id);
+        synchronized(runtime) {
+            if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
+            long id=runtime.nextId.getAndIncrement(); runtime.values.put(id,value);
+            return fields("type","jvm_runtime","session",runtime.namespace,"id",id);
+        }
     }
     Object runtimeDecode(Map<String,Object> record) {
         if(!runtime.namespace.equals(record.get("session"))) throw new IllegalArgumentException("Runtime value belongs to another graph family");
@@ -69,6 +77,7 @@ public final class CrabGraph implements Graph {
         return result;
     }
     private static final class RuntimeValues {
+        volatile boolean closed;
         final String namespace=UUID.randomUUID().toString();
         final java.util.concurrent.atomic.AtomicLong nextId=new java.util.concurrent.atomic.AtomicLong();
         final Map<Long,Object> values=new java.util.concurrent.ConcurrentHashMap<>();
@@ -76,7 +85,8 @@ public final class CrabGraph implements Graph {
     }
     /** Acquire on the executing thread and close on that same thread. */
     public AutoCloseable executionLease() {
-        lease.lock();
+        try { lease.lockInterruptibly(); }
+        catch(InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Graph execution lease interrupted",e); }
         if(closed) { lease.unlock(); throw new IllegalStateException("Graph is closed"); }
         return ()->lease.unlock();
     }
@@ -147,9 +157,19 @@ public final class CrabGraph implements Graph {
     }
     /** Cancel pending I/O and discard this session. Safe to call from another thread. */
     public void abort() { closed=true; session.abort(); releaseRuntime(); }
-    public void abortFamily() { for(CrabGraph member:new ArrayList<>(runtime.members)) member.abort(); }
-    public void closeFamily() { for(CrabGraph member:new ArrayList<>(runtime.members)) member.close(); }
-    private void releaseRuntime() { runtime.members.remove(this); if(runtime.members.isEmpty()) runtime.values.clear(); }
+    public void abortFamily() {
+        List<CrabGraph> members;
+        synchronized(runtime) { runtime.closed=true; members=new ArrayList<>(runtime.members); }
+        for(CrabGraph member:members) member.abort();
+    }
+    public void closeFamily() {
+        List<CrabGraph> members;
+        synchronized(runtime) { runtime.closed=true; members=new ArrayList<>(runtime.members); }
+        RuntimeException failure=null;
+        for(CrabGraph member:members) try { member.close(); } catch(RuntimeException e) { if(failure==null) failure=e; else failure.addSuppressed(e); }
+        if(failure!=null) throw failure;
+    }
+    private void releaseRuntime() { synchronized(runtime) { runtime.members.remove(this); if(runtime.members.isEmpty()) runtime.values.clear(); } }
     @Override public void close() {
         if(closed) return;
         try { if(transaction.isOpen()) transaction.rollback(); }

@@ -20,6 +20,10 @@ public class CrabGraphTest {
             Edge edge=a.addEdge("knows",b,T.id,"e","weight",0.5f);
             assertEquals(Collections.singletonList("Grace"),graph.traversal().V("a").out("knows").values("name").toList());
             assertEquals(Float.class,edge.value("weight").getClass());
+            a.property("infinity",Double.POSITIVE_INFINITY);
+            a.property("negativeInfinity",Float.NEGATIVE_INFINITY);
+            assertEquals(Double.POSITIVE_INFINITY,(Double)a.value("infinity"),0.0);
+            assertEquals(Float.NEGATIVE_INFINITY,(Float)a.value("negativeInfinity"),0.0f);
             assertEquals(Long.valueOf(9007199254740993L),b.id());
             VertexProperty<Object> property=a.property(VertexProperty.Cardinality.list,"precise",new BigDecimal("12345678901234567890.0000000000001"),"source","input");
             assertEquals(new BigDecimal("12345678901234567890.0000000000001"),property.value());
@@ -110,6 +114,21 @@ public class CrabGraphTest {
             Vertex vertex=result.addVertex(); vertex.property("runtime",runtime);
             source.close(); assertSame(runtime,result.vertices(vertex.id()).next().value("runtime"));
         } finally { source.close(); result.close(); }
+    }
+    @Test public void queuedExecutionLeaseCanBeCancelledWithoutAbortingGraph() throws Exception {
+        try(CrabGraph graph=CrabGraph.open(executable); AutoCloseable lease=graph.executionLease()) {
+            java.util.concurrent.CountDownLatch started=new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicBoolean interrupted=new java.util.concurrent.atomic.AtomicBoolean();
+            Thread queued=new Thread(()->{
+                started.countDown();
+                try(AutoCloseable ignored=graph.executionLease()) { }
+                catch(Exception expected) { interrupted.set(Thread.currentThread().isInterrupted()); }
+            });
+            queued.start(); started.await(); queued.interrupt(); queued.join(2000);
+            assertFalse("Cancelled lease must stop while another thread holds it",queued.isAlive());
+            assertTrue(interrupted.get());
+            graph.addVertex(T.id,"still-open"); assertTrue(graph.vertices("still-open").hasNext());
+        }
     }
     @Test public void closeAndAbortInvalidateNativeSession() {
         CrabGraph graph=CrabGraph.open(executable); graph.addVertex(); graph.abort();
