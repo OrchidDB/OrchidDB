@@ -376,6 +376,7 @@ impl PropertyGraph {
             }
         }
         rebuild_inserted_adjacency(&mut ov, &outgoing, &incoming);
+        ov.rebuild_public_id_lookup();
         Ok(())
     }
 }

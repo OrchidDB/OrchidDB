@@ -52,6 +52,7 @@ impl PropertyGraph {
             .or_insert(0);
         let id = base + *counter;
         *counter += 1;
+        overlay.unassigned_public_ids.insert((true,rel_type.clone(),id));
         overlay
             .inserted_out_adj
             .entry((src_label.clone(), src_id))
@@ -106,6 +107,7 @@ impl PropertyGraph {
             .or_insert(0);
         let id = base_rows + *counter;
         *counter += 1;
+        overlay.unassigned_public_ids.insert((false,label.clone(),id));
         note_keys(&mut overlay.inserted_node_keys, &label, &properties);
         overlay
             .inserted_nodes
@@ -119,7 +121,9 @@ impl PropertyGraph {
         if matches!(target, Value::VertexProperty { .. }) { return self.set_meta_property(target, &key, value); }
         if let Value::Node {label,id} = target {
             // Scalar language writes replace any existing Gremlin multi-property.
-            self.overlay.borrow_mut().vertex_properties.entry((label.clone(),*id)).or_default().remove(&key);
+            let address=(label.clone(),*id);
+            let mut overlay=self.overlay.borrow_mut();
+            if let Some(records)=overlay.vertex_properties.get_mut(&address) {records.remove(&key);if records.is_empty(){overlay.vertex_properties.remove(&address);}}
         }
         self.set_property_scalar(target,key,value)
     }
