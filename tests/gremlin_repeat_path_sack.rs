@@ -238,3 +238,30 @@ fn inner_repeat_restores_enclosing_anonymous_loop_counter() {
         ["1"]
     );
 }
+
+#[test]
+fn prefix_until_does_not_replay_its_input_writer() {
+    let graph = PropertyGraph::new();
+    assert_eq!(
+        results(
+            "g.inject(1).addV('x').until(__.constant(true)).repeat(__.identity()).count()",
+            &graph
+        ),
+        ["1"]
+    );
+    assert_eq!(results("g.V().hasLabel('x').count()", &graph), ["1"]);
+    assert_eq!(
+        results(
+            "g.inject(1,2).aggregate('a').until(__.constant(true)).repeat(__.identity()).cap('a').unfold().count()",
+            &graph
+        ),
+        ["2"]
+    );
+    assert_eq!(
+        results(
+            "g.inject(1).until(__.is(1)).emit().repeat(__.identity()).count()",
+            &graph
+        ),
+        ["1"]
+    );
+}
