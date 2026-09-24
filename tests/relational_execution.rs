@@ -110,3 +110,57 @@ fn graph_checkpoints_isolate_writes_in_both_directions() {
     checkpoint.insert_node("checkpoint", BTreeMap::new());
     assert!(graph.node_ids("checkpoint").is_err());
 }
+
+#[tokio::test]
+#[cfg(feature = "duckdb")]
+async fn reused_dag_resources_do_not_reuse_graph_contents() {
+    let mut first = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut second = new_graph::engine::GraphEngine::in_memory().unwrap();
+    async fn count(engine: &mut new_graph::engine::GraphEngine) -> String {
+        let result = engine.gremlin("g.V().count()").await.unwrap();
+        result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"].clone()
+    }
+    first.replace_graph(graph()).unwrap();
+    let original = count(&mut first).await;
+    let empty = count(&mut second).await;
+    assert_ne!(original, empty);
+    for _ in 0..3 {
+        first.replace_graph(PropertyGraph::new()).unwrap();
+        assert_eq!(count(&mut first).await, empty);
+        first.replace_graph(graph()).unwrap();
+        assert_eq!(count(&mut first).await, original);
+        assert_eq!(count(&mut second).await, empty);
+    }
+    first.begin().unwrap();
+    first.gremlin("g.addV('pending')").await.unwrap();
+    assert_ne!(count(&mut first).await, original);
+    first.rollback().unwrap();
+    assert_eq!(count(&mut first).await, original);
+    assert!(
+        first
+            .gremlin("g.inject(1).fail('expected error')")
+            .await
+            .is_err()
+    );
+    assert_eq!(count(&mut first).await, original);
+}
+
+#[tokio::test]
+async fn fused_unary_kernels_preserve_exact_rows_and_bulk() {
+    let query = plan("g.inject(1,2,3).map(__.constant(5)).identity().constant(7)");
+    let graph = PropertyGraph::new();
+    let expected = new_graph::ir::interpreter::execute_rows(&query, &graph).unwrap();
+    let (actual, stats) = execute_rows_with_jvm(&query, &graph, JvmExecution::default())
+        .await
+        .unwrap();
+    assert!(
+        stats.physical_plan.contains("Fused("),
+        "{}",
+        stats.physical_plan
+    );
+    assert_eq!(actual.len(), expected.len());
+    for (a, b) in actual.iter().zip(expected) {
+        assert_eq!(a.bindings, b.bindings);
+        assert_eq!(a.bulk, b.bulk);
+    }
+}
