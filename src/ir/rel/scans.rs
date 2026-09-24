@@ -138,7 +138,8 @@ impl<'a> LoweringContext<'a> {
                     .iter()
                     .filter_map(|row| row.get(index))
                     .collect::<Vec<_>>();
-                if homogeneous_scalar_type(values.iter().copied()).is_none() {
+                if homogeneous_scalar_type(values.iter().copied()).is_none()
+                    && !(self.options.mapping.is_some() && values.iter().all(|v|matches!(v,Value::Null))) {
                     return Err(RelError::Unsupported(
                         "Gremlin heterogeneous values require native runtime types".into(),
                     ));
