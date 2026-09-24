@@ -61,8 +61,10 @@ Raw evidence:
   computed from graph data through GraphComputer.
 - Stored-null and null-as-removal configurations, property cardinality and
   typed dynamic cardinality arguments for native merge operations.
-- Transaction ownership, rollback, savepoints, cancellation and persistent
-  store lifecycle; bounded read caches invalidate on mutation and rollback.
+- Transaction ownership, committed-state reads from independent threads,
+  rollback, savepoints, cancellation and persistent store lifecycle. Bounded
+  read caches invalidate on mutation and rollback; foreign committed reads
+  bypass caches belonging to a writer.
 - Native file writers and independent reader round trips through production
   codecs, with atomic destination publication.
 - Cyclic project modulators, seeded group counts, bounded lazy consumption,
