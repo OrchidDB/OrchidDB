@@ -101,3 +101,12 @@ async fn multiple_property_keys_execute_upstream_mutation_and_store_once() {
     assert_eq!(rows[0][0]["value"], 1);
     assert_eq!(native(&mut engine, "g.V().count()").await[0][0]["value"], 1);
 }
+
+#[tokio::test]
+async fn label_retraction_keeps_dynamic_mutation_endpoint_bindings() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    native(&mut engine, "g.inject(1,2).addV('item')").await;
+    let rows = native(&mut engine, "g.V().aggregate('x').as('a').select('x').unfold().addE('link').to('a').count()").await;
+    assert_eq!(rows[0][0]["value"], 4);
+    assert_eq!(native(&mut engine, "g.E().count()").await[0][0]["value"], 4);
+}

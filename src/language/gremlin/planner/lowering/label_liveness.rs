@@ -50,6 +50,24 @@ pub(super) fn direct_references(steps: &[Step]) -> Labels {
                 labels.extend(refs);
             }
             Step::AddE { from, to, .. } => labels.extend(from.iter().chain(to).cloned()),
+            Step::AddDynamicE { label, from, to } => {
+                for argument in std::iter::once(label).chain(from).chain(to) {
+                    if let MutationArgument::Label(label) = argument { labels.insert(label.clone()); }
+                }
+            }
+            Step::AddDynamicV { label } => {
+                if let MutationArgument::Label(label) = label { labels.insert(label.clone()); }
+            }
+            Step::PropertyDynamic { key, value } => {
+                for argument in [key, value] {
+                    if let MutationArgument::Label(label) = argument { labels.insert(label.clone()); }
+                }
+            }
+            Step::DynamicMerge { criteria, options, .. } => {
+                for argument in std::iter::once(criteria).chain(options.values()) {
+                    if let MutationArgument::Label(label) = argument { labels.insert(label.clone()); }
+                }
+            }
             Step::Format(parts) => {
                 for part in parts {
                     if let crate::language::gremlin::ast::FormatPart::Placeholder { key: Some(key) } = part {
