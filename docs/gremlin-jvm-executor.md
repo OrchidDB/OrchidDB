@@ -69,7 +69,14 @@ Blocking application code that ignores JVM interruption can outlive the worker
 deadline, but its native store is terminated and it cannot commit graph writes.
 
 Direct `CrabGraph` users control `tx().open()/commit()/rollback()`. Failed native
-operations restore their statement snapshot. `atomicMutation(Runnable)` provides
+operations restore their statement snapshot. Transaction status is thread-local;
+write transactions serialize until their owner commits or rolls back. Other
+threads wait before reading or writing pending native state. A helper thread's
+empty transaction cannot complete another thread's writes. Waiting operations
+support interruption and stop when the graph closes. GraphComputer borrows its
+submitting thread's transaction under an exclusive lease and returns ownership
+after execution, preserving caller rollback of published properties.
+`atomicMutation(Runnable)` provides
 a savepoint without discarding an enclosing caller transaction. Operations within
 that block share its checkpoint; a failed operation poisons the block until it
 is rolled back. `bulkLoad(Runnable)` additionally defers commits requested by
@@ -94,6 +101,9 @@ arbitrary Java object IDs. Numeric ID lookup accepts string representations,
 preferring an exact stored string ID when both forms exist. Reader fixture
 configuration can therefore preserve multi-properties without changing the
 ordinary single-cardinality default.
+Constructor key/value pairs retain list cardinality, including repeated keys,
+independently of the default used by subsequent property assignments. Numeric
+ID managers generate numeric vertex and edge IDs and skip existing public IDs.
 
 The JVM provider registers the compatible `tinker.search` and
 `tinker.degree.centrality` service names. These scan actual native properties and

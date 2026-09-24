@@ -28,11 +28,13 @@ public final class CrabGraph implements Graph {
     private final boolean persistent;
     private RuntimeValues runtime = new RuntimeValues();
     
-    private final Configuration configuration = new BaseConfiguration();
+    private Configuration configuration = new BaseConfiguration();
     private final NativeTransaction transaction = new NativeTransaction();
     private final org.apache.tinkerpop.gremlin.structure.service.ServiceRegistry services=CrabServices.create(this);
     private int bulkLoadDepth;
     private int atomicMutationDepth;
+    private long nextNumericId;
+    private boolean numericIdsExhausted;
     private final int adjacencyCacheSize=Math.max(0,Integer.getInteger("crabgraph.native.adjacencyCacheSize",4096));
     private final Map<Object,Object> adjacencyCache=Collections.synchronizedMap(
         new LinkedHashMap<Object,Object>(128,0.75f,true) {
@@ -40,6 +42,7 @@ public final class CrabGraph implements Graph {
         });
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
+    private final java.util.concurrent.locks.Condition writerFinished=lease.newCondition();
 
     private CrabGraph(String executable,Path path) { this(executable,path,null,VertexProperty.Cardinality.single); }
     private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality) {
@@ -51,6 +54,10 @@ public final class CrabGraph implements Graph {
         defaultCardinality=Objects.requireNonNull(cardinality,"default vertex-property cardinality");
         this.executable=Objects.requireNonNull(executable,"native executable");
         persistent=path!=null;
+        if(path!=null) {
+            try { java.nio.file.Files.createDirectories(path.toAbsolutePath().getParent()); }
+            catch(java.io.IOException e) { throw new IllegalStateException("Cannot create native graph directory",e); }
+        }
         session=new CrabSession(executable,path);
         if(family!=null) runtime=family;
         synchronized(runtime) {
@@ -76,11 +83,13 @@ public final class CrabGraph implements Graph {
     public static CrabGraph open(Configuration config) {
         String executable=config.getString("crabgraph.native.executable",System.getenv("CRABGRAPH_JVM_STORE"));
         String path=config.getString("crabgraph.native.path",null);
-        return new CrabGraph(executable,path==null?null:Path.of(path),null,
+        CrabGraph graph=new CrabGraph(executable,path==null?null:Path.of(path),null,
             VertexProperty.Cardinality.valueOf(config.getString(DEFAULT_CARDINALITY,"single")),
             IdManager.valueOf(config.getString(VERTEX_ID_MANAGER,"ANY")),
             IdManager.valueOf(config.getString(EDGE_ID_MANAGER,"ANY")),
             IdManager.valueOf(config.getString(VERTEX_PROPERTY_ID_MANAGER,"ANY")));
+        graph.configuration=config;
+        return graph;
     }
     public CrabGraph freshGraph() {
         if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
@@ -118,9 +127,27 @@ public final class CrabGraph implements Graph {
         if(closed) { lease.unlock(); throw new IllegalStateException("Graph is closed"); }
         return ()->lease.unlock();
     }
+    /** Borrow the submitting thread's transaction for an exclusively leased computation. */
+    public AutoCloseable executionLease(Thread submittingThread,boolean callerTransactionOpen) {
+        AutoCloseable lock=executionLease();
+        Thread previous=transaction.writeOwner;
+        if(previous!=null&&previous!=submittingThread&&previous!=Thread.currentThread()) {
+            lease.unlock();
+            throw new IllegalStateException("Computation cannot borrow another thread's transaction");
+        }
+        if(previous!=null) transaction.writeOwner=Thread.currentThread();
+        boolean previousOpen=transaction.open.get();
+        if(callerTransactionOpen) transaction.open.set(true);
+        return ()->{
+            try {
+                if(transaction.writeOwner==Thread.currentThread())
+                    transaction.writeOwner=previous==null?submittingThread:previous;
+            } finally { transaction.open.set(previousOpen); lock.close(); }
+        };
+    }
     /** Import atomically, deferring reader commits and preserving any existing caller transaction. */
     public void bulkLoad(Runnable action) {
-        lease.lock();
+        lockForMutation();
         boolean hadTransaction=transaction.isOpen();
         boolean outer=bulkLoadDepth++==0;
         try {
@@ -138,7 +165,7 @@ public final class CrabGraph implements Graph {
     }
     /** Native savepoint preserves the surrounding caller transaction on failure. */
     public void atomicMutation(Runnable action) {
-        lease.lock();
+        lockForMutation();
         atomicMutationDepth++;
         try {
             transaction.readWrite(); Object id=call(fields("op","savepoint"));
@@ -151,6 +178,11 @@ public final class CrabGraph implements Graph {
             }
         } finally { atomicMutationDepth--; lease.unlock(); }
     }
+    private void lockForMutation() {
+        lease.lock();
+        try { transaction.awaitOwner(); }
+        catch(RuntimeException|Error failure) { lease.unlock(); throw failure; }
+    }
     private Object call(Map<String,Object> request) {
         lease.lock();
         try {
@@ -158,8 +190,16 @@ public final class CrabGraph implements Graph {
             if(Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Native request cancelled before submission");
             if(!session.isAlive()) throw new IllegalStateException("Native graph session is closed or disconnected");
             String op=(String)request.get("op");
+            if(op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties"))
+                transaction.awaitOwner();
+            if(op.equals("addVertex")||op.equals("addEdge")||op.equals("setVertexProperty")||op.equals("setProperty")||op.equals("remove")||op.equals("savepoint"))
+                transaction.claimWrite();
             boolean read=op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties")||op.equals("begin")||op.equals("hello");
             if(!read) adjacencyCache.clear();
+            if((op.equals("addVertex")||op.equals("addEdge"))&&!request.containsKey("id")) {
+                IdManager manager=op.equals("addVertex")?vertexIdManager:edgeIdManager;
+                if(manager!=IdManager.ANY) request.put("id",nextNumericId(manager));
+            }
             boolean cache=op.equals("adjacent")&&atomicMutationDepth==0&&adjacencyCacheSize>0;
             if(cache) {
                 Object hit=adjacencyCache.get(request);
@@ -174,6 +214,22 @@ public final class CrabGraph implements Graph {
             return value;
         } catch(RuntimeException|Error failure) { adjacencyCache.clear(); throw failure; }
         finally { lease.unlock(); }
+    }
+    // Invoked under the session lease. The counter never rewinds on rollback; after
+    // reopen, exact native identity lookups skip every surviving supplied/generated ID.
+    private Object nextNumericId(IdManager manager) {
+        while(true) {
+            if(numericIdsExhausted || (manager==IdManager.INTEGER&&nextNumericId>Integer.MAX_VALUE))
+                throw new IllegalStateException("Automatic "+manager+" identifier space is exhausted");
+            long candidate=nextNumericId;
+            if(candidate==Long.MAX_VALUE) numericIdsExhausted=true; else nextNumericId++;
+            Object id;
+            if(manager==IdManager.INTEGER) id=Integer.valueOf((int)candidate); else id=Long.valueOf(candidate);
+            Object encoded=CrabCodec.encode(id);
+            List<Object> ids=Collections.singletonList(encoded);
+            if(((List<?>)call(fields("op","vertices","ids",ids))).isEmpty() &&
+               ((List<?>)call(fields("op","edges","ids",ids))).isEmpty()) return encoded;
+        }
     }
     private static Object immutableRecord(Object value) {
         if(value instanceof Map) {
@@ -225,7 +281,15 @@ public final class CrabGraph implements Graph {
     private IdManager idManager(String type) {
         return type.equals("vertex")?vertexIdManager:type.equals("edge")?edgeIdManager:vertexPropertyIdManager;
     }
-    Object encodeId(Object id,String type) { return CrabCodec.encode(idManager(type).convert(id)); }
+    Object encodeId(Object id,String type) {
+        IdManager manager=idManager(type);
+        if(id!=null&&!manager.allows(id)) {
+            if(type.equals("vertex")) throw Vertex.Exceptions.userSuppliedIdsOfThisTypeNotSupported();
+            if(type.equals("edge")) throw Edge.Exceptions.userSuppliedIdsOfThisTypeNotSupported();
+            throw VertexProperty.Exceptions.userSuppliedIdsOfThisTypeNotSupported();
+        }
+        return CrabCodec.encode(manager.convert(id));
+    }
     Object elementId(Map<String,Object> record) { return idManager((String)record.get("type")).convert(decode(record.get("id"))); }
     private List<Object> ids(Object[] ids,String type) {
         List<Object> result=new ArrayList<>();
@@ -247,21 +311,20 @@ public final class CrabGraph implements Graph {
         ElementHelper.validateLabel(label);
         Map<String,Object> request=fields("op","addVertex","label",label,"properties",props);
         ElementHelper.getIdValue(keyValues).ifPresent(id->request.put("id",encodeId(id,"vertex")));
-        if(defaultCardinality==VertexProperty.Cardinality.single || props.isEmpty()) {
-            Map<Object,Object> lastValueByKey=new LinkedHashMap<>();
-            for(Object property:props) { List<?> pair=(List<?>)property; lastValueByKey.put(pair.get(0),pair.get(1)); }
-            List<Object> singleProperties=new ArrayList<>();
-            lastValueByKey.forEach((key,value)->singleProperties.add(Arrays.asList(key,value)));
-            request.put("properties",singleProperties);
+        Set<Object> keys=new HashSet<>();
+        boolean duplicateKey=false;
+        for(Object property:props) if(!keys.add(((List<?>)property).get(0))) duplicateKey=true;
+        if(!duplicateKey) {
             transaction.readWrite(); return decode(call(request));
         }
-        // Keep creation atomic while honoring a configured list/set default on older protocol-v1 stores.
+        // Constructor key/value pairs have list cardinality independently of the
+        // default used by subsequent Vertex.property calls (TinkerPop semantics).
         request.put("properties",Collections.emptyList());
         Vertex[] created=new Vertex[1];
         atomicMutation(()->{
             created[0]=decode(call(request));
             for(int i=0;i<keyValues.length;i+=2) if(keyValues[i] instanceof String)
-                created[0].property(defaultCardinality,(String)keyValues[i],keyValues[i+1]);
+                created[0].property(VertexProperty.Cardinality.list,(String)keyValues[i],keyValues[i+1]);
         });
         return created[0];
     }
@@ -303,52 +366,101 @@ public final class CrabGraph implements Graph {
         finally { closed=true; adjacencyCache.clear(); session.close(); services.close(); releaseRuntime(); }
     }
     private final class NativeTransaction extends AbstractThreadLocalTransaction {
-        private boolean open;
+        private final ThreadLocal<Boolean> open=ThreadLocal.withInitial(()->false);
+        private Thread writeOwner;
         NativeTransaction() { super(CrabGraph.this); }
-        @Override public boolean isOpen() { return open&&!closed; }
-        @Override public void commit() { if(bulkLoadDepth==0) super.commit(); }
+        @Override public boolean isOpen() { return open.get()&&!closed; }
+        @Override public void commit() { if(writeOwner!=Thread.currentThread()||bulkLoadDepth==0) super.commit(); }
+        // The provider supports one writer. Read-only transactions in helper threads
+        // must never commit or roll back another thread's pending native mutations.
+        void claimWrite() {
+            awaitOwner();
+            writeOwner=Thread.currentThread();
+        }
+        void awaitOwner() {
+            while(writeOwner!=null&&writeOwner!=Thread.currentThread()&&!closed) {
+                try { writerFinished.awaitNanos(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100)); }
+                catch(InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new java.util.concurrent.CancellationException("Native transaction wait interrupted");
+                }
+            }
+            if(closed) throw new IllegalStateException("Graph is closed");
+        }
         @Override protected void doOpen() {
             if(closed) throw new IllegalStateException("Graph is closed");
-            call(fields("op","begin")); open=true;
+            call(fields("op","begin")); open.set(true);
         }
-        @Override protected void doCommit() { call(fields("op","commit")); open=false; }
-        @Override protected void doRollback() { call(fields("op","rollback")); open=false; }
+        private void finish(String operation) {
+            lease.lock();
+            try {
+                if(writeOwner==Thread.currentThread()) {
+                    call(fields("op",operation));
+                    writeOwner=null;
+                    writerFinished.signalAll();
+                }
+                open.remove();
+            } finally { lease.unlock(); }
+        }
+        @Override protected void doCommit() { finish("commit"); }
+        @Override protected void doRollback() { finish("rollback"); }
     }
+    @Override public String toString() { return org.apache.tinkerpop.gremlin.structure.util.StringFactory.graphString(this,"native"); }
     @Override public Features features() { return FEATURES; }
-    private final Features FEATURES=new Features() {
-        private final GraphFeatures graph=new GraphFeatures() {
-            @Override public boolean supportsServiceCall() { return true; }
-            @Override public boolean supportsComputer() { try { Class.forName("io.crabgraph.gremlin.computer.CrabGraphComputer"); return true; } catch(ClassNotFoundException e) { return false; } }
-            @Override public boolean supportsPersistence() { return true; }
-            @Override public boolean supportsConcurrentAccess() { return false; }
-            @Override public boolean supportsThreadedTransactions() { return false; }
-            @Override public VariableFeatures variables() { return new VariableFeatures() { @Override public boolean supportsVariables() { return false; } }; }
-        };
-        private final VertexPropertyFeatures vp=new NativeVertexPropertyFeatures();
-        private final VertexFeatures vertex=new VertexFeatures() {
-            @Override public boolean supportsStringIds() { return vertexIdManager==IdManager.ANY; }
-            @Override public boolean willAllowId(Object id) { return vertexIdManager.allows(id); }
-            @Override public VertexProperty.Cardinality getCardinality(String key) { return defaultCardinality; }
-            @Override public boolean supportsNullPropertyValues() { return true; }
-            @Override public boolean supportsUuidIds() { return false; }
-            @Override public boolean supportsCustomIds() { return false; }
-            @Override public boolean supportsAnyIds() { return false; }
-            @Override public VertexPropertyFeatures properties() { return vp; }
-        };
-        private final EdgeFeatures edge=new EdgeFeatures() {
-            @Override public boolean supportsStringIds() { return edgeIdManager==IdManager.ANY; }
-            @Override public boolean willAllowId(Object id) { return edgeIdManager.allows(id); }
-            @Override public boolean supportsNullPropertyValues() { return true; }
-            @Override public boolean supportsUuidIds() { return false; }
-            @Override public boolean supportsCustomIds() { return false; }
-            @Override public boolean supportsAnyIds() { return false; }
-            @Override public EdgePropertyFeatures properties() { return new NativeEdgePropertyFeatures(); }
-        };
+    private final Features FEATURES=new NativeFeatures();
+    public final class NativeFeatures implements Features {
+        private final GraphFeatures graph=new NativeGraphFeatures();
+        private final VertexFeatures vertex=new NativeVertexFeatures();
+        private final EdgeFeatures edge=new NativeEdgeFeatures();
         @Override public GraphFeatures graph() { return graph; }
         @Override public VertexFeatures vertex() { return vertex; }
         @Override public EdgeFeatures edge() { return edge; }
-    };
-    private interface NativeDataFeatures extends Features.DataTypeFeatures {
+        @Override public String toString() { return org.apache.tinkerpop.gremlin.structure.util.StringFactory.featureString(this); }
+    }
+    public static final class NativeGraphFeatures implements Features.GraphFeatures {
+        private final Features.VariableFeatures variables=new NativeVariableFeatures();
+        @Override public boolean supportsServiceCall() { return true; }
+        @Override public boolean supportsComputer() { try { Class.forName("io.crabgraph.gremlin.computer.CrabGraphComputer"); return true; } catch(ClassNotFoundException e) { return false; } }
+        @Override public boolean supportsPersistence() { return true; }
+        @Override public boolean supportsConcurrentAccess() { return false; }
+        @Override public boolean supportsThreadedTransactions() { return false; }
+        @Override public Features.VariableFeatures variables() { return variables; }
+    }
+    public final class NativeVertexFeatures implements Features.VertexFeatures {
+        private final Features.VertexPropertyFeatures properties=new NativeVertexPropertyFeatures();
+        @Override public boolean supportsStringIds() { return vertexIdManager==IdManager.ANY; }
+        @Override public boolean willAllowId(Object id) { return vertexIdManager.allows(id); }
+        @Override public VertexProperty.Cardinality getCardinality(String key) { return defaultCardinality; }
+        @Override public boolean supportsNullPropertyValues() { return true; }
+        @Override public boolean supportsUuidIds() { return false; }
+        @Override public boolean supportsCustomIds() { return false; }
+        @Override public boolean supportsAnyIds() { return false; }
+        @Override public Features.VertexPropertyFeatures properties() { return properties; }
+    }
+    public final class NativeEdgeFeatures implements Features.EdgeFeatures {
+        private final Features.EdgePropertyFeatures properties=new NativeEdgePropertyFeatures();
+        @Override public boolean supportsStringIds() { return edgeIdManager==IdManager.ANY; }
+        @Override public boolean willAllowId(Object id) { return edgeIdManager.allows(id); }
+        @Override public boolean supportsNullPropertyValues() { return true; }
+        @Override public boolean supportsUuidIds() { return false; }
+        @Override public boolean supportsCustomIds() { return false; }
+        @Override public boolean supportsAnyIds() { return false; }
+        @Override public Features.EdgePropertyFeatures properties() { return properties; }
+    }
+    public static final class NativeVariableFeatures implements Features.VariableFeatures,NativeDataFeatures {
+        @Override public boolean supportsVariables() { return false; }
+        @Override public boolean supportsBooleanValues() { return false; }
+        @Override public boolean supportsByteValues() { return false; }
+        @Override public boolean supportsDoubleValues() { return false; }
+        @Override public boolean supportsFloatValues() { return false; }
+        @Override public boolean supportsIntegerValues() { return false; }
+        @Override public boolean supportsLongValues() { return false; }
+        @Override public boolean supportsMapValues() { return false; }
+        @Override public boolean supportsMixedListValues() { return false; }
+        @Override public boolean supportsStringValues() { return false; }
+        @Override public boolean supportsUniformListValues() { return false; }
+    }
+    public interface NativeDataFeatures extends Features.DataTypeFeatures {
         @Override default boolean supportsBooleanArrayValues() { return false; }
         @Override default boolean supportsByteArrayValues() { return false; }
         @Override default boolean supportsDoubleArrayValues() { return false; }
@@ -358,7 +470,7 @@ public final class CrabGraph implements Graph {
         @Override default boolean supportsLongArrayValues() { return false; }
         @Override default boolean supportsSerializableValues() { return false; }
     }
-    private class NativeVertexPropertyFeatures implements Features.VertexPropertyFeatures,NativeDataFeatures {
+    public final class NativeVertexPropertyFeatures implements Features.VertexPropertyFeatures,NativeDataFeatures {
         @Override public boolean supportsStringIds() { return vertexPropertyIdManager==IdManager.ANY; }
         @Override public boolean willAllowId(Object id) { return vertexPropertyIdManager.allows(id); }
         @Override public boolean supportsNullPropertyValues() { return true; }
@@ -366,5 +478,5 @@ public final class CrabGraph implements Graph {
         @Override public boolean supportsCustomIds() { return false; }
         @Override public boolean supportsAnyIds() { return false; }
     }
-    private static class NativeEdgePropertyFeatures implements Features.EdgePropertyFeatures,NativeDataFeatures {}
+    public static final class NativeEdgePropertyFeatures implements Features.EdgePropertyFeatures,NativeDataFeatures {}
 }
