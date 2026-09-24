@@ -60,7 +60,7 @@ impl<'a> LoweringContext<'a> {
             false,
             batches,
         )?;
-        self.scan_batches("nodes", batches)
+        self.scan_batches_keyed("nodes", batches, &[id_col(binding), label_col(binding)])
     }
 
     pub(super) fn lower_rel_scan(
@@ -121,7 +121,7 @@ impl<'a> LoweringContext<'a> {
             true,
             batches,
         )?;
-        self.scan_batches("edges", batches)
+        self.scan_batches_keyed("edges", batches, &[id_col(binding), label_col(binding)])
     }
 
     pub(super) fn lower_values(
@@ -170,11 +170,33 @@ impl<'a> LoweringContext<'a> {
         prefix: &str,
         batches: Vec<RecordBatch>,
     ) -> RelResult<LoweredNode> {
+        self.scan_batches_keyed(prefix, batches, &[])
+    }
+
+    fn scan_batches_keyed(
+        &mut self,
+        prefix: &str,
+        batches: Vec<RecordBatch>,
+        primary_key: &[String],
+    ) -> RelResult<LoweredNode> {
         let schema = batches
             .first()
             .map(RecordBatch::schema)
             .unwrap_or_else(|| Arc::new(Schema::empty()));
-        let provider = Arc::new(MemTable::try_new(schema, vec![batches])?);
+        // Catalog scans generate identity as (row id, label/type). Mapped
+        // sources use their own lowering and do not receive an assumed key.
+        let constraints = if primary_key.is_empty() {
+            datafusion::common::Constraints::default()
+        } else {
+            let indices = primary_key.iter().map(|name| schema.index_of(name))
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            datafusion::common::Constraints::new_unverified(vec![
+                datafusion::common::Constraint::PrimaryKey(indices),
+            ])
+        };
+        let provider = Arc::new(
+            MemTable::try_new(schema, vec![batches])?.with_constraints(constraints)
+        );
         let table_name = format!("__graph_rel_{}_{}", prefix, self.scan_counter);
         self.scan_counter += 1;
         let plan =

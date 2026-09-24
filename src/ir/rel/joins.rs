@@ -109,7 +109,9 @@ impl<'a> LoweringContext<'a> {
         };
         let left = left.with_plan(left_plan);
         let previous = self.correlate_plan.replace(left.plan.clone());
-        let right = self.lower_node(right);
+        let right = if matches!(kind, ApplyKind::Semi | ApplyKind::Anti) {
+            self.lower_existence_input(right)
+        } else { self.lower_node(right) };
         self.correlate_plan = previous;
         let right = right?;
         match kind {
@@ -312,7 +314,8 @@ pub(super) fn with_distinct_ordinal(plan: LogicalPlan, ordinal: &str) -> RelResu
         .build()?)
 }
 
-pub(super) fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usize) -> RelResult<LogicalPlan> {
+/// The same semantic keys serve ordered dedup and cardinality-only distinct.
+pub(super) fn distinct_partition(plan: &LogicalPlan, keys: &[String]) -> Vec<Expr> {
     let mut partition = Vec::new();
     if keys.is_empty() {
         partition.extend(existing_columns_by_name(&plan, &BTreeSet::new()));
@@ -330,6 +333,14 @@ pub(super) fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usi
         }
     }
     partition.extend(apply_correlation_key_columns(&plan).iter().map(col_exact));
+    partition
+}
+
+pub(super) fn keyed_distinct(plan: LogicalPlan, keys: &[String], barrier_id: usize) -> RelResult<LogicalPlan> {
+    let partition = distinct_partition(&plan, keys);
+    if let Some(plan) = rules::eliminate_redundant_distinct(&plan, &partition) {
+        return Ok(plan);
+    }
     let ordinal = unique_internal_alias(
         &plan,
         &BTreeSet::new(),

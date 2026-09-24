@@ -289,6 +289,10 @@ pub(super) fn guard_scalar_cardinality(
     mut right: LoweredNode,
     key_cols: &[String],
 ) -> RelResult<LoweredNode> {
+    let keys = key_cols.iter().map(col_exact).collect::<Vec<_>>();
+    if rules::unique_on(&right.plan, &keys) {
+        return Ok(right);
+    }
     let rank = unique_internal_alias(&right.plan, &BTreeSet::new(), "__apply_scalar_rank");
     let row_number = df_window::row_number()
         .window_frame(datafusion::logical_expr::WindowFrame::new(None))

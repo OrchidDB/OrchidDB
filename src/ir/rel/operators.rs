@@ -182,7 +182,13 @@ impl LoweringContext<'_> {
                 if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Sum | AggKind::Avg)) {
                     return Err(RelError::Unsupported("Gremlin aggregate requires native values and empty-stream semantics".into()));
                 }
-                let input = self.lower_node(input)?;
+                // Count-only consumers cannot observe which representative
+                // dedup kept or its order. Preserve correlation partitions.
+                let input = if group.is_empty() && !aggs.is_empty()
+                    && aggs.iter().all(|agg| matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
+                {
+                    self.lower_cardinality_input(input)?
+                } else { self.lower_node(input)? };
                 if input
                     .plan
                     .schema()
