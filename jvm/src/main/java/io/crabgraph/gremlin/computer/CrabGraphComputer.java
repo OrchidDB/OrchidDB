@@ -92,18 +92,20 @@ public final class CrabGraphComputer implements GraphComputer {
             program.setup(memory);
             // A worker clone has its own iteration lifecycle just as a remote worker does.
             VertexProgram worker = program.clone();
+            CrabWorkerMemory workerMemory = new CrabWorkerMemory(memory);
             while (true) {
                 interrupted();
                 memory.completeSubRound();
-                worker.workerIterationStart(memory.asImmutable());
+                worker.workerIterationStart(workerMemory.asImmutable());
                 Iterator<Vertex> vertices = view.vertices();
                 while (vertices.hasNext()) {
                     interrupted();
                     Vertex vertex = vertices.next();
                     worker.execute(ComputerGraph.vertexProgram(vertex, worker),
-                            new CrabMessenger(vertex, messages, worker.getMessageCombiner()), memory);
+                            new CrabMessenger(vertex, messages, worker.getMessageCombiner()), workerMemory);
                 }
-                worker.workerIterationEnd(memory.asImmutable());
+                worker.workerIterationEnd(workerMemory.asImmutable());
+                workerMemory.complete();
                 messages.completeIteration();
                 memory.completeSubRound();
                 boolean done = program.terminate(memory);
