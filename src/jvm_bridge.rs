@@ -3,7 +3,10 @@
 //! Every store owns its graph and transaction checkpoint. Handles are scoped to
 //! this store and must never be transferred between sessions. `commit` persists
 //! a lossless native snapshot when a path is configured; close/EOF discard pending
-//! writes. A failed request restores its statement checkpoint.
+//! writes. Outside an atomic block, a failed mutation restores its statement
+//! checkpoint. Savepoints form atomic blocks: they avoid per-mutation copies,
+//! and any failure poisons the block until `rollbackTo` (or `close`). Reads never
+//! copy the graph. Property-record materialization is a read cache operation.
 use crate::ir::catalog::Cardinality;
 use crate::ir::value::gremlin_set;
 use crate::ir::{PropertyGraph, Value};
@@ -18,6 +21,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 type Result<T> = std::result::Result<T, String>;
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+struct Savepoint {
+    id: u64,
+    graph: PropertyGraph,
+    runtime: BTreeMap<String, Json>,
+    failed: bool,
+}
+
 /// A single-threaded native graph session. Synchronize callers externally.
 pub struct Store {
     graph: PropertyGraph,
@@ -28,7 +38,7 @@ pub struct Store {
     closed: bool,
     runtime: BTreeMap<String, Json>,
     checkpoint_runtime: BTreeMap<String, Json>,
-    savepoints: Vec<(u64, PropertyGraph, BTreeMap<String, Json>)>,
+    savepoints: Vec<Savepoint>,
     next_savepoint: u64,
     handle_generations: RefCell<BTreeMap<String, u64>>,
     next_generation: Cell<u64>,
@@ -115,16 +125,48 @@ impl Store {
     pub fn is_closed(&self) -> bool {
         self.closed
     }
+    /// Report an invalid wire request and poison any active atomic block.
+    pub fn protocol_error(&mut self, error: impl Into<String>) -> Json {
+        if let Some(block) = self.savepoints.last_mut() {
+            block.failed = true;
+        }
+        json!({"ok":false,"error":error.into()})
+    }
     pub fn request(&mut self, request: &Json) -> Json {
-        let before = self.graph.clone();
-        let before_runtime = self.runtime.clone();
+        let op = request.get("op").and_then(Json::as_str).unwrap_or("");
+        if self.savepoints.last().is_some_and(|s| s.failed) && !matches!(op, "rollbackTo" | "close")
+        {
+            return json!({"ok":false,"error":"atomic block failed; rollbackTo or close is required"});
+        }
+        // Control operations validate before modifying state and own the one
+        // checkpoint they need. Reads only materialize stable native records.
+        // A block's checkpoint subsumes every mutation checkpoint inside it.
+        let mutation = matches!(
+            op,
+            "addVertex" | "addEdge" | "setVertexProperty" | "setProperty" | "remove"
+        );
+        let before = if mutation && self.savepoints.is_empty() {
+            Some(self.graph.clone())
+        } else {
+            None
+        };
+        let before_runtime =
+            if before.is_some() && matches!(op, "setVertexProperty" | "setProperty") {
+                Some(self.runtime.clone())
+            } else {
+                None
+            };
         match self.dispatch(request) {
             Ok(value) => json!({"ok":true,"value":value}),
             Err(error) => {
-                self.graph = before;
-                self.prune_handles();
-                self.runtime = before_runtime;
-                json!({"ok":false,"error":error})
+                if let Some(before) = before {
+                    self.graph = before;
+                    self.prune_handles();
+                }
+                if let Some(before_runtime) = before_runtime {
+                    self.runtime = before_runtime;
+                }
+                self.protocol_error(error)
             }
         }
     }
@@ -138,6 +180,12 @@ impl Store {
             }
         }
         let op = string(r, "op")?;
+        if matches!(op, "commit" | "rollback") && !self.savepoints.is_empty() {
+            return Err(
+                "release or rollbackTo the active atomic block before completing the transaction"
+                    .into(),
+            );
+        }
         match op {
             "hello" => Ok(
                 json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some()}),
@@ -160,16 +208,20 @@ impl Store {
             "savepoint" => {
                 let id = self.next_savepoint;
                 self.next_savepoint += 1;
-                self.savepoints
-                    .push((id, self.graph.clone(), self.runtime.clone()));
+                self.savepoints.push(Savepoint {
+                    id,
+                    graph: self.graph.clone(),
+                    runtime: self.runtime.clone(),
+                    failed: false,
+                });
                 Ok(json!(id))
             }
             "rollbackTo" | "release" => {
                 let id = field(r, "id")?.as_u64().ok_or("invalid savepoint id")?;
-                if self.savepoints.last().map(|s| s.0) != Some(id) {
+                if self.savepoints.last().map(|s| s.id) != Some(id) {
                     return Err("savepoints must be completed in LIFO order".into());
                 }
-                let (_, graph, runtime) = self.savepoints.pop().unwrap();
+                let Savepoint { graph, runtime, .. } = self.savepoints.pop().unwrap();
                 if op == "rollbackTo" {
                     self.graph = graph;
                     self.prune_handles();
@@ -178,8 +230,10 @@ impl Store {
                 Ok(Json::Null)
             }
             "close" => {
-                self.graph = self.checkpoint.clone();
-                self.prune_handles();
+                self.graph = std::mem::take(&mut self.checkpoint);
+                self.runtime = std::mem::take(&mut self.checkpoint_runtime);
+                self.savepoints.clear();
+                self.handle_generations.borrow_mut().clear();
                 self.closed = true;
                 self._lock = None;
                 Ok(Json::Null)
@@ -194,7 +248,7 @@ impl Store {
                         .map(|id| self.decode(id))
                         .collect::<Result<Vec<_>>>()?
                         .iter()
-                        .filter_map(|id| self.graph.find_element_by_public_id(id, edge))
+                        .filter_map(|id| self.lookup_id(id, edge))
                         .collect()
                 };
                 self.encode_many(values)
@@ -377,6 +431,16 @@ impl Store {
             let _ = std::fs::remove_file(temporary);
         }
         result
+    }
+    fn lookup_id(&self, id: &Value, edge: bool) -> Option<Value> {
+        self.graph.find_element_by_public_id(id, edge).or_else(|| {
+            // Numeric string conversion is only a fallback. An actual string
+            // ID must win even when a numerically equivalent ID also exists.
+            let Value::String(text) = id else { return None };
+            let number = text.parse::<bigdecimal::BigDecimal>().ok()?;
+            self.graph
+                .find_element_by_public_id(&Value::BigDecimal(number), edge)
+        })
     }
     fn elements(&self, edge: bool) -> Result<Vec<Value>> {
         let mut result = vec![];
@@ -886,6 +950,120 @@ mod tests {
         call(&mut s, json!({"op":"close"}));
         assert_eq!(s.request(&json!({"op":"vertices"}))["ok"], false);
     }
+    #[test]
+    fn failed_atomic_blocks_cannot_expose_or_commit_partial_writes() {
+        let mut s = Store::new();
+        let committed = vertex(&mut s, "committed");
+        call(&mut s, json!({"op":"commit"}));
+        let prior = vertex(&mut s, "before-block");
+        let outer = call(&mut s, json!({"op":"savepoint"}));
+        let retained = vertex(&mut s, "outer");
+        let inner = call(&mut s, json!({"op":"savepoint"}));
+        let temporary = vertex(&mut s, "inner");
+        property(
+            &mut s,
+            &committed,
+            "compute",
+            json!({"type":"jvm_runtime","session":"family","id":1}),
+        );
+        // Duplicate IDs fail after native insertion, so this exercises a
+        // genuinely partial statement in the optimized block, not validation.
+        assert_eq!(
+            s.request(&json!({"op":"addVertex","id":{"type":"string","value":"committed"}}))["ok"],
+            false
+        );
+        for forbidden in [
+            json!({"op":"vertices"}),
+            json!({"op":"properties","owner":committed["handle"]}),
+            json!({"op":"commit"}),
+            json!({"op":"rollback"}),
+            json!({"op":"release","id":inner}),
+            json!({"op":"savepoint"}),
+            json!({"op":"addVertex"}),
+        ] {
+            assert_eq!(s.request(&forbidden)["ok"], false, "{forbidden}");
+        }
+        assert_eq!(
+            s.request(&json!({"op":"rollbackTo","id":outer}))["ok"],
+            false
+        );
+        call(&mut s, json!({"op":"rollbackTo","id":inner}));
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices"}))
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","owner":committed["handle"]})
+            ),
+            json!([])
+        );
+        assert!(s.resolve(&temporary["handle"]).is_err());
+        assert!(s.resolve(&retained["handle"]).is_ok());
+        assert!(s.resolve(&prior["handle"]).is_ok());
+        call(&mut s, json!({"op":"release","id":outer}));
+        call(&mut s, json!({"op":"commit"}));
+        let last = call(&mut s, json!({"op":"savepoint"}));
+        vertex(&mut s, "discard-on-close");
+        assert_eq!(s.request(&json!({"op":"unsupported"}))["ok"], false);
+        assert_eq!(s.request(&json!({"op":"release","id":last}))["ok"], false);
+        call(&mut s, json!({"op":"close"}));
+        assert_eq!(s.graph.node_ids("person").unwrap().len(), 3);
+        assert!(s.savepoints.is_empty());
+    }
+
+    #[test]
+    fn id_lookup_prefers_exact_strings_before_numeric_fallback() {
+        let mut s = Store::new();
+        let number = call(
+            &mut s,
+            json!({"op":"addVertex","id":{"type":"long","value":"42"}}),
+        );
+        let query = json!({"op":"vertices","ids":[{"type":"string","value":"42"}]});
+        assert_eq!(call(&mut s, query.clone()), json!([number]));
+        let exact = call(
+            &mut s,
+            json!({"op":"addVertex","id":{"type":"string","value":"42"}}),
+        );
+        assert_eq!(call(&mut s, query), json!([exact]));
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"vertices","ids":[{"type":"long","value":"42"}]})
+            ),
+            json!([number])
+        );
+        let edge = call(
+            &mut s,
+            json!({"op":"addEdge","out":number["handle"],"in":exact["handle"],"label":"link","id":{"type":"int","value":7}}),
+        );
+        let query = json!({"op":"edges","ids":[{"type":"string","value":"7"}]});
+        assert_eq!(call(&mut s, query.clone()), json!([edge]));
+        let exact_edge = call(
+            &mut s,
+            json!({"op":"addEdge","out":number["handle"],"in":exact["handle"],"label":"link","id":{"type":"string","value":"7"}}),
+        );
+        assert_eq!(call(&mut s, query), json!([exact_edge]));
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"vertices","ids":[{"type":"string","value":"unknown"}]})
+            ),
+            json!([])
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"edges","ids":[{"type":"string","value":"99"}]})
+            ),
+            json!([])
+        );
+    }
+
     #[test]
     fn persistent_commit_reopen_rollback_and_exclusive_lock() {
         let path = std::env::temp_dir().join(format!(
