@@ -33,6 +33,8 @@ public final class CrabGraph implements Graph {
     private final org.apache.tinkerpop.gremlin.structure.service.ServiceRegistry services=CrabServices.create(this);
     private int bulkLoadDepth;
     private int atomicMutationDepth;
+    private long nextNumericId;
+    private boolean numericIdsExhausted;
     private final int adjacencyCacheSize=Math.max(0,Integer.getInteger("crabgraph.native.adjacencyCacheSize",4096));
     private final Map<Object,Object> adjacencyCache=Collections.synchronizedMap(
         new LinkedHashMap<Object,Object>(128,0.75f,true) {
@@ -160,6 +162,10 @@ public final class CrabGraph implements Graph {
             String op=(String)request.get("op");
             boolean read=op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties")||op.equals("begin")||op.equals("hello");
             if(!read) adjacencyCache.clear();
+            if((op.equals("addVertex")||op.equals("addEdge"))&&!request.containsKey("id")) {
+                IdManager manager=op.equals("addVertex")?vertexIdManager:edgeIdManager;
+                if(manager!=IdManager.ANY) request.put("id",nextNumericId(manager));
+            }
             boolean cache=op.equals("adjacent")&&atomicMutationDepth==0&&adjacencyCacheSize>0;
             if(cache) {
                 Object hit=adjacencyCache.get(request);
@@ -174,6 +180,22 @@ public final class CrabGraph implements Graph {
             return value;
         } catch(RuntimeException|Error failure) { adjacencyCache.clear(); throw failure; }
         finally { lease.unlock(); }
+    }
+    // Invoked under the session lease. The counter never rewinds on rollback; after
+    // reopen, exact native identity lookups skip every surviving supplied/generated ID.
+    private Object nextNumericId(IdManager manager) {
+        while(true) {
+            if(numericIdsExhausted || (manager==IdManager.INTEGER&&nextNumericId>Integer.MAX_VALUE))
+                throw new IllegalStateException("Automatic "+manager+" identifier space is exhausted");
+            long candidate=nextNumericId;
+            if(candidate==Long.MAX_VALUE) numericIdsExhausted=true; else nextNumericId++;
+            Object id;
+            if(manager==IdManager.INTEGER) id=Integer.valueOf((int)candidate); else id=Long.valueOf(candidate);
+            Object encoded=CrabCodec.encode(id);
+            List<Object> ids=Collections.singletonList(encoded);
+            if(((List<?>)call(fields("op","vertices","ids",ids))).isEmpty() &&
+               ((List<?>)call(fields("op","edges","ids",ids))).isEmpty()) return encoded;
+        }
     }
     private static Object immutableRecord(Object value) {
         if(value instanceof Map) {
@@ -247,21 +269,20 @@ public final class CrabGraph implements Graph {
         ElementHelper.validateLabel(label);
         Map<String,Object> request=fields("op","addVertex","label",label,"properties",props);
         ElementHelper.getIdValue(keyValues).ifPresent(id->request.put("id",encodeId(id,"vertex")));
-        if(defaultCardinality==VertexProperty.Cardinality.single || props.isEmpty()) {
-            Map<Object,Object> lastValueByKey=new LinkedHashMap<>();
-            for(Object property:props) { List<?> pair=(List<?>)property; lastValueByKey.put(pair.get(0),pair.get(1)); }
-            List<Object> singleProperties=new ArrayList<>();
-            lastValueByKey.forEach((key,value)->singleProperties.add(Arrays.asList(key,value)));
-            request.put("properties",singleProperties);
+        Set<Object> keys=new HashSet<>();
+        boolean duplicateKey=false;
+        for(Object property:props) if(!keys.add(((List<?>)property).get(0))) duplicateKey=true;
+        if(!duplicateKey) {
             transaction.readWrite(); return decode(call(request));
         }
-        // Keep creation atomic while honoring a configured list/set default on older protocol-v1 stores.
+        // Constructor key/value pairs have list cardinality independently of the
+        // default used by subsequent Vertex.property calls (TinkerPop semantics).
         request.put("properties",Collections.emptyList());
         Vertex[] created=new Vertex[1];
         atomicMutation(()->{
             created[0]=decode(call(request));
             for(int i=0;i<keyValues.length;i+=2) if(keyValues[i] instanceof String)
-                created[0].property(defaultCardinality,(String)keyValues[i],keyValues[i+1]);
+                created[0].property(VertexProperty.Cardinality.list,(String)keyValues[i],keyValues[i+1]);
         });
         return created[0];
     }
