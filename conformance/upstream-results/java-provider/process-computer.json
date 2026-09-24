@@ -1,5 +1,5 @@
 {
-  "started_at": "2026-09-24T16:45:51.784070+00:00",
+  "started_at": "2026-09-24T17:14:27.224809+00:00",
   "profile": "jvm-graphcomputer",
   "selection": "ProcessComputerSuite",
   "upstream_revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
@@ -13,25 +13,25 @@
     "crabgraph.test.computer": "true",
     "build.dir": "isolated per class"
   },
-  "store_path": "/private/tmp/gremlin-final-store-integrated-1d09c57/crabgraph-jvm-store",
-  "store_sha256": "eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91",
-  "store_source_commit": "1d09c57964dacf17f48dd68c88db4e58ccc1fc27",
-  "runtime_jar_sha256": "de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d",
-  "runtime_source_commit": "4b84efa72228c659efc997d0086082f731bd93bb",
+  "store_path": "/private/tmp/gremlin-committed-read-native-2ae5e75/crabgraph-jvm-store",
+  "store_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
+  "store_source_commit": "2ae5e7529a9054be57a853759ec61100f9f1b811",
+  "runtime_jar_sha256": "ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468",
+  "runtime_source_commit": "cbd8fa37e26a76a723d76df27abb04a2474f5820",
   "runtime_source_manifest": {
-    "frozen_at": "2026-09-24T16:44:25.886848+00:00",
-    "source_revision": "4b84efa72228c659efc997d0086082f731bd93bb",
+    "frozen_at": "2026-09-24T17:08:45.801849+00:00",
+    "source_revision": "cbd8fa37e26a76a723d76df27abb04a2474f5820",
     "working_tree_modified": false,
-    "jar_sha256": "de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d",
+    "jar_sha256": "ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468",
     "jvm_tests": {
-      "tests": 60,
+      "tests": 63,
       "failures": 0,
       "errors": 0,
       "skipped": 0
     },
-    "test_native_binary": "/tmp/gremlin-final-store-integrated-1d09c57/crabgraph-jvm-store",
-    "test_native_sha256": "eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91",
-    "native_source_revision": "1d09c57964dacf17f48dd68c88db4e58ccc1fc27",
+    "native_binary": "/tmp/gremlin-committed-read-native-2ae5e75/crabgraph-jvm-store",
+    "native_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
+    "native_source_revision": "2ae5e7529a9054be57a853759ec61100f9f1b811",
     "files": {
       "conformance/upstream/catalog.json": "d5ca4f77dc8663c606854c1a60fa2f14a32f278288380b669cc97f50a8efc875",
       "conformance/data/parity-baseline.json": "0e2ee4c02a82a3723e3978b6d98e98b33d6d0a47b8fd86253c514272a0edc2af",
@@ -43,7 +43,7 @@
       "jvm/pom.xml": "6ee7967fa84b891405d0444f6ddf123933cc050d0bb81ef9e4007751adb20ae9",
       "jvm/src/main/java/io/crabgraph/gremlin/CrabCodec.java": "7a374be5c145f40dfee642a0ddc18e41ed72f295653811ec9ff8d5a72b8755da",
       "jvm/src/main/java/io/crabgraph/gremlin/CrabElement.java": "01d5771ca98f372cfc0792d712e138df22687a61b90f8d12c70c61b6453e82ea",
-      "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b78181dac6b5b9b209d03e47ef802ced61debdd208fb7e916591f099f9728e2a",
+      "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b37220d23bcbd9636fe24dbc7d93913fb53a8b7ea31ef00a27b025bb424aec58",
       "jvm/src/main/java/io/crabgraph/gremlin/CrabJvm.java": "d975d3360f4cbcb428e457d8821ba09450ce6c563d19cdf1e5cdb47faa2283b4",
       "jvm/src/main/java/io/crabgraph/gremlin/CrabJvmExecutor.java": "6b13e8efc7a39f405850a08f368533da0e42cb7e0c0d0adab6ad06ab32bc782a",
       "jvm/src/main/java/io/crabgraph/gremlin/CrabServices.java": "2b7d6abc3fb75de20e5de35f517757c52ab5e0adbcc4c37b21cad3e841d464bb",
@@ -60,6 +60,7 @@
       "jvm/src/main/java/io/crabgraph/gremlin/computer/package-info.java": "54fe8a6b40b34b6c6a574dabe48a370a3be355ffc348a729c4da5e0886206207",
       "jvm/src/main/resources/META-INF/LICENSE-tinkerpop": "87bf32821efc488aa4e432d034cc2c1199b73fef392ca45a8ebbfff715ea9396",
       "jvm/src/main/resources/META-INF/NOTICE-crabgraph-computer": "a037e68e648dcbe295c6a40a2fdf3bd5269d103f298c8acfb2a2d964e8f7849b",
+      "jvm/src/test/java/io/crabgraph/gremlin/CrabCommittedReadTest.java": "e7b84ee452d99b818aaa1c406d67c2a527ed8754706a584c7bfa61bd7750273e",
       "jvm/src/test/java/io/crabgraph/gremlin/CrabGraphTest.java": "b52205bc32bed611892ea3054d3a594514fbec43695f831f03c5e6a651c06ec0",
       "jvm/src/test/java/io/crabgraph/gremlin/CrabJvmExecutorTest.java": "45b2e116e5a621ed7d4d06345182dc943c3decb41fe3fdad432dad8d1c2f1d40",
       "jvm/src/test/java/io/crabgraph/gremlin/CrabPropertyCacheTest.java": "3afdef574d031862b8fa74b0781448510681d960b5b642790e093b3fb387496d",
@@ -76,7 +77,7 @@
     "jvm/pom.xml": "6ee7967fa84b891405d0444f6ddf123933cc050d0bb81ef9e4007751adb20ae9",
     "jvm/src/main/java/io/crabgraph/gremlin/CrabCodec.java": "7a374be5c145f40dfee642a0ddc18e41ed72f295653811ec9ff8d5a72b8755da",
     "jvm/src/main/java/io/crabgraph/gremlin/CrabElement.java": "01d5771ca98f372cfc0792d712e138df22687a61b90f8d12c70c61b6453e82ea",
-    "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b78181dac6b5b9b209d03e47ef802ced61debdd208fb7e916591f099f9728e2a",
+    "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b37220d23bcbd9636fe24dbc7d93913fb53a8b7ea31ef00a27b025bb424aec58",
     "jvm/src/main/java/io/crabgraph/gremlin/CrabJvm.java": "d975d3360f4cbcb428e457d8821ba09450ce6c563d19cdf1e5cdb47faa2283b4",
     "jvm/src/main/java/io/crabgraph/gremlin/CrabJvmExecutor.java": "6b13e8efc7a39f405850a08f368533da0e42cb7e0c0d0adab6ad06ab32bc782a",
     "jvm/src/main/java/io/crabgraph/gremlin/CrabServices.java": "2b7d6abc3fb75de20e5de35f517757c52ab5e0adbcc4c37b21cad3e841d464bb",
@@ -93,6 +94,7 @@
     "jvm/src/main/java/io/crabgraph/gremlin/computer/package-info.java": "54fe8a6b40b34b6c6a574dabe48a370a3be355ffc348a729c4da5e0886206207",
     "jvm/src/main/resources/META-INF/LICENSE-tinkerpop": "87bf32821efc488aa4e432d034cc2c1199b73fef392ca45a8ebbfff715ea9396",
     "jvm/src/main/resources/META-INF/NOTICE-crabgraph-computer": "a037e68e648dcbe295c6a40a2fdf3bd5269d103f298c8acfb2a2d964e8f7849b",
+    "jvm/src/test/java/io/crabgraph/gremlin/CrabCommittedReadTest.java": "e7b84ee452d99b818aaa1c406d67c2a527ed8754706a584c7bfa61bd7750273e",
     "jvm/src/test/java/io/crabgraph/gremlin/CrabGraphTest.java": "b52205bc32bed611892ea3054d3a594514fbec43695f831f03c5e6a651c06ec0",
     "jvm/src/test/java/io/crabgraph/gremlin/CrabJvmExecutorTest.java": "45b2e116e5a621ed7d4d06345182dc943c3decb41fe3fdad432dad8d1c2f1d40",
     "jvm/src/test/java/io/crabgraph/gremlin/CrabPropertyCacheTest.java": "3afdef574d031862b8fa74b0781448510681d960b5b642790e093b3fb387496d",
@@ -111,20 +113,20 @@
     "io/crabgraph/gremlin/CrabCodec.class": "0f91994f29340250da54dac164c4df7e6abeedb9da665f4acc723e7629b712d3",
     "io/crabgraph/gremlin/CrabEdge.class": "993455fb94d1dfe0a0113d77dc36b8d50c3c4a607f241dae684bde69f2aa53a8",
     "io/crabgraph/gremlin/CrabElement.class": "bed0d9cd46f41e716e513befe06daf2a54a753d98f97ea96b7a1f3f4c3fc13a7",
-    "io/crabgraph/gremlin/CrabGraph$1.class": "f515b37350d8a940e3b778bd7197b248babf1232d042ec34b8e7cf5eed4d6823",
-    "io/crabgraph/gremlin/CrabGraph$2.class": "58ebb580e581c029eddcdea5528db10216150be708ea12246e535582ab54b610",
-    "io/crabgraph/gremlin/CrabGraph$IdManager.class": "3813d5ebdf83c670f1b76f49dc12ccd51e08c62a5d3661a9e45911fd8a60fe63",
-    "io/crabgraph/gremlin/CrabGraph$NativeDataFeatures.class": "04a6225fc34db67b993f748c1420cbd90164b003aee89c0d3505766148c9d9f7",
-    "io/crabgraph/gremlin/CrabGraph$NativeEdgeFeatures.class": "0312ad0e72c7b6a59c437e35e35ea5a792e17d414444565e000dca41922fecca",
-    "io/crabgraph/gremlin/CrabGraph$NativeEdgePropertyFeatures.class": "d6c47216d7157472bf91ec17e7a8789e2d096575e6d96aa5c495816cd2f403bf",
-    "io/crabgraph/gremlin/CrabGraph$NativeFeatures.class": "1309cfbc548438de1b06997ae8ef368a6744185e64b0b6175a023c57e6e20658",
-    "io/crabgraph/gremlin/CrabGraph$NativeGraphFeatures.class": "761836dec7a11bd91332bb2423e33fa27efb63441d73e3f2d78da9ab8eeab20e",
-    "io/crabgraph/gremlin/CrabGraph$NativeTransaction.class": "6a724f179564a288a08f1c3f0a4cbccd0a0ef48df65fad1a7d053c4ba08d886c",
-    "io/crabgraph/gremlin/CrabGraph$NativeVariableFeatures.class": "2e922f31f4deda2cd1371eccbdba8b2290a59fe110af9748555c243d8cef8e74",
-    "io/crabgraph/gremlin/CrabGraph$NativeVertexFeatures.class": "2349ca460e22bfd01c170cc51460750190c0a3c1ae2291a06d37393ec33ecad2",
-    "io/crabgraph/gremlin/CrabGraph$NativeVertexPropertyFeatures.class": "d40022a2f0b5657c3b80cc00c7e842ddb75ae5ed94f9e2ad7006ad52a6152fe6",
-    "io/crabgraph/gremlin/CrabGraph$RuntimeValues.class": "7bda8a71d3bed5adc6dd71d3aa85c959339c2c9a209fffec16306da3c63efd3f",
-    "io/crabgraph/gremlin/CrabGraph.class": "489202df7f6f78188621db733b0fb30094502c83b8c9de0d2c36aee62a899a07",
+    "io/crabgraph/gremlin/CrabGraph$1.class": "c40dc12815d5aae7bbae0b26c86edf7baaac6ae9df49afca4e51c11cc7ac3322",
+    "io/crabgraph/gremlin/CrabGraph$2.class": "2e4cb93d16922ed0181d0ece4ed8b7b3a17dda3c06a90f0e3b8e5d208ede2f06",
+    "io/crabgraph/gremlin/CrabGraph$IdManager.class": "d02f664f8e5e50b0ca8e3afc9598ac5d1e46fcf115620e8772c4a64ff1126ef4",
+    "io/crabgraph/gremlin/CrabGraph$NativeDataFeatures.class": "43b053ffb5ef3f892f0eca8b60c56297792c5730d384118ae78f39fae521ba2d",
+    "io/crabgraph/gremlin/CrabGraph$NativeEdgeFeatures.class": "3ad7071e50d3adfb107a63d757be7377afb4d7854b14cd5740276055fc4705b3",
+    "io/crabgraph/gremlin/CrabGraph$NativeEdgePropertyFeatures.class": "ddb012c01ba1796b14bcc2d8c9e2389373f184ba2817969f550cd6d9bebea3f4",
+    "io/crabgraph/gremlin/CrabGraph$NativeFeatures.class": "374aca64ba527f8896c47e27ab21c418b54cc0e8d1de8e38f8b050d752b5d85a",
+    "io/crabgraph/gremlin/CrabGraph$NativeGraphFeatures.class": "fb5df8ef4f7c0aa70b1f763be122c53564054d1fcb00020383acb4b5ebd32ee3",
+    "io/crabgraph/gremlin/CrabGraph$NativeTransaction.class": "f6644e17f62494d22a82b3ed45d8552ad110218dfce5001d44253d3959fc805f",
+    "io/crabgraph/gremlin/CrabGraph$NativeVariableFeatures.class": "3d5cf7abd6d4f80e979f78fd00edc3678b7b0e0f263a8d485318ce9c852343dd",
+    "io/crabgraph/gremlin/CrabGraph$NativeVertexFeatures.class": "733405a6a17e37b897406cf472fe3a6e1c2c82b947a91b3645c34aa37eecfcba",
+    "io/crabgraph/gremlin/CrabGraph$NativeVertexPropertyFeatures.class": "311851713c571f6ceffae7150cd673597d9562d9cc5af358b4d89faa1015b63a",
+    "io/crabgraph/gremlin/CrabGraph$RuntimeValues.class": "3ccf4acc295919c76d1f6a74506f626a5fc47632b818f295897ca8b65e74d660",
+    "io/crabgraph/gremlin/CrabGraph.class": "3e09c85a97a49f9652f1890e811947ee887588c27cd7f3cef126d6e7cf9eb11e",
     "io/crabgraph/gremlin/CrabJvm.class": "04a931df9ca5619a56e819ff845761a796810bc2c98a0a19796a4ae0a069c377",
     "io/crabgraph/gremlin/CrabJvmExecutor$1$1.class": "ce0f6d6caa6b0d69d39fb627641fa58fdb21c050fde52f985ef6e3f4587e5ee3",
     "io/crabgraph/gremlin/CrabJvmExecutor$1.class": "873e1e23d4ae5e4100e667eecf9d791d738dc4c36be2e19fc7ac84a2f0f8bfe7",
@@ -160,18 +162,18 @@
   },
   "harness_class_sha256": {
     "io/crabgraph/conformance/NativeGraphProvider.class": "71baed6bf56e14553c5797ab2346fbff6a5dd3fc2516951f0a39d69f3f70f4ba",
-    "io/crabgraph/conformance/ProviderSuite$1.class": "48690e6ef729d644fc49514b79aa6246fe6f3bde38752344ab4a42a060a17877",
-    "io/crabgraph/conformance/ProviderSuite.class": "647430069085b0e03e1111958a56c62aeb072f696605d2f9db62cf5802b20299",
+    "io/crabgraph/conformance/ProviderSuite$1.class": "30a15a54122810e98211e9115ce53d37351b7979a66117d45e7e9745d89c162b",
+    "io/crabgraph/conformance/ProviderSuite.class": "2093920101a94fc8c62ee993b30e2349cad61b47efa8a846f6516644fb873ce4",
     "io/crabgraph/conformance/ProviderSupplemental.class": "b8d1d31a1f4491c6541c917af5f10fab8f39ba3fa2ae96ccc531fd018201b5a1"
   },
   "harness_source_sha256": {
     "main/java/io/crabgraph/conformance/NativeGraphProvider.java": "19458f75b18a4b39fabfa54d764cb9c9335f5d7900ba51b30c053ce7027fc62d",
-    "main/java/io/crabgraph/conformance/ProviderSuite.java": "b45ed095b94f1a4b9bff229c7b48855b39456eb877678d323a84470016deb6c2",
+    "main/java/io/crabgraph/conformance/ProviderSuite.java": "efeb88421c1a7fae73e4fc69f5286a47e3e9c894fa6f24dc27656236805c78a0",
     "main/java/io/crabgraph/conformance/ProviderSupplemental.java": "d5d36fd7cf9d6050ca692667d0a10099d1f42ceea1566258f99d8b251e2d0d3f"
   },
   "orchestrator_sha256": "7b60955393f3f4fd88082762460e7ef88ec4dc4a2ed6491528c6b148e445bbfd",
   "class_timeout_seconds": 180,
-  "effective_classpath": "/private/tmp/crabgraph-computer-broad-4b84efa/production-classes:/private/tmp/crabgraph-computer-broad-4b84efa/harness-classes:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-test/3.7.4/gremlin-test-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/commons-io/commons-io/2.8.0/commons-io-2.8.0.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.1/junit-4.13.1.jar:/Users/henneberger/.m2/repository/org/mockito/mockito-core/3.10.0/mockito-core-3.10.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy/1.11.0/byte-buddy-1.11.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy-agent/1.11.0/byte-buddy-agent-1.11.0.jar:/Users/henneberger/.m2/repository/org/objenesis/objenesis/3.2/objenesis-3.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-java/6.11.0/cucumber-java-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-core/6.11.0/cucumber-core-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin/6.11.0/cucumber-gherkin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin-messages/6.11.0/cucumber-gherkin-messages-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/messages/15.0.0/messages-15.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/tag-expressions/3.0.1/tag-expressions-3.0.1.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-expressions/10.3.0/cucumber-expressions-10.3.0.jar:/Users/henneberger/.m2/repository/io/cucumber/datatable/3.5.0/datatable-3.5.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-plugin/6.11.0/cucumber-plugin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/docstring/6.11.0/docstring-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/html-formatter/13.0.0/html-formatter-13.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/create-meta/4.0.0/create-meta-4.0.0.jar:/Users/henneberger/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-junit/6.11.0/cucumber-junit-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-guice/6.11.0/cucumber-guice-6.11.0.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-simplekdc/2.0.1/kerb-simplekdc-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-client/2.0.1/kerb-client-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-config/2.0.1/kerby-config-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-core/2.0.1/kerb-core-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-pkix/2.0.1/kerby-pkix-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-asn1/2.0.1/kerby-asn1-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-util/2.0.1/kerby-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-common/2.0.1/kerb-common-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-crypto/2.0.1/kerb-crypto-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-util/2.0.1/kerb-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/token-provider/2.0.1/token-provider-2.0.1.jar:/Users/henneberger/.m2/repository/com/nimbusds/nimbus-jose-jwt/8.2.1/nimbus-jose-jwt-8.2.1.jar:/Users/henneberger/.m2/repository/com/github/stephenc/jcip/jcip-annotations/1.0-1/jcip-annotations-1.0-1.jar:/Users/henneberger/.m2/repository/net/minidev/json-smart/2.3/json-smart-2.3.jar:/Users/henneberger/.m2/repository/net/minidev/accessors-smart/1.2/accessors-smart-1.2.jar:/Users/henneberger/.m2/repository/org/ow2/asm/asm/5.0.4/asm-5.0.4.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-admin/2.0.1/kerb-admin-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-server/2.0.1/kerb-server-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-identity/2.0.1/kerb-identity-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-xdr/2.0.1/kerby-xdr-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/tinkergraph-gremlin/3.7.4/tinkergraph-gremlin-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar:/tmp/gremlin-final-jvm-4b84efa/crabgraph-jvm-0.1.0.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-groovy/3.7.4/gremlin-groovy-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy/4.0.25/groovy-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-groovysh/4.0.25/groovy-groovysh-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-console/4.0.25/groovy-console-4.0.25.jar:/Users/henneberger/.m2/repository/com/github/javaparser/javaparser-core/3.26.3/javaparser-core-3.26.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-swing/4.0.25/groovy-swing-4.0.25.jar:/Users/henneberger/.m2/repository/org/abego/treelayout/org.abego.treelayout.core/1.0.3/org.abego.treelayout.core-1.0.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-templates/4.0.25/groovy-templates-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-xml/4.0.25/groovy-xml-4.0.25.jar:/Users/henneberger/.m2/repository/jline/jline/2.14.6/jline-2.14.6.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-json/4.0.25/groovy-json-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-jsr223/4.0.25/groovy-jsr223-4.0.25.jar:/Users/henneberger/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/Users/henneberger/.m2/repository/com/github/ben-manes/caffeine/caffeine/2.3.1/caffeine-2.3.1.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.2/junit-4.13.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
+  "effective_classpath": "/private/tmp/crabgraph-computer-broad-cbd8fa3-canonical/production-classes:/private/tmp/crabgraph-computer-broad-cbd8fa3-canonical/harness-classes:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-test/3.7.4/gremlin-test-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/commons-io/commons-io/2.8.0/commons-io-2.8.0.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.1/junit-4.13.1.jar:/Users/henneberger/.m2/repository/org/mockito/mockito-core/3.10.0/mockito-core-3.10.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy/1.11.0/byte-buddy-1.11.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy-agent/1.11.0/byte-buddy-agent-1.11.0.jar:/Users/henneberger/.m2/repository/org/objenesis/objenesis/3.2/objenesis-3.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-java/6.11.0/cucumber-java-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-core/6.11.0/cucumber-core-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin/6.11.0/cucumber-gherkin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin-messages/6.11.0/cucumber-gherkin-messages-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/messages/15.0.0/messages-15.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/tag-expressions/3.0.1/tag-expressions-3.0.1.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-expressions/10.3.0/cucumber-expressions-10.3.0.jar:/Users/henneberger/.m2/repository/io/cucumber/datatable/3.5.0/datatable-3.5.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-plugin/6.11.0/cucumber-plugin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/docstring/6.11.0/docstring-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/html-formatter/13.0.0/html-formatter-13.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/create-meta/4.0.0/create-meta-4.0.0.jar:/Users/henneberger/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-junit/6.11.0/cucumber-junit-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-guice/6.11.0/cucumber-guice-6.11.0.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-simplekdc/2.0.1/kerb-simplekdc-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-client/2.0.1/kerb-client-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-config/2.0.1/kerby-config-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-core/2.0.1/kerb-core-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-pkix/2.0.1/kerby-pkix-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-asn1/2.0.1/kerby-asn1-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-util/2.0.1/kerby-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-common/2.0.1/kerb-common-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-crypto/2.0.1/kerb-crypto-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-util/2.0.1/kerb-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/token-provider/2.0.1/token-provider-2.0.1.jar:/Users/henneberger/.m2/repository/com/nimbusds/nimbus-jose-jwt/8.2.1/nimbus-jose-jwt-8.2.1.jar:/Users/henneberger/.m2/repository/com/github/stephenc/jcip/jcip-annotations/1.0-1/jcip-annotations-1.0-1.jar:/Users/henneberger/.m2/repository/net/minidev/json-smart/2.3/json-smart-2.3.jar:/Users/henneberger/.m2/repository/net/minidev/accessors-smart/1.2/accessors-smart-1.2.jar:/Users/henneberger/.m2/repository/org/ow2/asm/asm/5.0.4/asm-5.0.4.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-admin/2.0.1/kerb-admin-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-server/2.0.1/kerb-server-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-identity/2.0.1/kerb-identity-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-xdr/2.0.1/kerby-xdr-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/tinkergraph-gremlin/3.7.4/tinkergraph-gremlin-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar:/tmp/gremlin-final-jvm-cbd8fa3/crabgraph-jvm-0.1.0.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-groovy/3.7.4/gremlin-groovy-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy/4.0.25/groovy-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-groovysh/4.0.25/groovy-groovysh-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-console/4.0.25/groovy-console-4.0.25.jar:/Users/henneberger/.m2/repository/com/github/javaparser/javaparser-core/3.26.3/javaparser-core-3.26.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-swing/4.0.25/groovy-swing-4.0.25.jar:/Users/henneberger/.m2/repository/org/abego/treelayout/org.abego.treelayout.core/1.0.3/org.abego.treelayout.core-1.0.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-templates/4.0.25/groovy-templates-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-xml/4.0.25/groovy-xml-4.0.25.jar:/Users/henneberger/.m2/repository/jline/jline/2.14.6/jline-2.14.6.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-json/4.0.25/groovy-json-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-jsr223/4.0.25/groovy-jsr223-4.0.25.jar:/Users/henneberger/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/Users/henneberger/.m2/repository/com/github/ben-manes/caffeine/caffeine/2.3.1/caffeine-2.3.1.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.2/junit-4.13.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
   "java_flags": [
     "-Dis.testing=true",
     "-DassertNonDeterministic=true",
@@ -187,7 +189,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.computer.GraphComputerTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 19.204,
+      "duration_seconds": 16.14,
       "complete": true,
       "counts": {
         "pass": 37
@@ -198,7 +200,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.BranchTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.362,
+      "duration_seconds": 1.266,
       "complete": true,
       "counts": {
         "pass": 5
@@ -209,7 +211,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.ChooseTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.881,
+      "duration_seconds": 1.557,
       "complete": true,
       "counts": {
         "skipped": 2,
@@ -221,7 +223,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.OptionalTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.731,
+      "duration_seconds": 1.155,
       "complete": true,
       "counts": {
         "skipped": 3,
@@ -233,7 +235,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.LocalTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.564,
+      "duration_seconds": 1.929,
       "complete": true,
       "counts": {
         "pass": 10,
@@ -245,7 +247,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.RepeatTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 3.726,
+      "duration_seconds": 3.207,
       "complete": true,
       "counts": {
         "skipped": 7,
@@ -257,7 +259,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.branch.UnionTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.847,
+      "duration_seconds": 1.551,
       "complete": true,
       "counts": {
         "pass": 8
@@ -268,7 +270,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.AndTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.326,
+      "duration_seconds": 1.111,
       "complete": true,
       "counts": {
         "skipped": 1,
@@ -280,7 +282,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.CoinTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.926,
+      "duration_seconds": 0.74,
       "complete": true,
       "counts": {
         "pass": 2
@@ -291,7 +293,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.CyclicPathTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.034,
+      "duration_seconds": 0.898,
       "complete": true,
       "counts": {
         "pass": 3
@@ -302,7 +304,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.DedupTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 3.396,
+      "duration_seconds": 3.059,
       "complete": true,
       "counts": {
         "pass": 19,
@@ -314,7 +316,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.FilterTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.831,
+      "duration_seconds": 1.598,
       "complete": true,
       "counts": {
         "pass": 9
@@ -325,7 +327,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.HasTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 10.011,
+      "duration_seconds": 9.156,
       "complete": true,
       "counts": {
         "pass": 76,
@@ -337,7 +339,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.IsTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.287,
+      "duration_seconds": 1.204,
       "complete": true,
       "counts": {
         "pass": 5
@@ -348,7 +350,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.OrTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.036,
+      "duration_seconds": 0.911,
       "complete": true,
       "counts": {
         "pass": 3
@@ -359,7 +361,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.RangeTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 3.143,
+      "duration_seconds": 2.777,
       "complete": true,
       "counts": {
         "pass": 15,
@@ -371,7 +373,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.SampleTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.398,
+      "duration_seconds": 1.251,
       "complete": true,
       "counts": {
         "pass": 6
@@ -382,7 +384,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.SimplePathTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.02,
+      "duration_seconds": 0.958,
       "complete": true,
       "counts": {
         "pass": 2,
@@ -394,7 +396,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.TailTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.211,
+      "duration_seconds": 2.068,
       "complete": true,
       "counts": {
         "pass": 9,
@@ -406,7 +408,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.filter.WhereTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 3.921,
+      "duration_seconds": 3.544,
       "complete": true,
       "counts": {
         "skipped": 9,
@@ -418,7 +420,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.CoalesceTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.5,
+      "duration_seconds": 1.329,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -430,7 +432,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConstantTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.088,
+      "duration_seconds": 0.956,
       "complete": true,
       "counts": {
         "pass": 3
@@ -441,7 +443,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.CountTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 38.932,
+      "duration_seconds": 36.707,
       "complete": true,
       "counts": {
         "pass": 9,
@@ -453,7 +455,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ElementMapTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.03,
+      "duration_seconds": 0.952,
       "complete": true,
       "counts": {
         "pass": 3
@@ -464,7 +466,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.FlatMapTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.689,
+      "duration_seconds": 0.63,
       "complete": true,
       "counts": {
         "pass": 1
@@ -475,7 +477,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.FoldTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.973,
+      "duration_seconds": 0.9,
       "complete": true,
       "counts": {
         "pass": 3
@@ -486,7 +488,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 8.177,
+      "duration_seconds": 7.931,
       "complete": true,
       "counts": {
         "skipped": 4
@@ -497,7 +499,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.LoopsTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.103,
+      "duration_seconds": 1.013,
       "complete": true,
       "counts": {
         "skipped": 3,
@@ -509,7 +511,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MapTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.401,
+      "duration_seconds": 1.321,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -521,7 +523,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MatchTest$CountMatchTraversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 88.011,
+      "duration_seconds": 82.181,
       "complete": true,
       "counts": {
         "pass": 31,
@@ -533,7 +535,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MatchTest$GreedyMatchTraversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 86.271,
+      "duration_seconds": 81.777,
       "complete": true,
       "counts": {
         "pass": 31,
@@ -545,7 +547,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MathTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.42,
+      "duration_seconds": 1.329,
       "complete": true,
       "counts": {
         "pass": 4,
@@ -557,7 +559,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MaxTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.114,
+      "duration_seconds": 2.008,
       "complete": true,
       "counts": {
         "pass": 13
@@ -568,7 +570,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MeanTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.684,
+      "duration_seconds": 1.599,
       "complete": true,
       "counts": {
         "pass": 7,
@@ -580,7 +582,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.MinTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.21,
+      "duration_seconds": 2.08,
       "complete": true,
       "counts": {
         "pass": 13,
@@ -592,7 +594,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.SumTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.856,
+      "duration_seconds": 1.828,
       "complete": true,
       "counts": {
         "pass": 10,
@@ -604,7 +606,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.OrderTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 22.256,
+      "duration_seconds": 20.912,
       "complete": true,
       "counts": {
         "pass": 25
@@ -615,7 +617,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PathTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.872,
+      "duration_seconds": 1.733,
       "complete": true,
       "counts": {
         "skipped": 7,
@@ -627,7 +629,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ProfileTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 20.914,
+      "duration_seconds": 19.818,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -639,7 +641,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ProjectTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.326,
+      "duration_seconds": 1.05,
       "complete": true,
       "counts": {
         "pass": 4
@@ -650,7 +652,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ProgramTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.526,
+      "duration_seconds": 1.435,
       "complete": true,
       "counts": {
         "pass": 3
@@ -661,7 +663,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.465,
+      "duration_seconds": 1.394,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -673,7 +675,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ReadTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.965,
+      "duration_seconds": 0.885,
       "complete": true,
       "counts": {
         "skipped": 6
@@ -684,7 +686,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.SelectTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 7.816,
+      "duration_seconds": 7.482,
       "complete": true,
       "counts": {
         "pass": 56,
@@ -696,7 +698,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.UnfoldTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.081,
+      "duration_seconds": 0.885,
       "complete": true,
       "counts": {
         "pass": 2,
@@ -708,7 +710,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ValueMapTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.839,
+      "duration_seconds": 1.698,
       "complete": true,
       "counts": {
         "pass": 9
@@ -719,7 +721,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.VertexTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 5.122,
+      "duration_seconds": 4.956,
       "complete": true,
       "counts": {
         "pass": 36,
@@ -731,7 +733,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.WriteTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.224,
+      "duration_seconds": 1.124,
       "complete": true,
       "counts": {
         "skipped": 6
@@ -742,7 +744,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.AddEdgeTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.976,
+      "duration_seconds": 1.895,
       "complete": true,
       "counts": {
         "skipped": 12
@@ -753,7 +755,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.AggregateTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.926,
+      "duration_seconds": 1.927,
       "complete": true,
       "counts": {
         "pass": 10,
@@ -765,7 +767,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.ExplainTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.597,
+      "duration_seconds": 0.603,
       "complete": true,
       "counts": {
         "skipped": 1
@@ -776,7 +778,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 52.089,
+      "duration_seconds": 51.743,
       "complete": true,
       "counts": {
         "pass": 23,
@@ -788,7 +790,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupCountTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.343,
+      "duration_seconds": 2.299,
       "complete": true,
       "counts": {
         "pass": 14
@@ -799,7 +801,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.InjectTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.789,
+      "duration_seconds": 1.794,
       "complete": true,
       "counts": {
         "skipped": 13
@@ -810,7 +812,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ProfileTest$Traversals",
       "suite_class_occurrence": 2,
       "exit_code": 0,
-      "duration_seconds": 19.817,
+      "duration_seconds": 18.619,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -822,7 +824,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SackTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.669,
+      "duration_seconds": 1.578,
       "complete": true,
       "counts": {
         "pass": 7,
@@ -834,7 +836,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SideEffectCapTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.9,
+      "duration_seconds": 0.791,
       "complete": true,
       "counts": {
         "pass": 2
@@ -845,7 +847,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SideEffectTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.563,
+      "duration_seconds": 1.379,
       "complete": true,
       "counts": {
         "pass": 5,
@@ -857,7 +859,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StoreTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.117,
+      "duration_seconds": 1.067,
       "complete": true,
       "counts": {
         "pass": 4
@@ -868,7 +870,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SubgraphTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.206,
+      "duration_seconds": 1.305,
       "complete": true,
       "counts": {
         "skipped": 3
@@ -879,7 +881,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.TreeTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.862,
+      "duration_seconds": 1.772,
       "complete": true,
       "counts": {
         "skipped": 3,
@@ -891,7 +893,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.step.ComplexTest$Traversals",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 17.111,
+      "duration_seconds": 18.156,
       "complete": true,
       "counts": {
         "pass": 4,
@@ -903,7 +905,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.TraversalInterruptionComputerTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 73.809,
+      "duration_seconds": 76.232,
       "complete": true,
       "counts": {
         "pass": 10
@@ -914,7 +916,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.computer.ranking.pagerank.PageRankVertexProgramTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.154,
+      "duration_seconds": 1.137,
       "complete": true,
       "counts": {
         "pass": 3
@@ -925,7 +927,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.computer.search.path.ShortestPathVertexProgramTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 15.496,
+      "duration_seconds": 15.394,
       "complete": true,
       "counts": {
         "pass": 13
@@ -936,7 +938,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.computer.clone.CloneVertexProgramTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.774,
+      "duration_seconds": 0.684,
       "complete": true,
       "counts": {
         "pass": 1
@@ -947,7 +949,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.TranslationStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.596,
+      "duration_seconds": 0.588,
       "complete": true,
       "counts": {
         "pass": 1
@@ -958,7 +960,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.verification.ReadOnlyStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 1.303,
+      "duration_seconds": 1.284,
       "complete": true,
       "counts": {
         "pass": 11
@@ -969,7 +971,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.SeedStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 30.147,
+      "duration_seconds": 30.65,
       "complete": true,
       "counts": {
         "pass": 5
@@ -980,7 +982,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.SubgraphStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 2.541,
+      "duration_seconds": 2.571,
       "complete": true,
       "counts": {
         "skipped": 6,
@@ -992,7 +994,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.optimization.IncidentToAdjacentStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 0.834,
+      "duration_seconds": 0.819,
       "complete": true,
       "counts": {
         "pass": 1
@@ -1003,7 +1005,7 @@
       "class": "org.apache.tinkerpop.gremlin.process.traversal.strategy.optimization.EarlyLimitStrategyProcessTest",
       "suite_class_occurrence": 1,
       "exit_code": 0,
-      "duration_seconds": 7.181,
+      "duration_seconds": 7.601,
       "complete": true,
       "counts": {
         "skipped": 1
@@ -1012,7 +1014,7 @@
   ],
   "run_complete": true,
   "inventory_only": false,
-  "finished_at": "2026-09-24T16:51:02.862844+00:00",
+  "finished_at": "2026-09-24T17:19:26.582047+00:00",
   "selected_occurrences": 868,
   "counts": {
     "pass": 700,
@@ -4665,7 +4667,7 @@
       },
       "suite_class_index": 21,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals#g_V_connectedComponent_withXEDGES_bothEXknowsXX_withXPROPERTY_NAME_clusterX_project_byXnameX_byXclusterX",
@@ -4682,7 +4684,7 @@
       },
       "suite_class_index": 21,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals#g_V_dedup_connectedComponent_hasXcomponentX",
@@ -4699,7 +4701,7 @@
       },
       "suite_class_index": 21,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals#g_V_hasLabelXsoftwareX_connectedComponent_project_byXnameX_byXcomponentX",
@@ -4716,7 +4718,7 @@
       },
       "suite_class_index": 21,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConstantTest$Traversals#g_V_chooseXhasLabelXpersonX_valuesXnameX_constantXinhumanXX",
@@ -6981,7 +6983,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_hasLabelXsoftwareX_hasXname_rippleX_pageRankX1X_withXedges_inEXcreatedXX_withXtimes_1X_withXpropertyName_priorsX_inXcreatedX_unionXboth__identityX_valueMapXname_priorsX",
@@ -6998,7 +7000,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_outXcreatedX_groupXmX_byXlabelX_pageRankX1X_withXPROPERTY_NAME_pageRankXX_withXEDGES_inEXX_withXTIMES_1X_inXcreatedX_groupXmX_byXpageRankX_capXmX",
@@ -7015,7 +7017,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_outXcreatedX_pageRank_withXedges_bothEX_withXpropertyName_projectRankXwithXtimes_0X_valueMapXname_projectRankX",
@@ -7032,7 +7034,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_pageRank_hasXpageRankX",
@@ -7049,7 +7051,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_pageRank_order_byXpageRank_descX_byXnameX_name",
@@ -7066,7 +7068,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_pageRank_order_byXpageRank_descX_name_limitX2X",
@@ -7083,7 +7085,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_pageRank_withXedges_outEXknowsXX_withXpropertyName_friendRankX_project_byXnameX_byXvaluesXfriendRankX_mathX",
@@ -7100,7 +7102,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals#g_V_pageRank_withXpropertyName_pageRankX_asXaX_outXknowsX_pageRank_asXbX_selectXa_bX_by_byXmathX",
@@ -7117,7 +7119,7 @@
       },
       "suite_class_index": 38,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PathTest$Traversals#g_VX1X_name_path",
@@ -7261,7 +7263,7 @@
       },
       "suite_class_index": 40,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest$Traversals#g_V_peerPressure_hasXclusterX",
@@ -7278,7 +7280,7 @@
       },
       "suite_class_index": 40,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest$Traversals#g_V_peerPressure_withXpropertyName_clusterX_withXedges_outEXknowsXX_pageRankX1X_withXpropertyName_rankX_withXedges_outEXknowsXX_withXtimes_2X_group_byXclusterX_byXrank_sumX_limitX100X",
@@ -7295,7 +7297,7 @@
       },
       "suite_class_index": 40,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ProfileTest$Traversals#g_V_groupXmX_profile",
@@ -7753,7 +7755,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_danielX_shortestPath_targetXhasXname_stephenXX_edgesXbothEXusesXX",
@@ -7770,7 +7772,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_markoX_shortestPath",
@@ -7787,7 +7789,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_markoX_shortestPath_maxDistanceX1X",
@@ -7804,7 +7806,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_markoX_shortestPath_targetXhasLabelXsoftwareXX",
@@ -7821,7 +7823,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_markoX_shortestPath_targetXhasXname_joshXX_distanceXweightX",
@@ -7838,7 +7840,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXname_vadasX_shortestPath_distanceXweightX_maxDistanceX1_3X",
@@ -7855,7 +7857,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_hasXsong_name_MIGHT_AS_WELLX_shortestPath_targetXhasXsong_name_MAYBE_YOU_KNOW_HOW_I_FEELXX_edgesXoutEXfollowedByXX_distanceXweightX",
@@ -7872,7 +7874,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath",
@@ -7889,7 +7891,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_directionXINX",
@@ -7906,7 +7908,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_edgesIncluded",
@@ -7923,7 +7925,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_edgesIncluded_edgesXoutEX",
@@ -7940,7 +7942,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_edgesXoutEX",
@@ -7957,7 +7959,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_targetXhasXname_markoXX",
@@ -7974,7 +7976,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals#g_V_shortestPath_targetXvaluesXnameX_isXmarkoXX",
@@ -7991,7 +7993,7 @@
       },
       "suite_class_index": 46,
       "suite_class_occurrence": 1,
-      "component_report": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "component_report": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     },
     {
       "id": "org.apache.tinkerpop.gremlin.process.traversal.step.map.SelectTest$Traversals#g_EX11X_propertiesXweightX_asXaX_selectXaX_byXkeyX",
@@ -11798,17 +11800,17 @@
   },
   "component_reports": [
     {
-      "path": "/private/tmp/crabgraph-computer-broad-4b84efa/aggregate.json",
-      "sha256": "8ea74ec8031f3cd16cec7d3941e441db3e5197ceaeac94446ff435eaea59067a",
+      "path": "/private/tmp/crabgraph-computer-broad-cbd8fa3-canonical/aggregate.json",
+      "sha256": "9ee5b4464b44143cec2bdc3ac4723ddd392228bc4c45452868daa5b8a1d94af2",
       "occurrences": 837
     },
     {
-      "path": "/private/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json",
-      "sha256": "6fcbc972200a3b19490ec0a94582b6756517793f16933fa13a834a2ec1474145",
+      "path": "/private/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json",
+      "sha256": "b7f8e21a3e4c557c020fe3630a63119b8cdb8a0b3b623f31be108aca0aac30fc",
       "occurrences": 31
     }
   ],
-  "combined_at": "2026-09-24T16:52:35.276030+00:00",
+  "combined_at": "2026-09-24T17:19:56.877278+00:00",
   "timing_scope": "started_at and finished_at describe the broad component; algorithm execution is independently recorded",
   "algorithm_component_provenance": {
     "upstream_revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
@@ -11822,54 +11824,54 @@
       "is.testing": "true",
       "assertNonDeterministic": "true",
       "crabgraph.test.computer": "true",
-      "build.dir": "/tmp/crabgraph-computer-original31-4b84efa-isolated-data"
+      "build.dir": "/tmp/crabgraph-computer-original31-cbd8fa3-isolated-data"
     },
     "process_exit_code": 0,
-    "elapsed_seconds": 36.8691771030426,
-    "store_sha256": "eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91",
-    "provider_jar_sha256": "de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d",
-    "harness_jar_sha256": "cf1bd3f523ce6e28771018dccb890f033f0cd20b5a84e2c023f098ccf43ce7cf",
+    "elapsed_seconds": 41.31732392311096,
+    "store_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
+    "provider_jar_sha256": "ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468",
+    "harness_jar_sha256": "c1ebdfb2f0114a897b82fb79be809917f84653871dccbdd4e1172fdeb21edcfb",
     "command": [
       "/opt/homebrew/opt/openjdk@21/bin/java",
       "-Dis.testing=true",
       "-DassertNonDeterministic=true",
       "-Dcrabgraph.test.computer=true",
-      "-Dbuild.dir=/tmp/crabgraph-computer-original31-4b84efa-isolated-data",
+      "-Dbuild.dir=/tmp/crabgraph-computer-original31-cbd8fa3-isolated-data",
       "--add-opens=java.base/java.util=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
       "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
       "-cp",
-      "/tmp/crabgraph-computer-original31-final-4b84efa-isolated.harness.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-test/3.7.4/gremlin-test-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/commons-io/commons-io/2.8.0/commons-io-2.8.0.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.1/junit-4.13.1.jar:/Users/henneberger/.m2/repository/org/mockito/mockito-core/3.10.0/mockito-core-3.10.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy/1.11.0/byte-buddy-1.11.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy-agent/1.11.0/byte-buddy-agent-1.11.0.jar:/Users/henneberger/.m2/repository/org/objenesis/objenesis/3.2/objenesis-3.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-java/6.11.0/cucumber-java-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-core/6.11.0/cucumber-core-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin/6.11.0/cucumber-gherkin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin-messages/6.11.0/cucumber-gherkin-messages-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/messages/15.0.0/messages-15.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/tag-expressions/3.0.1/tag-expressions-3.0.1.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-expressions/10.3.0/cucumber-expressions-10.3.0.jar:/Users/henneberger/.m2/repository/io/cucumber/datatable/3.5.0/datatable-3.5.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-plugin/6.11.0/cucumber-plugin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/docstring/6.11.0/docstring-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/html-formatter/13.0.0/html-formatter-13.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/create-meta/4.0.0/create-meta-4.0.0.jar:/Users/henneberger/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-junit/6.11.0/cucumber-junit-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-guice/6.11.0/cucumber-guice-6.11.0.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-simplekdc/2.0.1/kerb-simplekdc-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-client/2.0.1/kerb-client-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-config/2.0.1/kerby-config-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-core/2.0.1/kerb-core-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-pkix/2.0.1/kerby-pkix-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-asn1/2.0.1/kerby-asn1-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-util/2.0.1/kerby-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-common/2.0.1/kerb-common-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-crypto/2.0.1/kerb-crypto-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-util/2.0.1/kerb-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/token-provider/2.0.1/token-provider-2.0.1.jar:/Users/henneberger/.m2/repository/com/nimbusds/nimbus-jose-jwt/8.2.1/nimbus-jose-jwt-8.2.1.jar:/Users/henneberger/.m2/repository/com/github/stephenc/jcip/jcip-annotations/1.0-1/jcip-annotations-1.0-1.jar:/Users/henneberger/.m2/repository/net/minidev/json-smart/2.3/json-smart-2.3.jar:/Users/henneberger/.m2/repository/net/minidev/accessors-smart/1.2/accessors-smart-1.2.jar:/Users/henneberger/.m2/repository/org/ow2/asm/asm/5.0.4/asm-5.0.4.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-admin/2.0.1/kerb-admin-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-server/2.0.1/kerb-server-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-identity/2.0.1/kerb-identity-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-xdr/2.0.1/kerby-xdr-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/tinkergraph-gremlin/3.7.4/tinkergraph-gremlin-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar:/tmp/gremlin-final-jvm-4b84efa/crabgraph-jvm-0.1.0.jar:/tmp/gremlin-final-jvm-4b84efa/crabgraph-jvm-0.1.0.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-groovy/3.7.4/gremlin-groovy-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy/4.0.25/groovy-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-groovysh/4.0.25/groovy-groovysh-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-console/4.0.25/groovy-console-4.0.25.jar:/Users/henneberger/.m2/repository/com/github/javaparser/javaparser-core/3.26.3/javaparser-core-3.26.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-swing/4.0.25/groovy-swing-4.0.25.jar:/Users/henneberger/.m2/repository/org/abego/treelayout/org.abego.treelayout.core/1.0.3/org.abego.treelayout.core-1.0.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-templates/4.0.25/groovy-templates-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-xml/4.0.25/groovy-xml-4.0.25.jar:/Users/henneberger/.m2/repository/jline/jline/2.14.6/jline-2.14.6.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-json/4.0.25/groovy-json-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-jsr223/4.0.25/groovy-jsr223-4.0.25.jar:/Users/henneberger/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/Users/henneberger/.m2/repository/com/github/ben-manes/caffeine/caffeine/2.3.1/caffeine-2.3.1.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.2/junit-4.13.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
+      "/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.harness.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-test/3.7.4/gremlin-test-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/commons-io/commons-io/2.8.0/commons-io-2.8.0.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.1/junit-4.13.1.jar:/Users/henneberger/.m2/repository/org/mockito/mockito-core/3.10.0/mockito-core-3.10.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy/1.11.0/byte-buddy-1.11.0.jar:/Users/henneberger/.m2/repository/net/bytebuddy/byte-buddy-agent/1.11.0/byte-buddy-agent-1.11.0.jar:/Users/henneberger/.m2/repository/org/objenesis/objenesis/3.2/objenesis-3.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-java/6.11.0/cucumber-java-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-core/6.11.0/cucumber-core-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin/6.11.0/cucumber-gherkin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-gherkin-messages/6.11.0/cucumber-gherkin-messages-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/messages/15.0.0/messages-15.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/tag-expressions/3.0.1/tag-expressions-3.0.1.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-expressions/10.3.0/cucumber-expressions-10.3.0.jar:/Users/henneberger/.m2/repository/io/cucumber/datatable/3.5.0/datatable-3.5.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-plugin/6.11.0/cucumber-plugin-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/docstring/6.11.0/docstring-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/html-formatter/13.0.0/html-formatter-13.0.0.jar:/Users/henneberger/.m2/repository/io/cucumber/create-meta/4.0.0/create-meta-4.0.0.jar:/Users/henneberger/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-junit/6.11.0/cucumber-junit-6.11.0.jar:/Users/henneberger/.m2/repository/io/cucumber/cucumber-guice/6.11.0/cucumber-guice-6.11.0.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-simplekdc/2.0.1/kerb-simplekdc-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-client/2.0.1/kerb-client-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-config/2.0.1/kerby-config-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-core/2.0.1/kerb-core-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-pkix/2.0.1/kerby-pkix-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-asn1/2.0.1/kerby-asn1-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-util/2.0.1/kerby-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-common/2.0.1/kerb-common-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-crypto/2.0.1/kerb-crypto-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-util/2.0.1/kerb-util-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/token-provider/2.0.1/token-provider-2.0.1.jar:/Users/henneberger/.m2/repository/com/nimbusds/nimbus-jose-jwt/8.2.1/nimbus-jose-jwt-8.2.1.jar:/Users/henneberger/.m2/repository/com/github/stephenc/jcip/jcip-annotations/1.0-1/jcip-annotations-1.0-1.jar:/Users/henneberger/.m2/repository/net/minidev/json-smart/2.3/json-smart-2.3.jar:/Users/henneberger/.m2/repository/net/minidev/accessors-smart/1.2/accessors-smart-1.2.jar:/Users/henneberger/.m2/repository/org/ow2/asm/asm/5.0.4/asm-5.0.4.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-admin/2.0.1/kerb-admin-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-server/2.0.1/kerb-server-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerb-identity/2.0.1/kerb-identity-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/kerby/kerby-xdr/2.0.1/kerby-xdr-2.0.1.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/tinkergraph-gremlin/3.7.4/tinkergraph-gremlin-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar:/tmp/gremlin-final-jvm-cbd8fa3/crabgraph-jvm-0.1.0.jar:/tmp/gremlin-final-jvm-cbd8fa3/crabgraph-jvm-0.1.0.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-language/3.7.4/gremlin-language-3.7.4.jar:/Users/henneberger/.m2/repository/org/antlr/antlr4-runtime/4.9.1/antlr4-runtime-4.9.1.jar:/Users/henneberger/.m2/repository/org/javatuples/javatuples/1.2/javatuples-1.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-text/1.10.0/commons-text-1.10.0.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar:/Users/henneberger/.m2/repository/org/slf4j/jcl-over-slf4j/1.7.25/jcl-over-slf4j-1.7.25.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-configuration2/2.9.0/commons-configuration2-2.9.0.jar:/Users/henneberger/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/Users/henneberger/.m2/repository/commons-beanutils/commons-beanutils/1.9.4/commons-beanutils-1.9.4.jar:/Users/henneberger/.m2/repository/commons-collections/commons-collections/3.2.2/commons-collections-3.2.2.jar:/Users/henneberger/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar:/Users/henneberger/.m2/repository/org/yaml/snakeyaml/2.0/snakeyaml-2.0.jar:/Users/henneberger/.m2/repository/com/carrotsearch/hppc/0.7.1/hppc-0.7.1.jar:/Users/henneberger/.m2/repository/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar:/Users/henneberger/.m2/repository/net/objecthunter/exp4j/0.4.8/exp4j-0.4.8.jar:/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-groovy/3.7.4/gremlin-groovy-3.7.4.jar:/Users/henneberger/.m2/repository/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy/4.0.25/groovy-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-groovysh/4.0.25/groovy-groovysh-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-console/4.0.25/groovy-console-4.0.25.jar:/Users/henneberger/.m2/repository/com/github/javaparser/javaparser-core/3.26.3/javaparser-core-3.26.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-swing/4.0.25/groovy-swing-4.0.25.jar:/Users/henneberger/.m2/repository/org/abego/treelayout/org.abego.treelayout.core/1.0.3/org.abego.treelayout.core-1.0.3.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-templates/4.0.25/groovy-templates-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-xml/4.0.25/groovy-xml-4.0.25.jar:/Users/henneberger/.m2/repository/jline/jline/2.14.6/jline-2.14.6.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-json/4.0.25/groovy-json-4.0.25.jar:/Users/henneberger/.m2/repository/org/apache/groovy/groovy-jsr223/4.0.25/groovy-jsr223-4.0.25.jar:/Users/henneberger/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/Users/henneberger/.m2/repository/com/github/ben-manes/caffeine/caffeine/2.3.1/caffeine-2.3.1.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.2/jackson-annotations-2.18.2.jar:/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar:/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar:/Users/henneberger/.m2/repository/junit/junit/4.13.2/junit-4.13.2.jar:/Users/henneberger/.m2/repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
       "io.crabgraph.conformance.ProviderSuite",
       "/tmp/crabgraph-computer-original31-selection.json",
       "/Users/henneberger/new-graph/conformance/upstream/cache/tinkerpop",
-      "/tmp/crabgraph-computer-original31-final-4b84efa-isolated.json"
+      "/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.json"
     ],
     "jvm_flags": [
       "-Dis.testing=true",
       "-DassertNonDeterministic=true",
       "-Dcrabgraph.test.computer=true",
-      "-Dbuild.dir=/tmp/crabgraph-computer-original31-4b84efa-isolated-data",
+      "-Dbuild.dir=/tmp/crabgraph-computer-original31-cbd8fa3-isolated-data",
       "--add-opens=java.base/java.util=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
       "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED"
     ],
     "build_dir_created_empty": true,
-    "test_data_directory": "/tmp/crabgraph-computer-original31-4b84efa-isolated-data",
+    "test_data_directory": "/tmp/crabgraph-computer-original31-cbd8fa3-isolated-data",
     "provider_manifest": {
-      "frozen_at": "2026-09-24T16:44:25.886848+00:00",
-      "source_revision": "4b84efa72228c659efc997d0086082f731bd93bb",
+      "frozen_at": "2026-09-24T17:08:45.801849+00:00",
+      "source_revision": "cbd8fa37e26a76a723d76df27abb04a2474f5820",
       "working_tree_modified": false,
-      "jar_sha256": "de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d",
+      "jar_sha256": "ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468",
       "jvm_tests": {
-        "tests": 60,
+        "tests": 63,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       },
-      "test_native_binary": "/tmp/gremlin-final-store-integrated-1d09c57/crabgraph-jvm-store",
-      "test_native_sha256": "eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91",
-      "native_source_revision": "1d09c57964dacf17f48dd68c88db4e58ccc1fc27",
+      "native_binary": "/tmp/gremlin-committed-read-native-2ae5e75/crabgraph-jvm-store",
+      "native_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
+      "native_source_revision": "2ae5e7529a9054be57a853759ec61100f9f1b811",
       "files": {
         "conformance/upstream/catalog.json": "d5ca4f77dc8663c606854c1a60fa2f14a32f278288380b669cc97f50a8efc875",
         "conformance/data/parity-baseline.json": "0e2ee4c02a82a3723e3978b6d98e98b33d6d0a47b8fd86253c514272a0edc2af",
@@ -11881,7 +11883,7 @@
         "jvm/pom.xml": "6ee7967fa84b891405d0444f6ddf123933cc050d0bb81ef9e4007751adb20ae9",
         "jvm/src/main/java/io/crabgraph/gremlin/CrabCodec.java": "7a374be5c145f40dfee642a0ddc18e41ed72f295653811ec9ff8d5a72b8755da",
         "jvm/src/main/java/io/crabgraph/gremlin/CrabElement.java": "01d5771ca98f372cfc0792d712e138df22687a61b90f8d12c70c61b6453e82ea",
-        "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b78181dac6b5b9b209d03e47ef802ced61debdd208fb7e916591f099f9728e2a",
+        "jvm/src/main/java/io/crabgraph/gremlin/CrabGraph.java": "b37220d23bcbd9636fe24dbc7d93913fb53a8b7ea31ef00a27b025bb424aec58",
         "jvm/src/main/java/io/crabgraph/gremlin/CrabJvm.java": "d975d3360f4cbcb428e457d8821ba09450ce6c563d19cdf1e5cdb47faa2283b4",
         "jvm/src/main/java/io/crabgraph/gremlin/CrabJvmExecutor.java": "6b13e8efc7a39f405850a08f368533da0e42cb7e0c0d0adab6ad06ab32bc782a",
         "jvm/src/main/java/io/crabgraph/gremlin/CrabServices.java": "2b7d6abc3fb75de20e5de35f517757c52ab5e0adbcc4c37b21cad3e841d464bb",
@@ -11898,6 +11900,7 @@
         "jvm/src/main/java/io/crabgraph/gremlin/computer/package-info.java": "54fe8a6b40b34b6c6a574dabe48a370a3be355ffc348a729c4da5e0886206207",
         "jvm/src/main/resources/META-INF/LICENSE-tinkerpop": "87bf32821efc488aa4e432d034cc2c1199b73fef392ca45a8ebbfff715ea9396",
         "jvm/src/main/resources/META-INF/NOTICE-crabgraph-computer": "a037e68e648dcbe295c6a40a2fdf3bd5269d103f298c8acfb2a2d964e8f7849b",
+        "jvm/src/test/java/io/crabgraph/gremlin/CrabCommittedReadTest.java": "e7b84ee452d99b818aaa1c406d67c2a527ed8754706a584c7bfa61bd7750273e",
         "jvm/src/test/java/io/crabgraph/gremlin/CrabGraphTest.java": "b52205bc32bed611892ea3054d3a594514fbec43695f831f03c5e6a651c06ec0",
         "jvm/src/test/java/io/crabgraph/gremlin/CrabJvmExecutorTest.java": "45b2e116e5a621ed7d4d06345182dc943c3decb41fe3fdad432dad8d1c2f1d40",
         "jvm/src/test/java/io/crabgraph/gremlin/CrabPropertyCacheTest.java": "3afdef574d031862b8fa74b0781448510681d960b5b642790e093b3fb387496d",
@@ -11909,13 +11912,36 @@
       }
     },
     "native_manifest": {
-      "revision": "1d09c57964dacf17f48dd68c88db4e58ccc1fc27",
+      "source_revision": "2ae5e7529a9054be57a853759ec61100f9f1b811",
+      "source_tree": "a71e8bc43c93d6edbebf6ffe1a90b11c6b3526c7",
       "working_tree_modified": false,
-      "frozen_at": "2026-09-24T16:39:55.901836+00:00",
-      "binary_sha256": "eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91"
+      "frozen_at": "2026-09-24T17:06:36.116291+00:00",
+      "binary_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
+      "binary_path": "/tmp/gremlin-committed-read-native-2ae5e75/crabgraph-jvm-store",
+      "native_protocol_tests": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "command": "CARGO_TARGET_DIR=/tmp/crabgraph-gremlin-null-target cargo test --lib jvm_bridge:: -- --nocapture"
+      },
+      "build_command": "CARGO_TARGET_DIR=/tmp/crabgraph-gremlin-null-target cargo build --bin crabgraph-jvm-store",
+      "hello": {
+        "committedReads": true,
+        "persistent": false,
+        "session": "40170-1790269596102394000-1",
+        "storage": "crabgraph-native",
+        "version": 1
+      },
+      "source_sha256": {
+        "src/jvm_bridge.rs": "9940ba685c71955e4f6d4fb3a3a8fa00b3fd38c9d1ee64c27a1405476edf2f2f",
+        "src/ir/catalog/properties.rs": "f278301d0e1b752ca05968c9b4cac1b30af06b7c8556c8c0e92af6bbb36303fa",
+        "src/jvm_bridge/user_keys_tests.rs": "d99ec72b07cf66ed9cf12476d2ca3c64416e12913725aeb2ce95486391e582aa",
+        "Cargo.toml": "9d0959e2dec9647eacb5a2e279b0350a240ffb0785d45a274a142a54396580ec",
+        "Cargo.lock": "7c6360a0049b37efa1c0667a6b7c9ad1293b10d4b13afa06c1eb193ea8421089"
+      }
     },
     "classpath_files_sha256": {
-      "/tmp/crabgraph-computer-original31-final-4b84efa-isolated.harness.jar": "cf1bd3f523ce6e28771018dccb890f033f0cd20b5a84e2c023f098ccf43ce7cf",
+      "/tmp/crabgraph-computer-original31-final-cbd8fa3-isolated.harness.jar": "c1ebdfb2f0114a897b82fb79be809917f84653871dccbdd4e1172fdeb21edcfb",
       "/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-test/3.7.4/gremlin-test-3.7.4.jar": "99a08b05b930b23b83eb5e05733dcf3000e7274b5bc6a7b0f74f7067768e68c9",
       "/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-core/3.7.4/gremlin-core-3.7.4.jar": "2adbcd4f55411993ed8e3b4919bfa5ed60ef289b25c6f2fd7e1ac5fc5a1d6519",
       "/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-shaded/3.7.4/gremlin-shaded-3.7.4.jar": "8ccff7696d1c169ab8b4145d0c747b59cbb0734dc3667337f633642d9cd4c3e9",
@@ -11981,7 +12007,7 @@
       "/Users/henneberger/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.2/jackson-core-2.18.2.jar": "d8054ae7c0d1c2d2f55d28e46026ebe5892881f3fab5f439233184381c3b4a1f",
       "/Users/henneberger/.m2/repository/org/slf4j/slf4j-simple/2.0.16/slf4j-simple-2.0.16.jar": "effc32018658bea09d1e08c7d1060ccad46c086960f583d07dd7ffe9c1172a47",
       "/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar": "a12578dde1ba00bd9b816d388a0b879928d00bab3c83c240f7013bf4196c579a",
-      "/tmp/gremlin-final-jvm-4b84efa/crabgraph-jvm-0.1.0.jar": "de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d",
+      "/tmp/gremlin-final-jvm-cbd8fa3/crabgraph-jvm-0.1.0.jar": "ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468",
       "/Users/henneberger/.m2/repository/org/slf4j/slf4j-api/1.7.25/slf4j-api-1.7.25.jar": "18c4a0095d5c1da6b817592e767bb23d29dd2f560ad74df75ff3961dbde25b79",
       "/Users/henneberger/.m2/repository/org/apache/tinkerpop/gremlin-groovy/3.7.4/gremlin-groovy-3.7.4.jar": "eba471d91c70dde433a86e16cd6843f99963ad6ef3b418826b5ea823ff6febdd",
       "/Users/henneberger/.m2/repository/org/apache/ivy/ivy/2.5.3/ivy-2.5.3.jar": "9502aa5aabf0b1484924a13ef4b5d24f121f7f91aab6768f11cc9d0906c0803b",
@@ -12004,11 +12030,11 @@
     "java_version": "openjdk version \"21.0.7\" 2025-04-15\nOpenJDK Runtime Environment Homebrew (build 21.0.7)\nOpenJDK 64-Bit Server VM Homebrew (build 21.0.7, mixed mode, sharing)\n",
     "harness_source_sha256": {
       "src/main/java/io/crabgraph/conformance/NativeGraphProvider.java": "19458f75b18a4b39fabfa54d764cb9c9335f5d7900ba51b30c053ce7027fc62d",
-      "src/main/java/io/crabgraph/conformance/ProviderSuite.java": "b45ed095b94f1a4b9bff229c7b48855b39456eb877678d323a84470016deb6c2",
+      "src/main/java/io/crabgraph/conformance/ProviderSuite.java": "7bff5ba3823f80b95dbdddea25676f875d9bb101e17ce971af02e6d20a4980d5",
       "src/main/java/io/crabgraph/conformance/ProviderSupplemental.java": "d5d36fd7cf9d6050ca692667d0a10099d1f42ceea1566258f99d8b251e2d0d3f"
     },
-    "source_commit": "f4748de0a8de0819315997a793504a631be79bd6",
-    "working_tree_modified": true,
-    "driver_sha256": "247365de1cb00d39a53a93995aa912cd39060c02dac6cf06a628736cbbae959a"
+    "source_commit": "35ae720d6dd07dbd5e58cbf7b708318ef2d2692a",
+    "working_tree_modified": false,
+    "driver_sha256": "e62e02ba3997880bd465be168aad8ec42eea82353c16d70b01c590d0ebdd91e2"
   }
 }
