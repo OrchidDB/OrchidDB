@@ -253,7 +253,7 @@ impl TableData {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for field in self.schema.fields() {
-            format!("{:?}", field.data_type()).hash(&mut hasher);
+            field.data_type().hash(&mut hasher);
         }
         for batch in &self.batches {
             batch.num_rows().hash(&mut hasher);
@@ -280,7 +280,7 @@ impl TableData {
 
 fn hash_array_data(data: &arrow::array::ArrayData, hasher: &mut impl std::hash::Hasher) {
     use std::hash::Hash;
-    format!("{:?}", data.data_type()).hash(hasher);
+    data.data_type().hash(hasher);
     data.len().hash(hasher);
     data.offset().hash(hasher);
     match data.nulls() {
@@ -478,14 +478,26 @@ pub async fn plan_tables_excluding(
     })?;
 
     let mut out = Vec::with_capacity(sources.len());
+    let mut fallback_context = None;
     for (name, source) in sources {
         let schema = source.schema();
-        let scan = TableScan::try_new(name.clone(), source, None, Vec::new(), None)?;
-        let ctx = SessionContext::new();
-        let df = ctx
-            .execute_logical_plan(LogicalPlan::TableScan(scan))
-            .await?;
-        let batches = df.collect().await?;
+        // Lowered graph scans already own immutable Arrow batches. Reading
+        // their complete contents needs neither planning nor execution. Scan
+        // filters and projections remain in the generated SQL.
+        let provider = datafusion::datasource::source_as_provider(&source).ok();
+        let batches = if let Some(table) = provider.as_ref()
+            .and_then(|provider| provider.as_any().downcast_ref::<datafusion::datasource::MemTable>())
+        {
+            let mut batches = Vec::new();
+            for partition in &table.batches {
+                batches.extend(partition.read().await.iter().cloned());
+            }
+            batches
+        } else {
+            let scan = TableScan::try_new(name.clone(), source, None, Vec::new(), None)?;
+            let ctx = fallback_context.get_or_insert_with(SessionContext::new);
+            ctx.execute_logical_plan(LogicalPlan::TableScan(scan)).await?.collect().await?
+        };
         out.push(TableData {
             name,
             schema,

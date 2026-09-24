@@ -9,7 +9,7 @@ Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG
 1. Capture a reproducible baseline from the current commit. Repeated workloads use the same fixtures, query sequence, build profile, and warmup. Record total time and per-query medians, and verify results on every repetition.
 2. Instrument lowering, SQL-region preparation, physical planning, and execution separately. Include region/kernel counts. Do not infer engine performance from adapter timing alone.
 3. Require all 1,511 pinned upstream Gremlin scenarios to pass on one uninterrupted Crabgraph instance. Run mapped-write regression tests for table destinations, identity, and transaction semantics.
-4. The primary performance target is total full-suite runtime with all 1,511 scenarios passing. Small benchmarks are diagnostic only. Batch related improvements before running the whole suite; use focused checks during implementation. Retain changes only when full-suite time improves without losing conformance. Record build profile and before/after revisions; do not compare different build profiles as an optimization gain.
+4. The primary performance target is total full-suite runtime with all 1,511 scenarios passing. Track mean and median scenario time as well as the total, so improvements benefit common queries rather than only outliers. Prioritize shared planning, source preparation, transport, and execution overhead. Small benchmarks are diagnostic only. Batch related improvements before running the whole suite; use focused checks during implementation. Retain changes only when full-suite time improves without losing conformance. Record build profile and before/after revisions; do not compare different build profiles as an optimization gain.
 
 ## Implementation sequence
 
@@ -22,3 +22,11 @@ Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG
 ## Existing leaderboard
 
 For Crabgraph only, add **Passed runtime**, the sum of `elapsed_ms` for records whose status is exactly `pass`. Exclude failed, skipped, unsupported, timeout, and adapter-error cases. Label this as recorded scenario time, including setup/assertion overhead, not pure database execution or suite wall-clock time. Show missing timing explicitly; never treat missing timing as zero. Keep ranking by passed scenarios and retain one Crabgraph result. Other engines do not receive a runtime value.
+
+## Broad per-query overhead batch
+
+- Read existing MemTable Arrow batches directly during SQL source preparation, retaining complete source contents and SQL filters/projections. Other providers still use DataFusion, with one preparation context per call.
+- Reuse a single query-scoped DataFusion state snapshot for logical and physical planning.
+- Preserve Arrow buffers when the result already consists of one batch.
+- Hash Arrow types directly instead of allocating temporary debug strings for scan-cache keys.
+- Run background conformance against copied, committed binaries while subsequent source edits continue. Each result belongs to its captured revision; never merge cases across revisions. Avoid compilation during timing-sensitive runs.

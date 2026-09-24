@@ -6,6 +6,9 @@
 - Fuse adjacent read kernels (Bind, Filter, Project, CurrentProject, Return, Expand, and PathFilter) and their scan/value/correlated sources, retaining evaluation order, bulk, cancellation checks, and work-budget charges. Apply this rewrite to correlated subplans as well as the outer DAG. SQL, JVM, write, branch, and aggregate operators remain distinct boundaries.
 - Reuse DataFusion session and DuckDB execution resources within one GraphEngine. Every query still compiles its current graph snapshot. DuckDB's existing content-addressed scan cache distinguishes changed data. Separate engines own separate sessions; execution errors discard the session.
 - Reuse immutable Arrow transport schemas and per-batch serialization buffers.
+- Read in-memory Arrow sources directly during SQL preparation; reuse one DataFusion context for other providers.
+- Reuse one query-scoped DataFusion state during logical and physical planning.
+- Avoid copying single-batch results and allocating debug strings during scan-cache hashing.
 - Add opt-in `CRABGRAPH_PROFILE_DAG=1` diagnostics for preparation, physical planning, and execution time.
 - Show summed passed-scenario runtime for Crabgraph only on the existing leaderboard. Other statuses do not contribute.
 
