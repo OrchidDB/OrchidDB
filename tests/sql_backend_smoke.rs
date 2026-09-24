@@ -533,3 +533,32 @@ async fn cypher_match_filter_expand_order_on_postgres() {
         .expect("postgres execute");
     assert_eq!(batch_lines(&returned.batch), vec!["bob", "carol"]);
 }
+
+#[tokio::test]
+async fn scan_preparation_retains_full_source_and_shares_arrow_buffers() {
+    use datafusion::datasource::{MemTable, provider_as_source};
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    use datafusion::prelude::{col, lit};
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("name", DataType::Utf8, false),
+    ]));
+    let batch = |ids, names| RecordBatch::try_new(schema.clone(), vec![
+        Arc::new(Int64Array::from(ids)) as ArrayRef,
+        Arc::new(StringArray::from(names)) as ArrayRef,
+    ]).unwrap();
+    let first = batch(vec![1_i64, 2], vec!["a", "b"]);
+    let second = batch(vec![3_i64, 4], vec!["c", "d"]);
+    let source = Arc::new(MemTable::try_new(schema.clone(), vec![
+        vec![first.clone()], vec![second.clone()],
+    ]).unwrap());
+    let plan = LogicalPlanBuilder::scan("input", provider_as_source(source), Some(vec![0]))
+        .unwrap().filter(col("id").gt(lit(2_i64))).unwrap().build().unwrap();
+    let tables = sql::plan_tables(&plan).await.unwrap();
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].schema, schema);
+    assert_eq!(tables[0].batches, vec![first.clone(), second.clone()]);
+    assert!(Arc::ptr_eq(tables[0].batches[0].column(0), first.column(0)));
+    assert!(sql::plan_tables_excluding(&plan, &std::collections::BTreeSet::from(["input".into()]))
+        .await.unwrap().is_empty());
+}

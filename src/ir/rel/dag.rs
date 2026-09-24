@@ -349,7 +349,10 @@ pub(crate) async fn execute_with_extensions(
     let session = &resources.session;
     // Optimize while relational scans and expressions remain visible, before
     // DuckDB placement turns each region into an opaque physical source.
-    let optimized = session.state().optimize(&lowered.plan)?;
+    // One state snapshot per query keeps execution time and function metadata
+    // consistent across logical and physical planning without repeated clones.
+    let query_state = session.state();
+    let optimized = query_state.optimize(&lowered.plan)?;
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
     let plan = partition(&optimized, &mut stats).await?;
@@ -368,15 +371,27 @@ pub(crate) async fn execute_with_extensions(
     }));
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
-        .create_physical_plan(&plan, &session.state())
+        .create_physical_plan(&plan, &query_state)
         .await?;
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
         .to_string();
     let planned_at = std::time::Instant::now();
     let schema = physical.schema();
-    let batches = datafusion::physical_plan::collect(physical, session.task_ctx()).await?;
-    let batch = arrow_select::concat::concat_batches(&schema, batches.iter())?;
+    let mut batches = datafusion::physical_plan::collect(physical, Arc::new(TaskContext::from(&query_state))).await?;
+    let batch = if batches.len() == 1 {
+        // SQL regions and fused residual pipelines normally return one batch.
+        // Preserve its buffers while applying the physical output schema.
+        let batch = batches.pop().unwrap();
+        if batch.schema() == schema {
+            batch
+        } else {
+            RecordBatch::try_new_with_options(schema, batch.columns().to_vec(),
+                &arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())))?
+        }
+    } else {
+        arrow_select::concat::concat_batches(&schema, batches.iter())?
+    };
     if std::env::var_os("CRABGRAPH_PROFILE_DAG").is_some() {
         eprintln!(
             "dag-profile {}",
