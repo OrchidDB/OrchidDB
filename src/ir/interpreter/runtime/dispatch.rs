@@ -1056,7 +1056,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         // is best-effort: an inconvertible input yields `null` rather
         // than a hard error so the surrounding chain still produces a
         // row stream the harness can compare.
-        ("cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,false)),
+        ("gremlin_cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,false)),
+        ("cast_string", [v]) => Ok(cast_to_string(v)),
         ("local_cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,true)),
         ("local_cast_number", [Value::List(items)]) => {
             Ok(Value::List(items.iter().map(cast_to_number).collect()))

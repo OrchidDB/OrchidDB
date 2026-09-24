@@ -12,7 +12,7 @@ pub(super) fn hash_function_value(value: &Value) -> Value {
 fn hash_value_u64(value: &Value) -> u64 {
     match value {
         Value::VertexProperty {id,..} => murmurhash64(*id as u64),
-        Value::Property {owner,key,..} => combine_hash_scalar(hash_value_u64(owner),hash_string_u64(key)),
+        Value::Property {value,key,..} => combine_hash_scalar(hash_value_u64(value),hash_string_u64(key)),
         Value::Null => u64::MAX,
         Value::Bool(value) => murmurhash64(u64::from(*value)),
         Value::Byte(value) => murmurhash64(*value as u64),

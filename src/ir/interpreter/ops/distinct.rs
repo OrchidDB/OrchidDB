@@ -96,9 +96,9 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(0x40);
             buf.extend_from_slice(&id.to_be_bytes());
         }
-        Value::Property { owner, key, .. } => {
+        Value::Property { value, key, .. } => {
             buf.push(0x41);
-            let owner = encode_value(owner);
+            let owner = encode_value(value);
             buf.extend_from_slice(&(owner.len() as u64).to_be_bytes());
             buf.extend(owner);
             buf.extend_from_slice(&(key.len() as u64).to_be_bytes());
