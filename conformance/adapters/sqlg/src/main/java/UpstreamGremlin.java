@@ -10,6 +10,7 @@ import org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.*;
 import org.apache.tinkerpop.gremlin.process.traversal.translator.GroovyTranslator;
 import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
+import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.remote.*;
 import org.apache.tinkerpop.gremlin.process.remote.traversal.*;
 import org.apache.tinkerpop.gremlin.structure.*;
@@ -174,6 +175,18 @@ public class UpstreamGremlin {
    value.get("key").asText(),nativeValue(value.get("value")),(Element)owner);
  }
  static Bridge bridge;
+ // Rows already carry the engine's expanded multiplicity and ordered sequence.
+ // InjectStep uses a TraverserSet and merges separated duplicates; applying it
+ // here would silently reorder an ordered remote result.
+ static <E> RemoteTraversal<?,E> orderedResults(List<E> values) {
+  return new AbstractRemoteTraversal<Object,E>() {
+   final Iterator<E> rows=values.iterator();
+   @Override public void close(){}
+   @Override public boolean hasNext(){return rows.hasNext();}
+   @Override public E next(){return rows.next();}
+   @Override public Traverser.Admin<E> nextTraverser(){return new DefaultRemoteTraverser<>(rows.next(),1L);}
+  };
+ }
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
@@ -215,7 +228,7 @@ public class UpstreamGremlin {
        queryTransports.add(Map.of("step",currentStep,"query",script,"backend",response.path("backend").asText(""),"native_rows",response.hasNonNull("native_rows"),"error",response.path("error").asText("")));
        if(response.has("error"))throw new RemoteConnectionException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
        boolean nativeRows=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();for(var row:response.get(nativeRows?"native_rows":"typed_rows")){values.add(nativeRows?nativeValue(row.get(0)):typedValue(row.get(0)));}
-       return CompletableFuture.completedFuture(new EmbeddedRemoteTraversal<>(__.inject((E[])values.toArray())));
+       return CompletableFuture.completedFuture(orderedResults((List<E>)(List<?>)values));
       }catch(Exception e){throw new RemoteConnectionException(e);}
      }
      public void close(){}
