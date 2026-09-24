@@ -24,6 +24,25 @@ public final class ProviderSuite {
         description.getAnnotations().forEach(a -> result.add(a.toString()));
         return result;
     }
+    private static ArrayNode requirements(Description description) {
+        ArrayNode result=JSON.createArrayNode();
+        try {
+            Method test=description.getTestClass().getMethod(description.getMethodName().split("\\[",2)[0]);
+            Set<FeatureRequirement> required=new HashSet<>(Arrays.asList(test.getAnnotationsByType(FeatureRequirement.class)));
+            for(LoadGraphWith fixture:test.getAnnotationsByType(LoadGraphWith.class))
+                required.addAll(fixture.value().featuresRequired());
+            for(FeatureRequirementSet bundle:test.getAnnotationsByType(FeatureRequirementSet.class))
+                required.addAll(bundle.value().featuresRequired());
+            required.stream().sorted(Comparator.comparing(r->r.featureClass().getName()+r.feature())).forEach(r->{
+                ObjectNode row=result.addObject();
+                row.put("feature_class",r.featureClass().getName());
+                row.put("feature",r.feature()); row.put("supported",r.supported());
+            });
+        } catch (ReflectiveOperationException | NullPointerException ignored) {
+            // Initialization failures have no corresponding original test method.
+        }
+        return result;
+    }
     private static Class<?>[] suiteClasses(String name) throws Exception {
         String pkg = name.equals("StructureStandardSuite") ? "structure" : "process";
         Class<?> suite = Class.forName("org.apache.tinkerpop.gremlin." + pkg + "." + name);
@@ -93,6 +112,7 @@ public final class ProviderSuite {
                     row.put("id",d.getClassName()+"#"+d.getMethodName());
                     row.put("source_sha256",hashes.get(d.getClassName()));
                     row.set("annotations", annotations(d));
+                    row.set("feature_requirements",requirements(d));
                     row.put("status","running");
                     JsonNode mapping = mappings.get(d.getClassName()+"#"+d.getMethodName());
                     if (mapping != null) row.set("placeholder",mapping);
@@ -140,6 +160,7 @@ public final class ProviderSuite {
             row.put("source_sha256",hashes.get(d.getClassName()));
             row.put("status","not-run");
             row.set("annotations",annotations(d));
+            row.set("feature_requirements",requirements(d));
         } else for (Description child : d.getChildren()) describe(child,cases,hashes);
     }
 }

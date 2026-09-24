@@ -214,3 +214,51 @@ async fn lazy_pipeline_preserves_barriers_and_executes_only_consumed_writes() {
     .await;
     assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 4);
 }
+
+#[tokio::test]
+async fn lazy_range_does_not_move_before_an_unproductive_projection() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    native(&mut engine, "g.addV('item').property('p',1)").await;
+    native(&mut engine, "g.addV('item')").await;
+    native(&mut engine, "g.addV('item').property('p',2)").await;
+    native(&mut engine, "g.addV('item').property('p',3)").await;
+    let rows = native(
+        &mut engine,
+        "g.V().as('a').store('x').select('a').by('p').limit(2).cap('x')",
+    )
+    .await;
+    assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn select_by_map_get_preserves_missing_null_and_typed_keys() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let rows = native(
+        &mut engine,
+        "g.inject(['p':1],[:],['p':null],['P':2],[(1):'number','p':3]).as('a').select('a').by('p')",
+    )
+    .await;
+    assert_eq!(rows.as_array().unwrap().len(), 5);
+    assert_eq!(rows[0][0]["value"], 1);
+    for index in [1, 2, 3] {
+        assert_eq!(rows[index][0], json!({"type":"null","value":null}));
+    }
+    assert_eq!(rows[4][0]["value"], 3);
+    let rows = native(&mut engine, "g.inject(['p':1],[:],['p':2],['p':3]).as('a').store('x').select('a').by('p').limit(2).cap('x')").await;
+    assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn select_by_element_property_preserves_present_null_and_drops_absence() {
+    use new_graph::ir::{catalog::PropertyGraph, value::Value as GValue};
+    use std::collections::BTreeMap;
+    let graph = PropertyGraph::new();
+    graph.enable_null_property_values(true);
+    let present = graph.insert_node("present", BTreeMap::new());
+    graph.set_gremlin_property(&present, "p", GValue::Null).unwrap();
+    graph.insert_node("missing", BTreeMap::new());
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.replace_graph(graph).unwrap();
+    let rows = native(&mut engine, "g.V().as('a').select('a').by('p')").await;
+    assert_eq!(rows, json!([[{"type":"null","value":null}]]));
+}

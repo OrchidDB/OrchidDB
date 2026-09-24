@@ -133,14 +133,15 @@ fn range_movable(node: &Node) -> bool {
     matches!(
         node,
         Node::GraphProject { .. }
-            | Node::GraphCurrentProject { .. }
             | Node::GraphBind { .. }
             | Node::GraphSelect { .. }
             | Node::GraphReadSideEffect { .. }
             | Node::GraphSideEffect { eager: false, .. }
             | Node::GraphSetProperty { .. }
             | Node::GraphCreate { .. }
-    ) || matches!(node, Node::GraphProcedureCall { name, .. }
+    ) || matches!(node, Node::GraphCurrentProject { expr: crate::ir::expr::IrExpr::Call { name, .. }, .. }
+        if matches!(name.as_str(), "make_project_map_productive" | "tree_value"))
+        || matches!(node, Node::GraphProcedureCall { name, .. }
         if name == "gremlin.mutation.add_vertex")
 }
 
