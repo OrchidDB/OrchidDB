@@ -61,6 +61,9 @@ impl<'a> LoweringContext<'a> {
         let value_alias = "__gm_value";
         let mut collected_value = false;
         let value_agg = match value {
+            GroupValue::Traversal { .. } => return Err(RelError::Unsupported(
+                "correlated group traversal requires native execution".into(),
+            )),
             GroupValue::CountBulk => count_all(),
             GroupValue::Aggregate(agg) => match agg.kind {
                 AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
