@@ -90,12 +90,12 @@ class Gremlin:
  def close(self):
   if self.process:self.process.close()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--native-only',action='store_true',help='Diagnostic native executor run; requires a separate output');p.add_argument('--output',type=Path);args=p.parse_args()
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
   missing=set(args.case)-{c['id'] for c in cases}
   if missing:p.error('Unknown or filtered case IDs: '+', '.join(sorted(missing)))
- if (args.limit or args.filter or args.case) and not args.output:p.error('Subset runs require --output')
+ if (args.limit or args.filter or args.case or args.native_only) and not args.output:p.error('Subset runs require --output')
  output=args.output or ROOT/'upstream-results'/f'{args.engine}-{args.suite}.json';output.parent.mkdir(parents=True,exist_ok=True);journal=output.with_suffix('.jsonl')
  results=[]
  if args.resume and journal.exists():
@@ -107,7 +107,11 @@ def main():
  applicable=args.suite=='tinkerpop' or args.suite=='opencypher' and args.engine in ['crabgraph','puppygraph'] or args.suite=='rdf' and args.engine=='crabgraph'
  adapter=None
  if applicable:
-  if args.suite=='tinkerpop':adapter=Gremlin(args.engine)
+  if args.suite=='tinkerpop':
+   if args.engine=='crabgraph' and not args.native_only:
+    from product_gremlin import ProductGremlin
+    adapter=ProductGremlin(Gremlin)
+   else:adapter=Gremlin(args.engine)
   elif args.suite=='rdf':
    from sparql import Sparql
    adapter=Sparql()
@@ -121,6 +125,8 @@ def main():
  elif args.engine=='crabgraph':
   binary=crabgraph_binary();build={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
  else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
+ if args.engine=='crabgraph' and args.suite=='tinkerpop' and not args.native_only:
+  build['jvm']=jvm_build(adapter.classpath)
  build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
  build['capture_phase']='before-scenarios'
  try:
@@ -142,6 +148,8 @@ def main():
  content={'schema_version':3,'engine':args.engine,'suite':args.suite,'source':catalog['sources'][args.suite],'started_at':started,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'environment':{'system':platform.system(),'architecture':platform.machine(),'python':platform.python_version(),'logical_cpus':os.cpu_count()},'coverage':{'catalog_cases':len([c for c in catalog['cases'] if c['suite']==args.suite]),'recorded_cases':len(results),'filtered':bool(args.limit or args.filter or args.case)},'results':results}
  if args.suite=='tinkerpop':
   content['execution_profile']=execution_profile(args.engine)
+  if args.engine=='crabgraph' and not args.native_only:
+   content['execution_profile']={'executor':'Crabgraph', 'selection':'Required interface selected from scenario inputs before execution; no retries or cross-run aggregation', 'assertions':'Pinned Apache StepDefinition and original JUnit counterparts (unmodified)'}
   if args.engine=='crabgraph-jvm':content['execution_profile']['placeholder_assertions']='Pinned original Apache JUnit counterparts; per-case source and execution evidence recorded'
   content['coverage']['excluded_capabilities']=capability_summary(results)
  content['build']=build

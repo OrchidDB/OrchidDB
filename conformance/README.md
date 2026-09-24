@@ -17,21 +17,20 @@ contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
 certification or a claim to cover every product feature.
 
-## Gremlin execution profiles
+## Crabgraph conformance run
 
-The Gremlin matrix separates the native Rust planner, JVM OLTP execution over
-Crabgraph native storage, and native-provider GraphComputer execution. Their
-results are recorded independently; a JVM pass does not change a native result.
-The product leaderboard counts each scenario once when any Crabgraph profile passes.
+`python3 conformance/run.py --engine crabgraph --suite tinkerpop` executes the
+complete product suite once and writes one outcome per scenario to
+`upstream-results/crabgraph-tinkerpop.json`. The matrix, totals, filters and
+leaderboard all read that same report.
 
-The final gap inventory has passing evidence for its 69 executable scenarios
-and the 15 corresponding original Java tests for literal Gherkin placeholders.
-The JVM adapter now executes those 15 Java counterparts for the unchanged
-Gherkin scenario IDs and records their assertion sources. See
-[implementation results](../docs/gremlin-final-results.md),
-[case-to-evidence mapping](upstream-results/gremlin-final-gap-evidence.json),
-[JVM executor](../docs/gremlin-jvm-executor.md), and
-[GraphComputer](../docs/gremlin-graphcomputer.md).
+The adapter selects the required interface before executing each scenario:
+GraphComputer for vertex programs, the JVM interface for Java callbacks and
+typed objects the text language cannot represent, and the relational query
+engine for ordinary traversals. It does not retry failures using another path
+or combine successful outcomes from separate runs. Execution details and
+binary provenance remain in the report. The 15 upstream placeholders execute
+their pinned original Java assertions.
 
 ## Run locally
 
@@ -65,7 +64,6 @@ for engine in crabgraph sqlg puppygraph; do
     python conformance/run.py --engine "$engine" --suite "$suite"
   done
 done
-python conformance/run.py --engine crabgraph-jvm --suite tinkerpop
 python -m unittest discover -s conformance/upstream -p 'test_*.py'
 python conformance/validate.py
 python website/docs/build.py
@@ -176,5 +174,5 @@ Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
 and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
 runs the original JUnit methods locally. It records per-test timings, assertion
 source and native/provider binary provenance. Failed assertions, assumptions,
-and incomplete runs never become passing results. The existing product union
-counts each scenario once; supplemental test totals remain separate.
+and incomplete runs never become passing results. The single product report
+records each scenario once; supplemental test totals remain separate.

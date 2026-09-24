@@ -4,7 +4,7 @@ Traverse nodes and relationships step by step with Gremlin, then project the val
 
 Crabgraph accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
 
-For JVM callbacks and TinkerPop vertex programs, use the [native-backed JVM executor](https://github.com/henneberger/new-graph/blob/main/docs/gremlin-jvm-executor.md) and [GraphComputer API](https://github.com/henneberger/new-graph/blob/main/docs/gremlin-graphcomputer.md). The [compatibility matrix](/conformance.html#language-tinkerpop) reports native Rust, JVM OLTP and GraphComputer execution separately.
+For JVM callbacks and TinkerPop vertex programs, use the [native-backed JVM executor](https://github.com/henneberger/new-graph/blob/main/docs/gremlin-jvm-executor.md) and [GraphComputer API](https://github.com/henneberger/new-graph/blob/main/docs/gremlin-graphcomputer.md). The [compatibility matrix](/conformance.html#language-tinkerpop) compares Crabgraph as one product, with execution details available in the evidence.
 
 ```gremlin
 g.V().hasLabel('Person').values('name')
