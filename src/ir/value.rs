@@ -101,6 +101,7 @@ pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
             parts.sort();
             framed(if matches!(value, Value::Set(_)) { 28 } else { 26 }, parts)
         }
+        Value::CardinalityValue { cardinality, value } => framed(29, [cardinality.as_bytes().to_vec(), set_member_key(value)]),
         Value::MapEntry(pair) => framed(27, [set_member_key(&pair.0), set_member_key(&pair.1)]),
         Value::Map(map) => map_key(map.iter().map(|(key, value)| (Value::String(key.clone()), value.clone()))),
         Value::TypedMap(entries) => map_key(entries.iter().cloned()),
@@ -230,6 +231,8 @@ pub enum Value {
     TypedMap(Vec<(Value, Value)>),
     /// Native Gremlin Map.Entry, distinct from a map with key/value properties.
     MapEntry(Box<(Value, Value)>),
+    /// Typed Gremlin cardinality instruction, distinct from its payload or a map.
+    CardinalityValue { cardinality: String, value: Box<Value> },
     /// Gremlin multiset, preserving repeated values and a distinct runtime type.
     BulkSet(Vec<Value>),
     Token(String),
@@ -273,12 +276,27 @@ impl PartialEq for Value {
             (Self::Map(a), Self::Map(b)) => a == b,
             (Self::TypedMap(a), Self::TypedMap(b)) => a == b,
             (Self::MapEntry(a), Self::MapEntry(b)) => a == b,
+            (Self::CardinalityValue {cardinality:a,value:x}, Self::CardinalityValue {cardinality:b,value:y}) => a == b && set_member_key(x) == set_member_key(y),
             _ => false,
         }
     }
 }
 
 impl Value {
+    /// Cardinality wrappers are traversal arguments, including when nested in
+    /// a collection. Graph property mutation boundaries reject them explicitly.
+    pub fn contains_cardinality_value(&self) -> bool {
+        match self {
+            Self::CardinalityValue { .. } => true,
+            Self::List(items) | Self::Set(items) | Self::BulkSet(items) | Self::Path(items) => items.iter().any(Self::contains_cardinality_value),
+            Self::Map(map) => map.values().any(Self::contains_cardinality_value),
+            Self::TypedMap(entries) => entries.iter().any(|(key,value)| key.contains_cardinality_value() || value.contains_cardinality_value()),
+            Self::MapEntry(entry) => entry.0.contains_cardinality_value() || entry.1.contains_cardinality_value(),
+            Self::VertexProperty { value, .. } | Self::Property { value, .. } => value.contains_cardinality_value(),
+            _ => false,
+        }
+    }
+
     pub fn map_from_entries(entries: Vec<(Value, Value)>) -> Self {
         if entries
             .iter()
@@ -328,6 +346,7 @@ impl Value {
             Self::Map(_) => "map",
             Self::TypedMap(_) => "map",
             Self::MapEntry(_) => "map entry",
+            Self::CardinalityValue { .. } => "cardinality value",
             Self::BulkSet(_) => "bulkset",
             Self::Token(_) => "token",
             Self::Direction(_) => "direction",
@@ -503,6 +522,7 @@ impl Value {
             }
             (Self::Map(a), Self::Map(b)) => semantic_map_eq(a, b),
             (Self::Token(a), Self::Token(b)) | (Self::Direction(a), Self::Direction(b)) => a == b,
+            (Self::CardinalityValue {cardinality:a,value:x}, Self::CardinalityValue {cardinality:b,value:y}) => a == b && set_member_key(x) == set_member_key(y),
             (Self::MapEntry(a), Self::MapEntry(b)) => a.0.three_valued_eq(&b.0) == Some(true) && a.1.three_valued_eq(&b.1) == Some(true),
             (Self::TypedMap(a), Self::TypedMap(b)) => {
                 a.len() == b.len()
@@ -918,4 +938,28 @@ fn visible_map_len(map: &std::collections::BTreeMap<String, Value>) -> usize {
 
 fn is_visible_map_key(key: &str) -> bool {
     key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !key.starts_with("__")
+}
+
+#[cfg(test)]
+mod cardinality_value_tests {
+    use super::*;
+
+    #[test]
+    fn cardinality_value_identity_is_typed_and_never_an_ordinary_map() {
+        let wrap=|kind:&str,value| Value::CardinalityValue {cardinality:kind.into(),value:Box::new(value)};
+        let a=wrap("list",Value::Int(1));
+        assert_eq!(a,a.clone());
+        assert_eq!(a.three_valued_eq(&a),Some(true));
+        assert_ne!(a,wrap("single",Value::Int(1)));
+        assert_ne!(a,wrap("list",Value::Long(1)));
+        assert_ne!(a,Value::Int(1));
+        let map=Value::Map(BTreeMap::from([("cardinality".into(),Value::String("list".into())),("value".into(),Value::Int(1))]));
+        assert_ne!(a,map);
+        assert!(!map.contains_cardinality_value());
+        assert!(Value::List(vec![Value::TypedMap(vec![(Value::Int(1),a.clone())])]).contains_cardinality_value());
+        assert_eq!(as_gremlin_set(&gremlin_set(vec![a.clone(),a,wrap("list",Value::Long(1))])).unwrap().len(),2);
+        let nan=wrap("set",Value::Float(f64::NAN));
+        assert_eq!(nan,nan.clone());
+        assert_eq!(nan.three_valued_eq(&nan),Some(true));
+    }
 }

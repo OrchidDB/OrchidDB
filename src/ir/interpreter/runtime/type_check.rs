@@ -19,6 +19,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
             normalised.as_str(),
             "entry" | "map.entry" | "java.util.map$entry"
         ),
+        Value::CardinalityValue {..} => matches!(normalised.as_str(), "cardinalityvalue" | "cardinality_value" | "cardinalityvaluetraversal"),
         Value::Token(_) => normalised == "token",
         Value::Direction(_) => normalised == "direction",
         Value::Bool(_) => matches!(normalised.as_str(), "boolean" | "bool"),

@@ -174,7 +174,7 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
     match value {
         Value::TypedMap(entries) => (13, map_order_key(graph, entries.iter().map(|(key,value)| (key.clone(),value.clone())).collect())),
         Value::MapEntry(entry) => (14, Value::List(vec![nested_order_key(graph,&entry.0), nested_order_key(graph,&entry.1)])),
-        Value::Token(_) | Value::Direction(_) => (14, value.clone()),
+        Value::Token(_) | Value::Direction(_) | Value::CardinalityValue {..} => (14, value.clone()),
         Value::Null => (0, Value::Null),
         Value::Bool(_) => (1, value.clone()),
         Value::Byte(_)

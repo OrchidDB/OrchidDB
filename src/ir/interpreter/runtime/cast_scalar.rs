@@ -37,6 +37,7 @@ pub(super) fn value_type_name(value: &Value) -> &'static str {
         Value::BulkSet(_) => "BULKSET",
         Value::Set(_) => "SET",
         Value::MapEntry(_) => "MAP_ENTRY",
+        Value::CardinalityValue {..} => "CARDINALITY_VALUE",
         Value::Map(_) | Value::TypedMap(_) => "STRUCT",
         Value::Token(_) => "TOKEN",
         Value::Direction(_) => "DIRECTION",

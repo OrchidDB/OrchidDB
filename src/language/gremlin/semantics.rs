@@ -27,6 +27,7 @@ pub enum CompareOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GValue {
+    CardinalityValue { cardinality: String, value: Box<GValue> },
     Token(String),
     DirectionToken(String),
     TypedMap(Vec<(GValue,GValue)>),
@@ -54,6 +55,7 @@ pub enum GValue {
 impl GValue {
     pub fn as_sql_literal_debug(&self) -> String {
         match self {
+            Self::CardinalityValue {cardinality,value} => format!("Cardinality.{cardinality}({})",value.as_sql_literal_debug()),
             Self::Token(token) | Self::DirectionToken(token) => token.clone(),
             Self::TypedMap(_) => "<typed-map>".into(),
             Self::VertexRef { id, label } => format!("new Vertex({}, {:?})", id.as_sql_literal_debug(), label),

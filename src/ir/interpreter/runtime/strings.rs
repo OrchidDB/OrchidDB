@@ -41,6 +41,7 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
     match v {
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_concat(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_concat(&entry.0), display_for_concat(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -153,6 +154,7 @@ pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
     match v {
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_kuzu_map_item(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_kuzu_map_item(&entry.0), display_for_kuzu_map_item(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -256,6 +258,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
     match v {
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_tagged_container(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_tagged_container(&entry.0), display_for_tagged_container(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),

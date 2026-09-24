@@ -572,6 +572,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "select_key_or_binding_pop",
     "set_compact",
     "set_literal",
+    "gremlin_cardinality_value",
     "sha1",
     "sha256",
     "sign",
