@@ -54,6 +54,23 @@ impl Store {
     }
     pub fn from_graph(graph: PropertyGraph) -> Self {
         graph.enable_null_property_values(true);
+        // Legacy Arrow/scalar properties acquire native property identities on
+        // first access. Allocate those once before the two transaction views can
+        // diverge, otherwise unrelated writer allocations could change a reader's
+        // property ID when that writer commits. Native records already have IDs.
+        for label in graph.labels() {
+            let mut keys = graph.node_property_keys(&label);
+            keys.sort();
+            for id in graph.node_ids(&label).unwrap_or_default() {
+                graph.properties(
+                    &Value::Node {
+                        label: label.clone(),
+                        id,
+                    },
+                    &keys,
+                );
+            }
+        }
         Self {
             checkpoint: graph.clone(),
             graph,
@@ -134,6 +151,14 @@ impl Store {
     }
     pub fn request(&mut self, request: &Json) -> Json {
         let op = request.get("op").and_then(Json::as_str).unwrap_or("");
+        if let Some(committed) = request.get("committed") {
+            if committed == &Json::Bool(true) {
+                return self.read_committed(request, op);
+            }
+            if committed != &Json::Bool(false) {
+                return json!({"ok":false,"error":"committed must be a boolean"});
+            }
+        }
         if self.savepoints.last().is_some_and(|s| s.failed) && !matches!(op, "rollbackTo" | "close")
         {
             return json!({"ok":false,"error":"atomic block failed; rollbackTo or close is required"});
@@ -170,6 +195,25 @@ impl Store {
             }
         }
     }
+    /// Read the last native commit without exposing or disturbing pending writes.
+    /// The process still serializes individual requests; swapping the two native
+    /// views avoids cloning the graph for every read. Materialized property records
+    /// remain in their own view. A foreign read failure cannot poison a writer's
+    /// savepoint, and committed reads remain available while that block is failed.
+    fn read_committed(&mut self, request: &Json, op: &str) -> Json {
+        if !matches!(op, "vertices" | "edges" | "adjacent" | "properties") {
+            return json!({"ok":false,"error":"committed view only supports read operations"});
+        }
+        std::mem::swap(&mut self.graph, &mut self.checkpoint);
+        std::mem::swap(&mut self.runtime, &mut self.checkpoint_runtime);
+        let result = self.dispatch(request);
+        std::mem::swap(&mut self.graph, &mut self.checkpoint);
+        std::mem::swap(&mut self.runtime, &mut self.checkpoint_runtime);
+        match result {
+            Ok(value) => json!({"ok":true,"value":value}),
+            Err(error) => json!({"ok":false,"error":error}),
+        }
+    }
     fn dispatch(&mut self, r: &Json) -> Result<Json> {
         if self.closed {
             return Err("native store is closed".into());
@@ -188,13 +232,14 @@ impl Store {
         }
         match op {
             "hello" => Ok(
-                json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some()}),
+                json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some(),"committedReads":true}),
             ),
             "begin" => Ok(Json::Null), // read/write transaction begins at open or the last commit/rollback
             "commit" => {
                 self.persist()?;
                 self.checkpoint = self.graph.clone();
                 self.checkpoint_runtime = self.runtime.clone();
+                self.prune_handles();
                 self.savepoints.clear();
                 Ok(Json::Null)
             }
@@ -503,8 +548,8 @@ impl Store {
         h["generation"] = json!(generation);
         Ok(h)
     }
-    fn prune_handles(&self) {
-        let invalid = self
+    fn prune_handles(&mut self) {
+        let candidates = self
             .handle_generations
             .borrow()
             .iter()
@@ -514,6 +559,18 @@ impl Store {
                 self.resolve(&h).is_err().then(|| key.clone())
             })
             .collect::<Vec<_>>();
+        // A writer may have removed an element that still exists for committed
+        // readers. Keep its identity until it is absent from both native views.
+        std::mem::swap(&mut self.graph, &mut self.checkpoint);
+        let invalid = candidates
+            .into_iter()
+            .filter(|key| {
+                let mut handle: Json = serde_json::from_str(key).expect("internal handle JSON");
+                handle["generation"] = json!(self.handle_generations.borrow()[key]);
+                self.resolve(&handle).is_err()
+            })
+            .collect::<Vec<_>>();
+        std::mem::swap(&mut self.graph, &mut self.checkpoint);
         for key in invalid {
             self.handle_generations.borrow_mut().remove(&key);
         }
@@ -866,6 +923,264 @@ mod tests {
         let nested = json!({"type":"map","value":[[{"type":"int","value":3},{"type":"set","value":[{"type":"long","value":"3"},{"type":"int","value":3}]}]]});
         assert_eq!(s.encode(&s.decode(&nested).unwrap()).unwrap(), nested);
     }
+    #[test]
+    fn legacy_property_identity_is_stable_across_committed_and_writer_reads() {
+        use crate::ir::catalog::nodes_from_columns;
+        use arrow::array::{ArrayRef, Int64Array};
+        use std::sync::Arc;
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(nodes_from_columns(
+            "person",
+            vec![("age", Arc::new(Int64Array::from(vec![7, 8])) as ArrayRef)],
+        ));
+        let mut s = Store::from_graph(graph);
+        let vertices = call(&mut s, json!({"op":"vertices","committed":true}));
+        // Allocate an unrelated writer property before the first reader property
+        // access. Both native views must already agree on legacy property IDs.
+        property(
+            &mut s,
+            &vertices[0],
+            "writer",
+            json!({"type":"int","value":9}),
+        );
+        let committed = call(&mut s, json!({"op":"properties","committed":true,"owner":vertices[1]["handle"],"keys":["age"]}))[0].clone();
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","owner":vertices[1]["handle"],"keys":["age"]})
+            ),
+            json!([committed])
+        );
+        call(&mut s, json!({"op":"commit"}));
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":vertices[1]["handle"],"keys":["age"]})
+            ),
+            json!([committed])
+        );
+        property(
+            &mut s,
+            &vertices[1],
+            "temporary",
+            json!({"type":"int","value":10}),
+        );
+        call(&mut s, json!({"op":"rollback"}));
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":vertices[1]["handle"],"keys":["age"]})
+            ),
+            json!([committed])
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","owner":committed["handle"]})
+            ),
+            json!([])
+        );
+    }
+
+    #[test]
+    fn committed_reads_hide_pending_topology_properties_and_runtime_values() {
+        let mut s = Store::new();
+        assert_eq!(call(&mut s, json!({"op":"hello"}))["committedReads"], true);
+        let a = vertex(&mut s, "a");
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true})),
+            json!([])
+        );
+        let runtime = json!({"type":"jvm_runtime","session":"family","id":1});
+        let p = property(&mut s, &a, "compute", runtime.clone());
+        call(&mut s, json!({"op":"commit"}));
+        let b = vertex(&mut s, "b");
+        let edge = call(
+            &mut s,
+            json!({"op":"addEdge","out":a["handle"],"in":b["handle"],"label":"knows"}),
+        );
+        property(
+            &mut s,
+            &a,
+            "compute",
+            json!({"type":"jvm_runtime","session":"family","id":2}),
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true})),
+            json!([a])
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"edges","committed":true})),
+            json!([])
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"adjacent","committed":true,"vertex":a["handle"],"direction":"OUT"})
+            ),
+            json!([])
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":a["handle"]})
+            ),
+            json!([p])
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"properties","owner":a["handle"]}))
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(call(&mut s, json!({"op":"edges"})), json!([edge]));
+        call(&mut s, json!({"op":"commit"}));
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true}))
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"edges","committed":true})),
+            json!([edge])
+        );
+        let values = call(
+            &mut s,
+            json!({"op":"properties","committed":true,"owner":a["handle"]}),
+        );
+        assert_eq!(values[0]["value"], runtime);
+        assert_eq!(values[1]["value"]["id"], 2);
+        call(&mut s, json!({"op":"close"}));
+        assert_eq!(
+            s.request(&json!({"op":"vertices","committed":true}))["ok"],
+            false
+        );
+    }
+
+    #[test]
+    fn committed_handles_survive_pending_deletion_and_failed_writer_statements() {
+        let mut s = Store::new();
+        let a = vertex(&mut s, "a");
+        let p = property(
+            &mut s,
+            &a,
+            "name",
+            json!({"type":"string","value":"before"}),
+        );
+        call(
+            &mut s,
+            json!({"op":"setProperty","owner":p["handle"],"key":"source","value":{"type":"string","value":"committed"}}),
+        );
+        let edge = call(
+            &mut s,
+            json!({"op":"addEdge","out":a["handle"],"in":a["handle"],"label":"self","properties":[["weight",{"type":"int","value":7}]]}),
+        );
+        call(&mut s, json!({"op":"commit"}));
+        let reader = call(&mut s, json!({"op":"vertices","committed":true}))[0].clone();
+        call(&mut s, json!({"op":"remove","owner":a["handle"]}));
+        let replacement = vertex(&mut s, "a");
+        // An ordinary failed statement restores its writer snapshot and prunes
+        // handles. The committed reader must still retain its older identities.
+        assert_eq!(
+            s.request(&json!({"op":"addVertex","id":{"type":"string","value":"a"}}))["ok"],
+            false
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":reader["handle"]})
+            )[0]["value"]["value"],
+            "before"
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":p["handle"]})
+            )[0]["value"]["value"],
+            "committed"
+        );
+        assert_eq!(
+            call(
+                &mut s,
+                json!({"op":"properties","committed":true,"owner":edge["handle"]})
+            )[0]["value"]["value"],
+            7
+        );
+        assert_eq!(call(&mut s, json!({"op":"vertices"})), json!([replacement]));
+        call(&mut s, json!({"op":"rollback"}));
+        assert_eq!(
+            call(&mut s, json!({"op":"properties","owner":reader["handle"]}))[0]["value"]["value"],
+            "before"
+        );
+        assert_eq!(
+            s.request(&json!({"op":"properties","owner":replacement["handle"]}))["ok"],
+            false
+        );
+        call(&mut s, json!({"op":"remove","owner":a["handle"]}));
+        call(&mut s, json!({"op":"commit"}));
+        let new_a = vertex(&mut s, "a");
+        call(&mut s, json!({"op":"commit"}));
+        assert_ne!(new_a["handle"], reader["handle"]);
+        assert_eq!(
+            s.request(&json!({"op":"properties","committed":true,"owner":reader["handle"]}))["ok"],
+            false
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true})),
+            json!([new_a])
+        );
+    }
+
+    #[test]
+    fn committed_read_errors_and_failed_writer_blocks_are_independent() {
+        let mut s = Store::new();
+        let a = vertex(&mut s, "a");
+        call(&mut s, json!({"op":"commit"}));
+        let savepoint = call(&mut s, json!({"op":"savepoint"}));
+        assert_eq!(
+            s.request(&json!({"op":"remove","committed":true,"owner":a["handle"]}))["ok"],
+            false
+        );
+        assert_eq!(
+            s.request(&json!({"op":"properties","committed":true,"owner":{}}))["ok"],
+            false
+        );
+        assert_eq!(
+            s.request(&json!({"op":"vertices","committed":"true"}))["ok"],
+            false
+        );
+        let b = vertex(&mut s, "b");
+        assert_eq!(
+            s.request(&json!({"op":"properties","committed":true,"owner":b["handle"]}))["ok"],
+            false
+        );
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices"}))
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            s.request(&json!({"op":"addVertex","id":{"type":"string","value":"a"}}))["ok"],
+            false
+        );
+        assert_eq!(s.request(&json!({"op":"vertices"}))["ok"], false);
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true})),
+            json!([a])
+        );
+        call(&mut s, json!({"op":"rollbackTo","id":savepoint}));
+        assert_eq!(call(&mut s, json!({"op":"vertices"})), json!([a]));
+        assert_eq!(
+            call(&mut s, json!({"op":"vertices","committed":true})),
+            json!([a])
+        );
+    }
+
     #[test]
     fn reads_writes_identity_null_and_statement_atomicity() {
         let mut s = Store::new();
