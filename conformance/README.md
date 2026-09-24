@@ -48,6 +48,10 @@ python3.12 -m venv .venv-conformance
 pip install -r conformance/requirements.txt
 python conformance/upstream/fetch.py
 python conformance/upstream/catalog.py
+cargo build --bin crabgraph-jvm-store
+export CRABGRAPH_JVM_STORE="$PWD/target/debug/crabgraph-jvm-store"
+mvn -q -f jvm-codecs/pom.xml install
+mvn -q -f jvm/pom.xml install
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
 CARGO_TARGET_DIR="$PWD/target" cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 docker compose -f conformance/compose.yml up -d
@@ -60,6 +64,7 @@ for engine in crabgraph sqlg puppygraph; do
     python conformance/run.py --engine "$engine" --suite "$suite"
   done
 done
+python conformance/run.py --engine crabgraph-jvm --suite tinkerpop
 python -m unittest discover -s conformance/upstream -p 'test_*.py'
 python conformance/validate.py
 python website/docs/build.py

@@ -42,10 +42,7 @@
       "label": "GraphComputer supplemental checks (included in the 63 JVM product contracts)",
       "file": "computer-supplemental.json",
       "counts": {
-        "pass": 21,
-        "fail": 0,
-        "error": 0,
-        "skip": 0
+        "pass": 21
       },
       "run_complete": true,
       "upstream_assertions": false
@@ -65,6 +62,16 @@
       "counts": {
         "pass": 656,
         "skipped": 287
+      },
+      "run_complete": true,
+      "upstream_assertions": true
+    },
+    {
+      "label": "Original ProcessStandardSuite (937 test occurrences; 937 unique tests)",
+      "file": "process-standard.json",
+      "counts": {
+        "pass": 920,
+        "skipped": 17
       },
       "run_complete": true,
       "upstream_assertions": true
