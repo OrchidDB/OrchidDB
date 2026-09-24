@@ -189,9 +189,9 @@ where
 {
     let by = consume_by(steps);
     // `where(P.within("x"))` referencing an aggregate side-effect bag:
-    // attach the *global* bag (all writer values folded to a list) as a
-    // hidden binding so the membership test sees every entry, not just
-    // the row-local write.
+    // attach the shared bag as a hidden binding so membership sees all
+    // values written so far. Correlate the read to this parent without
+    // replaying the upstream traversal.
     let mut input = input;
     let mut bag_refs: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
@@ -199,9 +199,11 @@ where
         if bag_refs.contains_key(&label) || !lo.side_effect_bags.contains_key(&label) {
             continue;
         }
-        if let Some(bag_plan) =
-            super::side_effects::lower_side_effect_bag_as_list(input.clone(), &label, lo)
-        {
+        if let Some(bag_plan) = super::side_effects::lower_side_effect_bag_as_list(
+            Node::GraphCorrelate { bindings: vec![] },
+            &label,
+            lo,
+        ) {
             let alias = lo.fresh("bag_ref");
             let right = Node::GraphProject {
                 mode: crate::ir::plan::ProjectMode::PreserveVisible,
@@ -361,154 +363,173 @@ fn anchor_where_labels(sub: &[Step]) -> Vec<Step> {
 /// `IrExpr::Binding` lookups so the comparison runs against the
 /// already-bound row.
 pub(super) fn lower_where_string<'a, I>(
-    input: Node,
+    mut input: Node,
     label: &str,
-    predicate: &crate::language::gremlin::semantics::Predicate,
+    predicate: &Predicate,
     steps: &mut Peekable<I>,
-    productive_by: bool,
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node>
 where
     I: Iterator<Item = &'a Step>,
 {
-    use crate::language::gremlin::semantics::{CompareOp, GValue, Predicate};
-    fn compare_op(op: CompareOp) -> crate::ir::expr::BinaryOp {
-        match op {
-            CompareOp::Eq => crate::ir::expr::BinaryOp::Eq,
-            CompareOp::Neq => crate::ir::expr::BinaryOp::Neq,
-            CompareOp::Lt => crate::ir::expr::BinaryOp::Lt,
-            CompareOp::Lte => crate::ir::expr::BinaryOp::Lte,
-            CompareOp::Gt => crate::ir::expr::BinaryOp::Gt,
-            CompareOp::Gte => crate::ir::expr::BinaryOp::Gte,
-        }
-    }
     let mut bys = Vec::new();
     while let Some(by) = consume_by(steps) {
         bys.push(by);
     }
-
-    fn compare_bindings(
-        label: &str,
-        lhs_by: Option<&BySpec>,
-        op: CompareOp,
-        other: &str,
-        productive_by: bool,
-    ) -> IrExpr {
-        let lhs = binding_by_expr(label, lhs_by);
-        let rhs = binding_by_expr(other, lhs_by);
-        let cmp = IrExpr::Binary {
-            op: compare_op(op),
-            lhs: Box::new(lhs.clone()),
-            rhs: Box::new(rhs.clone()),
-        };
-        if lhs_by.is_some() && productive_by {
-            // ProductiveByStrategy keeps unproductive by() values as
-            // null; `eq`/`neq` then compare null against null.
-            let both_null = IrExpr::and(vec![
-                IrExpr::IsNull(Box::new(lhs.clone())),
-                IrExpr::IsNull(Box::new(rhs.clone())),
-            ]);
-            return match op {
-                CompareOp::Eq => IrExpr::Binary {
-                    op: crate::ir::expr::BinaryOp::Or,
-                    lhs: Box::new(both_null),
-                    rhs: Box::new(cmp),
-                },
-                CompareOp::Neq => IrExpr::and(vec![
-                    IrExpr::Not(Box::new(both_null)),
-                    IrExpr::Binary {
-                        op: crate::ir::expr::BinaryOp::Or,
-                        lhs: Box::new(IrExpr::IsNull(Box::new(lhs))),
-                        rhs: Box::new(IrExpr::Binary {
-                            op: crate::ir::expr::BinaryOp::Or,
-                            lhs: Box::new(IrExpr::IsNull(Box::new(rhs))),
-                            rhs: Box::new(cmp),
-                        }),
-                    },
-                ]),
-                _ => cmp,
-            };
-        }
-        if lhs_by.is_some() {
-            // `by(key)` modulators are productive filters: a missing
-            // property on either side drops the traverser rather than
-            // comparing null == null.
-            IrExpr::and(vec![
-                IrExpr::IsNotNull(Box::new(lhs)),
-                IrExpr::IsNotNull(Box::new(rhs)),
-                cmp,
-            ])
+    // WherePredicateStep advances its traversal ring once for the start
+    // value, then once per predicate leaf value, including nested predicates.
+    // Project each operand independently so an unproductive child drops the
+    // parent even if another branch of an OR would have matched.
+    let labels = std::iter::once(label.to_owned()).chain(predicate_string_refs(predicate));
+    let mut projected = Vec::new();
+    for (index, label) in labels.enumerate() {
+        let by = if bys.is_empty() {
+            None
         } else {
-            cmp
-        }
+            bys.get(index % bys.len())
+        };
+        let (next, value) = project_where_binding(input, &label, by, lo, ctx)?;
+        input = next;
+        projected.push(value);
     }
-    fn rhs_by<'a>(bys: &'a [BySpec], rhs_idx: &mut usize) -> Option<&'a BySpec> {
-        match bys.len() {
-            0 => None,
-            1 => bys.first(),
-            _ => {
-                let idx = (*rhs_idx).min(bys.len() - 1);
-                *rhs_idx += 1;
-                bys.get(idx)
-            }
-        }
-    }
-    fn rewrite(
-        label: &str,
-        lhs_by: Option<&BySpec>,
-        bys: &[BySpec],
-        rhs_idx: &mut usize,
-        predicate: &Predicate,
-    ) -> GremlinPlanResult<IrExpr> {
-        match predicate {
-            Predicate::Compare {
-                op,
-                value: GValue::String(other),
-            } => Ok(IrExpr::Binary {
-                op: compare_op(*op),
-                lhs: Box::new(binding_by_expr(label, lhs_by)),
-                rhs: Box::new(binding_by_expr(other, rhs_by(bys, rhs_idx))),
-            }),
-            Predicate::And(a, b) => Ok(IrExpr::and(vec![
-                rewrite(label, lhs_by, bys, rhs_idx, a)?,
-                rewrite(label, lhs_by, bys, rhs_idx, b)?,
-            ])),
-            Predicate::Or(a, b) => Ok(IrExpr::Binary {
-                op: crate::ir::expr::BinaryOp::Or,
-                lhs: Box::new(rewrite(label, lhs_by, bys, rhs_idx, a)?),
-                rhs: Box::new(rewrite(label, lhs_by, bys, rhs_idx, b)?),
-            }),
-            Predicate::Not(inner) => Ok(IrExpr::Not(Box::new(rewrite(
-                label, lhs_by, bys, rhs_idx, inner,
-            )?))),
-            _ => Ok(IrExpr::lit_bool(true)),
-        }
-    }
-    // `binding(label) cmp binding(other)` — we replace both the lhs
-    // *and* rhs of the predicate so the comparison fires per-row. The
-    // first arg of `Compare` becomes `binding(label)` here.
-    let lhs_by = bys.first();
-    let mut rhs_idx = if bys.len() > 1 { 1 } else { 0 };
-    let cond = match predicate {
-        Predicate::Compare {
-            op,
-            value: GValue::String(other),
-        } => {
-            if bys.len() <= 1 {
-                compare_bindings(label, lhs_by, *op, other, productive_by)
-            } else {
-                IrExpr::Binary {
-                    op: compare_op(*op),
-                    lhs: Box::new(binding_by_expr(label, lhs_by)),
-                    rhs: Box::new(binding_by_expr(other, rhs_by(&bys, &mut rhs_idx))),
-                }
-            }
-        }
-        _ => rewrite(label, lhs_by, &bys, &mut rhs_idx, predicate)?,
-    };
+    let target = projected.remove(0);
+    let operands = std::cell::RefCell::new(projected.into_iter());
+    let condition = where_predicate_expr(
+        target,
+        predicate,
+        &|_| operands.borrow_mut().next(),
+        lo.productive_by,
+    )?;
     Ok(Node::GraphFilter {
-        condition: cond,
+        condition,
         input: input.boxed(),
     })
+}
+
+fn project_where_binding(
+    input: Node,
+    label: &str,
+    by: Option<&BySpec>,
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<(Node, IrExpr)> {
+    use crate::ir::plan::{ProjectErrorPolicy, ProjectMode, ProjectionItem};
+    let shared = lo.side_effect_bags.contains_key(label)
+        || lo.group_count_side_effects.contains(label);
+    let seeded = lo.side_effect_seeds.contains_key(label);
+    if by.is_none() && !shared && !seeded {
+        return Ok((input, IrExpr::Binding(label.into())));
+    }
+    let selected = if shared {
+        Node::GraphReadSideEffect {
+            label: label.into(),
+            input: Node::GraphCorrelate { bindings: vec![] }.boxed(),
+        }
+    } else if seeded {
+        super::side_effects::lower_side_effect_value(
+            Node::GraphCorrelate { bindings: vec![] }, label, lo,
+        ).expect("known side-effect seed")
+    } else {
+        Node::GraphProject {
+            mode: ProjectMode::ReplaceCurrent,
+            items: vec![ProjectionItem {
+                alias: CURRENT.into(),
+                expr: IrExpr::Binding(label.into()),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: Node::GraphCorrelate { bindings: vec![label.into()] }.boxed(),
+        }
+    };
+    let (projected, value) = match by {
+        Some(by) => super::helpers::apply_by_spec(selected, by, lo, ctx)?,
+        None => (selected, IrExpr::Binding(CURRENT.into())),
+    };
+    let alias = lo.fresh("where_by");
+    let right = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem {
+            alias: alias.clone(),
+            expr: value,
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: projected.boxed(),
+    };
+    Ok((
+        Node::GraphApply {
+            kind: ApplyKind::Inner,
+            correlation: vec![label.into()],
+            outputs: vec![alias.clone()],
+            optional_missing: OptionalMissing::Null,
+            left: input.boxed(),
+            right: right.boxed(),
+        },
+        IrExpr::Binding(alias),
+    ))
+}
+
+fn where_predicate_expr(
+    target: IrExpr,
+    predicate: &Predicate,
+    resolve: &dyn Fn(&str) -> Option<IrExpr>,
+    productive_by: bool,
+) -> GremlinPlanResult<IrExpr> {
+    use crate::ir::expr::BinaryOp;
+    use crate::language::gremlin::semantics::CompareOp;
+    match predicate {
+        Predicate::And(a, b) | Predicate::Or(a, b) => Ok(IrExpr::Binary {
+            op: if matches!(predicate, Predicate::And(..)) {
+                BinaryOp::And
+            } else {
+                BinaryOp::Or
+            },
+            lhs: Box::new(where_predicate_expr(
+                target.clone(),
+                a,
+                resolve,
+                productive_by,
+            )?),
+            rhs: Box::new(where_predicate_expr(target, b, resolve, productive_by)?),
+        }),
+        Predicate::Not(inner) => Ok(IrExpr::Not(Box::new(where_predicate_expr(
+            target,
+            inner,
+            resolve,
+            productive_by,
+        )?))),
+        Predicate::Compare {
+            op,
+            value: GValue::String(label),
+        } if productive_by && matches!(op, CompareOp::Eq | CompareOp::Neq) => {
+            let rhs = resolve(label).unwrap_or_else(|| IrExpr::Binding(label.clone()));
+            let both_null = IrExpr::and(vec![
+                IrExpr::IsNull(Box::new(target.clone())),
+                IrExpr::IsNull(Box::new(rhs.clone())),
+            ]);
+            let equal = IrExpr::Binary {
+                op: BinaryOp::Eq,
+                lhs: Box::new(target.clone()),
+                rhs: Box::new(rhs.clone()),
+            };
+            // ProductiveByStrategy retains nulls: two null values compare
+            // equal, while a null and a non-null value compare unequal.
+            let equal = IrExpr::Binary {
+                op: BinaryOp::Or,
+                lhs: Box::new(both_null),
+                rhs: Box::new(IrExpr::and(vec![
+                    IrExpr::IsNotNull(Box::new(target)),
+                    IrExpr::IsNotNull(Box::new(rhs)),
+                    equal,
+                ])),
+            };
+            Ok(if matches!(op, CompareOp::Neq) {
+                IrExpr::Not(Box::new(equal))
+            } else {
+                equal
+            })
+        }
+        _ => predicate_to_expr_with_bindings(target, predicate, resolve),
+    }
 }
 
 fn binding_by_expr(binding: &str, by: Option<&BySpec>) -> IrExpr {
