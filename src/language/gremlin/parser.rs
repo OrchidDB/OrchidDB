@@ -443,8 +443,8 @@ mod tests {
         assert!(matches!(traversal.steps.as_slice(), [
             Step::V { .. },
             Step::ShortestPath,
-            Step::WithOption { key, value: Some(GValue::String(value)), .. },
-        ] if key.ends_with("edges") && value.contains("Direction.IN")));
+            Step::WithOption { key, value: Some(GValue::DirectionToken(value)), .. },
+        ] if key.ends_with("edges") && value == "IN"));
     }
 
     #[test]

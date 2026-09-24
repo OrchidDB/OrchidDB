@@ -95,7 +95,7 @@ pub(super) fn apply_by_spec(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<(Node, IrExpr)> {
-    apply_by_spec_impl(input, spec, lo, ctx, lo.productive_by)
+    apply_by_spec_impl(input, spec, lo, ctx, lo.productive_by, None)
 }
 
 pub(super) fn apply_project_by_spec(
@@ -103,8 +103,14 @@ pub(super) fn apply_project_by_spec(
     spec: &BySpec,
     lo: &mut Lowerer,
     ctx: &TraversalContext,
-) -> GremlinPlanResult<(Node, IrExpr)> {
-    apply_by_spec_impl(input, spec, lo, ctx, true)
+) -> GremlinPlanResult<(Node, IrExpr, IrExpr)> {
+    let productivity = if !lo.productive_by && (spec.traversal.is_some() || spec.key.is_some()) {
+        Some(lo.fresh("by_productive"))
+    } else {
+        None
+    };
+    let (input, value) = apply_by_spec_impl(input, spec, lo, ctx, true, productivity.as_deref())?;
+    Ok((input, value, productivity.map(IrExpr::Binding).unwrap_or_else(|| IrExpr::lit_bool(true))))
 }
 
 fn apply_by_spec_impl(
@@ -113,6 +119,7 @@ fn apply_by_spec_impl(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
     keep_unproductive: bool,
+    productivity: Option<&str>,
 ) -> GremlinPlanResult<(Node, IrExpr)> {
     use super::sub_traversal::lower_child_traversal;
     use crate::ir::plan::{ApplyKind, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice};
@@ -143,12 +150,18 @@ fn apply_by_spec_impl(
             },
             input: lower_child_traversal(sub, lo, ctx, ChildTraversalKind::ByModulator)?.boxed(),
         };
+        let mut items = vec![ProjectionItem {
+            alias: probe.clone(),
+            expr: IrExpr::Binding(CURRENT.into()),
+        }];
+        let mut outputs = vec![probe.clone()];
+        if let Some(productivity) = productivity {
+            items.push(ProjectionItem { alias: productivity.into(), expr: IrExpr::lit_bool(true) });
+            outputs.push(productivity.into());
+        }
         let projected = Node::GraphProject {
             mode: ProjectMode::PreserveVisible,
-            items: vec![ProjectionItem {
-                alias: probe.clone(),
-                expr: IrExpr::Binding(CURRENT.into()),
-            }],
+            items,
             error_policy: ProjectErrorPolicy::PropagateError,
             input: sub_node.boxed(),
         };
@@ -159,7 +172,7 @@ fn apply_by_spec_impl(
                 ApplyKind::Inner
             },
             correlation: Vec::new(),
-            outputs: vec![probe.clone()],
+            outputs,
             optional_missing: OptionalMissing::Null,
             left: input.boxed(),
             right: projected.boxed(),

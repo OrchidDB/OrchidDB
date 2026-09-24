@@ -8,8 +8,8 @@ use super::context::{CURRENT, Lowerer, PATH, TraversalContext};
 use super::helpers::{apply_project_by_spec, consume_by};
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::{IrExpr, Lit};
-use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, UnionAlign};
-use crate::ir::policy::PropertyMissing;
+use crate::ir::plan::{ApplyKind, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, UnionAlign};
+use crate::ir::policy::{OptionalMissing, PropertyMissing};
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
@@ -53,12 +53,14 @@ pub(super) fn lower_values(input: Node, keys: &[String], lo: &Lowerer) -> Gremli
         })
     } else {
         // values('a','b'): one row per (input, key) where the property is
-        // non-null. Lower as a union of CurrentProject probes.
+        // non-null. Correlate the probes so the upstream traversal and its
+        // mutations/side effects execute once, independent of key count.
+        let source = Node::GraphCorrelate { bindings: vec![CURRENT.into()] };
         let mut iter = keys.iter();
         let first = iter.next().unwrap();
-        let mut acc = current_project_property(input.clone(), first);
+        let mut acc = current_project_property(source.clone(), first);
         for k in iter {
-            let next = current_project_property(input.clone(), k);
+            let next = current_project_property(source.clone(), k);
             acc = Node::GraphUnion {
                 all: true,
                 align: UnionAlign::ByPosition,
@@ -66,7 +68,14 @@ pub(super) fn lower_values(input: Node, keys: &[String], lo: &Lowerer) -> Gremli
                 right: next.boxed(),
             };
         }
-        Ok(acc)
+        Ok(Node::GraphApply {
+            kind: ApplyKind::Inner,
+            correlation: vec![CURRENT.into()],
+            outputs: vec![CURRENT.into()],
+            optional_missing: OptionalMissing::Null,
+            left: input.boxed(),
+            right: acc.boxed(),
+        })
     }
 }
 
@@ -144,8 +153,8 @@ pub(super) fn lower_constant(input: Node, value: &GValue) -> GremlinPlanResult<N
 ///
 /// Each `by(__.t)` lowers via `apply_by_spec` to a fresh probe binding
 /// joined onto the input via `Apply Optional`. Once all keys resolve,
-/// we emit a `CurrentProject` whose expression is `make_map(label_0,
-/// key_0, label_1, key_1, ...)`.
+/// each child also returns a productivity flag. This distinguishes a valid
+/// null result from an absent result when building the projected map.
 pub(super) fn lower_project<'a, I>(
     input: Node,
     labels: &[String],
@@ -157,24 +166,21 @@ where
     I: Iterator<Item = &'a Step>,
 {
     let mut input = input;
-    let mut entries: Vec<IrExpr> = Vec::with_capacity(labels.len() * 2);
+    let mut entries: Vec<IrExpr> = Vec::with_capacity(labels.len() * 3);
     for label in labels {
         let spec = consume_by(steps);
-        let (next_input, value_expr) = match spec {
+        let (next_input, value_expr, productive) = match spec {
             Some(spec) => apply_project_by_spec(input, &spec, lo, ctx)?,
-            None => (input, IrExpr::Binding(CURRENT.into())),
+            None => (input, IrExpr::Binding(CURRENT.into()), IrExpr::lit_bool(true)),
         };
         input = next_input;
         entries.push(IrExpr::Lit(Lit::String(label.clone())));
         entries.push(value_expr);
+        entries.push(productive);
     }
     Ok(Node::GraphCurrentProject {
         expr: IrExpr::Call {
-            name: if lo.productive_by {
-                "make_map".into()
-            } else {
-                "make_project_map".into()
-            },
+            name: "make_project_map_productive".into(),
             args: entries,
         },
         fields: vec![CURRENT.to_string()],

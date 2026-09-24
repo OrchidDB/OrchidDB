@@ -58,7 +58,15 @@ where
         Some(n) => Some(n as u32),
         None => None,
     };
+    let inherited_labels = lo.live_labels.clone();
+    // RepeatUnrollStrategy precedes PathRetractionStrategy. Fixed repeats
+    // must retain child references across the logical unrolled copies.
+    // Multiple repeat children (until/emit/body) also share their keepers.
+    if times.is_some() || until.is_some() || emit.is_some() {
+        lo.live_labels.extend(super::label_liveness::references_iter(body.iter()));
+    }
     let body_node = lower_child_traversal(body, lo, ctx, ChildTraversalKind::RepeatBody)?;
+    lo.live_labels = inherited_labels;
 
     // Postfix `repeat(...).emit(...)`. None inner = emit() always, Some
     // inner = emit(P) or emit(<traversal>) — try a row-level expression

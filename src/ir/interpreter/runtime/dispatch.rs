@@ -350,6 +350,20 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             }
             Ok(Value::Map(map))
         }
+        ("make_project_map_productive", entries) if entries.len() % 3 == 0 => {
+            let mut map = std::collections::BTreeMap::new();
+            for chunk in entries.chunks_exact(3) {
+                if !matches!(chunk[2], Value::Bool(true)) {
+                    continue;
+                }
+                let key = match &chunk[0] {
+                    Value::String(s) => s.clone(),
+                    other => display_for_concat(other),
+                };
+                map.insert(key, chunk[1].clone());
+            }
+            Ok(Value::Map(map))
+        }
         // ----- select(Column.keys|values) on a map-shaped traverser -----
         ("map_keys", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(key, _)| key.clone()).collect())),
         ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),

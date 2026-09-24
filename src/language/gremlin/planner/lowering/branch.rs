@@ -8,7 +8,7 @@ use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::{BinaryOp, IrExpr};
 use crate::ir::plan::{
     ApplyKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Node,
-    ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice, UnionAlign,
+    ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice,
 };
 use crate::ir::policy::OptionalMissing;
 use crate::language::gremlin::ast::{OptionKey, Step, TraversalOption};
@@ -46,25 +46,14 @@ pub(super) fn lower_mid_traversal_union(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
-    // `union()` with no arms — pass the input through unchanged. The
-    // parser produces this shape for a few odd-but-valid TinkerPop
-    // queries (e.g. `or()` desugars to `union()` of the alternatives,
-    // and an empty `or()` is a tautology).
-    let mut iter = branches.iter();
-    let Some(first) = iter.next() else {
-        return Ok(input);
-    };
-    let mut acc = super::sub_traversal::lower_stream_child_traversal(input.clone(), first, lo, ctx, ChildTraversalKind::UnionArm)?;
-    for next in iter {
-        let arm = super::sub_traversal::lower_stream_child_traversal(input.clone(), next, lo, ctx, ChildTraversalKind::UnionArm)?;
-        acc = Node::GraphUnion {
-            all: true,
-            align: UnionAlign::ByPosition,
-            left: acc.boxed(),
-            right: arm.boxed(),
-        };
+    let mut arms = Vec::new();
+    for steps in branches {
+        arms.push((
+            IrExpr::lit_bool(true),
+            lower_arm_continuation(stream_input(), steps, lo, ctx)?,
+        ));
     }
-    Ok(acc)
+    Ok(stream_choose(input, arms))
 }
 
 pub(super) fn lower_choose_predicate(
@@ -75,34 +64,19 @@ pub(super) fn lower_choose_predicate(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
-    let true_arm = lower_child_traversal(then, lo, ctx, ChildTraversalKind::BranchArm)?;
-    let false_arm = match else_branch {
-        Some(steps) => lower_child_traversal(steps, lo, ctx, ChildTraversalKind::BranchArm)?,
-        None => Node::GraphCorrelate {
-            bindings: vec![CURRENT.into()],
-        },
-    };
-    Ok(Node::GraphChoose {
-        selector: ChooseSelector::Boolean(predicate_to_expr(
-            IrExpr::Binding(CURRENT.into()),
-            predicate,
-        )?),
-        output: CURRENT.into(),
-        correlation: vec![CURRENT.into()],
-        arms: vec![
-            ChooseArm {
-                key: None,
-                body: true_arm,
-            },
-            ChooseArm {
-                key: None,
-                body: false_arm,
-            },
+    let condition = truth_test(predicate_to_expr(
+        IrExpr::Binding(CURRENT.into()),
+        predicate,
+    )?);
+    let true_arm = lower_arm_continuation(stream_input(), then, lo, ctx)?;
+    let false_arm = lower_arm_continuation(stream_input(), else_branch.unwrap_or(&[]), lo, ctx)?;
+    Ok(stream_choose(
+        input,
+        vec![
+            (condition.clone(), true_arm),
+            (IrExpr::Not(Box::new(condition)), false_arm),
         ],
-        default: None,
-        unmatched: ChooseUnmatched::PassThrough,
-        input: input.boxed(),
-    })
+    ))
 }
 
 pub(super) fn lower_choose_traversal(
@@ -143,28 +117,16 @@ pub(super) fn lower_choose_traversal(
         }
         .boxed(),
     };
-    // Route the true/false traverser *streams* through the arms so
-    // arm-internal barriers (order/limit/fold) see every routed
-    // traverser (TinkerPop choose semantics), not one row at a time.
-    let true_stream = Node::GraphFilter {
-        condition: IrExpr::IsBound(probe.clone()),
-        input: probe_apply.clone().boxed(),
-    };
-    let true_arm = lower_arm_continuation(true_stream, then, lo, ctx)?;
-    let false_stream = Node::GraphFilter {
-        condition: IrExpr::Not(Box::new(IrExpr::IsBound(probe))),
-        input: probe_apply.boxed(),
-    };
-    let false_arm = match else_branch {
-        Some(steps) => lower_arm_continuation(false_stream, steps, lo, ctx)?,
-        None => false_stream,
-    };
-    Ok(Node::GraphUnion {
-        all: true,
-        align: UnionAlign::ByPosition,
-        left: true_arm.boxed(),
-        right: false_arm.boxed(),
-    })
+    let condition = IrExpr::IsBound(probe);
+    let true_arm = lower_arm_continuation(stream_input(), then, lo, ctx)?;
+    let false_arm = lower_arm_continuation(stream_input(), else_branch.unwrap_or(&[]), lo, ctx)?;
+    Ok(stream_choose(
+        probe_apply,
+        vec![
+            (condition.clone(), true_arm),
+            (IrExpr::Not(Box::new(condition)), false_arm),
+        ],
+    ))
 }
 
 pub(super) fn lower_branch_options(
@@ -260,9 +222,14 @@ pub(super) fn lower_local_or_map(
             optional_missing: OptionalMissing::Null,
             left: input.boxed(),
             right: Node::GraphSlice {
-                slice: Slice { offset: 0, fetch: Some(1), tail: None },
+                slice: Slice {
+                    offset: 0,
+                    fetch: Some(1),
+                    tail: None,
+                },
                 input: right.boxed(),
-            }.boxed(),
+            }
+            .boxed(),
         });
     }
     let right = if matches!(kind, ChildTraversalKind::Map) {
@@ -337,20 +304,41 @@ fn lower_choose_options(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
-    let none = lower_first_pick(pick_none, lo, ctx)?;
-    let unproductive = lower_first_pick(pick_unproductive, lo, ctx)?;
-    let mut fallback = productive_default(dispatch_key, none, unproductive);
-    for (condition, steps) in regular.into_iter().rev() {
-        let body = lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm)?;
-        fallback = boolean_choose_correlated(
-            condition,
-            body,
-            fallback,
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        );
+    let mut arms = Vec::new();
+    let mut matched = Vec::new();
+    for (condition, steps) in regular {
+        let condition = truth_test(condition);
+        let selected = IrExpr::and(vec![no_matches(&matched), condition.clone()]);
+        matched.push(condition);
+        arms.push((
+            selected,
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
-    Ok(attach_input(fallback, input))
+    if let Some(steps) = pick_none.into_iter().next() {
+        let condition = if pick_unproductive.is_empty() {
+            no_matches(&matched)
+        } else {
+            IrExpr::and(vec![
+                no_matches(&matched),
+                productive_condition(dispatch_key),
+            ])
+        };
+        arms.push((
+            condition,
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
+    }
+    if let Some(steps) = pick_unproductive.into_iter().next() {
+        arms.push((
+            IrExpr::and(vec![
+                no_matches(&matched),
+                unproductive_condition(dispatch_key),
+            ]),
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
+    }
+    Ok(stream_choose(input, arms))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -365,182 +353,145 @@ fn lower_branch_option_union(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
-    // Each arm routes the *stream* of matching traversers through the
-    // option traversal (TinkerPop branch semantics: barriers inside an
-    // arm — fold/count/order — see every routed traverser, not one row
-    // at a time).
-    let mut nodes = Vec::new();
-    let mut regular_conditions = Vec::new();
+    let mut input = input;
+    let mut arms = Vec::new();
+    let mut matched = Vec::new();
     for (condition, steps) in regular {
-        regular_conditions.push(condition.clone());
-        let filtered = Node::GraphFilter {
+        let condition = truth_test(condition);
+        matched.push(condition.clone());
+        arms.push((
             condition,
-            input: input.clone().boxed(),
-        };
-        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
     for (key_steps, steps) in regular_trav {
-        // Traversal-valued option key: the arm admits traversers whose
-        // dispatch value satisfies the key traversal (≥1 result).
-        let saved = lo.fresh("branch_saved");
-        let pre = Node::GraphProject {
-            mode: ProjectMode::PreserveVisible,
-            items: vec![ProjectionItem {
-                alias: saved.clone(),
-                expr: IrExpr::Binding(CURRENT.into()),
-            }],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: input.clone().boxed(),
-        };
-        let as_key = Node::GraphProject {
+        // Probe each traversal key once against the dispatch value, preserving
+        // the parent traverser for the selected option's body.
+        let probe = lo.fresh("branch_match");
+        let key_input = Node::GraphProject {
             mode: ProjectMode::ReplaceCurrent,
             items: vec![ProjectionItem {
                 alias: CURRENT.into(),
-                expr: IrExpr::Binding(dispatch_key.to_string()),
+                expr: IrExpr::Binding(dispatch_key.into()),
             }],
             error_policy: ProjectErrorPolicy::PropagateError,
-            input: pre.boxed(),
+            input: stream_input().boxed(),
         };
-        let semi = Node::GraphApply {
-            kind: ApplyKind::Semi,
-            correlation: vec![CURRENT.into()],
-            outputs: Vec::new(),
+        let key_body = super::sub_traversal::lower_stream_child_traversal(
+            key_input,
+            &key_steps,
+            lo,
+            ctx,
+            ChildTraversalKind::WherePredicate,
+        )?;
+        input = Node::GraphApply {
+            kind: ApplyKind::Optional,
+            correlation: vec![dispatch_key.into()],
+            outputs: vec![probe.clone()],
             optional_missing: OptionalMissing::Null,
-            left: as_key.boxed(),
-            right: lower_child_traversal(&key_steps, lo, ctx, ChildTraversalKind::WherePredicate)?
+            left: input.boxed(),
+            right: Node::GraphProject {
+                mode: ProjectMode::PreserveVisible,
+                items: vec![ProjectionItem {
+                    alias: probe.clone(),
+                    expr: IrExpr::lit_bool(true),
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: Node::GraphSlice {
+                    slice: Slice {
+                        offset: 0,
+                        fetch: Some(1),
+                        tail: None,
+                    },
+                    input: key_body.boxed(),
+                }
                 .boxed(),
+            }
+            .boxed(),
         };
-        let restored = Node::GraphProject {
-            mode: ProjectMode::ReplaceCurrent,
-            items: vec![ProjectionItem {
-                alias: CURRENT.into(),
-                expr: IrExpr::Binding(saved),
-            }],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: semi.boxed(),
-        };
-        nodes.push(lower_arm_continuation(restored, &steps, lo, ctx)?);
+        let condition = IrExpr::IsBound(probe);
+        matched.push(condition.clone());
+        arms.push((
+            condition,
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
     for steps in pick_any {
-        let filtered = Node::GraphFilter {
-            condition: productive_condition(dispatch_key),
-            input: input.clone().boxed(),
-        };
-        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
+        arms.push((
+            productive_condition(dispatch_key),
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
     for steps in pick_none {
-        let no_match = IrExpr::and(
-            regular_conditions
-                .iter()
-                .map(|c| IrExpr::Not(Box::new(c.clone())))
-                .collect(),
-        );
-        let filtered = Node::GraphFilter {
-            condition: no_match,
-            input: input.clone().boxed(),
-        };
-        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
+        arms.push((
+            no_matches(&matched),
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
     for steps in pick_unproductive {
-        let filtered = Node::GraphFilter {
-            condition: unproductive_condition(dispatch_key),
-            input: input.clone().boxed(),
-        };
-        nodes.push(lower_arm_continuation(filtered, &steps, lo, ctx)?);
+        arms.push((
+            unproductive_condition(dispatch_key),
+            lower_arm_continuation(stream_input(), &steps, lo, ctx)?,
+        ));
     }
-    Ok(union_all(nodes))
+    Ok(stream_choose(input, arms))
 }
 
-/// Lower an option-arm traversal as a continuation of the routed stream
-/// (not a per-row correlated apply), so arm-internal barriers behave.
-/// Arms containing a reducing barrier are gated on the routed stream
-/// being non-empty — a barrier fed by zero traversers emits nothing in
-/// TinkerPop (unlike a root-level `fold()`).
+fn truth_test(condition: IrExpr) -> IrExpr {
+    IrExpr::Case {
+        arms: vec![(condition, IrExpr::lit_bool(true))],
+        otherwise: Some(Box::new(IrExpr::lit_bool(false))),
+    }
+}
+
+fn no_matches(conditions: &[IrExpr]) -> IrExpr {
+    IrExpr::and(
+        conditions
+            .iter()
+            .cloned()
+            .map(|condition| IrExpr::Not(Box::new(condition)))
+            .collect(),
+    )
+}
+
+fn stream_input() -> Node {
+    // This existing correlate contract carries complete traverser rows,
+    // including labels, paths and bulk, rather than projecting only current.
+    Node::GraphCorrelate {
+        bindings: vec!["__gremlin_group_members".into()],
+    }
+}
+
+fn stream_choose(input: Node, arms: Vec<(IrExpr, Node)>) -> Node {
+    let (conditions, arms): (Vec<_>, Vec<_>) = arms
+        .into_iter()
+        .map(|(condition, body)| (condition, ChooseArm { key: None, body }))
+        .unzip();
+    Node::GraphChoose {
+        selector: ChooseSelector::Predicates(conditions),
+        output: CURRENT.into(),
+        correlation: vec![CURRENT.into()],
+        arms,
+        default: None,
+        unmatched: ChooseUnmatched::Drop,
+        input: input.boxed(),
+    }
+}
+
+/// Arms consume the saved incoming stream; runtime routing skips empty arms.
 fn lower_arm_continuation(
     input: Node,
     steps: &[Step],
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
-    let gate = arm_has_barrier(steps).then(|| input.clone());
-    let mut node = input;
-    let mut iter = steps.iter().peekable();
-    while let Some(step) = iter.next() {
-        node = super::dispatch::lower_step_with_context(node, step, &mut iter, lo, ctx)?;
-    }
-    if let Some(stream) = gate {
-        node = Node::GraphApply {
-            kind: ApplyKind::Semi,
-            correlation: Vec::new(),
-            outputs: Vec::new(),
-            optional_missing: OptionalMissing::Null,
-            left: node.boxed(),
-            right: stream.boxed(),
-        };
-    }
-    Ok(node)
-}
-
-fn arm_has_barrier(steps: &[Step]) -> bool {
-    steps.iter().any(|s| {
-        matches!(
-            s,
-            Step::Fold
-                | Step::Count
-                | Step::Aggregate(_)
-                | Step::FoldReduce { .. }
-                | Step::GroupCount
-        )
-    })
-}
-
-fn lower_first_pick(
-    picks: Vec<Vec<Step>>,
-    lo: &mut Lowerer,
-    ctx: &TraversalContext,
-) -> GremlinPlanResult<Option<Node>> {
-    picks
-        .into_iter()
-        .next()
-        .map(|steps| lower_child_traversal(&steps, lo, ctx, ChildTraversalKind::BranchArm))
-        .transpose()
-}
-
-fn productive_default(dispatch_key: &str, none: Option<Node>, unproductive: Option<Node>) -> Node {
-    // An option traversal without a matching key drops the traverser. It
-    // does not have the identity fallback of choose(predicate, trueBranch).
-    match (none, unproductive) {
-        (Some(none), Some(unproductive)) => boolean_choose_correlated(
-            productive_condition(dispatch_key),
-            none,
-            unproductive,
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        ),
-        (Some(none), None) => none,
-        (None, Some(unproductive)) => boolean_choose_correlated(
-            productive_condition(dispatch_key),
-            Node::GraphEmpty,
-            unproductive,
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        ),
-        (None, None) => Node::GraphEmpty,
-    }
-}
-
-fn no_regular_match(dispatch_key: &str, conditions: Vec<IrExpr>, body: Node) -> Node {
-    let mut node = body;
-    for condition in conditions.into_iter().rev() {
-        node = boolean_choose_correlated(
-            condition,
-            Node::GraphEmpty,
-            node,
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        );
-    }
-    node
+    super::sub_traversal::lower_stream_child_traversal(
+        input,
+        steps,
+        lo,
+        ctx,
+        ChildTraversalKind::BranchArm,
+    )
 }
 
 fn option_value_condition(dispatch_key: &str, value: &GValue) -> GremlinPlanResult<IrExpr> {
@@ -563,89 +514,4 @@ fn productive_condition(dispatch_key: &str) -> IrExpr {
 
 fn unproductive_condition(dispatch_key: &str) -> IrExpr {
     IrExpr::Not(Box::new(productive_condition(dispatch_key)))
-}
-
-fn boolean_choose(condition: IrExpr, true_body: Node, false_body: Node, input: Node) -> Node {
-    boolean_choose_correlated(
-        condition,
-        true_body,
-        false_body,
-        input,
-        vec![CURRENT.into()],
-    )
-}
-
-fn boolean_choose_correlated(
-    condition: IrExpr,
-    true_body: Node,
-    false_body: Node,
-    input: Node,
-    correlation: Vec<String>,
-) -> Node {
-    Node::GraphChoose {
-        selector: ChooseSelector::Boolean(condition),
-        output: CURRENT.into(),
-        correlation,
-        arms: vec![
-            ChooseArm {
-                key: None,
-                body: true_body,
-            },
-            ChooseArm {
-                key: None,
-                body: false_body,
-            },
-        ],
-        default: None,
-        unmatched: ChooseUnmatched::Drop,
-        input: input.boxed(),
-    }
-}
-
-fn attach_input(node: Node, input: Node) -> Node {
-    match node {
-        Node::GraphChoose {
-            selector,
-            output,
-            correlation,
-            arms,
-            default,
-            unmatched,
-            ..
-        } => Node::GraphChoose {
-            selector,
-            output,
-            correlation,
-            arms,
-            default,
-            unmatched,
-            input: input.boxed(),
-        },
-        other => boolean_choose(IrExpr::lit_bool(true), other, Node::GraphEmpty, input),
-    }
-}
-
-fn union_all(nodes: Vec<Node>) -> Node {
-    let mut iter = nodes.into_iter();
-    let Some(first) = iter.next() else {
-        return Node::GraphEmpty;
-    };
-    iter.fold(first, |acc, node| Node::GraphUnion {
-        all: true,
-        align: UnionAlign::ByPosition,
-        left: acc.boxed(),
-        right: node.boxed(),
-    })
-}
-
-fn correlate_current() -> Node {
-    Node::GraphCorrelate {
-        bindings: vec![CURRENT.into()],
-    }
-}
-
-fn correlate_current_and(binding: &str) -> Node {
-    Node::GraphCorrelate {
-        bindings: vec![CURRENT.into(), binding.to_string()],
-    }
 }

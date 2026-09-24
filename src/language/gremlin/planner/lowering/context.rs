@@ -210,9 +210,14 @@ pub(super) struct Lowerer {
     /// per-row binding so `sack()` and `sack(op).by(...)` can stay
     /// traverser-local instead of global.
     pub(super) sack_initial: Option<GValue>,
-    /// Hidden per-row projections written by side-effect steps such as
-    /// `aggregate("x").by(...)`. `cap("x")` folds the recorded binding
-    /// when the straight-line writer is visible.
+    pub(super) sack_merge: Option<SackOp>,
+    pub(super) bulk_enabled: bool,
+    pub(super) bulk_safe: bool,
+    pub(super) retract_labels: bool,
+    pub(super) path_labels: BTreeSet<String>,
+    pub(super) live_labels: BTreeSet<String>,
+    pub(super) in_repeat: bool,
+    /// Registered traversal-scoped bag and tree side effects.
     pub(super) side_effect_bags: BTreeMap<String, String>,
     /// Root `withSideEffect(label, seed)` values. These are global traversal
     /// entries and can be read by `select(label)` without a row-local writer.
@@ -223,15 +228,6 @@ pub(super) struct Lowerer {
     /// Labels written by real map-valued `groupCount(label)` side effects.
     /// These are read by `cap(label)` through the interpreter side channel.
     pub(super) group_count_side_effects: BTreeSet<String>,
-    /// Labels whose aggregate writer is lazy (`local(aggregate(label))` /
-    /// `aggregate(Scope.local, label)`) — writes land one traverser at a
-    /// time, so an `Operator.assign` reducer keeps only the last value.
-    pub(super) side_effect_local_labels: BTreeSet<String>,
-    /// Map-valued `group(label)` side effects that were *not* immediately
-    /// consumed by `cap(label)`. Keyed by label; the stored plan computes
-    /// the full group map from the source so a later `select(label)` can
-    /// attach it per traverser via a scalar apply.
-    pub(super) group_side_effect_maps: BTreeMap<String, crate::ir::plan::Node>,
     /// Recursion guard: when we are *evaluating* a subgraph filter
     /// sub-traversal we must not re-apply the strategy — otherwise the
     /// filter's own scans would each spawn another copy of the filter,
@@ -252,12 +248,17 @@ impl Lowerer {
             productive_by: false,
             partition_write: None,
             sack_initial: None,
+            sack_merge: None,
+            bulk_enabled: true,
+            bulk_safe: false,
+            retract_labels: false,
+            path_labels: BTreeSet::new(),
+            live_labels: BTreeSet::new(),
+            in_repeat: false,
             side_effect_bags: BTreeMap::new(),
             side_effect_seeds: BTreeMap::new(),
             side_effect_reducers: BTreeMap::new(),
             group_count_side_effects: BTreeSet::new(),
-            side_effect_local_labels: BTreeSet::new(),
-            group_side_effect_maps: BTreeMap::new(),
             in_subgraph_filter_eval: false,
         }
     }

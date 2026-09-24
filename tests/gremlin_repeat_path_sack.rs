@@ -265,3 +265,47 @@ fn prefix_until_does_not_replay_its_input_writer() {
         ["1"]
     );
 }
+
+fn native_values(query: &str) -> Vec<Value> {
+    let traversal = parse_traversal(query).unwrap();
+    let plan = GremlinPlanner::new().plan(&traversal).unwrap();
+    new_graph::ir::interpreter::execute_rows(&plan, &PropertyGraph::new())
+        .unwrap().into_iter().map(|row| row.bindings["current"].clone()).collect()
+}
+
+#[test]
+fn repeat_retracts_expired_child_only_labels_using_the_default_strategy() {
+    // Pinned TinkerPop: the project child reads v, but the body's later
+    // select(t) only retains direct body scope keys p and t. Reattaching v
+    // next iteration starts a new history. This scalar example is independent
+    // of the integrated shortest-path fixture and its vertex names.
+    let body = "__.filter(__.loops().is(P.lt(2))).constant(1).as('v').project('p').by(__.select(Pop.all,'v')).as('t').select('t').select('p').aggregate('x')";
+    let query = format!("g.inject(0).as('v').repeat({body}).cap('x').unfold()");
+    assert_eq!(native_values(&query), [
+        Value::List(vec![Value::Int(0), Value::Int(1)]),
+        Value::List(vec![Value::Int(1)]),
+    ]);
+    let disabled = query.replacen("g.inject", "g.withoutStrategies(PathRetractionStrategy).inject", 1);
+    assert_eq!(native_values(&disabled), [
+        Value::List(vec![Value::Int(0), Value::Int(1)]),
+        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(1)]),
+    ]);
+    let path_observing = query.replace(".aggregate('x')", ".sideEffect(__.path()).aggregate('x')");
+    assert_eq!(native_values(&path_observing), native_values(&disabled));
+}
+
+#[test]
+fn label_retraction_preserves_repeat_siblings_and_future_pop_reads() {
+    let body = "__.constant(1).as('v').project('p').by(__.select(Pop.all,'v')).as('t').select('t').select('p')";
+    let expected = [Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(1)])];
+    // Fixed repeats are logically unrolled before label retraction in
+    // TinkerPop. Until/emit children instead share their label keepers.
+    assert_eq!(native_values(&format!("g.inject(0).as('v').repeat({body}).times(2)")), expected);
+    assert_eq!(native_values(&format!("g.inject(0).as('v').repeat({body}).until(__.loops().is(2))")), expected);
+    let query = "g.inject(0).as('v').constant(1).as('v').select(Pop.first,'v').select(Pop.last,'v').select(Pop.all,'v')";
+    assert_eq!(native_values(query), [Value::List(vec![Value::Int(0), Value::Int(1)])]);
+    assert_eq!(native_values("g.inject(1).as('a').constant(2).as('b').select('b').where('a',P.lt('b')).select('a')"), [Value::Int(1)]);
+    assert_eq!(native_values("g.inject(1).as('a').constant(2).as('b').select('b').where(__.as('a').is(1)).select('a')"), [Value::Int(1)]);
+    assert_eq!(native_values("g.inject(null).as('a').constant(1).as('b').select('b').select('a')"), [Value::Null]);
+    assert_eq!(native_values("g.inject(1).as('a').select('a').match(__.as('a').constant(2).as('b')).select('a')"), [Value::Int(1)]);
+}

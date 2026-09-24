@@ -497,6 +497,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "make_date",
     "make_map",
     "make_project_map",
+    "make_project_map_productive",
     "map",
     "map_extract",
     "map_get_display",

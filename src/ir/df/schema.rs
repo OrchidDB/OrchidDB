@@ -303,7 +303,12 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         Node::GraphGroupMap { output, .. } => {
             vec![semantic_field(output, DataType::Utf8, true, "map")]
         }
-        Node::GraphGroupCountSideEffect { input, .. } => schema_fields_for_node(input),
+        Node::GraphGroupSideEffect { input, .. } | Node::GraphGroupCountSideEffect { input, .. } | Node::GraphSideEffect { input, .. } => schema_fields_for_node(input),
+        Node::GraphReadSideEffect { input, .. } => {
+            let mut fields = schema_fields_for_node(input);
+            upsert_field(&mut fields, semantic_field("current", DataType::Utf8, true, "value"));
+            fields
+        },
         Node::GraphCap { labels, .. } if labels.len() == 1 => {
             vec![semantic_field("current", DataType::Utf8, true, "map")]
         }
