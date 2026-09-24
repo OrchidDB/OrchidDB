@@ -9,6 +9,7 @@
 pub mod grammar;
 pub mod ir;
 pub mod language;
+pub mod jvm_bridge;
 pub mod planner;
 
 #[cfg(feature = "duckdb")]

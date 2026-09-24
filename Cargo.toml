@@ -9,6 +9,10 @@ name = "crabgraph"
 path = "src/bin/crabgraph.rs"
 required-features = ["duckdb"]
 
+[[bin]]
+name = "crabgraph-jvm-store"
+path = "src/bin/crabgraph-jvm-store.rs"
+
 [features]
 default = ["duckdb"]
 duckdb = ["dep:duckdb"]
