@@ -93,7 +93,9 @@ impl<'a> LoweringContext<'a> {
             let filtered = LogicalPlanBuilder::from(input.plan.clone())
                 .filter(condition.clone())?
                 .build()?;
-            branches.push(self.lower_with_correlate(filtered, &arm.body)?);
+            if !matches!(arm.body, Node::GraphEmpty) {
+                branches.push(self.lower_with_correlate(filtered, &arm.body)?);
+            }
             unmatched_condition = Some(match unmatched_condition {
                 Some(acc) => Expr::or(acc, condition.clone()),
                 None => condition.clone(),
@@ -109,7 +111,9 @@ impl<'a> LoweringContext<'a> {
                     .build()?,
                 None => input.plan.clone(),
             };
-            branches.push(self.lower_with_correlate(default_input, default)?);
+            if !matches!(default, Node::GraphEmpty) {
+                branches.push(self.lower_with_correlate(default_input, default)?);
+            }
         } else if unmatched == ChooseUnmatched::PassThrough {
             let pass_input = match unmatched_filter {
                 Some(condition) => LogicalPlanBuilder::from(input.plan.clone())
@@ -130,8 +134,31 @@ impl<'a> LoweringContext<'a> {
         }
 
         let Some(first) = branches.first().cloned() else {
-            return Ok(input);
+            return Ok(LoweredNode {
+                plan: LogicalPlanBuilder::from(input.plan).filter(lit(false))?.build()?,
+                islands: input.islands,
+                fields: input.fields,
+                result_form: input.result_form,
+            });
         };
+        if self.language == Language::Gremlin {
+            // SQL UNION coerces a mixed scalar column (for example name/age)
+            // to one physical type. Preserve each traverser's value type by
+            // using the native runtime for such choices.
+            let mut current_type = None;
+            for branch in &branches {
+                if let Some(ty) = plan_column_type(&branch.plan, "current") {
+                    if ty != DataType::Null {
+                        if current_type.as_ref().is_some_and(|previous| previous != &ty) {
+                            return Err(RelError::Unsupported(
+                                "Gremlin heterogeneous choice values require native runtime types".into(),
+                            ));
+                        }
+                        current_type = Some(ty);
+                    }
+                }
+            }
+        }
         let mut plan = first.plan;
         let mut islands = input.islands;
         islands.merge(first.islands);
