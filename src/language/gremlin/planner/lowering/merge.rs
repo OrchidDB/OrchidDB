@@ -143,7 +143,7 @@ pub(super) fn lower_merge_vertex(
                     .get(key)
                     .or(updates.default_cardinality.as_ref())
                     .map(String::as_str)
-                    .unwrap_or("list");
+                    .unwrap_or("single");
                 node = super::mutations::write_call(
                     node,
                     "gremlin.mutation.property_native",
@@ -580,7 +580,7 @@ pub(super) fn lower_dynamic_merge(
                 cardinality_option_expr(
                     options,
                     "onMatchCardinality",
-                    GValue::String("list".into()),
+                    GValue::String("single".into()),
                 )?,
             ],
         );
