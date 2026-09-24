@@ -107,7 +107,7 @@ def render(out):
     html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+'</summary>')
     if status!='not-run':html.append('<p><a href="/downloads/conformance/'+p+'-'+suite+'.json">Full run JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
-    export.append([c['id'],suite,c['name'],p,status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
+    export.append([c['id'],suite,c['name'],'crabgraph' if p in PROFILES else p,p,status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
    html.append('</tr>')
   html.append('</tbody></table></div></details></td></tr></tbody>')
  html.append('</table></div></section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
@@ -142,5 +142,5 @@ def render(out):
  for (p,s),d in runs.items():
   html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Full evidence JSON</a></details>')
  html.append('</details></div>')
- buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','status','scenario_wall_ms','diagnostic','upstream_source']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
+ buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
  return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('cases','Upstream cases'),('java-provider','Java provider tests'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]
