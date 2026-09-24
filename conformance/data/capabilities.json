@@ -116,6 +116,12 @@
         "source": "https://sqlg.org/docs/3.1.6/",
         "kind": "unavailable",
         "reviewed": "2026-09-23"
+      },
+      "crabgraph": {
+        "text": "JVM GraphComputer · single process",
+        "source": "https://github.com/henneberger/new-graph/blob/main/docs/gremlin-graphcomputer.md",
+        "kind": "documented",
+        "reviewed": "2026-09-24"
       }
     }
   },
@@ -598,10 +604,10 @@
     "title": "Embedded use",
     "cells": {
       "crabgraph": {
-        "text": "Rust library",
-        "source": "https://docs.crabgraph.net/rust-api.html",
+        "text": "Rust library; JVM executor",
+        "source": "https://github.com/henneberger/new-graph/blob/main/docs/gremlin-jvm-executor.md",
         "kind": "documented",
-        "reviewed": "2026-09-23"
+        "reviewed": "2026-09-24"
       },
       "sqlg": {
         "text": "JVM library",
