@@ -47,6 +47,12 @@ public final class CrabCodec {
         if ((value instanceof Double && !Double.isFinite((Double)value)) || (value instanceof Float && !Float.isFinite((Float)value))) value=value.toString();
         return fields("type",type,"value",value);
     }
+    private static String floatingText(Object value) {
+        String text=value.toString();
+        if(text.equals("inf")||text.equals("+inf")) return "Infinity";
+        if(text.equals("-inf")) return "-Infinity";
+        return text;
+    }
     @SuppressWarnings("unchecked")
     public static Object decode(Object raw, CrabGraph graph) {
         if (!(raw instanceof Map)) throw new IllegalArgumentException("Expected typed native value: "+raw);
@@ -59,8 +65,8 @@ public final class CrabCodec {
             case "short": return Short.valueOf(value.toString());
             case "int": return Integer.valueOf(value.toString());
             case "long": return Long.valueOf(value.toString());
-            case "float": return Float.valueOf(value.toString());
-            case "double": return Double.valueOf(value.toString());
+            case "float": return Float.valueOf(floatingText(value));
+            case "double": return Double.valueOf(floatingText(value));
             case "bigint": return new BigInteger(value.toString());
             case "bigdecimal": return new BigDecimal(value.toString());
             case "jvm_runtime": if(graph==null) throw new IllegalArgumentException("Runtime value requires a graph session"); return graph.runtimeDecode(record);
