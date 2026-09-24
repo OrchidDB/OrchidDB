@@ -178,6 +178,7 @@ pub enum StringOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BySpec {
+    pub comparator: Option<String>,
     /// The key to project. `None` means "use the current scalar".
     pub key: Option<String>,
     /// A sub-traversal projection (`by(__.bothE().count())` etc.). When
@@ -196,6 +197,7 @@ impl BySpec {
             key: Some(key.into()),
             traversal: None,
             direction: SortDir::Asc,
+            comparator: None,
         }
     }
 
@@ -204,6 +206,7 @@ impl BySpec {
             key: None,
             traversal: None,
             direction: SortDir::Asc,
+            comparator: None,
         }
     }
 
@@ -212,6 +215,7 @@ impl BySpec {
             key: None,
             traversal: Some(steps),
             direction: SortDir::Asc,
+            comparator: None,
         }
     }
 }

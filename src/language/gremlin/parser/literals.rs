@@ -363,7 +363,7 @@ pub(super) fn parse_unary_math_call(s: &str) -> Option<(&str, &str)> {
     if let Some((func, operand)) = s.split_once(' ') {
         let func = func.trim();
         let operand = operand.trim();
-        if !func.is_empty() && !operand.is_empty() {
+        if is_supported_unary_math_func(func) && !operand.is_empty() {
             return Some((func, operand));
         }
     }

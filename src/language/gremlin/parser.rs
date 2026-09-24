@@ -85,7 +85,8 @@ pub fn parse_traversal_with_bindings(
     lexer.remove_error_listeners();
     lexer.add_error_listener(Box::new(errors.listener()));
 
-    let lexer = legacy_tokens::LegacyTokens::new(lexer);
+    let mut lexer = legacy_tokens::LegacyTokens::new(lexer);
+    lexer.bindings = bindings.clone();
     let literal_overrides = lexer.literals.clone();
     let token_stream = CommonTokenStream::new(lexer);
     let mut parser = GremlinParser::new(token_stream);
@@ -528,3 +529,5 @@ mod tests {
         ));
     }
 }
+
+pub(crate) fn decode_callable_string(raw: &str) -> Result<String> { literals::decode_string_literal(raw) }

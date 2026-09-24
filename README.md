@@ -62,10 +62,10 @@ Implemented pieces include:
   types, execution policy, and plan formatting.
 - Public planner facades under `src/planner` for lowering Cypher and Gremlin
   planner-input ASTs into Graph IR.
-- A Graph IR interpreter backed by Apache Arrow data structures for local test
-  execution.
-- A DataFusion logical-plan adapter under `src/ir/df.rs`, used to model how
-  graph operators can participate in relational optimizer rewrites.
+- Managed execution lowers Graph IR to a SQL IR DAG. DuckDB runs eligible SQL
+  regions; DataFusion runs residual operators and JVM compute kernels.
+- Arrow-backed graph operations preserve element identities, paths, and typed
+  values across execution boundaries.
 - Transform rules under `src/transform` for graph plan normalization.
 - Case runners and integration tests for Gremlin/TinkerPop and Cypher/Ladybug
   corpora.

@@ -580,3 +580,11 @@ pub(super) fn resolve_gremlin_vertex_reference(graph: &PropertyGraph, id: &Value
     }
     Err(crate::ir::interpreter::InterpretError::Runtime(format!("Vertex with id {id:?} does not exist")))
 }
+
+pub(super) fn resolve_gremlin_edge_reference(graph: &PropertyGraph, id: &Value) -> crate::ir::interpreter::IrResult<Value> {
+    for edge in crate::ir::interpreter::ops::source::rel_scan("edge", &crate::ir::plan::LabelExpr::Any, crate::ir::plan::Direction::Both, graph)? {
+        let edge=edge.get("edge");
+        if gremlin_user_id(graph, &edge).three_valued_eq(id)==Some(true) {return Ok(edge);}
+    }
+    Err(crate::ir::interpreter::InterpretError::Runtime(format!("Edge with id {id:?} does not exist")))
+}

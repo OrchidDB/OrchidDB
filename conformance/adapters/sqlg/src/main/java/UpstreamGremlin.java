@@ -16,6 +16,7 @@ import org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.*;
 import org.apache.tinkerpop.gremlin.process.traversal.translator.GroovyTranslator;
 import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
+import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.remote.*;
 import org.apache.tinkerpop.gremlin.process.remote.traversal.*;
@@ -34,7 +35,7 @@ public class UpstreamGremlin {
  static String backend;
  static boolean jvmProfile(){return "crabgraph-jvm".equals(backend)||"crabgraph-computer".equals(backend);}
  static class Bridge {
-  Process process; BufferedReader output; BufferedWriter input;
+  Process process; BufferedReader output; BufferedWriter input; String engineInstance;
   Bridge() throws Exception {
    var builder=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT);
    builder.environment().putIfAbsent("CRABGRAPH_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
@@ -44,7 +45,14 @@ public class UpstreamGremlin {
   }
   synchronized JsonNode send(Object request) throws Exception {
    input.write(json.writeValueAsString(request)+"\n");input.flush();String line=output.readLine();
-   if(line==null)throw new IOException("Fixture bridge exited");return json.readTree(line);
+   if(line==null)throw new IOException("Fixture bridge exited");
+   JsonNode response=json.readTree(line);
+   if(backend.equals("crabgraph") && response.has("engine_instance")) {
+    String instance=response.get("engine_instance").asText();
+    if(engineInstance!=null&&!engineInstance.equals(instance))throw new IOException("Crabgraph instance changed during the suite");
+    engineInstance=instance;
+   }
+   return response;
   }
  }
  static Map<String,String> propertyTypes(Map<String,Object> props) {
@@ -194,11 +202,22 @@ public class UpstreamGremlin {
    @Override public Traverser.Admin<E> nextTraverser(){return new DefaultRemoteTraverser<>(rows.next(),1L);}
   };
  }
+ static <E> GraphTraversal<Object,E> nativeResults(List<E> values) {
+  var traversal=new DefaultGraphTraversal<Object,E>();
+  traversal.addStep(new org.apache.tinkerpop.gremlin.process.traversal.step.util.AbstractStep<Object,E>(traversal) {
+   final Iterator<E> rows=values.iterator();
+   @Override protected Traverser.Admin<E> processNextStart() {
+    return new DefaultRemoteTraverser<>(rows.next(),1L);
+   }
+  });
+  return traversal;
+ }
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
   boolean allowNullPropertyValues,directionAliasesInstalled;
   final Map<String,RuntimeException> assertionParameterErrors=new LinkedHashMap<>();
   final Map<String,Object> typedParameters=new LinkedHashMap<>();
+  final Map<String,Object> nativeBindings=new LinkedHashMap<>();
   final Map<String,String> parameterDefinitions=new LinkedHashMap<>(),predicateDefinitions=new LinkedHashMap<>();
   GremlinGroovyScriptEngine scriptEngine; CrabJvmExecutor executor;
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
@@ -379,7 +398,33 @@ public class UpstreamGremlin {
   String code=script.replaceAll("'([^'\\\\]|\\\\.)*'|\"([^\"\\\\]|\\\\.)*\"", "");
   return Pattern.compile("\\bLambda\\s*\\.\\s*\\w+\\s*\\(").matcher(code).find();
  }
+ static Object nativeBindingValue(Object value) {
+  if(value instanceof Vertex vertex)return Map.of("type","vertex","id",nativeBindingValue(vertex.id()),"label",vertex.label());
+  if(value instanceof Edge edge)return Map.of("type","edge","id",nativeBindingValue(edge.id()));
+  if(value instanceof T token)return Map.of("type","token","value",token.name());
+  if(value instanceof Direction direction)return Map.of("type","direction","value",direction.name());
+  if(value instanceof java.time.OffsetDateTime date)return Map.of("type","datetime","value",date.toString());
+  if(value instanceof java.util.Date date)return Map.of("type","datetime","value",date.toInstant().toString());
+  if(value instanceof P<?> predicate)return Map.of("type","predicate","operator",predicate.getBiPredicate().toString(),"value",nativeBindingValue(predicate.getValue()));
+  if(value instanceof Map<?,?> map){List<Object> entries=new ArrayList<>();map.forEach((k,v)->entries.add(Arrays.asList(nativeBindingValue(k),nativeBindingValue(v))));return Map.of("type","map","value",entries);}
+  if(value instanceof Collection<?> values){List<Object> entries=new ArrayList<>();values.forEach(v->entries.add(nativeBindingValue(v)));return Map.of("type",value instanceof Set<?>?"set":"list","value",entries);}
+  return io.crabgraph.gremlin.CrabCodec.encode(value);
+ }
+ static Traversal<?,?> nativeTraversal(StepDefinition def,String script)throws Exception {
+  var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
+  String updated=(String)path.invoke(def,script);
+  JsonNode response=bridge.send(Map.of("op","gremlin","query",updated,"bindings",context(def).nativeBindings));
+  context(def).queryTransports.add(Map.of("step",context(def).currentStep,"query",updated,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"typed_parameters",true));
+  if(response.has("error"))throw new IllegalStateException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
+  boolean typed=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();
+  for(JsonNode row:response.get(typed?"native_rows":"typed_rows"))values.add(typed?nativeValue(row.get(0)):typedValue(row.get(0)));
+  return nativeResults(values);
+ }
  static void defineTraversal(StepDefinition def,String script)throws Exception {
+  if(backend.equals("crabgraph")){
+   try{setField(def,"traversal",nativeTraversal(def,script));}catch(Exception error){setField(def,"error",error);}
+   return;
+  }
   if(jvmProfile()){
    try{setField(def,"traversal",jvmTraversal(def,script));}
    catch(Exception error){setField(def,"error",error);}
@@ -399,9 +444,17 @@ public class UpstreamGremlin {
  static void step(StepDefinition def,JsonNode s)throws Exception{
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
-  else if(t.equals("the graph initializer of")){if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
-  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);cacheAssertionParameter(def,m.group(1),raw,null);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
-  else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(jvmProfile()){
+  else if(t.equals("the graph initializer of")){if(backend.equals("crabgraph"))nativeTraversal(def,doc).iterate();else if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
+  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(backend.equals("crabgraph")){
+   String raw=unquote(m.group(2));Object value;
+   if(raw.startsWith("c[")&&raw.endsWith("]"))value=Map.of("type","lambda","script",raw.substring(2,raw.length()-1));
+   else value=nativeBindingValue(typedParameter(def,raw));
+   context(def).nativeBindings.put(m.group(1),value);cacheAssertionParameter(def,m.group(1),raw,null);
+  }else if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);cacheAssertionParameter(def,m.group(1),raw,null);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
+  else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(backend.equals("crabgraph")){
+   String raw=unquote(m.group(3));context(def).nativeBindings.put(m.group(1),Map.of("type","predicate","operator",m.group(2),"value",nativeBindingValue(typedParameter(def,raw))));
+   cacheAssertionParameter(def,m.group(1),raw,m.group(2));
+  }else if(jvmProfile()){
    String raw=unquote(m.group(3));context(def).parameterDefinitions.put(m.group(1),raw);context(def).predicateDefinitions.put(m.group(1),m.group(2));
    Bindings values=bindings(def,false);values.put("__value",typedParameter(def,raw));
    context(def).typedParameters.put(m.group(1),scriptEngine(def).eval("P."+m.group(2)+"(__value)",values));
@@ -426,7 +479,7 @@ public class UpstreamGremlin {
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
    try{for(var tag:request.get("tags"))if(tag.asText().equals("@AllowNullPropertyValues"))context.allowNullPropertyValues=true;
-   for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("crabgraph-computer")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("crabgraph")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
+   for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("crabgraph-computer")&&!backend.equals("crabgraph")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("crabgraph")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
    for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}
    catch(AssumptionViolatedException ex){status=ex.getMessage().startsWith("unsupported-feature:")?"unsupported":"skipped";error=ex.getMessage();}
    catch(AssertionError ex){status="fail";error=ex.toString();}
@@ -438,7 +491,9 @@ public class UpstreamGremlin {
    if(String.valueOf(queryError).contains("adapter-timeout: "))status="timeout";
    else if(String.valueOf(queryError).contains("adapter-error: "))status="adapter-error";
    try{context.afterEachScenario();}catch(Exception ex){status="adapter-error";error+=" cleanup: "+ex;}
-   System.out.println(json.writeValueAsString(Map.of("id",request.get("id").asText(),"status",status,"error",error,"failed_step",status.equals("pass")?"":failedStep,"actual_graphson",actualJson,"query_error",String.valueOf(queryError),"elapsed_ms",(System.nanoTime()-start)/1e6,"step_timings",timings,"query_transports",context.queryTransports,"assertion_engine","Apache gremlin-test 3.7.4 StepDefinition (unmodified)")));System.out.flush();
+   var evidence=new LinkedHashMap<String,Object>(Map.of("id",request.get("id").asText(),"status",status,"error",error,"failed_step",status.equals("pass")?"":failedStep,"actual_graphson",actualJson,"query_error",String.valueOf(queryError),"elapsed_ms",(System.nanoTime()-start)/1e6,"step_timings",timings,"query_transports",context.queryTransports,"assertion_engine","Apache gremlin-test 3.7.4 StepDefinition (unmodified)"));
+   if(backend.equals("crabgraph"))evidence.put("engine_instance",bridge.engineInstance);
+   System.out.println(json.writeValueAsString(evidence));System.out.flush();
   }
   if(bridge!=null)bridge.process.destroy();if(cachedSqlg!=null)cachedSqlg.close();
  }

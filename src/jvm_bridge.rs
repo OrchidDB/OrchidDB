@@ -667,6 +667,7 @@ impl Store {
             Value::BigDecimal(v) => tagged("bigdecimal", json!(v.to_string())),
             Value::List(v) => tagged("list", self.encode_many(v.clone())?),
             Value::Path(v) => tagged("path", self.encode_many(v.clone())?),
+            Value::MapEntry(pair) => tagged("entry", json!([self.encode(&pair.0)?,self.encode(&pair.1)?])),
             Value::Set(v) => tagged("set", self.encode_many(v.clone())?),
             Value::Map(v) => tagged(
                 "map",
@@ -774,6 +775,10 @@ impl Store {
                     Value::List(values)
                 }
             }
+            "entry" => {
+                let pair=v.as_array().filter(|p|p.len()==2).ok_or("expected map entry pair")?;
+                Value::MapEntry(Box::new((self.decode(&pair[0])?,self.decode(&pair[1])?)))
+            },
             "map" => Value::TypedMap(
                 v.as_array()
                     .ok_or("expected map pairs")?

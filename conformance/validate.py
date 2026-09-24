@@ -39,7 +39,7 @@ def main():
                 assert result['status'] in STATUS, f'{path}: unknown outcome'
                 assert result['elapsed_ms'] >= 0, f'{path}: negative time'
                 if result.get('assertion_source', {}).get('kind') == 'java-counterpart':
-                    assert engine in ('crabgraph', 'crabgraph-jvm') and suite == 'tinkerpop', path
+                    assert engine == 'crabgraph-jvm' and suite == 'tinkerpop', path
                     case = cases[result['id']]
                     mapping = counterpart(case, selection)
                     assert mapping is not None, f'{path}: unmapped Java counterpart'
@@ -47,6 +47,12 @@ def main():
                     verified = result_for(case, mapping, report, sources[suite]['revision'])
                     for key in ('status', 'elapsed_ms', 'assertion_source', 'assertion_engine'):
                         assert result[key] == verified[key], f'{path}: inconsistent Java evidence {key}'
+            if engine == 'crabgraph' and suite == 'tinkerpop':
+                instances = {r.get('engine_instance') for r in results}
+                assert len(instances) == 1 and None not in instances, f'{path}: requires one engine instance'
+                assert run['execution_profile']['single_instance_verified'] is True, path
+                assert run['execution_profile']['engine_instances'] == sorted(instances), path
+                assert all('java_run' not in r for r in results), f'{path}: separate execution evidence is not a product result'
             counts = Counter(r['status'] for r in results)
             if engine == 'reference':
                 assert set(counts) <= {'pass', 'skipped'} and counts['pass'] > 0, 'Reference assertion check failed'

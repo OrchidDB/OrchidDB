@@ -406,7 +406,11 @@ pub async fn execute_rows_with_jvm(
     graph: &PropertyGraph,
     jvm: JvmExecution,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
-    execute_rows_inner(plan, graph, jvm, None).await
+    crate::ir::jvm::validate_computer_plan(&plan.root)?;
+    let local=graph.clone();
+    let result=execute_rows_inner(plan, &local, jvm, None).await?;
+    if !crate::ir::jvm::contains_computer(&plan.root) {graph.restore_execution_overlay(&local);}
+    Ok(result)
 }
 async fn execute_rows_inner(
     plan: &GraphPlan,
@@ -1348,6 +1352,7 @@ pub async fn execute(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
+    crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
     let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout).await?;
     let (fields, form) = match plan.root.as_ref() {
@@ -1369,7 +1374,7 @@ pub async fn execute(
     let returned =
         crate::ir::interpreter::output::finalize_return(&fields, form, rows, &local, &plan.policy)
             .map_err(|e| e.to_string())?;
-    graph.restore_execution_overlay(&local);
+    if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
     Ok((returned, stats))
 }
 

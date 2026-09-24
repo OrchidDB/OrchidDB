@@ -14,6 +14,9 @@ pub(super) struct LegacyTokens<'input, S: TokenSource<'input, TF = CommonTokenFa
     source: S,
     pending: VecDeque<Box<CommonToken<'input>>>,
     previous: i32,
+    previous_text: String,
+    calls: Vec<String>,
+    pub(super) bindings: std::collections::HashMap<String, super::GValue>,
     pub(super) literals:
         std::rc::Rc<std::cell::RefCell<std::collections::BTreeMap<isize, super::GValue>>>,
 }
@@ -24,6 +27,9 @@ impl<'input, S: TokenSource<'input, TF = CommonTokenFactory>> LegacyTokens<'inpu
             source,
             pending: VecDeque::new(),
             previous: 0,
+            previous_text: String::new(),
+            calls: Vec::new(),
+            bindings: Default::default(),
             literals: Default::default(),
         }
     }
@@ -37,6 +43,19 @@ impl<'input, S: TokenSource<'input, TF = CommonTokenFactory>> TokenSource<'input
             .pending
             .pop_front()
             .unwrap_or_else(|| self.source.next_token());
+        // inject/constant use genericLiteral instead of genericArgument in the
+        // upstream grammar. Bound values are typed lexical atoms there.
+        // Keep their values out of source text, including element references and
+        // numeric widths. A method/member name following a dot is never a binding.
+        if token.token_type == crate::grammar::generated::gremlin::gremlinparser::Gremlin_Identifier
+            && self.previous != Gremlin_DOT
+            && self.calls.last().is_some_and(|name| matches!(name.as_str(), "inject" | "constant")) {
+            if let Some(value) = self.bindings.get(token.text.as_ref()) {
+                self.literals.borrow_mut().insert(token.start, value.clone());
+                token.token_type = crate::grammar::generated::gremlin::gremlinparser::Gremlin_EmptyStringLiteral;
+                token.text = std::borrow::Cow::Borrowed("\"\"");
+            }
+        }
         // The bytecode translator spells the enum's enclosing class, while
         // the grammar accepts Barrier.normSack. Strip only the exact token
         // prefix, leaving quoted text and unrelated identifiers untouched.
@@ -240,6 +259,9 @@ impl<'input, S: TokenSource<'input, TF = CommonTokenFactory>> TokenSource<'input
             }
         }
         if token.channel == TOKEN_DEFAULT_CHANNEL {
+            if token.token_type == Gremlin_LPAREN { self.calls.push(self.previous_text.clone()); }
+            if token.token_type == Gremlin_RPAREN { self.calls.pop(); }
+            self.previous_text = token.text.to_string();
             self.previous = token.token_type;
         }
         token

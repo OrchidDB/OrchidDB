@@ -8,10 +8,9 @@ class Rust:
   self.p=subprocess.Popen([os.environ.get('CONFORMANCE_CRABGRAPH_BINARY',str(ROOT/'target/debug/upstream'))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
  def send(self,req):
   if self.p.poll() is not None:
-   if req.get('op')!='fixture':raise RuntimeError('Crabgraph adapter exited; fixture reload required')
-   self.__init__()
+   raise RuntimeError('The single Crabgraph instance exited; this run cannot restart it')
   self.p.stdin.write(json.dumps(req)+'\n');self.p.stdin.flush()
-  if not select.select([self.p.stdout],[],[],15)[0]:self.p.kill();raise TimeoutError('Crabgraph adapter deadline')
+  if not select.select([self.p.stdout],[],[],40)[0]:self.p.kill();raise TimeoutError('Crabgraph adapter deadline')
   line=self.p.stdout.readline()
   if not line:raise RuntimeError('Crabgraph adapter exited')
   return json.loads(line)

@@ -1,5 +1,10 @@
 # Gremlin final-gap implementation results
 
+> Historical implementation record. Current production comparison results come
+> only from the single-instance run in
+> [crabgraph-tinkerpop.json](../conformance/upstream-results/crabgraph-tinkerpop.json).
+> The separate execution results below are not combined into the leaderboard.
+
 ## Execution architecture
 
 Crabgraph now provides a production JVM traversal executor backed by its native

@@ -65,6 +65,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             return Ok(reduce_list_numeric(&[value.clone()], "mean"));
         }
         ("gremlin_sum_result", [sum, count]) => return Ok(if count.as_i64() == Some(0) { Value::Null } else { match sum { Value::Int(n) => Value::Long(*n), other => other.clone() } }),
+        ("gremlin_edge_ref", [id]) => return super::graph::resolve_gremlin_edge_reference(graph, id),
         ("gremlin_vertex_ref", [id, Value::String(_label)]) => return super::graph::resolve_gremlin_vertex_reference(graph, id),
         ("local_tail", [value, count]) => return Ok(super::lists::gremlin_local_tail(value, count.as_i64().unwrap_or(0))),
         ("local_range", [value, low, high]) => return Ok(super::lists::gremlin_local_range(value, low.as_i64().unwrap_or(0), high.as_i64().unwrap_or(-1))),

@@ -430,7 +430,15 @@ impl GraphEngine {
     }
 
     pub async fn gremlin(&mut self, query: &str) -> EngineResult<QueryResult> {
-        let parsed = gremlin::parse_traversal(query).map_err(|e| e.to_string())?;
+        self.gremlin_with_bindings(query, &std::collections::HashMap::new()).await
+    }
+
+    pub async fn gremlin_with_bindings(
+        &mut self, query: &str,
+        bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>,
+    ) -> EngineResult<QueryResult> {
+        let (source, values) = gremlin::callables::prepare(query, bindings).map_err(|e| e.to_string())?;
+        let parsed = gremlin::parse_traversal_with_bindings(&source, &values).map_err(|e| e.to_string())?;
         let plan = gremlin::GremlinPlanner::new()
             .plan(&parsed)
             .map_err(|e| e.to_string())?;

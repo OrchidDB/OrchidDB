@@ -31,7 +31,7 @@ pub(super) fn lower_call(
     args: &[CallArg],
     options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
-    if name == "crabgraph.jvm" {
+    if matches!(name, "crabgraph.jvm" | "crabgraph.jvm.computer") {
         let invalid = || GremlinPlanError::Unsupported("call('crabgraph.jvm', ['script': code, 'mode': 'map'|'flatMap'|'filter', 'bindings': map]) requires trusted code and literal options".into());
         fn entries(value: &GValue) -> Option<Vec<(&str, &GValue)>> {
             match value {
@@ -45,13 +45,13 @@ pub(super) fn lower_call(
         if !options.is_empty() || parameters.iter().any(|(key,_)| !matches!(*key,"script"|"mode"|"bindings")) { return Err(invalid()); }
         let get = |key| parameters.iter().find_map(|(name,value)| (*name == key).then_some(*value));
         let Some(GValue::String(script)) = get("script") else { return Err(invalid()); };
-        let mode = match get("mode") {
+        let mode = if name=="crabgraph.jvm.computer" { crate::ir::jvm::JvmMode::Computer } else { match get("mode") {
             None => crate::ir::jvm::JvmMode::Map,
             Some(GValue::String(mode)) if mode == "map" => crate::ir::jvm::JvmMode::Map,
             Some(GValue::String(mode)) if mode == "flatMap" => crate::ir::jvm::JvmMode::FlatMap,
             Some(GValue::String(mode)) if mode == "filter" => crate::ir::jvm::JvmMode::Filter,
             _ => return Err(invalid()),
-        };
+        }};
         let mut arguments = vec![ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(CURRENT.into()) }];
         if let Some(bindings) = get("bindings") {
             for (key,value) in entries(bindings).ok_or_else(invalid)? {

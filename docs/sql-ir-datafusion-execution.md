@@ -123,3 +123,29 @@ The pinned Apache TinkerPop scenarios run through `GraphEngine` using
 `conformance/upstream/run.py --engine crabgraph --suite tinkerpop`. That exercises
 the production relational executor, not the reference interpreter. GitHub Actions
 publishes committed static results only; it does not execute these tests.
+
+## Typed Gremlin callbacks
+
+`GraphEngine::gremlin_with_bindings` accepts `GremlinBinding::Value`,
+`GremlinBinding::Predicate`, and trusted `GremlinBinding::Lambda` arguments.
+The frontend lowers callbacks and vertex programs into operators in the SQL IR
+DAG. The conformance adapter submits every traversal to this same API; it does
+not choose a different executor for individual scenarios.
+
+JVM workers are shared within a query, including correlated and repeated
+operators. Each operator borrows the statement's native graph overlay. Failure
+invalidates the worker and rolls back the statement. Comparator operators reorder
+original rows, retaining their labels, paths, and bulk. Vertex-program properties
+are visible to later operators in the query without being committed to the graph.
+
+Enable JVM operators by setting `CRABGRAPH_JVM_CLASSPATH` to the built production
+JVM classes and dependencies, and optionally `CRABGRAPH_JAVA` to the Java executable.
+
+### Write storage
+
+Managed mutations, including JVM callback writes, currently modify the native
+`PropertyGraph` overlay. `GraphEngine` persists incremental records in
+`__crabgraph_records` and checkpoints in `__crabgraph_state`. This is separate
+from the external table mappings used by relational reads. Mapped write-through
+requires mutation lowering against those same table/column mappings and a shared
+transaction; it is not implemented by this execution change.

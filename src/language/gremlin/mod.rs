@@ -5,6 +5,8 @@
 //! - `planner` — lowers a `Traversal` into a `crate::ir::plan::GraphPlan`.
 
 pub mod ast;
+pub mod callables;
+pub use callables::GremlinBinding;
 pub mod parser;
 pub mod planner;
 pub mod semantics;
