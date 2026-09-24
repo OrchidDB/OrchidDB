@@ -273,7 +273,7 @@ fn pinned_independent_readers_validate_all_six_default_and_explicit_writers() {
                     "--add-opens=java.base/java.util=ALL-UNNAMED",
                     "-cp",
                     &classpath,
-                    "ImportGraph",
+                    "io.crabgraph.gremlin.codec.ImportGraph",
                     format,
                 ])
                 .arg(&file)
@@ -421,7 +421,7 @@ fn gryo_and_independent_graphson_reader_preserve_enabled_nulls() {
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "ImportGraph",
+                "io.crabgraph.gremlin.codec.ImportGraph",
                 format,
             ])
             .arg(&file)
@@ -527,7 +527,7 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "ImportGraph",
+                "io.crabgraph.gremlin.codec.ImportGraph",
                 format,
             ])
             .arg(&file)

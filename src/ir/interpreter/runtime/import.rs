@@ -290,7 +290,7 @@ pub(crate) fn read(graph: &PropertyGraph, path: &str, reader: &str) -> IrResult<
                     "--add-opens=java.base/java.util=ALL-UNNAMED",
                     "-cp",
                     &classpath,
-                    "ImportGraph",
+                    "io.crabgraph.gremlin.codec.ImportGraph",
                     reader,
                     path,
                 ])
