@@ -16,6 +16,7 @@
 //! Explicit native property updates use [`MappedGraphEngine::cypher_update`].
 
 mod update;
+mod write;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -180,6 +181,11 @@ impl MappedGraphEngine {
 
     /// Lower a plan, prepare it against the executor's dialect, and execute it.
     async fn run_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
+        if find_mutation(&plan.root).is_some() { self.run_mutations(plan).await }
+        else { self.run_read_plan(plan).await }
+    }
+
+    async fn run_read_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
         reject_mutations(plan)?;
         let lowered = self.with_functions(|| {
             self.backend()

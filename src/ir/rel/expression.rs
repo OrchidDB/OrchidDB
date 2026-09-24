@@ -727,6 +727,31 @@ impl<'a> LoweringContext<'a> {
                     Ok(if op == "neq" { Expr::Not(Box::new(equal)) } else { equal })
                 } else { Ok(binary(lhs, operator, rhs)) }
             }
+            IrExpr::Call { name, args } if name == "requested_property_values" && self.options.mapping.is_some() => {
+                let [IrExpr::Binding(binding), IrExpr::List(keys)] = args.as_slice() else {
+                    return Err(RelError::Unsupported("Mapped property projection requires literal keys".into()));
+                };
+                let mut columns = Vec::new();
+                if keys.is_empty() {
+                    let prefix = format!("{binding}__prop__");
+                    columns.extend(plan.schema().fields().iter().filter(|f| f.name().starts_with(&prefix)).map(|f|col_exact(f.name())));
+                } else {
+                    for key in keys {
+                        let IrExpr::Lit(Lit::String(key)) = key else { return Err(RelError::Unsupported("Dynamic mapped property key".into())); };
+                        let column = prop_col(binding, key);
+                        if has_exact_col(plan, &column) { columns.push(col_exact(column)); }
+                    }
+                }
+                let types = columns.iter().map(|c|c.get_type(plan.schema())).collect::<datafusion::common::Result<Vec<_>>>()?;
+                if types.windows(2).any(|pair|pair[0]!=pair[1]) { return Err(RelError::Unsupported("Mapped property values have incompatible SQL types".into())); }
+                use datafusion::functions_nested::expr_fn::{make_array, array_concat};
+                let mut result = make_array(vec![]);
+                for column in columns {
+                    let item = datafusion::logical_expr::when(column.clone().is_null(),make_array(vec![])).otherwise(make_array(vec![column]))?;
+                    result = array_concat(vec![result,item]);
+                }
+                Ok(result)
+            }
             IrExpr::Call { name, .. } if name == "requested_property_values" => {
                 Err(RelError::Unsupported(
                     "Heterogeneous Gremlin property values require native runtime values".into(),
