@@ -102,7 +102,7 @@ def main():
   content['execution_profile']={'traversal_language':'gremlin-language','assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)','execution':'OLTP','remote':args.engine not in ('reference','sqlg')}
   content['coverage']['excluded_capabilities']=capability_summary(results)
  if args.engine=='crabgraph':
-  binary=crabgraph_binary();content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':True}
+  binary=crabgraph_binary();content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
  else:content['build']={'version':{'sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
  output.write_text(json.dumps(content,indent=2)+'\n')
  from collections import Counter
