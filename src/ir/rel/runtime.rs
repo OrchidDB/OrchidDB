@@ -5,7 +5,7 @@ use super::{LoweredPlan, RelBackend};
 use crate::ir::{
     catalog::{
         PropertyGraph,
-        snapshot::binary::{decode_value_bytes, encode_value_bytes},
+        snapshot::binary::{decode_value_bytes, encode_value},
     },
     interpreter::{InterpretError, IrResult, ReturnedBatches, Row, eval, run::ExecutionContext},
     jvm::JvmExecution,
@@ -38,7 +38,7 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -55,16 +55,20 @@ fn failure(e: impl ToString) -> DataFusionError {
     DataFusionError::Execution(e.to_string())
 }
 fn schema() -> SchemaRef {
-    Arc::new(Schema::new(vec![
+    static SCHEMA: OnceLock<SchemaRef> = OnceLock::new();
+    SCHEMA.get_or_init(|| Arc::new(Schema::new(vec![
         Field::new("bindings", DataType::Binary, false),
         Field::new("bulk", DataType::UInt64, false),
-    ]))
+    ]))).clone()
 }
 fn encode_rows(rows: Vec<Row>) -> Result<RecordBatch> {
     let mut bindings = BinaryBuilder::new();
     let mut bulk = Vec::with_capacity(rows.len());
+    let mut encoded = Vec::new();
     for row in rows {
-        bindings.append_value(encode_value_bytes(&Value::Map(row.bindings)));
+        encoded.clear();
+        encode_value(&mut encoded, &Value::Map(row.bindings));
+        bindings.append_value(&encoded);
         bulk.push(row.bulk);
     }
     Ok(RecordBatch::try_new(
@@ -195,11 +199,15 @@ fn kernel(
             ),
             kernel: Arc::new(operation),
             relational_input: None,
-            fuse_unary: matches!(name, "Bind" | "Filter" | "Project" | "CurrentProject" | "Return"),
+            fuse_unary: matches!(name,
+                "Bind" | "Filter" | "Project" | "CurrentProject" | "Return"
+                | "Expand" | "PathFilter" | "CorrelatedInput"
+                | "NodeScan" | "RelScan" | "Values" | "OneRow" | "Empty"
+            ),
         }),
     })
 }
-/// Fuse only adjacent unary scalar kernels. This does not move predicates,
+/// Fuse adjacent read kernels, including their zero-input sources. This does not move predicates,
 /// change evaluation order, share branches, or cross SQL/JVM/write boundaries.
 /// Every original operator keeps its cancellation and work-budget check.
 fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
@@ -210,7 +218,7 @@ fn fuse_unary_kernels(plan: LogicalPlan) -> Result<LogicalPlan> {
         if !parent.fuse_unary || parent.inputs.len()!=1 { return Ok(Transformed::no(plan)); }
         let LogicalPlan::Extension(input) = &parent.inputs[0] else { return Ok(Transformed::no(plan)); };
         let Some(child) = input.node.as_any().downcast_ref::<RowKernel>() else { return Ok(Transformed::no(plan)); };
-        if !child.fuse_unary || child.inputs.len()!=1 || child.relational_input.is_some() || parent.relational_input.is_some() {
+        if !child.fuse_unary || child.inputs.len()>1 || child.relational_input.is_some() || parent.relational_input.is_some() {
             return Ok(Transformed::no(plan));
         }
         let mut fused=parent.clone();

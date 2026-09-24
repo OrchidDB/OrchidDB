@@ -45,6 +45,8 @@ async fn typed_traversers_and_correlated_state_match_reference() {
         "g.V().choose(__.has('name','a'),__.values('name'),__.identity())",
         "g.V().outE().inV().values('name')",
         "g.V().local(__.out().count())",
+        "g.V().local(__.out().has('name','b').values('age'))",
+        "g.V().filter(__.out().has('name','b')).values('name')",
         "g.V().has('name','a').as('a').out().as('a').select(Pop.first,'a')",
         "g.inject(null).coalesce(__.identity(),__.constant('fallback'))",
         "g.inject(1,2,3).store('x').limit(1).cap('x')",

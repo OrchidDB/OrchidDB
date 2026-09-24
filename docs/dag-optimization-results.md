@@ -3,12 +3,15 @@
 ## Changes
 
 - Run DataFusion logical optimization before partitioning the SQL IR DAG into DuckDB regions.
-- Fuse adjacent unary Bind, Filter, Project, CurrentProject, and Return kernels, retaining evaluation order, bulk, cancellation checks, and work-budget charges. SQL, JVM, write, branch, and aggregate operators remain distinct boundaries.
+- Fuse adjacent read kernels (Bind, Filter, Project, CurrentProject, Return, Expand, and PathFilter) and their scan/value/correlated sources, retaining evaluation order, bulk, cancellation checks, and work-budget charges. Apply this rewrite to correlated subplans as well as the outer DAG. SQL, JVM, write, branch, and aggregate operators remain distinct boundaries.
 - Reuse DataFusion session and DuckDB execution resources within one GraphEngine. Every query still compiles its current graph snapshot. DuckDB's existing content-addressed scan cache distinguishes changed data. Separate engines own separate sessions; execution errors discard the session.
+- Reuse immutable Arrow transport schemas and per-batch serialization buffers.
 - Add opt-in `CRABGRAPH_PROFILE_DAG=1` diagnostics for preparation, physical planning, and execution time.
 - Show summed passed-scenario runtime for Crabgraph only on the existing leaderboard. Other statuses do not contribute.
 
-## Repeated-query benchmark
+## Earlier diagnostic benchmark
+
+These measurements cover the first optimization batch, before correlated-subplan fusion and transport allocation improvements. The full-suite result is the acceptance metric.
 
 The [raw measurements](performance/dag-before-after.json) record three alternating baseline/optimized rounds, six query shapes over the same 256-node/256-edge fixture, three warmups per query per round, and 20 measured repetitions. All 360 measured results per binary, plus warmups, were compared for exact equality. Fixture setup is excluded. Timings include the local request/response, query parsing, planning, execution, and result encoding.
 
@@ -29,6 +32,6 @@ Reproduce with `scripts/benchmark-dag.py --binary baseline=PATH --binary optimiz
 
 ## Verification
 
-- 37 mapped-write, mapped-read, and relational-execution tests pass.
+- 38 mapped-write, mapped-read, and relational-execution tests pass.
 - Three leaderboard aggregation tests pass.
 - Full upstream Gremlin run: pending final verification on the committed optimized source.

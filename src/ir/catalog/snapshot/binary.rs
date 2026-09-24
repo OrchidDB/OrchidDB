@@ -108,7 +108,7 @@ pub(super) fn write_section(out: &mut Vec<u8>, tag: u8, payload: &[u8]) {
 
 // ---------------- Value codec ----------------
 
-fn encode_value(out: &mut Vec<u8>, value: &Value) {
+pub(crate) fn encode_value(out: &mut Vec<u8>, value: &Value) {
     match value {
         Value::VertexProperty {id,owner,key,value} => {put_u8(out, 0x40);put_i64(out,*id);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
         Value::Property {owner,key,value} => {put_u8(out, 0x41);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
