@@ -117,9 +117,31 @@ public class UpstreamGremlin {
    case "map" -> {Map<Object,Object> values=new LinkedHashMap<>();x.forEach(pair->values.put(nativeValue(pair.get(0)),nativeValue(pair.get(1))));yield values;}
    case "vertex" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("id")),v.get("label").asText());
    case "edge" -> new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceEdge(nativeValue(v.get("id")),v.get("label").asText(),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("inV")),v.get("inVLabel").asText()),new org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex(nativeValue(v.get("outV")),v.get("outVLabel").asText()));
+   case "vertex_property" -> nativeVertexProperty(v);
+   case "property" -> nativeProperty(v);
    case "path" -> {var path=org.apache.tinkerpop.gremlin.process.traversal.step.util.MutablePath.make();x.forEach(item->path.extend(nativeValue(item),Set.of()));yield path;}
    default -> throw new IllegalArgumentException("Unmapped native result type "+v);
   };
+ }
+ /** Native properties retain their owners; maps with similar fields are still maps. */
+ static VertexProperty<Object> nativeVertexProperty(JsonNode value) {
+  Object owner=nativeValue(value.get("owner"));
+  if(!(owner instanceof Vertex vertex))throw new IllegalArgumentException("Vertex property owner must be a vertex: "+value);
+  Map<String,Object> properties=new LinkedHashMap<>();
+  for(JsonNode property:value.path("properties")) {
+   if(property.has("type")&&!property.path("type").asText().equals("property"))throw new IllegalArgumentException("Invalid native meta-property: "+property);
+   // The enclosing vertex property supplies the owner. This also avoids
+   // requiring an infinitely recursive owner->properties->owner wire value.
+   properties.put(property.get("key").asText(),nativeValue(property.get("value")));
+  }
+  return new org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertexProperty<>(
+   nativeValue(value.get("id")),value.get("key").asText(),nativeValue(value.get("value")),properties,vertex);
+ }
+ static Property<Object> nativeProperty(JsonNode value) {
+  Object owner=nativeValue(value.get("owner"));
+  if(!(owner instanceof Edge)&&!(owner instanceof VertexProperty<?>))throw new IllegalArgumentException("Property owner must be an edge or vertex property: "+value);
+  return new org.apache.tinkerpop.gremlin.structure.util.detached.DetachedProperty<>(
+   value.get("key").asText(),nativeValue(value.get("value")),(Element)owner);
  }
  static Bridge bridge;
  static SqlgGraph cachedSqlg;static String cachedFixture;
