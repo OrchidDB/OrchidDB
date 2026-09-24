@@ -1,4 +1,6 @@
-# Draft: completing Gremlin conformance
+# Gremlin conformance completion plan
+
+> Implementation checkpoint: the 84 originally identified gaps now have passing evidence across the native, JVM OLTP, GraphComputer and original Java test profiles. See [implementation results](gremlin-final-results.md) and the [case-to-evidence mapping](../conformance/upstream-results/gremlin-final-gap-evidence.json). The inventory below preserves the original plan and baseline; it is not the current failure list. Broader Java suite results are reported separately.
 
 ## Architectural work required
 
@@ -14,7 +16,7 @@ The remaining work needs **an upstream Java provider test path, a general lambda
 
 ## Baseline and definition of done
 
-Current verified source: `6c67ebc4b3aff08547017b828c1554c82778d411`; published checkpoint: `b1c05ac`.
+Original baseline source: `6c67ebc4b3aff08547017b828c1554c82778d411`; published checkpoint: `b1c05ac`.
 
 - **1,427 pass, 83 skipped, 1 unsupported**, out of 1,511 pinned TinkerPop 3.7.4 scenarios.
 - **Zero failures, timeouts, adapter errors or peer-only passing gaps** against the recorded SQLg/PuppyGraph runs.
