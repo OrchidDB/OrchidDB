@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--store', type=Path)
     parser.add_argument('--java', default=os.environ.get('CONFORMANCE_JAVA', 'java'))
     parser.add_argument('--inventory', action='store_true')
+    parser.add_argument('--computer', action='store_true', help='Use GraphComputer for class/method selections')
     parser.add_argument('--timeout', type=int, default=3600)
     args = parser.parse_args()
     subprocess.run(['mvn', '-q', '-f', str(ROOT / 'pom.xml'), 'package',
@@ -37,7 +38,7 @@ def main():
         for dependency_file in [args.jvm / 'classpath.txt', args.jvm / 'target/classpath.txt']:
             if dependency_file.exists():
                 cp.append(dependency_file.read_text().strip())
-    command = [args.java, '--add-opens=java.base/java.util=ALL-UNNAMED',
+    command = [args.java, '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '--add-opens=java.base/java.util=ALL-UNNAMED',
                '--add-opens=java.base/java.lang=ALL-UNNAMED',
                '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED',
                '-cp', os.pathsep.join(cp), 'io.crabgraph.conformance.ProviderSuite',
@@ -57,7 +58,7 @@ def main():
         exit_code = 124
     if args.output.exists():
         report = json.loads(args.output.read_text())
-        report['run_complete'] = exit_code in (0, 1)
+        report['run_complete'] = report.get('run_complete', False) and exit_code in (0, 1)
         report['process_exit_code'] = exit_code
         report['store_sha256'] = digest(args.store) if args.store else None
         report['java_version'] = subprocess.run([args.java, '-version'], capture_output=True, text=True).stderr
