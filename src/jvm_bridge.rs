@@ -463,12 +463,9 @@ impl Store {
         Ok(result)
     }
     fn edge(&self, label: &str, row: i64) -> Result<Value> {
-        if !self.graph.edge_ids(label).contains(&row) {
-            return Err("edge does not exist".into());
-        }
         let (src_label, src_id, dst_label, dst_id) = self
             .graph
-            .edge_endpoints(label, row)
+            .live_edge_endpoints(label, row)
             .ok_or("edge does not exist")?;
         Ok(Value::Edge {
             rel_type: label.into(),
@@ -546,7 +543,7 @@ impl Store {
             "vertex" => {
                 let label = string(h, "label")?;
                 let row = integer(field(h, "row")?)?;
-                if !self.graph.node_ids(label).map_err(err)?.contains(&row) {
+                if !self.graph.node_is_live(label, row) {
                     return Err("vertex does not exist".into());
                 }
                 Ok(Value::Node {
@@ -1062,6 +1059,53 @@ mod tests {
             ),
             json!([])
         );
+    }
+
+    #[test]
+    fn direct_handle_lookup_respects_arrow_groups_overlay_deletion_and_rollback() {
+        use crate::ir::catalog::{edges_from_columns, nodes_from_columns_with_count};
+        let mut graph = PropertyGraph::new();
+        graph.add_nodes(nodes_from_columns_with_count("a", vec![], 2));
+        graph.add_nodes(nodes_from_columns_with_count("b", vec![], 1));
+        graph
+            .add_edges(edges_from_columns("r", "a", "a", vec![0], vec![1], vec![]))
+            .unwrap();
+        graph
+            .add_edges(edges_from_columns("r", "a", "b", vec![1], vec![0], vec![]))
+            .unwrap();
+        assert!(graph.node_is_live("a", 0));
+        assert!(!graph.node_is_live("a", -1));
+        assert!(!graph.node_is_live("a", 2));
+        assert!(!graph.node_is_live("missing", 0));
+        assert!(graph.live_edge_endpoints("r", -1).is_none());
+        assert!(graph.live_edge_endpoints("r", 2).is_none());
+        assert!(graph.live_edge_endpoints("missing", 0).is_none());
+        let mut s = Store::from_graph(graph);
+        let vertices = call(&mut s, json!({"op":"vertices"}));
+        let edges = call(&mut s, json!({"op":"edges"}));
+        assert_eq!(edges.as_array().unwrap().len(), 2);
+        assert_eq!(edges[1]["in"]["label"], "b");
+        let overlay = call(&mut s, json!({"op":"addVertex","label":"a"}));
+        let added = call(
+            &mut s,
+            json!({"op":"addEdge","out":overlay["handle"],"in":vertices[0]["handle"],"label":"r"}),
+        );
+        for edge in [&edges[0], &edges[1], &added] {
+            assert!(s.resolve(&edge["handle"]).is_ok());
+        }
+        call(&mut s, json!({"op":"remove","owner":edges[0]["handle"]}));
+        assert!(s.resolve(&edges[0]["handle"]).is_err());
+        assert!(s.resolve(&edges[1]["handle"]).is_ok());
+        call(&mut s, json!({"op":"remove","owner":vertices[0]["handle"]}));
+        assert!(s.resolve(&vertices[0]["handle"]).is_err());
+        assert!(s.resolve(&added["handle"]).is_err());
+        call(&mut s, json!({"op":"rollback"}));
+        assert!(s.resolve(&vertices[0]["handle"]).is_ok());
+        assert!(s.resolve(&edges[0]["handle"]).is_ok());
+        assert!(s.resolve(&edges[1]["handle"]).is_ok());
+        assert!(s.resolve(&overlay["handle"]).is_err());
+        assert!(s.resolve(&added["handle"]).is_err());
+        assert_eq!(call(&mut s, json!({"op":"edges"})), edges);
     }
 
     #[test]
