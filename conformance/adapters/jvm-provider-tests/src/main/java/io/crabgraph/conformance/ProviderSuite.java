@@ -90,20 +90,25 @@ public final class ProviderSuite {
                     row.put("id",d.getClassName()+"#"+d.getMethodName());
                     row.put("source_sha256",hashes.get(d.getClassName()));
                     row.set("annotations", annotations(d));
-                    row.put("status","pass");
+                    row.put("status","running");
                     JsonNode mapping = mappings.get(d.getClassName()+"#"+d.getMethodName());
                     if (mapping != null) row.set("placeholder",mapping);
                     return row;
                 });
             }
-            @Override public void testStarted(Description d) { record(d); }
+            private void checkpoint() {
+                try { JSON.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), report); }
+                catch (Exception e) { throw new IllegalStateException(e); }
+            }
+            @Override public void testStarted(Description d) { record(d); checkpoint(); }
             @Override public void testFailure(Failure f) { record(f.getDescription()).put("status","fail").put("error",f.getTrace()); }
             @Override public void testAssumptionFailure(Failure f) { record(f.getDescription()).put("status","skipped").put("reason",f.getMessage()); }
             @Override public void testIgnored(Description d) { record(d).put("status","skipped").put("reason","JUnit @Ignore"); }
             @Override public void testFinished(Description d) {
-                System.err.println(record(d).get("status").asText()+" "+d);
-                try { JSON.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), report); }
-                catch (Exception e) { throw new IllegalStateException(e); }
+                ObjectNode row=record(d);
+                if (row.path("status").asText().equals("running")) row.put("status","pass");
+                System.err.println(row.get("status").asText()+" "+d);
+                checkpoint();
             }
         };
         for (Request request : requests) {
