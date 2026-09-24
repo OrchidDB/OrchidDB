@@ -1,5 +1,7 @@
 # Remaining Gremlin conformance work
 
+> **Status update (2026-09-24):** The integrated run now has 1,427 passes, zero failures/timeouts/adapter errors, 83 skips and one unsupported remote-lambda case. All 111 executable failures/timeouts below pass; all 23 fixture-blocked cases also pass. This document preserves the original diagnosis. See [verified remediation results](gremlin-remediation-results.md) for current status and remaining capability boundaries.
+
 ## Architectural changes first
 
 These changes address shared causes rather than adding one-off scenario handling. They are an implementation plan, not a claim that a rewrite is necessary for every failure. Extend the existing Graph IR and interpreter where possible; keep language-specific semantics from changing Cypher/SPARQL behavior.
