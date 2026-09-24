@@ -19,4 +19,18 @@ public class UpstreamLiteralTransportTest {
   assertTrue(map instanceof java.util.Map<?,?>);
   assertFalse(map instanceof java.util.Map.Entry<?,?>);
  }
+ @Test public void nativeCollectionKindsAndElementWidthsRemainDistinct() throws Exception {
+  String items="[{\"type\":\"int\",\"value\":1},{\"type\":\"long\",\"value\":1},{\"type\":\"int\",\"value\":1}]";
+  var set=UpstreamGremlin.nativeValue(UpstreamGremlin.json.readTree("{\"type\":\"set\",\"value\":"+items+"}"));
+  var list=UpstreamGremlin.nativeValue(UpstreamGremlin.json.readTree("{\"type\":\"list\",\"value\":"+items+"}"));
+  var bulk=UpstreamGremlin.nativeValue(UpstreamGremlin.json.readTree("{\"type\":\"bulkset\",\"value\":"+items+"}"));
+  assertTrue(set instanceof java.util.Set<?>);
+  assertEquals(java.util.Set.of(Integer.valueOf(1),Long.valueOf(1)),set);
+  assertEquals(java.util.List.of(Integer.valueOf(1),Long.valueOf(1),Integer.valueOf(1)),list);
+  assertTrue(bulk instanceof org.apache.tinkerpop.gremlin.process.traversal.step.util.BulkSet<?>);
+  assertEquals(2L,((org.apache.tinkerpop.gremlin.process.traversal.step.util.BulkSet<Object>)bulk).get(Integer.valueOf(1)));
+  var empty=UpstreamGremlin.nativeValue(UpstreamGremlin.json.readTree("{\"type\":\"set\",\"value\":[]}"));
+  assertEquals(java.util.Set.of(),empty);
+  assertFalse(empty instanceof java.util.List<?>);
+ }
 }

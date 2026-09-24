@@ -3,6 +3,35 @@
 import argparse,datetime,hashlib,json,os,platform,select,signal,subprocess,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];REPO=ROOT.parent
+def gremlin_capability(result):
+ """Describe observed exclusions without predicting outcomes or changing status."""
+ if result.get('status') not in ('skipped','unsupported'):return None
+ reason=result.get('error') or result.get('reason','')
+ categories=[
+  ('unsupported-feature: remote-lambda:', 'F18', 'remote-lambda', 'language-profile'),
+  ('excludes @GraphComputerOnly', 'S01', 'graph-computer', 'execution-profile'),
+  ('lambda as a parameter', 'S02', 'lambda-parameter', 'upstream-language'),
+  ('fixture has multi/meta-properties', 'S03', 'multi-meta-property-fixture', 'adapter'),
+  ('SQLg does not support the upstream CREW', 'S03', 'multi-meta-property-fixture', 'provider'),
+  ('assert the remotely written file', 'S04', 'remote-file-assertion', 'upstream-assertion'),
+  ('excludes @AllowNullPropertyValues', 'S05', 'null-property-values', 'execution-profile'),
+  ('Edge as a parameter', 'S06', 'edge-parameter', 'upstream-language'),
+  ('property identifiers and related assertions', 'S07', 'property-identifier-assertion', 'upstream-assertion'),
+  ('empty Set as a parameter', 'S08', 'empty-set-parameter', 'upstream-language'),
+  ('not supported by Gherkin because:', 'S09', 'gherkin-assertion', 'upstream-assertion'),
+  ('excludes @RemoteOnly', None, 'remote-only', 'execution-profile'),
+  ('Path as a parameter', None, 'path-parameter', 'upstream-language'),
+  ('Set as a parameter', None, 'set-parameter', 'upstream-language'),
+ ]
+ for text,work_item,capability,origin in categories:
+  if text in reason:
+   return {'name':capability,'origin':origin,**({'work_item':work_item} if work_item else {})}
+ return {'name':'unclassified','origin':'unknown'}
+
+def capability_summary(results):
+ from collections import Counter
+ return dict(Counter(capability['name'] for r in results if (capability:=gremlin_capability(r))))
+
 def crabgraph_binary():
  return Path(os.environ.get('CONFORMANCE_CRABGRAPH_BINARY',str(REPO/'target/debug/upstream'))).resolve()
 class Process:
@@ -22,7 +51,8 @@ class Process:
   self.log.close()
 class Gremlin:
  def __init__(self,engine):
-  d=ROOT/'adapters/sqlg';classpath=str(d/'target/classes')+os.pathsep+(d/'classpath.txt').read_text().strip()
+  d=ROOT/'adapters/sqlg';classpath=os.environ.get('CONFORMANCE_GREMLIN_CLASSPATH')
+  if not classpath:classpath=str(d/'target/classes')+os.pathsep+(d/'classpath.txt').read_text().strip()
   self.engine=engine;self.command=[os.environ.get('CONFORMANCE_JAVA','java'),'--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED','--add-opens=java.base/java.lang=ALL-UNNAMED','--add-opens=java.base/java.util=ALL-UNNAMED','--add-opens=java.base/java.lang.invoke=ALL-UNNAMED','-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'UpstreamGremlin',engine];self.process=None
  def run(self,case):
   if self.process is None or self.process.p.poll() is not None:self.process=Process(self.command,ROOT/f'upstream-{self.engine}-gremlin.log',True)
@@ -59,12 +89,18 @@ def main():
     try:result=adapter.run(case) if adapter else {'status':'not-applicable','reason':'No native interface for this suite in the compared product'}
     except TimeoutError as e:result={'status':'timeout','reason':str(e)}
     except Exception as e:result={'status':'adapter-error','reason':str(e)}
+    if args.suite=='tinkerpop':
+     capability=gremlin_capability(result)
+     if capability:result={**result,'capability':capability}
     result={'id':case['id'],'case_sha256':hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest(),'elapsed_ms':round((time.monotonic()-before)*1000,3),**result}
     results.append(result);f.write(json.dumps(result)+'\n');f.flush()
     if (i+1)%50==0:print(args.engine,args.suite,i+1,'/',len(cases),flush=True)
  finally:
   if adapter:adapter.close()
  content={'schema_version':3,'engine':args.engine,'suite':args.suite,'source':catalog['sources'][args.suite],'started_at':started,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'environment':{'system':platform.system(),'architecture':platform.machine(),'python':platform.python_version(),'logical_cpus':os.cpu_count()},'coverage':{'catalog_cases':len([c for c in catalog['cases'] if c['suite']==args.suite]),'recorded_cases':len(results),'filtered':bool(args.limit or args.filter)},'results':results}
+ if args.suite=='tinkerpop':
+  content['execution_profile']={'traversal_language':'gremlin-language','assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)','execution':'OLTP','remote':args.engine not in ('reference','sqlg')}
+  content['coverage']['excluded_capabilities']=capability_summary(results)
  if args.engine=='crabgraph':
   binary=crabgraph_binary();content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':True}
  else:content['build']={'version':{'sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
