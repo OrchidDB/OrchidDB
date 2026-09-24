@@ -940,6 +940,7 @@ fn civil_from_days(days_since_epoch: i64) -> Option<(i64, u32, u32)> {
 pub(crate) fn cast_graph_string(v:&Value,graph:&crate::ir::catalog::PropertyGraph,local:bool)->Value {
     if local {if let Value::List(items)=v{return Value::List(items.iter().map(|v|if *v==Value::Null{Value::Null}else{cast_graph_string(v,graph,false)}).collect())}}
     match v {
+        Value::Null => Value::Null,
         Value::Node{..}=>Value::String(format!("v[{}]",display_for_as_string(&graph.element_public_id(v)))),
         Value::Edge{rel_type,src_label,src_id,dst_label,dst_id,..}=>Value::String(format!("e[{}][{}-{}->{}]",display_for_as_string(&graph.element_public_id(v)),display_for_as_string(&graph.element_public_id(&Value::Node{label:src_label.clone(),id:*src_id})),rel_type,display_for_as_string(&graph.element_public_id(&Value::Node{label:dst_label.clone(),id:*dst_id})))),
         _=>cast_to_string(v),
