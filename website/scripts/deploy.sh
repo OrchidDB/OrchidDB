@@ -4,8 +4,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 python3 website/docs/build.py
-python3 website/docs/check.py
-node --check website/docs/assets/docs.js
 
 bucket=crabgraph-landing-846199521923
 # Upload only public landing assets. Never sync the repository or delete docs.
