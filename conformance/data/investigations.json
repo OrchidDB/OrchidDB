@@ -15,9 +15,9 @@
     "source": "https://tinkerpop.apache.org/docs/3.7.4/reference/#sum-step"
   },
   "gremlin.local": {
-    "state": "Reproduced against reference; root cause open",
-    "note": "TinkerGraph 3.7.4 returns two rows containing 3. SQLg 3.1.6 returns one row containing 6. The same Groovy query and dependencies are used by both adapters. Investigate local traversal boundaries and provider optimization.",
-    "source": "https://tinkerpop.apache.org/docs/3.7.4/reference/#local-step"
+    "state": "SQLg optimization divergence isolated",
+    "note": "The expected local sums are 3 and 3, corroborated by TinkerGraph 3.7.4. SQLg 3.1.6 returns one row containing 6. Disabling only SqlgLocalStepStrategy restores two rows containing 3 on the same graph and adapter. This isolates the observed divergence to that optimization path.",
+    "source": "/downloads/conformance/sqlg-investigation.json"
   },
   "gremlin.missing_order": {
     "state": "Documented provider difference",
