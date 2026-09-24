@@ -58,7 +58,7 @@ pub(super) fn predicate_to_expr_with_bindings(
     predicate: &Predicate,
     resolve_binding: &dyn Fn(&str) -> Option<IrExpr>,
 ) -> GremlinPlanResult<IrExpr> {
-    match predicate {
+    let expression = match predicate {
         Predicate::Compare { op, value } => {
             if matches!(value, GValue::Null) {
                 return Ok(match op {
@@ -246,7 +246,8 @@ pub(super) fn predicate_to_expr_with_bindings(
             let inner = predicate_to_expr_with_bindings(target, inner, resolve_binding)?;
             Ok(IrExpr::Not(Box::new(inner)))
         }
-    }
+    }?;
+    Ok(gremlin_comparisons(expression))
 }
 
 fn regex_to_expr(target: IrExpr, pattern: &str) -> IrExpr {
@@ -298,5 +299,35 @@ fn regex_to_expr(target: IrExpr, pattern: &str) -> IrExpr {
     IrExpr::Call {
         name: "regex_match".into(),
         args: vec![target, IrExpr::lit_str(pattern.to_string())],
+    }
+}
+
+// Calls retain Gremlin promotion across SQL boundaries: a backend must explicitly
+// support this semantic function before lowering it to a native comparison.
+fn gremlin_comparisons(expr: IrExpr) -> IrExpr {
+    match expr {
+        IrExpr::Binary { op, lhs, rhs } => {
+            let name = match op {
+                BinaryOp::Eq => "eq",
+                BinaryOp::Neq => "neq",
+                BinaryOp::Lt => "lt",
+                BinaryOp::Lte => "lte",
+                BinaryOp::Gt => "gt",
+                BinaryOp::Gte => "gte",
+                _ => {
+                    return IrExpr::Binary {
+                        op,
+                        lhs: Box::new(gremlin_comparisons(*lhs)),
+                        rhs: Box::new(gremlin_comparisons(*rhs)),
+                    };
+                }
+            };
+            IrExpr::Call {
+                name: "gremlin_compare".into(),
+                args: vec![IrExpr::lit_str(name), *lhs, *rhs],
+            }
+        }
+        IrExpr::Not(inner) => IrExpr::Not(Box::new(gremlin_comparisons(*inner))),
+        other => other,
     }
 }

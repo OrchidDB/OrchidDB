@@ -29,7 +29,7 @@ use crate::ir::policy::ResultForm;
 use crate::ir::value::Value;
 
 mod element_id;
-mod expr;
+pub(crate) mod expr;
 mod ops;
 mod output;
 mod run;

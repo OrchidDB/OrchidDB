@@ -104,6 +104,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("gremlin_id_token", [value]) => Ok(gremlin_user_id(graph, value)),
         ("gremlin_scan_order", [value]) => Ok(gremlin_scan_order(graph, value)),
         ("gremlin_order_key", [value]) => Ok(gremlin_order_key(graph, value)),
+        ("gremlin_compare", [Value::String(op), lhs, rhs]) => Ok(crate::ir::gremlin_semantics::predicate(op, lhs, rhs)),
         ("gremlin_within", [needle, candidates]) => {
             Ok(Value::Bool(gremlin_within(needle, candidates)))
         }
