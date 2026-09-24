@@ -1,6 +1,7 @@
-import unittest
+import unittest,tempfile
+from pathlib import Path
 from cypher import value,rows_equal,native_value,classified_error_matches
-from sparql import rows_equal as rdf_rows
+from sparql import rows_equal as rdf_rows,relocated_graph_name
 from bridge import property_type
 class AdapterTests(unittest.TestCase):
  def test_fixture_numeric_width(self):
@@ -54,6 +55,19 @@ class AdapterTests(unittest.TestCase):
   b=lambda x:{'type':'bnode','value':x}
   self.assertTrue(rdf_rows([[b('a')],[b('a')]],[[b('z')],[b('z')]],False))
   self.assertFalse(rdf_rows([[b('a')],[b('b')]],[[b('z')],[b('z')]],False))
+ def test_named_graph_fixture_relocation(self):
+  with tempfile.TemporaryDirectory() as folder:
+   base=Path(folder)/'new checkout';relative='sparql/sparql10/graph/data-g1.ttl';current=base/relative
+   current.parent.mkdir(parents=True);current.write_text('<#s> <https://example/p> <#o>.')
+   old=(Path('/old/checkout')/relative).as_uri()
+   self.assertEqual(relocated_graph_name(base,relative,old),current.absolute().as_uri())
+   for explicit in ['https://example/graph','urn:graph:one','file:///unrelated/data-g1.ttl',old+'#graph',old+'?version=1']:
+    self.assertEqual(relocated_graph_name(base,relative,explicit),explicit)
+   self.assertIsNone(relocated_graph_name(base,relative,None))
+   self.assertEqual(relocated_graph_name(base,'missing.ttl','file:///old/missing.ttl'),'file:///old/missing.ttl')
+   from rdflib import Graph
+   parsed=Graph().parse(current)
+   self.assertIn(current.absolute().as_uri()+'#s',[str(s) for s in parsed.subjects()])
  def test_rdf_literal_identity(self):
   term=lambda v,d:{'type':'literal','value':v,'datatype':d,'lang':None}
   self.assertFalse(rdf_rows([[term('1','integer')]],[[term('1','string')]],False))

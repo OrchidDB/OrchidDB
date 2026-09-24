@@ -1,6 +1,7 @@
 """W3C manifest adapter. Uses original data/query/result files, preserving RDF terms."""
 import io,json,re,time
 from pathlib import Path
+from urllib.parse import urlsplit,unquote
 import rdflib
 from rdflib import Graph,URIRef,BNode,Literal
 from rdflib.query import Result
@@ -10,6 +11,20 @@ from run import Process,ROOT,REPO,crabgraph_binary
 rdflib.NORMALIZE_LITERALS=False
 XSD='http://www.w3.org/2001/XMLSchema#'
 RS=rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/result-set#')
+def relocated_graph_name(base,filename,name):
+ """Rebase catalog file-derived graph names when the upstream checkout moves.
+
+ Only a file URI matching the complete relative fixture path is eligible.
+ Keep its lexical checkout path, matching RDFLib's base for fixture/result files.
+ Resolving symlinks here would give a different graph IRI from those files.
+ """
+ if not name or not filename:return name
+ uri=urlsplit(name);relative=Path(filename)
+ if uri.scheme!='file' or uri.netloc not in ('','localhost') or uri.query or uri.fragment:return name
+ if relative.is_absolute() or '..' in relative.parts:return name
+ if not unquote(uri.path).endswith('/'+relative.as_posix()):return name
+ current=Path(base)/relative
+ return current.absolute().as_uri() if current.is_file() else name
 def term(v):
  if v is None:return None
  if isinstance(v,URIRef):return {'type':'uri','value':str(v)}
@@ -74,6 +89,7 @@ class Sparql:
   quads=[]
   for filename,name in [(f,None) for f in case['data']]+[(r['file'],r['name']) for r in case['named']]:
    if not filename:return {'status':'adapter-error','reason':'Manifest graph fixture has no file'}
+   name=relocated_graph_name(base,filename,name)
    data=Graph().parse(base/filename)
    for triple in data:
     row=[name]
