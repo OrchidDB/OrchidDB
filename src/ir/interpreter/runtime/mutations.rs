@@ -32,24 +32,131 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
     match (name, args) {
         (
             "gremlin.mutation.merge_create",
-            [criteria, create, Value::Bool(edge), out, input, partition],
-        ) => merge_create(criteria, create, *edge, out, input, partition, graph),
-        ("gremlin.mutation.merge_update", [element, updates]) => {
+            [
+                criteria,
+                create,
+                Value::Bool(edge),
+                out,
+                input,
+                partition,
+                Value::Map(cardinalities),
+            ],
+        ) => merge_create(
+            criteria,
+            create,
+            *edge,
+            out,
+            input,
+            partition,
+            cardinalities,
+            graph,
+        ),
+        ("gremlin.mutation.merge_validate", [current, criteria, updates, Value::Bool(edge)]) => {
+            validate(&entries(criteria)?, *edge, false)?;
+            validate(&entries(updates)?, *edge, true)?;
+            Ok(current.clone())
+        }
+        ("gremlin.mutation.merge_guard", [current, Value::Bool(edge)]) => {
+            if matches!(
+                current,
+                Value::Node { .. } | Value::Edge { .. } | Value::VertexProperty { .. }
+            ) {
+                return Err(error(format!(
+                    "The incoming traverser for {} cannot be an Element",
+                    if *edge {
+                        "MergeEdgeStep"
+                    } else {
+                        "MergeVertexStep"
+                    }
+                )));
+            }
+            Ok(current.clone())
+        }
+        (
+            "gremlin.mutation.merge_update",
+            [
+                element,
+                updates,
+                Value::Map(cardinalities),
+                Value::String(default_cardinality),
+            ],
+        ) => {
             let map = entries(updates)?;
             validate(&map, matches!(element, Value::Edge { .. }), true)?;
             for (key, value) in map {
                 let Value::String(key) = key else {
                     unreachable!()
                 };
-                graph.set_property(element, &key, value)?;
+                if matches!(element, Value::Node { .. }) {
+                    let cardinality = match cardinalities.get(&key) {
+                        Some(Value::String(cardinality)) => cardinality.as_str(),
+                        None => default_cardinality.as_str(),
+                        _ => return Err(error("Invalid vertex property cardinality")),
+                    };
+                    graph.set_vertex_property(
+                        element,
+                        &key,
+                        value,
+                        parse_cardinality(cardinality)?,
+                        BTreeMap::new(),
+                    )?;
+                } else {
+                    graph.set_property(element, &key, value)?;
+                }
             }
             Ok(element.clone())
         }
         ("gremlin.mutation.add_vertex", [name, props]) => {
-            Ok(graph.insert_node(label(name)?, properties(props)?))
+            let element = graph.insert_node(label(name)?, properties(props)?);
+            graph.assign_generated_public_id(&element)?;
+            Ok(element)
         }
         ("gremlin.mutation.add_edge", [name, src, dst, props]) => {
-            Ok(graph.insert_edge(label(name)?, src, dst, properties(props)?)?)
+            let element = graph.insert_edge(label(name)?, src, dst, properties(props)?)?;
+            graph.assign_generated_public_id(&element)?;
+            Ok(element)
+        }
+        (
+            "gremlin.mutation.property_native",
+            [
+                target,
+                key,
+                value,
+                Value::String(cardinality),
+                Value::Map(meta),
+            ],
+        ) => {
+            if !meta.is_empty() && !matches!(target, Value::Node { .. }) {
+                return Err(error("Meta-properties require a vertex property"));
+            }
+            for key in meta.keys() {
+                public_key(key)?;
+            }
+            match key {
+                Value::Token(token) if token == "id" => {
+                    if !meta.is_empty() {
+                        return Err(error("Meta-properties require a vertex property"));
+                    }
+                    graph.set_element_public_id(target, value.clone())?;
+                }
+                Value::String(key) => {
+                    public_key(key)?;
+                    let cardinality = parse_cardinality(cardinality)?;
+                    if matches!(target, Value::Node { .. }) {
+                        graph.set_vertex_property(
+                            target,
+                            key,
+                            value.clone(),
+                            cardinality,
+                            meta.clone(),
+                        )?;
+                    } else {
+                        graph.set_property(target, key, value.clone())?;
+                    }
+                }
+                _ => return Err(error("Property key must be a String or T.id")),
+            }
+            Ok(target.clone())
         }
         ("gremlin.mutation.property", [target, Value::String(key), value]) => {
             if key.is_empty() {
@@ -76,7 +183,9 @@ fn entries(value: &Value) -> IrResult<Vec<(Value, Value)>> {
             .map(|(k, v)| (Value::String(k.clone()), v.clone()))
             .collect()),
         Value::TypedMap(entries) => Ok(entries.clone()),
-        _ => Err(error(format!("merge argument must be a Map, got {value:?}"))),
+        _ => Err(error(format!(
+            "merge argument must be a Map, got {value:?}"
+        ))),
     }
 }
 fn lookup<'a>(map: &'a [(Value, Value)], key: &Value) -> Option<&'a Value> {
@@ -106,6 +215,9 @@ fn validate(map: &[(Value, Value)], edge: bool, updates: bool) -> IrResult<()> {
             Value::Token(token) if token == "id" => {
                 if matches!(value, Value::Null) {
                     return Err(error("merge() does not allow null Map values"));
+                }
+                if matches!(value, Value::List(_) | Value::Map(_)) {
+                    return Err(error("Invalid element id"));
                 }
             }
             Value::Direction(direction) if edge && matches!(direction.as_str(), "IN" | "OUT") => {
@@ -142,7 +254,11 @@ fn endpoint(value: &Value, option: &Value, graph: &PropertyGraph) -> IrResult<Va
             Err(error("Vertex does not exist for merge endpoint"))
         }
         Value::Null => Err(error("Merge endpoint option did not resolve a vertex")),
-        value => super::graph::resolve_gremlin_vertex_reference(graph, value),
+        value => super::graph::resolve_gremlin_vertex_reference(graph, value).map_err(|_| {
+            error(format!(
+                "Vertex id could not be resolved from mergeE: {value:?}"
+            ))
+        }),
     }
 }
 pub(crate) fn matches(
@@ -157,6 +273,16 @@ pub(crate) fn matches(
     validate(&map, edge, false)?;
     for (key, expected) in map {
         let actual = match key {
+            Value::String(key) if matches!(element, Value::Node { .. }) => {
+                let found = graph.properties(element, &[key]).iter().any(|property| {
+                    matches!(property, Value::VertexProperty { value, .. }
+                        if value.three_valued_eq(&expected) == Some(true))
+                });
+                if !found {
+                    return Ok(false);
+                }
+                continue;
+            }
             Value::String(key) => super::graph::graph_element_property(graph, element, &key),
             Value::Token(key) if key == "id" => super::graph::gremlin_user_id(graph, element),
             Value::Token(key) if key == "label" => match element {
@@ -212,6 +338,7 @@ fn merge_create(
     out: &Value,
     input: &Value,
     partition: &Value,
+    cardinalities: &BTreeMap<String, Value>,
     graph: &PropertyGraph,
 ) -> IrResult<Value> {
     let mut map = entries(criteria)?;
@@ -220,7 +347,9 @@ fn merge_create(
     validate(&additions, edge, false)?;
     for (key, value) in additions {
         if let Some(previous) = lookup(&map, &key) {
-            if previous != &value {
+            if previous != &value
+                || matches!(&key, Value::String(key) if cardinalities.contains_key(key))
+            {
                 return Err(error(
                     "option(onCreate) cannot override values from merge() argument",
                 ));
@@ -229,8 +358,11 @@ fn merge_create(
             map.push((key, value));
         }
     }
-    if lookup(&map, &Value::Token("id".into())).is_some() {
-        return Err(error("Creating user-supplied element IDs is not supported"));
+    let public_id = lookup(&map, &Value::Token("id".into())).cloned();
+    if let Some(id) = &public_id {
+        if graph.find_element_by_public_id(id, edge).is_some() {
+            return Err(error(format!("Element with id {id:?} already exists")));
+        }
     }
     let name = lookup(&map, &Value::Token("label".into()))
         .map(label)
@@ -247,18 +379,33 @@ fn merge_create(
         })
         .collect();
     props.extend(properties(partition)?);
-    if edge {
+    let element = if edge {
         let src = lookup(&map, &Value::Direction("OUT".into()))
             .ok_or_else(|| error("Out Vertex not specified"))?;
         let dst = lookup(&map, &Value::Direction("IN".into()))
             .ok_or_else(|| error("In Vertex not specified"))?;
-        Ok(graph.insert_edge(
+        graph.insert_edge(
             name,
             &endpoint(src, out, graph)?,
             &endpoint(dst, input, graph)?,
             props,
-        )?)
+        )?
     } else {
-        Ok(graph.insert_node(name, props))
+        graph.insert_node(name, props)
+    };
+    graph.assign_generated_public_id(&element)?;
+    if let Some(id) = public_id {
+        graph.set_element_public_id(&element, id)?;
+    }
+    Ok(element)
+}
+
+fn parse_cardinality(cardinality: &str) -> IrResult<crate::ir::catalog::Cardinality> {
+    use crate::ir::catalog::Cardinality;
+    match cardinality {
+        "single" => Ok(Cardinality::Single),
+        "list" => Ok(Cardinality::List),
+        "set" => Ok(Cardinality::Set),
+        _ => Err(error("Unknown vertex property cardinality")),
     }
 }

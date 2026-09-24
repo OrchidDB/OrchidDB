@@ -3,18 +3,13 @@ use super::context::CURRENT;
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::{BinaryOp, IrExpr};
 use crate::ir::plan::LabelExpr;
-use crate::ir::plan::{BindKind, CreateNode, Node, SetMode, SetPropertyItem};
+use crate::ir::plan::{BindKind, Node, SetMode, SetPropertyItem};
 use crate::ir::policy::PropertyMissing;
 use crate::language::gremlin::ast::MergeVertexMap;
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
 use crate::language::gremlin::semantics::GValue;
 
 fn validate(map: &MergeVertexMap) -> GremlinPlanResult<()> {
-    if map.id.is_some() {
-        return Err(GremlinPlanError::Unsupported(
-            "mergeV user-supplied T.id requires an element identity allocator".into(),
-        ));
-    }
     match map.label.as_ref() {
         Some(GValue::Null) => {
             return Err(GremlinPlanError::Parse(
@@ -59,6 +54,35 @@ pub(super) fn lower_merge_vertex(
     lo: &mut super::context::Lowerer,
     ctx: &super::context::TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    // Public IDs use the same runtime path as traversal-valued merge maps.
+    // In particular, onCreate conflicts must be checked before ID allocation.
+    if criteria.is_some_and(|map| map.id.is_some())
+        || on_create
+            .and_then(|map| map.as_ref())
+            .is_some_and(|map| map.id.is_some())
+    {
+        use crate::language::gremlin::ast::MutationArgument;
+        let criteria =
+            MutationArgument::Literal(criteria.map(|map| map.literal()).unwrap_or(GValue::Null));
+        let mut options = std::collections::BTreeMap::new();
+        for (key, value) in [("onCreate", on_create), ("onMatch", on_match)] {
+            if let Some(value) = value {
+                if let Some(map) = value.as_ref() {
+                    add_cardinality_options(&mut options, key, map);
+                }
+                options.insert(
+                    key.into(),
+                    MutationArgument::Literal(
+                        value
+                            .as_ref()
+                            .map(|map| map.literal())
+                            .unwrap_or(GValue::Null),
+                    ),
+                );
+            }
+        }
+        return lower_dynamic_merge(input, false, &criteria, &options, lo, ctx, true);
+    }
     for map in criteria
         .into_iter()
         .chain(on_create.and_then(|m| m.as_ref()))
@@ -90,16 +114,16 @@ pub(super) fn lower_merge_vertex(
                 label: label.clone(),
             });
         }
-        for (key, value) in &criteria.properties {
-            conditions.push(IrExpr::Binary {
-                op: BinaryOp::Eq,
-                lhs: Box::new(IrExpr::property(
-                    CURRENT,
-                    key,
-                    PropertyMissing::NullOnMissing,
-                )),
-                rhs: Box::new(gvalue_to_expr(value)?),
-            });
+        if !criteria.properties.is_empty() {
+            conditions.push(call(
+                "gremlin_merge_matches",
+                vec![
+                    IrExpr::Binding(CURRENT.into()),
+                    gvalue_to_expr(&criteria.literal())?,
+                    IrExpr::Lit(crate::ir::expr::Lit::Null),
+                    IrExpr::Lit(crate::ir::expr::Lit::Null),
+                ],
+            ));
         }
         if !conditions.is_empty() {
             node = Node::GraphFilter {
@@ -113,21 +137,25 @@ pub(super) fn lower_merge_vertex(
                     "option(onMatch) cannot update element tokens".into(),
                 ));
             }
-            node = Node::GraphSetProperty {
-                items: updates
-                    .properties
-                    .iter()
-                    .map(|(key, value)| {
-                        Ok(SetPropertyItem {
-                            target: IrExpr::Binding(CURRENT.into()),
-                            key: key.clone(),
-                            mode: SetMode::Property,
-                            value: gvalue_to_expr(value)?,
-                        })
-                    })
-                    .collect::<GremlinPlanResult<Vec<_>>>()?,
-                input: node.boxed(),
-            };
+            for (key, value) in &updates.properties {
+                let cardinality = updates
+                    .cardinalities
+                    .get(key)
+                    .or(updates.default_cardinality.as_ref())
+                    .map(String::as_str)
+                    .unwrap_or("list");
+                node = super::mutations::write_call(
+                    node,
+                    "gremlin.mutation.property_native",
+                    vec![
+                        IrExpr::Binding(CURRENT.into()),
+                        gvalue_to_expr(&GValue::String(key.clone()))?,
+                        gvalue_to_expr(value)?,
+                        gvalue_to_expr(&GValue::String(cardinality.into()))?,
+                        gvalue_to_expr(&GValue::Map(Default::default()))?,
+                    ],
+                );
+            }
         }
         node
     } else {
@@ -148,7 +176,9 @@ pub(super) fn lower_merge_vertex(
                 }
                 for (key, value) in &create.properties {
                     if merged.properties.get(key).is_some_and(|previous| {
-                        previous != value || create.single_properties.contains(key)
+                        previous != value
+                            || create.cardinalities.contains_key(key)
+                            || create.single_properties.contains(key)
                     }) {
                         return Err(GremlinPlanError::Parse(
                             "option(onCreate) cannot override values from merge() argument".into(),
@@ -164,19 +194,16 @@ pub(super) fn lower_merge_vertex(
                 Some(GValue::String(label)) => label,
                 _ => "vertex".into(),
             };
-            Node::GraphCreate {
-                graph: "default".into(),
-                nodes: vec![CreateNode {
-                    bind: Some(CURRENT.into()),
-                    label,
-                    properties: Some(gvalue_to_expr(&GValue::Map(merged.properties))?),
-                }],
-                edges: vec![],
-                input: Node::GraphCorrelate {
+            super::mutations::write_call(
+                Node::GraphCorrelate {
                     bindings: vec![CURRENT.into()],
-                }
-                .boxed(),
-            }
+                },
+                "gremlin.mutation.add_vertex",
+                vec![
+                    gvalue_to_expr(&GValue::String(label))?,
+                    gvalue_to_expr(&GValue::Map(merged.properties))?,
+                ],
+            )
         }
     };
     Ok(Node::GraphMerge {
@@ -449,6 +476,23 @@ pub(super) fn lower_dynamic_merge(
         endpoint_exprs.push(IrExpr::Binding(binding.clone()));
         bindings.push(binding);
     }
+    // TinkerPop validates a constant onMatch map before consuming the search
+    // iterator, including when that iterator is empty. Traversal options remain
+    // lazy: their values and effects are evaluated only for matched elements.
+    let literal_match = match options.get("onMatch") {
+        Some(MutationArgument::Literal(value)) => gvalue_to_expr(value)?,
+        _ => IrExpr::Lit(crate::ir::expr::Lit::Null),
+    };
+    input = write_call(
+        input,
+        "gremlin.mutation.merge_validate",
+        vec![
+            IrExpr::Binding(CURRENT.into()),
+            IrExpr::Binding(criteria_bind.clone()),
+            literal_match,
+            IrExpr::lit_bool(edge),
+        ],
+    );
     let correlate = Node::GraphCorrelate {
         bindings: bindings.clone(),
     };
@@ -514,11 +558,31 @@ pub(super) fn lower_dynamic_merge(
                 input: matching.boxed(),
             };
         }
+        if !start && !matches!(value, MutationArgument::Literal(_)) {
+            matching = write_call(
+                matching,
+                "gremlin.mutation.merge_guard",
+                vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_bool(edge)],
+            );
+        }
         let (next, value) = argument(matching, value, lo, ctx)?;
         matching = write_call(
             next,
             "gremlin.mutation.merge_update",
-            vec![IrExpr::Binding(matched), value],
+            vec![
+                IrExpr::Binding(matched),
+                value,
+                cardinality_option_expr(
+                    options,
+                    "onMatchCardinalities",
+                    GValue::Map(Default::default()),
+                )?,
+                cardinality_option_expr(
+                    options,
+                    "onMatchCardinality",
+                    GValue::String("list".into()),
+                )?,
+            ],
         );
     }
     let (create_input, create_value) = if let Some(value) = options.get("onCreate") {
@@ -537,6 +601,11 @@ pub(super) fn lower_dynamic_merge(
             endpoint_exprs[0].clone(),
             endpoint_exprs[1].clone(),
             partition,
+            cardinality_option_expr(
+                options,
+                "onCreateCardinalities",
+                GValue::Map(Default::default()),
+            )?,
         ],
     );
     Ok(Node::GraphMerge {
@@ -562,6 +631,9 @@ pub(super) fn lower_merge_edge(
     let mut options = std::collections::BTreeMap::new();
     for (key, value) in [("onCreate", on_create), ("onMatch", on_match)] {
         if let Some(value) = value {
+            if let Some(map) = value.as_ref() {
+                add_cardinality_options(&mut options, key, map);
+            }
             options.insert(
                 key.into(),
                 MutationArgument::Literal(
@@ -571,4 +643,48 @@ pub(super) fn lower_merge_edge(
         }
     }
     lower_dynamic_merge(input, true, &criteria, &options, lo, ctx, start)
+}
+
+fn add_cardinality_options(
+    options: &mut std::collections::BTreeMap<
+        String,
+        crate::language::gremlin::ast::MutationArgument,
+    >,
+    option: &str,
+    map: &MergeVertexMap,
+) {
+    use crate::language::gremlin::ast::MutationArgument;
+    if !map.cardinalities.is_empty() {
+        options.insert(
+            format!("{option}Cardinalities"),
+            MutationArgument::Literal(GValue::Map(
+                map.cardinalities
+                    .iter()
+                    .map(|(key, cardinality)| (key.clone(), GValue::String(cardinality.clone())))
+                    .collect(),
+            )),
+        );
+    }
+    if let Some(cardinality) = &map.default_cardinality {
+        options.insert(
+            format!("{option}Cardinality"),
+            MutationArgument::Literal(GValue::String(cardinality.clone())),
+        );
+    }
+}
+
+fn cardinality_option_expr(
+    options: &std::collections::BTreeMap<String, crate::language::gremlin::ast::MutationArgument>,
+    key: &str,
+    default: GValue,
+) -> GremlinPlanResult<IrExpr> {
+    match options.get(key) {
+        Some(crate::language::gremlin::ast::MutationArgument::Literal(value)) => {
+            gvalue_to_expr(value)
+        }
+        None => gvalue_to_expr(&default),
+        _ => Err(GremlinPlanError::Parse(
+            "Merge cardinality metadata must be literal".into(),
+        )),
+    }
 }
