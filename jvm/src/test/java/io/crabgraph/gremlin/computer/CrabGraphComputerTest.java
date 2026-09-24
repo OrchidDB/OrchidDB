@@ -219,6 +219,29 @@ public class CrabGraphComputerTest {
         }
     }
 
+    @Test public void originalPublicationReservesExplicitIdsBeforeGeneratedIds() throws Exception {
+        Vertex source = vertex("source");
+        source.property(VertexProperty.Cardinality.single, "source-tag", "preserved", T.id, 43L);
+        ComputerResult result = computer().program(new CountingProgram() {
+            @Override public Set<VertexComputeKey> getVertexComputeKeys() {
+                Set<VertexComputeKey> keys = new HashSet<>(super.getVertexComputeKeys());
+                keys.add(VertexComputeKey.of("explicit", false));
+                return keys;
+            }
+            @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                super.execute(vertex, messenger, memory);
+                vertex.property(VertexProperty.Cardinality.single, "explicit", 42L, T.id, 44L);
+            }
+        }).result(GraphComputer.ResultGraph.ORIGINAL).persist(GraphComputer.Persist.VERTEX_PROPERTIES)
+                .submit().get(20, TimeUnit.SECONDS);
+        assertSame(graph, result.graph());
+        assertEquals(44L, source.property("explicit").id());
+        assertEquals(42L, source.<Long>value("explicit").longValue());
+        assertEquals(1L, source.<Long>value("computed").longValue());
+        assertNotEquals(source.property("explicit").id(), source.property("computed").id());
+        assertEquals("preserved", source.value("source-tag"));
+    }
+
     @Test public void graphFilterRestrictsExecutionAndNewResultGraph() throws Exception {
         Vertex a = vertex("a"), b = vertex("b"), c = vertex("c");
         a.property("keep", true); b.property("keep", true); c.property("keep", false);
