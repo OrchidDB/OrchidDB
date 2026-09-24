@@ -103,10 +103,18 @@ public final class ProviderSuite {
                 try { JSON.writerWithDefaultPrettyPrinter().writeValue(Path.of(args[2]).toFile(), report); }
                 catch (Exception e) { throw new IllegalStateException(e); }
             }
-            @Override public void testStarted(Description d) { record(d); checkpoint(); }
+            @Override public void testStarted(Description d) {
+                // Parameterized runners can expose the same description for
+                // distinct invocations. Preserve every execution separately.
+                active.remove(d);
+                record(d); checkpoint();
+            }
             @Override public void testFailure(Failure f) { record(f.getDescription()).put("status","fail").put("error",f.getTrace()); }
             @Override public void testAssumptionFailure(Failure f) { record(f.getDescription()).put("status","skipped").put("reason",f.getMessage()); }
-            @Override public void testIgnored(Description d) { record(d).put("status","skipped").put("reason","JUnit @Ignore"); }
+            @Override public void testIgnored(Description d) {
+                active.remove(d);
+                record(d).put("status","skipped").put("reason","JUnit @Ignore");
+            }
             @Override public void testFinished(Description d) {
                 ObjectNode row=record(d);
                 if (row.path("status").asText().equals("running")) row.put("status","pass");
