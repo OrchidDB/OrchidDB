@@ -64,6 +64,7 @@ final class CrabSession implements AutoCloseable {
             } catch(InterruptedException repeated) { /* Keep draining the already-submitted operation. */ }
         }
     }
+    boolean isAlive() { return !closed&&process.isAlive(); }
     void abort() {
         closed=true; process.destroyForcibly();
         replies.offer(new EOFException("Native graph aborted"));

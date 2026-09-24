@@ -32,6 +32,12 @@ public final class CrabGraph implements Graph {
     private final NativeTransaction transaction = new NativeTransaction();
     private final org.apache.tinkerpop.gremlin.structure.service.ServiceRegistry services=CrabServices.create(this);
     private int bulkLoadDepth;
+    private int atomicMutationDepth;
+    private final int adjacencyCacheSize=Math.max(0,Integer.getInteger("crabgraph.native.adjacencyCacheSize",4096));
+    private final Map<Object,Object> adjacencyCache=Collections.synchronizedMap(
+        new LinkedHashMap<Object,Object>(128,0.75f,true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<Object,Object> eldest) { return size()>adjacencyCacheSize; }
+        });
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
 
@@ -133,6 +139,7 @@ public final class CrabGraph implements Graph {
     /** Native savepoint preserves the surrounding caller transaction on failure. */
     public void atomicMutation(Runnable action) {
         lease.lock();
+        atomicMutationDepth++;
         try {
             transaction.readWrite(); Object id=call(fields("op","savepoint"));
             try { action.run(); call(fields("op","release","id",id)); }
@@ -142,10 +149,43 @@ public final class CrabGraph implements Graph {
                 finally { if(interrupted) Thread.currentThread().interrupt(); }
                 throw failure;
             }
-        } finally { lease.unlock(); }
+        } finally { atomicMutationDepth--; lease.unlock(); }
     }
     private Object call(Map<String,Object> request) {
-        lease.lock(); try { return session.call(request); } finally { lease.unlock(); }
+        lease.lock();
+        try {
+            if(closed) throw new IllegalStateException("Graph is closed");
+            if(Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Native request cancelled before submission");
+            if(!session.isAlive()) throw new IllegalStateException("Native graph session is closed or disconnected");
+            String op=(String)request.get("op");
+            boolean read=op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties")||op.equals("begin")||op.equals("hello");
+            if(!read) adjacencyCache.clear();
+            boolean cache=op.equals("adjacent")&&atomicMutationDepth==0&&adjacencyCacheSize>0;
+            if(cache) {
+                Object hit=adjacencyCache.get(request);
+                if(hit!=null) return hit;
+            }
+            Object value=session.call(request);
+            if(cache&&!closed) {
+                value=immutableRecord(value);
+                adjacencyCache.put(immutableRecord(request),value);
+            }
+            return value;
+        } catch(RuntimeException|Error failure) { adjacencyCache.clear(); throw failure; }
+        finally { lease.unlock(); }
+    }
+    private static Object immutableRecord(Object value) {
+        if(value instanceof Map) {
+            Map<Object,Object> copy=new LinkedHashMap<>();
+            ((Map<?,?>)value).forEach((key,item)->copy.put(key,immutableRecord(item)));
+            return Collections.unmodifiableMap(copy);
+        }
+        if(value instanceof List) {
+            List<Object> copy=new ArrayList<>();
+            for(Object item:(List<?>)value) copy.add(immutableRecord(item));
+            return Collections.unmodifiableList(copy);
+        }
+        return value;
     }
     Object request(String op,Object... values) {
         if(closed) throw new IllegalStateException("Graph is closed");
@@ -242,7 +282,7 @@ public final class CrabGraph implements Graph {
         return type.cast(computer);
     }
     /** Cancel pending I/O and discard this session. Safe to call from another thread. */
-    public void abort() { closed=true; session.abort(); services.close(); releaseRuntime(); }
+    public void abort() { closed=true; adjacencyCache.clear(); session.abort(); services.close(); releaseRuntime(); }
     public void abortFamily() {
         List<CrabGraph> members;
         synchronized(runtime) { runtime.closed=true; members=new ArrayList<>(runtime.members); }
@@ -259,7 +299,7 @@ public final class CrabGraph implements Graph {
     @Override public void close() {
         if(closed) return;
         try { if(transaction.isOpen()) transaction.rollback(); }
-        finally { closed=true; session.close(); services.close(); releaseRuntime(); }
+        finally { closed=true; adjacencyCache.clear(); session.close(); services.close(); releaseRuntime(); }
     }
     private final class NativeTransaction extends AbstractThreadLocalTransaction {
         private boolean open;
