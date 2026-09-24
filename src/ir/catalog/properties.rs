@@ -18,6 +18,25 @@ pub(super) struct VertexPropertyRecord {
 }
 
 impl PropertyGraph {
+    /// Select Gremlin's null-valued-property feature. Disabled by default for
+    /// compatibility with providers that interpret null assignments as removal.
+    /// Stored records keep their presence independently of this write policy.
+    pub fn enable_null_property_values(&self, enabled: bool) {
+        self.overlay.borrow_mut().allow_null_property_values = enabled;
+        // Include the provider setting in the next delta for existing entities.
+        let mut pending = self.pending.borrow_mut();
+        for label in self.labels() {
+            for id in self.node_ids(&label).unwrap_or_default() { pending.nodes.insert((label.clone(), id)); }
+        }
+        for label in self.rel_types() {
+            for id in self.edge_ids(&label) { pending.edges.insert((label.clone(), id)); }
+        }
+    }
+
+    pub fn supports_null_property_values(&self) -> bool {
+        self.overlay.borrow().allow_null_property_values
+    }
+
     /// Materialize a legacy scalar property exactly once. A list-valued column
     /// remains one property; cardinality is represented only by record count.
     fn ensure_vertex_property(&self, owner: &Value, key: &str) {
@@ -95,6 +114,9 @@ impl PropertyGraph {
                 out
             }
             Value::Edge { rel_type, id, .. } => {
+                if !self.overlay.borrow().edge_is_live(rel_type, *id) {
+                    return vec![];
+                }
                 let keys = if keys.is_empty() {
                     self.edge_property_keys(rel_type)
                 } else {
@@ -104,7 +126,9 @@ impl PropertyGraph {
                     .filter(|k| !k.starts_with("__") && k != "id")
                     .filter_map(|key| {
                         let value = self.edge_property(rel_type, *id, &key);
-                        (value != Value::Null).then(|| Value::Property {
+                        let present_null = self.overlay.borrow().edge_null_properties
+                            .get(&(rel_type.clone(), *id)).is_some_and(|keys| keys.contains(&key));
+                        (value != Value::Null || present_null).then(|| Value::Property {
                             owner: Box::new(owner.clone()),
                             key,
                             value: Box::new(value),
@@ -145,6 +169,29 @@ impl PropertyGraph {
         }
     }
 
+    /// Gremlin writes honor the configured null-valued-property feature.
+    /// Scalar-language writes use `set_property`, where null removes a property.
+    pub fn set_gremlin_property(&self, target: &Value, key: &str, value: Value) -> CatalogResult<()> {
+        match target {
+            Value::Node { .. } => {
+                self.set_vertex_property(target, key, value, Cardinality::Single, BTreeMap::new())?;
+            }
+            Value::VertexProperty { .. } => self.set_meta_property(target, key, value)?,
+            Value::Edge { rel_type, id, .. } => {
+                let is_null = value == Value::Null && self.supports_null_property_values();
+                self.set_property_scalar(target, key, value)?;
+                let mut overlay = self.overlay.borrow_mut();
+                if is_null && overlay.edge_is_live(rel_type, *id) {
+                    overlay.edge_null_properties.entry((rel_type.clone(), *id))
+                        .or_default().insert(key.into());
+                    note_key(&mut overlay.override_edge_keys, rel_type, key);
+                }
+            }
+            _ => return Err(CatalogError::Schema("Property requires an element".into())),
+        }
+        Ok(())
+    }
+
     pub fn set_vertex_property(
         &self,
         owner: &Value,
@@ -163,6 +210,7 @@ impl PropertyGraph {
         }
         self.ensure_vertex_property(owner, key);
         let address = (label.clone(), *id);
+        let allow_null = self.supports_null_property_values();
         let mut ov = self.overlay.borrow_mut();
         if cardinality == Cardinality::Set {
             let member_key = crate::ir::value::set_member_key(&value);
@@ -172,7 +220,10 @@ impl PropertyGraph {
                 .and_then(|m| m.get_mut(key))
                 .and_then(|rs| rs.iter_mut().find(|r| crate::ir::value::set_member_key(&r.value) == member_key))
             {
-                record.meta.extend(meta);
+                for (key, value) in meta {
+                    if value == Value::Null && !allow_null { record.meta.remove(&key); }
+                    else { record.meta.insert(key, value); }
+                }
                 let result = Value::VertexProperty {
                     id: record.id,
                     owner: Box::new(owner.clone()),
@@ -194,12 +245,12 @@ impl PropertyGraph {
         if cardinality == Cardinality::Single {
             records.clear();
         }
-        if value != Value::Null {
+        if value != Value::Null || allow_null {
             records.push(VertexPropertyRecord {
                 id: property_id,
                 value: value.clone(),
                 public_id: None,
-                meta,
+                meta: meta.into_iter().filter(|(_, value)| allow_null || value != &Value::Null).collect(),
             });
         }
         let scalar = records
@@ -209,6 +260,8 @@ impl PropertyGraph {
         drop(ov);
         // Keep the scalar catalog view for Cypher and ordinary property filters.
         self.set_property_scalar(owner, key, scalar)?;
+        // A null record still contributes a key to property enumeration.
+        note_key(&mut self.overlay.borrow_mut().override_node_keys, label, key);
         self.pending.borrow_mut().nodes.insert(address);
         Ok(Value::VertexProperty {
             id: property_id,
@@ -238,6 +291,7 @@ impl PropertyGraph {
             return Err(CatalogError::Schema("Invalid vertex property owner".into()));
         };
         let address = (label.clone(), *vertex_id);
+        let allow_null = self.supports_null_property_values();
         let mut ov = self.overlay.borrow_mut();
         let record = ov
             .vertex_properties
@@ -245,7 +299,7 @@ impl PropertyGraph {
             .and_then(|m| m.get_mut(property_key))
             .and_then(|rs| rs.iter_mut().find(|r| r.id == *id))
             .ok_or_else(|| CatalogError::Schema("Vertex property no longer exists".into()))?;
-        if value == Value::Null {
+        if value == Value::Null && !allow_null {
             record.meta.remove(key);
         } else {
             record.meta.insert(key.into(), value);
@@ -256,7 +310,22 @@ impl PropertyGraph {
 
     pub fn remove_property(&self, target: &Value) -> CatalogResult<()> {
         match target {
-            Value::Property { owner, key, .. } => self.set_property(owner, key, Value::Null),
+            Value::Property { owner, key, .. } => {
+                if let Value::VertexProperty { id, owner: vertex, key: property_key, .. } = owner.as_ref() {
+                    if let Value::Node { label, id: vertex_id } = vertex.as_ref() {
+                        let address = (label.clone(), *vertex_id);
+                        if let Some(record) = self.overlay.borrow_mut().vertex_properties
+                            .get_mut(&address).and_then(|m| m.get_mut(property_key))
+                            .and_then(|records| records.iter_mut().find(|r| r.id == *id)) {
+                            record.meta.remove(key);
+                        }
+                        self.pending.borrow_mut().nodes.insert(address);
+                    }
+                    Ok(())
+                } else {
+                    self.set_property(owner, key, Value::Null)
+                }
+            },
             Value::VertexProperty { id, owner, key, .. } => {
                 let Value::Node {
                     label,
@@ -629,6 +698,40 @@ impl GraphOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn null_presence_incremental_replay_and_removal() {
+        let graph = PropertyGraph::new();
+        let vertex = graph.insert_node("node", BTreeMap::new());
+        let edge = graph.insert_edge("edge", &vertex, &vertex, BTreeMap::new()).unwrap();
+        let checkpoint = graph.snapshot_encode().unwrap();
+        graph.enable_null_property_values(true);
+        let property = graph.set_vertex_property(&vertex, "null", Value::Null,
+            Cardinality::Single, [("meta".into(), Value::Null)].into()).unwrap();
+        graph.set_gremlin_property(&edge, "null", Value::Null).unwrap();
+        let pending = graph.pending.borrow().clone();
+        let records = graph.incremental_records(&pending.nodes, &pending.edges).unwrap();
+        let mut restored = PropertyGraph::snapshot_decode(&checkpoint).unwrap();
+        restored.apply_incremental_records(&records).unwrap();
+        assert!(restored.supports_null_property_values());
+        assert_eq!(restored.properties(&vertex, &[]), vec![property.clone()]);
+        assert_eq!(restored.properties(&property, &[]).len(), 1);
+        assert_eq!(restored.properties(&edge, &[]).len(), 1);
+        let edge_property = restored.properties(&edge, &[])[0].clone();
+        let meta = restored.properties(&property, &[])[0].clone();
+        restored.remove_property(&edge_property).unwrap();
+        restored.remove_property(&meta).unwrap();
+        restored.remove_property(&property).unwrap();
+        let pending = restored.pending.borrow().clone();
+        let records = restored.incremental_records(&pending.nodes, &pending.edges).unwrap();
+        let mut again = graph.clone();
+        again.apply_incremental_records(&records).unwrap();
+        assert!(again.properties(&vertex, &[]).is_empty());
+        assert!(again.properties(&edge, &[]).is_empty());
+        assert!(again.properties(&property, &[]).is_empty());
+        assert_eq!(graph.properties(&vertex, &[]), vec![property]);
+        assert_eq!(graph.properties(&edge, &[]), vec![edge_property]);
+    }
+
     #[test]
     fn native_metadata_incremental_replay_and_checkpoint_rollback() {
         let graph = PropertyGraph::new();
