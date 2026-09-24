@@ -99,9 +99,9 @@ public class ProviderSupplemental {
         var source=graph.traversal().withStrategies(
             org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.SeedStrategy.build().seed(71).create());
         Map<Object,Object> first=source.V().group().by("group").by(
-            org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.values("n").sample(1)).next();
+            org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.values("n").sample(1).fold()).next();
         Map<Object,Object> second=source.V().group().by("group").by(
-            org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.values("n").sample(1)).next();
+            org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.values("n").sample(1).fold()).next();
         assertEquals(32,first.size()); assertEquals(first,second);
         for(Object value:first.values()) {
             List<?> selected=(List<?>)value;
@@ -116,12 +116,16 @@ public class ProviderSupplemental {
             a.property(VertexProperty.Cardinality.list,"tag","one",T.id,"p1","year",2021);
             a.property(VertexProperty.Cardinality.list,"tag","two",T.id,"p2");
         }
-        Path path=Files.createTempFile("crabgraph-provider-roundtrip-", "."+format);
+        String extension=switch(format) { case "graphson" -> ".json"; case "gryo" -> ".kryo"; default -> ".xml"; };
+        assertEquals(format.equals("graphml")?0L:2L,(long)graph.traversal().V("a").properties("tag").count().next());
+        Path path=Files.createTempFile("crabgraph-provider-roundtrip-", extension);
         try {
             var traversal=graph.traversal().io(path.toString());
             if (explicit) traversal.with(IO.writer,format);
             traversal.write().iterate();
-            try (Graph read=TinkerGraph.open(); InputStream input=Files.newInputStream(path)) {
+            var configuration=new org.apache.commons.configuration2.BaseConfiguration();
+            configuration.setProperty("gremlin.tinkergraph.defaultVertexPropertyCardinality","list");
+            try (Graph read=TinkerGraph.open(configuration); InputStream input=Files.newInputStream(path)) {
                 GraphReader reader=switch(format) {
                     case "graphson" -> GraphSONReader.build().mapper(GraphSONMapper.build().version(GraphSONVersion.V3_0).create()).create();
                     case "gryo" -> GryoReader.build().create();
