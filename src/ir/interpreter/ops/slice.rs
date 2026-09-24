@@ -10,19 +10,36 @@ use super::super::expr::eval;
 use super::super::{InterpretError, IrResult, Row};
 
 pub(crate) fn slice_op(slice: &crate::ir::plan::Slice, rows: Vec<Row>) -> IrResult<Vec<Row>> {
-    let mut out: Vec<Row> = rows;
+    // Offsets and bounds count logical traversers. Splitting a bulk row
+    // preserves its bindings and sack; it does not materialize each copy.
     if let Some(tail) = slice.tail {
-        let len = out.len();
-        let start = len.saturating_sub(tail as usize);
-        out = out.split_off(start);
+        let mut out = slice_bulk(rows.into_iter().rev(), 0, Some(tail));
+        out.reverse();
         return Ok(out);
     }
-    let mut iter = out.into_iter().skip(slice.offset as usize);
-    let collected: Vec<Row> = match slice.fetch {
-        Some(fetch) => iter.by_ref().take(fetch as usize).collect(),
-        None => iter.collect(),
-    };
-    Ok(collected)
+    Ok(slice_bulk(rows.into_iter(), slice.offset, slice.fetch))
+}
+
+fn slice_bulk(rows: impl Iterator<Item = Row>, mut skip: u64, fetch: Option<u64>) -> Vec<Row> {
+    let mut remaining = fetch.unwrap_or(u64::MAX);
+    let mut out = Vec::new();
+    for mut row in rows {
+        if remaining == 0 {
+            break;
+        }
+        if skip >= row.bulk {
+            skip -= row.bulk;
+            continue;
+        }
+        row.bulk -= skip;
+        skip = 0;
+        row.bulk = row.bulk.min(remaining);
+        remaining -= row.bulk;
+        if row.bulk > 0 {
+            out.push(row);
+        }
+    }
+    out
 }
 
 pub(crate) fn slice_expr_op(
@@ -72,5 +89,74 @@ fn evaluate_slice_bound(name: &str, expr: &IrExpr, graph: &PropertyGraph) -> IrR
             "{name} expression must evaluate to a non-negative integer, got {}",
             other.type_name()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::plan::Slice;
+    fn rows() -> Vec<Row> {
+        [(1, 3), (2, 5), (3, 2)]
+            .into_iter()
+            .map(|(value, bulk)| {
+                let mut row = Row::new().with("current", Value::Int(value));
+                row.bulk = bulk;
+                row
+            })
+            .collect()
+    }
+    #[test]
+    fn range_splits_both_boundary_traversers() {
+        let out = slice_op(
+            &Slice {
+                offset: 2,
+                fetch: Some(4),
+                tail: None,
+            },
+            rows(),
+        )
+        .unwrap();
+        assert_eq!(out.iter().map(|row| row.bulk).collect::<Vec<_>>(), [1, 3]);
+        assert_eq!(out[0].bindings["current"], Value::Int(1));
+        assert_eq!(out[1].bindings["current"], Value::Int(2));
+    }
+    #[test]
+    fn tail_splits_bulk_preserving_order_and_empty_bounds() {
+        let out = slice_op(
+            &Slice {
+                offset: 0,
+                fetch: None,
+                tail: Some(4),
+            },
+            rows(),
+        )
+        .unwrap();
+        assert_eq!(out.iter().map(|row| row.bulk).collect::<Vec<_>>(), [2, 2]);
+        assert_eq!(out[0].bindings["current"], Value::Int(2));
+        assert!(
+            slice_op(
+                &Slice {
+                    offset: 0,
+                    fetch: Some(0),
+                    tail: None
+                },
+                rows()
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            slice_op(
+                &Slice {
+                    offset: 11,
+                    fetch: None,
+                    tail: None
+                },
+                rows()
+            )
+            .unwrap()
+            .is_empty()
+        );
     }
 }

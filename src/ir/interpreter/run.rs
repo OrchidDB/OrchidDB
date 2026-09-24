@@ -35,6 +35,9 @@ use super::{InterpretError, IrResult, Row};
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
     pub(crate) random_steps: BTreeMap<String, super::ops::sample::JavaRandom>,
+    pub(crate) side_effect_reducers: BTreeMap<String, String>,
+    pub(crate) side_effects: BTreeMap<String, Value>,
+    pub(crate) group_side_effects: BTreeMap<String, super::ops::aggregate::GroupAccumulator>,
     pub(crate) group_counts: BTreeMap<String, Vec<(Value, u64)>>,
     pub(crate) step_state: Vec<StepStateFrame>,
     step_limit: Option<u64>,
@@ -49,6 +52,87 @@ pub(crate) struct StepStateFrame {
 }
 
 impl ExecutionContext {
+    /// This map belongs to one execution, never a row or a repeat frame.
+    /// A registered seed is installed once, even when the writer sees no rows.
+    pub(crate) fn write_side_effect(
+        &mut self, label: &str, value_input: &Node, value: &crate::ir::expr::IrExpr,
+        seed: &Value, reducer: &str, eager: bool, rows: Vec<Row>, graph: &PropertyGraph,
+    ) -> IrResult<Vec<Row>> {
+        if reducer == "register" {
+            self.side_effects.entry(label.to_owned()).or_insert_with(|| seed.clone());
+            return Ok(rows);
+        }
+        self.side_effect_reducers.entry(label.to_owned()).or_insert_with(|| reducer.to_owned());
+        self.push_step_state_frame();
+        let projected = super::ops::repeat::run_body_with_frontier(value_input, rows.clone(), graph, self);
+        self.pop_step_state_frame();
+        let projected = projected?;
+        let mut values = Vec::new();
+        for row in &projected {
+            let value = eval(value, row, graph)?;
+            values.extend(std::iter::repeat_n(value, row.bulk as usize));
+        }
+        let state = self.side_effects.entry(label.to_owned()).or_insert_with(|| seed.clone());
+        if reducer == "assign" {
+            if eager && !values.is_empty() { *state = Value::BulkSet(values); }
+            else if let Some(last) = values.pop() { *state = Value::BulkSet(vec![last]); }
+        } else if reducer == "collect" || reducer == "addAll" || reducer == "tree" {
+            if let Some(existing) = crate::ir::value::as_gremlin_set(state) {
+                let mut items = existing.to_vec();
+                for value in values { if !items.contains(&value) { items.push(value); } }
+                *state = crate::ir::value::gremlin_set(items);
+            } else {
+                match state {
+                    Value::BulkSet(items) | Value::List(items) => items.extend(values),
+                    _ => for value in values {
+                        *state = super::runtime::reductions::apply_sack_op(state, &value, reducer);
+                    },
+                }
+            }
+        } else {
+            for value in values {
+                *state = super::runtime::reductions::apply_sack_op(state, &value, reducer);
+            }
+        }
+        Ok(rows)
+    }
+
+    pub(crate) fn side_effect_value(&mut self, label: &str, _graph: &PropertyGraph) -> IrResult<Value> {
+        if let Some(value) = super::ops::aggregate::group_side_effect_value(self, label, _graph)? { return Ok(value); }
+        if let Some(value) = self.side_effects.get(label) {
+            if self.side_effect_reducers.get(label).is_some_and(|r| r == "tree") {
+                let paths = match value { Value::BulkSet(items) => Value::List(items.clone()), other => other.clone() };
+                return super::runtime::eval_call("tree_value", vec![paths], _graph);
+            }
+            return Ok(value.clone());
+        }
+        Ok(group_count_map_value(self, label))
+    }
+
+    pub(crate) fn read_side_effect(&mut self, label: &str, rows: Vec<Row>, graph: &PropertyGraph) -> IrResult<Vec<Row>> {
+        let value = self.side_effect_value(label, graph)?;
+        Ok(rows.into_iter().map(|mut row| {
+            // Scope lookup resolves current map keys before traversal side effects.
+            let selected = match row.bindings.get("current") {
+                Some(Value::Map(map)) => map.get(label),
+                Some(Value::TypedMap(entries)) => entries.iter().find_map(|(key, value)|
+                    matches!(key, Value::String(key) if key == label).then_some(value)),
+                _ => None,
+            }.cloned().unwrap_or_else(|| value.clone());
+            row.bindings.insert("current".into(), selected);
+            row
+        }).collect())
+    }
+
+    pub(crate) fn cap_side_effects(&mut self, labels: &[String], graph: &PropertyGraph) -> IrResult<Vec<Row>> {
+        let value = if labels.len() == 1 { self.side_effect_value(&labels[0], graph)? } else {
+            let mut entries = BTreeMap::new();
+            for label in labels { entries.insert(label.clone(), self.side_effect_value(label, graph)?); }
+            Value::Map(entries)
+        };
+        Ok(vec![Row::new().with("current", value)])
+    }
+
     const STEP_LIMIT_ENV: &'static str = "NEW_GRAPH_INTERPRETER_MAX_STEPS";
 
     pub(crate) fn charge(&mut self, units: u64) -> IrResult<()> {
@@ -104,6 +188,9 @@ impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
             random_steps: BTreeMap::new(),
+            side_effect_reducers: BTreeMap::new(),
+            side_effects: BTreeMap::new(),
+            group_side_effects: BTreeMap::new(),
             group_counts: BTreeMap::new(),
             step_state: Vec::new(),
             step_limit: std::env::var(Self::STEP_LIMIT_ENV)
@@ -193,6 +280,7 @@ pub(crate) fn run_with_context(
             loop_name,
             times,
             emit,
+            until_first,
             until,
             until_traversal,
             path,
@@ -211,6 +299,7 @@ pub(crate) fn run_with_context(
                 emit,
                 prefix_predicate.as_ref(),
                 prefix_traversal.as_deref(),
+                *until_first,
                 until.as_ref(),
                 until_traversal.as_deref(),
                 path.as_deref(),
@@ -301,6 +390,14 @@ pub(crate) fn run_with_context(
             sort_op(keys, rows, graph)
         }
         Node::GraphSlice { slice, input } => {
+            if let Node::GraphSideEffect { label, value_input, value, seed, reducer, eager: false, input: source } = input.as_ref() {
+                if let Some(fetch) = slice.fetch.filter(|_| slice.tail.is_none()) {
+                    let rows = run_with_context(source, graph, ctx)?;
+                    let consumed = slice_op(&crate::ir::plan::Slice { offset: 0, fetch: Some(slice.offset.saturating_add(fetch)), tail: None }, rows)?;
+                    let rows = ctx.write_side_effect(label, value_input, value, seed, reducer, false, consumed, graph)?;
+                    return slice_op(slice, rows);
+                }
+            }
             let rows = run_with_context(input, graph, ctx)?;
             slice_op(slice, rows)
         }
@@ -446,7 +543,12 @@ pub(crate) fn run_with_context(
             input,
         } => {
             let rows = run_with_context(input, graph, ctx)?;
-            group_map_op(key, value, output, rows, graph)
+            group_map_op(key, value, output, rows, graph, ctx)
+        }
+        Node::GraphGroupSideEffect { label, key, value, key_input, input } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            super::ops::aggregate::group_side_effect_write(ctx, label, key, value, key_input, &rows, graph)?;
+            Ok(rows)
         }
         Node::GraphGroupCountSideEffect { label, key, input } => {
             let rows = run_with_context(input, graph, ctx)?;
@@ -459,19 +561,17 @@ pub(crate) fn run_with_context(
             }
             Ok(rows)
         }
+        Node::GraphSideEffect { label, value_input, value, seed, reducer, eager, input } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            ctx.write_side_effect(label, value_input, value, seed, reducer, *eager, rows, graph)
+        }
+        Node::GraphReadSideEffect { label, input } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            ctx.read_side_effect(label, rows, graph)
+        }
         Node::GraphCap { labels, input } => {
             let _ = run_with_context(input, graph, ctx)?;
-            if labels.len() == 1 {
-                Ok(vec![
-                    Row::new().with("current", group_count_map_value(ctx, &labels[0])),
-                ])
-            } else {
-                let mut map = BTreeMap::new();
-                for label in labels {
-                    map.insert(label.clone(), group_count_map_value(ctx, label));
-                }
-                Ok(vec![Row::new().with("current", Value::Map(map))])
-            }
+            ctx.cap_side_effects(labels, graph)
         }
         Node::GraphShortestPath {
             source,

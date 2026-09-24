@@ -677,7 +677,7 @@ impl LoweringVisitor {
                 let Some(predicate) = self.pop_predicate() else {
                     return;
                 };
-                self.steps.push(Step::Is { predicate });
+                self.steps.push(Step::WhereString { label: "current".into(), predicate });
             }
             TraversalMethod_whereContextAll::TraversalMethod_where_TraversalContext(c) => {
                 let inner = c

@@ -63,6 +63,7 @@ mod project;
 mod property_object;
 mod reduce;
 mod repeat;
+mod label_liveness;
 mod select;
 mod side_effects;
 mod slice;
@@ -83,9 +84,12 @@ pub fn lower_traversal(traversal: &Traversal) -> GremlinPlanResult<GraphPlan> {
     let mut lo = Lowerer::new();
     let mut steps = traversal.steps.iter().peekable();
 
+    register_side_effects(&traversal.steps, &mut lo);
     consume_leading_config(&mut steps, &mut lo);
     let remaining = steps.cloned().collect::<Vec<_>>();
 
+    lo.bulk_safe = permits_path_elision(&traversal.steps);
+    label_liveness::configure(&traversal.steps, &mut lo);
     let ctx = lo.root_context();
     let node = lo.enter_context(ctx, |lo, ctx| {
         lower_source_traversal_with_context(&remaining, lo, ctx)
@@ -144,8 +148,14 @@ where
                 lo.productive_by = true;
                 steps.next();
             }
-            Step::WithSack { initial, .. } => {
+            Step::WithoutPathRetraction => { steps.next(); }
+            Step::WithBulk(enabled) => {
+                lo.bulk_enabled = *enabled;
+                steps.next();
+            }
+            Step::WithSack { initial, op } => {
                 lo.sack_initial = Some(initial.clone());
+                lo.sack_merge = *op;
                 steps.next();
             }
             Step::WithSideEffect { label, initial, op } => {
@@ -160,6 +170,128 @@ where
                 steps.next();
             }
             _ => break,
+        }
+    }
+}
+
+/// Prove that no step can observe the complete path. Unknown steps retain it.
+/// Labels still participate in traverser identity and are never discarded.
+fn permits_path_elision(steps: &[Step]) -> bool {
+    let mut steps = steps.iter().peekable();
+    while let Some(step) = steps.next() {
+        let safe = match step {
+            Step::Group | Step::GroupAs(_) | Step::GroupCount | Step::GroupCountAs(_) => {
+                // A group can discard incoming path history only when both
+                // its key and value traversals depend on the current object.
+                // Default fold values remain excluded because order matters.
+                let key_safe = if matches!(steps.peek(), Some(Step::By(_))) {
+                    let Some(Step::By(key)) = steps.next() else { unreachable!() };
+                    key.traversal.as_ref().is_none_or(|body| {
+                        body.iter().all(group::current_only_projection)
+                    })
+                } else {
+                    true
+                };
+                let value_safe = if matches!(step, Step::GroupCount | Step::GroupCountAs(_)) {
+                    true
+                } else if let Some(Step::By(value)) = steps.next() {
+                    value.traversal.as_ref().is_some_and(|body| {
+                        group::current_only_reduction(body)
+                    })
+                } else {
+                    false
+                };
+                key_safe && value_safe
+            }
+            Step::V { .. } | Step::E { .. } | Step::Inject(_) | Step::ExpandVertex { .. }
+            | Step::ExpandEdge { .. } | Step::EndpointVertex { .. } | Step::OtherVertex
+            | Step::Has { .. } | Step::HasLabel(_) | Step::HasId { .. } | Step::HasIdPredicate { .. }
+            | Step::HasNot { .. } | Step::Identity | Step::Is { .. } | Step::Values(_)
+            | Step::Id | Step::Label | Step::As(_) | Step::Select(_, _) | Step::SelectMulti(_, _)
+            | Step::Count | Step::Dedup | Step::Times(_) | Step::Loops(_)
+            | Step::Limit(_) | Step::Range { .. } | Step::Skip(_) | Step::Tail(_)
+            | Step::WithBulk(_) | Step::WithSack { .. } | Step::Sack | Step::SackOp(_)
+            | Step::Barrier | Step::NormSackBarrier | Step::Constant(_) | Step::Cap(_) => true,
+            Step::Repeat(_, body) | Step::Until(body) | Step::Local(body) => permits_path_elision(body),
+            Step::Emit(body) => body.as_ref().is_none_or(|body| permits_path_elision(body)),
+            _ => false,
+        };
+        if !safe { return false; }
+    }
+    true
+}
+
+/// Register shared names before lowering any reader (including readers that
+/// precede the writer inside repeat). Registration belongs to the traversal.
+fn register_side_effects(steps: &[Step], lo: &mut Lowerer) {
+    use crate::language::gremlin::ast::{CallArg, MutationArgument, OptionKey, StringOp};
+
+    fn register_argument(argument: &MutationArgument, lo: &mut Lowerer) {
+        if let MutationArgument::Traversal(sub) = argument {
+            register_side_effects(sub, lo);
+        }
+    }
+
+    for step in steps {
+        match step {
+            Step::AggregateAs(label) | Step::AggregateLocal(label) | Step::Tree(Some(label)) => {
+                lo.side_effect_bags.entry(label.clone()).or_insert_with(|| label.clone());
+            }
+            Step::GroupAs(label) | Step::GroupCountAs(label) => { lo.group_count_side_effects.insert(label.clone()); }
+            Step::By(spec) => if let Some(sub) = &spec.traversal { register_side_effects(sub, lo); },
+            Step::Union(branches) | Step::Coalesce(branches) | Step::Match(branches) => {
+                for sub in branches { register_side_effects(sub, lo); }
+            }
+            Step::BranchOptions { dispatch, options, .. } => {
+                register_side_effects(dispatch, lo);
+                for option in options {
+                    if let OptionKey::Traversal(key) = &option.key {
+                        register_side_effects(key, lo);
+                    }
+                    register_side_effects(&option.traversal, lo);
+                }
+            }
+            Step::ChoosePredicate { then, else_branch, .. } => {
+                register_side_effects(then, lo);
+                if let Some(sub) = else_branch { register_side_effects(sub, lo); }
+            }
+            Step::ChooseTraversal { condition, then, else_branch } => {
+                register_side_effects(condition, lo); register_side_effects(then, lo);
+                if let Some(sub) = else_branch { register_side_effects(sub, lo); }
+            }
+            Step::Local(sub) | Step::Map(sub) | Step::FlatMap(sub) | Step::SideEffect(sub)
+            | Step::WhereTraversal(sub) | Step::NotTraversal(sub) | Step::Repeat(_, sub)
+            | Step::Until(sub) | Step::ListOpTraversal(_, sub) | Step::Emit(Some(sub))
+            | Step::PropertyTraversal { traversal: sub, .. }
+            | Step::WithOption { traversal: Some(sub), .. }
+            | Step::StringOp(StringOp::ConcatTraversal(sub)) => register_side_effects(sub, lo),
+            Step::WithStrategy { vertex_filter, edge_filter, vertex_property_filter, .. } => {
+                for sub in [vertex_filter, edge_filter, vertex_property_filter].into_iter().flatten() {
+                    register_side_effects(sub, lo);
+                }
+            }
+            Step::Call(_, arguments) => {
+                for argument in arguments {
+                    if let CallArg::Traversal(sub) = argument {
+                        register_side_effects(sub, lo);
+                    }
+                }
+            }
+            Step::DynamicMerge { criteria, options, .. } => {
+                register_argument(criteria, lo);
+                for argument in options.values() { register_argument(argument, lo); }
+            }
+            Step::AddDynamicV { label } => register_argument(label, lo),
+            Step::AddDynamicE { label, from, to } => {
+                register_argument(label, lo);
+                for argument in [from, to].into_iter().flatten() { register_argument(argument, lo); }
+            }
+            Step::PropertyDynamic { key, value } => {
+                register_argument(key, lo);
+                register_argument(value, lo);
+            }
+            Step::LocalScoped(inner) => register_side_effects(std::slice::from_ref(inner.as_ref()), lo),
+            _ => {}
         }
     }
 }

@@ -17,6 +17,21 @@ pub(super) fn first_correlate_bindings(node: &Node) -> Option<Vec<String>> {
 pub(super) fn node_children(node: &Node) -> Vec<&Node> {
     use Node::*;
     match node {
+        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
+        GraphGroupSideEffect { input, key_input, value, .. } => {
+            let mut nodes = vec![input.as_ref(), key_input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_ref());
+            }
+            nodes
+        }
+        GraphGroupMap { input, value, .. } => {
+            let mut nodes = vec![input.as_ref()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
+                nodes.push(traversal.as_ref());
+            }
+            nodes
+        }
         GraphMerge {
             input,
             match_arm,
@@ -36,8 +51,8 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
-        | GraphGroupMap { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
@@ -59,6 +74,7 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphUnion { left, right, .. }
         | GraphSparqlMinus { left, right, .. } => vec![left, right],
         GraphRepeat {
+            emit,
             seed,
             body,
             until_traversal,
@@ -71,6 +87,9 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
             }
             if let Some(node) = prefix_traversal {
                 out.push(node);
+            }
+            if let crate::ir::plan::EmitMode::AfterEachIfTraversal(traversal) = emit {
+                out.push(traversal.as_ref());
             }
             out
         }
@@ -118,7 +137,10 @@ pub(super) fn unsupported_node_name(node: &Node) -> &'static str {
         Node::GraphSetProperty { .. } => "GraphSetProperty",
         Node::GraphDelete { .. } => "GraphDelete",
         Node::GraphGroupMap { .. } => "GraphGroupMap",
+        Node::GraphGroupSideEffect { .. } => "GraphGroupSideEffect",
         Node::GraphGroupCountSideEffect { .. } => "GraphGroupCountSideEffect",
+        Node::GraphSideEffect { .. } => "GraphSideEffect",
+        Node::GraphReadSideEffect { .. } => "GraphReadSideEffect",
         Node::GraphCap { .. } => "GraphCap",
         Node::GraphShortestPath { .. } => "GraphShortestPath",
         Node::GraphSliceExpr { .. } => "GraphSliceExpr",

@@ -264,8 +264,20 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
             writeln!(buf, "GraphGroupMap(output=[{output}])").ok();
             write_node(buf, input, depth + 1);
         }
+        Node::GraphGroupSideEffect { label, input, .. } => {
+            writeln!(buf, "GraphGroupSideEffect(label=[{label}])").ok();
+            write_node(buf, input, depth + 1);
+        }
         Node::GraphGroupCountSideEffect { label, input, .. } => {
             writeln!(buf, "GraphGroupCountSideEffect(label=[{label}])").ok();
+            write_node(buf, input, depth + 1);
+        }
+        Node::GraphSideEffect { label, reducer, input, .. } => {
+            writeln!(buf, "GraphSideEffect(label=[{label}], reducer=[{reducer}])").ok();
+            write_node(buf, input, depth + 1);
+        }
+        Node::GraphReadSideEffect { label, input } => {
+            writeln!(buf, "GraphReadSideEffect(label=[{label}])").ok();
             write_node(buf, input, depth + 1);
         }
         Node::GraphCap { labels, input } => {

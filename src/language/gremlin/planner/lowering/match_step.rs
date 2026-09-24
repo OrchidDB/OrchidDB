@@ -1,9 +1,7 @@
 //! `match(t1, t2, ...)` — labelled traversal patterns sharing one
 //! match environment.
 //!
-//! A correct implementation would run a join over the labelled
-//! bindings declared by each pattern. As a first cut we fold the
-//! patterns into a chain of `Apply Inner` against `current` so each
+//! Patterns form a chain of correlated `Apply Inner` joins so each
 //! pattern's bindings flow into the row stream visible to downstream
 //! `select(...)`. Repeated label declarations across patterns are
 //! handled by the join semantics of nested Apply: a pattern that
@@ -39,6 +37,25 @@ pub(super) fn lower_match(
         if let Some(Step::As(label)) = pattern.first() {
             if seen_labels.iter().any(|seen| seen == label) {
                 pattern.insert(0, Step::Select(label.clone(), Pop::Last));
+            } else {
+                // A reducing barrier clears its child row's bindings. Bind
+                // the pattern's start in the outer match environment so it
+                // remains available to subsequent patterns after count/mean.
+                acc = Node::GraphProject {
+                    mode: ProjectMode::PreserveVisible,
+                    items: vec![ProjectionItem {
+                        alias: label.clone(),
+                        expr: IrExpr::Case {
+                            arms: vec![(
+                                IrExpr::IsBound(label.clone()),
+                                IrExpr::Binding(label.clone()),
+                            )],
+                            otherwise: Some(Box::new(IrExpr::Binding(CURRENT.into()))),
+                        },
+                    }],
+                    error_policy: ProjectErrorPolicy::PropagateError,
+                    input: acc.boxed(),
+                };
             }
         }
         let probe = lower_child_traversal(&pattern, lo, ctx, ChildTraversalKind::MatchPattern)?;

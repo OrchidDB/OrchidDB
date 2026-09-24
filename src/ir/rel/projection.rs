@@ -56,6 +56,21 @@ impl<'a> LoweringContext<'a> {
         {
             return Ok(Vec::new());
         }
+        if self.language == Language::Gremlin && matches!(expr, IrExpr::Case { .. }) {
+            fn has_element_result(expr: &IrExpr, plan: &LogicalPlan) -> bool {
+                match expr {
+                    IrExpr::Binding(binding) => has_binding_shape(plan, binding).is_some(),
+                    IrExpr::Case { arms, otherwise } => arms.iter().any(|(_, value)| has_element_result(value, plan))
+                        || otherwise.as_deref().is_some_and(|value| has_element_result(value, plan)),
+                    _ => false,
+                }
+            }
+            if has_element_result(expr, plan) {
+                return Err(RelError::Unsupported(
+                    "conditional Gremlin element projection requires native values".into(),
+                ));
+            }
+        }
         if let IrExpr::Binding(binding) = expr {
             if has_binding_shape(plan, binding).is_some() {
                 return duplicate_binding_projection_only(plan, binding, alias);

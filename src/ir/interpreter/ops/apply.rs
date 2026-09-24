@@ -25,7 +25,13 @@ pub(crate) fn apply_op(
     let mut out = Vec::new();
     for outer_row in outer {
         ctx.charge(1)?;
-        let inner_rows = run_with_outer(right, &outer_row, graph, ctx)?;
+        // A correlated child runs on a split representing one traverser.
+        // Parent bulk weights the returned results, not child reducers or
+        // side effects (TraversalUtil.prepare resets the split bulk to one).
+        let mut probe = outer_row.clone();
+        probe.bulk = 1;
+        let inner_rows = run_with_outer(right, &probe, graph, ctx)?;
+
         ctx.charge(inner_rows.len() as u64)?;
         match kind {
             ApplyKind::Inner => {
@@ -37,11 +43,24 @@ pub(crate) fn apply_op(
                         if binding == "current" && !outputs.iter().any(|output| output == binding) {
                             continue;
                         }
-                        if binding == "__path"
+                        if (binding == "__path" || binding == "__path_labels" || binding == "__sack")
                             || binding.starts_with("__gremlin_select_history_")
                         {
                             if outputs.iter().any(|output| output == "current") {
                                 row.bindings.insert(binding.clone(), value.clone());
+                            }
+                            continue;
+                        }
+                        // A path processor clears both the label and its
+                        // history. This removes child scope, rather than
+                        // imposing a null equality join on the parent.
+                        // Productive null labels retain a list history.
+                        let retracted = matches!(value, Value::Null)
+                            && inner.bindings.get(&format!("__gremlin_select_history_{binding}"))
+                                == Some(&Value::Null);
+                        if retracted {
+                            if outputs.iter().any(|output| output == "current") {
+                                row.bindings.insert(binding.clone(), Value::Null);
                             }
                             continue;
                         }
@@ -67,6 +86,9 @@ pub(crate) fn apply_op(
                         row.bindings.insert(binding.clone(), value.clone());
                     }
                     if compatible {
+                        row.bulk = outer_row.bulk.checked_mul(inner.bulk).ok_or_else(|| {
+                            InterpretError::Runtime("correlated traverser bulk overflow".into())
+                        })?;
                         ctx.charge(1)?;
                         out.push(row);
                     }
@@ -88,6 +110,9 @@ pub(crate) fn apply_op(
                     for inner in inner_rows {
                         ctx.charge(1)?;
                         let mut row = outer_row.clone();
+                        row.bulk = outer_row.bulk.checked_mul(inner.bulk).ok_or_else(|| {
+                            InterpretError::Runtime("correlated traverser bulk overflow".into())
+                        })?;
                         for binding in outputs {
                             row.bindings.insert(
                                 binding.clone(),
@@ -96,7 +121,7 @@ pub(crate) fn apply_op(
                         }
                         for (binding, value) in &inner.bindings {
                             if outputs.iter().any(|output| output == "current")
-                                && (binding == "__path"
+                                && ((binding == "__path" || binding == "__path_labels" || binding == "__sack")
                                     || binding.starts_with("__gremlin_select_history_")
                                     || inner.bindings.contains_key(&format!(
                                         "__gremlin_select_history_{binding}"

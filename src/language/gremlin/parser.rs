@@ -417,7 +417,10 @@ mod tests {
                 vertex_property_filter: _,
                 check_adjacent_vertices,
             } => {
-                assert!(*check_adjacent_vertices);
+                assert!(
+                    !check_adjacent_vertices,
+                    "PartitionStrategy filters an edge by its own partition, independently of its endpoints"
+                );
                 assert!(matches!(
                     vertex_filter.as_deref(),
                     Some([Step::Has {
