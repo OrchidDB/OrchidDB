@@ -26,6 +26,7 @@ public final class CrabGraph implements Graph {
     private final String executable;
     private final CrabSession session;
     private final boolean persistent;
+    private final boolean committedReadsSupported;
     private RuntimeValues runtime = new RuntimeValues();
     
     private Configuration configuration = new BaseConfiguration();
@@ -69,7 +70,10 @@ public final class CrabGraph implements Graph {
             if(runtime.closed) { session.abort(); throw new IllegalStateException("Graph family is closed"); }
             runtime.members.add(this);
         }
-        try { session.call(fields("op","hello","version",1)); } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
+        try {
+            Object hello=session.call(fields("op","hello","version",1));
+            committedReadsSupported=hello instanceof Map&&Boolean.TRUE.equals(((Map<?,?>)hello).get("committedReads"));
+        } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
         configuration.setProperty(Graph.GRAPH,CrabGraph.class.getName());
         configuration.setProperty(DEFAULT_CARDINALITY,defaultCardinality.name());
         configuration.setProperty(VERTEX_ID_MANAGER,vertexIdManager.name());
@@ -195,8 +199,11 @@ public final class CrabGraph implements Graph {
             if(Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Native request cancelled before submission");
             if(!session.isAlive()) throw new IllegalStateException("Native graph session is closed or disconnected");
             String op=(String)request.get("op");
-            if(op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties"))
-                transaction.awaitOwner();
+            boolean committedRead=isTraversalRead(op)&&transaction.writeOwner!=null&&transaction.writeOwner!=Thread.currentThread();
+            if(committedRead) {
+                if(!committedReadsSupported) throw new UnsupportedOperationException("Native store lacks committed snapshot reads; use a compatible crabgraph-jvm-store binary");
+                request.put("committed",true);
+            }
             if(op.equals("addVertex")||op.equals("addEdge")||op.equals("setVertexProperty")||op.equals("setProperty")||op.equals("remove")||op.equals("savepoint"))
                 transaction.claimWrite();
             boolean read=op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties")||op.equals("begin")||op.equals("hello");
@@ -205,7 +212,7 @@ public final class CrabGraph implements Graph {
                 IdManager manager=op.equals("addVertex")?vertexIdManager:edgeIdManager;
                 if(manager!=IdManager.ANY) request.put("id",nextNumericId(manager));
             }
-            Map<Object,Object> cache=atomicMutationDepth!=0?null:
+            Map<Object,Object> cache=atomicMutationDepth!=0||committedRead?null:
                 op.equals("adjacent")&&adjacencyCacheSize>0?adjacencyCache:
                 op.equals("properties")&&propertyCacheSize>0?propertyCache:null;
             if(cache!=null) {
@@ -252,11 +259,24 @@ public final class CrabGraph implements Graph {
         }
         return value;
     }
+    private static boolean isTraversalRead(String op) {
+        return op.equals("vertices")||op.equals("edges")||op.equals("adjacent")||op.equals("properties");
+    }
     Object request(String op,Object... values) {
         if(closed) throw new IllegalStateException("Graph is closed");
-        transaction.readWrite();
-        Map<String,Object> request=fields(values); request.put("op",op);
-        return call(request);
+        try {
+            transaction.readWrite();
+            Map<String,Object> request=fields(values); request.put("op",op);
+            return call(request);
+        } catch(java.util.concurrent.CancellationException cancelled) {
+            if(isTraversalRead(op)&&Thread.currentThread().isInterrupted()) {
+                org.apache.tinkerpop.gremlin.process.traversal.util.TraversalInterruptedException interrupted=
+                    new org.apache.tinkerpop.gremlin.process.traversal.util.TraversalInterruptedException();
+                interrupted.initCause(cancelled);
+                throw interrupted;
+            }
+            throw cancelled;
+        }
     }
     @SuppressWarnings("unchecked")
     <E> E decode(Object value) { return (E)CrabCodec.decode(value,this); }
