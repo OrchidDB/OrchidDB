@@ -13,7 +13,7 @@ def execution_path(case):
         parameter = re.fullmatch(r'using the parameter \w+ defined as (.+)', text)
         if parameter:
             value = json.loads(parameter[1])
-            if value.startswith('c[') or (value.startswith('e[') and value.endswith(']')) or value == 's[]':
+            if value.startswith('c[') or re.search(r'(?:^|[\[,])e\[[^\]]*\](?!\.id)', value) or value == 's[]':
                 return 'crabgraph-jvm'
         if text in ('the traversal of', 'the graph initializer of'):
             # Ignore quoted property values when identifying inline JVM callbacks.
