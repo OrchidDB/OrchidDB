@@ -98,7 +98,9 @@ public final class CrabJvmExecutor implements AutoCloseable {
                         try { if (graph.tx().isOpen()) graph.tx().rollback(); }
                         catch (Throwable rollback) { failure.addSuppressed(rollback); abort(); }
                     }
-                    result.completeExceptionally(failure);
+                    // Session termination owns completion of pending requests. In particular,
+                    // a deadline must become visible only after the session is invalidated.
+                    if (!closed.get()) result.completeExceptionally(failure);
                 }
             });
         } catch (RejectedExecutionException failure) {
@@ -106,8 +108,7 @@ public final class CrabJvmExecutor implements AutoCloseable {
         }
         ScheduledFuture<?> deadline = deadlines.schedule(() -> {
             if (!result.isDone()) {
-                result.completeExceptionally(new TimeoutException("JVM submission exceeded " + timeout));
-                task.cancel(true); abort();
+                abort(result, new TimeoutException("JVM submission exceeded " + timeout));
             }
         }, timeout.toNanos(), TimeUnit.NANOSECONDS);
         result.whenComplete((value, failure) -> {
@@ -134,11 +135,15 @@ public final class CrabJvmExecutor implements AutoCloseable {
     }
 
     private void abort() {
+        abort(null, null);
+    }
+
+    private void abort(CompletableFuture<?> expired, Throwable deadline) {
         if (closed.compareAndSet(false, true)) {
             graph.abortFamily();
             worker.shutdownNow(); deadlines.shutdownNow();
             for (CompletableFuture<?> item : pending)
-                item.completeExceptionally(new CancellationException("Session terminated"));
+                item.completeExceptionally(item == expired ? deadline : new CancellationException("Session terminated"));
         }
     }
 
