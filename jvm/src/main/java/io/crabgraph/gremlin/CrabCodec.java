@@ -17,11 +17,11 @@ public final class CrabCodec {
         if(graph!=null) { Object runtime=graph.runtimeEncode(value); if(runtime!=null) return runtime; }
         if (value == null) return fields("type","null");
         if (value instanceof CrabElement && (graph==null || ((CrabElement)value).graph==graph)) return ((CrabElement)value).record;
-        if(value instanceof org.apache.tinkerpop.gremlin.structure.Vertex) return fields("type","vertex_ref","id",encode(((org.apache.tinkerpop.gremlin.structure.Vertex)value).id()));
-        if(value instanceof org.apache.tinkerpop.gremlin.structure.Edge) return fields("type","edge_ref","id",encode(((org.apache.tinkerpop.gremlin.structure.Edge)value).id()));
+        if(value instanceof org.apache.tinkerpop.gremlin.structure.Vertex) return fields("type","vertex_ref","id",encodeReferenceId(((org.apache.tinkerpop.gremlin.structure.Vertex)value).id(),graph,"vertex"));
+        if(value instanceof org.apache.tinkerpop.gremlin.structure.Edge) return fields("type","edge_ref","id",encodeReferenceId(((org.apache.tinkerpop.gremlin.structure.Edge)value).id(),graph,"edge"));
         if(value instanceof org.apache.tinkerpop.gremlin.structure.VertexProperty) {
             org.apache.tinkerpop.gremlin.structure.VertexProperty<?> property=(org.apache.tinkerpop.gremlin.structure.VertexProperty<?>)value;
-            return fields("type","vertex_property_ref","owner",fields("type","vertex_ref","id",encode(property.element().id())),"id",encode(property.id()));
+            return fields("type","vertex_property_ref","owner",fields("type","vertex_ref","id",encodeReferenceId(property.element().id(),graph,"vertex")),"id",encodeReferenceId(property.id(),graph,"vertex_property"));
         }
         if (value instanceof CrabProperty) return ((CrabProperty<?>)value).record;
         String type;
@@ -46,6 +46,9 @@ public final class CrabCodec {
         } else throw new IllegalArgumentException("Unsupported native property type: "+value.getClass().getName());
         if ((value instanceof Double && !Double.isFinite((Double)value)) || (value instanceof Float && !Float.isFinite((Float)value))) value=value.toString();
         return fields("type",type,"value",value);
+    }
+    private static Object encodeReferenceId(Object id,CrabGraph graph,String type) {
+        return graph==null?encode(id):graph.encodeId(id,type);
     }
     private static String floatingText(Object value) {
         String text=value.toString();

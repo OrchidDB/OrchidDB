@@ -19,6 +19,10 @@ import static io.crabgraph.gremlin.CrabCodec.fields;
 public final class CrabGraph implements Graph {
     public static final String DEFAULT_CARDINALITY = "crabgraph.vertex.defaultCardinality";
     private final VertexProperty.Cardinality defaultCardinality;
+    public static final String VERTEX_ID_MANAGER = "crabgraph.vertex.idManager";
+    public static final String EDGE_ID_MANAGER = "crabgraph.edge.idManager";
+    public static final String VERTEX_PROPERTY_ID_MANAGER = "crabgraph.vertexProperty.idManager";
+    private final IdManager vertexIdManager,edgeIdManager,vertexPropertyIdManager;
     private final String executable;
     private final CrabSession session;
     private final boolean persistent;
@@ -26,11 +30,18 @@ public final class CrabGraph implements Graph {
     
     private final Configuration configuration = new BaseConfiguration();
     private final NativeTransaction transaction = new NativeTransaction();
+    private final org.apache.tinkerpop.gremlin.structure.service.ServiceRegistry services=CrabServices.create(this);
+    private int bulkLoadDepth;
     private volatile boolean closed;
     private final java.util.concurrent.locks.ReentrantLock lease=new java.util.concurrent.locks.ReentrantLock();
 
     private CrabGraph(String executable,Path path) { this(executable,path,null,VertexProperty.Cardinality.single); }
     private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality) {
+        this(executable,path,family,cardinality,IdManager.ANY,IdManager.ANY,IdManager.ANY);
+    }
+    private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality,
+                      IdManager vertexIds,IdManager edgeIds,IdManager propertyIds) {
+        vertexIdManager=vertexIds; edgeIdManager=edgeIds; vertexPropertyIdManager=propertyIds;
         defaultCardinality=Objects.requireNonNull(cardinality,"default vertex-property cardinality");
         this.executable=Objects.requireNonNull(executable,"native executable");
         persistent=path!=null;
@@ -43,6 +54,9 @@ public final class CrabGraph implements Graph {
         try { session.call(fields("op","hello","version",1)); } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
         configuration.setProperty(Graph.GRAPH,CrabGraph.class.getName());
         configuration.setProperty(DEFAULT_CARDINALITY,defaultCardinality.name());
+        configuration.setProperty(VERTEX_ID_MANAGER,vertexIdManager.name());
+        configuration.setProperty(EDGE_ID_MANAGER,edgeIdManager.name());
+        configuration.setProperty(VERTEX_PROPERTY_ID_MANAGER,vertexPropertyIdManager.name());
         configuration.setProperty("crabgraph.native.executable",executable);
         if(path!=null) configuration.setProperty("crabgraph.native.path",path.toString());
     }
@@ -57,11 +71,14 @@ public final class CrabGraph implements Graph {
         String executable=config.getString("crabgraph.native.executable",System.getenv("CRABGRAPH_JVM_STORE"));
         String path=config.getString("crabgraph.native.path",null);
         return new CrabGraph(executable,path==null?null:Path.of(path),null,
-            VertexProperty.Cardinality.valueOf(config.getString(DEFAULT_CARDINALITY,"single")));
+            VertexProperty.Cardinality.valueOf(config.getString(DEFAULT_CARDINALITY,"single")),
+            IdManager.valueOf(config.getString(VERTEX_ID_MANAGER,"ANY")),
+            IdManager.valueOf(config.getString(EDGE_ID_MANAGER,"ANY")),
+            IdManager.valueOf(config.getString(VERTEX_PROPERTY_ID_MANAGER,"ANY")));
     }
     public CrabGraph freshGraph() {
         if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
-        return new CrabGraph(executable,null,runtime,defaultCardinality);
+        return new CrabGraph(executable,null,runtime,defaultCardinality,vertexIdManager,edgeIdManager,vertexPropertyIdManager);
     }
     public Object encodeValue(Object value) { return CrabCodec.encode(value,this); }
     public Object decodeValue(Object value) { return CrabCodec.decode(value,this); }
@@ -95,6 +112,24 @@ public final class CrabGraph implements Graph {
         if(closed) { lease.unlock(); throw new IllegalStateException("Graph is closed"); }
         return ()->lease.unlock();
     }
+    /** Import atomically, deferring reader commits and preserving any existing caller transaction. */
+    public void bulkLoad(Runnable action) {
+        lease.lock();
+        boolean hadTransaction=transaction.isOpen();
+        boolean outer=bulkLoadDepth++==0;
+        try {
+            try { atomicMutation(action); }
+            finally { bulkLoadDepth--; }
+            if(outer&&!hadTransaction) transaction.commit();
+        } catch(RuntimeException|Error failure) {
+            if(outer&&!hadTransaction) {
+                boolean interrupted=Thread.interrupted();
+                try { transaction.rollback(); } catch(RuntimeException rollback) { failure.addSuppressed(rollback); }
+                finally { if(interrupted) Thread.currentThread().interrupt(); }
+            }
+            throw failure;
+        } finally { lease.unlock(); }
+    }
     /** Native savepoint preserves the surrounding caller transaction on failure. */
     public void atomicMutation(Runnable action) {
         lease.lock();
@@ -102,7 +137,9 @@ public final class CrabGraph implements Graph {
             transaction.readWrite(); Object id=call(fields("op","savepoint"));
             try { action.run(); call(fields("op","release","id",id)); }
             catch(RuntimeException|Error failure) {
+                boolean interrupted=Thread.interrupted();
                 try { call(fields("op","rollbackTo","id",id)); } catch(RuntimeException rollback) { failure.addSuppressed(rollback); }
+                finally { if(interrupted) Thread.currentThread().interrupt(); }
                 throw failure;
             }
         } finally { lease.unlock(); }
@@ -122,9 +159,36 @@ public final class CrabGraph implements Graph {
         List<E> result=new ArrayList<>(); for(Object value:(List<?>)values) result.add(decode(value));
         return result.iterator();
     }
-    static List<Object> ids(Object[] ids) {
+    private enum IdManager {
+        ANY, LONG, INTEGER;
+        Object convert(Object id) {
+            if(id==null) return null;
+            if(this==ANY) {
+                if(id instanceof String || id instanceof Byte || id instanceof Short || id instanceof Integer ||
+                   id instanceof Long || id instanceof Float || id instanceof Double || id instanceof java.math.BigInteger ||
+                   id instanceof java.math.BigDecimal) return id;
+                throw new IllegalArgumentException("Unsupported native identifier type: "+id.getClass().getName());
+            }
+            if(id instanceof Number) {
+                if(this==LONG) return ((Number)id).longValue();
+                return ((Number)id).intValue();
+            }
+            if(id instanceof String) {
+                if(this==LONG) return Long.valueOf((String)id);
+                return Integer.valueOf((String)id);
+            }
+            throw new IllegalArgumentException("Cannot convert identifier to "+name()+": "+id);
+        }
+        boolean allows(Object id) { try { return convert(id)!=null; } catch(IllegalArgumentException e) { return false; } }
+    }
+    private IdManager idManager(String type) {
+        return type.equals("vertex")?vertexIdManager:type.equals("edge")?edgeIdManager:vertexPropertyIdManager;
+    }
+    Object encodeId(Object id,String type) { return CrabCodec.encode(idManager(type).convert(id)); }
+    Object elementId(Map<String,Object> record) { return idManager((String)record.get("type")).convert(decode(record.get("id"))); }
+    private List<Object> ids(Object[] ids,String type) {
         List<Object> result=new ArrayList<>();
-        for(Object id:ids) result.add(CrabCodec.encode(id instanceof Element?((Element)id).id():id));
+        for(Object id:ids) result.add(encodeId(id instanceof Element?((Element)id).id():id,type));
         return result;
     }
     List<Object> properties(Object... keyValues) {
@@ -141,7 +205,7 @@ public final class CrabGraph implements Graph {
         String label=ElementHelper.getLabelValue(keyValues).orElse(Vertex.DEFAULT_LABEL);
         ElementHelper.validateLabel(label);
         Map<String,Object> request=fields("op","addVertex","label",label,"properties",props);
-        ElementHelper.getIdValue(keyValues).ifPresent(id->request.put("id",CrabCodec.encode(id)));
+        ElementHelper.getIdValue(keyValues).ifPresent(id->request.put("id",encodeId(id,"vertex")));
         if(defaultCardinality==VertexProperty.Cardinality.single || props.isEmpty()) {
             Map<Object,Object> lastValueByKey=new LinkedHashMap<>();
             for(Object property:props) { List<?> pair=(List<?>)property; lastValueByKey.put(pair.get(0),pair.get(1)); }
@@ -160,10 +224,11 @@ public final class CrabGraph implements Graph {
         });
         return created[0];
     }
-    @Override public Iterator<Vertex> vertices(Object... ids) { return records(request("vertices","ids",ids(ids))); }
-    @Override public Iterator<Edge> edges(Object... ids) { return records(request("edges","ids",ids(ids))); }
+    @Override public Iterator<Vertex> vertices(Object... ids) { return records(request("vertices","ids",ids(ids,"vertex"))); }
+    @Override public Iterator<Edge> edges(Object... ids) { return records(request("edges","ids",ids(ids,"edge"))); }
     @Override public Transaction tx() { return transaction; }
     @Override public Configuration configuration() { return configuration; }
+    @Override public org.apache.tinkerpop.gremlin.structure.service.ServiceRegistry getServiceRegistry() { return services; }
     @Override public Variables variables() { throw Graph.Exceptions.variablesNotSupported(); }
     @Override public GraphComputer compute() {
         try {
@@ -177,7 +242,7 @@ public final class CrabGraph implements Graph {
         return type.cast(computer);
     }
     /** Cancel pending I/O and discard this session. Safe to call from another thread. */
-    public void abort() { closed=true; session.abort(); releaseRuntime(); }
+    public void abort() { closed=true; session.abort(); services.close(); releaseRuntime(); }
     public void abortFamily() {
         List<CrabGraph> members;
         synchronized(runtime) { runtime.closed=true; members=new ArrayList<>(runtime.members); }
@@ -194,12 +259,13 @@ public final class CrabGraph implements Graph {
     @Override public void close() {
         if(closed) return;
         try { if(transaction.isOpen()) transaction.rollback(); }
-        finally { closed=true; session.close(); releaseRuntime(); }
+        finally { closed=true; session.close(); services.close(); releaseRuntime(); }
     }
     private final class NativeTransaction extends AbstractThreadLocalTransaction {
         private boolean open;
         NativeTransaction() { super(CrabGraph.this); }
         @Override public boolean isOpen() { return open&&!closed; }
+        @Override public void commit() { if(bulkLoadDepth==0) super.commit(); }
         @Override protected void doOpen() {
             if(closed) throw new IllegalStateException("Graph is closed");
             call(fields("op","begin")); open=true;
@@ -210,6 +276,7 @@ public final class CrabGraph implements Graph {
     @Override public Features features() { return FEATURES; }
     private final Features FEATURES=new Features() {
         private final GraphFeatures graph=new GraphFeatures() {
+            @Override public boolean supportsServiceCall() { return true; }
             @Override public boolean supportsComputer() { try { Class.forName("io.crabgraph.gremlin.computer.CrabGraphComputer"); return true; } catch(ClassNotFoundException e) { return false; } }
             @Override public boolean supportsPersistence() { return true; }
             @Override public boolean supportsConcurrentAccess() { return false; }
@@ -218,6 +285,8 @@ public final class CrabGraph implements Graph {
         };
         private final VertexPropertyFeatures vp=new NativeVertexPropertyFeatures();
         private final VertexFeatures vertex=new VertexFeatures() {
+            @Override public boolean supportsStringIds() { return vertexIdManager==IdManager.ANY; }
+            @Override public boolean willAllowId(Object id) { return vertexIdManager.allows(id); }
             @Override public VertexProperty.Cardinality getCardinality(String key) { return defaultCardinality; }
             @Override public boolean supportsNullPropertyValues() { return true; }
             @Override public boolean supportsUuidIds() { return false; }
@@ -226,6 +295,8 @@ public final class CrabGraph implements Graph {
             @Override public VertexPropertyFeatures properties() { return vp; }
         };
         private final EdgeFeatures edge=new EdgeFeatures() {
+            @Override public boolean supportsStringIds() { return edgeIdManager==IdManager.ANY; }
+            @Override public boolean willAllowId(Object id) { return edgeIdManager.allows(id); }
             @Override public boolean supportsNullPropertyValues() { return true; }
             @Override public boolean supportsUuidIds() { return false; }
             @Override public boolean supportsCustomIds() { return false; }
@@ -246,7 +317,9 @@ public final class CrabGraph implements Graph {
         @Override default boolean supportsLongArrayValues() { return false; }
         @Override default boolean supportsSerializableValues() { return false; }
     }
-    private static class NativeVertexPropertyFeatures implements Features.VertexPropertyFeatures,NativeDataFeatures {
+    private class NativeVertexPropertyFeatures implements Features.VertexPropertyFeatures,NativeDataFeatures {
+        @Override public boolean supportsStringIds() { return vertexPropertyIdManager==IdManager.ANY; }
+        @Override public boolean willAllowId(Object id) { return vertexPropertyIdManager.allows(id); }
         @Override public boolean supportsNullPropertyValues() { return true; }
         @Override public boolean supportsUuidIds() { return false; }
         @Override public boolean supportsCustomIds() { return false; }
