@@ -210,19 +210,11 @@ fn bulk_set_fold(input: Node) -> Node {
 }
 
 fn seed_values(seed: &crate::language::gremlin::semantics::GValue) -> Node {
-    let rows = match seed {
-        crate::language::gremlin::semantics::GValue::List(items)
-        | crate::language::gremlin::semantics::GValue::Set(items) => items
-            .iter()
-            .map(|value| vec![gvalue_to_value(value)])
-            .collect(),
-        other => vec![vec![gvalue_to_value(other)]],
+    let values = match seed {
+        crate::language::gremlin::semantics::GValue::List(items) | crate::language::gremlin::semantics::GValue::Set(items) => items.clone(),
+        other => vec![other.clone()],
     };
-    Node::GraphValues {
-        bindings: vec![CURRENT.into()],
-        rows,
-        bulk: None,
-    }
+    super::sources::values_node(&values).expect("validated side effect literals")
 }
 
 pub(super) fn lower_side_effect_bag_as_list(

@@ -683,3 +683,36 @@ fn range_integer_arg(value: &Value) -> Option<i64> {
         _ => None,
     }
 }
+
+/// TinkerPop RangeLocalStep: a requested width of one emits a scalar for
+/// iterables, while maps always remain maps. A missing scalar is unproductive.
+pub(super) fn gremlin_local_range(value: &Value, low: i64, high: i64) -> Value {
+    let start = low.max(0) as usize;
+    let count = if high == -1 { usize::MAX } else { (high.max(0) as usize).saturating_sub(start) };
+    let set = crate::ir::value::as_gremlin_set(value);
+    if let Some(items) = set.or_else(|| match value {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Some(items.as_slice()),
+        _ => None,
+    }) {
+        if high != -1 && high - low == 1 {
+            return items.get(start).cloned().unwrap_or(Value::Null);
+        }
+        let selected = items.iter().skip(start).take(count).cloned().collect();
+        return if set.is_some() { crate::ir::value::gremlin_set(selected) } else { Value::List(selected) };
+    }
+    match value {
+        Value::TypedMap(items) => Value::TypedMap(items.iter().skip(start).take(count).cloned().collect()),
+        Value::Map(items) => Value::Map(items.iter().skip(start).take(count).map(|(k,v)|(k.clone(),v.clone())).collect()),
+        other => other.clone(),
+    }
+}
+
+pub(super) fn gremlin_local_tail(value: &Value, count: i64) -> Value {
+    let len = match value {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => items.len(),
+        Value::TypedMap(items) => items.len(),
+        Value::Map(items) => crate::ir::value::as_gremlin_set(value).map_or(items.len(), |items| items.len()),
+        _ => return value.clone(),
+    } as i64;
+    gremlin_local_range(value, len.saturating_sub(count.max(0)), len)
+}

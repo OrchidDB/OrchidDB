@@ -22,12 +22,13 @@ pub(super) fn source_node(
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
     let node = match step {
+        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(Node::GraphValues { bindings: vec![], rows: vec![vec![]], bulk: None }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(Node::GraphValues {
             bindings: vec![], rows: vec![vec![]], bulk: None,
-        }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref()),
+        }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
         Step::AddV { label } => Ok(super::mutations::lower_add_vertex(Node::GraphValues {
             bindings: vec![], rows: vec![vec![]], bulk: None,
-        }, label)),
+        }, label, lo)),
         Step::V { ids } if ids.is_empty() => {
             let scan = vertex_scan();
             apply_vertex_subgraph(scan, lo, ctx)
@@ -44,11 +45,7 @@ pub(super) fn source_node(
             let scan = edge_scan();
             apply_edge_subgraph(filter_by_ids(scan, ids), lo, ctx)
         }
-        Step::Inject(values) => Ok(Node::GraphValues {
-            bindings: vec![CURRENT.into()],
-            rows: values.iter().map(|v| vec![gvalue_to_value(v)]).collect(),
-            bulk: None,
-        }),
+        Step::Inject(values) => values_node(values),
         Step::Call(name, args) => lower_call_source(name, args)?.ok_or_else(|| {
             GremlinPlanError::Unsupported(format!("unsupported source call `{name}`"))
         }),
@@ -202,11 +199,7 @@ pub(super) fn lower_mid_traversal_inject(
             )));
         }
     };
-    let injected = Node::GraphValues {
-        bindings: vec![CURRENT.into()],
-        rows: values.iter().map(|v| vec![gvalue_to_value(v)]).collect(),
-        bulk: None,
-    };
+    let injected = values_node(values)?;
     Ok(Node::GraphUnion {
         all: true,
         align: UnionAlign::ByPosition,
@@ -229,4 +222,12 @@ pub(super) fn project_rel_as_current(rel: String, expand: Node) -> Node {
         error_policy: ProjectErrorPolicy::PropagateError,
         input: expand.boxed(),
     }
+}
+
+pub(super) fn values_node(values: &[crate::language::gremlin::semantics::GValue]) -> GremlinPlanResult<Node> {
+    if let Some(values) = values.iter().map(gvalue_to_value).collect::<Option<Vec<_>>>() {
+        return Ok(Node::GraphValues { bindings: vec![CURRENT.into()], rows: values.into_iter().map(|value|vec![value]).collect(), bulk: None });
+    }
+    Ok(Node::GraphUnwind { input_expr: IrExpr::List(values.iter().map(gvalue_to_expr).collect::<GremlinPlanResult<_>>()?), bind: CURRENT.into(), outer: false,
+        input: Node::GraphValues { bindings: vec![], rows: vec![vec![]], bulk: None }.boxed() })
 }

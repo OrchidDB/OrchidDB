@@ -251,8 +251,9 @@ fn search_arg(args: &[CallArg]) -> Option<String> {
 
 fn display_gvalue(value: &GValue) -> String {
     match gvalue_to_value(value) {
-        Value::String(value) => value,
-        other => format!("{other:?}"),
+        Some(Value::String(value)) => value,
+        Some(other) => format!("{other:?}"),
+        None => value.as_sql_literal_debug(),
     }
 }
 

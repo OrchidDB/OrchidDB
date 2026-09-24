@@ -46,7 +46,9 @@ impl<'a> LoweringContext<'a> {
             && alias.starts_with("__gremlin_select_history_")
             && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
         {
-            return Ok(Vec::new());
+            return Err(RelError::Unsupported(
+                "Gremlin label history requires traverser state".into(),
+            ));
         }
         if self.language == Language::Gremlin
             && alias.starts_with("select_source_")

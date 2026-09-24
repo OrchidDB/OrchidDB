@@ -4,6 +4,9 @@ use super::*;
 
 impl<'a> LoweringContext<'a> {
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if matches!(expr, IrExpr::Call { name, .. } if name.starts_with("gremlin_string_") || name == "gremlin_cast_date") {
+            return Err(RelError::Unsupported("Gremlin scalar semantics require native values".into()));
+        }
         if matches!(
             expr,
             IrExpr::Binary { .. }

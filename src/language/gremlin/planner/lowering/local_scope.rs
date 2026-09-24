@@ -78,29 +78,29 @@ pub(super) fn lower_local_scoped(
                 mode: crate::ir::plan::ProjectMode::ReplaceCurrent,
                 items: vec![crate::ir::plan::ProjectionItem {
                     alias: CURRENT.into(),
-                    expr: call("local_length", vec![cur()]),
+                    expr: call("gremlin_string_local_length", vec![cur()]),
                 }],
                 error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
                 input: input.boxed(),
             });
         }
         Step::StringOp(op) => match op {
-            AstStringOp::ToLower => call("local_lcase", vec![cur()]),
-            AstStringOp::ToUpper => call("local_ucase", vec![cur()]),
+            AstStringOp::ToLower => call("gremlin_string_local_lcase", vec![cur()]),
+            AstStringOp::ToUpper => call("gremlin_string_local_ucase", vec![cur()]),
             AstStringOp::Length => unreachable!("handled above"),
-            AstStringOp::Trim => call("local_trim", vec![cur()]),
-            AstStringOp::LTrim => call("local_ltrim", vec![cur()]),
-            AstStringOp::RTrim => call("local_rtrim", vec![cur()]),
-            AstStringOp::Reverse => call("local_reverse_strings", vec![cur()]),
+            AstStringOp::Trim => call("gremlin_string_local_trim", vec![cur()]),
+            AstStringOp::LTrim => call("gremlin_string_local_ltrim", vec![cur()]),
+            AstStringOp::RTrim => call("gremlin_string_local_rtrim", vec![cur()]),
+            AstStringOp::Reverse => call("gremlin_string_local_reverse", vec![cur()]),
             AstStringOp::Substring { start, end } => {
                 let mut args = vec![cur(), int(*start)];
                 if let Some(e) = end {
                     args.push(int(*e));
                 }
-                call("local_substring", args)
+                call("gremlin_string_local_substring", args)
             }
             AstStringOp::Replace { old, new } => call(
-                "local_replace",
+                "gremlin_string_local_replace",
                 vec![
                     cur(),
                     IrExpr::Lit(Lit::String(old.clone())),
@@ -108,7 +108,7 @@ pub(super) fn lower_local_scoped(
                 ],
             ),
             AstStringOp::Split(delim) => call(
-                "local_split",
+                "gremlin_string_local_split",
                 vec![
                     cur(),
                     delim
@@ -118,11 +118,11 @@ pub(super) fn lower_local_scoped(
                 ],
             ),
             AstStringOp::Concat(suffix) => call(
-                "local_concat",
-                vec![cur(), IrExpr::Lit(Lit::String(suffix.clone()))],
+                "gremlin_string_local_concat",
+                vec![cur(), suffix.clone().map(IrExpr::lit_str).unwrap_or(IrExpr::Lit(Lit::Null))],
             ),
             AstStringOp::Conjoin(delim) => call(
-                "local_conjoin",
+                "gremlin_string_local_conjoin",
                 vec![cur(), IrExpr::Lit(Lit::String(delim.clone()))],
             ),
             AstStringOp::ConcatTraversal(_) => {
@@ -137,6 +137,14 @@ pub(super) fn lower_local_scoped(
             )));
         }
     };
+    if matches!(inner, Step::StringOp(_)) {
+        return Ok(Node::GraphProject {
+            mode: crate::ir::plan::ProjectMode::ReplaceCurrent,
+            items: vec![crate::ir::plan::ProjectionItem { alias: CURRENT.into(), expr: helper_call }],
+            error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+            input: input.boxed(),
+        });
+    }
     Ok(Node::GraphCurrentProject {
         expr: helper_call,
         fields: vec![CURRENT.to_string()],

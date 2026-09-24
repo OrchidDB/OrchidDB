@@ -128,12 +128,24 @@ pub(crate) fn group_map_op(
         };
         entries.push((key, value));
     }
-    let map = if entries.iter().all(|(key, _)| matches!(key, Value::String(_))) {
-        Value::Map(entries.into_iter().map(|(key, value)| {
-            let Value::String(key) = key else { unreachable!() };
-            (key, value)
-        }).collect())
-    } else { Value::TypedMap(entries) };
+    let map = if entries
+        .iter()
+        .all(|(key, _)| matches!(key, Value::String(_)))
+    {
+        Value::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let Value::String(key) = key else {
+                        unreachable!()
+                    };
+                    (key, value)
+                })
+                .collect(),
+        )
+    } else {
+        Value::TypedMap(entries)
+    };
     Ok(vec![Row::new().with(output, map)])
 }
 
@@ -424,7 +436,16 @@ pub(crate) fn compute_aggregate(
             for row in rows {
                 let v = eval(expr, row, graph)?;
                 evaluated += 1;
-                if matches!(v, Value::Null) && matches!(agg.kind, AggKind::CollectRows) {
+                if matches!(v, Value::Null)
+                    && (matches!(agg.kind, AggKind::CollectRows)
+                        || matches!(
+                            expr,
+                            IrExpr::Property {
+                                policy: crate::ir::policy::PropertyMissing::DropUnproductive,
+                                ..
+                            }
+                        ))
+                {
                     continue;
                 }
                 if agg.distinct && !seen.insert(encode_value(&v)) {

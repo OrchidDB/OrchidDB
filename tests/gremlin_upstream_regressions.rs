@@ -418,7 +418,13 @@ fn qualified_java_enum_names_are_lexical_aliases() {
         ),
         vec![Value::String("Scope.global".into())]
     );
-    assert!(parse_traversal("g.addV().property('age',__.constant(2))").is_err());
+    assert_eq!(
+        graph_values(
+            "g.addV().property('age',__.constant(2)).values('age')",
+            &graph
+        ),
+        vec![Value::Int(2)]
+    );
 }
 
 #[cfg(feature = "duckdb")]
@@ -513,4 +519,126 @@ fn merge_vertex_single_cardinality_values_are_real_values() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn traversal_valued_properties_preserve_target_and_outer_labels() {
+    let graph = PropertyGraph::new();
+    assert_eq!(
+        graph_values(
+            "g.addV('person').property('age',29).as('a').addV('animal').property('age',__.select('a').by('age')).values('age')",
+            &graph
+        ),
+        vec![Value::Int(29)]
+    );
+    assert_eq!(
+        graph_values(
+            "g.withSideEffect('a','marko').addV().property('name',__.select('a')).values('name')",
+            &graph
+        ),
+        vec![Value::String("marko".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.V().hasLabel('animal').property('age',__.constant(30)).values('age')",
+            &graph
+        ),
+        vec![Value::Int(30)]
+    );
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn drop_vertices_and_edges_performs_real_deletions() {
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    engine
+        .gremlin("g.addV().as('a').addV().addE('link').to('a').none()")
+        .await
+        .unwrap();
+    engine.gremlin("g.E().drop()").await.unwrap();
+    let result = engine.gremlin("g.E().count()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], 0);
+    engine.gremlin("g.V().drop()").await.unwrap();
+    let result = engine.gremlin("g.V().count()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], 0);
+}
+
+#[test]
+fn merge_edges_match_create_update_with_real_endpoint_ids() {
+    let graph = PropertyGraph::new();
+    graph_values(
+        "g.addV('person').property('name','marko').addV('person').property('name','vadas').none()",
+        &graph,
+    );
+    assert_eq!(
+        graph_values(
+            "g.mergeE([(T.label):'knows',(Direction.OUT):'person#0',(Direction.IN):'person#1']).option(Merge.onCreate,['created':'Y']).values('created')",
+            &graph
+        ),
+        vec![Value::String("Y".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.mergeE([(T.label):'knows',(Direction.OUT):'person#0',(Direction.IN):'person#1']).option(Merge.onMatch,['created':'N']).values('created')",
+            &graph
+        ),
+        vec![Value::String("N".into())]
+    );
+    assert_eq!(
+        graph_values(
+            "g.V().has('name','marko').out('knows').values('name')",
+            &graph
+        ),
+        vec![Value::String("vadas".into())]
+    );
+    assert_eq!(graph_values("g.E().count()", &graph), vec![Value::Long(1)]);
+    assert_eq!(
+        graph_values("g.mergeE([:]).count()", &graph),
+        vec![Value::Long(1)]
+    );
+    assert_eq!(
+        graph_values("g.V().mergeE(null).count()", &graph),
+        vec![Value::Long(2)]
+    );
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn merge_edge_commits_real_graph_writes() {
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    engine
+        .gremlin("g.addV('p').addV('p').none()")
+        .await
+        .unwrap();
+    engine
+        .gremlin("g.mergeE([(T.label):'link',(Direction.OUT):'p#0',(Direction.IN):'p#1']).none()")
+        .await
+        .unwrap();
+    let result = engine.gremlin("g.E().count()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], 1);
+}
+
+#[test]
+fn native_vertex_references_resolve_catalog_identity_without_string_spoofing() {
+    let graph = PropertyGraph::new();
+    graph.insert_node("person", [("id".into(),Value::String("custom-a".into())),("name".into(),Value::String("marko".into()))].into());
+    graph.insert_node("person", [("id".into(),Value::String("custom-b".into())),("name".into(),Value::String("vadas".into()))].into());
+    assert_eq!(graph_values("g.V(new Vertex('custom-a','vertex')).values('name')", &graph), vec![Value::String("marko".into())]);
+    assert_eq!(graph_values("g.inject(new Vertex('custom-a','vertex')).values('name')", &graph), vec![Value::String("marko".into())]);
+    assert_eq!(graph_values("g.withSideEffect('v',new Vertex('custom-b','vertex')).inject(1).select('v').values('name')", &graph), vec![Value::String("vadas".into())]);
+    assert_eq!(graph_values("g.mergeE([(T.label):'knows',(Direction.OUT):new Vertex('custom-a','vertex'),(Direction.IN):new Vertex('custom-b','vertex')]).label()", &graph), vec![Value::String("knows".into())]);
+    assert_eq!(graph_values("g.V(new Vertex('custom-a','vertex')).out('knows').values('name')", &graph), vec![Value::String("vadas".into())]);
+    assert_eq!(graph_values("g.inject('new Vertex(1,vertex)')", &graph), vec![Value::String("new Vertex(1,vertex)".into())]);
 }

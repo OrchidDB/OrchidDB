@@ -7,6 +7,7 @@ impl LoweringVisitor {
         &mut self,
         argument: Option<Rc<GenericMapNullableArgumentContextAll<'input>>>,
         allow_cardinality: bool,
+        edge: bool,
     ) -> Result<Option<MergeVertexMap>> {
         let argument = argument.ok_or_else(|| GremlinError::Parse("missing merge map".into()))?;
         let literal = argument
@@ -73,6 +74,25 @@ impl LoweringVisitor {
                         ));
                     }
                 }
+            } else if let Some(direction) = key
+                .traversalDirection()
+                .map(|d| d.get_text())
+                .or_else(|| key.traversalDirectionLong().map(|d| d.get_text()))
+            {
+                if !edge {
+                    return Err(GremlinError::Unsupported(
+                        "mergeV does not accept direction keys".into(),
+                    ));
+                }
+                match direction.rsplit('.').next() {
+                    Some("OUT") | Some("from") => result.out_vertex = Some(value),
+                    Some("IN") | Some("to") => result.in_vertex = Some(value),
+                    _ => {
+                        return Err(GremlinError::Parse(
+                            "mergeE endpoint direction must be OUT or IN".into(),
+                        ));
+                    }
+                }
             } else if let Some(string) = key.stringLiteral() {
                 let key = super::literals::decode_string_literal(&string.get_text())?;
                 if single {
@@ -92,11 +112,24 @@ impl LoweringVisitor {
         }
         Ok(Some(result))
     }
+    pub(super) fn lower_merge_edge_map<'input>(
+        &mut self,
+        argument: Option<Rc<GenericMapNullableArgumentContextAll<'input>>>,
+    ) {
+        match self.parse_merge_map(argument, false, true) {
+            Ok(criteria) => self.steps.push(Step::MergeE {
+                criteria,
+                on_create: None,
+                on_match: None,
+            }),
+            Err(error) => self.fail(error),
+        }
+    }
     pub(super) fn lower_merge_vertex_map<'input>(
         &mut self,
         argument: Option<Rc<GenericMapNullableArgumentContextAll<'input>>>,
     ) {
-        match self.parse_merge_map(argument, false) {
+        match self.parse_merge_map(argument, false, false) {
             Ok(criteria) => self.steps.push(Step::MergeV {
                 criteria,
                 on_create: None,
@@ -116,19 +149,27 @@ impl LoweringVisitor {
             ));
             return;
         };
+        let edge = matches!(self.steps.last(), Some(Step::MergeE { .. }));
         let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
-        let value = match self.parse_merge_map(c.genericMapNullableArgument(), true) {
+        let value = match self.parse_merge_map(c.genericMapNullableArgument(), !edge, edge) {
             Ok(value) => value,
             Err(error) => {
                 self.fail(error);
                 return;
             }
         };
-        let Some(Step::MergeV {
-            on_create,
-            on_match,
-            ..
-        }) = self.steps.last_mut()
+        let Some(
+            Step::MergeV {
+                on_create,
+                on_match,
+                ..
+            }
+            | Step::MergeE {
+                on_create,
+                on_match,
+                ..
+            },
+        ) = self.steps.last_mut()
         else {
             return;
         };

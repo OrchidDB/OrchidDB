@@ -132,6 +132,10 @@ where
                 lo.subgraph_check_adjacent_vertices = *check_adjacent_vertices;
                 steps.next();
             }
+            Step::WithPartitionWrite { key, value } => {
+                lo.partition_write = Some((key.clone(), value.clone()));
+                steps.next();
+            }
             Step::WithProductiveByStrategy => {
                 lo.productive_by = true;
                 steps.next();

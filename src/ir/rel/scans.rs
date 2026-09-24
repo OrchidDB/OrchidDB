@@ -129,6 +129,19 @@ impl<'a> LoweringContext<'a> {
         bindings: &[String],
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
+        if self.language == Language::Gremlin {
+            // Arrow columns have a single physical type. Mixed traversal values,
+            // nested collections and arbitrary-precision numbers must remain native;
+            // rendering them as text loses identity, ordering and numeric equality.
+            for index in 0..bindings.len() {
+                let values = rows.iter().filter_map(|row| row.get(index)).collect::<Vec<_>>();
+                if homogeneous_scalar_type(values.iter().copied()).is_none() {
+                    return Err(RelError::Unsupported(
+                        "Gremlin heterogeneous values require native runtime types".into(),
+                    ));
+                }
+            }
+        }
         fn typed_key_value(value: &Value) -> bool {
             match value {
                 Value::TypedMap(_) | Value::Token(_) | Value::Direction(_) => true,

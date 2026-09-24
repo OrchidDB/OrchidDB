@@ -639,15 +639,13 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
 /// Preserve a valid timestamp's time and offset while retaining the shared
 /// numeric epoch-millisecond and date-only conversions.
 pub(crate) fn cast_to_gremlin_date(v: &Value) -> Value {
-    match v {
-        Value::DateTime(raw) => parse_datetime_string(raw)
-            .map(Value::DateTime)
-            .unwrap_or(Value::Null),
-        Value::String(raw) => parse_datetime_string(raw)
-            .map(Value::DateTime)
-            .unwrap_or(Value::Null),
-        _ => cast_to_date(v),
-    }
+    let parsed = match v {
+        Value::DateTime(raw) | Value::String(raw) => parse_datetime_string(raw),
+        Value::Int(n) | Value::Long(n) => epoch_millis_to_datetime(*n),
+        Value::Byte(_) | Value::Short(_) | Value::BigInt(_) => v.as_i64().and_then(epoch_millis_to_datetime),
+        _ => None,
+    };
+    parsed.map(Value::DateTime).unwrap_or(Value::Null)
 }
 
 fn date_part(raw: &str) -> Option<&str> {

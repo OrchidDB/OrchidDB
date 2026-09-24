@@ -18,23 +18,23 @@ pub(super) fn lower_string_op(
 ) -> GremlinPlanResult<Node> {
     let arg = || IrExpr::Binding(CURRENT.into());
     match op {
-        AstStringOp::Length => Ok(project_call(input, "length", vec![arg()])),
-        AstStringOp::ToLower => Ok(project_call(input, "lcase", vec![arg()])),
-        AstStringOp::ToUpper => Ok(project_call(input, "ucase", vec![arg()])),
-        AstStringOp::Trim => Ok(project_call(input, "trim", vec![arg()])),
-        AstStringOp::LTrim => Ok(project_call(input, "ltrim", vec![arg()])),
-        AstStringOp::RTrim => Ok(project_call(input, "rtrim", vec![arg()])),
-        AstStringOp::Reverse => Ok(project_call(input, "reverse", vec![arg()])),
+        AstStringOp::Length => Ok(project_call(input, "gremlin_string_length", vec![arg()])),
+        AstStringOp::ToLower => Ok(project_call(input, "gremlin_string_lcase", vec![arg()])),
+        AstStringOp::ToUpper => Ok(project_call(input, "gremlin_string_ucase", vec![arg()])),
+        AstStringOp::Trim => Ok(project_call(input, "gremlin_string_trim", vec![arg()])),
+        AstStringOp::LTrim => Ok(project_call(input, "gremlin_string_ltrim", vec![arg()])),
+        AstStringOp::RTrim => Ok(project_call(input, "gremlin_string_rtrim", vec![arg()])),
+        AstStringOp::Reverse => Ok(project_call(input, "gremlin_string_reverse", vec![arg()])),
         AstStringOp::Substring { start, end } => {
             let mut args = vec![arg(), IrExpr::Lit(Lit::Int(*start))];
             if let Some(end) = end {
                 args.push(IrExpr::Lit(Lit::Int(*end)));
             }
-            Ok(project_call(input, "gremlin_substring", args))
+            Ok(project_call(input, "gremlin_string_substring", args))
         }
         AstStringOp::Replace { old, new } => Ok(project_call(
             input,
-            "replace",
+            "gremlin_string_replace",
             vec![
                 arg(),
                 IrExpr::lit_str(old.clone()),
@@ -42,35 +42,20 @@ pub(super) fn lower_string_op(
             ],
         )),
         AstStringOp::Concat(suffix) => {
-            let suffix_expr = IrExpr::lit_str(suffix.clone());
-            let expr = if suffix.is_empty() {
-                IrExpr::Call {
-                    name: "concat".into(),
-                    args: vec![arg(), suffix_expr],
-                }
-            } else {
-                IrExpr::Case {
-                    arms: vec![(IrExpr::IsNull(Box::new(arg())), suffix_expr.clone())],
-                    otherwise: Some(Box::new(IrExpr::Call {
-                        name: "concat".into(),
-                        args: vec![arg(), suffix_expr],
-                    })),
-                }
-            };
-            Ok(project_expr(input, expr))
+            Ok(project_call(input, "gremlin_string_concat", vec![arg(), suffix.clone().map(IrExpr::lit_str).unwrap_or(IrExpr::Lit(Lit::Null))]))
         }
         AstStringOp::Conjoin(delim) => Ok(project_call(
             input,
-            "conjoin",
+            "gremlin_string_conjoin",
             vec![arg(), IrExpr::lit_str(delim.clone())],
         )),
         AstStringOp::Split(delim) => Ok(match delim {
             // `split(null)` = split on whitespace. Uses a gremlin-specific
             // runtime name so Cypher's null-propagating `split` doesn't
             // swallow the call.
-            None => project_call(input, "gremlin_split_ws", vec![arg()]),
+            None => project_call(input, "gremlin_string_split_ws", vec![arg()]),
             Some(delim) => {
-                project_call(input, "split", vec![arg(), IrExpr::lit_str(delim.clone())])
+                project_call(input, "gremlin_string_split", vec![arg(), IrExpr::lit_str(delim.clone())])
             }
         }),
         AstStringOp::ConcatTraversal(sub) => lower_concat_traversal(input, sub, lo, ctx),
@@ -133,10 +118,13 @@ fn lower_concat_traversal(
             fetch: Some(1),
             tail: None,
         },
-        input: lower_child_traversal(sub, lo, ctx, ChildTraversalKind::StringRhs)?.boxed(),
+        input: lower_child_traversal(sub, lo, ctx,
+            if matches!(sub.first(), Some(crate::language::gremlin::ast::Step::V { .. } | crate::language::gremlin::ast::Step::E { .. })) {
+                ChildTraversalKind::SourceUnionArm
+            } else { ChildTraversalKind::StringRhs })?.boxed(),
     };
     let projected_probe = Node::GraphProject {
-        mode: ProjectMode::PreserveVisible,
+        mode: ProjectMode::ReplaceScope,
         items: vec![ProjectionItem {
             alias: probe.clone(),
             expr: IrExpr::Binding(CURRENT.into()),
@@ -145,7 +133,7 @@ fn lower_concat_traversal(
         input: sub_node.boxed(),
     };
     let applied = Node::GraphApply {
-        kind: ApplyKind::Inner,
+        kind: ApplyKind::Scalar,
         correlation: Vec::new(),
         outputs: vec![probe.clone()],
         optional_missing: OptionalMissing::Null,
@@ -157,7 +145,7 @@ fn lower_concat_traversal(
         items: vec![ProjectionItem {
             alias: CURRENT.to_string(),
             expr: IrExpr::Call {
-                name: "concat".into(),
+                name: "gremlin_string_concat".into(),
                 args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::Binding(probe)],
             },
         }],

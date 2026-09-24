@@ -1,6 +1,7 @@
 //! ANTLR visitor callbacks that emit traversal steps and typed leaf values.
 
 use antlr4rust::tree::ParseTree;
+use antlr4rust::parser_rule_context::ParserRuleContext;
 
 use super::literals::{
     date_diff_traversal_arg, date_unit_from_text, decode_string_literal, direction_from_to_arg,
@@ -110,6 +111,13 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         &mut self,
         ctx: &TraversalSourceSpawnMethodContext<'input>,
     ) {
+        if let Some(c) = ctx.traversalSourceSpawnMethod_mergeE() {
+            match &*c {
+                TraversalSourceSpawnMethod_mergeEContextAll::TraversalSourceSpawnMethod_mergeE_MapContext(c) => self.lower_merge_edge_map(c.genericMapNullableArgument()),
+                _ => self.fail(GremlinError::Unsupported("mergeE traversal criteria".into())),
+            }
+            return;
+        }
         if let Some(c) = ctx.traversalSourceSpawnMethod_mergeV() {
             match &*c {
                 TraversalSourceSpawnMethod_mergeVContextAll::TraversalSourceSpawnMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
@@ -221,6 +229,14 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     // ---- traversalMethod dispatch ----
 
     fn visit_traversalMethod(&mut self, ctx: &TraversalMethodContext<'input>) {
+        if ctx.traversalMethod_drop().is_some() { self.steps.push(Step::Drop); return; }
+        if let Some(c) = ctx.traversalMethod_mergeE() {
+            match &*c {
+                TraversalMethod_mergeEContextAll::TraversalMethod_mergeE_MapContext(c) => self.lower_merge_edge_map(c.genericMapNullableArgument()),
+                _ => self.fail(GremlinError::Unsupported("mergeE dynamic criteria".into())),
+            }
+            return;
+        }
         if let Some(c) = ctx.traversalMethod_mergeV() {
             match &*c {
                 TraversalMethod_mergeVContextAll::TraversalMethod_mergeV_MapContext(c) => self.lower_merge_vertex_map(c.genericMapNullableArgument()),
@@ -1670,6 +1686,7 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
     }
 
     fn visit_genericLiteral(&mut self, ctx: &GenericLiteralContext<'input>) {
+        if let Some(value) = self.literal_overrides.get(&ctx.start().start).cloned() { self.value_stack.push(value); return; }
         if let Some(num) = ctx.numericLiteral() {
             if let Some(int_lit) = num.integerLiteral() {
                 match parse_typed_integer_literal(&int_lit.get_text()) {

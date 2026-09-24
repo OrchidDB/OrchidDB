@@ -36,6 +36,34 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    match (name, args.as_slice()) {
+        ("gremlin_vertex_ref", [id, Value::String(_label)]) => return super::graph::resolve_gremlin_vertex_reference(graph, id),
+        ("local_tail", [value, count]) => return Ok(super::lists::gremlin_local_tail(value, count.as_i64().unwrap_or(0))),
+        ("local_range", [value, low, high]) => return Ok(super::lists::gremlin_local_range(value, low.as_i64().unwrap_or(0), high.as_i64().unwrap_or(-1))),
+        _ => {}
+    }
+    if let Some(inner) = name.strip_prefix("gremlin_traversal_list_") {
+        // Validate the incoming traverser before evaluating the argument type,
+        // matching TinkerPop's collection-step validation order.
+        if let Some(lhs) = args.first() {
+            if !matches!(lhs, Value::List(_) | Value::Path(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(lhs).is_none() && !(inner == "merge" && matches!(lhs, Value::Map(_) | Value::TypedMap(_))) {
+                return Err(InterpretError::Runtime(if matches!(lhs, Value::Null) {
+                    format!("Incoming traverser for {inner} step can't be null")
+                } else { format!("{inner} step can only take an array or an Iterable type for incoming traversers, encountered {}", lhs.type_name()) }));
+            }
+        }
+        if let Some(rhs) = args.get(1) {
+            if !matches!(rhs, Value::List(_) | Value::Path(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(rhs).is_none() && !(inner == "merge" && matches!(rhs, Value::Map(_) | Value::TypedMap(_))) {
+                return Err(InterpretError::Runtime(if matches!(rhs, Value::Null) {
+                    format!("traversal argument for {inner} step must yield an iterable type, not null")
+                } else { format!("traversal argument for {inner} step must yield an iterable type, encountered {}", rhs.type_name()) }));
+            }
+        }
+        return eval_call(&format!("list_{inner}"), args, graph);
+    }
+    if let Some(op) = name.strip_prefix("gremlin_string_") {
+        return super::strings::gremlin_string_call(op, &args);
+    }
     // Property-object helpers need catalog access; route them before
     // the value-only dispatch table.
     if matches!(
@@ -345,6 +373,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("select_key_or_binding", [_, binding, _]) => Ok(binding.clone()),
         // `map_has_key(map, key)` — true iff `map` is a Map containing the
         // given key. Used by lowering to decide whether to keep a row.
+        ("map_has_key", [Value::TypedMap(entries),key]) => Ok(Value::Bool(entries.iter().any(|(candidate,_)|candidate==key))),
         ("map_has_key", [Value::Map(map), Value::String(key)]) => {
             Ok(Value::Bool(map.contains_key(key)))
         }
@@ -370,6 +399,9 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ) => {
             if !matches!(binding, Value::Null) || !matches!(history, Value::Null) {
                 return Ok(select_binding_by_pop(binding, history, pop));
+            }
+            if let Value::TypedMap(entries)=source {
+                return Ok(entries.iter().find(|(candidate,_)|candidate==&Value::String(key.clone())).map(|(_,value)|value.clone()).unwrap_or(Value::Null));
             }
             if let Value::Map(map) = source {
                 return Ok(revive_value_map_entry(
@@ -575,7 +607,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         }
         ("gremlin_unfold_items", [value]) => Ok(match value {
             Value::Null => Value::List(vec![Value::Null]),
-            Value::List(items) | Value::BulkSet(items) => Value::List(items.clone()),
+            Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Value::List(items.clone()),
             Value::TypedMap(entries) => Value::List(entries.iter().map(|(key, value)|
                 Value::Map(BTreeMap::from([("key".into(), key.clone()), ("value".into(), value.clone())]))
             ).collect()),
@@ -681,16 +713,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Ok(project_path_edges(&[other.clone()], keys))
         }
         // ----- LocalScoped(<step>) — per-list-element variants -----
-        ("local_tail", [Value::List(items), Value::Int(n)]) => {
-            let n = (*n).max(0) as usize;
-            let start = items.len().saturating_sub(n);
-            Ok(Value::List(items[start..].to_vec()))
-        }
-        ("local_tail", [Value::Map(items), Value::Int(n)]) => {
-            let n = (*n).max(0) as usize;
-            let start = items.len().saturating_sub(n);
-            Ok(Value::Map(slice_map_entries(items, start, items.len())))
-        }
         ("local_limit", [Value::List(items), Value::Int(n)]) => {
             let n = (*n).max(0) as usize;
             Ok(Value::List(items.iter().take(n).cloned().collect()))
@@ -710,18 +732,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 n.min(items.len()),
                 items.len(),
             )))
-        }
-        ("local_range", [Value::List(items), Value::Int(low), Value::Int(high)]) => {
-            let low = (*low).max(0) as usize;
-            let high = (*high).max(low as i64) as usize;
-            let end = high.min(items.len());
-            Ok(Value::List(items[low.min(end)..end].to_vec()))
-        }
-        ("local_range", [Value::Map(items), Value::Int(low), Value::Int(high)]) => {
-            let low = (*low).max(0) as usize;
-            let high = (*high).max(low as i64) as usize;
-            let end = high.min(items.len());
-            Ok(Value::Map(slice_map_entries(items, low.min(end), end)))
         }
         ("local_order", [Value::List(items)]) => {
             let mut sorted = items.clone();
@@ -927,8 +937,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 .collect(),
         )),
         // Local-scoped on non-list inputs degrades to the global handler.
-        ("local_tail" | "local_limit" | "local_skip", [other, Value::Int(_n)]) => Ok(other.clone()),
-        ("local_range", [other, Value::Int(_), Value::Int(_)]) => Ok(other.clone()),
+        ("local_limit" | "local_skip", [other, Value::Int(_n)]) => Ok(other.clone()),
         ("local_order" | "local_dedup", [other]) => Ok(other.clone()),
         ("local_count", [_]) => Ok(Value::Long(1)),
         ("local_sum" | "local_min" | "local_max" | "local_mean", [scalar]) => Ok(scalar.clone()),
@@ -1076,7 +1085,10 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("cast_bigdecimal", [v]) => Ok(cast_to_bigdecimal(v)),
         ("cast_bool", [v]) => Ok(cast_to_bool(v)),
         ("cast_date", [v]) => Ok(cast_to_date(v)),
-        ("gremlin_cast_date", [v]) => Ok(cast_to_gremlin_date(v)),
+        ("gremlin_cast_date", [v]) => match cast_to_gremlin_date(v) {
+            Value::Null => Err(InterpretError::Runtime("Can't parse value as date".into())),
+            value => Ok(value),
+        },
         ("datetime_literal", [Value::String(s)]) => Ok(parse_datetime_string(s)
             .map(Value::DateTime)
             .unwrap_or(Value::Null)),
