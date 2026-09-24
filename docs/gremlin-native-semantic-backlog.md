@@ -14,6 +14,11 @@ does not consult a reference engine.
 - Named `groupCount()` starts from the registered typed map. Its long counts
   and typed keys survive empty input, repeat accumulation, cache invalidation,
   `select()` and repeated `cap()` calls without adding the seed twice.
+- Direct `select(...).by('property')` uses case-sensitive `Map.get()` semantics
+  for ordinary and typed maps, including productive null for an absent key.
+  Element reads preserve a present null property and drop a truly absent
+  property. Consequently a downstream range counts a missing-map-key null,
+  while continuing past a vertex whose property is absent.
 - Bounded lazy aggregation consumes through filters, projections, pure
   per-traverser children, nonbarrier choices and native mutations. Whole-stream
   barriers still consume their inputs. The range boundary respects movable
@@ -61,7 +66,7 @@ Regression sources:
 
 - `tests/gremlin_semantic_backlog.rs`: cyclic modulators, typed seeds, empty
   streams, repeated publication, filtered/ranged lazy consumption, choices,
-  graph writes and unproductive projections.
+  graph writes, unproductive projections and map/element null productivity.
 - `tests/gremlin_group_finalization.rs`: pending reads, explicit repeated caps,
   prefix versus suffix writes, published reducer seeds, fold accumulation,
   native element results and rollback.
