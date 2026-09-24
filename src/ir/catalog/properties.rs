@@ -75,6 +75,16 @@ impl PropertyGraph {
     }
 
     pub fn properties(&self, owner: &Value, keys: &[String]) -> Vec<Value> {
+        self.properties_inner(owner, keys, false)
+    }
+
+    /// The JVM provider accepts double-underscore user keys. Only explicit
+    /// overlay properties may use them: physical Arrow columns are not exposed.
+    pub(crate) fn jvm_properties(&self, owner: &Value, keys: &[String]) -> Vec<Value> {
+        self.properties_inner(owner, keys, true)
+    }
+
+    fn properties_inner(&self, owner: &Value, keys: &[String], jvm_user_keys: bool) -> Vec<Value> {
         match owner {
             Value::Node { label, id } => {
                 if !self.node_is_live(label, *id) {
@@ -87,7 +97,9 @@ impl PropertyGraph {
                 };
                 let mut out = vec![];
                 for key in keys.into_iter().filter(|k| {
-                    !k.starts_with("__")
+                    (!k.starts_with("__") || (jvm_user_keys
+                        && self.overlay.borrow().vertex_properties
+                            .get(&(label.clone(), *id)).is_some_and(|m| m.contains_key(k))))
                         && (k != "id"
                             || self
                                 .overlay
@@ -123,7 +135,16 @@ impl PropertyGraph {
                     keys.to_vec()
                 };
                 keys.into_iter()
-                    .filter(|k| !k.starts_with("__") && k != "id")
+                    .filter(|k| {
+                        if k == "id" { return false; }
+                        if !k.starts_with("__") { return true; }
+                        if !jvm_user_keys { return false; }
+                        let ov = self.overlay.borrow();
+                        let address = (rel_type.clone(), *id);
+                        ov.inserted_edges.get(&address).is_some_and(|e| e.properties.contains_key(k))
+                            || ov.edge_property_overrides.get(&address).is_some_and(|p| p.contains_key(k))
+                            || ov.edge_null_properties.get(&address).is_some_and(|keys| keys.contains(k))
+                    })
                     .filter_map(|key| {
                         let value = self.edge_property(rel_type, *id, &key);
                         let present_null = self.overlay.borrow().edge_null_properties
@@ -200,6 +221,29 @@ impl PropertyGraph {
         cardinality: Cardinality,
         meta: BTreeMap<String, Value>,
     ) -> CatalogResult<Value> {
+        self.set_vertex_property_inner(owner, key, value, cardinality, meta, false)
+    }
+
+    pub(crate) fn set_jvm_vertex_property(
+        &self,
+        owner: &Value,
+        key: &str,
+        value: Value,
+        cardinality: Cardinality,
+        meta: BTreeMap<String, Value>,
+    ) -> CatalogResult<Value> {
+        self.set_vertex_property_inner(owner, key, value, cardinality, meta, true)
+    }
+
+    fn set_vertex_property_inner(
+        &self,
+        owner: &Value,
+        key: &str,
+        value: Value,
+        cardinality: Cardinality,
+        meta: BTreeMap<String, Value>,
+        jvm_user_keys: bool,
+    ) -> CatalogResult<Value> {
         if value.contains_cardinality_value() || meta.values().any(Value::contains_cardinality_value) {
             return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
         }
@@ -210,6 +254,13 @@ impl PropertyGraph {
         };
         if key == "id" {
             self.set_element_public_id(owner, self.element_public_id(owner))?;
+        }
+        // An internal Arrow column must not become the first list/set member
+        // when the JVM explicitly creates a user property with the same name.
+        if jvm_user_keys && key.starts_with("__") {
+            self.overlay.borrow_mut().vertex_properties
+                .entry((label.clone(), *id)).or_default()
+                .entry(key.into()).or_default();
         }
         self.ensure_vertex_property(owner, key);
         let address = (label.clone(), *id);
