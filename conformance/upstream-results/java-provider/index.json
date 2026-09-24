@@ -23,7 +23,7 @@
       "label": "JVM product contracts (including GraphComputer supplemental checks)",
       "file": "jvm-executor-contracts.json",
       "counts": {
-        "pass": 60
+        "pass": 63
       },
       "run_complete": true,
       "upstream_assertions": false
@@ -39,13 +39,22 @@
       "upstream_assertions": true
     },
     {
-      "label": "GraphComputer supplemental checks (included in the 60 JVM product contracts)",
+      "label": "GraphComputer supplemental checks (included in the 63 JVM product contracts)",
       "file": "computer-supplemental.json",
       "counts": {
         "pass": 21,
         "fail": 0,
         "error": 0,
         "skip": 0
+      },
+      "run_complete": true,
+      "upstream_assertions": false
+    },
+    {
+      "label": "Native bridge protocol contracts",
+      "file": "native-store-contracts.json",
+      "counts": {
+        "pass": 15
       },
       "run_complete": true,
       "upstream_assertions": false
