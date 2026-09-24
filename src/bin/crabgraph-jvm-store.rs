@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for line in stdin.lock().lines() {
         let response = match serde_json::from_str::<serde_json::Value>(&line?) {
             Ok(request) => store.request(&request),
-            Err(e) => serde_json::json!({"ok":false,"error":format!("invalid JSON request: {e}")}),
+            Err(e) => store.protocol_error(format!("invalid JSON request: {e}")),
         };
         serde_json::to_writer(&mut stdout, &response)?;
         stdout.write_all(b"\n")?;
