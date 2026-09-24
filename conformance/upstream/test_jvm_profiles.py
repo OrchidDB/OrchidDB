@@ -33,5 +33,12 @@ class JvmProfileTests(unittest.TestCase):
    self.assertIn('captured_at',recorded['build'])
  def test_null_policy_exclusion_is_explicit(self):
   self.assertEqual(gremlin_capability({'status':'skipped','error':'Upstream execution profile excludes @DisallowNullPropertyValues'})['name'],'null-as-removal')
+ def test_optional_codec_jar_does_not_ambiguate_executor_identity(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);(root/'UpstreamGremlin.class').write_bytes(b'compiled')
+   executor=root/'crabgraph-jvm-0.1.0.jar';codec=root/'crabgraph-jvm-codecs-0.1.0.jar'
+   with patch.object(run,'file_identity',side_effect=lambda p:{'path':str(p)}),patch.object(run.subprocess,'check_output',return_value=''):
+    build=run.jvm_build(':'.join(map(str,[root,codec,executor])))
+   self.assertEqual(build['jvm_bridge']['path'],str(executor))
 
 if __name__=='__main__':unittest.main()
