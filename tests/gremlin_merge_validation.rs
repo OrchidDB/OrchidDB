@@ -251,9 +251,9 @@ fn dynamic_merge_options_retain_and_replace_cardinality_settings() {
     )
     .unwrap();
     assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 1);
-    // Replacing the static option with a traversal must discard its old single default.
-    run("g.mergeV(['name':'alice']).option(Merge.onMatch,['age':34],single).option(Merge.onMatch,__.constant(['age':35]))", &graph).unwrap();
-    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 2);
+    // Replacing the static option with a traversal restores the provider single default.
+    run("g.mergeV(['name':'alice']).option(Merge.onMatch,['age':34],list).option(Merge.onMatch,__.constant(['age':35]))", &graph).unwrap();
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 1);
     run("g.mergeV(__.constant(['name':'alice'])).option(Merge.onMatch,['age':Cardinality.list(36)],single)", &graph).unwrap();
-    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 3);
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 2);
 }

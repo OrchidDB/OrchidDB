@@ -246,7 +246,7 @@ pub(super) fn lower_native_property(input:Node,cardinality:&str,key:&crate::lang
     let (input,key)=argument(input,key,lo,ctx)?;
     let (input,value)=argument(input,value,lo,ctx)?;
     let meta=gvalue_to_expr(&GValue::Map(meta.iter().cloned().collect()))?;
-    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(if cardinality == "default" {"list"} else {cardinality}),meta]))
+    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(if cardinality == "default" {"single"} else {cardinality}),meta]))
 }
 
 
