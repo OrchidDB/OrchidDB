@@ -26,6 +26,11 @@ const V_EDGE: u8 = 19;
 const V_LIST: u8 = 20;
 const V_MAP: u8 = 21;
 const V_PATH: u8 = 22;
+const V_TYPED_MAP: u8 = 23;
+const V_TOKEN: u8 = 24;
+const V_DIRECTION: u8 = 25;
+const V_BULK_SET: u8 = 26;
+const V_MAP_ENTRY: u8 = 27;
 
 // ---------------- primitive writers ----------------
 
@@ -210,6 +215,27 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_u8(out, V_MAP);
             put_map(out, map);
         }
+        Value::MapEntry(pair) => { put_u8(out, V_MAP_ENTRY); encode_value(out, &pair.0); encode_value(out, &pair.1); }
+        Value::TypedMap(entries) => {
+            put_u8(out, V_TYPED_MAP);
+            put_u64(out, entries.len() as u64);
+            for (key, value) in entries {
+                encode_value(out, key);
+                encode_value(out, value);
+            }
+        }
+        Value::Token(value) => {
+            put_u8(out, V_TOKEN);
+            put_str(out, value);
+        }
+        Value::Direction(value) => {
+            put_u8(out, V_DIRECTION);
+            put_str(out, value);
+        }
+        Value::BulkSet(items) => {
+            put_u8(out, V_BULK_SET);
+            put_values(out, items);
+        }
         Value::Path(items) => {
             put_u8(out, V_PATH);
             put_values(out, items);
@@ -267,6 +293,18 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
         V_LIST => Value::List(decode_values(r)?),
         V_MAP => Value::Map(decode_map(r)?),
         V_PATH => Value::Path(decode_values(r)?),
+        V_MAP_ENTRY => Value::MapEntry(Box::new((decode_value(r)?,decode_value(r)?))),
+        V_TYPED_MAP => {
+            let count = r.count()?;
+            let mut entries = Vec::with_capacity(count);
+            for _ in 0..count {
+                entries.push((decode_value(r)?, decode_value(r)?));
+            }
+            Value::TypedMap(entries)
+        }
+        V_TOKEN => Value::Token(r.str()?),
+        V_DIRECTION => Value::Direction(r.str()?),
+        V_BULK_SET => Value::BulkSet(decode_values(r)?),
         other => return Err(format!("unknown value tag {other}")),
     })
 }
@@ -456,5 +494,67 @@ pub(super) fn finish(r: &Reader) -> Result<(), String> {
         Ok(())
     } else {
         Err("trailing bytes after section".to_string())
+    }
+}
+
+#[cfg(test)]
+mod typed_map_tests {
+    use super::*;
+    #[test]
+    fn typed_map_snapshot_preserves_key_kinds_and_nested_values() {
+        let value = Value::TypedMap(vec![
+            (Value::Token("id".into()), Value::Int(7)),
+            (Value::String("id".into()), Value::Long(8)),
+            (
+                Value::Direction("OUT".into()),
+                Value::TypedMap(vec![(
+                    Value::Node {
+                        label: "person".into(),
+                        id: 2,
+                    },
+                    Value::Bool(true),
+                )]),
+            ),
+        ]);
+        assert_eq!(
+            decode_value_bytes(&encode_value_bytes(&value)).unwrap(),
+            value
+        );
+        assert_eq!(
+            encode_value_bytes(&Value::String("id".into())),
+            vec![17, 2, 0, 0, 0, 0, 0, 0, 0, b'i', b'd']
+        );
+    }
+}
+
+#[cfg(test)]
+mod bulkset_codec_tests {
+    use super::*;
+    #[test]
+    fn bulkset_roundtrip_keeps_duplicates_and_distinct_kind() {
+        let value = Value::BulkSet(vec![Value::Int(1), Value::Int(1), Value::Long(1)]);
+        assert_eq!(
+            decode_value_bytes(&encode_value_bytes(&value)).unwrap(),
+            value
+        );
+        assert_ne!(
+            encode_value_bytes(&value),
+            encode_value_bytes(&Value::List(vec![
+                Value::Int(1),
+                Value::Int(1),
+                Value::Long(1)
+            ]))
+        );
+    }
+}
+
+#[cfg(test)]
+mod entry_codec_tests {
+    use super::*;
+    #[test]
+    fn map_entry_roundtrip_preserves_native_key_and_value_types() {
+        let entry=Value::MapEntry(Box::new((Value::Token("id".into()),Value::Long(42))));
+        assert_eq!(decode_value_bytes(&encode_value_bytes(&entry)).unwrap(),entry);
+        assert_ne!(encode_value_bytes(&entry),encode_value_bytes(&Value::TypedMap(vec![(Value::Token("id".into()),Value::Long(42))])));
     }
 }

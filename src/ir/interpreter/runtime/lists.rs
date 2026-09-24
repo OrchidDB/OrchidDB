@@ -1,9 +1,5 @@
 //! List comparison, literals, display, and indexing.
 
-use crate::ir::catalog::PropertyGraph;
-use crate::ir::interpreter::{InterpretError, IrResult};
-use crate::ir::interpreter::expr::compare_values;
-use crate::ir::value::Value;
 use super::datetime::normalize_interval_spec;
 use super::graph::graph_element_property;
 use super::maps::{
@@ -11,7 +7,11 @@ use super::maps::{
     visible_map_keys, visible_map_len,
 };
 use super::numeric::{value_as_bigint, value_as_f64};
-use super::string_functions::string_index_1_based;
+use super::string_functions::string_index;
+use crate::ir::catalog::PropertyGraph;
+use crate::ir::interpreter::expr::compare_values;
+use crate::ir::interpreter::{InterpretError, IrResult};
+use crate::ir::value::Value;
 
 pub(super) fn list_semantic_eq(left: &Value, right: &Value) -> bool {
     match (left, right) {
@@ -104,6 +104,11 @@ fn numeric_type(value: &Value) -> bool {
 
 pub(super) fn cypher_list_type_name(value: &Value) -> String {
     match value {
+        Value::MapEntry(_) => "MAP_ENTRY".into(),
+        Value::TypedMap(_) => "MAP".into(),
+        Value::BulkSet(_) => "BULKSET".into(),
+        Value::Token(_) => "TOKEN".into(),
+        Value::Direction(_) => "DIRECTION".into(),
         Value::Null => "NULL".to_string(),
         Value::Bool(_) => "BOOL".to_string(),
         Value::Byte(_) => "INT8".to_string(),
@@ -336,6 +341,22 @@ pub(super) fn list_product_value(items: &[Value]) -> Value {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::MapEntry(entry) => format!("{}={}", display_for_list_to_string(&entry.0), display_for_list_to_string(&entry.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_list_to_string(key),
+                    display_for_list_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => String::new(),
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
@@ -353,7 +374,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::BigDecimal(n) => n.to_string(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
-        Value::List(items) | Value::Path(items) => {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_list_to_string)
@@ -535,17 +556,21 @@ pub(super) fn list_element_1_based(items: &[Value], index: i64) -> Option<Value>
     }
 }
 
-pub(super) fn cypher_subscript(target: &Value, index: &Value, graph: &PropertyGraph) -> IrResult<Value> {
+pub(super) fn cypher_subscript(
+    target: &Value,
+    index: &Value,
+    graph: &PropertyGraph,
+) -> IrResult<Value> {
     if let Some(items) = runtime_list(target) {
         return match index.as_i64() {
-            Some(index) => Ok(list_index_1_based(&items, index)),
+            Some(index) => Ok(list_index(&items, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),
             None => Err(list_extract_type_error()),
         };
     }
     match (target, index) {
         (Value::String(text), index) => match index.as_i64() {
-            Some(index) => Ok(string_index_1_based(text, index)),
+            Some(index) => Ok(string_index(text, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),
             None => Err(list_extract_type_error()),
         },
@@ -659,4 +684,75 @@ fn range_integer_arg(value: &Value) -> Option<i64> {
         Value::BigInt(value) | Value::UInt128(value) => value.to_i64(),
         _ => None,
     }
+}
+
+/// TinkerPop RangeLocalStep: a requested width of one emits a scalar for
+/// iterables, while maps always remain maps. A missing scalar is unproductive.
+pub(super) fn gremlin_local_range(value: &Value, low: i64, high: i64) -> Value {
+    let start = low.max(0) as usize;
+    let count = if high == -1 { usize::MAX } else { (high.max(0) as usize).saturating_sub(start) };
+    let set = crate::ir::value::as_gremlin_set(value);
+    if let Some(items) = set.or_else(|| match value {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Some(items.as_slice()),
+        _ => None,
+    }) {
+        if high != -1 && high - low == 1 {
+            return items.get(start).cloned().unwrap_or(Value::Null);
+        }
+        let selected = items.iter().skip(start).take(count).cloned().collect();
+        return if set.is_some() { crate::ir::value::gremlin_set(selected) } else { Value::List(selected) };
+    }
+    match value {
+        Value::TypedMap(items) => Value::TypedMap(items.iter().skip(start).take(count).cloned().collect()),
+        Value::Map(items) => Value::Map(items.iter().skip(start).take(count).map(|(k,v)|(k.clone(),v.clone())).collect()),
+        other => other.clone(),
+    }
+}
+
+pub(super) fn gremlin_local_tail(value: &Value, count: i64) -> Value {
+    let len = match value {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => items.len(),
+        Value::TypedMap(items) => items.len(),
+        Value::Map(items) => crate::ir::value::as_gremlin_set(value).map_or(items.len(), |items| items.len()),
+        _ => return value.clone(),
+    } as i64;
+    gremlin_local_range(value, len.saturating_sub(count.max(0)), len)
+}
+
+pub(super) fn gremlin_merge(lhs: &Value, rhs: &Value, traversal: bool) -> IrResult<Value> {
+    let is_map = |value: &Value| matches!(value, Value::TypedMap(_) | Value::Map(_)) && crate::ir::value::as_gremlin_set(value).is_none();
+    if is_map(lhs) {
+        if !is_map(rhs) {
+            return Err(InterpretError::Runtime(format!("merge step expected provided argument to evaluate to a Map, encountered {}", rhs.type_name())));
+        }
+        let entries = |value: &Value| match value {
+            Value::TypedMap(items) => items.clone(),
+            Value::Map(items) => items.iter().filter(|(key,_)| key.as_str() != crate::ir::value::STRUCT_ORDER_KEY && key.as_str() != crate::ir::value::STRUCT_TYPES_KEY).map(|(key,value)|(Value::String(key.clone()),value.clone())).collect(),
+            _ => unreachable!(),
+        };
+        let mut merged = entries(lhs);
+        for (key,value) in entries(rhs) {
+            if let Some((_,existing)) = merged.iter_mut().find(|(existing,_)| *existing == key) { *existing = value; }
+            else { merged.push((key,value)); }
+        }
+        return Ok(Value::TypedMap(merged));
+    }
+    let iterable = |value: &Value| match value {
+        Value::List(items) | Value::Path(items) | Value::BulkSet(items) => Some(items.clone()),
+        other => crate::ir::value::as_gremlin_set(other).map(|items|items.to_vec()),
+    };
+    let lhs = iterable(lhs).ok_or_else(|| InterpretError::Runtime(if matches!(lhs,Value::Null) {
+        "Incoming traverser for merge step can't be null".into()
+    } else { format!("merge step can only take an array or an Iterable type for incoming traversers, encountered {}",lhs.type_name()) }))?;
+    if !traversal && is_map(rhs) {
+        return Err(InterpretError::Runtime("merge step type mismatch: expected argument to be Iterable but got Map".into()));
+    }
+    let rhs = iterable(rhs).ok_or_else(|| InterpretError::Runtime(if traversal {
+        if matches!(rhs,Value::Null) {"traversal argument for merge step must yield an iterable type, not null".into()}
+        else {format!("traversal argument for merge step must yield an iterable type, encountered {}",rhs.type_name())}
+    } else if matches!(rhs,Value::Null) {"Argument provided for merge step can't be null".into()}
+    else {format!("merge step can only take an array or an Iterable as an argument, encountered {}",rhs.type_name())}))?;
+    let mut out=Vec::new();
+    for item in lhs.into_iter().chain(rhs) {if !out.contains(&item) {out.push(item);}}
+    Ok(crate::ir::value::gremlin_set(out))
 }

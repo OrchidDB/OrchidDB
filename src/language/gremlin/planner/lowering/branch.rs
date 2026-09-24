@@ -54,23 +54,9 @@ pub(super) fn lower_mid_traversal_union(
     let Some(first) = iter.next() else {
         return Ok(input);
     };
-    let mut acc = Node::GraphApply {
-        kind: ApplyKind::Inner,
-        correlation: vec![CURRENT.into()],
-        outputs: vec![CURRENT.into()],
-        optional_missing: OptionalMissing::Null,
-        left: input.clone().boxed(),
-        right: lower_child_traversal(first, lo, ctx, ChildTraversalKind::UnionArm)?.boxed(),
-    };
+    let mut acc = super::sub_traversal::lower_stream_child_traversal(input.clone(), first, lo, ctx, ChildTraversalKind::UnionArm)?;
     for next in iter {
-        let arm = Node::GraphApply {
-            kind: ApplyKind::Inner,
-            correlation: vec![CURRENT.into()],
-            outputs: vec![CURRENT.into()],
-            optional_missing: OptionalMissing::Null,
-            left: input.clone().boxed(),
-            right: lower_child_traversal(next, lo, ctx, ChildTraversalKind::UnionArm)?.boxed(),
-        };
+        let arm = super::sub_traversal::lower_stream_child_traversal(input.clone(), next, lo, ctx, ChildTraversalKind::UnionArm)?;
         acc = Node::GraphUnion {
             all: true,
             align: UnionAlign::ByPosition,
@@ -509,6 +495,8 @@ fn lower_first_pick(
 }
 
 fn productive_default(dispatch_key: &str, none: Option<Node>, unproductive: Option<Node>) -> Node {
+    // An option traversal without a matching key drops the traverser. It
+    // does not have the identity fallback of choose(predicate, trueBranch).
     match (none, unproductive) {
         (Some(none), Some(unproductive)) => boolean_choose_correlated(
             productive_condition(dispatch_key),
@@ -517,21 +505,15 @@ fn productive_default(dispatch_key: &str, none: Option<Node>, unproductive: Opti
             correlate_current_and(dispatch_key),
             vec![CURRENT.into(), dispatch_key.to_string()],
         ),
-        (Some(none), None) => boolean_choose_correlated(
-            productive_condition(dispatch_key),
-            none,
-            correlate_current(),
-            correlate_current_and(dispatch_key),
-            vec![CURRENT.into(), dispatch_key.to_string()],
-        ),
+        (Some(none), None) => none,
         (None, Some(unproductive)) => boolean_choose_correlated(
             productive_condition(dispatch_key),
-            correlate_current(),
+            Node::GraphEmpty,
             unproductive,
             correlate_current_and(dispatch_key),
             vec![CURRENT.into(), dispatch_key.to_string()],
         ),
-        (None, None) => correlate_current_and(dispatch_key),
+        (None, None) => Node::GraphEmpty,
     }
 }
 

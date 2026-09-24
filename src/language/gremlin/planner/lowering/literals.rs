@@ -7,9 +7,15 @@ use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
     Ok(match value {
+        GValue::Token(_) | GValue::DirectionToken(_) | GValue::TypedMap(_) | GValue::VertexRef { .. } => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("native vertex reference requires runtime evaluation".into())),
         GValue::Null => Lit::Null,
         GValue::Bool(b) => Lit::Bool(*b),
-        GValue::Int(n) => Lit::Int(*n),
+        GValue::Int(n) | GValue::Long(n) => Lit::Int(*n),
+        GValue::Byte(n) => Lit::Int(*n as i64),
+        GValue::Short(n) => Lit::Int(*n as i64),
+        GValue::Float32(n) => Lit::Float(*n as f64),
+        GValue::BigInt(n) => Lit::String(n.to_string()),
+        GValue::BigDecimal(n) => Lit::String(n.to_string()),
         GValue::Float(f) => Lit::Float(*f),
         GValue::String(s) => Lit::String(s.clone()),
         GValue::DateTime(_) => Lit::Null,
@@ -26,6 +32,20 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
 
 pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     Ok(match value {
+        GValue::Token(token) => IrExpr::Call {name:"gremlin_token_literal".into(),args:vec![IrExpr::lit_str(token)]},
+        GValue::DirectionToken(token) => IrExpr::Call {name:"gremlin_direction_literal".into(),args:vec![IrExpr::lit_str(token)]},
+        GValue::TypedMap(entries) => IrExpr::Call { name:"map_literal".into(),args:vec![IrExpr::List(entries.iter().map(|(k,_)|gvalue_to_expr(k)).collect::<GremlinPlanResult<_>>()?),IrExpr::List(entries.iter().map(|(_,v)|gvalue_to_expr(v)).collect::<GremlinPlanResult<_>>()?)]},
+        GValue::VertexRef { id, label } => IrExpr::Call { name: "gremlin_vertex_ref".into(), args: vec![gvalue_to_expr(id)?, IrExpr::lit_str(label)] },
+        GValue::Byte(_) | GValue::Short(_) | GValue::Long(_) |
+        GValue::BigInt(_) | GValue::Float32(_) | GValue::BigDecimal(_) => IrExpr::Call {
+            name: match value {
+                GValue::Byte(_) => "cast_byte", GValue::Short(_) => "cast_short",
+                GValue::Long(_) => "cast_long", GValue::BigInt(_) => "cast_bigint",
+                GValue::Float32(_) => "cast_float", GValue::BigDecimal(_) => "cast_bigdecimal",
+                _ => unreachable!(),
+            }.into(),
+            args: vec![IrExpr::Lit(gvalue_to_lit(value)?)],
+        },
         GValue::DateTime(s) => IrExpr::Call {
             name: "datetime_literal".into(),
             args: vec![IrExpr::Lit(Lit::String(s.clone()))],
@@ -65,22 +85,32 @@ pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     })
 }
 
-pub(super) fn gvalue_to_value(value: &GValue) -> Value {
-    match value {
+pub(super) fn gvalue_to_value(value: &GValue) -> Option<Value> {
+    Some(match value {
+        GValue::Token(token) => Value::Token(token.clone()),
+        GValue::DirectionToken(token) => Value::Direction(token.clone()),
+        GValue::TypedMap(entries) => Value::map_from_entries(entries.iter().map(|(k,v)|Some((gvalue_to_value(k)?,gvalue_to_value(v)?))).collect::<Option<_>>()?),
+        GValue::VertexRef { .. } => return None,
         GValue::Null => Value::Null,
         GValue::Bool(b) => Value::Bool(*b),
         GValue::Int(n) => Value::Int(*n),
+        GValue::Byte(n) => Value::Byte(*n),
+        GValue::Short(n) => Value::Short(*n),
+        GValue::Long(n) => Value::Long(*n),
+        GValue::BigInt(n) => Value::BigInt(n.clone()),
+        GValue::Float32(n) => Value::Float32(*n),
+        GValue::BigDecimal(n) => Value::BigDecimal(n.clone()),
         GValue::Float(f) => Value::Float(*f),
         GValue::DateTime(s) => Value::DateTime(s.clone()),
         GValue::String(s) => Value::String(s.clone()),
-        GValue::List(items) => Value::List(items.iter().map(gvalue_to_value).collect()),
+        GValue::List(items) => Value::List(items.iter().map(gvalue_to_value).collect::<Option<Vec<_>>>()?),
         GValue::Set(items) => {
-            crate::ir::value::gremlin_set(items.iter().map(gvalue_to_value).collect())
+            crate::ir::value::gremlin_set(items.iter().map(gvalue_to_value).collect::<Option<Vec<_>>>()?)
         }
         GValue::Map(map) => Value::Map(
             map.iter()
-                .map(|(key, value)| (key.clone(), gvalue_to_value(value)))
-                .collect(),
+                .map(|(key, value)| Some((key.clone(), gvalue_to_value(value)?)))
+                .collect::<Option<_>>()?,
         ),
-    }
+    })
 }

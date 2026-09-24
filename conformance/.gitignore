@@ -1,0 +1,8 @@
+__pycache__/
+runner/target/
+adapters/sqlg/target/
+adapters/sqlg/classpath.txt
+*.log
+
+upstream/cache/
+upstream-results/*.jsonl

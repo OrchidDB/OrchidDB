@@ -55,6 +55,19 @@ async fn rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
     rows
 }
 
+async fn hybrid_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
+    let parsed = parse_query(query).unwrap();
+    let plan = CypherPlanner::new().plan(&parsed).unwrap();
+    let (returned, _) = new_graph::ir::exec::execute_with_islands(
+        &plan, graph, &RelBackend::new(), &new_graph::ir::exec::SqlTarget::duckdb(),
+    ).await.unwrap();
+    let mut rows = (0..returned.batch.num_rows()).map(|row| {
+        arrow::util::display::array_value_to_string(returned.batch.column(0).as_ref(), row).unwrap()
+    }).collect::<Vec<_>>();
+    rows.sort();
+    rows
+}
+
 #[tokio::test]
 async fn encoded_list_property_uses_elements_for_size_subscript_and_unwind() {
     let graph = graph(vec![
@@ -70,9 +83,10 @@ async fn encoded_list_property_uses_elements_for_size_subscript_and_unwind() {
         ["10", "20"]
     );
     assert_eq!(
-        rows(&graph, "MATCH (p:P) RETURN p.items[1]").await,
+        rows(&graph, "MATCH (p:P) RETURN p.items[0]").await,
         ["", "10"]
     );
+    assert_eq!(rows(&graph, "MATCH (p:P) RETURN p.items[1]").await, ["", "20"]);
     assert_eq!(
         rows(&graph, "MATCH (p:P) RETURN list_append(p.items, 30)").await,
         ["[10, 20, 30]", "[30]"]
@@ -94,7 +108,7 @@ async fn encoded_list_quantifier_handles_empty_and_null_elements() {
         ("single", vec!["", "", "", "false"]),
     ] {
         assert_eq!(
-            rows(
+            hybrid_rows(
                 &graph,
                 &format!("MATCH (p:P) RETURN {function}(x IN p.items WHERE x = 10)")
             )

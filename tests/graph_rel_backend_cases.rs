@@ -763,6 +763,26 @@ async fn execute_case_duckdb(
     let mut guard = HARNESS_DUCKDB_EXECUTOR.lock().expect("duckdb executor");
     let executor =
         guard.get_or_insert_with(|| DuckDbExecutor::with_timeouts(case_timeout(), setup_timeout()));
+    if std::env::var("GRAPH_REL_EXPLAIN_SQL").is_ok_and(|value| value == "1") {
+        use sql::SqlExecutor;
+        match executor.run_with_tables(
+            &prepared.tables,
+            &prepared.setup,
+            &format!("EXPLAIN {}", prepared.query),
+        ) {
+            Ok(rows) => {
+                eprintln!("duckdb-explain query={}", current_case());
+                for row in rows {
+                    for value in row {
+                        if let sql::SqlValue::Text(text) = value {
+                            eprintln!("{text}");
+                        }
+                    }
+                }
+            }
+            Err(err) => eprintln!("duckdb-explain failed: {err}"),
+        }
+    }
     let result = sql::execute_prepared(executor, &prepared).map_err(|err| format!("{err}"));
     record_slow_engine_phase(
         "duckdb_setup_and_query",

@@ -1,0 +1,20 @@
+[package]
+name = "crabgraph-conformance-runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+new-graph = { path = "../.." }
+arrow = "58.2.0"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+datafusion = "53.1.0"
+duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow"] }
+spargebra = "0.4.7"
+
+# Keep local builds compact: bundled DuckDB and the many integration-test
+# binaries otherwise retain substantial debug symbols and incremental objects.
+# The test profile inherits these settings from dev.
+[profile.dev]
+debug = 0
+incremental = false

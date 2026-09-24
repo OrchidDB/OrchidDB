@@ -1,14 +1,13 @@
 //! Struct, union, and Kuzu map values.
 
+use super::cast_scalar::UnionVariant;
+use super::cast_union::encode_union_variants;
+use super::display_for_kuzu_map_item;
+use super::lists::{list_semantic_eq, parse_runtime_list_literal};
+use super::{KUZU_MAP_ENTRIES_KEY, UNION_TAG_KEY, UNION_VALUE_KEY, UNION_VARIANTS_KEY};
 use crate::ir::interpreter::{InterpretError, IrResult};
 use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 use std::collections::BTreeMap;
-use super::{KUZU_MAP_ENTRIES_KEY, UNION_TAG_KEY, UNION_VALUE_KEY, UNION_VARIANTS_KEY};
-use super::cast_scalar::UnionVariant;
-use super::cast_union::encode_union_variants;
-use super::lists::{list_semantic_eq, parse_runtime_list_literal};
-use super::display_for_kuzu_map_item;
-
 
 pub(super) fn slice_map_entries(
     items: &std::collections::BTreeMap<String, Value>,
@@ -111,7 +110,11 @@ pub(super) fn union_extract(value: &Value, tag: &str) -> Value {
     }
 }
 
-pub(super) fn make_union_value(tag: &str, value: Value, variants: Option<&[UnionVariant<'_>]>) -> Value {
+pub(super) fn make_union_value(
+    tag: &str,
+    value: Value,
+    variants: Option<&[UnionVariant<'_>]>,
+) -> Value {
     let mut out = BTreeMap::new();
     out.insert(UNION_TAG_KEY.to_string(), Value::String(tag.to_string()));
     out.insert(UNION_VALUE_KEY.to_string(), value.clone());
@@ -125,17 +128,59 @@ pub(super) fn make_union_value(tag: &str, value: Value, variants: Option<&[Union
     Value::Map(out)
 }
 
+/// Cypher equality propagates unknown values recursively. A definite unequal
+/// component still makes the whole collection unequal, even beside a null.
+pub(super) fn cypher_equal(left: &Value, right: &Value) -> Option<bool> {
+    fn combine(values: impl Iterator<Item = Option<bool>>) -> Option<bool> {
+        let mut unknown = false;
+        for value in values {
+            match value {
+                Some(false) => return Some(false),
+                None => unknown = true,
+                Some(true) => {}
+            }
+        }
+        if unknown { None } else { Some(true) }
+    }
+    match (left, right) {
+        (Value::Null, _) | (_, Value::Null) => None,
+        (Value::List(left), Value::List(right)) => {
+            if left.len() != right.len() {
+                return Some(false);
+            }
+            combine(
+                left.iter()
+                    .zip(right)
+                    .map(|(left, right)| cypher_equal(left, right)),
+            )
+        }
+        (Value::Map(left), Value::Map(right)) => {
+            let left_keys = visible_map_keys(left);
+            let right_keys = visible_map_keys(right);
+            if left_keys.len() != right_keys.len()
+                || left_keys.iter().any(|key| !right_keys.contains(key))
+            {
+                return Some(false);
+            }
+            combine(
+                left_keys
+                    .iter()
+                    .map(|key| cypher_equal(&left[key], &right[key])),
+            )
+        }
+        _ => left.three_valued_eq(right),
+    }
+}
+
 pub(super) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Value {
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
         return Value::Null;
     }
     match op {
-        "eq" => left
-            .three_valued_eq(right)
+        "eq" => cypher_equal(left, right)
             .map(Value::Bool)
             .unwrap_or(Value::Null),
-        "neq" => left
-            .three_valued_eq(right)
+        "neq" => cypher_equal(left, right)
             .map(|value| Value::Bool(!value))
             .unwrap_or(Value::Null),
         _ => {
@@ -173,8 +218,10 @@ pub(super) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Val
 }
 
 pub(crate) fn runtime_list(value: &Value) -> Option<Vec<Value>> {
+    if let Some(items) = crate::ir::value::as_gremlin_set(value) { return Some(items.to_vec()); }
+
     match value {
-        Value::List(items) => Some(items.clone()),
+        Value::List(items) | Value::BulkSet(items) => Some(items.clone()),
         Value::Path(items) => Some(items.clone()),
         Value::String(text) => parse_runtime_list_literal(text),
         _ => None,

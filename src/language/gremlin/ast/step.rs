@@ -6,6 +6,37 @@ use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    DynamicMerge { edge: bool, criteria: MutationArgument, options: std::collections::BTreeMap<String,MutationArgument> },
+    AddDynamicV { label: MutationArgument },
+    AddDynamicE { label: MutationArgument, from: Option<MutationArgument>, to: Option<MutationArgument> },
+    PropertyDynamic { key: MutationArgument, value: MutationArgument },
+    MergeE {
+        criteria: Option<MergeVertexMap>,
+        on_create: Option<Option<MergeVertexMap>>,
+        on_match: Option<Option<MergeVertexMap>>,
+    },
+    MergeV {
+        criteria: Option<MergeVertexMap>,
+        on_create: Option<Option<MergeVertexMap>>,
+        on_match: Option<Option<MergeVertexMap>>,
+    },
+    AddV {
+        label: String,
+    },
+    AddE {
+        label: String,
+        from: Option<String>,
+        to: Option<String>,
+    },
+    Property {
+        key: String,
+        value: GValue,
+    },
+    PropertyTraversal {
+        key: String,
+        traversal: Vec<Step>,
+    },
+    Drop,
     V {
         ids: Vec<GValue>,
     },
@@ -236,6 +267,8 @@ pub enum Step {
     /// `aggregate(label)` / `store(label)` — snapshot the current row
     /// stream under the given label so a later `cap(label)` can restore it.
     AggregateAs(String),
+    /// Lazy per-traverser aggregate (Gremlin3 store / aggregate(local,...)).
+    AggregateLocal(String),
     /// `cap(label)` — replace the current row stream with whatever was
     /// snapshotted under `label`.
     Cap(String),
@@ -317,6 +350,11 @@ pub enum Step {
     /// projection is unproductive and surfaces NULL rather than dropping the
     /// traverser. The default Gremlin strategy stack drops those rows.
     WithProductiveByStrategy,
+    /// Partition assigned to newly created graph elements.
+    WithPartitionWrite {
+        key: String,
+        value: GValue,
+    },
     /// `tree()` / `tree(label)` — collect a path-tree of visited elements.
     /// The optional label, when present, doubles as a side-effect store so
     /// a later `cap(label)` can retrieve it.
@@ -406,4 +444,26 @@ pub enum Step {
         value: Option<GValue>,
         traversal: Option<Vec<Step>>,
     },
+}
+
+/// Static merge criteria retain token identity separately from property keys.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MergeVertexMap {
+    pub label: Option<GValue>,
+    pub id: Option<GValue>,
+    pub out_vertex: Option<GValue>,
+    pub in_vertex: Option<GValue>,
+    pub properties: std::collections::BTreeMap<String, GValue>,
+    pub single_properties: std::collections::BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MutationArgument { Literal(GValue), Traversal(Vec<Step>), Label(String) }
+
+impl MergeVertexMap {
+    pub(crate) fn literal(&self)->GValue {
+        let mut entries:Vec<_>=self.properties.iter().map(|(k,v)|(GValue::String(k.clone()),v.clone())).collect();
+        for (key,value) in [(GValue::Token("id".into()),&self.id),(GValue::Token("label".into()),&self.label),(GValue::DirectionToken("OUT".into()),&self.out_vertex),(GValue::DirectionToken("IN".into()),&self.in_vertex)] {if let Some(value)=value {entries.push((key,value.clone()));}}
+        GValue::TypedMap(entries)
+    }
 }

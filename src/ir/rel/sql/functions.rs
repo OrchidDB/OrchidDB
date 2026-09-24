@@ -32,6 +32,25 @@ pub(super) fn prepare_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDialect) -
 }
 
 fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> {
+    if let ast::Expr::IsNull(operand) | ast::Expr::IsNotNull(operand)
+        | ast::Expr::IsTrue(operand) | ast::Expr::IsFalse(operand)
+        | ast::Expr::IsNotTrue(operand) | ast::Expr::IsNotFalse(operand) = expr {
+        if matches!(operand.as_ref(), ast::Expr::UnaryOp { .. } | ast::Expr::BinaryOp { .. }) {
+            **operand = ast::Expr::Nested(Box::new(operand.as_ref().clone()));
+        }
+    }
+    // SQL postfix predicates bind differently from comparisons. The upstream
+    // unparser omits these parentheses, changing `(a IS NULL) = (b IS NULL)`
+    // into `(a IS NULL = b) IS NULL` when the target parses it again.
+    if let ast::Expr::BinaryOp { left, right, .. } = expr {
+        for operand in [left, right] {
+            if matches!(operand.as_ref(), ast::Expr::IsNull(_) | ast::Expr::IsNotNull(_)
+                | ast::Expr::IsTrue(_) | ast::Expr::IsFalse(_)
+                | ast::Expr::IsNotTrue(_) | ast::Expr::IsNotFalse(_)) {
+                **operand = ast::Expr::Nested(Box::new(operand.as_ref().clone()));
+            }
+        }
+    }
     let ast::Expr::Function(function) = expr else {
         return Ok(());
     };

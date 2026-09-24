@@ -29,6 +29,17 @@ pub(crate) fn coalesce_op(
                     if let Some(value) = arm_row.bindings.get(output) {
                         new_row.bindings.insert(output.to_string(), value.clone());
                     }
+                    for (binding, value) in &arm_row.bindings {
+                        if binding == "__path"
+                            || binding.starts_with("__gremlin_select_history_")
+                            || arm_row
+                                .bindings
+                                .contains_key(&format!("__gremlin_select_history_{binding}"))
+                        {
+                            new_row.bindings.insert(binding.clone(), value.clone());
+                        }
+                    }
+                    new_row.bulk = arm_row.bulk;
                     out.push(new_row);
                 }
                 break;

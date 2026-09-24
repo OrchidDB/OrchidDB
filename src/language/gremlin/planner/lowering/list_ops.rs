@@ -79,7 +79,7 @@ pub(super) fn lower_list_op_traversal(
         items: vec![ProjectionItem {
             alias: CURRENT.to_string(),
             expr: IrExpr::Call {
-                name: list_op_name(op).into(),
+                name: format!("gremlin_traversal_{}", list_op_name(op)),
                 args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::Binding(probe)],
             },
         }],

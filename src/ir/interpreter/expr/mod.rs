@@ -56,6 +56,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     }
                 }
                 Value::Edge { rel_type, id, .. } => graph.edge_property(&rel_type, id, name),
+                Value::MapEntry(pair) => match name.as_str() { "key" => pair.0.clone(), "value" => pair.1.clone(), _ => Value::Null },
                 Value::Map(map) => match map.get(name) {
                     Some(v) => v.clone(),
                     // Kuzu struct/map field lookup is case-insensitive:

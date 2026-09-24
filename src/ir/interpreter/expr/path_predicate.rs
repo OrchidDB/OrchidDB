@@ -4,17 +4,8 @@
 
 use crate::ir::value::Value;
 
-use std::collections::BTreeSet;
-
+/// A simple path contains no repeated objects, including projected scalar
+/// values and edges. Comparing only vertices loses cycles after by().
 pub(crate) fn is_simple_path(items: &[Value]) -> bool {
-    let mut seen = BTreeSet::new();
-    for item in items {
-        if let Value::Node { label, id } = item {
-            let key = (label.clone(), *id);
-            if !seen.insert(key) {
-                return false;
-            }
-        }
-    }
-    true
+    !items.iter().enumerate().any(|(index, item)| items[..index].contains(item))
 }

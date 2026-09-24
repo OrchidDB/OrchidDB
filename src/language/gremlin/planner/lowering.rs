@@ -54,6 +54,8 @@ mod literals;
 mod local_scope;
 mod match_step;
 mod math;
+mod mutations;
+mod merge;
 mod path;
 mod predicates;
 mod procedures;
@@ -128,6 +130,10 @@ where
                     lo.subgraph_vertex_property_filter = Some(vpf.clone());
                 }
                 lo.subgraph_check_adjacent_vertices = *check_adjacent_vertices;
+                steps.next();
+            }
+            Step::WithPartitionWrite { key, value } => {
+                lo.partition_write = Some((key.clone(), value.clone()));
                 steps.next();
             }
             Step::WithProductiveByStrategy => {

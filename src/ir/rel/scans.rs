@@ -3,7 +3,11 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
-    pub(super) fn lower_node_scan(&mut self, binding: &str, labels: &LabelExpr) -> RelResult<LoweredNode> {
+    pub(super) fn lower_node_scan(
+        &mut self,
+        binding: &str,
+        labels: &LabelExpr,
+    ) -> RelResult<LoweredNode> {
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
         }
@@ -59,7 +63,11 @@ impl<'a> LoweringContext<'a> {
         self.scan_batches("nodes", batches)
     }
 
-    pub(super) fn lower_rel_scan(&mut self, binding: &str, types: &LabelExpr) -> RelResult<LoweredNode> {
+    pub(super) fn lower_rel_scan(
+        &mut self,
+        binding: &str,
+        types: &LabelExpr,
+    ) -> RelResult<LoweredNode> {
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_rel_scan(self, &user_mapping, binding, types);
         }
@@ -116,12 +124,46 @@ impl<'a> LoweringContext<'a> {
         self.scan_batches("edges", batches)
     }
 
-    pub(super) fn lower_values(&mut self, bindings: &[String], rows: &[Vec<Value>]) -> RelResult<LoweredNode> {
+    pub(super) fn lower_values(
+        &mut self,
+        bindings: &[String],
+        rows: &[Vec<Value>],
+    ) -> RelResult<LoweredNode> {
+        if self.language == Language::Gremlin {
+            // Arrow columns have a single physical type. Mixed traversal values,
+            // nested collections and arbitrary-precision numbers must remain native;
+            // rendering them as text loses identity, ordering and numeric equality.
+            for index in 0..bindings.len() {
+                let values = rows.iter().filter_map(|row| row.get(index)).collect::<Vec<_>>();
+                if homogeneous_scalar_type(values.iter().copied()).is_none() {
+                    return Err(RelError::Unsupported(
+                        "Gremlin heterogeneous values require native runtime types".into(),
+                    ));
+                }
+            }
+        }
+        fn typed_key_value(value: &Value) -> bool {
+            match value {
+                Value::TypedMap(_) | Value::MapEntry(_) | Value::Token(_) | Value::Direction(_) => true,
+                Value::List(items) | Value::Path(items) => items.iter().any(typed_key_value),
+                Value::Map(items) => items.values().any(typed_key_value),
+                _ => false,
+            }
+        }
+        if rows.iter().flatten().any(typed_key_value) {
+            return Err(RelError::Unsupported(
+                "Typed map keys require native runtime values".into(),
+            ));
+        }
         let batch = values_batch(self.language, bindings, rows)?;
         self.scan_batches("values", vec![batch])
     }
 
-    pub(super) fn scan_batches(&mut self, prefix: &str, batches: Vec<RecordBatch>) -> RelResult<LoweredNode> {
+    pub(super) fn scan_batches(
+        &mut self,
+        prefix: &str,
+        batches: Vec<RecordBatch>,
+    ) -> RelResult<LoweredNode> {
         let schema = batches
             .first()
             .map(RecordBatch::schema)
@@ -697,7 +739,11 @@ pub(super) fn property_array(
     }
 }
 
-pub(super) fn property_union_tag_array(batch: &RecordBatch, name: &str, rows: usize) -> RelResult<ArrayRef> {
+pub(super) fn property_union_tag_array(
+    batch: &RecordBatch,
+    name: &str,
+    rows: usize,
+) -> RelResult<ArrayRef> {
     let Some(idx) = schema_index(batch.schema().as_ref(), name) else {
         return Ok(arrow::array::new_null_array(&DataType::Utf8, rows));
     };
@@ -1145,7 +1191,39 @@ pub(super) fn infer_element_property_type(
     infer_property_data_type(&values)
 }
 
+// Retain the actual scalar widths when every non-null value agrees.
+// In particular Gremlin Integer and Long have distinct public types.
+fn homogeneous_scalar_type<'a>(values: impl Iterator<Item = &'a Value>) -> Option<DataType> {
+    let mut kind = None;
+    for value in values {
+        let next = match value {
+            Value::Null => continue,
+            Value::Bool(_) => DataType::Boolean,
+            Value::Byte(_) => DataType::Int8,
+            Value::Short(_) => DataType::Int16,
+            Value::Int(value) if i32::try_from(*value).is_ok() => DataType::Int32,
+            Value::Int(_) | Value::Long(_) => DataType::Int64,
+            Value::UInt8(_) => DataType::UInt8,
+            Value::UInt16(_) => DataType::UInt16,
+            Value::UInt32(_) => DataType::UInt32,
+            Value::UInt64(_) => DataType::UInt64,
+            Value::Float32(_) => DataType::Float32,
+            Value::Float(_) => DataType::Float64,
+            Value::String(_) => DataType::Utf8,
+            _ => return None,
+        };
+        if kind.as_ref().is_some_and(|existing| *existing != next) {
+            return None;
+        }
+        kind = Some(next);
+    }
+    kind
+}
+
 pub(super) fn infer_property_data_type(values: &[Value]) -> DataType {
+    if let Some(kind) = homogeneous_scalar_type(values.iter()) {
+        return kind;
+    }
     #[derive(Clone, Copy, PartialEq)]
     enum Kind {
         Bool,
@@ -1228,6 +1306,9 @@ pub(super) fn values_batch(
 }
 
 pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
+    if let Some(kind) = homogeneous_scalar_type(values.iter().copied()) {
+        return Ok(kind);
+    }
     if values.iter().any(|value| matches!(value, Value::List(_)))
         && values
             .iter()
@@ -1252,6 +1333,11 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
                     | Value::Node { .. }
                     | Value::Edge { .. }
                     | Value::Map(_)
+                    | Value::TypedMap(_)
+            | Value::MapEntry(_)
+                    | Value::BulkSet(_)
+                    | Value::Token(_)
+                    | Value::Direction(_)
                     | Value::Path(_)
                     | Value::List(_)
             )
@@ -1293,6 +1379,11 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
             | Value::Edge { .. }
             | Value::List(_)
             | Value::Map(_)
+            | Value::TypedMap(_)
+            | Value::MapEntry(_)
+            | Value::BulkSet(_)
+            | Value::Token(_)
+            | Value::Direction(_)
             | Value::Path(_) => {
                 data_type = DataType::Utf8;
                 break;
@@ -1321,6 +1412,20 @@ pub(super) fn values_array<'a>(
     data_type: &DataType,
 ) -> RelResult<ArrayRef> {
     match data_type {
+        DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64 => {
+            let wide = values_array(language, values, &DataType::Int64)?;
+            Ok(arrow::compute::cast(&wide, data_type)?)
+        }
+        DataType::Float32 => {
+            let wide = values_array(language, values, &DataType::Float64)?;
+            Ok(arrow::compute::cast(&wide, data_type)?)
+        }
         DataType::Boolean => {
             let mut builder = BooleanBuilder::new();
             for value in values {

@@ -276,12 +276,12 @@ impl LoweringVisitor {
                 // suffix string. `concat("a", "b")` is equivalent to
                 // `concat("a").concat("b")` for our flat-row model, so a
                 // single combined Concat step is sufficient.
-                let mut suffix = String::new();
+                let mut suffix = None::<String>;
                 if let Some(v) = c.stringNullableLiteralVarargs() {
                     for s in v.stringNullableLiteral_all() {
                         self.visit_stringNullableLiteral(&s);
                         if let Some(part) = self.pop_string() {
-                            suffix.push_str(&part);
+                            suffix.get_or_insert_with(String::new).push_str(&part);
                         }
                     }
                 }

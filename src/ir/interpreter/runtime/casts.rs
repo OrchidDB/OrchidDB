@@ -14,13 +14,29 @@ pub(crate) fn cast_to_string(v: &Value) -> Value {
 
 pub(crate) fn cast_list_to_string(v: &Value) -> Value {
     match v {
-        Value::List(items) => Value::List(items.iter().map(cast_to_string).collect()),
+        Value::List(items) => Value::List(items.iter().map(|item| if matches!(item, Value::Null) { Value::Null } else { cast_to_string(item) }).collect()),
         other => cast_to_string(other),
     }
 }
 
 fn display_for_as_string(v: &Value) -> String {
     match v {
+        Value::MapEntry(entry) => format!("{}={}", display_for_as_string(&entry.0), display_for_as_string(&entry.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_as_string(key),
+                    display_for_as_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => "null".to_string(),
         Value::String(s) => normalize_collection_string(s),
         Value::Bool(b) => b.to_string(),
@@ -55,7 +71,7 @@ fn display_for_as_string(v: &Value) -> String {
             rel_type,
             tinker_node_id(dst_label, *dst_id)
         ),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)
@@ -71,7 +87,7 @@ fn display_for_as_string_container(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => display_string_for_as_string_container(s),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)
@@ -198,7 +214,7 @@ fn normalize_collection_spacing(text: &str) -> String {
 fn display_map_for_as_string(map: &std::collections::BTreeMap<String, Value>) -> String {
     if let (Some(Value::String(key)), Some(value)) = (map.get("key"), map.get("value")) {
         if map.contains_key("element") {
-            return format!("str[vp[{key}->{}]]", display_property_value(value));
+            return format!("vp[{key}->{}]", display_property_value(value));
         }
     }
     if let Some(value) = union_display_value(map) {
@@ -624,15 +640,13 @@ pub(crate) fn cast_to_date(v: &Value) -> Value {
 /// Preserve a valid timestamp's time and offset while retaining the shared
 /// numeric epoch-millisecond and date-only conversions.
 pub(crate) fn cast_to_gremlin_date(v: &Value) -> Value {
-    match v {
-        Value::DateTime(raw) => parse_datetime_string(raw)
-            .map(Value::DateTime)
-            .unwrap_or(Value::Null),
-        Value::String(raw) => parse_datetime_string(raw)
-            .map(Value::DateTime)
-            .unwrap_or(Value::Null),
-        _ => cast_to_date(v),
-    }
+    let parsed = match v {
+        Value::DateTime(raw) | Value::String(raw) => parse_datetime_string(raw),
+        Value::Int(n) | Value::Long(n) => epoch_millis_to_datetime(*n),
+        Value::Byte(_) | Value::Short(_) | Value::BigInt(_) => v.as_i64().and_then(epoch_millis_to_datetime),
+        _ => None,
+    };
+    parsed.map(Value::DateTime).unwrap_or(Value::Null)
 }
 
 fn date_part(raw: &str) -> Option<&str> {

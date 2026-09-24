@@ -16,16 +16,16 @@ pub(super) fn value_literal_expr(value: &Value) -> RelResult<Expr> {
     match value {
         Value::Null => Ok(lit(ScalarValue::Null)),
         Value::Bool(value) => Ok(lit(*value)),
-        Value::Byte(value) => Ok(lit(*value as i64)),
+        Value::Byte(value) => Ok(lit(ScalarValue::Int8(Some(*value)))),
         Value::UInt8(value) => Ok(lit(*value as i64)),
-        Value::Short(value) => Ok(lit(*value as i64)),
+        Value::Short(value) => Ok(lit(ScalarValue::Int16(Some(*value)))),
         Value::UInt16(value) => Ok(lit(*value as i64)),
         Value::Int(value) | Value::Long(value) => Ok(lit(*value)),
         Value::UInt32(value) => Ok(lit(*value as i64)),
         Value::UInt64(value) => i64::try_from(*value)
             .map(lit)
             .map_err(|_| RelError::Unsupported("UINT64 choose key overflows INT64".into())),
-        Value::Float32(value) => Ok(lit(*value as f64)),
+        Value::Float32(value) => Ok(lit(ScalarValue::Float32(Some(*value)))),
         Value::Float(value) => Ok(lit(*value)),
         Value::String(value) | Value::DateTime(value) => Ok(lit(value.clone())),
         other => Err(RelError::Unsupported(format!(
@@ -158,17 +158,20 @@ pub(super) fn constant_fold_result_expr(value: &Value, language: Language) -> Ex
     match value {
         Value::Null => lit(ScalarValue::Utf8(None)),
         Value::Bool(value) => lit(*value),
-        Value::Byte(value) => lit(*value as i64),
+        Value::Byte(value) => lit(ScalarValue::Int8(Some(*value))),
         Value::UInt8(value) => lit(*value as i64),
-        Value::Short(value) => lit(*value as i64),
+        Value::Short(value) => lit(ScalarValue::Int16(Some(*value))),
         Value::UInt16(value) => lit(*value as i64),
+        Value::Int(value) if language == Language::Gremlin && i32::try_from(*value).is_ok() => {
+            lit(ScalarValue::Int32(Some(*value as i32)))
+        }
         Value::Int(value) | Value::Long(value) => lit(*value),
         Value::UInt32(value) => lit(*value as i64),
         Value::UInt64(value) => match i64::try_from(*value) {
             Ok(value) => lit(value),
             Err(_) => lit(value.to_string()),
         },
-        Value::Float32(value) => lit(*value as f64),
+        Value::Float32(value) => lit(ScalarValue::Float32(Some(*value))),
         Value::Float(value) => lit(*value),
         Value::String(value) | Value::DateTime(value) => lit(value.clone()),
         Value::BigInt(value) => match value.to_i64() {
@@ -532,6 +535,18 @@ pub(super) fn constant_result_expr(
 
 pub(super) fn tagged_value(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", tagged_value(&pair.0), tagged_value(&pair.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!("{}: {}", tagged_value(key), tagged_value(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => "null".to_string(),
         Value::Bool(value) => value.to_string(),
         Value::Byte(value) => format!("d[{value}].b"),
@@ -552,7 +567,7 @@ pub(super) fn tagged_value(value: &Value) -> String {
         Value::String(value) => value.clone(),
         Value::Node { label, id } => format!("v[{label}#{id}]"),
         Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
-        Value::List(items) | Value::Path(items) => {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
             let prefix = if matches!(value, Value::Path(_)) {
                 "p"
             } else {
@@ -584,6 +599,22 @@ pub(super) fn tagged_value(value: &Value) -> String {
 
 pub(super) fn cypher_plain_value(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", cypher_plain_value(&pair.0), cypher_plain_value(&pair.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    cypher_plain_value(key),
+                    cypher_plain_value(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => String::new(),
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
@@ -602,7 +633,7 @@ pub(super) fn cypher_plain_value(value: &Value) -> String {
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
-        Value::List(items) => {
+        Value::List(items) | Value::BulkSet(items) => {
             let body = items.iter().map(cypher_plain_value).collect::<Vec<_>>();
             format!("[{}]", body.join(","))
         }
@@ -694,6 +725,22 @@ pub(super) fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", display_for_list_to_string(&pair.0), display_for_list_to_string(&pair.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_list_to_string(key),
+                    display_for_list_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         Value::Null => String::new(),
         Value::Bool(true) => "True".to_string(),
         Value::Bool(false) => "False".to_string(),
@@ -712,7 +759,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
-        Value::List(items) | Value::Path(items) => {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_list_to_string)

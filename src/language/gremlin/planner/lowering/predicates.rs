@@ -68,16 +68,22 @@ pub(super) fn predicate_to_expr_with_bindings(
                     CompareOp::Lt | CompareOp::Gt => IrExpr::lit_bool(false),
                 });
             }
-            // TinkerPop comparability: ordered comparison against NaN is
-            // an error, and errors filter the traverser (P.lt(NaN) etc.
-            // never match).
+            if (matches!(value, GValue::Float(f) if f.is_nan())
+                || matches!(value, GValue::Float32(f) if f.is_nan()))
+                && matches!(op, CompareOp::Eq | CompareOp::Neq)
+            {
+                return Ok(IrExpr::lit_bool(matches!(op, CompareOp::Neq)));
+            }
+            // Ordered comparisons to NaN are undefined. Preserve that third
+            // truth value through boolean composition and negation; treating it
+            // as false would incorrectly make not(gt(NaN)) succeed.
             if matches!(value, GValue::Float(f) if f.is_nan())
                 && matches!(
                     op,
                     CompareOp::Lt | CompareOp::Lte | CompareOp::Gt | CompareOp::Gte
                 )
             {
-                return Ok(IrExpr::lit_bool(false));
+                return Ok(IrExpr::Lit(crate::ir::expr::Lit::Null));
             }
             let rhs = predicate_value_expr_with(value, resolve_binding)?;
             let bin = match op {

@@ -177,7 +177,10 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
     if ids.is_empty() {
         return input;
     }
-    let id_target = IrExpr::Id(CURRENT.into());
+    let id_target = IrExpr::Call {
+        name: "gremlin_id".into(),
+        args: vec![IrExpr::Binding(CURRENT.into())],
+    };
     let parts = ids
         .iter()
         .flat_map(|v| id_filter_parts(v, &id_target))
@@ -194,10 +197,11 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
 
 fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
     match value {
-        GValue::Int(n) => vec![IrExpr::Binary {
+        GValue::VertexRef { id, .. } => id_filter_parts(id, id_target),
+        GValue::Int(_) | GValue::Long(_) | GValue::Byte(_) | GValue::Short(_) | GValue::BigInt(_) => vec![IrExpr::Binary {
             op: BinaryOp::Eq,
             lhs: Box::new(id_target.clone()),
-            rhs: Box::new(IrExpr::lit_int(*n)),
+            rhs: Box::new(super::literals::gvalue_to_expr(value).expect("numeric literal")),
         }],
         GValue::String(s) => {
             vec![
@@ -216,20 +220,19 @@ fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
     }
 }
 
-/// Decompose a `"label#row"` synthetic id token into a label-and-id
-/// filter expression. Returns `None` if the token isn't of that shape.
+/// Compare a recognized synthetic ID against the public element identity.
+/// Private row offsets differ from public IDs after runtime expansion, and a
+/// user-supplied ID takes precedence over a synthetic one.
 pub(super) fn element_token_filter(binding: &str, token: &str) -> Option<IrExpr> {
     let (label, row_id) = token.split_once('#')?;
     let row_id = row_id.parse::<i64>().ok()?;
-    Some(IrExpr::and(vec![
-        IrExpr::HasLabel {
-            binding: binding.to_string(),
-            label: label.to_string(),
-        },
-        IrExpr::Binary {
-            op: BinaryOp::Eq,
-            lhs: Box::new(IrExpr::Id(binding.to_string())),
-            rhs: Box::new(IrExpr::lit_int(row_id)),
-        },
-    ]))
+    let _ = (label, row_id);
+    Some(IrExpr::Binary {
+        op: BinaryOp::Eq,
+        lhs: Box::new(IrExpr::Call {
+            name: "gremlin_id".into(),
+            args: vec![IrExpr::Binding(binding.into())],
+        }),
+        rhs: Box::new(IrExpr::lit_str(token)),
+    })
 }

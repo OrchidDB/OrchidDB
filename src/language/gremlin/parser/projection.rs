@@ -96,7 +96,7 @@ impl LoweringVisitor {
 
     /// Inspects a `by(__.<traversal>)` body. Recognised fast-paths:
     ///   * empty traversal → `BySpec::default()` (use current scalar)
-    ///   * `__.values('k')` → `BySpec::key("k")`
+    ///   * `__.values('k')` retains traversal identity (group reducers distinguish it from by('k')).
     /// Anything more complex (e.g. `__.bothE().count()`,
     /// `__.tail(Scope.local)`) is preserved as a sub-traversal on the
     /// `BySpec` so the planner can evaluate it per row instead of
@@ -111,11 +111,6 @@ impl LoweringVisitor {
         let inner = self.lower_nested_traversal(&nested);
         if inner.is_empty() {
             return BySpec::default();
-        }
-        if let [Step::Values(keys)] = inner.as_slice() {
-            if !keys.is_empty() {
-                return BySpec::key(keys[0].clone());
-            }
         }
         BySpec::traversal(inner)
     }

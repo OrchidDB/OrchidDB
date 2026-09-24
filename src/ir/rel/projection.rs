@@ -3,7 +3,11 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
-    pub(super) fn return_projection(&self, plan: &LogicalPlan, fields: &[String]) -> RelResult<Vec<Expr>> {
+    pub(super) fn return_projection(
+        &self,
+        plan: &LogicalPlan,
+        fields: &[String],
+    ) -> RelResult<Vec<Expr>> {
         let mut projections = Vec::new();
         for field in fields {
             if self.language == Language::Gremlin
@@ -42,7 +46,9 @@ impl<'a> LoweringContext<'a> {
             && alias.starts_with("__gremlin_select_history_")
             && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
         {
-            return Ok(Vec::new());
+            return Err(RelError::Unsupported(
+                "Gremlin label history requires traverser state".into(),
+            ));
         }
         if self.language == Language::Gremlin
             && alias.starts_with("select_source_")
@@ -85,6 +91,11 @@ impl<'a> LoweringContext<'a> {
                 .chunks(2)
                 .all(|pair| matches!(pair[0], IrExpr::Lit(Lit::String(_))))
         {
+            if matches!(self.language, Language::Cypher | Language::Gremlin) {
+                return Err(RelError::Unsupported(
+                    "Map projection requires native runtime values".into(),
+                ));
+            }
             let rendered = if name == "make_map" {
                 self.lower_make_map(plan, args)?
             } else {
@@ -205,7 +216,6 @@ impl<'a> LoweringContext<'a> {
         }
         Ok(vec![self.lower_expr(plan, expr)?.alias(alias)])
     }
-
 }
 
 impl LoweringContext<'_> {

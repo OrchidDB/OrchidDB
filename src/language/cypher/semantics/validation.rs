@@ -5,6 +5,7 @@ use super::{
     BTreeMap, BTreeSet, BindingKind, CypherPlanError, CypherPlanResult, Expr, PatternElement,
     PatternPart, ProjectionBody, SemanticOutput, SemanticScope,
 };
+use crate::language::cypher::planner::CypherSemanticError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ProcedureMode {
     Read,
@@ -66,17 +67,6 @@ pub(super) fn validate_unique(fields: &[String], message: &str) -> CypherPlanRes
             duplicates.join(", ")
         )))
     }
-}
-
-pub(super) fn validate_with_order_by_requires_skip_or_limit(
-    body: &ProjectionBody,
-) -> CypherPlanResult<()> {
-    if body.order_by.is_empty() || body.skip.is_some() || body.limit.is_some() {
-        return Ok(());
-    }
-    Err(CypherPlanError::Invalid(
-        "Binder exception: In WITH clause, ORDER BY must be followed by SKIP or LIMIT.".to_string(),
-    ))
 }
 
 pub(super) fn validate_union_outputs(
@@ -175,9 +165,10 @@ pub(super) fn validate_path_binding(
         return Ok(());
     };
     if scope.contains(path) || pattern_element_declares(&part.element, path) {
-        return Err(CypherPlanError::Invalid(
-            "SyntaxError: VariableAlreadyBound".to_string(),
-        ));
+        return Err(
+            CypherPlanError::Invalid("SyntaxError: VariableAlreadyBound".to_string())
+                .classified(CypherSemanticError::VariableAlreadyBound),
+        );
     }
     Ok(())
 }
@@ -193,7 +184,8 @@ pub(super) fn validate_relationship_binding(
                 "Binder exception: {binding} has data type {} but {} was expected.",
                 kind.cypher_type_name(),
                 expected.cypher_type_name()
-            )))
+            ))
+            .classified(CypherSemanticError::VariableTypeConflict))
         }
         _ => Ok(()),
     }
@@ -207,7 +199,8 @@ pub(super) fn validate_node_binding(
         Some(kind) if !matches!(kind, BindingKind::Unknown | BindingKind::Node) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: Cannot bind {binding} as node pattern."
-            )))
+            ))
+            .classified(CypherSemanticError::VariableTypeConflict))
         }
         _ => Ok(()),
     }

@@ -1,13 +1,7 @@
 //! Cypher and Kuzu function dispatch.
 
-use crate::ir::catalog::PropertyGraph;
-use crate::ir::interpreter::{InterpretError, IrResult};
-use crate::ir::interpreter::element_id::element_internal_id;
-use crate::ir::interpreter::expr::{compare_values, modulo};
-use crate::ir::value::{STRUCT_ORDER_KEY, Value};
-use super::{next_deterministic_uuid, next_kuzu_random, registry, temporal};
-use super::cast_conversion::{cast_value, strict_cast_to_named_type};
 use super::CastMode;
+use super::cast_conversion::{cast_value, strict_cast_to_named_type};
 use super::cast_scalar::{
     blob_bytes_for_value, cast_to_blob, cast_to_uuid, encode_blob_text, timestamp_function_value,
     value_type_name,
@@ -21,10 +15,9 @@ use super::graph::{graph_element_property, is_acyclic_path, is_trail_path};
 use super::hashing::{hash_function_value, md5_hex, sha256_hex};
 use super::lists::{
     cypher_list_type_name, cypher_subscript, display_for_list_to_string, ensure_list_comparable,
-    first_non_null_list_value, list_distinct_values, list_element_1_based,
-    list_extract_type_error, list_extract_value, list_index, list_product_value,
-    list_semantic_eq, list_slice_range, make_range, parse_integer_runtime_literal,
-    sort_list_values, string_slice_range,
+    first_non_null_list_value, list_distinct_values, list_element_1_based, list_extract_type_error,
+    list_extract_value, list_index, list_product_value, list_semantic_eq, list_slice_range,
+    make_range, parse_integer_runtime_literal, sort_list_values, string_slice_range,
 };
 use super::maps::{
     cypher_compare_value, is_map_entry, kuzu_map_cardinality, kuzu_map_entries, kuzu_map_extract,
@@ -38,14 +31,23 @@ use super::numeric::{
 };
 use super::string_functions::{
     compile_regex, left_string_value, levenshtein_distance, pad_string, regex_full_match,
-    regexp_extract, regexp_extract_all, runtime_initcap, runtime_split_part,
-    runtime_split_string, string_function_value, string_index, string_index_1_based,
-    string_index_1_based_clamped,
+    regexp_extract, regexp_extract_all, runtime_initcap, runtime_split_part, runtime_split_string,
+    string_function_value, string_index, string_index_1_based, string_index_1_based_clamped,
 };
 use super::strings::{display_for_concat, substring};
 use super::vectors::{array_cross_product_value, float_vector, numeric_vector};
+use super::{next_deterministic_uuid, next_kuzu_random, registry, temporal};
+use crate::ir::catalog::PropertyGraph;
+use crate::ir::interpreter::element_id::element_internal_id;
+use crate::ir::interpreter::expr::{compare_values, modulo};
+use crate::ir::interpreter::{InterpretError, IrResult};
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
-pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Option<Value>> {
+pub(super) fn cypher_call(
+    name: &str,
+    args: &[Value],
+    graph: &PropertyGraph,
+) -> IrResult<Option<Value>> {
     // Resolve aliases (`tofloat` / `to_float` / `float`, etc.) to a
     // single canonical spelling so every arm below sees one name.
     let canonical = registry::canonical_name(name);
@@ -82,6 +84,18 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("mod", [a, b]) => modulo(a, b).map(Some),
         ("xor", [Value::Bool(a), Value::Bool(b)]) => Ok(Some(Value::Bool(*a ^ *b))),
         ("xor", [Value::Null, _]) | ("xor", [_, Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_in", [_, Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_in", [needle, Value::List(items)]) => {
+            let mut unknown = false;
+            for item in items {
+                match super::maps::cypher_equal(needle, item) {
+                    Some(true) => return Ok(Some(Value::Bool(true))),
+                    None => unknown = true,
+                    Some(false) => {}
+                }
+            }
+            Ok(Some(if unknown { Value::Null } else { Value::Bool(false) }))
+        }
         ("in", [needle, container]) if runtime_list(container).is_some() => {
             if matches!(needle, Value::Null) {
                 return Ok(Some(Value::Null));
@@ -99,6 +113,21 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
             Ok(Some(Value::Bool(false)))
         }
         ("in", [_, Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_slice", [Value::Null, _, _])
+        | ("cypher_slice", [_, Value::Null, _])
+        | ("cypher_slice", [_, _, Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_slice", [target, start, end]) => {
+            let Some(items) = runtime_list(target) else {
+                return Err(super::lists::list_extract_type_error());
+            };
+            let (Some(start), Some(end)) = (start.as_i64(), end.as_i64()) else {
+                return Err(super::lists::list_extract_type_error());
+            };
+            let len = items.len() as i64;
+            let bound = |n: i64| if n < 0 { len.saturating_add(n) } else { n }.clamp(0, len) as usize;
+            let (start, end) = (bound(start), bound(end));
+            Ok(Some(Value::List(items[start.min(end)..end].to_vec())))
+        }
         ("cypher_subscript", [target, index]) => Ok(Some(cypher_subscript(target, index, graph)?)),
         ("list_at", [Value::List(items), Value::Int(idx)]) => Ok(Some(list_index(items, *idx))),
         ("list_at", [Value::String(s), Value::Int(idx)]) => Ok(Some(string_index(s, *idx))),
@@ -258,8 +287,9 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("is_trail", [Value::Null]) => Ok(Some(Value::Null)),
         ("keys", [Value::Node { label, id }]) => Ok(Some(Value::List(
             graph
-                .node_property_keys(label)
+                .node_property_keys_with_id(label)
                 .into_iter()
+                .filter(|key| key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY)
                 .filter(|key| !matches!(graph.node_property(label, *id, key), Value::Null))
                 .map(Value::String)
                 .collect(),
@@ -268,6 +298,7 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
             graph
                 .edge_property_keys(rel_type)
                 .into_iter()
+                .filter(|key| key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY)
                 .filter(|key| !matches!(graph.edge_property(rel_type, *id, key), Value::Null))
                 .map(Value::String)
                 .collect(),
@@ -282,9 +313,9 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("isempty", [Value::Null]) => Ok(Some(Value::Null)),
         ("properties", [Value::Node { label, id }]) => {
             let mut map = std::collections::BTreeMap::new();
-            for key in graph.node_property_keys(label) {
+            for key in graph.node_property_keys_with_id(label) {
                 let value = graph.node_property(label, *id, &key);
-                if !matches!(value, Value::Null) {
+                if key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !matches!(value, Value::Null) {
                     map.insert(key, value);
                 }
             }
@@ -294,7 +325,7 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
             let mut map = std::collections::BTreeMap::new();
             for key in graph.edge_property_keys(rel_type) {
                 let value = graph.edge_property(rel_type, *id, &key);
-                if !matches!(value, Value::Null) {
+                if key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !matches!(value, Value::Null) {
                     map.insert(key, value);
                 }
             }
@@ -462,13 +493,12 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("substring", [Value::String(s), start]) => Ok(Some(
             start
                 .as_i64()
-                .map(|start| Value::String(substring(s, start - 1, None)))
+                .map(|start| Value::String(substring(s, start, None)))
                 .unwrap_or(Value::Null),
         )),
         ("substring", [Value::String(s), start, length]) => {
             Ok(Some(match (start.as_i64(), length.as_i64()) {
                 (Some(start), Some(length)) if length >= 0 => {
-                    let start = start - 1;
                     Value::String(substring(s, start, start.checked_add(length)))
                 }
                 _ => Value::Null,
@@ -698,6 +728,7 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
                 .map(Value::DateTime)
                 .unwrap_or(Value::Null),
         )),
+        ("datetime", [Value::Map(fields)]) => Ok(Some(Value::DateTime(cypher_calendar_datetime(fields)?))),
         ("datetime", [Value::String(value)]) => Ok(Some(
             parse_datetime_string(value)
                 .map(Value::DateTime)
@@ -720,6 +751,7 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("cast", [Value::Null, _]) => Ok(Some(Value::Null)),
         ("string", [v]) => Ok(Some(string_function_value(v))),
         ("date", []) => Err(kuzu_function_arity_error("DATE", "()", "(STRING) -> DATE")),
+        ("date", [Value::Map(fields)]) => Ok(Some(Value::DateTime(cypher_calendar_date(fields)?))),
         ("date" | "to_date", [v]) => Ok(Some(cast_to_date(v))),
         ("timestamp", [v]) => Ok(Some(timestamp_function_value(v)?)),
         // Alias spellings (`toint8`, `int8`, `serial`, ...) are
@@ -1148,6 +1180,10 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
             }
         }
         // ----- interval/duration constructors -----
+        ("duration", [Value::Map(fields)]) => Ok(Some(Value::String(cypher_duration(fields)?))),
+        ("duration", [Value::String(spec)]) if spec.starts_with('P') => {
+            Ok(Some(Value::String(cypher_duration(&cypher_duration_fields(spec)?)?)))
+        }
         ("interval" | "duration", [Value::String(spec)]) => Ok(Some(Value::String(
             temporal::parse_interval_strict(spec)
                 .map(temporal::format_interval)
@@ -1758,4 +1794,200 @@ pub(super) fn cypher_call(name: &str, args: &[Value], graph: &PropertyGraph) -> 
         ("case_macro", _) => Ok(Some(Value::Null)),
         _ => Ok(None),
     }
+}
+
+fn cypher_temporal_field(
+    fields: &std::collections::BTreeMap<String, Value>,
+    key: &str,
+    default: Option<i64>,
+) -> IrResult<i64> {
+    match fields.get(key) {
+        Some(Value::Float(_) | Value::Float32(_) | Value::BigDecimal(_)) => {
+            Err(InterpretError::Type(format!("{key} must be an integer")))
+        }
+        Some(value) => value
+            .as_i64()
+            .ok_or_else(|| InterpretError::Type(format!("{key} must be an integer"))),
+        None => {
+            default.ok_or_else(|| InterpretError::Runtime(format!("missing temporal field {key}")))
+        }
+    }
+}
+
+fn cypher_calendar_date(fields: &std::collections::BTreeMap<String, Value>) -> IrResult<String> {
+    for key in visible_map_keys(fields) {
+        if !matches!(key.as_str(), "year" | "month" | "day") {
+            return Err(InterpretError::Unsupported(format!(
+                "calendar date field {key}"
+            )));
+        }
+    }
+    let year = cypher_temporal_field(fields, "year", None)?;
+    let month = cypher_temporal_field(fields, "month", Some(1))?;
+    let day = cypher_temporal_field(fields, "day", Some(1))?;
+    temporal::make_date(year, month, day)
+        .ok_or_else(|| InterpretError::Runtime("invalid calendar date".into()))
+}
+
+fn cypher_calendar_datetime(
+    fields: &std::collections::BTreeMap<String, Value>,
+) -> IrResult<String> {
+    for key in visible_map_keys(fields) {
+        if !matches!(
+            key.as_str(),
+            "year" | "month" | "day" | "hour" | "minute" | "second" | "nanosecond" | "timezone"
+        ) {
+            return Err(InterpretError::Unsupported(format!(
+                "calendar datetime field {key}"
+            )));
+        }
+    }
+    let date_fields = fields
+        .iter()
+        .filter(|(key, _)| matches!(key.as_str(), "year" | "month" | "day"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    let date = cypher_calendar_date(&date_fields)?;
+    let hour = cypher_temporal_field(fields, "hour", Some(0))?;
+    let minute = cypher_temporal_field(fields, "minute", Some(0))?;
+    let second = cypher_temporal_field(fields, "second", Some(0))?;
+    let nano = cypher_temporal_field(fields, "nanosecond", Some(0))?;
+    if !(0..24).contains(&hour)
+        || !(0..60).contains(&minute)
+        || !(0..60).contains(&second)
+        || !(0..1_000_000_000).contains(&nano)
+    {
+        return Err(InterpretError::Runtime("invalid calendar time".into()));
+    }
+    let timezone = match fields.get("timezone") {
+        None => "Z",
+        Some(Value::String(value)) => value.as_str(),
+        Some(_) => return Err(InterpretError::Type("timezone must be a string".into())),
+    };
+    let fraction = if nano == 0 {
+        String::new()
+    } else {
+        format!(".{nano:09}").trim_end_matches('0').to_string()
+    };
+    let value = format!("{date}T{hour:02}:{minute:02}:{second:02}{fraction}{timezone}");
+    parse_datetime_string(&value)
+        .ok_or_else(|| InterpretError::Unsupported(format!("datetime timezone {timezone}")))
+}
+
+/// Cypher durations keep calendar months, calendar days and clock seconds
+/// separate. In particular, 24 hours must never silently become one day.
+fn cypher_duration(fields: &std::collections::BTreeMap<String, Value>) -> IrResult<String> {
+    let known = [
+        "years",
+        "months",
+        "weeks",
+        "days",
+        "hours",
+        "minutes",
+        "seconds",
+        "milliseconds",
+        "microseconds",
+        "nanoseconds",
+    ];
+    for key in visible_map_keys(fields) {
+        if !known.contains(&key.as_str()) {
+            return Err(InterpretError::Type(format!(
+                "unknown duration field {key}"
+            )));
+        }
+    }
+    let integer = |key| cypher_temporal_field(fields, key, Some(0)).map(i128::from);
+    let months = integer("years")? * 12 + integer("months")?;
+    let days = integer("weeks")? * 7 + integer("days")?;
+    let seconds = match fields.get("seconds") {
+        Some(Value::Float(value)) if value.is_finite() => {
+            let scaled = value * 1_000_000_000.0;
+            if scaled.abs() > i64::MAX as f64 * 1_000_000_000.0 {
+                return Err(InterpretError::Runtime("duration seconds overflow".into()));
+            }
+            scaled.round() as i128
+        }
+        _ => integer("seconds")? * 1_000_000_000,
+    };
+    let nanos = (integer("hours")? * 3600 + integer("minutes")? * 60) * 1_000_000_000
+        + seconds
+        + integer("milliseconds")? * 1_000_000
+        + integer("microseconds")? * 1000
+        + integer("nanoseconds")?;
+    let mut out = String::from("P");
+    for (value, suffix) in [(months / 12, 'Y'), (months % 12, 'M'), (days, 'D')] {
+        if value != 0 {
+            out.push_str(&format!("{value}{suffix}"));
+        }
+    }
+    let hours = nanos / 3_600_000_000_000;
+    let remainder = nanos % 3_600_000_000_000;
+    let minutes = remainder / 60_000_000_000;
+    let remaining_seconds = remainder % 60_000_000_000;
+    if nanos != 0 {
+        out.push('T');
+        if hours != 0 {
+            out.push_str(&format!("{hours}H"));
+        }
+        if minutes != 0 {
+            out.push_str(&format!("{minutes}M"));
+        }
+        if remaining_seconds != 0 {
+            let whole = remaining_seconds.abs() / 1_000_000_000;
+            let fraction = remaining_seconds.abs() % 1_000_000_000;
+            let sign = if remaining_seconds < 0 { "-" } else { "" };
+            out.push_str(&format!("{sign}{whole}"));
+            if fraction != 0 {
+                out.push_str(format!(".{fraction:09}").trim_end_matches('0'));
+            }
+            out.push('S');
+        }
+    }
+    if out == "P" {
+        out.push_str("T0S");
+    }
+    Ok(out)
+}
+
+fn cypher_duration_fields(source: &str) -> IrResult<std::collections::BTreeMap<String, Value>> {
+    let invalid = || InterpretError::Runtime(format!("invalid ISO duration {source}"));
+    let mut fields = std::collections::BTreeMap::new();
+    let mut time = false;
+    let mut digits = String::new();
+    for ch in source[1..].chars() {
+        if ch == 'T' {
+            if time || !digits.is_empty() {
+                return Err(invalid());
+            }
+            time = true;
+            continue;
+        }
+        if ch.is_ascii_digit() || matches!(ch, '.' | '-' | '+') {
+            digits.push(ch);
+            continue;
+        }
+        let key = match (time, ch) {
+            (false, 'Y') => "years",
+            (false, 'M') => "months",
+            (false, 'W') => "weeks",
+            (false, 'D') => "days",
+            (true, 'H') => "hours",
+            (true, 'M') => "minutes",
+            (true, 'S') => "seconds",
+            _ => return Err(invalid()),
+        };
+        let value = if key == "seconds" && digits.contains('.') {
+            Value::Float(digits.parse().map_err(|_| invalid())?)
+        } else {
+            Value::Long(digits.parse().map_err(|_| invalid())?)
+        };
+        if fields.insert(key.to_string(), value).is_some() {
+            return Err(invalid());
+        }
+        digits.clear();
+    }
+    if !digits.is_empty() || fields.is_empty() || source.ends_with('T') {
+        return Err(invalid());
+    }
+    Ok(fields)
 }

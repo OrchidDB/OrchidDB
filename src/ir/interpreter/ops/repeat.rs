@@ -297,7 +297,7 @@ pub(crate) fn run_with_frontier(
                     }
                 }
                 for (binding, value) in &outer.bindings {
-                    if binding.starts_with("__loops:") && !row.bindings.contains_key(binding) {
+                    if (binding.starts_with("__loops:") || binding.starts_with("__gremlin_select_history_")) && !row.bindings.contains_key(binding) {
                         row.bindings.insert(binding.clone(), value.clone());
                     }
                 }
@@ -566,8 +566,9 @@ pub(crate) fn run_with_frontier(
             let counts = ctx.group_counts.entry(label.clone()).or_default();
             for row in &rows {
                 let key_value = eval(key, row, graph)?;
-                let key = super::aggregate::map_key(&key_value);
-                *counts.entry(key).or_insert(0) += row.bulk;
+                if let Some((_, count)) = counts.iter_mut().find(|(key, _)| key == &key_value) {
+                    *count += row.bulk;
+                } else { counts.push((key_value, row.bulk)); }
             }
             Ok(rows)
         }
@@ -619,6 +620,10 @@ pub(crate) fn run_with_frontier(
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             super::mutation::merge_op(outputs, rows, match_arm, create_arm, graph, ctx)
         }
+        Node::GraphProcedureCall {name,args,yields,input,..} => {
+            let rows=match input {Some(input)=>run_with_frontier(input,frontier,graph,ctx)?,None=>vec![Row::new()]};
+            super::super::run::procedure_call_op(name,args,yields,rows,graph)
+        }
         // Sources without correlation behave normally.
         other => run_with_context(other, graph, ctx),
     }
@@ -631,9 +636,9 @@ fn group_count_map_value(ctx: &ExecutionContext, label: &str) -> Value {
         .map(|counts| {
             counts
                 .iter()
-                .map(|(key, count)| (key.clone(), Value::String(format!("d[{count}].l"))))
+                .map(|(key, count)| (key.clone(), Value::Long(*count as i64)))
                 .collect()
         })
         .unwrap_or_default();
-    Value::Map(map)
+    Value::map_from_entries(map)
 }

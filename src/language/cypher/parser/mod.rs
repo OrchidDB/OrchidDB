@@ -62,6 +62,15 @@ pub fn parse_cypher(input: &str) -> Result<CypherProgram> {
 }
 
 pub fn parse_query(input: &str) -> Result<Query> {
+    // The generated grammar consumes many Rust frames per nested Cypher
+    // expression. Keep parsing, lowering and parse-tree destruction on a
+    // bounded expanded stack, including callers on small async stacks.
+    stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || {
+        parse_query_inner(input)
+    })
+}
+
+fn parse_query_inner(input: &str) -> Result<Query> {
     let normalized = normalize_cypher_extensions(input);
     let (root, _syntax) = parse_root(&normalized)?;
     let mut visitor = lowering::visitor::AstLoweringVisitor::new();
@@ -70,12 +79,32 @@ pub fn parse_query(input: &str) -> Result<Query> {
 }
 
 pub fn parse_syntax(input: &str) -> Result<CypherSyntax> {
-    let normalized = normalize_cypher_extensions(input);
-    let (_root, syntax) = parse_root(&normalized)?;
-    Ok(syntax)
+    stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || {
+        let normalized = normalize_cypher_extensions(input);
+        let (_root, syntax) = parse_root(&normalized)?;
+        Ok(syntax)
+    })
 }
 
 fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)> {
+    // Check actual lexer tokens so brackets inside strings/comments do not
+    // count. Reject resource-exhausting nesting before recursive descent.
+    let tokens = tokenize(input)?;
+    let mut nesting = 0usize;
+    for token in &tokens {
+        match token.text.as_str() {
+            "(" | "[" | "{" => {
+                nesting += 1;
+                if nesting > 256 {
+                    return Err(CypherParseError::Unsupported(
+                        "syntactic nesting exceeds the parser limit of 256".into(),
+                    ));
+                }
+            }
+            ")" | "]" | "}" => nesting = nesting.saturating_sub(1),
+            _ => {}
+        }
+    }
     let errors = SyntaxErrors::default();
     let mut lexer = CypherLexer::new(InputStream::new(input));
     lexer.remove_error_listeners();
@@ -93,7 +122,7 @@ fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)
 
     let syntax = CypherSyntax {
         parse_tree: root.to_string_tree(&*parser),
-        tokens: tokenize(input)?,
+        tokens,
     };
     Ok((root, syntax))
 }
