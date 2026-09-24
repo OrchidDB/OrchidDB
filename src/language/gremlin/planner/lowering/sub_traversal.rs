@@ -222,6 +222,11 @@ fn lower_remaining_steps(
         lo.live_labels.extend(super::label_liveness::references_iter(iter.clone()));
         lo.live_labels.extend(super::label_liveness::direct_references(std::slice::from_ref(step)));
         node = lower_step_with_context(node, step, &mut iter, lo, ctx)?;
+        if matches!(step, Step::ExpandVertex { .. } | Step::ExpandEdge { .. } | Step::EndpointVertex { .. } | Step::OtherVertex) {
+            if let Some(split) = &lo.sack_split {
+                node = super::sources::sack_callback(node, format!("({split}).call(__sack)"));
+            }
+        }
         if lo.retract_labels && matches!(step, Step::Select(..) | Step::SelectMulti(..)) {
             let mut live = keep.clone();
             live.extend(super::label_liveness::references_iter(iter.clone()));

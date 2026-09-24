@@ -27,12 +27,15 @@ pub enum CompareOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GValue {
+    /// Trusted supplier and optional split callback; valid only as withSack configuration.
+    SackCallbacks { supplier: String, split: Option<String> },
     CardinalityValue { cardinality: String, value: Box<GValue> },
     Token(String),
     DirectionToken(String),
     TypedMap(Vec<(GValue,GValue)>),
     VertexRef { id: Box<GValue>, label: String },
     EdgeRef { id: Box<GValue> },
+    VertexPropertyRef { id: Box<GValue>, owner: Box<GValue>, key: String },
     Null,
     Bool(bool),
     Int(i64),
@@ -56,9 +59,11 @@ pub enum GValue {
 impl GValue {
     pub fn as_sql_literal_debug(&self) -> String {
         match self {
+            Self::SackCallbacks { .. } => "<sack callbacks>".into(),
             Self::CardinalityValue {cardinality,value} => format!("Cardinality.{cardinality}({})",value.as_sql_literal_debug()),
             Self::Token(token) | Self::DirectionToken(token) => token.clone(),
             Self::TypedMap(_) => "<typed-map>".into(),
+            Self::VertexPropertyRef { id, .. } => format!("vertex_property({})", id.as_sql_literal_debug()),
             Self::EdgeRef { id } => format!("edge({})", id.as_sql_literal_debug()),
             Self::VertexRef { id, label } => format!("new Vertex({}, {:?})", id.as_sql_literal_debug(), label),
             Self::Null => "NULL".to_owned(),

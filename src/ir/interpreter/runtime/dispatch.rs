@@ -65,6 +65,11 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             return Ok(reduce_list_numeric(&[value.clone()], "mean"));
         }
         ("gremlin_sum_result", [sum, count]) => return Ok(if count.as_i64() == Some(0) { Value::Null } else { match sum { Value::Int(n) => Value::Long(*n), other => other.clone() } }),
+        ("gremlin_vertex_property_ref", [id, owner, Value::String(key)]) => {
+            return graph.properties(owner, &[key.clone()]).into_iter()
+                .find(|property| graph.element_public_id(property).three_valued_eq(id) == Some(true))
+                .ok_or_else(|| InterpretError::Runtime(format!("Vertex property with id {id:?} does not exist")));
+        },
         ("gremlin_edge_ref", [id]) => return super::graph::resolve_gremlin_edge_reference(graph, id),
         ("gremlin_vertex_ref", [id, Value::String(_label)]) => return super::graph::resolve_gremlin_vertex_reference(graph, id),
         ("local_tail", [value, count]) => return Ok(super::lists::gremlin_local_tail(value, count.as_i64().unwrap_or(0))),
@@ -659,6 +664,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Value::Map(entries) => Value::List(
                 entries
                     .iter()
+                    .filter(|(key,_)| key.as_str()!=crate::ir::value::STRUCT_ORDER_KEY && key.as_str()!=crate::ir::value::STRUCT_TYPES_KEY)
                     .map(|(k, v)| {
                         Value::MapEntry(Box::new((Value::String(k.clone()), v.clone())))
                     })

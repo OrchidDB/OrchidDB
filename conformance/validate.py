@@ -53,6 +53,18 @@ def main():
                 assert run['execution_profile']['single_instance_verified'] is True, path
                 assert run['execution_profile']['engine_instances'] == sorted(instances), path
                 assert all('java_run' not in r for r in results), f'{path}: separate execution evidence is not a product result'
+                for result in results:
+                    assertion = result.get('java_assertion')
+                    if assertion is None:
+                        continue
+                    mapping = counterpart(cases[result['id']], selection)
+                    assert mapping is not None, f'{path}: unmapped original Java assertion'
+                    for key, source_key in [('class', 'java_class'), ('method', 'java_method'), ('source', 'source'), ('source_sha256', 'source_sha256'), ('feature_source_sha256', 'feature_source_sha256')]:
+                        assert assertion[key] == mapping[source_key], f'{path}: original assertion pin mismatch'
+                    if result['status'] == 'pass':
+                        assert assertion['run_count'] == 1 and all(assertion[k] == 0 for k in ('failure_count', 'ignored_count', 'assumption_count')), f'{path}: unexecuted Java assertion counted as pass'
+                    assert result['query_transports'], f'{path}: Java assertion did not use the engine'
+                    assert all(q.get('engine_instance') == result['engine_instance'] for q in result['query_transports']), f'{path}: Java assertion changed engine instance'
             counts = Counter(r['status'] for r in results)
             if engine == 'reference':
                 assert set(counts) <= {'pass', 'skipped'} and counts['pass'] > 0, 'Reference assertion check failed'

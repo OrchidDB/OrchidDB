@@ -202,6 +202,7 @@ public final class CrabGraph implements Graph {
         try { transaction.awaitOwner(); }
         catch(RuntimeException|Error failure) { lease.unlock(); throw failure; }
     }
+    Object callbackRequest(Map<String,Object> request) { return call(request); }
     private Object call(Map<String,Object> request) {
         lease.lock();
         try {

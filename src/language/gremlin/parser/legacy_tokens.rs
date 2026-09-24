@@ -49,7 +49,7 @@ impl<'input, S: TokenSource<'input, TF = CommonTokenFactory>> TokenSource<'input
         // numeric widths. A method/member name following a dot is never a binding.
         if token.token_type == crate::grammar::generated::gremlin::gremlinparser::Gremlin_Identifier
             && self.previous != Gremlin_DOT
-            && self.calls.last().is_some_and(|name| matches!(name.as_str(), "inject" | "constant")) {
+            && self.calls.last().is_some_and(|name| matches!(name.as_str(), "inject" | "constant" | "withSack")) {
             if let Some(value) = self.bindings.get(token.text.as_ref()) {
                 self.literals.borrow_mut().insert(token.start, value.clone());
                 token.token_type = crate::grammar::generated::gremlin::gremlinparser::Gremlin_EmptyStringLiteral;

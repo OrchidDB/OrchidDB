@@ -29,8 +29,12 @@ and it never restarts the engine after a crash. Results record the instance iden
 source revision, native binary, adapter classes, and JVM classpath hashes.
 
 Historical provider and GraphComputer runs remain diagnostic evidence. Their passes
-are never merged into the product outcome. Gherkin placeholders remain skipped
-unless their original assertions execute through this same engine instance.
+are never merged into the product outcome. The 15 Gherkin placeholders run their
+pinned, unmodified Java assertions in the suite adapter. Those tests submit every
+traversal to the same `GraphEngine`, including fixture lookups. Their evidence
+records the original class/method, source hashes, JUnit invocation counts, and
+engine identity. Java callbacks are registered as query-scoped handles and invoked
+by JVM operators in the SQL IR DAG; no whole traversal is executed by the adapter.
 
 ## Run locally
 
@@ -50,6 +54,7 @@ python conformance/upstream/fetch.py
 python conformance/upstream/catalog.py
 cargo build --bin crabgraph-jvm-store
 export CRABGRAPH_JVM_STORE="$PWD/target/debug/crabgraph-jvm-store"
+export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
 mvn -q -f jvm-codecs/pom.xml install
 mvn -q -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
 export CRABGRAPH_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
@@ -177,5 +182,4 @@ Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
 and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
 runs the original JUnit methods locally. It records per-test timings, assertion
 source and native/provider binary provenance. Failed assertions, assumptions,
-and incomplete runs never become passing results. The existing product union
-counts each scenario once; supplemental test totals remain separate.
+and incomplete runs never become passing results. The production report counts each scenario once from its single engine run.

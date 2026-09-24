@@ -62,7 +62,7 @@ fn literal_source(value: &GValue) -> Option<String> {
             if v.to_string().contains('.') {
                 v.to_string()
             } else {
-                format!("{v}.0")
+                format!("{v}e0")
             }
         ),
         GValue::DateTime(v) => format!("datetime({})", quote(v)),
@@ -188,8 +188,20 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
     let mut output = Vec::new();
     let mut stack: Vec<String> = Vec::new();
     let mut i = 0;
+    let mut traverser_priors = false;
     while i < tokens.len() {
         let text = &tokens[i].text;
+        if text == "sack" && tokens.get(i+1).is_some_and(|t|t.text=="(")
+            && tokens.get(i+3).is_some_and(|t|t.text==")") {
+            if let Some(GremlinBinding::Lambda(body)) = bindings.get(&tokens[i+2].text) {
+                let body = body.trim();
+                let closure = if body.starts_with('{') { body.to_string() } else { format!("{{{body}}}") };
+                let script = format!("({closure}).call(__sack,current)");
+                output.push(format!("call('crabgraph.jvm.sack',['script':{}])",serde_json::to_string(&script).unwrap()));
+                i += 4;
+                continue;
+            }
+        }
         if matches!(
             text.as_str(),
             "pageRank" | "peerPressure" | "connectedComponent" | "shortestPath"
@@ -235,17 +247,21 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let bound = if values.is_empty() {
-                String::new()
-            } else {
-                format!(",'bindings':[{values}]")
-            };
+            let bound=format!(",'bindings':['__crabgraph_traverser_priors':{}{}{}]",traverser_priors || !stack.is_empty(),if values.is_empty(){""}else{","},values);
             output.push(format!(
                 "call('crabgraph.jvm.computer',['script':{}{bound}])",
                 serde_json::to_string(&script).unwrap()
             ));
             i = end;
             continue;
+        }
+        if stack.is_empty() && i > 0 && tokens[i-1].text == "."
+            && tokens.get(i+1).is_some_and(|t|t.text=="(") {
+            match text.as_str() {
+                "V" if tokens.get(i+2).is_some_and(|t|t.text==")") => {},
+                "withComputer" | "withBulk" | "withPath" | "withStrategies" | "withoutStrategies" | "identity" => {},
+                _ => traverser_priors = true,
+            }
         }
         if text == "by" && tokens.get(i + 1).is_some_and(|t| t.text == "(") {
             let mut depth = 1;

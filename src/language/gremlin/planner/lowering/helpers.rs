@@ -220,7 +220,7 @@ fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
             vec![
                 element_token_filter(CURRENT, s).unwrap_or_else(|| IrExpr::Binary {
                     op: BinaryOp::Eq,
-                    lhs: Box::new(id_target.clone()),
+                    lhs: Box::new(IrExpr::Call {name:"cast_string".into(),args:vec![id_target.clone()]}),
                     rhs: Box::new(IrExpr::lit_str(s.clone())),
                 }),
             ]

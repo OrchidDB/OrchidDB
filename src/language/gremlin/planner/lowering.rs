@@ -155,6 +155,7 @@ where
             }
             Step::WithSack { initial, op } => {
                 lo.sack_initial = Some(initial.clone());
+                lo.sack_split = match initial { crate::language::gremlin::semantics::GValue::SackCallbacks { split, .. } => split.clone(), _ => None };
                 lo.sack_merge = *op;
                 steps.next();
             }
