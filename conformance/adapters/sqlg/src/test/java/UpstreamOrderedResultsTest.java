@@ -4,6 +4,14 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class UpstreamOrderedResultsTest {
+ @Test public void nativeResultsSupportUpstreamTraversalLifecycle() {
+  var values=Arrays.asList("a","b","a",null,3L);
+  var traversal=UpstreamGremlin.nativeResults(values);
+  assertFalse(traversal.asAdmin().isLocked());
+  assertEquals(values,traversal.toList());
+  assertTrue(traversal.asAdmin().isLocked());
+ }
+
  @Test public void separatedDuplicateScalarsKeepTheirPositions() {
   var values=List.of("java","lop","java","ripple");
   var traversal=UpstreamGremlin.orderedResults(values);

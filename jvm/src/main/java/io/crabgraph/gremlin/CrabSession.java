@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 /** One private native process; interrupted requests are drained before another request is accepted. */
 final class CrabSession implements AutoCloseable {
     private final Process process;
+    private BufferedReader borrowedInput;
     private final BufferedWriter input;
     private final BlockingQueue<Object> replies = new LinkedBlockingQueue<>();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -37,14 +38,9 @@ final class CrabSession implements AutoCloseable {
         borrowed=true; owner=null; graphId=0;
         process=null;
         input=new BufferedWriter(new OutputStreamWriter(sink,StandardCharsets.UTF_8));
-        Thread reader=new Thread(()->{
-            try {
-                String line;
-                while((line=source.readLine())!=null) replies.put(line);
-                replies.offer(new EOFException("Relational executor disconnected"));
-            } catch(Exception failure) { replies.offer(failure); }
-        },"crabgraph-ir-native-replies");
-        reader.setDaemon(true); reader.start();
+        // The IR worker owns the outer request loop. Read callback responses
+        // synchronously so no background reader consumes the next operator.
+        borrowedInput=source;
     }
     private CrabSession(CrabSession owner,long graphId) {
         this.owner=owner; this.graphId=graphId; borrowed=true; process=null; input=owner.input;
@@ -64,7 +60,7 @@ final class CrabSession implements AutoCloseable {
         if(Thread.currentThread().isInterrupted()) throw new CancellationException("Native request cancelled before submission");
         try {
             input.write(mapper.writeValueAsString(borrowed?Map.of("kind","native","graph",graphId,"request",request):request)); input.newLine(); input.flush();
-            Object reply=replies.poll(Long.getLong("crabgraph.native.timeoutSeconds",120),TimeUnit.SECONDS);
+            Object reply=borrowedInput!=null?borrowedInput.readLine():replies.poll(Long.getLong("crabgraph.native.timeoutSeconds",120),TimeUnit.SECONDS);
             if(reply==null) throw new IOException("Native store response timed out");
             if(reply instanceof Exception) throw new IOException("Native store disconnected",(Exception)reply);
             Map<String,Object> response=mapper.readValue((String)reply,new TypeReference<Map<String,Object>>(){});

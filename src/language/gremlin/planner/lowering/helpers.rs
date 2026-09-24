@@ -210,7 +210,7 @@ pub(super) fn filter_by_ids(input: Node, ids: &[GValue]) -> Node {
 
 fn id_filter_parts(value: &GValue, id_target: &IrExpr) -> Vec<IrExpr> {
     match value {
-        GValue::VertexRef { id, .. } => id_filter_parts(id, id_target),
+        GValue::VertexRef { id, .. } | GValue::EdgeRef { id } => id_filter_parts(id, id_target),
         GValue::Int(_) | GValue::Long(_) | GValue::Byte(_) | GValue::Short(_) | GValue::BigInt(_) => vec![IrExpr::Binary {
             op: BinaryOp::Eq,
             lhs: Box::new(id_target.clone()),

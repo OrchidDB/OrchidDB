@@ -140,8 +140,24 @@ where
     I: Iterator<Item = &'a Step>,
 {
     let mut input = input;
+    let mut specs=Vec::new();
+    while let Some(spec)=consume_by(steps) {specs.push(spec);}
+    if specs.iter().any(|s|s.comparator.is_some()) {
+        let mut arguments=Vec::new();
+        let mut comparators=Vec::new();
+        for (index,spec) in specs.iter().enumerate() {
+            let (next,expr)=apply_by_spec(input,spec,lo,ctx)?;input=next;
+            let alias=format!("key{index}");
+            arguments.push(ProjectionItem {alias:alias.clone(),expr});
+            comparators.push(serde_json::json!({"key":alias,"body":spec.comparator,"descending":spec.direction==AstSortDir::Desc}));
+        }
+        return Ok(Node::GraphJvm {operation:crate::ir::jvm::JvmOperation {
+            script:serde_json::to_string(&comparators).unwrap(),arguments,
+            output:CURRENT.into(),mode:crate::ir::jvm::JvmMode::Sort,
+        },input:input.boxed()});
+    }
     let mut keys = Vec::new();
-    while let Some(spec) = consume_by(steps) {
+    for spec in specs {
         let dir = match spec.direction {
             AstSortDir::Asc => SortDir::Asc,
             AstSortDir::Desc => SortDir::Desc,

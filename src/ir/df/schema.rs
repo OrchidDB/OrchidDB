@@ -266,7 +266,7 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         },
         Node::GraphJvm { operation, input } => {
             let mut out = schema_fields_for_node(input);
-            if operation.mode != crate::ir::jvm::JvmMode::Filter {
+            if !matches!(operation.mode, crate::ir::jvm::JvmMode::Filter | crate::ir::jvm::JvmMode::Sort) {
                 upsert_field(&mut out, semantic_field(&operation.output, arrow::datatypes::DataType::Utf8, true, "value"));
             }
             out

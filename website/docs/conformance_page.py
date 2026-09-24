@@ -6,9 +6,7 @@ from html import escape as e
 ROOT=Path(__file__).resolve().parents[2]/'conformance'
 PRODUCTS={'crabgraph':'Crabgraph','sqlg':'SQLg','puppygraph':'PuppyGraph'}
 SUITE_PRODUCTS={'opencypher':('crabgraph','puppygraph'),'tinkerpop':('crabgraph','sqlg','puppygraph'),'rdf':('crabgraph',)}
-PROFILES={'crabgraph-jvm':'Crabgraph · JVM OLTP','crabgraph-computer':'Crabgraph · GraphComputer'}
 COLUMNS=PRODUCTS
-EVIDENCE_COLUMNS={**SUITE_PRODUCTS,'tinkerpop':('crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph')}
 SUITE_COLUMNS=SUITE_PRODUCTS
 def column_name(key,suite):return COLUMNS[key]
 SUITES={'opencypher':'openCypher TCK','tinkerpop':'Apache gremlin-test · Gherkin','rdf':'W3C SPARQL 1.0 / 1.1'}
@@ -19,7 +17,7 @@ def pretty(value,limit=6000):
 def result_fingerprint(case):return hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest()
 def render_java_evidence(download):
  source=ROOT/'upstream-results/java-provider';index=source/'index.json'
- html=['<section class="java-evidence" id="java-provider"><h2>Java provider tests</h2><p>Original Java assertions cover cases the upstream Gherkin framework cannot express. The 15 Gherkin placeholders execute their mapped original Java assertions in the JVM profile, with per-case evidence. Other Java and supplemental test counts are not added to the matrix or product leaderboard.</p>']
+ html=['<section class="java-evidence" id="java-provider"><h2>Java provider tests</h2><p>These separately recorded Java provider tests are supplemental evidence. Their outcomes are not added to the matrix or product leaderboard. The comparison uses the single Crabgraph suite run linked above.</p>']
  if not index.exists():return ''.join(html)+'<p>No committed Java provider evidence is available.</p></section>'
  manifest=json.loads(index.read_text());entries=manifest if isinstance(manifest,list) else manifest['entries']
  target=download/'java-provider';target.mkdir(exist_ok=True);(target/'index.json').write_bytes(index.read_bytes())
@@ -41,17 +39,12 @@ def render(out):
  (download/'upstream-sources.json').write_bytes((ROOT/'upstream/sources.json').read_bytes())
  for p in COLUMNS:
   for suite in SUITES:
-   if p not in EVIDENCE_COLUMNS[suite]:continue
+   if p not in SUITE_PRODUCTS[suite]:continue
    path=ROOT/'upstream-results'/f'{p}-{suite}.json'
    if path.exists():
     d=json.loads(path.read_text());runs[p,suite]=d;lookup[p,suite]={r['id']:r for r in d['results']};(download/path.name).write_bytes(path.read_bytes())
  reference=ROOT/'upstream-results/reference-tinkerpop.json'
  if reference.exists():(download/reference.name).write_bytes(reference.read_bytes())
- supplemental=[]
- for filename,label in [('crabgraph-native-build.json','Native build manifest'),('crabgraph-jvm-build.json','JVM build manifest'),('gremlin-final-gap-evidence.json','Gremlin case-to-profile evidence')]:
-  path=ROOT/'upstream-results'/filename
-  if path.exists():
-   (download/filename).write_bytes(path.read_bytes());supplemental.append('<a href="/downloads/conformance/'+filename+'">'+label+'</a>')
  def get(p,c):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
   if result.get('case_sha256') and result['case_sha256']!=result_fingerprint(c):return {**result,'status':'stale'}
@@ -108,7 +101,7 @@ def render(out):
     html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+'</summary>')
     if status!='not-run':html.append('<p><a href="/downloads/conformance/'+(p+'-'+suite)+'.json">Full run JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
-    export.append([c['id'],suite,c['name'],'crabgraph' if p in PROFILES else p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
+    export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
    html.append('</tr>')
   html.append('</tbody></table></div></details></td></tr></tbody>')
  html.append('</table></div></section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
@@ -133,13 +126,12 @@ def render(out):
 <p><strong>Upstream expectations.</strong> The original feature files are compiled with Cucumber’s Gherkin compiler, including Scenario Outline examples. Apache’s unmodified <code>gremlin-test 3.7.4 StepDefinition</code> methods perform Gremlin assertions. The openCypher adapter executes the upstream steps and compares their original result tables and graph side effects. It never treats a generic exception as a passing TCK error-category assertion: unclassified error type, detail or phase is recorded as an adapter limitation.</p>
 <p><strong>RDF semantics.</strong> The W3C adapter loads manifest data and named graphs, checks positive and negative query syntax, and compares SELECT, ASK and graph results with their expected artifacts. It preserves RDF term identity, unbound variables, duplicate rows and global blank-node identity; graph results use isomorphism. Update interfaces, wire protocols, entailment configurations and federated service fixtures are accounted for explicitly.</p>
 <p><strong>Fixtures and interfaces.</strong> SQLg uses PostgreSQL and upstream TinkerFactory fixtures. PuppyGraph maps disposable external PostgreSQL fixture tables; mutation outcomes refer to that configuration. For Cypher fixtures only, a local Neo4j instance materializes upstream GIVEN statements; it supplies no expected answers and is not a compared product. Fixtures that cannot be represented faithfully are excluded with a reason. Crabgraph uses a local repository build in hybrid mode and its RDF dataset API. Native result metadata preserves graph identities, numeric widths, paths, sets and typed map keys. Structured Cypher errors are compared against the required type, detail and execution phase.</p>
-<p><strong>Gremlin execution profiles.</strong> Crabgraph results include its traversal engine, JVM execution and GraphComputer. JVM OLTP runs pinned TinkerPop traversal and callback machinery over the native CrabGraph provider. GraphComputer runs vertex programs over that provider. The run records source and binary hashes and per-case execution details. The matrix and leaderboard use the same single Crabgraph suite run. Each scenario selects its required interface before execution; failures are not retried through another executor. For 15 upstream Gherkin placeholders, the adapter executes the corresponding original Apache JUnit test. Each result identifies the Java source, assertion outcome, timing and build; these scenarios are counted once through the JVM profile. Other Java provider tests and supplemental tests remain separate and are not added to scenario totals.</p>
+<p><strong>Gremlin execution.</strong> One Crabgraph instance executes the complete suite through its production Gremlin frontend and SQL IR DAG. DuckDB executes eligible SQL regions; DataFusion executes the remaining operators, including JVM kernels. The adapter submits every traversal through the same endpoint and does not select an executor per scenario or retry failures through another implementation. The matrix and leaderboard use one recorded outcome per scenario from that run. Downloads include instance identity, source and binary hashes, JVM artifacts, timings, and assertion diagnostics. Separately recorded Java tests do not contribute to the comparison totals.</p>
 <p><strong>Timings.</strong> Recorded milliseconds include fixture setup, query execution and adapter work. Individual step timings and result differences are available in the evidence. The leaderboard ranks passed scenarios; these timings are not used as a performance ranking.</p>
 <p><strong>Versions and scope.</strong> The TCK is pinned to 2024.3, while PuppyGraph documents openCypher 9. A failure in this newer corpus is not by itself evidence of violating a product’s declared version. Gremlin uses the pinned 3.7.4 language profile. W3C coverage is SPARQL 1.0 and 1.1. These are observed compatibility results, not certification or an overall product ranking. A failure deserves investigation of the engine, adapter and language/version contract.</p>
 <p><strong>Local execution only.</strong> Test engines and harnesses run on the local workstation. GitHub Actions only builds and publishes static documentation and committed evidence; it does not run tests or validation jobs. A changed case hash makes old results stale. Version pins, exact source links, complete outcomes and raw diagnostics are downloadable. <a href="https://github.com/henneberger/new-graph/tree/main/conformance">Local reproduction commands and adapter source</a> describe the execution profiles and time limits.</p>
 ''')
  html.append('</details><details class="report-section" id="versions"><summary>Versions and downloadable evidence</summary><p><a href="/downloads/conformance/upstream-catalog.json">Complete upstream catalog JSON</a> · <a href="/downloads/conformance/upstream-sources.json">Pinned source revisions</a> · <a href="/downloads/conformance/upstream-comparison.csv">Comparison CSV</a> · <a href="/downloads/conformance/reference-tinkerpop.json">Apache reference-engine check</a></p>')
- if supplemental:html.append('<p>'+' · '.join(supplemental)+'</p>')
  for (p,s),d in runs.items():
   html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Full evidence JSON</a></details>')
  html.append('</details></div>')

@@ -17,6 +17,7 @@ type Labels = BTreeSet<String>;
 pub(super) fn configure(steps: &[Step], lo: &mut Lowerer) {
     lo.retract_labels = true;
     visit(steps, &mut |step| match step {
+        Step::Call(name, _) if name.starts_with("crabgraph.jvm") => lo.retract_labels = false,
         Step::As(label) => { lo.path_labels.insert(label.clone()); }
         Step::WithoutPathRetraction | Step::Path | Step::SimplePath | Step::CyclicPath
         | Step::Tree(_) | Step::ShortestPath

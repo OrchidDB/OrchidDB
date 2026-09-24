@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
@@ -20,6 +20,8 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JvmMode {
+    Computer,
+    Sort,
     Map,
     FlatMap,
     Filter,
@@ -58,6 +60,7 @@ pub struct JvmExecution {
     pub config: Option<JvmConfig>,
     pub cancelled: Arc<AtomicBool>,
     pub deadline: Option<Instant>,
+    pub worker: JvmWorkerPool,
 }
 impl Default for JvmExecution {
     fn default() -> Self {
@@ -65,6 +68,7 @@ impl Default for JvmExecution {
             config: JvmConfig::from_env(),
             cancelled: Arc::new(AtomicBool::new(false)),
             deadline: None,
+            worker: Default::default(),
         }
     }
 }
@@ -91,14 +95,88 @@ pub fn contains_jvm(node: &Node) -> bool {
             .into_iter()
             .any(contains_jvm)
 }
-struct Worker(Child);
+/// Query-scoped worker shared by correlated and sequential relational operators.
+#[derive(Debug, Clone, Default)]
+pub struct JvmWorkerPool(Arc<Mutex<Option<Worker>>>);
+#[derive(Debug)]
+struct Worker {
+    child: Child,
+    outgoing: Option<mpsc::Sender<String>>,
+    received: Option<mpsc::Receiver<Result<Json, String>>>,
+    reader: Option<std::thread::JoinHandle<()>>,
+    writer: Option<std::thread::JoinHandle<()>>,
+}
 impl Drop for Worker {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        self.outgoing.take();
+        self.received.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(thread) = self.writer.take() {
+            let _ = thread.join();
+        }
+        if let Some(thread) = self.reader.take() {
+            let _ = thread.join();
+        }
     }
 }
 const MAX_FRAME: u64 = 64 * 1024 * 1024;
+
+impl Worker {
+    fn start(config: &JvmConfig) -> IrResult<Self> {
+        let mut child = Command::new(&config.java)
+            .arg("-cp")
+            .arg(&config.classpath)
+            .arg("io.crabgraph.gremlin.CrabIr")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| error(format!("Cannot start JVM IR worker: {e}")))?;
+        let stdout = child.stdout.take().unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let (responses, received) = mpsc::sync_channel(1);
+        let reader = std::thread::spawn(move || {
+            let mut input = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                let result = (&mut input).take(MAX_FRAME + 1).read_line(&mut line);
+                let message = match result {
+                    Ok(0) => Err("JVM IR worker disconnected".to_string()),
+                    Ok(_) if line.len() as u64 > MAX_FRAME || !line.ends_with('\n') => {
+                        Err("Invalid or oversized JVM frame".to_string())
+                    }
+                    Ok(_) => serde_json::from_str::<Json>(&line)
+                        .map_err(|e| format!("Invalid JVM protocol: {e}")),
+                    Err(e) => Err(e.to_string()),
+                };
+                let failed = message.is_err();
+                if responses.send(message).is_err() || failed {
+                    break;
+                }
+            }
+        });
+        // Writes run separately so a JVM that stops reading cannot block cancellation.
+        let (outgoing, writes) = mpsc::channel::<String>();
+        let writer = std::thread::spawn(move || {
+            for frame in writes {
+                if writeln!(stdin, "{frame}")
+                    .and_then(|_| stdin.flush())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        Ok(Self {
+            child,
+            outgoing: Some(outgoing),
+            received: Some(received),
+            reader: Some(reader),
+            writer: Some(writer),
+        })
+    }
+}
 
 pub(crate) fn execute(
     operation: &JvmOperation,
@@ -139,8 +217,18 @@ pub(crate) fn execute(
                 .map(Json::Object)
         })
         .collect::<IrResult<_>>()?;
-    let request =
-        json!({"script":operation.script,"mode":format!("{:?}",operation.mode),"rows":arguments});
+    let traversers: Vec<Json> = rows
+        .iter()
+        .map(|row| {
+            let state: serde_json::Map<String, Json> = row
+                .bindings
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), store.encode(value).map_err(error)?)))
+                .collect::<IrResult<_>>()?;
+            Ok(json!({"bindings":state,"bulk":row.bulk}))
+        })
+        .collect::<IrResult<_>>()?;
+    let request = json!({"script":operation.script,"mode":format!("{:?}",operation.mode),"rows":arguments,"traversers":traversers});
     let frame = serde_json::to_string(&request).map_err(|e| error(e.to_string()))?;
     if frame.len() as u64 > MAX_FRAME {
         return Err(error("JVM input frame exceeds 64 MiB"));
@@ -150,52 +238,14 @@ pub(crate) fn execute(
     execution
         .deadline
         .get_or_insert_with(|| Instant::now() + Duration::from_secs(30));
-    let mut worker = Worker(
-        Command::new(&config.java)
-            .arg("-cp")
-            .arg(&config.classpath)
-            .arg("io.crabgraph.gremlin.CrabIr")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| error(format!("Cannot start JVM IR worker: {e}")))?,
-    );
-    let stdout = worker.0.stdout.take().unwrap();
-    let mut stdin = worker.0.stdin.take().unwrap();
-    let (responses, received) = mpsc::sync_channel(1);
-    let reader = std::thread::spawn(move || {
-        let mut input = BufReader::new(stdout);
-        loop {
-            let mut line = String::new();
-            let result = (&mut input).take(MAX_FRAME + 1).read_line(&mut line);
-            let message = match result {
-                Ok(0) => Err("JVM IR worker disconnected".to_string()),
-                Ok(_) if line.len() as u64 > MAX_FRAME || !line.ends_with('\n') => {
-                    Err("Invalid or oversized JVM frame".to_string())
-                }
-                Ok(_) => serde_json::from_str::<Json>(&line)
-                    .map_err(|e| format!("Invalid JVM protocol: {e}")),
-                Err(e) => Err(e.to_string()),
-            };
-            let failed = message.is_err();
-            if responses.send(message).is_err() || failed {
-                break;
-            }
-        }
-    });
-    // Writes run separately so a JVM that stops reading cannot block cancellation.
-    let (outgoing, writes) = mpsc::channel::<String>();
-    let writer = std::thread::spawn(move || {
-        for frame in writes {
-            if writeln!(stdin, "{frame}")
-                .and_then(|_| stdin.flush())
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
+    let pool = execution.worker.0.clone();
+    let mut guard = pool.lock().map_err(|_| error("JVM worker lock poisoned"))?;
+    if guard.is_none() {
+        *guard = Some(Worker::start(&config)?);
+    }
+    let worker = guard.as_ref().unwrap();
+    let outgoing = worker.outgoing.as_ref().unwrap();
+    let received = worker.received.as_ref().unwrap();
     let result = (|| {
         outgoing.send(frame).map_err(|e| error(e.to_string()))?;
         loop {
@@ -237,6 +287,27 @@ pub(crate) fn execute(
                     if response["ok"] != true {
                         return Err(error(format!("JVM IR: {}", response["error"])));
                     }
+                    if operation.mode == JvmMode::Sort {
+                        let indices = response["order"]
+                            .as_array()
+                            .ok_or_else(|| error("Missing JVM row order"))?;
+                        let order: Vec<usize> = indices
+                            .iter()
+                            .map(|v| {
+                                v.as_u64()
+                                    .and_then(|i| usize::try_from(i).ok())
+                                    .ok_or_else(|| error("Invalid JVM row index"))
+                            })
+                            .collect::<IrResult<_>>()?;
+                        let unique: BTreeSet<usize> = order.iter().copied().collect();
+                        if unique != (0..rows.len()).collect() || order.len() != rows.len() {
+                            return Err(error("JVM sort must return a permutation of its input"));
+                        }
+                        execution.check()?;
+                        store.validate_execution_finish().map_err(error)?;
+                        graph.restore_execution_overlay(store.graph());
+                        return Ok(order.into_iter().map(|index| rows[index].clone()).collect());
+                    }
                     let groups = response["rows"]
                         .as_array()
                         .ok_or_else(|| error("JVM result must contain row groups"))?;
@@ -248,7 +319,9 @@ pub(crate) fn execute(
                         let values = group
                             .as_array()
                             .ok_or_else(|| error("Invalid JVM row group"))?;
-                        if operation.mode != JvmMode::FlatMap && values.len() != 1 {
+                        if !matches!(operation.mode, JvmMode::FlatMap | JvmMode::Computer)
+                            && values.len() != 1
+                        {
                             return Err(error("Invalid JVM result cardinality"));
                         }
                         for value in values {
@@ -275,10 +348,36 @@ pub(crate) fn execute(
             }
         }
     })();
-    drop(outgoing);
-    drop(received);
-    drop(worker); // Terminate before joining either potentially blocked pipe thread.
-    let _ = writer.join();
-    let _ = reader.join();
+    // Any failure invalidates this protocol session. The statement overlay is
+    // discarded by the caller; a failed worker cannot leak replies or mutations.
+    if result.is_err() {
+        guard.take();
+    }
     result
+}
+
+/// GraphComputer results are a query-local graph view, never a durable graph mutation.
+pub fn contains_computer(node: &Node) -> bool {
+    matches!(node, Node::GraphJvm {operation, ..} if operation.mode==JvmMode::Computer)
+        || crate::ir::analysis::children(node)
+            .into_iter()
+            .any(contains_computer)
+}
+
+/// Vertex-program traversals operate on a read snapshot. Reject ordinary graph
+/// writes instead of silently discarding them with the computed graph view.
+pub fn validate_computer_plan(node: &Node) -> Result<(), String> {
+    if !contains_computer(node) {
+        return Ok(());
+    }
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        if !matches!(node, Node::GraphJvm { .. })
+            && crate::ir::analysis::node_effect(node) == crate::ir::analysis::Effect::SourceMutation
+        {
+            return Err("GraphComputer traversal cannot contain graph mutation operators".into());
+        }
+        pending.extend(crate::ir::analysis::children(node));
+    }
+    Ok(())
 }

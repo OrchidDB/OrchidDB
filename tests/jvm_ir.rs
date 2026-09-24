@@ -390,3 +390,166 @@ async fn public_engine_executes_ir_and_respects_outer_rollback() {
         "caller"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor() {
+    use new_graph::engine::{ExecutionBackend, GraphEngine};
+    use new_graph::language::gremlin::GremlinBinding;
+    use std::collections::HashMap;
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine
+        .gremlin("g.addV('person').property('name','alice').property('age',20)")
+        .await
+        .unwrap();
+    engine
+        .gremlin("g.addV('person').property('name','bob').property('age',30)")
+        .await
+        .unwrap();
+    let bindings = HashMap::from([
+        (
+            "f".into(),
+            GremlinBinding::Lambda("it.get().value('age') > 20".into()),
+        ),
+        (
+            "m".into(),
+            GremlinBinding::Lambda("it.get().value('name').toUpperCase()".into()),
+        ),
+        (
+            "key".into(),
+            GremlinBinding::Lambda("it.value('name').substring(0,1)".into()),
+        ),
+    ]);
+    let output = engine
+        .gremlin_with_bindings("g.V().filter(f).map(m)", &bindings)
+        .await
+        .unwrap();
+    assert_eq!(output.backend, ExecutionBackend::DataFusion);
+    assert_eq!(output.returned.batch.num_rows(), 1);
+    let metadata = output.returned.batch.schema();
+    assert!(metadata.metadata()["crabgraph.gremlin.typed_rows.v1"].contains("BOB"));
+    let grouped = engine
+        .gremlin_with_bindings("g.V().group().by(key).by(__.count())", &bindings)
+        .await
+        .unwrap();
+    assert_eq!(grouped.returned.batch.num_rows(), 1);
+    let inline = engine
+        .gremlin("g.V().map(Lambda.function(\"it.get().value('name')\"))")
+        .await
+        .unwrap();
+    assert_eq!(inline.returned.batch.num_rows(), 2);
+    let bindings = HashMap::from([(
+        "f".into(),
+        GremlinBinding::Lambda("it.path('a').value('name')".into()),
+    )]);
+    let path = engine
+        .gremlin_with_bindings("g.withPath().V().as('a').map(f)", &bindings)
+        .await
+        .unwrap();
+    assert_eq!(path.returned.batch.num_rows(), 2);
+    let bindings = HashMap::from([(
+        "f".into(),
+        GremlinBinding::Lambda(
+            "it.get().property('name','lost'); throw new IllegalStateException('callback failure')"
+                .into(),
+        ),
+    )]);
+    assert!(
+        engine
+            .gremlin_with_bindings("g.V().map(f)", &bindings)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        engine
+            .gremlin("g.V().has('name','lost')")
+            .await
+            .unwrap()
+            .returned
+            .batch
+            .num_rows(),
+        0
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn production_comparator_preserves_rows_and_graph_computer_uses_query_local_view() {
+    use new_graph::engine::GraphEngine;
+    use new_graph::language::gremlin::GremlinBinding;
+    use std::collections::HashMap;
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let bindings = HashMap::from([
+        (
+            "first".into(),
+            GremlinBinding::Lambda("a,b -> a.substring(1,2).compareTo(b.substring(1,2))".into()),
+        ),
+        (
+            "second".into(),
+            GremlinBinding::Lambda("a,b -> b.substring(2,3).compareTo(a.substring(2,3))".into()),
+        ),
+    ]);
+    let result=engine.gremlin_with_bindings("g.inject('ax1','az1','ax2').as('original').order().by(first).by(second).select('original')",&bindings).await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], "ax2");
+    assert_eq!(rows[1][0]["value"], "ax1");
+    assert_eq!(rows[2][0]["value"], "az1");
+    engine.gremlin("g.addV('person').property('name','a').as('a').addV('person').property('name','b').addE('knows').from('a')").await.unwrap();
+    assert_eq!(
+        engine
+            .gremlin("g.V()")
+            .await
+            .unwrap()
+            .returned
+            .batch
+            .num_rows(),
+        2
+    );
+    let connected=engine.gremlin("g.V().connectedComponent().with('~tinkerpop.connectedComponent.propertyName','component').values('component')").await.unwrap();
+    assert_eq!(connected.returned.batch.num_rows(), 2);
+    assert_eq!(
+        engine
+            .gremlin("g.V().has('component')")
+            .await
+            .unwrap()
+            .returned
+            .batch
+            .num_rows(),
+        0
+    );
+    let rank=engine.gremlin("g.V().pageRank(1.0).with('~tinkerpop.pageRank.times',1).with('~tinkerpop.pageRank.propertyName','rank').values('rank')").await.unwrap();
+    assert_eq!(rank.returned.batch.num_rows(), 2);
+    let shortest=engine.gremlin("g.V().has('name','a').shortestPath().with('~tinkerpop.shortestPath.target',__.has('name','b'))").await.unwrap();
+    assert_eq!(shortest.returned.batch.num_rows(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
+    use new_graph::language::gremlin::{GremlinBinding, semantics::GValue};
+    use std::collections::HashMap;
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let bindings = HashMap::from([
+        ("seed".into(), GremlinBinding::Value(GValue::Long(1))),
+        (
+            "increment".into(),
+            GremlinBinding::Lambda("it.get() + 1L".into()),
+        ),
+    ]);
+    let result = engine
+        .gremlin_with_bindings(
+            "g.inject(seed).repeat(__.map(increment)).times(20)",
+            &bindings,
+        )
+        .await
+        .unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], 21);
+    assert_eq!(rows[0][0]["type"], "long");
+}

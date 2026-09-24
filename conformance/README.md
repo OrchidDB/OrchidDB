@@ -17,20 +17,20 @@ contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
 certification or a claim to cover every product feature.
 
-## Crabgraph conformance run
+## One Crabgraph execution
 
-`python3 conformance/run.py --engine crabgraph --suite tinkerpop` executes the
-complete product suite once and writes one outcome per scenario to
-`upstream-results/crabgraph-tinkerpop.json`. The matrix, totals, filters and
-leaderboard all read that same report.
+The production matrix and leaderboard read `upstream-results/crabgraph-tinkerpop.json`.
+Each scenario has one outcome from one suite invocation against one persistent
+`GraphEngine`. Typed values and callbacks enter the production Gremlin frontend,
+which lowers queries to the SQL IR DAG. DuckDB executes eligible SQL regions;
+DataFusion executes residual operators, including JVM callback and graph-computer
+kernels. The adapter does not choose executors by scenario, syntax, or prior outcome,
+and it never restarts the engine after a crash. Results record the instance identity,
+source revision, native binary, adapter classes, and JVM classpath hashes.
 
-The adapter selects the required interface before executing each scenario:
-GraphComputer for vertex programs, the JVM interface for Java callbacks and
-typed objects the text language cannot represent, and the relational query
-engine for ordinary traversals. It does not retry failures using another path
-or combine successful outcomes from separate runs. Execution details and
-binary provenance remain in the report. The 15 upstream placeholders execute
-their pinned original Java assertions.
+Historical provider and GraphComputer runs remain diagnostic evidence. Their passes
+are never merged into the product outcome. Gherkin placeholders remain skipped
+unless their original assertions execute through this same engine instance.
 
 ## Run locally
 
@@ -51,7 +51,8 @@ python conformance/upstream/catalog.py
 cargo build --bin crabgraph-jvm-store
 export CRABGRAPH_JVM_STORE="$PWD/target/debug/crabgraph-jvm-store"
 mvn -q -f jvm-codecs/pom.xml install
-mvn -q -f jvm/pom.xml install
+mvn -q -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
+export CRABGRAPH_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
 CARGO_TARGET_DIR="$PWD/target" cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 docker compose -f conformance/compose.yml up -d
@@ -138,7 +139,8 @@ or version mismatch. Unsupported transport is never silently counted as a pass.
 Times are one local execution per scenario, including fixture/adapter work.
 Gremlin step and Cypher query measurements are included where available.
 Gremlin scenario deadlines are 45 seconds (90 for grateful fixtures), Crabgraph
-SQL queries have an 8-second bound, PostgreSQL statements 10 seconds, and
+SQL regions have an 8-second bound, JVM execution has a 30-second query bound,
+and the native transport allows 40 seconds to return its result. PostgreSQL statements have a 10-second bound, and
 PuppyGraph queries 30 seconds. These are diagnostic timings, not controlled
 cross-product performance rankings.
 
@@ -159,13 +161,14 @@ JSON downloads remain available without JavaScript.
 
 The static report ranks recorded passes separately for each language, with only
 engines that expose that language. `data/parity-baseline.json` preserves the
-starting results. The leaderboard shows the change in passes and the exact cases
+starting results. The leaderboard shows passed totals and the exact cases
 passed by a peer but not by the current engine; its JSON download includes those
 case IDs. Updating complete local result artifacts updates the leaderboard during
 the next documentation publication. No test suite runs in GitHub Actions.
 
-### Gherkin placeholders
+### Historical Java counterpart diagnostics
 
+This diagnostic adapter is excluded from the product comparison.
 The `crabgraph-jvm` adapter executes the 15 pinned Java counterparts when it
 encounters Apache's non-executable Gherkin placeholders. Set
 `CONFORMANCE_TINKERPOP_SOURCE` to the pinned TinkerPop checkout, or use the
@@ -174,5 +177,5 @@ Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
 and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
 runs the original JUnit methods locally. It records per-test timings, assertion
 source and native/provider binary provenance. Failed assertions, assumptions,
-and incomplete runs never become passing results. The single product report
-records each scenario once; supplemental test totals remain separate.
+and incomplete runs never become passing results. The existing product union
+counts each scenario once; supplemental test totals remain separate.

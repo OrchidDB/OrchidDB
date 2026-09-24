@@ -1,3 +1,5 @@
+#[path = "../gremlin_bindings.rs"]
+mod gremlin_bindings;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
@@ -118,13 +120,13 @@ async fn main(){
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");
  let mut classification=None;
- let r=if op=="gremlin"{engine.gremlin(q).await}else{match cypher_plan(q,&params){
+ let r=if op=="gremlin"{match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)}}else{match cypher_plan(q,&params){
   Ok(plan)=>engine.execute_plan(&plan).await,
   Err((message,detail))=>{classification=detail;Err(message)}
  }};
  r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("crabgraph.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("crabgraph.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
- let output=result.unwrap_or_else(|e|json!({"error":e}));println!("{output}");io::stdout().flush().unwrap();
+ let mut output=result.unwrap_or_else(|e|json!({"error":e}));output["engine_instance"]=json!(std::process::id().to_string());println!("{output}");io::stdout().flush().unwrap();
  }
 }
 

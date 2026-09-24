@@ -40,7 +40,9 @@ public final class CrabCodec {
         else if (value instanceof Double) type="double";
         else if (value instanceof BigInteger) { type="bigint"; value=value.toString(); }
         else if (value instanceof BigDecimal) { type="bigdecimal"; value=value.toString(); }
-        else if (value instanceof Map) {
+        else if (value instanceof Map.Entry<?,?> pair) {
+            return fields("type","entry","value",Arrays.asList(encode(pair.getKey(),graph),encode(pair.getValue(),graph)));
+        } else if (value instanceof Map) {
             List<Object> entries=new ArrayList<>();
             ((Map<?,?>)value).forEach((k,v)->entries.add(Arrays.asList(encode(k,graph),encode(v,graph))));
             return fields("type","map","value",entries);
@@ -91,6 +93,11 @@ public final class CrabCodec {
                 Collection<Object> result=type.equals("set")?new LinkedHashSet<>():new ArrayList<>();
                 for(Object item:(List<?>)value) result.add(decode(item,graph));
                 return result;
+            }
+            case "entry": {
+                List<?> pair=(List<?>)value;
+                if(pair.size()!=2)throw new IllegalArgumentException("Invalid map entry");
+                return new AbstractMap.SimpleImmutableEntry<>(decode(pair.get(0),graph),decode(pair.get(1),graph));
             }
             case "map": {
                 Map<Object,Object> result=new LinkedHashMap<>();
