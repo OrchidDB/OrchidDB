@@ -2,7 +2,7 @@
 """Build the documentation with Python's standard library; no runtime server."""
 from pathlib import Path
 from html import escape
-import re, json, shutil
+import re, json, shutil, hashlib
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / 'dist'
@@ -63,6 +63,12 @@ def build():
     shutil.copytree(ROOT/'assets', OUT/'assets',dirs_exist_ok=True)
     shutil.copytree(ROOT/'downloads', OUT/'downloads',dirs_exist_ok=True)
     shutil.copyfile(ROOT.parent/'favicon.svg',OUT/'favicon.svg')
+    comparison_assets={}
+    for ext in ('css','js'):
+        data=(ROOT/'assets'/('conformance.'+ext)).read_bytes()
+        name='conformance.'+hashlib.sha256(data).hexdigest()[:12]+'.'+ext
+        (OUT/'assets'/name).write_bytes(data)
+        comparison_assets[ext]='/assets/'+name
     search=[]
     for n,(slug,title,group) in enumerate(PAGES):
         src=(ROOT/'content'/f'{slug}.md').read_text()
@@ -80,7 +86,7 @@ def build():
         html=f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · Crabgraph docs</title><meta name="description" content="{escape(description)}">
-<link rel="canonical" href="{canonical}"><meta property="og:title" content="{escape(title)} · Crabgraph docs"><meta property="og:description" content="{escape(description)}"><meta property="og:type" content="website"><meta property="og:url" content="{canonical}"><meta name="theme-color" content="#f5f3ec"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/docs.css"><script src="/assets/docs.js" defer></script>{'<link rel="stylesheet" href="/assets/conformance.css"><script src="/assets/conformance.js" defer></script>' if slug == 'conformance' else ''}</head>
+<link rel="canonical" href="{canonical}"><meta property="og:title" content="{escape(title)} · Crabgraph docs"><meta property="og:description" content="{escape(description)}"><meta property="og:type" content="website"><meta property="og:url" content="{canonical}"><meta name="theme-color" content="#f5f3ec"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/docs.css"><script src="/assets/docs.js" defer></script>{'<link rel="stylesheet" href="'+comparison_assets['css']+'"><script src="'+comparison_assets['js']+'" defer></script>' if slug == 'conformance' else ''}</head>
 <body class="{'comparison-page' if slug == 'conformance' else ''}"><a class="skip" href="#content">Skip to content</a><header class="header"><a class="brand" href="/index.html"><img src="/favicon.svg" width="31" height="31" alt="">crabgraph<span>docs</span></a><div class="header-actions"><button id="search-open" type="button" hidden>Search docs <kbd>/</kbd></button><a href="https://crabgraph.net/">Website ↗</a><a class="github" href="https://github.com/henneberger/new-graph">GitHub ↗</a><button id="menu" type="button" aria-expanded="false" aria-controls="sidebar" hidden>Menu</button></div></header>
 <div class="layout"><nav class="sidebar" id="sidebar" aria-label="Documentation"><div class="version">DOCUMENTATION <span>v0.1.0</span></div>{nav}<a class="nav-download" href="/llms.txt">Plain text index ↗</a></nav><main id="content"><div class="eyebrow">{escape(group)}</div><h1>{escape(title)}</h1><p class="lead">{escape(description)}</p>{article}<nav class="pager" aria-label="Adjacent pages">{pager}</nav><footer>Crabgraph documentation · <a href="https://crabgraph.net/">crabgraph.net</a></footer></main><aside class="toc"><p>ON THIS PAGE</p>{''.join(f'<a href="#{a}">{escape(t)}</a>' for a,t in toc)}<div class="toc-bottom">Graph languages.<br>Your data.</div></aside></div>
 <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-top"><label id="search-title" for="search-input">Search documentation</label><button id="search-close" type="button" aria-label="Close search">Esc</button></div><input id="search-input" type="search" placeholder="Try mappings, transactions, or Cypher" autocomplete="off"><p id="search-status" role="status"></p><div id="search-results"></div></dialog><div id="copy-status" class="sr-only" role="status"></div></body></html>'''
