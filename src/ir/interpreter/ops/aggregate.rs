@@ -290,26 +290,28 @@ pub(crate) fn compute_aggregate(
             let mut have_bigint = false;
             let mut have_decimal = false;
             let mut have_float = false;
-            for value in aggregate_values(expr, rows, graph, agg.distinct)? {
+            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
                 match value {
-                    Value::Byte(n) => int_sum += n as i64,
-                    Value::Short(n) => int_sum += n as i64,
-                    Value::Int(n) | Value::Long(n) => int_sum += n,
+                    Value::Byte(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
+                    Value::Short(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
+                    Value::Int(n) | Value::Long(n) => {
+                        int_sum = add_weighted_integer(int_sum, n, weight)?
+                    }
                     Value::Float32(f) => {
                         have_float = true;
-                        float_sum += f as f64;
+                        float_sum += f as f64 * weight as f64;
                     }
                     Value::Float(f) => {
                         have_float = true;
-                        float_sum += f;
+                        float_sum += f * weight as f64;
                     }
                     Value::BigInt(n) => {
                         have_bigint = true;
-                        bigint_sum += n;
+                        bigint_sum += n * BigInt::from(weight);
                     }
                     Value::BigDecimal(d) => {
                         have_decimal = true;
-                        decimal_sum += d;
+                        decimal_sum += d * BigDecimal::from(weight);
                     }
                     // Non-numeric inputs (Node/Edge/List/Map/Path) are
                     // ignored rather than failing; this matches the
@@ -338,28 +340,38 @@ pub(crate) fn compute_aggregate(
                 .as_ref()
                 .ok_or_else(|| InterpretError::Type("avg requires an argument".into()))?;
             let mut sum = 0.0_f64;
-            let mut count = 0_i64;
-            for value in aggregate_values(expr, rows, graph, agg.distinct)? {
+            let mut count = 0_u64;
+            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
                 match value {
                     Value::Byte(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Short(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Int(n) | Value::Long(n) => {
-                        sum += n as f64;
-                        count += 1;
+                        sum += n as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Float32(f) => {
-                        sum += f as f64;
-                        count += 1;
+                        sum += f as f64 * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     Value::Float(f) => {
-                        sum += f;
-                        count += 1;
+                        sum += f * weight as f64;
+                        count = count.checked_add(weight).ok_or_else(|| {
+                            InterpretError::Runtime("aggregate bulk overflow".into())
+                        })?;
                     }
                     _ => {}
                 }
@@ -504,15 +516,36 @@ pub(crate) fn compute_aggregate(
     }
 }
 
+fn add_weighted_integer(total: i64, value: i64, weight: u64) -> IrResult<i64> {
+    i64::try_from(i128::from(total) + i128::from(value) * i128::from(weight))
+        .map_err(|_| InterpretError::Runtime("integer sum overflow".into()))
+}
+
 fn aggregate_values(
     expr: &IrExpr,
     rows: &[Row],
     graph: &PropertyGraph,
     distinct: bool,
 ) -> IrResult<Vec<Value>> {
+    Ok(aggregate_weighted_values(expr, rows, graph, distinct)?
+        .into_iter()
+        .map(|(value, _)| value)
+        .collect())
+}
+
+/// Keep bulk as a weight rather than expanding potentially huge frontiers.
+fn aggregate_weighted_values(
+    expr: &IrExpr,
+    rows: &[Row],
+    graph: &PropertyGraph,
+    distinct: bool,
+) -> IrResult<Vec<(Value, u64)>> {
     let mut values = Vec::new();
     let mut seen = BTreeSet::new();
     for row in rows {
+        if row.bulk == 0 {
+            continue;
+        }
         let value = eval(expr, row, graph)?;
         if matches!(value, Value::Null) {
             continue;
@@ -520,7 +553,7 @@ fn aggregate_values(
         if distinct && !seen.insert(encode_value(&value)) {
             continue;
         }
-        values.push(value);
+        values.push((value, if distinct { 1 } else { row.bulk }));
     }
     Ok(values)
 }
@@ -635,6 +668,41 @@ mod tests {
     use num_bigint::BigInt;
 
     use super::*;
+
+    #[test]
+    fn sum_and_mean_weight_bulk_without_expanding_rows() {
+        let graph = PropertyGraph::new();
+        let mut first = Row::new().with("current", Value::Int(2));
+        first.bulk = 1_000_000_000;
+        let mut second = Row::new().with("current", Value::Int(8));
+        second.bulk = 3_000_000_000;
+        let rows = [first, second];
+        let mut agg = AggCall {
+            kind: AggKind::Sum,
+            alias: "sum".into(),
+            arg: Some(IrExpr::Binding("current".into())),
+            distinct: false,
+        };
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Int(26_000_000_000)
+        );
+        agg.kind = AggKind::Avg;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Float(6.5)
+        );
+        agg.distinct = true;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Float(5.0)
+        );
+        agg.kind = AggKind::Sum;
+        assert_eq!(
+            compute_aggregate(&agg, &rows, &graph).unwrap(),
+            Value::Int(10)
+        );
+    }
 
     #[test]
     fn count_if_truthiness_includes_unsigned_numbers() {
