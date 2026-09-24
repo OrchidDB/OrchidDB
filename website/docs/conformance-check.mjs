@@ -8,25 +8,21 @@ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors
 await page.goto(base+'/conformance.html');
 assert.equal(await page.locator('.comparison-row').count(),6533);
 assert.equal(await page.locator('.feature-card').count(),361);
-assert.equal(await page.locator('.feature-card:visible').count(),1);
-assert.equal(await page.locator('.feature-card:visible').getAttribute('data-suite'),'tinkerpop');
-const products={tinkerpop:['Crabgraph','SQLg','PuppyGraph'],opencypher:['Crabgraph','PuppyGraph'],rdf:['Crabgraph']};
-// Every feature, not just the default, must exclude irrelevant engines.
+assert.equal(await page.locator('.feature-card:visible').count(),361);
+const products={tinkerpop:['Crabgraph · native Rust','Crabgraph · JVM OLTP','Crabgraph · GraphComputer','SQLg','PuppyGraph'],opencypher:['Crabgraph','PuppyGraph'],rdf:['Crabgraph']};
+// All features stay visible. Only Gremlin adds execution-profile columns.
 for(const [suite,names] of Object.entries(products)){
   const valid=await page.locator('.feature-card[data-suite="'+suite+'"]').evaluateAll((cards,names)=>cards.every(card=>{
-    const headings=[...card.querySelectorAll('.support-column h3')].map(h=>h.childNodes[0].textContent);
     const columns=[...card.querySelectorAll('.comparison-table thead th')].slice(1).map(h=>h.textContent);
-    return JSON.stringify(headings)===JSON.stringify(names)&&JSON.stringify(columns)===JSON.stringify(names);
-  }),names);assert.equal(valid,true,suite+' relevant engines');
+    return card.querySelectorAll('.feature-matrix-row > td').length===names.length&&JSON.stringify(columns)===JSON.stringify(names);
+  }),names);assert.equal(valid,true,suite+' execution columns');
   await page.locator('[data-language-tab="'+suite+'"]').click();
-  assert.equal(await page.locator('.feature-card:visible').getAttribute('data-suite'),suite);
-  assert.equal(await page.locator('.feature-card:visible .support-column').count(),names.length);
-  assert.equal(await page.locator('#feature-list a:not([hidden])').count(),await page.locator('.feature-card[data-suite="'+suite+'"]').count());
+  assert.equal(await page.locator('.feature-card:visible').count(),361);
 }
-await page.locator('[data-language-tab="tinkerpop"]').click();
+assert.equal(await page.locator('#capabilities .comparison-table thead th').count(),4);
+assert.equal(await page.locator('.leaderboard-table').textContent().then(text=>/JVM|GraphComputer/.test(text)),false);
 for(const value of ['crab-wins','peer-wins','adapter','failures']){
  await page.locator('#comparison-filter').selectOption(value);
- assert.ok(await page.locator('#feature-list a:not([hidden])').count()>0);
  assert.equal(await page.locator('.comparison-row:not([hidden])').evaluateAll((rows,value)=>rows.every(row=>row.dataset.flags.split(' ').includes(value)),value),true);
 }
 await page.locator('#comparison-reset').click();
@@ -34,22 +30,22 @@ await page.locator('#comparison-search').fill('no-such-feature-123');
 await page.locator('#empty-stage').waitFor();assert.equal(await page.locator('.feature-card:visible').count(),0);
 await page.locator('#comparison-reset').click();
 await page.locator('#comparison-search').fill('groupCount');
-await page.locator('#feature-list a:not([hidden])').getByText('groupCount()', {exact:true}).click();
-await page.waitForFunction(()=>document.querySelector('.feature-card:not([hidden])')?.dataset.name==='groupCount()');
+await page.waitForFunction(()=>[...document.querySelectorAll('.feature-card:not([hidden])')].some(card=>card.dataset.name==='groupCount()'));
 await page.locator('#comparison-reset').click();
 await page.screenshot({path:'/tmp/conformance-explorer-desktop.png'});
-const card=page.locator('.feature-card:visible');
-await card.locator('[data-product-focus="crabgraph"]').click();
+const card=page.locator('.feature-card[data-suite="tinkerpop"]:visible').first();
+await card.locator('[data-product-focus="crabgraph-jvm"]').click();
 const row=card.locator('.comparison-row').first();
-await row.locator('[data-product="crabgraph"] .raw-evidence').waitFor({state:'attached'});
-const actual=JSON.parse(await row.locator('[data-product="crabgraph"] .raw-evidence').textContent());
+await row.locator('[data-product="crabgraph-jvm"] .raw-evidence').waitFor({state:'attached'});
+const actual=JSON.parse(await row.locator('[data-product="crabgraph-jvm"] .raw-evidence').textContent());
 await row.locator('[data-product="upstream"] > summary').click();
 await row.locator('[data-product="upstream"] .raw-evidence').waitFor({state:'attached'});
 const original=JSON.parse(await row.locator('[data-product="upstream"] .raw-evidence').textContent());
 assert.equal(actual.id,original.id);assert.ok(actual.case_sha256);
 const cypherAnchor=await page.locator('.feature-card[data-suite="opencypher"] .comparison-row').first().getAttribute('id');
 await page.goto(base+'/conformance.html#'+cypherAnchor);
-assert.equal(await page.locator('.feature-card:visible').getAttribute('data-suite'),'opencypher');
+assert.equal(await page.locator('.feature-card:visible').count(),361);
+assert.equal(await page.locator('#'+cypherAnchor).isVisible(),true);
 assert.equal(await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('open'),'');
 const evidenceUrl=await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('data-evidence');
 const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['crabgraph','puppygraph']);
@@ -59,7 +55,18 @@ for(const width of [1440,1000,760,390]){
  await page.setViewportSize({width,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'overflow '+width);
 }
-await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/conformance-explorer-mobile.png',fullPage:true});
+await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/tmp/conformance-explorer-mobile.png'});
+const javaIndexLink=page.locator('#java-provider a[href$="index.json"]');
+if(await javaIndexLink.count()){
+ const response=await page.request.get(base+await javaIndexLink.getAttribute('href'));assert.equal(response.status(),200);
+ const manifest=await response.json();const entries=Array.isArray(manifest)?manifest:manifest.entries;
+ assert.equal(await page.locator('#java-provider tbody tr').count(),entries.length);
+ for(const entry of entries){const raw=await page.request.get(base+'/downloads/conformance/java-provider/'+entry.file);assert.equal(raw.status(),200);}
+}
+for(const profile of ['crabgraph-jvm','crabgraph-computer']){
+ const response=await page.request.get(base+'/downloads/conformance/'+profile+'-tinkerpop.json');assert.equal(response.status(),200);
+ const evidence=await response.json();assert.ok(evidence.results.length>0);assert.ok(evidence.execution_profile);
+}
 assert.deepEqual(errors,[]);await context.close();
 const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
 const staticPage=await nojs.newPage();await staticPage.goto(base+'/conformance.html');
@@ -72,4 +79,4 @@ const download=staticPage.locator('.comparison-row [data-product="upstream"] a')
 assert.ok(await download.isVisible());
 assert.equal((await staticPage.request.get(base+await download.getAttribute('href'))).status(),200);
 assert.equal(await staticPage.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-await browser.close();console.log('Language groups, applicable engines for all 361 features, filters, evidence, deep links, responsive layout and no-JavaScript view passed');
+await browser.close();console.log('All 361 visible features, separate Gremlin execution profiles and Java evidence, filters, evidence, deep links, responsive layout and no-JavaScript view passed');
