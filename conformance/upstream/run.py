@@ -109,6 +109,15 @@ def main():
   else:
    from cypher import Cypher
    adapter=Cypher(args.engine)
+ # Capture source and executable identity before the first adapter launch. A
+ # concurrent checkout/build must not make finished results claim later source.
+ if args.engine in JVM_ENGINES and adapter is not None:
+  build=jvm_build(adapter.classpath)
+ elif args.engine=='crabgraph':
+  binary=crabgraph_binary();build={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
+ else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
+ build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+ build['capture_phase']='before-scenarios'
  try:
   with journal.open('a') as f:
    for i,case in enumerate(cases):
@@ -129,11 +138,7 @@ def main():
  if args.suite=='tinkerpop':
   content['execution_profile']=execution_profile(args.engine)
   content['coverage']['excluded_capabilities']=capability_summary(results)
- if args.engine in JVM_ENGINES:
-  content['build']=jvm_build(adapter.classpath if adapter else os.environ.get('CONFORMANCE_GREMLIN_CLASSPATH',''))
- elif args.engine=='crabgraph':
-  binary=crabgraph_binary();content['build']={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
- else:content['build']={'version':{'sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
+ content['build']=build
  output.write_text(json.dumps(content,indent=2)+'\n')
  from collections import Counter
  print(args.engine,args.suite,dict(Counter(r['status'] for r in results)),flush=True)
