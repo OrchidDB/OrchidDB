@@ -50,6 +50,7 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphDelete { input, .. }
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupCountSideEffect { input, .. }
         | GraphReadSideEffect { input, .. }

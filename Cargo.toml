@@ -19,6 +19,8 @@ duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 
 [dependencies]
+async-trait = "0.1"
+futures = "0.3"
 antlr4rust = "0.5.2"
 stacker = "0.1.24"
 arrow = "58.2.0"

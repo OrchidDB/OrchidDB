@@ -54,6 +54,10 @@ impl Store {
     }
     pub fn from_graph(graph: PropertyGraph) -> Self {
         graph.enable_null_property_values(true);
+        Self::from_execution_graph(graph)
+    }
+    /// Preserve the caller's null policy and uncommitted state for an IR node.
+    pub(crate) fn from_execution_graph(graph: PropertyGraph) -> Self {
         // Legacy Arrow/scalar properties acquire native property identities on
         // first access. Allocate those once before the two transaction views can
         // diverge, otherwise unrelated writer allocations could change a reader's
@@ -135,6 +139,15 @@ impl Store {
         store.path = Some(path);
         store._lock = Some(lock);
         Ok(store)
+    }
+    pub(crate) fn validate_execution_finish(&self) -> Result<()> {
+        if self.closed || !self.savepoints.is_empty() {
+            return Err("JVM IR left an incomplete native atomic block".into());
+        }
+        if !self.runtime.is_empty() {
+            return Err("JVM runtime objects cannot escape an IR invocation through graph properties".into());
+        }
+        Ok(())
     }
     pub fn graph(&self) -> &PropertyGraph {
         &self.graph
@@ -232,7 +245,7 @@ impl Store {
         }
         match op {
             "hello" => Ok(
-                json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some(),"committedReads":true}),
+                json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some(),"committedReads":true,"nullPropertyValues":self.graph.supports_null_property_values()}),
             ),
             "begin" => Ok(Json::Null), // read/write transaction begins at open or the last commit/rollback
             "commit" => {
@@ -653,6 +666,7 @@ impl Store {
             Value::BigInt(v) => tagged("bigint", json!(v.to_string())),
             Value::BigDecimal(v) => tagged("bigdecimal", json!(v.to_string())),
             Value::List(v) => tagged("list", self.encode_many(v.clone())?),
+            Value::Path(v) => tagged("path", self.encode_many(v.clone())?),
             Value::Set(v) => tagged("set", self.encode_many(v.clone())?),
             Value::Map(v) => tagged(
                 "map",
@@ -746,14 +760,15 @@ impl Store {
             "double" => Value::Float(number()?.parse().map_err(err)?),
             "bigint" => Value::BigInt(number()?.parse().map_err(err)?),
             "bigdecimal" => Value::BigDecimal(number()?.parse().map_err(err)?),
-            "list" | "set" => {
+            "list" | "set" | "path" => {
                 let values = v
                     .as_array()
                     .ok_or("expected typed array")?
                     .iter()
                     .map(|x| self.decode(x))
                     .collect::<Result<_>>()?;
-                if kind == "set" {
+                if kind == "path" { Value::Path(values) }
+                else if kind == "set" {
                     gremlin_set(values)
                 } else {
                     Value::List(values)

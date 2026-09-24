@@ -30,10 +30,10 @@ use crate::ir::value::Value;
 
 mod element_id;
 pub(crate) mod expr;
-mod ops;
-mod output;
-mod run;
-mod runtime;
+pub(crate) mod ops;
+pub(crate) mod output;
+pub(crate) mod run;
+pub(crate) mod runtime;
 pub(crate) use runtime::is_known_function;
 
 use crate::ir::interpreter::output::finalize_return;

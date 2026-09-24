@@ -66,6 +66,18 @@ pub struct EdgeTable {
     pub batch: RecordBatch,
 }
 
+/// Cheap isolated checkpoints. Reads share state; the first write detaches it.
+/// Correlated DataFusion subplans can checkpoint a large native fixture without
+/// copying its complete overlay for every incoming traverser.
+#[derive(Debug, Clone, Default)]
+struct SnapshotCell<T: Clone>(RefCell<Arc<T>>);
+impl<T: Clone> SnapshotCell<T> {
+    fn new(value:T)->Self {Self(RefCell::new(Arc::new(value)))}
+    fn borrow(&self)->std::cell::Ref<'_,T> {std::cell::Ref::map(self.0.borrow(),|v|v.as_ref())}
+    fn borrow_mut(&self)->std::cell::RefMut<'_,T> {std::cell::RefMut::map(self.0.borrow_mut(),Arc::make_mut)}
+    fn share_from(&self,other:&Self) {let shared=other.0.borrow().clone();*self.0.borrow_mut()=shared;}
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PropertyGraph {
     pub nodes: HashMap<String, NodeTable>,
@@ -96,10 +108,10 @@ pub struct PropertyGraph {
     /// Session-local graph mutations layered above immutable Arrow
     /// fixture tables. This keeps Graph IR mutation semantics visible to
     /// normal scans/property reads without rebuilding Arrow batches per row.
-    overlay: RefCell<GraphOverlay>,
+    overlay: SnapshotCell<GraphOverlay>,
     /// Persistence work since the last successful flush. Derived state only:
     /// snapshots do not carry it, and failed statements restore it with the graph.
-    pending: RefCell<PendingChanges>,
+    pending: SnapshotCell<PendingChanges>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -855,3 +867,12 @@ fn table_property_keys(batch: &RecordBatch, exclude: &[&str]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests;
+
+impl PropertyGraph {
+    /// Publish or restore an execution-local overlay. Base Arrow tables remain
+    /// immutable throughout JVM execution; bridge mutations use only the overlay.
+    pub(crate) fn restore_execution_overlay(&self, checkpoint: &Self) {
+        self.overlay.share_from(&checkpoint.overlay);
+        self.pending.share_from(&checkpoint.pending);
+    }
+}

@@ -196,7 +196,7 @@ pub(crate) fn map_key(value: &Value) -> String {
     display_for_group_key(value)
 }
 
-fn unwrap_single_group_value(value: Value) -> Value {
+pub(crate) fn unwrap_single_group_value(value: Value) -> Value {
     match value {
         Value::List(items) if items.len() == 1 => items.into_iter().next().unwrap_or(Value::Null),
         other => other,
@@ -526,7 +526,7 @@ pub(crate) fn compute_aggregate(
     }
 }
 
-fn checked_bulk_total(rows: &[Row]) -> IrResult<u64> {
+pub(crate) fn checked_bulk_total(rows: &[Row]) -> IrResult<u64> {
     rows.iter().try_fold(0u64, |total, row| {
         total.checked_add(row.bulk).ok_or_else(|| {
             InterpretError::ExecutionLimit("aggregate traverser bulk overflow".into())
@@ -667,7 +667,7 @@ fn percentile_disc(values: &[f64], percentile: f64) -> f64 {
     values[index]
 }
 
-fn flatten_group_lists(value: Value) -> Value {
+pub(crate) fn flatten_group_lists(value: Value) -> Value {
     let Value::List(items) = value else {
         return value;
     };
@@ -1014,7 +1014,7 @@ fn merge_finalized_group(seed: Option<&Value>, value: Value, kind: AggKind) -> I
 
 /// Detach the first supported reducing barrier from its post-processing
 /// traversal. Its prefix has already been captured at contribution insertion.
-fn split_writer_finalizer(node: &mut crate::ir::plan::Node) -> Option<(crate::ir::plan::Node, AggKind)> {
+pub(crate) fn split_writer_finalizer(node: &mut crate::ir::plan::Node) -> Option<(crate::ir::plan::Node, AggKind)> {
     use crate::ir::plan::Node;
     if let Node::GraphAggregate { group, aggs, input, .. } = node {
         if group.is_empty() && aggs.len() == 1 && aggs[0].alias == "current"
@@ -1129,7 +1129,7 @@ fn group_members_source() -> crate::ir::plan::Node {
 
 /// Find the first barrier on the main value traversal, excluding barriers
 /// in per-traverser child traversals. Replace its input with stored members.
-fn split_group_prefix(node: &mut crate::ir::plan::Node) -> Option<crate::ir::plan::Node> {
+pub(crate) fn split_group_prefix(node: &mut crate::ir::plan::Node) -> Option<crate::ir::plan::Node> {
     use crate::ir::plan::Node;
     let barrier = matches!(
         node,

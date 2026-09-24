@@ -42,7 +42,7 @@ def execution_profile(engine):
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='crabgraph-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='crabgraph' else 'provider default',
-         'executor':'Crabgraph JVM provider over native store' if engine in JVM_ENGINES else 'native Rust planner' if engine=='crabgraph' else engine,
+         'executor':'Crabgraph JVM provider over native store' if engine in JVM_ENGINES else 'native Rust planner; relational DAG executed by DuckDB and DataFusion' if engine=='crabgraph' else engine,
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('CRABGRAPH_JVM_STORE',str(REPO/'target/debug/crabgraph-jvm-store')))

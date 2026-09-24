@@ -126,7 +126,8 @@ pub fn contains_source_mutation(root: &Node) -> bool {
 
 pub fn node_effect(node: &Node) -> Effect {
     match node {
-        Node::GraphCreate { .. }
+        Node::GraphJvm { .. }
+        | Node::GraphCreate { .. }
         | Node::GraphMerge { .. }
         | Node::GraphSetProperty { .. }
         | Node::GraphDelete { .. }
@@ -206,6 +207,7 @@ pub(crate) fn children(node: &Node) -> Vec<&Node> {
         | GraphDelete { input, .. }
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupCountSideEffect { input, .. }
         | GraphReadSideEffect { input, .. }

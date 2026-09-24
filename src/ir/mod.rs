@@ -12,6 +12,7 @@ pub mod expr;
 pub mod functions;
 pub mod gremlin_semantics;
 pub mod interpreter;
+pub mod jvm;
 pub mod plan;
 pub mod policy;
 pub mod rel;

@@ -34,6 +34,9 @@ use super::{InterpretError, IrResult, Row};
 
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
+    pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
+    pub(crate) sql_timeout: Option<std::time::Duration>,
+    pub(crate) jvm: crate::ir::jvm::JvmExecution,
     pub(crate) random_steps: BTreeMap<String, super::ops::sample::JavaRandom>,
     pub(crate) side_effect_reducers: BTreeMap<String, String>,
     pub(crate) side_effects: BTreeMap<String, Value>,
@@ -98,6 +101,7 @@ impl ExecutionContext {
     }
 
     pub(crate) fn side_effect_value(&mut self, label: &str, _graph: &PropertyGraph) -> IrResult<Value> {
+        if let Some(value) = crate::ir::rel::runtime::control::groups::group_side_effect_value(self, label, _graph)? {return Ok(value);}
         if let Some(value) = super::ops::aggregate::group_side_effect_value(self, label, _graph)? { return Ok(value); }
         if let Some(value) = self.side_effects.get(label) {
             if self.side_effect_reducers.get(label).is_some_and(|r| r == "tree") {
@@ -134,6 +138,7 @@ impl ExecutionContext {
     }
 
     fn finalized_side_effect_value(&mut self, label: &str, graph: &PropertyGraph) -> IrResult<Value> {
+        if let Some(value) = crate::ir::rel::runtime::control::groups::group_side_effect_finalize(self, label, graph)? {return Ok(value);}
         if let Some(value) = super::ops::aggregate::group_side_effect_finalize(self, label, graph)? {
             return Ok(value);
         }
@@ -194,6 +199,9 @@ impl ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
+            relational_groups: BTreeMap::new(),
+            sql_timeout:None,
+            jvm: Default::default(),
             random_steps: BTreeMap::new(),
             side_effect_reducers: BTreeMap::new(),
             side_effects: BTreeMap::new(),
@@ -221,6 +229,7 @@ pub(crate) fn run_with_context(
 ) -> IrResult<Vec<Row>> {
     ctx.charge(1)?;
     match node {
+        Node::GraphJvm { .. } => Err(InterpretError::Unsupported("JVM compute requires the relational DataFusion executor".into())),
         Node::GraphReturn { input, .. } => run_with_context(input, graph, ctx),
         Node::GraphOneRow => Ok(vec![Row::new()]),
         Node::GraphEmpty => Ok(vec![]),
@@ -798,7 +807,7 @@ fn group_count_map_value(ctx: &ExecutionContext, label: &str) -> Value {
     Value::map_from_entries(map)
 }
 
-fn shortest_path_op(
+pub(crate) fn shortest_path_op(
     source: &str,
     target: Option<&str>,
     direction: Direction,
