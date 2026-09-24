@@ -15,7 +15,7 @@ Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG
 
 1. Measure first. Identify fixed overhead versus row processing and SQL preparation costs.
 2. Remove measured overhead with narrow changes. Candidates include repeated session construction, repeated source collection, and redundant row serialization between compatible residual kernels.
-3. Add conservative DAG rewrites with explicit eligibility. Preserve SQL scope barriers, ordering, side effects, and duplicate evaluation. Run DataFusion logical optimization before region placement; opaque kernels retain their pushdown barriers. Fuse compatible unary residual kernels without reordering evaluation.
+3. Add DAG rewrites with explicit eligibility. Apply fusion inside correlated subplans as well as the outer plan; fuse adjacent read kernels and their sources to avoid intermediate Arrow encoding and task scheduling. Reuse immutable transport schemas and serialization buffers. Preserve SQL scope barriers, ordering, side effects, and duplicate evaluation. Run DataFusion logical optimization before region placement; opaque kernels retain their pushdown barriers. Fuse compatible unary residual kernels without reordering evaluation.
 4. Establish typed operator contracts before broader predicate movement or cost-based placement. Stateful/JVM/write operators remain boundaries unless their semantics prove a rewrite safe. Full typed-column migration, plan caching, and set-based write batching are separate follow-on changes if measurements justify them.
 5. Re-run matched before/after benchmarks and the complete Gremlin suite; commit and push code and evidence. Publish through the existing static workflow.
 

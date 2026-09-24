@@ -154,7 +154,7 @@ impl Compiler<'_> {
             sql: false,
         };
         Ok(Subplan {
-            plan: compiler.lower(node)?,
+            plan: fuse_unary_kernels(compiler.lower(node)?)?,
             prepared: Default::default(),
             observable: observable(node),
             barrier: ops::choose::contains_barrier(node),
