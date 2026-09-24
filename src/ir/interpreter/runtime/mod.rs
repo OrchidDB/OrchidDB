@@ -21,6 +21,7 @@ mod path;
 mod property_object;
 mod reductions;
 mod registry;
+pub(crate) use registry::is_known_function;
 mod string_functions;
 mod strings;
 pub(crate) mod temporal;
@@ -65,7 +66,6 @@ fn next_kuzu_random() -> f64 {
     state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
     ((state >> 11) as f64) / ((1_u64 << 53) as f64)
 }
-
 
 #[cfg(test)]
 mod list_function_tests;

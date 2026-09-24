@@ -110,7 +110,7 @@ pub(super) fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
 /// free, and not tied to internal traversal state.
 pub(super) fn constant_foldable_function(name: &str) -> bool {
     let normalized = name.to_ascii_lowercase();
-    if normalized.starts_with("__") {
+    if !crate::ir::interpreter::is_known_function(&normalized) || normalized.starts_with("__") {
         return false;
     }
     const DENY: &[&str] = &[
@@ -375,7 +375,11 @@ pub(super) fn cast_bigint_range(value: &Value, min: i128, max: i128) -> RelResul
     cast_bigint_range_big_max(value, BigInt::from(min), BigInt::from(max))
 }
 
-pub(super) fn cast_bigint_range_big_max(value: &Value, min: BigInt, max: BigInt) -> RelResult<BigInt> {
+pub(super) fn cast_bigint_range_big_max(
+    value: &Value,
+    min: BigInt,
+    max: BigInt,
+) -> RelResult<BigInt> {
     let value = value_to_bigint(value)
         .ok_or_else(|| RelError::Unsupported("constant integer cast".into()))?;
     if value < min || value > max {
@@ -494,7 +498,11 @@ pub(super) fn graph_values_display(value: &Value, language: Language) -> String 
     }
 }
 
-pub(super) fn rel_display_value(value: &Value, language: Language, context: DisplayContext) -> String {
+pub(super) fn rel_display_value(
+    value: &Value,
+    language: Language,
+    context: DisplayContext,
+) -> String {
     match language {
         Language::Cypher | Language::Gql => match context {
             DisplayContext::Scalar => cypher_plain_value(value),
@@ -511,7 +519,11 @@ pub(super) fn literal_collection_context(language: Language) -> DisplayContext {
     }
 }
 
-pub(super) fn constant_result_expr(value: &Value, language: Language, context: DisplayContext) -> Expr {
+pub(super) fn constant_result_expr(
+    value: &Value,
+    language: Language,
+    context: DisplayContext,
+) -> Expr {
     match value {
         Value::Null => lit(ScalarValue::Utf8(None)),
         _ => lit(rel_display_value(value, language, context)),
@@ -757,4 +769,28 @@ pub(super) fn label_index_case(label_expr: Expr, order: &[String], base: i64, st
         arms,
         Some(Box::new(lit("?"))),
     ))
+}
+
+#[cfg(test)]
+mod folding_tests {
+    use super::*;
+
+    #[test]
+    fn engine_calls_are_not_interpreter_constants_even_with_null_arguments() {
+        for name in ["unknown_function", "stats", "uuid_extract_version"] {
+            let call = IrExpr::Call {
+                name: name.into(),
+                args: vec![IrExpr::Lit(Lit::Null)],
+            };
+            assert!(!expr_is_constant(&call, &[]), "{name}");
+            let nested = IrExpr::Call {
+                name: "coalesce".into(),
+                args: vec![call, IrExpr::Lit(Lit::Int(1))],
+            };
+            assert!(!expr_is_constant(&nested, &[]), "nested {name}");
+        }
+        assert!(constant_foldable_function("UPPER"));
+        assert!(constant_foldable_function("tointeger"));
+        assert!(!constant_foldable_function("random"));
+    }
 }

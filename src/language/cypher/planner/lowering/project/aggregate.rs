@@ -177,9 +177,16 @@ pub(super) fn rewrite_aggregate_projection_expr(
                 "percentilecont" => AggKind::PercentileCont,
                 "percentiledisc" => AggKind::PercentileDisc,
                 "collect" => AggKind::CollectRows,
-                _ => unreachable!("aggregate_kind filtered aggregate functions"),
+                _ => AggKind::EngineFunction,
             };
             let arg = match kind {
+                AggKind::EngineFunction => Some(IrExpr::Call {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| lower_expr(lowerer, arg))
+                        .collect::<CypherPlanResult<_>>()?,
+                }),
                 AggKind::PercentileCont | AggKind::PercentileDisc => {
                     if args.len() != 2 {
                         return Err(CypherPlanError::Invalid(format!(
@@ -894,9 +901,16 @@ pub(super) fn rewrite_aggregate_projection(
                 "percentilecont" => AggKind::PercentileCont,
                 "percentiledisc" => AggKind::PercentileDisc,
                 "collect" => AggKind::CollectRows,
-                _ => unreachable!("aggregate_kind filtered aggregate functions"),
+                _ => AggKind::EngineFunction,
             };
             let arg = match kind {
+                AggKind::EngineFunction => Some(IrExpr::Call {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| lower_expr(lowerer, arg))
+                        .collect::<CypherPlanResult<_>>()?,
+                }),
                 AggKind::PercentileCont | AggKind::PercentileDisc => {
                     if args.len() != 2 {
                         return Err(CypherPlanError::Invalid(format!(
@@ -1084,6 +1098,7 @@ pub(super) fn aggregate_kind(name: &str) -> Option<AggKind> {
         "percentilecont" => Some(AggKind::PercentileCont),
         "percentiledisc" => Some(AggKind::PercentileDisc),
         "collect" => Some(AggKind::CollectRows),
+        _ if crate::ir::functions::is_native_aggregate(name) => Some(AggKind::EngineFunction),
         _ => None,
     }
 }

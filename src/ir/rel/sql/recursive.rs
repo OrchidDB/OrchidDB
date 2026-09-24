@@ -122,10 +122,11 @@ fn unparse_one(
     unparser: &Unparser<'_>,
     dialect: SqlDialect,
 ) -> SqlResult<String> {
-    let statement = unparser
+    let mut statement = unparser
         .plan_to_sql(plan)
         .map_err(|err| SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name())))?;
-    restore_aggregate_ordering(plan, unparser, statement.to_string())
+    super::functions::prepare_ast(&mut statement, dialect)?;
+    restore_aggregate_ordering(plan, unparser, dialect, statement.to_string())
 }
 
 fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec<RecursiveCte>)> {

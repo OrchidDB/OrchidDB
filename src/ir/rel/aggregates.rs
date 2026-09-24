@@ -3,7 +3,55 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
-    pub(super) fn lower_required_agg_arg(&self, plan: &LogicalPlan, arg: &Option<IrExpr>) -> RelResult<Expr> {
+    pub(super) fn lower_engine_aggregate(
+        &self,
+        plan: &LogicalPlan,
+        agg: &AggCall,
+    ) -> RelResult<Expr> {
+        let (name, args): (&str, Vec<&IrExpr>) = match (agg.kind, &agg.arg) {
+            (AggKind::EngineFunction, Some(IrExpr::Call { name, args })) => {
+                (name.as_str(), args.iter().collect())
+            }
+            (AggKind::StDev, Some(arg)) => ("stddev_samp", vec![arg]),
+            (AggKind::StDevP, Some(arg)) => ("stddev_pop", vec![arg]),
+            (AggKind::PercentileCont, Some(IrExpr::List(args))) if args.len() == 2 => {
+                ("quantile_cont", args.iter().collect())
+            }
+            (AggKind::PercentileDisc, Some(IrExpr::List(args))) if args.len() == 2 => {
+                ("quantile_disc", args.iter().collect())
+            }
+            _ => {
+                return Err(RelError::Unsupported(
+                    "invalid engine aggregate arguments".into(),
+                ));
+            }
+        };
+        let args = args
+            .into_iter()
+            .map(|arg| {
+                if matches!(arg, IrExpr::List(_)) {
+                    self.lower_native_list(plan, arg)
+                } else if let Some(native) = collections::native_list_property(plan, arg) {
+                    Ok(native)
+                } else {
+                    self.lower_expr(plan, arg)
+                }
+            })
+            .collect::<RelResult<Vec<_>>>()?;
+        let expr = crate::ir::functions::native_aggregate(name, args, plan.schema(), agg.distinct)?;
+        // Cypher stdev variants return zero for an empty or singleton sample.
+        Ok(if matches!(agg.kind, AggKind::StDev | AggKind::StDevP) {
+            df_core::coalesce(vec![expr, lit(0.0_f64)])
+        } else {
+            expr
+        })
+    }
+
+    pub(super) fn lower_required_agg_arg(
+        &self,
+        plan: &LogicalPlan,
+        arg: &Option<IrExpr>,
+    ) -> RelResult<Expr> {
         let Some(arg) = arg else {
             return Err(RelError::Unsupported(
                 "aggregate requires an argument".to_string(),
@@ -167,7 +215,6 @@ impl<'a> LoweringContext<'a> {
             .build()?;
         Ok(input.with_plan(plan))
     }
-
 }
 
 /// Element-id columns of `plan`, in schema order, as ascending sort keys.

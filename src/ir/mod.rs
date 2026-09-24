@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod df;
 pub mod exec;
 pub mod expr;
+pub mod functions;
 pub mod interpreter;
 pub mod plan;
 pub mod policy;

@@ -34,6 +34,7 @@ mod ops;
 mod output;
 mod run;
 mod runtime;
+pub(crate) use runtime::is_known_function;
 
 use crate::ir::interpreter::output::finalize_return;
 use crate::ir::interpreter::run::run;

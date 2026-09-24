@@ -23,6 +23,11 @@ pub(crate) fn aggregate_op(
     rows: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if aggs.iter().any(|agg| agg.kind == AggKind::EngineFunction) {
+        return Err(InterpretError::Unsupported(
+            "engine aggregate functions require relational execution".into(),
+        ));
+    }
     use std::collections::BTreeMap as Map;
     let mut groups: Map<Vec<u8>, (Vec<Value>, Vec<Row>)> = Map::new();
     for row in rows {
@@ -153,6 +158,9 @@ pub(crate) fn compute_aggregate(
     graph: &PropertyGraph,
 ) -> IrResult<Value> {
     match agg.kind {
+        AggKind::EngineFunction => Err(InterpretError::Unsupported(
+            "engine aggregate functions require relational execution".into(),
+        )),
         AggKind::CountRows => {
             // `countRows(x)` only counts rows where evaluating `x` is
             // non-null; `countRows()` counts every row.

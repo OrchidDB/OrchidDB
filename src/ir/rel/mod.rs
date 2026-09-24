@@ -25,14 +25,14 @@ use joins::*;
 mod columns;
 pub(crate) use columns::*;
 
-mod operators;
 mod aggregates;
+mod operators;
 use aggregates::*;
-mod expansion;
-mod collection_operators;
 mod branches;
-mod projection;
+mod collection_operators;
+mod expansion;
 mod plan_walk;
+mod projection;
 use plan_walk::*;
 
 mod apply;
@@ -486,4 +486,34 @@ impl IslandReport {
         self.lowerable_nodes += other.lowerable_nodes;
         self.unsupported.extend(other.unsupported);
     }
+}
+
+/// Names with language-owned lowering must not be silently shadowed by UDF
+/// aliases. Keep classification aligned with the expression dispatch.
+pub(crate) fn is_language_function(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    crate::ir::interpreter::is_known_function(&name)
+        || expression::is_label_function(&name)
+        || expression::is_id_function(&name)
+        || expression::is_mod_function(&name)
+        || expression::is_abs_function(&name)
+        || expression::is_pow_function(&name)
+        || expression::is_unary_math_function(&name)
+        || expression::is_binary_math_function(&name)
+        || expression::is_date_function(&name)
+        || expression::is_date_constructor(&name)
+        || expression::is_constant_collection_function(&name)
+        || expression::is_string_function(&name)
+        || expression::is_core_variadic_function(&name)
+        || expression::is_exists_function(&name)
+        || expression::is_in_function(&name)
+        || expression::cast_target_from_function_name(&name).is_ok()
+        || name.starts_with("cypher_")
+        || name.starts_with("gremlin_")
+        || name.starts_with("sparql_")
+        || name.starts_with("__")
+        || matches!(
+            name.as_str(),
+            "cast" | "date_part" | "date_trunc" | "map" | "make_map" | "list_slice" | "range"
+        )
 }

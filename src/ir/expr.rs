@@ -181,6 +181,8 @@ pub struct AggCall {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AggKind {
+    /// Catalog-resolved engine aggregate. `arg` holds an `IrExpr::Call` with all arguments.
+    EngineFunction,
     /// `countRows()` — counts visible rows. Bag semantics. Argument may
     /// scope which rows participate (`countRows(f)` only counts rows where
     /// `f` is non-null).

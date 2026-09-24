@@ -24,64 +24,74 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
 ///   early. Such strings are rebuilt from pieces around `chr(39)`.
 /// * Non-finite floats unparse as bare `inf` / `NaN`, which engines read as
 ///   column references. They become a cast from their standard spelling.
-pub(super) fn encode_unprintable_literals(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<LogicalPlan> {
+pub(super) fn encode_unprintable_literals(
+    plan: LogicalPlan,
+    dialect: SqlDialect,
+) -> SqlResult<LogicalPlan> {
     let transformed = plan.transform_up_with_subqueries(|node| {
-        node.map_expressions(|expr| {
-            expr.transform_up(|inner| {
-                match &inner {
-                    Expr::Literal(ScalarValue::Float64(Some(value)), _) if !value.is_finite() => {
-                        return Ok(Transformed::yes(non_finite_float_expr(
-                            *value,
-                            DataType::Float64,
-                        )));
-                    }
-                    Expr::Literal(ScalarValue::Float32(Some(value)), _) if !value.is_finite() => {
-                        return Ok(Transformed::yes(non_finite_float_expr(
-                            f64::from(*value),
-                            DataType::Float32,
-                        )));
-                    }
-                    _ => {}
-                }
-                let Expr::Literal(ScalarValue::Utf8(Some(value)), metadata) = &inner else {
-                    return Ok(Transformed::no(inner));
-                };
-                let encode_nul = dialect == SqlDialect::DuckDb && value.contains('\0');
-                let encode_quote = value.contains("''") || value.contains("\\'");
-                if !encode_nul && !encode_quote {
-                    return Ok(Transformed::no(inner));
-                }
-                let mut parts = Vec::new();
-                let mut current = String::new();
-                let flush = |current: &mut String, parts: &mut Vec<Expr>| {
-                    if !current.is_empty() {
-                        parts.push(Expr::Literal(
-                            ScalarValue::Utf8(Some(std::mem::take(current))),
-                            metadata.clone(),
-                        ));
-                    }
-                };
-                for ch in value.chars() {
-                    let code = match ch {
-                        '\0' if encode_nul => 0_i64,
-                        '\'' if encode_quote => 39_i64,
-                        other => {
-                            current.push(other);
-                            continue;
-                        }
-                    };
-                    flush(&mut current, &mut parts);
-                    parts.push(df_string::chr(lit(code)));
-                }
-                flush(&mut current, &mut parts);
-                if parts.is_empty() {
-                    parts.push(lit(""));
-                }
-                Ok(Transformed::yes(df_string::concat(parts)))
-            })
-        })
+        node.map_expressions(|expr| encode_expression_literals(expr, dialect))
     })?;
     Ok(transformed.data)
+}
+
+/// The expression-level half of [`encode_unprintable_literals`], shared by
+/// whole-query emission and catalog binding. Metadata and aliases survive.
+pub(super) fn encode_expression_literals(
+    expr: Expr,
+    dialect: SqlDialect,
+) -> Result<Transformed<Expr>, DataFusionError> {
+    expr.transform_up(|inner| {
+        match &inner {
+            Expr::Literal(ScalarValue::Float64(Some(value)), _) if !value.is_finite() => {
+                return Ok(Transformed::yes(non_finite_float_expr(
+                    *value,
+                    DataType::Float64,
+                )));
+            }
+            Expr::Literal(ScalarValue::Float32(Some(value)), _) if !value.is_finite() => {
+                return Ok(Transformed::yes(non_finite_float_expr(
+                    f64::from(*value),
+                    DataType::Float32,
+                )));
+            }
+            _ => {}
+        }
+        let Expr::Literal(ScalarValue::Utf8(Some(value)), metadata) = &inner else {
+            return Ok(Transformed::no(inner));
+        };
+        let encode_nul = dialect == SqlDialect::DuckDb && value.contains('\0');
+        let encode_quote = value.contains("''") || value.contains("\\'");
+        if !encode_nul && !encode_quote {
+            return Ok(Transformed::no(inner));
+        }
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let flush = |current: &mut String, parts: &mut Vec<Expr>| {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(
+                    ScalarValue::Utf8(Some(std::mem::take(current))),
+                    metadata.clone(),
+                ));
+            }
+        };
+        for ch in value.chars() {
+            let code = match ch {
+                '\0' if encode_nul => 0_i64,
+                '\'' if encode_quote => 39_i64,
+                other => {
+                    current.push(other);
+                    continue;
+                }
+            };
+            flush(&mut current, &mut parts);
+            parts.push(df_string::chr(lit(code)));
+        }
+        flush(&mut current, &mut parts);
+        if parts.is_empty() {
+            parts.push(lit(""));
+        }
+        Ok(Transformed::yes(df_string::concat(parts)))
+    })
 }
 
 pub(super) fn non_finite_float_expr(value: f64, data_type: DataType) -> Expr {
@@ -161,6 +171,7 @@ pub(super) fn apply_identifier_repairs(mut sql: String, repairs: &[(String, Stri
 pub(super) fn restore_aggregate_ordering(
     plan: &LogicalPlan,
     unparser: &Unparser<'_>,
+    dialect: SqlDialect,
     sql: String,
 ) -> SqlResult<String> {
     let mut ordered: Vec<datafusion::logical_expr::expr::AggregateFunction> = Vec::new();
@@ -183,10 +194,11 @@ pub(super) fn restore_aggregate_ordering(
     for agg in ordered {
         let mut plain = agg.clone();
         plain.params.order_by = Vec::new();
-        let call = unparser
+        let mut call = unparser
             .expr_to_sql(&Expr::AggregateFunction(plain))
-            .map_err(|err| SqlError::Unsupported(format!("aggregate call: {err}")))?
-            .to_string();
+            .map_err(|err| SqlError::Unsupported(format!("aggregate call: {err}")))?;
+        functions::prepare_ast(&mut call, dialect)?;
+        let call = call.to_string();
         if sql.matches(call.as_str()).count() != 1 {
             return Err(SqlError::Unsupported(format!(
                 "cannot place ORDER BY on `{call}` unambiguously"
@@ -194,9 +206,10 @@ pub(super) fn restore_aggregate_ordering(
         }
         let mut keys = Vec::with_capacity(agg.params.order_by.len());
         for sort in &agg.params.order_by {
-            let key = unparser
+            let mut key = unparser
                 .expr_to_sql(&sort.expr)
                 .map_err(|err| SqlError::Unsupported(format!("order key: {err}")))?;
+            functions::prepare_ast(&mut key, dialect)?;
             keys.push(format!(
                 "{key} {} NULLS {}",
                 if sort.asc { "ASC" } else { "DESC" },

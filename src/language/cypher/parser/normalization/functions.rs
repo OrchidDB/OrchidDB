@@ -23,7 +23,7 @@ pub(super) fn normalize_keyword_function_names(input: &str) -> String {
             i += 1;
             continue;
         }
-        if matches!(ch, '\'' | '"') {
+        if matches!(ch, '\'' | '"' | '`') {
             quote = Some(ch);
             out.push(ch);
             i += 1;

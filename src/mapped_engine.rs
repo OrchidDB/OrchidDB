@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::ir::catalog::PropertyGraph;
+use crate::ir::functions::{OperatorTable, with_operator_table};
 use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::plan::{GraphPlan, Node, ProcedureMode};
 use crate::ir::rel::mapping::GraphMapping;
@@ -38,11 +39,39 @@ use crate::language::sparql::{OntologyMapping, SparqlPlanner};
 pub struct MappedGraphEngine {
     executor: DuckDbExecutor,
     mapping: Arc<GraphMapping>,
+    operator_table: Option<Arc<dyn OperatorTable>>,
 }
 
 impl MappedGraphEngine {
     pub fn new(executor: DuckDbExecutor, mapping: Arc<GraphMapping>) -> Self {
-        Self { executor, mapping }
+        Self {
+            executor,
+            mapping,
+            operator_table: None,
+        }
+    }
+
+    /// Install code-defined function mappings and the catalog used for this
+    /// engine's queries. Register UDF implementations on `executor_mut()`'s
+    /// connection first, then snapshot that connection with `DuckDbCatalog`.
+    /// Selection is scoped internally to synchronous planning and lowering;
+    /// callers can await query methods normally without thread-local setup.
+    pub fn set_operator_table(&mut self, table: Arc<dyn OperatorTable>) -> Result<(), String> {
+        if table.engine() != "duckdb" {
+            return Err(format!(
+                "mapped DuckDB engine cannot use `{}` operator table",
+                table.engine()
+            ));
+        }
+        self.operator_table = Some(table);
+        Ok(())
+    }
+
+    fn with_functions<T>(&self, operation: impl FnOnce() -> T) -> T {
+        match &self.operator_table {
+            Some(table) => with_operator_table(table.clone(), operation),
+            None => operation(),
+        }
     }
 
     /// Immutable access to the underlying executor.
@@ -78,20 +107,24 @@ impl MappedGraphEngine {
         query: &str,
         parameters: &BTreeMap<String, Value>,
     ) -> Result<ReturnedBatches, String> {
-        let mut parsed = parse_query(query).map_err(|err| err.to_string())?;
-        crate::language::cypher::parameters::bind_parameters(&mut parsed, parameters)?;
-        let plan = CypherPlanner::new()
-            .plan(&parsed)
-            .map_err(|err| err.to_string())?;
+        let plan = self.with_functions(|| {
+            let mut parsed = parse_query(query).map_err(|err| err.to_string())?;
+            crate::language::cypher::parameters::bind_parameters(&mut parsed, parameters)?;
+            CypherPlanner::new()
+                .plan(&parsed)
+                .map_err(|err| err.to_string())
+        })?;
         self.run_plan(&plan).await
     }
 
     /// Run a Gremlin read traversal against the mapped schema.
     pub async fn gremlin(&mut self, query: &str) -> Result<ReturnedBatches, String> {
-        let traversal = parse_traversal(query).map_err(|err| err.to_string())?;
-        let plan = GremlinPlanner::new()
-            .plan(&traversal)
-            .map_err(|err| err.to_string())?;
+        let plan = self.with_functions(|| {
+            let traversal = parse_traversal(query).map_err(|err| err.to_string())?;
+            GremlinPlanner::new()
+                .plan(&traversal)
+                .map_err(|err| err.to_string())
+        })?;
         self.run_plan(&plan).await
     }
 
@@ -103,19 +136,23 @@ impl MappedGraphEngine {
         query: &str,
         ontology: OntologyMapping,
     ) -> Result<ReturnedBatches, String> {
-        let plan = SparqlPlanner::new("mapped")
-            .with_ontology(ontology)
-            .plan_str(query)
-            .map_err(|err| err.to_string())?;
+        let plan = self.with_functions(|| {
+            SparqlPlanner::new("mapped")
+                .with_ontology(ontology)
+                .plan_str(query)
+                .map_err(|err| err.to_string())
+        })?;
         self.run_plan(&plan).await
     }
 
     /// Lower a Cypher read query and return the generated DuckDB SQL text.
     pub async fn explain_cypher(&mut self, query: &str) -> Result<String, String> {
-        let parsed = parse_query(query).map_err(|err| err.to_string())?;
-        let plan = CypherPlanner::new()
-            .plan(&parsed)
-            .map_err(|err| err.to_string())?;
+        let plan = self.with_functions(|| {
+            let parsed = parse_query(query).map_err(|err| err.to_string())?;
+            CypherPlanner::new()
+                .plan(&parsed)
+                .map_err(|err| err.to_string())
+        })?;
         self.sql_for_plan(&plan).await
     }
 
@@ -129,10 +166,11 @@ impl MappedGraphEngine {
     /// Lower a plan and return only the generated query text.
     async fn sql_for_plan(&self, plan: &GraphPlan) -> Result<String, String> {
         reject_mutations(plan)?;
-        let lowered = self
-            .backend()
-            .lower(plan, &PropertyGraph::new())
-            .map_err(|err| err.to_string())?;
+        let lowered = self.with_functions(|| {
+            self.backend()
+                .lower(plan, &PropertyGraph::new())
+                .map_err(|err| err.to_string())
+        })?;
         let external = self.mapping.physical_table_names();
         let prepared = prepare_with_external(&lowered, self.executor.dialect(), &external)
             .await
@@ -143,10 +181,11 @@ impl MappedGraphEngine {
     /// Lower a plan, prepare it against the executor's dialect, and execute it.
     async fn run_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
         reject_mutations(plan)?;
-        let lowered = self
-            .backend()
-            .lower(plan, &PropertyGraph::new())
-            .map_err(|err| err.to_string())?;
+        let lowered = self.with_functions(|| {
+            self.backend()
+                .lower(plan, &PropertyGraph::new())
+                .map_err(|err| err.to_string())
+        })?;
         let external = self.mapping.physical_table_names();
         let prepared = prepare_with_external(&lowered, self.executor.dialect(), &external)
             .await

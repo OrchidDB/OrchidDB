@@ -19,6 +19,8 @@
 //!   `duckdb`, on by default) runs everything in-memory; [`PostgresExecutor`]
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
+mod functions;
+pub(crate) use functions::expression_sql;
 mod rows;
 use rows::*;
 mod literals;
@@ -203,16 +205,6 @@ impl SqlDialect {
             }
         }
         if self == Self::DuckDb {
-            for (from, to) in [
-                ("array_intersect(", "list_intersect("),
-                ("array_min(", "list_min("),
-                ("array_max(", "list_max("),
-                ("array_replace_all(", "list_replace("),
-            ] {
-                if sql.contains(from) {
-                    sql = sql.replace(from, to);
-                }
-            }
             sql = alias_duckdb_unnest_outputs(sql);
         }
         sql
@@ -736,13 +728,13 @@ mod tests {
     }
 
     #[test]
-    fn duckdb_fixups_alias_unnest_and_nested_function_names() {
+    fn duckdb_fixups_alias_unnest_outputs() {
         let sql = SqlDialect::DuckDb.fixup_query(
             "SELECT UNNEST(\"items\"), UNNEST(\"items\") AS \"copy\", array_min(\"items\"), array_intersect(\"items\", \"other\")".into(),
         );
         assert_eq!(
             sql,
-            "SELECT UNNEST(\"items\") AS \"items\", UNNEST(\"items\") AS \"copy\", list_min(\"items\"), list_intersect(\"items\", \"other\")"
+            "SELECT UNNEST(\"items\") AS \"items\", UNNEST(\"items\") AS \"copy\", array_min(\"items\"), array_intersect(\"items\", \"other\")"
         );
     }
 }

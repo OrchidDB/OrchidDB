@@ -559,7 +559,9 @@ impl<'a> LoweringContext<'a> {
                     _ => unreachable!(),
                 })
             }
-            IrExpr::Call { name, args } if matches!(name.as_str(), "sack_apply" | "fold_reduce") && args.len() == 3 => {
+            IrExpr::Call { name, args }
+                if matches!(name.as_str(), "sack_apply" | "fold_reduce") && args.len() == 3 =>
+            {
                 self.lower_gremlin_state_call(plan, name, args)
             }
             IrExpr::Call { name, args } if name == "map" => self.lower_cypher_map(plan, args),
@@ -583,9 +585,25 @@ impl<'a> LoweringContext<'a> {
                 };
                 self.lower_comparison_or_binary(plan, &args[0], op, &args[1])
             }
-            IrExpr::Call { name, .. } => Err(RelError::Unsupported(format!(
-                "function `{name}` is not relationally lowered yet"
-            ))),
+            IrExpr::Call { name, args } => {
+                let args = args
+                    .iter()
+                    .map(|arg| {
+                        if matches!(arg, IrExpr::List(_)) {
+                            self.lower_native_list(plan, arg)
+                        } else if let Some(native) = collections::native_list_property(plan, arg) {
+                            Ok(native)
+                        } else {
+                            self.lower_expr(plan, arg)
+                        }
+                    })
+                    .collect::<RelResult<Vec<_>>>()?;
+                Ok(crate::ir::functions::native_scalar(
+                    name,
+                    args,
+                    plan.schema(),
+                )?)
+            }
             other => Err(RelError::Unsupported(format!(
                 "expression `{other:?}` is not relationally lowered yet"
             ))),
@@ -640,7 +658,6 @@ impl<'a> LoweringContext<'a> {
         let data_type = data_type_for_cast_target(target_name)?;
         Ok((value, data_type, lenient))
     }
-
 }
 
 impl<'a> LoweringContext<'a> {
@@ -1171,7 +1188,6 @@ impl<'a> LoweringContext<'a> {
         let data_type = expr.get_type(plan.schema())?;
         Ok(lit(data_type_matches_gremlin_type(&data_type, &normalized)))
     }
-
 }
 
 pub(super) fn is_label_function(name: &str) -> bool {

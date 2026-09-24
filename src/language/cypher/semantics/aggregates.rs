@@ -7,8 +7,19 @@ pub(super) fn contains_aggregate(expr: &Expr) -> bool {
         Expr::Function { name, args, .. } => {
             matches!(
                 name.to_ascii_lowercase().as_str(),
-                "count" | "sum" | "avg" | "min" | "max" | "collect"
-            ) || args.iter().any(contains_aggregate)
+                "count"
+                    | "count_if"
+                    | "sum"
+                    | "avg"
+                    | "min"
+                    | "max"
+                    | "collect"
+                    | "stdev"
+                    | "stdevp"
+                    | "percentilecont"
+                    | "percentiledisc"
+            ) || crate::ir::functions::is_native_aggregate(name)
+                || args.iter().any(contains_aggregate)
         }
         Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => {
             contains_aggregate(expr)

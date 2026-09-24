@@ -58,9 +58,11 @@ impl MappedGraphEngine {
                     .into(),
             );
         }
-        let plan = CypherPlanner::new()
-            .plan(&parsed)
-            .map_err(|e| e.to_string())?;
+        let plan = self.with_functions(|| {
+            CypherPlanner::new()
+                .plan(&parsed)
+                .map_err(|e| e.to_string())
+        })?;
         let Node::GraphReturn {
             input: write,
             result_form,
@@ -148,10 +150,11 @@ impl MappedGraphEngine {
                 }),
             }),
         };
-        let lowered = self
-            .backend()
-            .lower(&read, &PropertyGraph::new())
-            .map_err(|e| e.to_string())?;
+        let lowered = self.with_functions(|| {
+            self.backend()
+                .lower(&read, &PropertyGraph::new())
+                .map_err(|e| e.to_string())
+        })?;
         let prepared = prepare_with_external(
             &lowered,
             SqlDialect::DuckDb,

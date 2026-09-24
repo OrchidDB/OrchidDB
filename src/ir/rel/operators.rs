@@ -189,12 +189,20 @@ impl LoweringContext<'_> {
                 );
                 let agg_calls = aggs;
                 let needs_row_count_barrier = aggs.iter().any(|agg| {
-                    matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none()
+                    (matches!(agg.kind, AggKind::CountRows | AggKind::CountBulk) && agg.arg.is_none())
+                        || matches!((&agg.kind, &agg.arg), (AggKind::EngineFunction, Some(IrExpr::Call { args, .. })) if args.is_empty())
                 });
                 let aggs = aggs
                     .iter()
                     .map(|agg| {
                         let expr = match agg.kind {
+                            AggKind::EngineFunction
+                            | AggKind::StDev
+                            | AggKind::StDevP
+                            | AggKind::PercentileCont
+                            | AggKind::PercentileDisc => {
+                                self.lower_engine_aggregate(&input.plan, agg)?
+                            }
                             AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
                                 Some(arg) => df_count(self.lower_expr(&input.plan, arg)?),
                                 None => count_input_rows(&input.plan),
@@ -288,11 +296,6 @@ impl LoweringContext<'_> {
                                         collect.order_by(keys).build()?
                                     }
                                 }
-                            }
-                            other => {
-                                return Err(RelError::Unsupported(format!(
-                                    "aggregate `{other:?}` is not relationally lowered yet"
-                                )));
                             }
                         };
                         Ok(expr.alias(agg.alias.clone()))
@@ -505,5 +508,4 @@ impl LoweringContext<'_> {
         };
         Ok(lowered)
     }
-
 }
