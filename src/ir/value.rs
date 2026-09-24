@@ -90,6 +90,10 @@ pub enum Value {
         /// means render the edge's full catalog property bag.
         projected_properties: Option<Vec<String>>,
     },
+    /// Persisted vertex property; identity is independent of owner/key/value.
+    VertexProperty { id: i64, owner: Box<Value>, key: String, value: Box<Value> },
+    /// Edge or meta-property. Owner can itself be a VertexProperty.
+    Property { owner: Box<Value>, key: String, value: Box<Value> },
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
     /// Gremlin maps may use graph objects, numbers, and tokens as keys.
@@ -148,6 +152,8 @@ impl Value {
             Self::String(_) => "string",
             Self::Node { .. } => "node",
             Self::Edge { .. } => "edge",
+            Self::VertexProperty { .. } => "vertex property",
+            Self::Property { .. } => "property",
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::TypedMap(_) => "map",

@@ -230,6 +230,13 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         write_section(&mut out, tag, &b);
     }
 
+    let mut state = Vec::new();
+    let mut keys = std::collections::BTreeSet::new();
+    keys.extend(ov.vertex_properties.keys().cloned());
+    keys.extend(ov.public_ids.keys().filter(|(edge,_,_)| !edge).map(|(_,label,id)|(label.clone(),*id)));
+    for key in keys {state.push(Value::List(vec![Value::String(key.0.clone()),Value::Long(key.1),ov.native_node_state(&key)]));}
+    let edges = ov.public_ids.iter().filter(|((edge,_,_),_)|*edge).map(|((_,name,id),value)|Value::List(vec![Value::String(name.clone()),Value::Long(*id),value.clone()])).collect();
+    write_section(&mut out, 0x20, &binary::encode_value_bytes(&Value::List(vec![Value::Long(ov.next_property_id),Value::List(state),Value::List(edges)])));
     Ok(out)
 }
 
@@ -307,6 +314,15 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
         let sub = r.blob()?;
         let mut sr = Reader::new(sub);
         match tag {
+            0x20 => {
+                let value = binary::decode_value_bytes(sub)?;
+                let Value::List(fields) = value else {return Err("Invalid native property state".into())};
+                let [Value::Long(next),Value::List(nodes),Value::List(edges)] = fields.as_slice() else {return Err("Invalid native property state fields".into())};
+                ov.next_property_id = *next;
+                for node in nodes {let Value::List(fields)=node else{return Err("Invalid native node".into())};let [Value::String(label),Value::Long(id),state]=fields.as_slice() else{return Err("Invalid native node fields".into())};ov.restore_native_node_state((label.clone(),*id),state)?;}
+                for edge in edges {let Value::List(fields)=edge else{return Err("Invalid public edge".into())};let [Value::String(label),Value::Long(id),value]=fields.as_slice() else{return Err("Invalid public edge fields".into())};ov.public_ids.insert((true,label.clone(),*id),value.clone());}
+                continue;
+            }
             OV_INSERTED_NODES => {
                 let n = sr.count()?;
                 for _ in 0..n {

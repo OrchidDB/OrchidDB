@@ -76,6 +76,9 @@ pub(crate) fn algorithm_property(graph: &PropertyGraph, value: &Value, key: &str
 
 pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Value {
     match (value, key) {
+        (Value::VertexProperty {key,..}|Value::Property {key,..}, "key") => Value::String(key.clone()),
+        (Value::VertexProperty {value,..}|Value::Property {value,..}, "value") => value.as_ref().clone(),
+        (Value::VertexProperty {..}, _) => graph.properties(value,&[key.into()]).first().and_then(|p|if let Value::Property{value,..}=p {Some(value.as_ref().clone())}else{None}).unwrap_or(Value::Null),
         (Value::Node { label, .. }, "_label" | "_LABEL") => Value::String(label.clone()),
         (Value::Edge { rel_type, .. }, "_label" | "_LABEL") => Value::String(rel_type.clone()),
         (Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }, "_id" | "_ID") => {
@@ -119,20 +122,7 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
     }
 }
 
-pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
-    match value {
-        Value::Node { label, id } => match graph.node_property(label, *id, "id") {
-            Value::Null => Value::String(format!("{label}#{id}")),
-            value => value,
-        },
-        Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
-            Value::Null => Value::String(format!("{rel_type}#{id}")),
-            value => value,
-        },
-        Value::Map(map) => map.get("__id").cloned().unwrap_or(Value::Null),
-        _ => Value::Null,
-    }
-}
+pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {graph.element_public_id(value)}
 
 pub(super) fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
     // Default identity includes the label, while scan order retains the
@@ -201,23 +191,9 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         }
         Value::Node { .. } | Value::InternalId { .. } => (6, gremlin_scan_order(graph, value)),
         Value::Edge { .. } => (7, gremlin_scan_order(graph, value)),
-        Value::Map(map) => {
-            // Property objects: VertexProperty (rank 8) orders by id;
-            // Property on an edge (rank 9) orders by (key, value).
-            let is_prop =
-                map.contains_key("element") && map.contains_key("key") && map.contains_key("value");
-            let edge_owned = matches!(map.get("element"), Some(Value::Edge { .. }))
-                || matches!(map.get("element"), Some(Value::String(s)) if s.contains("->"));
-            if is_prop && edge_owned {
-                let key = map.get("key").cloned().unwrap_or(Value::Null);
-                let val = map.get("value").cloned().unwrap_or(Value::Null);
-                return (9, Value::List(vec![key, val]));
-            }
-            match map.get("__order").or_else(|| map.get("__id")) {
-                Some(order) => (8, order.clone()),
-                None => (13, value.clone()),
-            }
-        }
+        Value::VertexProperty{..}=>(8,graph.element_public_id(value)),
+        Value::Property{key,value,..}=>(9,Value::List(vec![Value::String(key.clone()),value.as_ref().clone()])),
+        Value::Map(_) => (13,value.clone()),
         Value::Path(_) => (10, value.clone()),
         Value::List(_) => (12, value.clone()),
         Value::BulkSet(_) => (11, value.clone()),

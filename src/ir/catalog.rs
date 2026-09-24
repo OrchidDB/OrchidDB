@@ -24,6 +24,8 @@ use crate::ir::value::Value;
 #[cfg(any(feature = "duckdb", test))]
 pub(crate) mod incremental;
 pub(crate) mod snapshot;
+mod properties;
+pub use properties::Cardinality;
 mod builders;
 mod mutations;
 mod values;
@@ -133,6 +135,9 @@ struct InsertedEdge {
 
 #[derive(Debug, Clone, Default)]
 struct GraphOverlay {
+    vertex_properties: BTreeMap<(String, i64), BTreeMap<String, Vec<properties::VertexPropertyRecord>>>,
+    next_property_id: i64,
+    public_ids: BTreeMap<(bool, String, i64), Value>,
     inserted_nodes: HashMap<(String, i64), BTreeMap<String, Value>>,
     node_property_overrides: HashMap<(String, i64), BTreeMap<String, Value>>,
     deleted_nodes: HashSet<(String, i64)>,

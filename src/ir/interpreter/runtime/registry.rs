@@ -231,6 +231,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "adddefault1",
     "addwithdefault",
     "all_property_values",
+    "requested_property_values",
     "any_property",
     "appendelement",
     "array_concat",
