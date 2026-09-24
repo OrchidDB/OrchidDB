@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'website/**'
+      - 'conformance/**'
       - '.github/workflows/website.yml'
   workflow_dispatch:
 
@@ -32,6 +33,7 @@ jobs:
           python3 website/docs/build.py
           python3 website/docs/check.py
           node --check website/docs/assets/docs.js
+          node --check website/docs/assets/conformance.js
           node --check website/script.js
           bash -n website/scripts/deploy.sh
       - uses: actions/upload-artifact@v4

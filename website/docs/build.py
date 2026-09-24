@@ -12,7 +12,7 @@ GROUPS = [
  ('Work with data', [('mapped-graphs','Map existing tables'),('mapping-reference','Mapping reference'),('views','Views and SQL sources'),('managed-graphs','Managed graphs'),('transactions','Transactions and storage'),('updates','Update properties')]),
  ('Query languages', [('cypher','Cypher'),('gremlin','Gremlin'),('sparql','SPARQL'),('ontology','Ontology mappings'),('rdf','RDF datasets')]),
  ('Integrate', [('parameters','Parameters and values'),('results','Arrow results'),('execution','Execution and plans'),('rust-api','Rust API'),('cli','CLI reference')]),
- ('Resources', [('recipes','Query recipes'),('configuration','Configuration'),('glossary','Glossary')]),
+ ('Resources', [('conformance','Conformance comparison'),('recipes','Query recipes'),('configuration','Configuration'),('glossary','Glossary')]),
 ]
 PAGES = [(slug,title,group) for group,pages in GROUPS for slug,title in pages]
 def url(slug): return '/index.html' if slug == 'index' else f'/{slug}.html'
@@ -68,6 +68,9 @@ def build():
         src=(ROOT/'content'/f'{slug}.md').read_text()
         description,body=src.split('\n',1)
         article,toc=render(body)
+        if slug == 'conformance':
+            from conformance_page import render as render_comparison
+            article,toc=render_comparison(OUT)
         nav=''.join('<div class="nav-group"><p>'+escape(g)+'</p>'+''.join(f'<a href="{url(s)}"'+(' aria-current="page"' if s==slug else '')+'>'+escape(t)+'</a>' for s,t in pages)+'</div>' for g,pages in GROUPS)
         pager=''
         for index,label in [(n-1,'Previous'),(n+1,'Next')]:
@@ -77,8 +80,8 @@ def build():
         html=f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · Crabgraph docs</title><meta name="description" content="{escape(description)}">
-<link rel="canonical" href="{canonical}"><meta property="og:title" content="{escape(title)} · Crabgraph docs"><meta property="og:description" content="{escape(description)}"><meta property="og:type" content="website"><meta property="og:url" content="{canonical}"><meta name="theme-color" content="#f5f3ec"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/docs.css"><script src="/assets/docs.js" defer></script></head>
-<body><a class="skip" href="#content">Skip to content</a><header class="header"><a class="brand" href="/index.html"><img src="/favicon.svg" width="31" height="31" alt="">crabgraph<span>docs</span></a><div class="header-actions"><button id="search-open" type="button" hidden>Search docs <kbd>/</kbd></button><a href="https://crabgraph.net/">Website ↗</a><a class="github" href="https://github.com/henneberger/new-graph">GitHub ↗</a><button id="menu" type="button" aria-expanded="false" aria-controls="sidebar" hidden>Menu</button></div></header>
+<link rel="canonical" href="{canonical}"><meta property="og:title" content="{escape(title)} · Crabgraph docs"><meta property="og:description" content="{escape(description)}"><meta property="og:type" content="website"><meta property="og:url" content="{canonical}"><meta name="theme-color" content="#f5f3ec"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/docs.css"><script src="/assets/docs.js" defer></script>{'<link rel="stylesheet" href="/assets/conformance.css"><script src="/assets/conformance.js" defer></script>' if slug == 'conformance' else ''}</head>
+<body class="{'comparison-page' if slug == 'conformance' else ''}"><a class="skip" href="#content">Skip to content</a><header class="header"><a class="brand" href="/index.html"><img src="/favicon.svg" width="31" height="31" alt="">crabgraph<span>docs</span></a><div class="header-actions"><button id="search-open" type="button" hidden>Search docs <kbd>/</kbd></button><a href="https://crabgraph.net/">Website ↗</a><a class="github" href="https://github.com/henneberger/new-graph">GitHub ↗</a><button id="menu" type="button" aria-expanded="false" aria-controls="sidebar" hidden>Menu</button></div></header>
 <div class="layout"><nav class="sidebar" id="sidebar" aria-label="Documentation"><div class="version">DOCUMENTATION <span>v0.1.0</span></div>{nav}<a class="nav-download" href="/llms.txt">Plain text index ↗</a></nav><main id="content"><div class="eyebrow">{escape(group)}</div><h1>{escape(title)}</h1><p class="lead">{escape(description)}</p>{article}<nav class="pager" aria-label="Adjacent pages">{pager}</nav><footer>Crabgraph documentation · <a href="https://crabgraph.net/">crabgraph.net</a></footer></main><aside class="toc"><p>ON THIS PAGE</p>{''.join(f'<a href="#{a}">{escape(t)}</a>' for a,t in toc)}<div class="toc-bottom">Graph languages.<br>Your data.</div></aside></div>
 <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-top"><label id="search-title" for="search-input">Search documentation</label><button id="search-close" type="button" aria-label="Close search">Esc</button></div><input id="search-input" type="search" placeholder="Try mappings, transactions, or Cypher" autocomplete="off"><p id="search-status" role="status"></p><div id="search-results"></div></dialog><div id="copy-status" class="sr-only" role="status"></div></body></html>'''
         (OUT/f'{slug}.html').write_text(html)

@@ -1,0 +1,118 @@
+name: Refresh conformance evidence
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 8 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'conformance/**'
+      - '.github/workflows/conformance.yml'
+permissions:
+  contents: read
+concurrency:
+  group: conformance-main
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      PUPPY_JDBC: jdbc:postgresql://postgres:5432/conformance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install free adapters
+        run: |
+          pip install -r conformance/requirements.txt
+          mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
+      - name: Start disposable free engines
+        run: |
+          docker compose -f conformance/compose.yml up -d
+          python conformance/wait_ready.py
+          python conformance/setup_puppy.py
+      - name: Run reference and competitors
+        run: |
+          python conformance/catalog.py
+          for engine in reference ladybug neo4j puppygraph sqlg; do
+            python conformance/run.py --engine "$engine"
+          done
+      - name: Build and run Crabgraph when its engine API is present
+        run: |
+          if grep -q 'pub mod engine' src/lib.rs; then
+            cargo build --locked --manifest-path conformance/runner/Cargo.toml
+            python conformance/run.py --engine crabgraph
+          else
+            echo '::notice::This revision predates GraphEngine. Retaining the dated Crabgraph snapshot; competitor evidence was rerun.'
+            echo 'Crabgraph: retained dated local snapshot (GraphEngine source is not on this revision).' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Validate evidence and build page
+        run: |
+          python conformance/capabilities.py
+          python conformance/inventory.py
+          python conformance/test_compare.py
+          python conformance/validate.py
+          python website/docs/build.py
+          python website/docs/check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-evidence
+          path: |
+            conformance/results/
+            conformance/*.log
+          retention-days: 90
+      - name: Commit refreshed evidence
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add conformance/results conformance/data conformance/probes.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Refresh versioned conformance evidence'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+      - name: Remove disposable engines and data
+        if: always()
+        run: docker compose -f conformance/compose.yml down -v
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: websites-refs/heads/main
+      cancel-in-progress: false
+    environment:
+      name: websites
+      url: https://docs.crabgraph.net/conformance.html
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate with personal AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CRABGRAPH_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CRABGRAPH_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Publish refreshed static comparison
+        run: bash website/scripts/deploy.sh
