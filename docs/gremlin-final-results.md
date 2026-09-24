@@ -80,6 +80,12 @@ are unchanged. Results record source revisions, binary/JAR hashes and the
 original scenario identifiers. Source and executable identity are captured
 before execution. The native and JVM build manifests accompany the artifacts.
 
+The complete original `ProcessComputerSuite` records **700 passed and 168
+upstream exclusions across 868 test occurrences**, with zero failures or
+timeouts. Those occurrences cover 852 unique tests (695 passed, 157 excluded);
+repeated upstream suite entries remain visible. All 37 computer contracts and
+10 interruption tests pass.
+
 The broader original Java suites and supplemental contracts have independent
 denominators and execution profiles. Their recorded outcomes are listed in the
 [Java evidence index](../conformance/upstream-results/java-provider/index.json).

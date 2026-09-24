@@ -27,6 +27,28 @@
       },
       "run_complete": true,
       "upstream_assertions": false
+    },
+    {
+      "label": "Original ProcessComputerSuite (868 test occurrences; 852 unique tests)",
+      "file": "process-computer.json",
+      "counts": {
+        "pass": 700,
+        "skipped": 168
+      },
+      "run_complete": true,
+      "upstream_assertions": true
+    },
+    {
+      "label": "GraphComputer supplemental checks (included in the 60 JVM product contracts)",
+      "file": "computer-supplemental.json",
+      "counts": {
+        "pass": 21,
+        "fail": 0,
+        "error": 0,
+        "skip": 0
+      },
+      "run_complete": true,
+      "upstream_assertions": false
     }
   ]
 }
