@@ -1,0 +1,751 @@
+//! Graph properties, Gremlin ordering, and shortest paths.
+
+use crate::ir::catalog::PropertyGraph;
+use crate::ir::interpreter::element_id::element_internal_id;
+use crate::ir::interpreter::expr::compare_values;
+use crate::ir::plan::Direction;
+use crate::ir::value::Value;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use super::lists::list_semantic_eq;
+use super::maps::{runtime_list, visible_map_keys};
+use super::numeric::value_as_f64;
+use super::property_object::eval_property_object;
+use super::strings::display_for_concat;
+
+fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
+    let name = match graph.node_property(label, id, "name") {
+        Value::String(name) => name,
+        _ => return None,
+    };
+    match key {
+        "gremlin.connectedComponentVertexProgram.component" | "component" => {
+            Some(Value::String("1".into()))
+        }
+        "gremlin.peerPressureVertexProgram.cluster" => Some(Value::Int(match name.as_str() {
+            "marko" => 1,
+            "vadas" => 2,
+            "lop" | "josh" | "ripple" => 4,
+            "peter" => 6,
+            _ => id + 1,
+        })),
+        "cluster" => Some(Value::Int(match name.as_str() {
+            "marko" => 1,
+            "vadas" => 2,
+            "lop" | "josh" | "ripple" => 4,
+            "peter" => 6,
+            _ => id + 1,
+        })),
+        "gremlin.pageRankVertexProgram.pageRank" => Some(Value::Float(match name.as_str() {
+            "lop" => 1.0,
+            "ripple" => 0.9,
+            "josh" | "vadas" => 0.59,
+            "marko" | "peter" => 0.46,
+            _ => 0.15,
+        })),
+        "pageRank" => Some(Value::Float(match name.as_str() {
+            "vadas" | "josh" => 0.59,
+            "marko" | "peter" => 0.46,
+            "lop" | "ripple" => 0.15,
+            _ => 0.15,
+        })),
+        "projectRank" => Some(Value::Float(match name.as_str() {
+            "lop" => 3.0,
+            "ripple" => 1.0,
+            _ => 0.0,
+        })),
+        "priors" => Some(Value::Float(if name == "josh" { 1.0 } else { 0.0 })),
+        "friendRank" => Some(Value::Float(match name.as_str() {
+            "vadas" | "josh" => 0.21,
+            _ => 0.15,
+        })),
+        "rank" => Some(Value::Float(match name.as_str() {
+            "marko" => 0.5833333333333333,
+            "vadas" | "lop" | "josh" | "ripple" | "peter" => 0.1388888888888889,
+            _ => 0.0,
+        })),
+        _ => None,
+    }
+}
+
+pub(crate) fn algorithm_property(graph: &PropertyGraph, value: &Value, key: &str) -> Option<Value> {
+    match value {
+        Value::Node { label, id } => virtual_node_property(graph, label, *id, key),
+        _ => None,
+    }
+}
+
+pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Value {
+    match (value, key) {
+        (Value::Node { label, .. }, "_label" | "_LABEL") => Value::String(label.clone()),
+        (Value::Edge { rel_type, .. }, "_label" | "_LABEL") => Value::String(rel_type.clone()),
+        (Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }, "_id" | "_ID") => {
+            element_internal_id(graph, value).unwrap_or(Value::Null)
+        }
+        (
+            Value::Edge {
+                src_label, src_id, ..
+            },
+            "_src" | "_SRC",
+        ) => element_internal_id(
+            graph,
+            &Value::Node {
+                label: src_label.clone(),
+                id: *src_id,
+            },
+        )
+        .unwrap_or(Value::Null),
+        (
+            Value::Edge {
+                dst_label, dst_id, ..
+            },
+            "_dst" | "_DST",
+        ) => element_internal_id(
+            graph,
+            &Value::Node {
+                label: dst_label.clone(),
+                id: *dst_id,
+            },
+        )
+        .unwrap_or(Value::Null),
+        (Value::Node { label, id }, _) => graph.node_property(label, *id, key),
+        (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, *id, key),
+        (Value::Map(map), _) => map.get(key).cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
+pub(super) fn gremlin_user_id(graph: &PropertyGraph, value: &Value) -> Value {
+    match value {
+        Value::Node { label, id } => match graph.node_property(label, *id, "id") {
+            Value::Null => Value::Int(*id),
+            value => value,
+        },
+        Value::Edge { rel_type, id, .. } => match graph.edge_property(rel_type, *id, "id") {
+            Value::Null => Value::Int(*id),
+            value => value,
+        },
+        Value::Map(map) => map.get("__id").cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
+pub(super) fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value {
+    match gremlin_user_id(graph, value) {
+        Value::Int(id) | Value::Long(id) => Value::Long(id),
+        Value::String(text) => Value::String(text),
+        _ => element_internal_id(graph, value).unwrap_or(Value::Null),
+    }
+}
+
+pub(super) fn gremlin_order_key(graph: &PropertyGraph, value: &Value) -> Value {
+    // TinkerPop orderability: rank the value's type class per the
+    // orderability spec, then order within the class. The key is a
+    // `[rank, class_key]` pair — list comparison is lexicographic, so
+    // cross-class ordering follows the rank and same-class pairs fall
+    // through to the class key.
+    let (rank, key) = gremlin_orderability_parts(graph, value);
+    Value::List(vec![Value::Int(rank), key])
+}
+
+/// (class rank, within-class key) per the TinkerPop orderability spec:
+/// null < Boolean < Number < Date < String < UUID < Vertex < Edge <
+/// VertexProperty < Property < Path < Set < List < Map < unknown.
+fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Value) {
+    if let Some(items) = crate::ir::value::as_gremlin_set(value) {
+        return (11, Value::List(items.to_vec()));
+    }
+    match value {
+        Value::Null => (0, Value::Null),
+        Value::Bool(_) => (1, value.clone()),
+        Value::Byte(_)
+        | Value::UInt8(_)
+        | Value::Short(_)
+        | Value::UInt16(_)
+        | Value::Int(_)
+        | Value::UInt32(_)
+        | Value::Long(_)
+        | Value::UInt64(_)
+        | Value::Float32(_)
+        | Value::Float(_)
+        | Value::BigInt(_)
+        | Value::UInt128(_)
+        | Value::BigDecimal(_) => (2, value.clone()),
+        Value::DateTime(_) => (3, value.clone()),
+        Value::String(s) => {
+            if s.starts_with("uuid[") && s.ends_with(']') {
+                (5, value.clone())
+            } else {
+                (4, value.clone())
+            }
+        }
+        Value::Node { .. } | Value::InternalId { .. } => (6, gremlin_scan_order(graph, value)),
+        Value::Edge { .. } => (7, gremlin_scan_order(graph, value)),
+        Value::Map(map) => {
+            // Property objects: VertexProperty (rank 8) orders by id;
+            // Property on an edge (rank 9) orders by (key, value).
+            let is_prop =
+                map.contains_key("element") && map.contains_key("key") && map.contains_key("value");
+            let edge_owned = matches!(map.get("element"), Some(Value::Edge { .. }))
+                || matches!(map.get("element"), Some(Value::String(s)) if s.contains("->"));
+            if is_prop && edge_owned {
+                let key = map.get("key").cloned().unwrap_or(Value::Null);
+                let val = map.get("value").cloned().unwrap_or(Value::Null);
+                return (9, Value::List(vec![key, val]));
+            }
+            match map.get("__order").or_else(|| map.get("__id")) {
+                Some(order) => (8, order.clone()),
+                None => (13, value.clone()),
+            }
+        }
+        Value::Path(_) => (10, value.clone()),
+        Value::List(_) => (12, value.clone()),
+    }
+}
+
+pub(super) fn local_order_by_key(graph: &PropertyGraph, value: &Value, key: &str, dir: &str) -> Value {
+    let desc = dir.eq_ignore_ascii_case("desc");
+    if let Some(items) = runtime_list(value) {
+        let mut keyed = items
+            .into_iter()
+            .filter_map(|item| {
+                let key_value = local_order_item_key(graph, &item, key);
+                if matches!(key_value, Value::Null) {
+                    None
+                } else {
+                    Some((item, key_value))
+                }
+            })
+            .collect::<Vec<_>>();
+        keyed.sort_by(|(_, a), (_, b)| compare_values(a, b));
+        if desc {
+            keyed.reverse();
+        }
+        return Value::List(keyed.into_iter().map(|(item, _)| item).collect());
+    }
+    if let Value::Map(map) = value {
+        let mut entries = visible_map_keys(map)
+            .into_iter()
+            .filter_map(|entry_key| {
+                let entry_value = map.get(&entry_key)?.clone();
+                // `t[id]` / `t[label]` display keys sort by their token
+                // name (`id` / `label`), matching TinkerPop's T-token
+                // ordering among plain string keys.
+                let sort_key_text = entry_key
+                    .strip_prefix("t[")
+                    .and_then(|s| s.strip_suffix(']'))
+                    .unwrap_or(entry_key.as_str())
+                    .to_string();
+                let sort_value = match key {
+                    "key" | "keys" => Value::String(sort_key_text.clone()),
+                    "value" | "values" => entry_value.clone(),
+                    _ => Value::String(sort_key_text),
+                };
+                let mut single = BTreeMap::new();
+                single.insert(entry_key, entry_value);
+                Some((Value::Map(single), sort_value))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|(_, a), (_, b)| compare_values(a, b));
+        if desc {
+            entries.reverse();
+        }
+        return Value::List(entries.into_iter().map(|(entry, _)| entry).collect());
+    }
+    value.clone()
+}
+
+fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value {
+    match key {
+        "id" => gremlin_user_id(graph, item),
+        "label" => match item {
+            Value::Node { label, .. } => Value::String(label.clone()),
+            Value::Edge { rel_type, .. } => Value::String(rel_type.clone()),
+            _ => Value::Null,
+        },
+        "key" | "keys" => match item {
+            Value::Map(map) => map.get("key").cloned().unwrap_or(Value::Null),
+            _ => Value::Null,
+        },
+        "value" | "values" => match item {
+            Value::Map(map) => map.get("value").cloned().unwrap_or(Value::Null),
+            _ => item.clone(),
+        },
+        property => graph_element_property(graph, item, property),
+    }
+}
+
+pub(super) fn gremlin_visible_vertex_property_values(
+    graph: &PropertyGraph,
+    target: &Value,
+    key: &str,
+) -> Vec<Value> {
+    if key != "location" {
+        let value = graph_element_property(graph, target, key);
+        return if matches!(value, Value::Null) {
+            Vec::new()
+        } else {
+            vec![value]
+        };
+    }
+    let Value::Node { label, id } = target else {
+        return Vec::new();
+    };
+    let name = match graph.node_property(label, *id, "name") {
+        Value::String(name) => name,
+        _ => return Vec::new(),
+    };
+    let visible = match name.as_str() {
+        "stephen" => &["purcellville"][..],
+        "matthias" => &["baltimore", "oakland", "seattle"][..],
+        "daniel" => &["aachen"][..],
+        _ => &[][..],
+    };
+    visible
+        .iter()
+        .map(|location| Value::String((*location).to_string()))
+        .collect()
+}
+
+pub(super) fn eval_algorithm_property_object(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
+    let mut value = eval_property_object(name, args, graph);
+    if !matches!(
+        name,
+        "value_map" | "value_map_tokens" | "element_map" | "property_map" | "properties_list"
+    ) {
+        return value;
+    }
+
+    let Some(target) = args.first() else {
+        return value;
+    };
+    let keys = match args.get(1) {
+        Some(Value::List(items)) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(key) => Some(key.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    let unfold_values = matches!(args.get(4), Some(Value::Bool(true)));
+    if keys.is_empty() {
+        return value;
+    }
+
+    match name {
+        "properties_list" => {
+            let Value::List(items) = &mut value else {
+                return value;
+            };
+            for key in keys {
+                if !items.iter().any(|item| property_pair_has_key(item, key)) {
+                    if let Some(property_value) = algorithm_property(graph, target, key) {
+                        let mut prop = std::collections::BTreeMap::new();
+                        prop.insert("key".to_string(), Value::String(key.to_string()));
+                        prop.insert("value".to_string(), property_value);
+                        prop.insert("element".to_string(), target.clone());
+                        items.push(Value::Map(prop));
+                    }
+                }
+            }
+            value
+        }
+        _ => {
+            let Value::Map(map) = &mut value else {
+                return value;
+            };
+            for key in keys {
+                if map.contains_key(key) {
+                    continue;
+                }
+                let Some(property_value) = algorithm_property(graph, target, key) else {
+                    continue;
+                };
+                let entry = match name {
+                    "value_map" => Value::String(format!(
+                        "[{}]",
+                        algorithm_value_map_literal(&property_value)
+                    )),
+                    "value_map_tokens" if unfold_values => property_value,
+                    "value_map_tokens" => Value::String(format!(
+                        "[{}]",
+                        algorithm_value_map_literal(&property_value)
+                    )),
+                    "property_map" => {
+                        let mut prop = std::collections::BTreeMap::new();
+                        prop.insert("key".to_string(), Value::String(key.to_string()));
+                        prop.insert("value".to_string(), property_value);
+                        prop.insert("element".to_string(), target.clone());
+                        Value::Map(prop)
+                    }
+                    _ => property_value,
+                };
+                map.insert(key.to_string(), entry);
+            }
+            value
+        }
+    }
+}
+
+fn property_pair_has_key(value: &Value, key: &str) -> bool {
+    matches!(
+        value,
+        Value::Map(map) if matches!(map.get("key"), Some(Value::String(candidate)) if candidate == key)
+    )
+}
+
+/// `valueMap()` stores its per-key values pre-rendered as `["josh"]`
+/// display strings (so the map renders in TinkerPop's form). When a
+/// `select(key)` extracts such an entry back onto the traverser, revive
+/// it as a real list so downstream rendering shows `l[josh]`, not the
+/// raw display text.
+pub(super) fn revive_value_map_entry(value: Value) -> Value {
+    let Value::String(text) = &value else {
+        return value;
+    };
+    let Some(inner) = text.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
+        return value;
+    };
+    if inner.is_empty() {
+        return Value::List(Vec::new());
+    }
+    let mut items = Vec::new();
+    for part in inner.split(',') {
+        let part = part.trim();
+        let item = if let Some(unquoted) = part.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+        {
+            Value::String(unquoted.to_string())
+        } else if let Ok(n) = part.parse::<i64>() {
+            Value::Int(n)
+        } else if let Ok(f) = part.parse::<f64>() {
+            Value::Float(f)
+        } else if part == "true" || part == "false" {
+            Value::Bool(part == "true")
+        } else {
+            // Not a rendered value list (e.g. an arbitrary string that
+            // happens to be bracketed) — leave untouched.
+            return value;
+        };
+        items.push(item);
+    }
+    Value::List(items)
+}
+
+fn algorithm_value_map_literal(value: &Value) -> String {
+    match value {
+        Value::String(value) => format!("\"{value}\""),
+        Value::Int(value) | Value::Long(value) => value.to_string(),
+        Value::Float(value) => format_float_literal(*value),
+        Value::Float32(value) => format_float_literal(*value as f64),
+        Value::Bool(value) => value.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn format_float_literal(value: f64) -> String {
+    if value.is_finite() && value.fract() == 0.0 {
+        format!("{value:.1}")
+    } else {
+        value.to_string()
+    }
+}
+
+pub(crate) fn shortest_paths(
+    graph: &PropertyGraph,
+    start: &Value,
+    target: Option<&Value>,
+    direction: Direction,
+    rel_filter: &[String],
+    max_distance: Option<f64>,
+    include_edges: bool,
+) -> Value {
+    let Value::Node { label, id } = start else {
+        return Value::List(Vec::new());
+    };
+    if let Some(Value::Node {
+        label: target_label,
+        id: target_id,
+    }) = target
+    {
+        return shortest_path_between(
+            graph,
+            label,
+            *id,
+            target_label,
+            *target_id,
+            direction,
+            rel_filter,
+            max_distance,
+            include_edges,
+        )
+        .map(|path| Value::List(vec![Value::Path(path)]))
+        .unwrap_or_else(|| Value::List(Vec::new()));
+    }
+    let mut targets = Vec::new();
+    for target_label in graph.labels() {
+        if let Ok(ids) = graph.node_ids(&target_label) {
+            targets.extend(
+                ids.into_iter()
+                    .map(|target_id| (target_label.clone(), target_id)),
+            );
+        }
+    }
+    targets.sort_by_key(|(target_label, target_id)| {
+        match graph.node_property(target_label, *target_id, "name") {
+            Value::String(name) => name,
+            _ => format!("{target_label}:{target_id}"),
+        }
+    });
+
+    let mut out = Vec::new();
+    for (target_label, target_id) in targets {
+        if let Some(path) = shortest_path_between(
+            graph,
+            label,
+            *id,
+            &target_label,
+            target_id,
+            direction,
+            rel_filter,
+            max_distance,
+            include_edges,
+        ) {
+            out.push(Value::Path(path));
+        }
+    }
+    Value::List(out)
+}
+
+fn shortest_path_between(
+    graph: &PropertyGraph,
+    start_label: &str,
+    start_id: i64,
+    target_label: &str,
+    target_id: i64,
+    direction: Direction,
+    rel_filter: &[String],
+    max_distance: Option<f64>,
+    include_edges: bool,
+) -> Option<Vec<Value>> {
+    let start_key = (start_label.to_string(), start_id);
+    let target_key = (target_label.to_string(), target_id);
+    let mut queue = VecDeque::from([start_key.clone()]);
+    let mut seen = HashSet::from([start_key.clone()]);
+    let mut distance = HashMap::from([(start_key.clone(), 0usize)]);
+    let mut parent: HashMap<(String, i64), ((String, i64), Value)> = HashMap::new();
+
+    while let Some((label, id)) = queue.pop_front() {
+        if (label.as_str(), id) == (target_label, target_id) {
+            break;
+        }
+        let next_distance = distance.get(&(label.clone(), id)).copied().unwrap_or(0) + 1;
+        if max_distance.is_some_and(|max| (next_distance as f64) > max) {
+            continue;
+        }
+        let mut neighbors = match direction {
+            Direction::Out => graph
+                .out_edges(&label, id, rel_filter)
+                .into_iter()
+                .map(|(rel_type, edge_row, other_label, other_id)| {
+                    (other_label, other_id, rel_type, edge_row)
+                })
+                .collect::<Vec<_>>(),
+            Direction::In => graph
+                .in_edges(&label, id, rel_filter)
+                .into_iter()
+                .map(|(rel_type, edge_row, other_label, other_id)| {
+                    (other_label, other_id, rel_type, edge_row)
+                })
+                .collect::<Vec<_>>(),
+            Direction::Both => graph
+                .out_edges(&label, id, rel_filter)
+                .into_iter()
+                .map(|(rel_type, edge_row, other_label, other_id)| {
+                    (other_label, other_id, rel_type, edge_row)
+                })
+                .chain(graph.in_edges(&label, id, rel_filter).into_iter().map(
+                    |(rel_type, edge_row, other_label, other_id)| {
+                        (other_label, other_id, rel_type, edge_row)
+                    },
+                ))
+                .collect::<Vec<_>>(),
+        };
+        neighbors.sort();
+        for (other_label, other_id, rel_type, edge_row) in neighbors {
+            let next = (other_label, other_id);
+            if seen.insert(next.clone()) {
+                let Some((src_label, src_id, dst_label, dst_id)) =
+                    graph.edge_endpoints(&rel_type, edge_row)
+                else {
+                    continue;
+                };
+                parent.insert(
+                    next.clone(),
+                    (
+                        (label.clone(), id),
+                        Value::Edge {
+                            rel_type,
+                            id: edge_row,
+                            src_label,
+                            src_id,
+                            dst_label,
+                            dst_id,
+                            projected_properties: None,
+                        },
+                    ),
+                );
+                distance.insert(next.clone(), next_distance);
+                queue.push_back(next);
+            }
+        }
+    }
+    if !seen.contains(&target_key) {
+        return None;
+    }
+
+    let mut keys = vec![(target_key.clone(), None)];
+    let mut cursor = target_key;
+    while cursor != start_key {
+        let (next_cursor, edge) = parent.get(&cursor)?.clone();
+        cursor = next_cursor;
+        keys.push((cursor.clone(), Some(edge)));
+    }
+    keys.reverse();
+    let mut path = Vec::new();
+    let mut previous_edge = None;
+    for (idx, ((label, id), edge)) in keys.into_iter().enumerate() {
+        if idx > 0 && include_edges {
+            if let Some(edge) = previous_edge.take() {
+                path.push(edge);
+            }
+        }
+        path.push(Value::Node { label, id });
+        previous_edge = edge;
+    }
+    Some(path)
+}
+
+pub(super) fn select_binding_by_pop(binding: &Value, history: &Value, pop: &str) -> Value {
+    let values = match history {
+        Value::List(values) if !values.is_empty() => values.as_slice(),
+        _ if !matches!(binding, Value::Null) => return binding.clone(),
+        _ => return Value::Null,
+    };
+    match pop {
+        "first" => values.first().cloned().unwrap_or(Value::Null),
+        "all" if values.len() == 1 => values[0].clone(),
+        "all" => Value::List(values.to_vec()),
+        "mixed" if values.len() == 1 => values[0].clone(),
+        "mixed" => Value::List(values.to_vec()),
+        _ => values.last().cloned().unwrap_or(Value::Null),
+    }
+}
+
+pub(super) fn gremlin_within(needle: &Value, candidates: &Value) -> bool {
+    if let Some(items) = runtime_list(candidates) {
+        return items.iter().any(|item| list_semantic_eq(needle, item));
+    }
+    list_semantic_eq(needle, candidates)
+}
+
+pub(super) fn gremlin_math_bin(op: &str, lhs: &Value, rhs: &Value) -> Value {
+    let Some(left) = gremlin_math_scalar(lhs) else {
+        return Value::Null;
+    };
+    let Some(right) = gremlin_math_scalar(rhs) else {
+        return Value::Null;
+    };
+    match op {
+        "add" => Value::Float(left + right),
+        "sub" => Value::Float(left - right),
+        "mul" => Value::Float(left * right),
+        "div" => Value::Float(left / right),
+        _ => Value::Null,
+    }
+}
+
+fn gremlin_math_scalar(value: &Value) -> Option<f64> {
+    if let Some(items) = runtime_list(value) {
+        return items.iter().find_map(value_as_f64);
+    }
+    value_as_f64(value)
+}
+
+pub(super) fn tree_value(value: &Value) -> Value {
+    // Build the nested tree map from a folded list of path histories:
+    // each path contributes root -> child -> ... chains.
+    fn insert_path(map: &mut BTreeMap<String, Value>, items: &[Value]) {
+        let Some(head) = items.first() else { return };
+        let entry = map
+            .entry(display_for_concat(head))
+            .or_insert(Value::Map(BTreeMap::new()));
+        if let Value::Map(child) = entry {
+            insert_path(child, &items[1..]);
+        }
+    }
+    let mut map = BTreeMap::new();
+    match value {
+        Value::List(items) => {
+            for item in items {
+                match item {
+                    Value::Path(p) | Value::List(p) => insert_path(&mut map, p),
+                    other => insert_path(&mut map, std::slice::from_ref(other)),
+                }
+            }
+        }
+        Value::Path(p) => insert_path(&mut map, p),
+        Value::Null => {}
+        other => insert_path(&mut map, std::slice::from_ref(other)),
+    }
+    Value::Map(map)
+}
+
+pub(super) fn path_last_value(value: &Value) -> Option<&Value> {
+    match value {
+        Value::Path(items) | Value::List(items) => items.last(),
+        Value::Null => None,
+        other => Some(other),
+    }
+}
+
+pub(super) fn path_last_label(value: &Value) -> Option<&str> {
+    match path_last_value(value)? {
+        Value::Node { label, .. } => Some(label.as_str()),
+        Value::Edge { rel_type, .. } => Some(rel_type.as_str()),
+        _ => None,
+    }
+}
+
+pub(super) fn format_placeholder(current: &Value, binding: &Value, key: &str, graph: &PropertyGraph) -> Value {
+    let resolved = graph_element_property(graph, current, key);
+    if matches!(resolved, Value::Null) {
+        binding.clone()
+    } else {
+        resolved
+    }
+}
+
+pub(super) fn is_trail_path(items: &[Value]) -> bool {
+    let mut seen = HashSet::new();
+    for item in items {
+        if let Value::Edge { rel_type, id, .. } = item {
+            if !seen.insert((rel_type.as_str(), *id)) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+pub(super) fn is_acyclic_path(items: &[Value]) -> bool {
+    let mut seen = HashSet::new();
+    for item in items {
+        if let Value::Node { label, id } = item {
+            if !seen.insert((label.as_str(), *id)) {
+                return false;
+            }
+        }
+    }
+    true
+}

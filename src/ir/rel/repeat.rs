@@ -100,19 +100,8 @@ impl LoweringContext<'_> {
     }
 
     fn lower_repeat_recursive(&mut self, spec: &RepeatSpec<'_>) -> RelResult<LoweredNode> {
-        if spec.until_traversal.is_some() {
-            return Err(RelError::Unsupported(
-                "GraphRepeat with until sub-traversal".into(),
-            ));
-        }
-        if spec.prefix_traversal.is_some() || matches!(spec.emit, EmitMode::AfterEachIfTraversal(_))
-        {
-            return Err(RelError::Unsupported(
-                "GraphRepeat with emit sub-traversal".into(),
-            ));
-        }
         check_recursive_body(spec.body)?;
-        let Some(bindings) = first_correlate_bindings(spec.body) else {
+        let Some(bindings) = repeat_correlate_bindings(spec.body) else {
             return Err(RelError::Unsupported(
                 "GraphRepeat body does not consume the frontier".into(),
             ));
@@ -165,7 +154,7 @@ impl LoweringContext<'_> {
         let cte_name = format!("__graph_repeat_{uniq}");
         let depth_col = format!("__rep_{uniq}_depth");
         let stop_col = format!("__rep_{uniq}_stop");
-        let has_until = spec.until.is_some();
+        let has_until = spec.until.is_some() || spec.until_traversal.is_some();
         let seed_input = LogicalPlanBuilder::from(seed_plan)
             .alias(format!("__rep_{uniq}_seed"))?
             .build()?;
@@ -283,9 +272,17 @@ impl LoweringContext<'_> {
             for loop_column in &loop_columns {
                 stepped_projection.push(next_depth.clone().alias(loop_column));
             }
-            let stepped = LogicalPlanBuilder::from(stepped)
+            let mut stepped = LogicalPlanBuilder::from(stepped)
                 .project(stepped_projection)?
                 .build()?;
+            // `until(<traversal>)` is decided per element: join the set of
+            // elements for which the probe is productive.
+            let mut until_matched = None;
+            if let Some(probe) = spec.until_traversal {
+                let (joined, matched) = self.probe_match(stepped, probe, &mut islands)?;
+                stepped = joined;
+                until_matched = Some(matched);
+            }
 
             let mut recursive_projection = Vec::new();
             for col in &state {
@@ -306,6 +303,8 @@ impl LoweringContext<'_> {
                 let matched = self.lower_expr(&stepped, until)?;
                 recursive_projection
                     .push(case_when(matched, lit(true), lit(false)).alias(&stop_col));
+            } else if let Some(matched) = until_matched {
+                recursive_projection.push(matched.alias(&stop_col));
             }
             let recursive_term = LogicalPlanBuilder::from(stepped)
                 .project(recursive_projection)?
@@ -321,7 +320,8 @@ impl LoweringContext<'_> {
         let emit_each = !matches!(spec.emit, EmitMode::AfterLoop);
         let depth = || col_exact(&depth_col);
         let structural = if emit_each {
-            (spec.prefix_predicate.is_none()).then(|| binary(depth(), BinaryOp::Gte, lit(1_i64)))
+            (spec.prefix_predicate.is_none() && spec.prefix_traversal.is_none())
+                .then(|| binary(depth(), BinaryOp::Gte, lit(1_i64)))
         } else if has_until {
             Some(binary(col_exact(&stop_col), BinaryOp::Eq, lit(true)))
         } else if let Some(times) = spec.times {
@@ -360,21 +360,45 @@ impl LoweringContext<'_> {
         islands.merge(body_islands);
         let mut output = self.repeat_rehydrate(selected, &state, &mut islands)?;
 
+        let mut probe_columns = Vec::new();
         if emit_each {
             let iteration_rows = binary(depth(), BinaryOp::Gte, lit(1_i64));
             let iteration_rows = match spec.emit {
                 EmitMode::AfterEachIfPredicate(predicate) => {
                     Expr::and(iteration_rows, self.lower_expr(&output, predicate)?)
                 }
+                EmitMode::AfterEachIfTraversal(probe) => {
+                    let before = output_fields(&output);
+                    let (joined, matched) = self.probe_match(output, probe, &mut islands)?;
+                    probe_columns.extend(
+                        output_fields(&joined)
+                            .into_iter()
+                            .filter(|field| !before.contains(field)),
+                    );
+                    output = joined;
+                    Expr::and(iteration_rows, matched)
+                }
                 _ => iteration_rows,
             };
-            let condition = match spec.prefix_predicate {
-                Some(predicate) => Expr::or(
+            let seed_rows = match (spec.prefix_predicate, spec.prefix_traversal) {
+                (Some(predicate), _) => Some(self.lower_expr(&output, predicate)?),
+                (None, Some(probe)) => {
+                    let before = output_fields(&output);
+                    let (joined, matched) = self.probe_match(output, probe, &mut islands)?;
+                    probe_columns.extend(
+                        output_fields(&joined)
+                            .into_iter()
+                            .filter(|field| !before.contains(field)),
+                    );
+                    output = joined;
+                    Some(matched)
+                }
+                (None, None) => None,
+            };
+            let condition = match seed_rows {
+                Some(seed_rows) => Expr::or(
                     iteration_rows,
-                    Expr::and(
-                        binary(depth(), BinaryOp::Eq, lit(0_i64)),
-                        self.lower_expr(&output, predicate)?,
-                    ),
+                    Expr::and(binary(depth(), BinaryOp::Eq, lit(0_i64)), seed_rows),
                 ),
                 None => iteration_rows,
             };
@@ -385,7 +409,9 @@ impl LoweringContext<'_> {
 
         let final_projection = output_fields(&output)
             .into_iter()
-            .filter(|field| *field != depth_col && *field != stop_col)
+            .filter(|field| {
+                *field != depth_col && *field != stop_col && !probe_columns.contains(field)
+            })
             .map(col_exact)
             .collect::<Vec<_>>();
         let plan = LogicalPlanBuilder::from(output)
@@ -460,6 +486,103 @@ impl LoweringContext<'_> {
         Ok(plan)
     }
 
+    /// Join `plan` with the set of `current` elements for which the
+    /// sub-traversal `probe` produces at least one result, returning the
+    /// joined plan and a boolean "probe is productive" expression.
+    ///
+    /// The set is computed once over every element of the frontier's shape,
+    /// not per frontier row, so it never re-reads a recursive work table.
+    /// That is only sound when the probe observes nothing but the element
+    /// itself: probes that read loop counters, labels, sacks or the path fail
+    /// to lower over the element scan and are declined.
+    fn probe_match(
+        &mut self,
+        plan: LogicalPlan,
+        probe: &Node,
+        islands: &mut IslandReport,
+    ) -> RelResult<(LogicalPlan, Expr)> {
+        let Some(shape) = has_binding_shape(&plan, CURRENT_BINDING) else {
+            return Err(RelError::Unsupported(
+                "GraphRepeat probe over a non-element traverser".into(),
+            ));
+        };
+        let mut probe = probe.clone();
+        strip_path_tracking(&mut probe)?;
+        match first_correlate_bindings(&probe) {
+            Some(bindings) if bindings.iter().all(|binding| binding == CURRENT_BINDING) => {}
+            Some(bindings) => {
+                return Err(RelError::Unsupported(format!(
+                    "GraphRepeat probe correlates traverser state {bindings:?}"
+                )));
+            }
+            None => {
+                return Err(RelError::Unsupported(
+                    "GraphRepeat probe does not consume the traverser".into(),
+                ));
+            }
+        }
+        let elements = match shape {
+            BindingShape::Node => Node::GraphNodeScan {
+                graph: "default".into(),
+                binding: CURRENT_BINDING.into(),
+                labels: LabelExpr::Any,
+            }
+            .bind_node(CURRENT_BINDING),
+            BindingShape::Edge => Node::GraphBind {
+                bind: CURRENT_BINDING.into(),
+                kind: crate::ir::plan::BindKind::Edge,
+                expr: None,
+                input: Node::GraphRelScan {
+                    graph: "default".into(),
+                    binding: CURRENT_BINDING.into(),
+                    types: LabelExpr::Any,
+                    dir: crate::ir::plan::Direction::Out,
+                }
+                .boxed(),
+            },
+        };
+        let semi = Node::GraphApply {
+            kind: crate::ir::plan::ApplyKind::Semi,
+            correlation: vec![CURRENT_BINDING.into()],
+            outputs: Vec::new(),
+            optional_missing: crate::ir::policy::OptionalMissing::Null,
+            left: elements.boxed(),
+            right: probe.boxed(),
+        };
+        let productive = self.lower_node(&semi)?;
+        islands.merge(productive.islands);
+        self.scan_counter += 1;
+        let uniq = self.scan_counter;
+        let key_id = format!("__rep_probe_{uniq}_id");
+        let key_label = format!("__rep_probe_{uniq}_label");
+        let matched_set = LogicalPlanBuilder::from(productive.plan)
+            .project(vec![
+                col_exact(id_col(CURRENT_BINDING)).alias(&key_id),
+                col_exact(label_col(CURRENT_BINDING)).alias(&key_label),
+            ])?
+            .distinct()?
+            .build()?;
+        let joined = LogicalPlanBuilder::from(plan)
+            .join_on(
+                matched_set,
+                JoinType::Left,
+                vec![
+                    binary(
+                        col_exact(id_col(CURRENT_BINDING)),
+                        BinaryOp::Eq,
+                        col_exact(&key_id),
+                    ),
+                    binary(
+                        col_exact(label_col(CURRENT_BINDING)),
+                        BinaryOp::Eq,
+                        col_exact(&key_label),
+                    ),
+                ],
+            )?
+            .build()?;
+        Ok((joined, col_exact(&key_id).is_not_null()))
+    }
+
     /// `repeat(body).times(n)` via bounded unrolling: apply the lowered body
     /// n times, feeding each iteration's plan into the body's
     /// `GraphCorrelate` leaf. Used for bodies the recursive form declines
@@ -527,7 +650,7 @@ impl LoweringContext<'_> {
         if emit_seed {
             emitted.push(current.clone());
         }
-        let correlate_bindings = first_correlate_bindings(spec.body);
+        let correlate_bindings = repeat_correlate_bindings(spec.body);
         for _ in 0..times {
             // The body re-lowers with fixed binding names each iteration;
             // restrict the incoming plan to the bindings its correlate leaf
@@ -587,6 +710,68 @@ impl LoweringContext<'_> {
             fields: seed.fields,
             result_form: seed.result_form,
         })
+    }
+}
+
+const CURRENT_BINDING: &str = "current";
+const PATH_BINDING: &str = "__path";
+
+/// Remove the (unobservable) path bookkeeping from an existence probe so it
+/// can run over a plain element scan. Only operators whose result does not
+/// depend on the removed path are accepted; anything else still referencing
+/// `__path` fails to lower afterwards and is declined.
+fn strip_path_tracking(node: &mut Node) -> RelResult<()> {
+    match node {
+        Node::GraphCorrelate { bindings } => {
+            bindings.retain(|binding| binding != PATH_BINDING);
+            Ok(())
+        }
+        Node::GraphExpand { path, input, .. } => {
+            *path = None;
+            strip_path_tracking(input)
+        }
+        Node::GraphProject { items, input, .. } => {
+            items.retain(|item| item.alias != PATH_BINDING);
+            strip_path_tracking(input)?;
+            if items.is_empty() {
+                let inner = std::mem::replace(input.as_mut(), Node::GraphEmpty);
+                *node = inner;
+            }
+            Ok(())
+        }
+        Node::GraphApply {
+            correlation,
+            outputs,
+            left,
+            right,
+            ..
+        } => {
+            correlation.retain(|binding| binding != PATH_BINDING);
+            outputs.retain(|binding| binding != PATH_BINDING);
+            strip_path_tracking(left)?;
+            strip_path_tracking(right)
+        }
+        Node::GraphUnion { left, right, .. } | Node::GraphJoin { left, right, .. } => {
+            strip_path_tracking(left)?;
+            strip_path_tracking(right)
+        }
+        Node::GraphFilter { input, .. }
+        | Node::GraphCurrentProject { input, .. }
+        | Node::GraphAggregate { input, .. }
+        | Node::GraphBind { input, .. }
+        | Node::GraphSlice { input, .. }
+        | Node::GraphDistinct { input, .. }
+        | Node::GraphSort { input, .. }
+        | Node::GraphUnwind { input, .. } => strip_path_tracking(input),
+        Node::GraphNodeScan { .. }
+        | Node::GraphRelScan { .. }
+        | Node::GraphValues { .. }
+        | Node::GraphOneRow
+        | Node::GraphEmpty => Ok(()),
+        other => Err(RelError::Unsupported(format!(
+            "GraphRepeat probe with {}",
+            node_kind(other)
+        ))),
     }
 }
 
@@ -771,6 +956,12 @@ fn check_recursive_term(plan: &LogicalPlan, cte_name: &str) -> RelResult<()> {
     let mut references = 0usize;
     let mut problem: Option<&'static str> = None;
     plan.apply_with_subqueries(|node| {
+        // Subplans that never read the frontier (e.g. a precomputed probe
+        // set) are evaluated independently of the iteration; barriers there
+        // are ordinary relational work.
+        if !reads_work_table(node, cte_name) {
+            return Ok(TreeNodeRecursion::Jump);
+        }
         match node {
             LogicalPlan::TableScan(scan) if scan.table_name.table() == cte_name => {
                 references += 1;
@@ -802,6 +993,18 @@ fn check_recursive_term(plan: &LogicalPlan, cte_name: &str) -> RelResult<()> {
         )));
     }
     Ok(())
+}
+
+fn reads_work_table(plan: &LogicalPlan, cte_name: &str) -> bool {
+    let mut found = false;
+    let _ = plan.apply_with_subqueries(|node| {
+        if matches!(node, LogicalPlan::TableScan(scan) if scan.table_name.table() == cte_name) {
+            found = true;
+            return Ok(TreeNodeRecursion::Stop);
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
 }
 
 /// `error(message)`: raises at execution time for any row that reaches it.
@@ -850,4 +1053,15 @@ impl ScalarUDFImpl for RepeatLimitError {
         };
         Err(DataFusionError::Execution(message))
     }
+}
+
+/// Follow the input side of applies first: their right-hand probes have a
+/// narrower local correlation scope, not the repeat frontier's state.
+fn repeat_correlate_bindings(node: &Node) -> Option<Vec<String>> {
+    if let Node::GraphCorrelate { bindings } = node {
+        return Some(bindings.clone());
+    }
+    node_children(node)
+        .into_iter()
+        .find_map(repeat_correlate_bindings)
 }

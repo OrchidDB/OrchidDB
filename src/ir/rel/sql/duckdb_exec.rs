@@ -47,8 +47,10 @@ pub struct DuckDbExecutor {
     /// [`TableData::content_key`].
     scan_tables: BTreeMap<String, ScanTableEntry>,
     /// Per-query scan names currently defined as views, and the content
-    /// table each one aliases.
-    scan_views: BTreeMap<String, String>,
+    /// table each one aliases plus the view's column names. Two queries can
+    /// reuse one scan name over identical content with different binding
+    /// column names, so the column list is part of the view identity.
+    scan_views: BTreeMap<String, (String, Vec<String>)>,
     scan_clock: u64,
     arrow_registered: bool,
     timeout: Option<Duration>,
@@ -237,7 +239,14 @@ impl DuckDbExecutor {
                 }
             }
         }
-        if !cache || self.scan_views.get(&table.name) != Some(&key) {
+        let view_columns = table
+            .schema
+            .fields()
+            .iter()
+            .map(|field| field.name().clone())
+            .collect::<Vec<_>>();
+        let view_identity = (key.clone(), view_columns);
+        if !cache || self.scan_views.get(&table.name) != Some(&view_identity) {
             let dialect = SqlDialect::DuckDb;
             let columns = table
                 .schema
@@ -260,7 +269,7 @@ impl DuckDbExecutor {
             ))
             .map_err(|err| SqlError::Setup(format!("duckdb scan view: {err}")))?;
             if cache {
-                self.scan_views.insert(table.name.clone(), key.clone());
+                self.scan_views.insert(table.name.clone(), view_identity);
             }
         }
         Ok(key)
@@ -301,7 +310,7 @@ impl DuckDbExecutor {
                 continue;
             }
             self.scan_tables.remove(&key);
-            self.scan_views.retain(|_, target| *target != key);
+            self.scan_views.retain(|_, (target, _)| *target != key);
             total -= bytes;
         }
     }

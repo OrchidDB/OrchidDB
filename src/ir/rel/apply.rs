@@ -2,6 +2,255 @@
 
 use super::*;
 
+fn simple_expand(mut node: &Node) -> Option<&Node> {
+    while let Node::GraphApply {
+        kind: ApplyKind::Inner,
+        left,
+        right,
+        ..
+    } = node
+    {
+        if !matches!(left.as_ref(), Node::GraphCorrelate { .. }) {
+            return None;
+        }
+        node = right;
+    }
+    match node {
+        Node::GraphExpand {
+            input,
+            length,
+            path: None,
+            ..
+        } if matches!(input.as_ref(), Node::GraphCorrelate { .. })
+            && length.min == 1
+            && length.max == Some(1) =>
+        {
+            Some(node)
+        }
+        _ => None,
+    }
+}
+
+/// An existence predicate that only uses already-bound endpoints can run
+/// before an unrelated expansion multiplies the row count. Unlike OPTIONAL,
+/// semi/anti apply never adds bindings or changes surviving multiplicities.
+pub(super) fn push_simple_existence(kind: ApplyKind, left: &Node, right: &Node) -> Option<Node> {
+    if !matches!(kind, ApplyKind::Semi | ApplyKind::Anti) {
+        return None;
+    }
+    let Node::GraphExpand {
+        source,
+        target,
+        target_mode,
+        history,
+        ..
+    } = simple_expand(right)?
+    else {
+        return None;
+    };
+    let mut dependencies = vec![source.clone()];
+    if *target_mode == TargetMode::Existing {
+        dependencies.push(target.clone());
+    }
+    let probe_history = history;
+    let left = match left {
+        Node::GraphApply {
+            kind: ApplyKind::Inner,
+            left,
+            right,
+            ..
+        } if matches!(left.as_ref(), Node::GraphOneRow) => right.as_ref(),
+        _ => left,
+    };
+    let Node::GraphExpand {
+        target,
+        rel_binding,
+        history,
+        path,
+        target_mode: TargetMode::BindNew,
+        ..
+    } = left
+    else {
+        return None;
+    };
+    if dependencies.contains(target)
+        || probe_history
+            .as_ref()
+            .is_some_and(|name| history.as_ref() == Some(name))
+        || rel_binding
+            .iter()
+            .chain(history.iter())
+            .chain(path.iter())
+            .any(|name| dependencies.contains(name))
+    {
+        return None;
+    }
+    let mut expanded = left.clone();
+    let Node::GraphExpand { input, .. } = &mut expanded else {
+        unreachable!()
+    };
+    *input = Box::new(Node::GraphApply {
+        kind,
+        correlation: dependencies,
+        outputs: Vec::new(),
+        optional_missing: crate::ir::policy::OptionalMissing::Null,
+        left: input.clone(),
+        right: Box::new(right.clone()),
+    });
+    Some(expanded)
+}
+
+impl LoweringContext<'_> {
+    /// A single correlated hop has no per-input barrier. Evaluate its graph
+    /// relation once and join on just its endpoints, instead of copying the
+    /// complete outer relation into the right side and joining it back again.
+    pub(super) fn try_simple_expand_apply(
+        &mut self,
+        kind: ApplyKind,
+        left: &LoweredNode,
+        right: &Node,
+        outputs: &[String],
+    ) -> RelResult<Option<LoweredNode>> {
+        if self.language != Language::Cypher
+            || self.options.mapping.is_some()
+            || !matches!(
+                kind,
+                ApplyKind::Optional | ApplyKind::Semi | ApplyKind::Anti
+            )
+        {
+            return Ok(None);
+        }
+        let Some(right) = simple_expand(right) else {
+            return Ok(None);
+        };
+        let Node::GraphExpand {
+            source,
+            target,
+            target_mode,
+            target_labels,
+            rel_binding,
+            rel_types,
+            dir,
+            length,
+            history,
+            path,
+            input,
+            ..
+        } = right
+        else {
+            return Ok(None);
+        };
+        if !matches!(input.as_ref(), Node::GraphCorrelate { .. })
+            || length.min != 1
+            || length.max != Some(1)
+            || path.is_some()
+            || source == target
+            || has_binding_shape(&left.plan, source) != Some(BindingShape::Node)
+            || history
+                .as_ref()
+                .is_some_and(|name| has_exact_col(&left.plan, name))
+            || rel_binding
+                .as_ref()
+                .is_some_and(|name| has_binding_shape(&left.plan, name).is_some())
+        {
+            return Ok(None);
+        }
+        let existing = *target_mode == TargetMode::Existing;
+        if (!existing
+            && (*target_mode != TargetMode::BindNew
+                || has_binding_shape(&left.plan, target).is_some()))
+            || (existing && has_binding_shape(&left.plan, target) != Some(BindingShape::Node))
+        {
+            return Ok(None);
+        }
+        let seed = Node::GraphNodeScan {
+            graph: "default".into(),
+            binding: source.clone(),
+            labels: LabelExpr::Any,
+        };
+        let right = self.lower_expand(
+            &seed,
+            source,
+            target,
+            TargetMode::BindNew,
+            if existing {
+                &LabelExpr::Any
+            } else {
+                target_labels
+            },
+            rel_binding.as_ref(),
+            rel_types,
+            *dir,
+            None,
+        )?;
+        let mut bindings = vec![source];
+        if existing {
+            bindings.push(target);
+        }
+        let mut conditions = Vec::new();
+        let mut projection = Vec::new();
+        let mut cleanup = BTreeSet::new();
+        for binding in bindings {
+            for column in [id_col(binding), label_col(binding)] {
+                let alias = unique_internal_alias(
+                    &left.plan,
+                    &cleanup,
+                    format!("__simple_apply_{}_{}", self.scan_counter, cleanup.len()),
+                );
+                conditions.push(col_exact(&column).eq(col_exact(&alias)));
+                projection.push(col_exact(column).alias(&alias));
+                cleanup.insert(alias);
+            }
+        }
+        if kind == ApplyKind::Optional {
+            for column in right_apply_output_columns(&right.plan, outputs)? {
+                if !has_exact_col(&left.plan, &column) {
+                    projection.push(col_exact(column));
+                }
+            }
+        }
+        let right_plan = LogicalPlanBuilder::from(right.plan)
+            .project(projection)?
+            .build()?;
+        let join_type = match kind {
+            ApplyKind::Optional => JoinType::Left,
+            ApplyKind::Semi => JoinType::LeftSemi,
+            ApplyKind::Anti => JoinType::LeftAnti,
+            _ => unreachable!(),
+        };
+        // Preserve left-side filters at the outer-join boundary. Without a
+        // subquery the SQL unparser moves those filters into ON, retaining
+        // rows that should have been filtered out before the optional match.
+        let left_plan = if kind == ApplyKind::Optional {
+            let guard = unique_internal_alias(&left.plan, &cleanup, "__simple_apply_guard");
+            let mut projection = existing_columns_by_name(&left.plan, &BTreeSet::new());
+            projection.push(lit(1_i64).alias(&guard));
+            cleanup.insert(guard);
+            LogicalPlanBuilder::from(left.plan.clone())
+                .project(projection)?
+                .alias(format!("__w_sql_cte_simple_apply_{}", self.scan_counter))?
+                .build()?
+        } else {
+            left.plan.clone()
+        };
+        let joined = LogicalPlanBuilder::from(left_plan)
+            .join_on(right_plan, join_type, conditions)?
+            .build()?;
+        let projection = existing_columns_by_name(&joined, &cleanup);
+        let plan = LogicalPlanBuilder::from(joined)
+            .project(projection)?
+            .build()?;
+        let mut islands = left.islands.clone();
+        islands.merge(right.islands);
+        Ok(Some(LoweredNode {
+            plan,
+            islands,
+            fields: left.fields.clone(),
+            result_form: left.result_form,
+        }))
+    }
+}
+
 /// Give each input occurrence its own correlation identity. Binding values alone
 /// cannot distinguish duplicate outer rows: joining on them squares their
 /// multiplicity when the right subtree starts at `GraphCorrelate`.

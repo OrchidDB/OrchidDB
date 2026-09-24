@@ -138,6 +138,9 @@ For the read-only Cypher, SPARQL, and Gremlin completion roadmap, architecture
 changes, and subagent work packages, see the
 [DuckDB read-query completion plan](docs/duckdb_read_query_completion_plan.md).
 
+For module boundaries and parallel feature work, see the
+[code ownership guide](docs/code_ownership.md).
+
 ## License
 
 `new-graph` is licensed by Daniel Henneberger under a custom GPL-3.0-only license.

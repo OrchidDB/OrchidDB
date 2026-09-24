@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::datasource::cte_worktable::CteWorkTable;
 use datafusion::datasource::provider_as_source;
 use datafusion::logical_expr::{LogicalPlan, TableScan};
@@ -41,8 +41,19 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     }
 
     let has_recursive = !recursive_ctes.is_empty();
-    let mut definitions = Vec::with_capacity(plain_ctes.len() + recursive_ctes.len());
+    // Every definition must follow the CTEs it reads: a recursive term may
+    // read a hoisted barrier (e.g. a precomputed probe set), and a barrier
+    // may read a recursive work table.
+    let names: BTreeSet<String> = recursive_ctes
+        .iter()
+        .map(|cte| cte.name.clone())
+        .chain(plain_ctes.iter().map(|cte| cte.name.clone()))
+        .collect();
+    let mut pending = Vec::with_capacity(plain_ctes.len() + recursive_ctes.len());
     for cte in recursive_ctes {
+        let mut deps = referenced_ctes(&cte.static_term, &names);
+        deps.extend(referenced_ctes(&cte.recursive_term, &names));
+        deps.remove(&cte.name);
         let static_sql = unparse_one(&cte.static_term, &unparser, dialect)?;
         let recursive_sql = unparse_one(&cte.recursive_term, &unparser, dialect)?;
         let union = if cte.is_distinct {
@@ -50,19 +61,39 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         } else {
             "UNION ALL"
         };
-        definitions.push(format!(
-            "{} AS (\n  {static_sql}\n  {union}\n  {recursive_sql}\n)",
-            dialect.quote_ident(&cte.name)
+        pending.push((
+            cte.name.clone(),
+            deps,
+            format!(
+                "{} AS (\n  {static_sql}\n  {union}\n  {recursive_sql}\n)",
+                dialect.quote_ident(&cte.name)
+            ),
         ));
     }
-    // Plain barriers can consume recursive CTEs, so define them only after
-    // every recursive work table they may reference.
     for cte in plain_ctes {
+        let mut deps = referenced_ctes(&cte.term, &names);
+        deps.remove(&cte.name);
         let term_sql = unparse_one(&cte.term, &unparser, dialect)?;
-        definitions.push(format!(
-            "{} AS (\n  {term_sql}\n)",
-            dialect.quote_ident(&cte.name)
+        pending.push((
+            cte.name.clone(),
+            deps,
+            format!("{} AS (\n  {term_sql}\n)", dialect.quote_ident(&cte.name)),
         ));
+    }
+    let mut definitions = Vec::with_capacity(pending.len());
+    let mut defined = BTreeSet::new();
+    while !pending.is_empty() {
+        let Some(ready) = pending
+            .iter()
+            .position(|(_, deps, _)| deps.iter().all(|dep| defined.contains(dep)))
+        else {
+            return Err(SqlError::Unsupported(
+                "cyclic dependency between hoisted CTEs".into(),
+            ));
+        };
+        let (name, _, definition) = pending.remove(ready);
+        defined.insert(name);
+        definitions.push(definition);
     }
     let keyword = if has_recursive {
         "WITH RECURSIVE"
@@ -70,6 +101,20 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         "WITH"
     };
     Ok(dialect.fixup_query(format!("{keyword} {}\n{main_sql}", definitions.join(",\n"))))
+}
+
+fn referenced_ctes(plan: &LogicalPlan, names: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let _ = plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::TableScan(scan) = node {
+            let table = scan.table_name.table();
+            if names.contains(table) {
+                found.insert(table.to_string());
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
 }
 
 fn unparse_one(

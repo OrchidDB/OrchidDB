@@ -429,9 +429,14 @@ async fn distinct_preserves_order_by_unprojected_values() {
             .lower(&plan, &PropertyGraph::new())
             .unwrap();
         let prepared = sql::prepare(&lowered, SqlDialect::DuckDb).await.unwrap();
+        // Typed SPARQL results carry each field's RDF term identity after
+        // the visible values; compare the visible value column.
         let actual = DuckDbExecutor::new()
             .run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .map(|row| row[..1].to_vec())
+            .collect::<Vec<_>>();
         let expected = expected
             .into_iter()
             .map(|s| vec![SqlValue::Text(s.into())])
@@ -466,11 +471,13 @@ async fn nested_distinct_has_independent_internal_columns() {
     let actual = DuckDbExecutor::new()
         .run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)
         .unwrap();
-    assert_eq!(
-        actual,
+    let literal = |value: &str| {
         vec![
-            vec![SqlValue::Text("a".into())],
-            vec![SqlValue::Text("b".into())]
+            SqlValue::Text(value.into()),
+            SqlValue::Text("LITERAL".into()),
+            SqlValue::Text("http://www.w3.org/2001/XMLSchema#string".into()),
+            SqlValue::Null,
         ]
-    );
+    };
+    assert_eq!(actual, vec![literal("a"), literal("b")]);
 }

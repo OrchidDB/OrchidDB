@@ -2,9 +2,11 @@
 
 use std::iter::Peekable;
 
-use super::context::{ChildTraversalKind, Lowerer, TraversalContext};
+use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
 use super::sub_traversal::lower_child_traversal;
-use crate::ir::plan::{EmitMode, Node, PathObjects};
+use crate::ir::expr::IrExpr;
+use crate::ir::plan::{ApplyKind, EmitMode, Node, PathObjects, UnionAlign};
+use crate::ir::policy::OptionalMissing;
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 
@@ -24,6 +26,7 @@ where
 {
     let prefix_times_set = prefix_times.is_some();
     let mut emit: Option<Option<Vec<Step>>> = prefix_emit.clone();
+    let mut until_first = prefix_until.is_some();
     let mut until: Option<Vec<Step>> = prefix_until;
     let mut times: Option<u64> = prefix_times;
     let mut times_is_postfix = false;
@@ -42,6 +45,7 @@ where
             }
             Step::Until(p) => {
                 until = Some(p.clone());
+                until_first = false;
                 steps.next();
             }
             _ => break,
@@ -107,7 +111,43 @@ where
         },
         None => (None, None),
     };
-    Ok(Node::GraphRepeat {
+    // `until(p).repeat(body)` is while-do: a seed traverser that already
+    // satisfies `p` leaves the loop without running the body (TinkerPop's
+    // `untilFirst`), and is never emit-split. Every later check happens at
+    // the same loop count as the IR's post-step `until`, so only the seed
+    // needs splitting: exiting seeds are emitted directly, the rest loop.
+    let seed_matches =
+        |kind: ApplyKind, negate: bool, seed: Node| match (&until_expr, &until_traversal) {
+            (Some(expr), _) => Node::GraphFilter {
+                condition: if negate {
+                    IrExpr::Case {
+                        arms: vec![(expr.clone(), IrExpr::lit_bool(false))],
+                        otherwise: Some(Box::new(IrExpr::lit_bool(true))),
+                    }
+                } else {
+                    expr.clone()
+                },
+                input: seed.boxed(),
+            },
+            (None, Some(probe)) => Node::GraphApply {
+                kind,
+                correlation: vec![CURRENT.into()],
+                outputs: Vec::new(),
+                optional_missing: OptionalMissing::Null,
+                left: seed.boxed(),
+                right: probe.clone(),
+            },
+            (None, None) => seed,
+        };
+    let (exiting, seed) = if until_first && (until_expr.is_some() || until_traversal.is_some()) {
+        (
+            Some(seed_matches(ApplyKind::Semi, false, input.clone())),
+            seed_matches(ApplyKind::Anti, true, input),
+        )
+    } else {
+        (None, input)
+    };
+    let repeat = Node::GraphRepeat {
         loop_name: name.map(str::to_string),
         times: repeat_times,
         emit: emit_mode,
@@ -117,8 +157,17 @@ where
         path_objects: PathObjects::VerticesOnly,
         prefix_predicate,
         prefix_traversal,
-        seed: input.boxed(),
+        seed: seed.boxed(),
         body: body_node.boxed(),
+    };
+    Ok(match exiting {
+        Some(exiting) => Node::GraphUnion {
+            all: true,
+            align: UnionAlign::ByVariableName,
+            left: exiting.boxed(),
+            right: repeat.boxed(),
+        },
+        None => repeat,
     })
 }
 

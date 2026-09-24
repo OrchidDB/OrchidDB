@@ -12,8 +12,8 @@ use new_graph::language::sparql::SparqlPlanner;
 fn typed_backend() -> RelBackend {
     let schema = Arc::new(Schema::new(
         [
-            "g", "s", "s_kind", "s_dt", "s_lang", "p", "p_kind", "p_dt", "p_lang",
-            "o", "o_kind", "o_dt", "o_lang",
+            "g", "s", "s_kind", "s_dt", "s_lang", "p", "p_kind", "p_dt", "p_lang", "o", "o_kind",
+            "o_dt", "o_lang",
         ]
         .into_iter()
         .map(|name| Field::new(name, DataType::Utf8, true))
@@ -70,23 +70,32 @@ fn typed_constant_patterns_lower_with_rdf_identity_checks() {
 #[test]
 fn typed_bgp_correlation_keeps_term_identity() {
     let ask = SparqlPlanner::default()
-        .plan_str(
-            "ASK { ?s <https://example.com/name> ?x . ?s <https://example.com/alias> ?x }",
-        )
+        .plan_str("ASK { ?s <https://example.com/name> ?x . ?s <https://example.com/alias> ?x }")
         .unwrap();
-    typed_backend()
-        .lower(&ask, &PropertyGraph::new())
-        .unwrap();
+    typed_backend().lower(&ask, &PropertyGraph::new()).unwrap();
 
     let plan = SparqlPlanner::default()
         .plan_str(
             "SELECT ?s WHERE { ?s <https://example.com/name> ?x . ?s <https://example.com/alias> ?x }",
         )
         .unwrap();
-    // Typed variable results are rejected because ReturnedBatches has no RDF
-    // term datatype; the preceding correlated BGP is still identity-aware.
-    let error = typed_backend()
-        .lower(&plan, &PropertyGraph::new())
-        .unwrap_err();
-    assert!(error.to_string().contains("cannot be represented by ReturnedBatches"));
+    // Typed results keep the term identity after the visible value column.
+    let lowered = typed_backend().lower(&plan, &PropertyGraph::new()).unwrap();
+    assert_eq!(lowered.fields, vec!["?s"]);
+    let columns: Vec<_> = lowered
+        .plan
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.name().clone())
+        .collect();
+    assert_eq!(
+        columns,
+        vec![
+            "?s",
+            "__rdf:term:kind:?s",
+            "__rdf:term:datatype:?s",
+            "__rdf:term:language:?s"
+        ]
+    );
 }

@@ -83,3 +83,57 @@ pub(crate) fn rdf_value(term: &RdfTerm) -> Value {
         RdfTerm::Variable(value) => Value::String(value.clone()),
     }
 }
+
+const XSD_STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
+const RDF_LANG_STRING: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
+
+/// Pattern term preserving the exact lexical form and datatype of every
+/// literal. RDF term matching is by identity, so `"01"^^xsd:integer` must
+/// not match `"1"^^xsd:integer`.
+pub(crate) fn exact_term(term: &TermPattern) -> RdfTerm {
+    match term {
+        TermPattern::Literal(value) => exact_literal(value),
+        other => self::term(other),
+    }
+}
+
+pub(crate) fn exact_literal(value: &Literal) -> RdfTerm {
+    if let Some(language) = value.language() {
+        return RdfTerm::LanguageTagged {
+            value: value.value().into(),
+            lang: language.into(),
+        };
+    }
+    if value.datatype().as_str() == XSD_STRING {
+        return RdfTerm::Literal(Lit::String(value.value().into()));
+    }
+    typed(value, value.datatype().as_str())
+}
+
+/// The four physical components of an RDF term — lexical value, kind,
+/// datatype, language — as used by typed relational solution columns.
+pub(crate) fn ground_components(term: &GroundTerm) -> [Value; 4] {
+    match term {
+        GroundTerm::NamedNode(value) => [
+            Value::String(value.as_str().into()),
+            Value::String("IRI".into()),
+            Value::Null,
+            Value::Null,
+        ],
+        GroundTerm::Literal(value) => {
+            let (datatype, language) = match value.language() {
+                Some(language) => (
+                    RDF_LANG_STRING.to_string(),
+                    Value::String(language.to_ascii_lowercase()),
+                ),
+                None => (value.datatype().as_str().to_string(), Value::Null),
+            };
+            [
+                Value::String(value.value().into()),
+                Value::String("LITERAL".into()),
+                Value::String(datatype),
+                language,
+            ]
+        }
+    }
+}

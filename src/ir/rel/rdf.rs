@@ -58,7 +58,12 @@ pub(crate) fn binding_identity_columns(binding: &str) -> [String; 3] {
 
 impl RdfTermColumns {
     pub fn new(value: impl Into<String>, kind: impl Into<String>) -> Self {
-        Self { value: value.into(), kind: kind.into(), datatype: None, language: None }
+        Self {
+            value: value.into(),
+            kind: kind.into(),
+            datatype: None,
+            language: None,
+        }
     }
 
     pub fn datatype(mut self, column: impl Into<String>) -> Self {
@@ -164,7 +169,10 @@ impl RdfDatasetMapping {
     }
 
     pub fn has_typed_sources(&self) -> bool {
-        self.sources.values().flatten().any(|source| source.typed_terms.is_some())
+        self.sources
+            .values()
+            .flatten()
+            .any(|source| source.typed_terms.is_some())
     }
 
     fn source_plan(&self, source: &IriQuadSource) -> RelResult<LogicalPlan> {
@@ -203,7 +211,9 @@ fn iri_column(plan: &LogicalPlan, name: &str) -> RelResult<Expr> {
 }
 
 fn null_safe_eq(left: Expr, right: Expr) -> Expr {
-    left.clone().eq(right.clone()).or(left.is_null().and(right.is_null()))
+    left.clone()
+        .eq(right.clone())
+        .or(left.is_null().and(right.is_null()))
 }
 
 fn constant_identity_conditions(
@@ -214,24 +224,46 @@ fn constant_identity_conditions(
     datatype: Option<&str>,
     language: Option<&str>,
 ) -> Vec<Expr> {
-    let datatype = datatype.map(|value| lit(value.to_string())).unwrap_or_else(|| lit(ScalarValue::Utf8(None)));
-    let language = language.map(|value| lit(value.to_ascii_lowercase())).unwrap_or_else(|| lit(ScalarValue::Utf8(None)));
+    let datatype = datatype
+        .map(|value| lit(value.to_string()))
+        .unwrap_or_else(|| lit(ScalarValue::Utf8(None)));
+    let language = language
+        .map(|value| lit(value.to_ascii_lowercase()))
+        .unwrap_or_else(|| lit(ScalarValue::Utf8(None)));
     vec![
         col_exact(value_column).eq(lit(lexical.to_string())),
         col_exact(&identity[0]).eq(lit(kind.to_string())),
         null_safe_eq(col_exact(&identity[1]), datatype),
-        null_safe_eq(df_string::lower(col_exact(&identity[2])), df_string::lower(language)),
+        null_safe_eq(
+            df_string::lower(col_exact(&identity[2])),
+            df_string::lower(language),
+        ),
     ]
 }
 
 fn literal_identity(value: &crate::ir::expr::Lit) -> (String, String) {
     use crate::ir::expr::Lit;
     match value {
-        Lit::Null => (String::new(), "http://www.w3.org/2001/XMLSchema#string".into()),
-        Lit::Bool(value) => (value.to_string(), "http://www.w3.org/2001/XMLSchema#boolean".into()),
-        Lit::Int(value) => (value.to_string(), "http://www.w3.org/2001/XMLSchema#integer".into()),
-        Lit::Float(value) => (value.to_string(), "http://www.w3.org/2001/XMLSchema#double".into()),
-        Lit::String(value) => (value.clone(), "http://www.w3.org/2001/XMLSchema#string".into()),
+        Lit::Null => (
+            String::new(),
+            "http://www.w3.org/2001/XMLSchema#string".into(),
+        ),
+        Lit::Bool(value) => (
+            value.to_string(),
+            "http://www.w3.org/2001/XMLSchema#boolean".into(),
+        ),
+        Lit::Int(value) => (
+            value.to_string(),
+            "http://www.w3.org/2001/XMLSchema#integer".into(),
+        ),
+        Lit::Float(value) => (
+            value.to_string(),
+            "http://www.w3.org/2001/XMLSchema#double".into(),
+        ),
+        Lit::String(value) => (
+            value.clone(),
+            "http://www.w3.org/2001/XMLSchema#string".into(),
+        ),
     }
 }
 
@@ -241,15 +273,23 @@ fn graph_in(graph_column: &str, allowed: &[String]) -> Expr {
     })
 }
 
-pub(super) fn lower_iri_quad_pattern(
+/// A deduplicated, graph-scoped relation over every mapped quad source of
+/// one dataset. Column names are unique to this scan.
+pub(super) struct QuadSource {
+    pub(super) plan: LogicalPlan,
+    /// Value columns for graph, subject, predicate, and object.
+    pub(super) names: [String; 4],
+    /// Kind, datatype, and language columns for the same four roles.
+    pub(super) identity: [[String; 3]; 4],
+    /// Whether any source carries typed term metadata.
+    pub(super) typed: bool,
+}
+
+pub(super) fn quad_source(
     ctx: &mut LoweringContext<'_>,
     dataset: &str,
     graph_scope: &RdfGraphScope,
-    subject: &RdfTerm,
-    predicate: &RdfTerm,
-    object: &RdfTerm,
-    _outputs: &[String],
-) -> RelResult<LoweredNode> {
+) -> RelResult<QuadSource> {
     if let RdfGraphScope::NamedGraph(term) = graph_scope {
         if !matches!(term, RdfTerm::Iri(_)) {
             return Err(RelError::Unsupported(format!(
@@ -278,24 +318,13 @@ pub(super) fn lower_iri_quad_pattern(
     }
     let typed_dataset = sources.iter().any(|source| source.typed_terms.is_some());
     ctx.rdf_typed_terms_used |= typed_dataset;
-    if !typed_dataset
-        && [subject, predicate, object].iter().any(|term| {
-            !matches!(term, RdfTerm::Variable(_) | RdfTerm::Iri(_))
-        })
-    {
-        return Err(RelError::Unsupported(
-            "IRI-only RDF quad mapping cannot match literal or blank-node terms; a typed RDF term source is required".into(),
-        ));
-    }
 
     let scan_id = ctx.scan_counter;
     ctx.scan_counter += 1;
     let names =
         ["graph", "subject", "predicate", "object"].map(|part| format!("__w_rdf_{scan_id}_{part}"));
     let identity_names = std::array::from_fn::<_, 4, _>(|role| {
-        ["kind", "datatype", "language"].map(|part| {
-            format!("__w_rdf_{scan_id}_term_{role}_{part}")
-        })
+        ["kind", "datatype", "language"].map(|part| format!("__w_rdf_{scan_id}_term_{role}_{part}"))
     });
     let mut branches = Vec::with_capacity(sources.len());
     for source in sources {
@@ -304,9 +333,13 @@ pub(super) fn lower_iri_quad_pattern(
             Some(column) => iri_column(&source_plan, column)?,
             None => lit(ScalarValue::Utf8(None)),
         };
-        let configured_values = source.typed_terms.as_ref().map(|terms| [
-            terms[0].value.as_str(), terms[1].value.as_str(), terms[2].value.as_str(),
-        ]);
+        let configured_values = source.typed_terms.as_ref().map(|terms| {
+            [
+                terms[0].value.as_str(),
+                terms[1].value.as_str(),
+                terms[2].value.as_str(),
+            ]
+        });
         let value_columns = configured_values.unwrap_or([
             source.subject_column.as_str(),
             source.predicate_column.as_str(),
@@ -329,14 +362,16 @@ pub(super) fn lower_iri_quad_pattern(
                 Some(column) => iri_column(&source_plan, column)?,
                 None => lit(ScalarValue::Utf8(None)),
             };
+            // Language tags compare case-insensitively; normalize once at
+            // the source so joins, DISTINCT, and results agree.
             let language = match metadata.and_then(|columns| columns.language.as_deref()) {
-                Some(column) => iri_column(&source_plan, column)?,
+                Some(column) => df_string::lower(iri_column(&source_plan, column)?),
                 None => lit(ScalarValue::Utf8(None)),
             };
             expressions.extend([
-                kind.alias(&identity_names[role][0]),
-                datatype.alias(&identity_names[role][1]),
-                language.alias(&identity_names[role][2]),
+                kind.alias(&identity_names[role + 1][0]),
+                datatype.alias(&identity_names[role + 1][1]),
+                language.alias(&identity_names[role + 1][2]),
             ]);
         }
         branches.push(
@@ -376,11 +411,48 @@ pub(super) fn lower_iri_quad_pattern(
         let mut projections = vec![lit(ScalarValue::Utf8(None)).alias(&names[0])];
         projections.extend(names[1..].iter().map(|name| col_exact(name)));
         projections.extend(identity_names.iter().flatten().map(|name| col_exact(name)));
-        source = LogicalPlanBuilder::from(source).project(projections)?.build()?;
+        source = LogicalPlanBuilder::from(source)
+            .project(projections)?
+            .build()?;
     }
     // RDF graphs are sets. Deduplicate before the join so equal input
     // solution mappings retain their correct multiplicity.
     source = LogicalPlanBuilder::from(source).distinct()?.build()?;
+
+    Ok(QuadSource {
+        plan: source,
+        names,
+        identity: identity_names,
+        typed: typed_dataset,
+    })
+}
+
+pub(super) fn lower_iri_quad_pattern(
+    ctx: &mut LoweringContext<'_>,
+    dataset: &str,
+    graph_scope: &RdfGraphScope,
+    subject: &RdfTerm,
+    predicate: &RdfTerm,
+    object: &RdfTerm,
+    _outputs: &[String],
+) -> RelResult<LoweredNode> {
+    let QuadSource {
+        plan: source,
+        names,
+        identity: identity_names,
+        typed: typed_dataset,
+    } = quad_source(ctx, dataset, graph_scope)?;
+    if !typed_dataset
+        && [subject, predicate, object]
+            .iter()
+            .any(|term| !matches!(term, RdfTerm::Variable(_) | RdfTerm::Iri(_)))
+    {
+        return Err(RelError::Unsupported(
+            "IRI-only RDF quad mapping cannot match literal or blank-node terms; a typed RDF term source is required".into(),
+        ));
+    }
+    let scan_id = ctx.scan_counter;
+    ctx.scan_counter += 1;
 
     let left = ctx.correlate_plan.clone();
     let mut combined = if let Some(left) = &left {
@@ -412,15 +484,34 @@ pub(super) fn lower_iri_quad_pattern(
             RdfTerm::Literal(value) => {
                 let (lexical, datatype) = literal_identity(value);
                 conditions.extend(constant_identity_conditions(
-                    column, identity, "LITERAL", &lexical, Some(&datatype), None,
+                    column,
+                    identity,
+                    "LITERAL",
+                    &lexical,
+                    Some(&datatype),
+                    None,
                 ));
             }
-            RdfTerm::LanguageTagged { value, lang } => conditions.extend(
-                constant_identity_conditions(column, identity, "LITERAL", value, Some("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"), Some(lang)),
-            ),
-            RdfTerm::Typed { lexical, datatype } => conditions.extend(
-                constant_identity_conditions(column, identity, "LITERAL", lexical, Some(datatype), None),
-            ),
+            RdfTerm::LanguageTagged { value, lang } => {
+                conditions.extend(constant_identity_conditions(
+                    column,
+                    identity,
+                    "LITERAL",
+                    value,
+                    Some("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"),
+                    Some(lang),
+                ))
+            }
+            RdfTerm::Typed { lexical, datatype } => {
+                conditions.extend(constant_identity_conditions(
+                    column,
+                    identity,
+                    "LITERAL",
+                    lexical,
+                    Some(datatype),
+                    None,
+                ))
+            }
             RdfTerm::BlankNode(value) => conditions.extend(constant_identity_conditions(
                 column, identity, "BLANK", value, None, None,
             )),
@@ -438,7 +529,9 @@ pub(super) fn lower_iri_quad_pattern(
                     conditions.push(col_exact(column).eq(col_exact(variable)));
                     let previous_identity = binding_identity_columns(variable);
                     if left.as_ref().is_some_and(|plan| {
-                        previous_identity.iter().all(|name| resolve_column_name(plan, name).is_some())
+                        previous_identity
+                            .iter()
+                            .all(|name| resolve_column_name(plan, name).is_some())
                     }) {
                         for (current, previous) in identity.iter().zip(previous_identity.iter()) {
                             conditions.push(null_safe_eq(col_exact(current), col_exact(previous)));
@@ -463,7 +556,9 @@ pub(super) fn lower_iri_quad_pattern(
         if let Some(previous) = variables.get(variable) {
             conditions.push(col_exact(&names[0]).eq(col_exact(previous)));
             let previous_identity = variable_identities.get(variable).ok_or_else(|| {
-                RelError::Unsupported(format!("RDF graph variable `{variable}` lacks term identity metadata"))
+                RelError::Unsupported(format!(
+                    "RDF graph variable `{variable}` lacks term identity metadata"
+                ))
             })?;
             for (current, previous) in identity_names[0].iter().zip(previous_identity) {
                 conditions.push(null_safe_eq(col_exact(current), col_exact(previous)));
@@ -475,7 +570,9 @@ pub(super) fn lower_iri_quad_pattern(
             conditions.push(col_exact(&names[0]).eq(col_exact(variable)));
             let previous_identity = binding_identity_columns(variable);
             if left.as_ref().is_some_and(|plan| {
-                previous_identity.iter().all(|name| resolve_column_name(plan, name).is_some())
+                previous_identity
+                    .iter()
+                    .all(|name| resolve_column_name(plan, name).is_some())
             }) {
                 for (current, previous) in identity_names[0].iter().zip(previous_identity.iter()) {
                     conditions.push(null_safe_eq(col_exact(current), col_exact(previous)));
@@ -512,9 +609,12 @@ pub(super) fn lower_iri_quad_pattern(
     );
     for (variable, columns) in &variable_identities {
         let aliases = binding_identity_columns(variable);
-        projections.extend(columns.iter().zip(aliases).map(|(column, alias)| {
-            col_exact(column).alias(alias)
-        }));
+        projections.extend(
+            columns
+                .iter()
+                .zip(aliases)
+                .map(|(column, alias)| col_exact(column).alias(alias)),
+        );
     }
     if projections.is_empty() {
         projections.push(lit(1_i64).alias(format!("__w_rdf_{scan_id}_match")));

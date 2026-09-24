@@ -1,6 +1,6 @@
 //! Function-name registry for the Cypher runtime.
 //!
-//! The dispatch in [`super::eval_call`] and [`super::cypher_call`] is a
+//! The dispatch in [`super::eval_call`] and [`super::cypher::cypher_call`] is a
 //! large `match (name, args)` table. Historically, alias groups like
 //! `tofloat` / `to_float` / `float` reached the table separately and
 //! could be split across reachable and unreachable arms, so adding a

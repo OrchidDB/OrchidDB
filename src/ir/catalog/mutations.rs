@@ -1,0 +1,305 @@
+//! Writes to the session-local property graph overlay.
+
+use super::*;
+
+impl PropertyGraph {
+    /// Append an edge between two node values. Returns the new edge value.
+    pub fn insert_edge(
+        &self,
+        rel_type: impl Into<String>,
+        src: &Value,
+        dst: &Value,
+        properties: BTreeMap<String, Value>,
+    ) -> CatalogResult<Value> {
+        let rel_type = rel_type.into();
+        let (src_label, src_id) = node_ref(src, &rel_type, "source")?;
+        let (dst_label, dst_id) = node_ref(dst, &rel_type, "destination")?;
+        if !self.node_is_live(&src_label, src_id) {
+            return Err(CatalogError::Schema(format!(
+                "relationship `{rel_type}` source node `{src_label}#{src_id}` does not exist"
+            )));
+        }
+        if !self.node_is_live(&dst_label, dst_id) {
+            return Err(CatalogError::Schema(format!(
+                "relationship `{rel_type}` destination node `{dst_label}#{dst_id}` does not exist"
+            )));
+        }
+        let declared = self.rel_endpoint_labels(&rel_type);
+        if !declared.is_empty()
+            && !declared
+                .iter()
+                .any(|(s, d)| s == &src_label && d == &dst_label)
+        {
+            return Err(CatalogError::Schema(format!(
+                "relationship `{rel_type}` endpoints `{src_label}`→`{dst_label}` \
+                 do not match the declared endpoint labels"
+            )));
+        }
+        let base = self
+            .edge_row_counts
+            .get(&rel_type)
+            .copied()
+            .unwrap_or_else(|| {
+                self.edges
+                    .get(&rel_type)
+                    .map(|table| table.batch.num_rows() as i64)
+                    .unwrap_or(0)
+            });
+        let mut overlay = self.overlay.borrow_mut();
+        let counter = overlay
+            .inserted_edge_counts
+            .entry(rel_type.clone())
+            .or_insert(0);
+        let id = base + *counter;
+        *counter += 1;
+        overlay
+            .inserted_out_adj
+            .entry((src_label.clone(), src_id))
+            .or_default()
+            .push((rel_type.clone(), id));
+        overlay
+            .inserted_in_adj
+            .entry((dst_label.clone(), dst_id))
+            .or_default()
+            .push((rel_type.clone(), id));
+        note_keys(&mut overlay.inserted_edge_keys, &rel_type, &properties);
+        overlay.inserted_edges.insert(
+            (rel_type.clone(), id),
+            InsertedEdge {
+                src_label: src_label.clone(),
+                src_id,
+                dst_label: dst_label.clone(),
+                dst_id,
+                properties,
+            },
+        );
+        self.pending
+            .borrow_mut()
+            .edges
+            .insert((rel_type.clone(), id));
+        Ok(Value::Edge {
+            rel_type,
+            id,
+            src_label,
+            src_id,
+            dst_label,
+            dst_id,
+            projected_properties: None,
+        })
+    }
+
+    pub fn insert_node(
+        &self,
+        label: impl Into<String>,
+        properties: BTreeMap<String, Value>,
+    ) -> Value {
+        let label = label.into();
+        let base_rows = self
+            .nodes
+            .get(&label)
+            .map(|table| table.batch.num_rows() as i64)
+            .unwrap_or(0);
+        let mut overlay = self.overlay.borrow_mut();
+        let counter = overlay
+            .inserted_node_counts
+            .entry(label.clone())
+            .or_insert(0);
+        let id = base_rows + *counter;
+        *counter += 1;
+        note_keys(&mut overlay.inserted_node_keys, &label, &properties);
+        overlay
+            .inserted_nodes
+            .insert((label.clone(), id), properties);
+        self.pending.borrow_mut().nodes.insert((label.clone(), id));
+        Value::Node { label, id }
+    }
+
+    pub fn set_property(
+        &self,
+        target: &Value,
+        key: impl Into<String>,
+        value: Value,
+    ) -> CatalogResult<()> {
+        let key = key.into();
+        match target {
+            Value::Node { label, id } => {
+                let node_key = (label.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_nodes.contains(&node_key) {
+                    return Ok(());
+                }
+                self.pending.borrow_mut().nodes.insert(node_key.clone());
+                if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
+                    if matches!(value, Value::Null) {
+                        props.remove(&key);
+                    } else {
+                        props.insert(key.clone(), value);
+                        note_key(&mut overlay.inserted_node_keys, label, &key);
+                    }
+                } else if matches!(value, Value::Null) {
+                    // A null assignment removes the property; store a null
+                    // override so any base-table column stays shadowed.
+                    overlay
+                        .node_property_overrides
+                        .entry(node_key)
+                        .or_default()
+                        .insert(key.clone(), Value::Null);
+                } else {
+                    overlay
+                        .node_property_overrides
+                        .entry(node_key)
+                        .or_default()
+                        .insert(key.clone(), value);
+                    note_key(&mut overlay.override_node_keys, label, &key);
+                }
+                Ok(())
+            }
+            Value::Edge { rel_type, id, .. } => {
+                let edge_key = (rel_type.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_edges.contains(&edge_key) {
+                    return Ok(());
+                }
+                self.pending.borrow_mut().edges.insert(edge_key.clone());
+                if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
+                    if matches!(value, Value::Null) {
+                        edge.properties.remove(&key);
+                    } else {
+                        edge.properties.insert(key.clone(), value);
+                        note_key(&mut overlay.inserted_edge_keys, rel_type, &key);
+                    }
+                } else if matches!(value, Value::Null) {
+                    overlay
+                        .edge_property_overrides
+                        .entry(edge_key)
+                        .or_default()
+                        .insert(key.clone(), Value::Null);
+                } else {
+                    overlay
+                        .edge_property_overrides
+                        .entry(edge_key)
+                        .or_default()
+                        .insert(key.clone(), value);
+                    note_key(&mut overlay.override_edge_keys, rel_type, &key);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Apply a whole property map to an element. `replace` discards every
+    /// property not named in `properties` (Cypher `n = {…}`); otherwise the
+    /// map is merged over the existing bag (`n += {…}`).
+    pub fn set_properties(
+        &self,
+        target: &Value,
+        properties: BTreeMap<String, Value>,
+        replace: bool,
+    ) -> CatalogResult<()> {
+        match target {
+            Value::Node { label, id } => {
+                let node_key = (label.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_nodes.contains(&node_key) {
+                    return Ok(());
+                }
+                self.pending.borrow_mut().nodes.insert(node_key.clone());
+                if let Some(props) = overlay.inserted_nodes.get_mut(&node_key) {
+                    if replace {
+                        *props = properties.clone();
+                    } else {
+                        props.extend(properties.clone());
+                    }
+                    note_keys(&mut overlay.inserted_node_keys, label, &properties);
+                    return Ok(());
+                }
+                note_keys(&mut overlay.override_node_keys, label, &properties);
+                if replace {
+                    overlay.replaced_node_properties.insert(node_key.clone());
+                    overlay.node_property_overrides.insert(node_key, properties);
+                } else {
+                    overlay
+                        .node_property_overrides
+                        .entry(node_key)
+                        .or_default()
+                        .extend(properties);
+                }
+                Ok(())
+            }
+            Value::Edge { rel_type, id, .. } => {
+                let edge_key = (rel_type.clone(), *id);
+                let mut overlay = self.overlay.borrow_mut();
+                if overlay.deleted_edges.contains(&edge_key) {
+                    return Ok(());
+                }
+                self.pending.borrow_mut().edges.insert(edge_key.clone());
+                if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
+                    if replace {
+                        edge.properties = properties.clone();
+                    } else {
+                        edge.properties.extend(properties.clone());
+                    }
+                    note_keys(&mut overlay.inserted_edge_keys, rel_type, &properties);
+                    return Ok(());
+                }
+                note_keys(&mut overlay.override_edge_keys, rel_type, &properties);
+                if replace {
+                    overlay.replaced_edge_properties.insert(edge_key.clone());
+                    overlay.edge_property_overrides.insert(edge_key, properties);
+                } else {
+                    overlay
+                        .edge_property_overrides
+                        .entry(edge_key)
+                        .or_default()
+                        .extend(properties);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub fn delete_value(&self, target: &Value, detach: bool) -> CatalogResult<()> {
+        match target {
+            Value::Node { label, id } => {
+                let outgoing = self.out_edges(label, *id, &[]);
+                let incoming = self.in_edges(label, *id, &[]);
+                if detach {
+                    let mut overlay = self.overlay.borrow_mut();
+                    for (rel_type, edge_row, _, _) in outgoing.iter().chain(incoming.iter()) {
+                        overlay.deleted_edges.insert((rel_type.clone(), *edge_row));
+                        self.pending
+                            .borrow_mut()
+                            .edges
+                            .insert((rel_type.clone(), *edge_row));
+                    }
+                } else if !outgoing.is_empty() || !incoming.is_empty() {
+                    return Err(CatalogError::DeleteIntegrity(format!(
+                        "cannot delete node `{label}` (id {id}): it still has relationships; \
+                         use DETACH DELETE to remove them first"
+                    )));
+                }
+                self.overlay
+                    .borrow_mut()
+                    .deleted_nodes
+                    .insert((label.clone(), *id));
+                self.pending.borrow_mut().nodes.insert((label.clone(), *id));
+                Ok(())
+            }
+            Value::Edge { rel_type, id, .. } => {
+                self.overlay
+                    .borrow_mut()
+                    .deleted_edges
+                    .insert((rel_type.clone(), *id));
+                self.pending
+                    .borrow_mut()
+                    .edges
+                    .insert((rel_type.clone(), *id));
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+}

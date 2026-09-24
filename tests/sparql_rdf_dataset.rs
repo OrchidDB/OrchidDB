@@ -81,7 +81,8 @@ async fn duckdb_rows(query: &str) -> Vec<Vec<String>> {
         .unwrap_or_else(|error| panic!("{error}: {sql}"));
     (0..output.batch.num_rows())
         .map(|row| {
-            (0..output.batch.num_columns())
+            // Visible fields come first; RDF term identity columns follow.
+            (0..output.fields.len())
                 .map(|column| {
                     output
                         .batch
@@ -226,5 +227,35 @@ fn typed_literal_cannot_be_compared_as_iri_text() {
     assert!(
         error.to_string().contains("typed RDF term source"),
         "{error}"
+    );
+}
+
+#[tokio::test]
+async fn graph_variable_groups_and_optional_scopes_execute() {
+    let rows = duckdb_rows(
+        "SELECT ?g (COUNT(*) AS ?c) WHERE { GRAPH ?g { ?s ?p ?o } } GROUP BY ?g ORDER BY ?g",
+    )
+    .await;
+    assert_eq!(
+        rows,
+        vec![
+            vec![format!("{EX}graph"), "1".to_string()],
+            vec![format!("{EX}graph2"), "1".to_string()],
+        ]
+    );
+    // The default graph is a set: the duplicated source row counts once.
+    let rows = duckdb_rows("SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }").await;
+    assert_eq!(rows, vec![vec!["2".to_string()]]);
+    let rows = duckdb_rows(
+        "PREFIX ex: <https://example.com/> SELECT ?s ?g WHERE { ?s ex:knows ?o OPTIONAL { GRAPH ?g { ?s ex:knows ex:dana } } } ORDER BY ?s ?g",
+    )
+    .await;
+    assert_eq!(
+        rows,
+        vec![
+            vec![format!("{EX}alice"), format!("{EX}graph")],
+            vec![format!("{EX}alice"), format!("{EX}graph2")],
+            vec![format!("{EX}bob"), String::new()],
+        ]
     );
 }
