@@ -513,11 +513,12 @@ fn merge_vertex_single_cardinality_values_are_real_values() {
         ),
         vec![Value::Int(82)]
     );
-    assert!(
-        parse_traversal(
-            "g.mergeV(['name':'alice']).option(Merge.onCreate,['age':Cardinality.list(81I)])"
-        )
-        .is_err()
+    assert_eq!(
+        graph_values(
+            "g.mergeV(['name':'bob']).option(Merge.onCreate,['age':Cardinality.list(81I)]).values('age')",
+            &graph,
+        ),
+        vec![Value::Int(81)]
     );
 }
 

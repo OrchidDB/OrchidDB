@@ -28,7 +28,7 @@ pub(super) fn lower_cast_scalar(input: Node, target: CastTarget) -> Node {
             NumericCast::Double => "cast_double",
             NumericCast::BigDecimal => "cast_bigdecimal",
         },
-        CastTarget::String => "cast_string",
+        CastTarget::String => "gremlin_cast_string",
         CastTarget::Bool => "cast_bool",
         CastTarget::Date => "gremlin_cast_date",
     };

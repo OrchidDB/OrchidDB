@@ -228,6 +228,9 @@ impl Value {
             _ => {}
         }
         Some(match (self, other) {
+            (Self::VertexProperty{id:a,..},Self::VertexProperty{id:b,..})=>a==b,
+            (Self::Property{key:a,value:x,..},Self::Property{key:b,value:y,..})=>a==b && x==y,
+
             (a, b) if numeric_decimal(a).is_some() || numeric_decimal(b).is_some() => {
                 match (numeric_decimal(a), numeric_decimal(b)) {
                     (Some(a), Some(b)) => a == b,

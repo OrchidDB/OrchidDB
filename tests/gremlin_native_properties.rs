@@ -56,6 +56,15 @@ fn list_scalar_and_multi_records_are_distinct_and_stable() {
         .set_vertex_property(&v, "tags", Value::Int(3), Cardinality::Set, BTreeMap::new())
         .unwrap();
     assert_eq!(id(&set), id(&q));
+    let empty_map = g
+        .set_vertex_property(
+            &v,
+            "empty",
+            Value::Map(BTreeMap::new()),
+            Cardinality::Single,
+            BTreeMap::new(),
+        )
+        .unwrap();
     let restored = decode_graph(&encode_graph(&g).unwrap()).unwrap();
     assert_eq!(restored.properties(&v, &[]), g.properties(&v, &[]));
     let r = restored
@@ -68,7 +77,8 @@ fn list_scalar_and_multi_records_are_distinct_and_stable() {
         )
         .unwrap();
     assert!(id(&r) > id(&q));
-    assert_eq!(restored.properties(&v, &[]), vec![r]);
+    assert_eq!(restored.properties(&v, &["tags".into()]), vec![r]);
+    assert_eq!(restored.properties(&v, &["empty".into()]), vec![empty_map]);
 }
 #[test]
 fn meta_properties_drop_only_targeted_records() {
@@ -180,4 +190,55 @@ fn property_map_cardinality_defaults_and_per_key_overrides() {
         vec![Value::Long(3)]
     );
     assert_eq!(values(&graph, "g.V().values('age')"), vec![Value::Int(44)]);
+}
+
+#[test]
+fn imported_property_ids_reserve_generated_ids_and_typed_set_members_stay_distinct() {
+    let graph = PropertyGraph::new();
+    let v = graph.insert_node("x", BTreeMap::new());
+    let first = graph
+        .set_vertex_property(&v, "x", Value::Int(1), Cardinality::Set, BTreeMap::new())
+        .unwrap();
+    graph
+        .set_vertex_property_public_id(&first, Value::Long(1000))
+        .unwrap();
+    let second = graph
+        .set_vertex_property(&v, "x", Value::Long(1), Cardinality::Set, BTreeMap::new())
+        .unwrap();
+    assert_eq!(graph.properties(&v, &[]).len(), 2);
+    assert!(graph.element_public_id(&second).as_i64().unwrap() > 1000);
+}
+#[test]
+fn ordinary_property_equality_compares_key_and_value_across_owners() {
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node("x", BTreeMap::new());
+    let b = graph.insert_node("y", BTreeMap::new());
+    for (src, dst) in [(&a, &b), (&b, &a)] {
+        graph
+            .insert_edge("route", src, dst, [("weight".into(), Value::Int(9))].into())
+            .unwrap();
+    }
+    assert_eq!(
+        values(&graph, "g.E().properties('weight').dedup().count()"),
+        vec![Value::Long(1)]
+    );
+}
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn scalar_element_strings_keep_public_ids_across_sql_boundaries() {
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    engine.gremlin("g.addV('x').property(T.id,'left').as('a').addV('y').property(T.id,'right').addE('route').from('a').property(T.id,'link')").await.unwrap();
+    let vertices = engine.gremlin("g.V().asString()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &vertices.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], "v[left]");
+    assert_eq!(rows[1][0]["value"], "v[right]");
+    let edges = engine.gremlin("g.E().asString()").await.unwrap();
+    let rows: serde_json::Value = serde_json::from_str(
+        &edges.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+    )
+    .unwrap();
+    assert_eq!(rows[0][0]["value"], "e[link][left-route->right]");
 }

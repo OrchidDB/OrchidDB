@@ -122,6 +122,14 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
         "nextval",
         "currval",
         "tinker_search",
+        "gremlin_cast_string",
+        "requested_property_values",
+        "properties_list",
+        "property_map",
+        "value_map",
+        "value_map_tokens",
+        "element_map",
+        "gremlin_id",
     ];
     if DENY.contains(&normalized.as_str()) {
         return false;
@@ -850,6 +858,14 @@ mod folding_tests {
             "stats",
             "uuid_extract_version",
             "tinker_search",
+            "gremlin_cast_string",
+            "requested_property_values",
+            "properties_list",
+            "property_map",
+            "value_map",
+            "value_map_tokens",
+            "element_map",
+            "gremlin_id",
         ] {
             let call = IrExpr::Call {
                 name: name.into(),
