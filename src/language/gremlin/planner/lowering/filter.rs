@@ -24,17 +24,10 @@ pub(super) fn lower_has_label(input: Node, labels: &[String]) -> GremlinPlanResu
 }
 
 pub(super) fn lower_has(input: Node, key: &str, predicate: &Predicate) -> GremlinPlanResult<Node> {
-    let property = IrExpr::property(CURRENT, key.to_string(), PropertyMissing::DropUnproductive);
-    let exists = IrExpr::IsNotNull(Box::new(IrExpr::property(
-        CURRENT,
-        key.to_string(),
-        PropertyMissing::NullOnMissing,
-    )));
-    let predicate = predicate_to_expr(property, predicate)?;
-    Ok(Node::GraphFilter {
-        condition: IrExpr::and(vec![exists, predicate]),
-        input: input.boxed(),
-    })
+    let candidate="__gremlin_has_property_value";
+    let values=IrExpr::Call{name:"requested_property_values".into(),args:vec![IrExpr::Binding(CURRENT.into()),IrExpr::List(vec![IrExpr::lit_str(key)])]};
+    let matches=IrExpr::ListFilter{list:Box::new(values),item:candidate.into(),predicate:Box::new(predicate_to_expr(IrExpr::Binding(candidate.into()),predicate)?)};
+    Ok(Node::GraphFilter{condition:IrExpr::Binary{op:crate::ir::expr::BinaryOp::Gt,lhs:Box::new(IrExpr::Call{name:"size".into(),args:vec![matches]}),rhs:Box::new(IrExpr::lit_int(0))},input:input.boxed()})
 }
 
 pub(super) fn lower_has_not(input: Node, key: &str) -> GremlinPlanResult<Node> {

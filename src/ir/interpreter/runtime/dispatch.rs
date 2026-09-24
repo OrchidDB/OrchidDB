@@ -363,6 +363,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),
         ("map_get_display", [Value::TypedMap(entries), key]) => Ok(entries.iter().find(|(candidate, _)| candidate == key).map(|(_, value)| value.clone()).unwrap_or(Value::Null)),
         ("local_count", [Value::TypedMap(entries)]) => Ok(Value::Long(entries.len() as i64)),
+        ("requested_property_values", [target, Value::List(keys)]) => Ok(super::property_object::requested_property_values(target,&keys.iter().filter_map(|k|if let Value::String(k)=k {Some(k.clone())}else{None}).collect::<Vec<_>>(),graph)),
         ("map_keys", [Value::MapEntry(pair)]) => Ok(pair.0.clone()),
         ("map_values", [Value::MapEntry(pair)]) => Ok(pair.1.clone()),
         ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
@@ -1055,8 +1056,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         // is best-effort: an inconvertible input yields `null` rather
         // than a hard error so the surrounding chain still produces a
         // row stream the harness can compare.
-        ("cast_string", [v]) => Ok(cast_to_string(v)),
-        ("local_cast_string", [v]) => Ok(cast_list_to_string(v)),
+        ("cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,false)),
+        ("local_cast_string", [v]) => Ok(super::casts::cast_graph_string(v,graph,true)),
         ("local_cast_number", [Value::List(items)]) => {
             Ok(Value::List(items.iter().map(cast_to_number).collect()))
         }

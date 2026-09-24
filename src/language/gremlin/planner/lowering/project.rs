@@ -8,100 +8,18 @@ use super::context::{CURRENT, Lowerer, PATH, TraversalContext};
 use super::helpers::{apply_project_by_spec, consume_by};
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::{IrExpr, Lit};
-use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, UnionAlign};
-use crate::ir::policy::PropertyMissing;
+use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem};
+
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
-pub(super) fn lower_values(input: Node, keys: &[String], lo: &Lowerer) -> GremlinPlanResult<Node> {
-    if keys.len() == 1 {
-        if has_vertex_property_filter(lo) && keys[0] == "location" {
-            let project = Node::GraphCurrentProject {
-                expr: IrExpr::Call {
-                    name: "gremlin_visible_vertex_property_values".into(),
-                    args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_str("location")],
-                },
-                fields: vec![CURRENT.to_string()],
-                input: input.boxed(),
-            };
-            return Ok(Node::GraphUnwind {
-                input_expr: IrExpr::Binding(CURRENT.into()),
-                bind: CURRENT.into(),
-                outer: false,
-                input: project.boxed(),
-            });
-        }
-        Ok(current_project_property(input, &keys[0]))
-    } else if keys.is_empty() {
-        // `values()` (no keys) — runtime helper enumerates the bound
-        // element's properties and returns a list, then `Unwind`
-        // fan-outs one row per (element, property).
-        let project = Node::GraphCurrentProject {
-            expr: IrExpr::Call {
-                name: "all_property_values".into(),
-                args: vec![IrExpr::Binding(CURRENT.into())],
-            },
-            fields: vec![CURRENT.to_string()],
-            input: input.boxed(),
-        };
-        Ok(Node::GraphUnwind {
-            input_expr: IrExpr::Binding(CURRENT.into()),
-            bind: CURRENT.into(),
-            outer: false,
-            input: project.boxed(),
-        })
-    } else {
-        // values('a','b'): one row per (input, key) where the property is
-        // non-null. Lower as a union of CurrentProject probes.
-        let mut iter = keys.iter();
-        let first = iter.next().unwrap();
-        let mut acc = current_project_property(input.clone(), first);
-        for k in iter {
-            let next = current_project_property(input.clone(), k);
-            acc = Node::GraphUnion {
-                all: true,
-                align: UnionAlign::ByPosition,
-                left: acc.boxed(),
-                right: next.boxed(),
-            };
-        }
-        Ok(acc)
-    }
-}
-
-fn has_vertex_property_filter(lo: &Lowerer) -> bool {
-    lo.subgraph_vertex_property_filter.is_some()
-}
-
-fn current_project_property(input: Node, key: &str) -> Node {
-    let expr = IrExpr::property(CURRENT, key.to_string(), PropertyMissing::DropUnproductive);
-    let input = Node::GraphFilter {
-        condition: IrExpr::IsNotNull(Box::new(expr.clone())),
-        input: input.boxed(),
+pub(super) fn lower_values(input: Node, keys: &[String], _lo: &Lowerer) -> GremlinPlanResult<Node> {
+    let project = Node::GraphCurrentProject {
+        expr: IrExpr::Call {name:"requested_property_values".into(),args:vec![IrExpr::Binding(CURRENT.into()),IrExpr::List(keys.iter().map(|key|IrExpr::lit_str(key)).collect())]},
+        fields:vec![CURRENT.into()],input:input.boxed(),
     };
-    Node::GraphProject {
-        mode: ProjectMode::ReplaceCurrent,
-        items: vec![
-            ProjectionItem {
-                alias: CURRENT.into(),
-                expr: expr.clone(),
-            },
-            ProjectionItem {
-                alias: PATH.into(),
-                expr: IrExpr::Call {
-                    name: "path_append_after".into(),
-                    args: vec![
-                        IrExpr::Binding(PATH.into()),
-                        IrExpr::Binding(CURRENT.into()),
-                        expr,
-                    ],
-                },
-            },
-        ],
-        error_policy: ProjectErrorPolicy::PropagateError,
-        input: input.boxed(),
-    }
+    Ok(Node::GraphUnwind {input_expr:IrExpr::Binding(CURRENT.into()),bind:CURRENT.into(),outer:false,input:project.boxed()})
 }
 
 pub(super) fn lower_id(input: Node) -> Node {

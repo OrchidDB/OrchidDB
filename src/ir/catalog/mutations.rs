@@ -114,7 +114,17 @@ impl PropertyGraph {
         Value::Node { label, id }
     }
 
-    pub fn set_property(
+    pub fn set_property(&self, target: &Value, key: impl Into<String>, value: Value) -> CatalogResult<()> {
+        let key = key.into();
+        if matches!(target, Value::VertexProperty { .. }) { return self.set_meta_property(target, &key, value); }
+        if let Value::Node {label,id} = target {
+            // Scalar language writes replace any existing Gremlin multi-property.
+            self.overlay.borrow_mut().vertex_properties.entry((label.clone(),*id)).or_default().remove(&key);
+        }
+        self.set_property_scalar(target,key,value)
+    }
+
+    pub(super) fn set_property_scalar(
         &self,
         target: &Value,
         key: impl Into<String>,
@@ -197,6 +207,11 @@ impl PropertyGraph {
         properties: BTreeMap<String, Value>,
         replace: bool,
     ) -> CatalogResult<()> {
+        if let Value::Node{label,id}=target {
+            let mut overlay=self.overlay.borrow_mut();
+            if replace {overlay.vertex_properties.remove(&(label.clone(),*id));}
+            else if let Some(records)=overlay.vertex_properties.get_mut(&(label.clone(),*id)) {for key in properties.keys(){records.remove(key);}}
+        }
         match target {
             Value::Node { label, id } => {
                 let node_key = (label.clone(), *id);
@@ -262,6 +277,7 @@ impl PropertyGraph {
 
     pub fn delete_value(&self, target: &Value, detach: bool) -> CatalogResult<()> {
         match target {
+            Value::VertexProperty { .. } | Value::Property { .. } => self.remove_property(target),
             Value::Node { label, id } => {
                 let outgoing = self.out_edges(label, *id, &[]);
                 let incoming = self.in_edges(label, *id, &[]);

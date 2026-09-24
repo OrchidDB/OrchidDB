@@ -3,7 +3,7 @@ use super::*;
 use crate::language::gremlin::ast::{MergeVertexMap, MutationArgument};
 
 impl LoweringVisitor {
-    fn parse_merge_map<'input>(
+    pub(super) fn parse_merge_map<'input>(
         &mut self,
         argument: Option<Rc<GenericMapNullableArgumentContextAll<'input>>>,
         allow_cardinality: bool,
@@ -34,10 +34,11 @@ impl LoweringVisitor {
             }
             let cardinality = value.traversalCardinality();
             let single = cardinality.is_some();
+            let cardinality_name = cardinality.as_ref().map(|c| c.get_text().split('(').next().unwrap_or("list").rsplit('.').next().unwrap_or("list").to_string());
             if let Some(cardinality) = cardinality {
-                if !allow_cardinality || cardinality.K_SINGLE().is_none() {
+                if !allow_cardinality {
                     return Err(GremlinError::Unsupported(
-                        "mergeV cardinality value requires single in an option map".into(),
+                        "mergeV cardinality values require an option map".into(),
                     ));
                 }
                 let inner = cardinality.genericLiteral().ok_or_else(|| {
@@ -97,11 +98,13 @@ impl LoweringVisitor {
                 let key = super::literals::decode_string_literal(&string.get_text())?;
                 if single {
                     result.single_properties.insert(key.clone());
+                    result.cardinalities.insert(key.clone(),cardinality_name.clone().unwrap());
                 }
                 result.properties.insert(key, value);
             } else if key.nakedKey().is_some() || key.keyword().is_some() {
                 if single {
                     result.single_properties.insert(key.get_text());
+                    result.cardinalities.insert(key.get_text(),cardinality_name.clone().unwrap());
                 }
                 result.properties.insert(key.get_text(), value);
             } else {
@@ -166,6 +169,10 @@ impl LoweringVisitor {
         let mut options = BTreeMap::new();
         for (key, value) in [("onCreate", on_create), ("onMatch", on_match)] {
             if let Some(value) = value {
+                if let Some(map)=&value {
+                    options.insert(format!("{key}Cardinalities"),MutationArgument::Literal(GValue::Map(map.cardinalities.iter().map(|(k,v)|(k.clone(),GValue::String(v.clone()))).collect())));
+                    if let Some(default)=&map.default_cardinality {options.insert(format!("{key}Cardinality"),MutationArgument::Literal(GValue::String(default.clone())));}
+                }
                 options.insert(
                     key.into(),
                     MutationArgument::Literal(value.map(|m| m.literal()).unwrap_or(GValue::Null)),
@@ -230,22 +237,20 @@ impl LoweringVisitor {
             }
             return;
         }
-        let TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) = ctx
-        else {
-            self.fail(GremlinError::Unsupported(
-                "mergeV option requires a static map".into(),
-            ));
-            return;
+        let (argument,option,default_cardinality)=match ctx {
+            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c)=>(c.genericMapNullableArgument(),c.traversalMerge().map(|t|t.get_text()).unwrap_or_default(),None),
+            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_Map_CardinalityContext(c)=>(c.genericMapNullableArgument(),c.traversalMerge().map(|t|t.get_text()).unwrap_or_default(),c.traversalCardinality().map(|c|c.get_text().rsplit('.').next().unwrap_or("list").to_string())),
+            _=>{self.fail(GremlinError::Unsupported("mergeV option requires a map".into()));return}
         };
         let edge = matches!(self.steps.last(), Some(Step::MergeE { .. }));
-        let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
-        let value = match self.parse_merge_map(c.genericMapNullableArgument(), !edge, edge) {
+        let mut value = match self.parse_merge_map(argument, !edge, edge) {
             Ok(value) => value,
             Err(error) => {
                 self.fail(error);
                 return;
             }
         };
+        if let Some(map)=value.as_mut(){map.default_cardinality=default_cardinality;}
         let Some(
             Step::MergeV {
                 on_create,

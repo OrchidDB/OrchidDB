@@ -66,6 +66,7 @@ impl LoweringVisitor {
                 Step::Property { .. }
                     | Step::PropertyTraversal { .. }
                     | Step::PropertyDynamic { .. }
+                    | Step::PropertyNative { .. }
             )
         }) else {
             return false;
@@ -104,80 +105,50 @@ impl LoweringVisitor {
         &mut self,
         ctx: &TraversalMethod_propertyContextAll<'input>,
     ) {
+        let map_form=match ctx {
+            TraversalMethod_propertyContextAll::TraversalMethod_property_ObjectContext(c)=>Some((c.genericMapNullableArgument(),"single".to_string())),
+            TraversalMethod_propertyContextAll::TraversalMethod_property_Cardinality_ObjectContext(c)=>Some((c.genericMapNullableArgument(),c.traversalCardinality().map(|c|c.get_text().rsplit('.').next().unwrap_or("single").to_string()).unwrap_or_else(||"single".into()))),
+            _=>None,
+        };
+        if let Some((argument,default))=map_form {
+            match self.parse_merge_map(argument,true,false) {
+                Ok(Some(map))=>{
+                    for (key,value) in map.properties {let cardinality=map.cardinalities.get(&key).cloned().unwrap_or_else(||default.clone());self.steps.push(Step::PropertyNative{cardinality,key:MutationArgument::Literal(GValue::String(key)),value:MutationArgument::Literal(value),meta:vec![]});}
+                    if let Some(id)=map.id {self.steps.push(Step::PropertyNative{cardinality:"single".into(),key:MutationArgument::Literal(GValue::Token("id".into())),value:MutationArgument::Literal(id),meta:vec![]});}
+                    if map.label.is_some(){self.fail(GremlinError::Unsupported("property map label requires addV".into()));}
+                }
+                Ok(None)=>{},Err(error)=>self.fail(error),
+            }
+            return;
+        }
+        let mut cardinality = "list".to_string();
         let (key, value, extras) = match ctx {
             TraversalMethod_propertyContextAll::TraversalMethod_property_Object_Object_ObjectContext(c) =>
                 (c.genericLiteral(), c.genericArgument(), c.genericArgumentVarargs()),
             TraversalMethod_propertyContextAll::TraversalMethod_property_Cardinality_Object_Object_ObjectContext(c) => {
-                let cardinality = c.traversalCardinality().map(|c| c.get_text()).unwrap_or_default();
-                if cardinality != "single" && cardinality != "Cardinality.single" {
-                    self.fail(GremlinError::Unsupported("property cardinality requires single".into())); return;
-                }
+                cardinality=c.traversalCardinality().map(|c|c.get_text().rsplit('.').next().unwrap_or("list").to_string()).unwrap_or_else(||"list".into());
                 (c.genericLiteral(), c.genericArgument(), c.genericArgumentVarargs())
             }
             _ => { self.fail(GremlinError::Unsupported("property map mutation".into())); return; }
         };
-        if extras
-            .as_ref()
-            .is_some_and(|args| !args.genericArgument_all().is_empty())
-        {
-            self.fail(GremlinError::Unsupported("property meta-properties".into()));
-            return;
-        }
-        let (Some(key), Some(value)) = (key, value) else {
-            return;
-        };
-        if let Some(nested) = key.nestedTraversal() {
-            let key = MutationArgument::Traversal(self.lower_nested_traversal(&nested));
-            let value =
-                if let Some(nested) = value.genericLiteral().and_then(|v| v.nestedTraversal()) {
-                    MutationArgument::Traversal(self.lower_nested_traversal(&nested))
-                } else {
-                    self.visit_genericArgument(&value);
-                    let Some(value) = self.pop_value() else {
-                        return;
-                    };
-                    MutationArgument::Literal(value)
-                };
-            self.steps.push(Step::PropertyDynamic { key, value });
-            return;
-        }
-        if key
-            .traversalT()
-            .is_some_and(|t| t.get_text().ends_with("label"))
-        {
+        let (Some(key),Some(value))=(key,value) else{return};
+        if key.traversalT().is_some_and(|t|t.get_text().ends_with("label")) {
             self.visit_genericArgument(&value);
-            let Some(GValue::String(label)) = self.pop_value() else {
-                self.fail(GremlinError::Parse("Label must be a string".into()));
-                return;
-            };
-            if let Some(Step::AddV { label: current }) = self.steps.last_mut() {
-                *current = label;
-                return;
+            let Some(GValue::String(label))=self.pop_value() else {self.fail(GremlinError::Parse("Label must be a string".into()));return};
+            if let Some(Step::AddV{label:current})=self.steps.last_mut(){*current=label;return}
+            self.fail(GremlinError::Unsupported("T.label property requires addV".into()));return;
+        }
+        let key=if let Some(nested)=key.nestedTraversal(){MutationArgument::Traversal(self.lower_nested_traversal(&nested))}else{self.visit_genericLiteral(&key);let Some(key)=self.pop_value() else{return};MutationArgument::Literal(key)};
+        let value=if let Some(nested)=value.genericLiteral().and_then(|v|v.nestedTraversal()){MutationArgument::Traversal(self.lower_nested_traversal(&nested))}else{self.visit_genericArgument(&value);let Some(value)=self.pop_value() else{return};MutationArgument::Literal(value)};
+        let mut meta=vec![];
+        if let Some(extras)=extras {
+            let args=extras.genericArgument_all();
+            if args.len()%2!=0 {self.fail(GremlinError::Parse("Meta-properties require key/value pairs".into()));return;}
+            for pair in args.chunks(2) {
+                self.visit_genericArgument(&pair[0]);let Some(GValue::String(key))=self.pop_value() else{self.fail(GremlinError::Parse("Meta-property key must be a string".into()));return};
+                self.visit_genericArgument(&pair[1]);let Some(value)=self.pop_value() else{return};meta.push((key,value));
             }
-            self.fail(GremlinError::Unsupported(
-                "T.label property requires an addV modulator".into(),
-            ));
-            return;
         }
-        self.visit_genericLiteral(&key);
-        let Some(GValue::String(key)) = self.pop_value() else {
-            self.fail(GremlinError::Unsupported(
-                "property key must be a string".into(),
-            ));
-            return;
-        };
-        if let Some(nested) = value
-            .genericLiteral()
-            .and_then(|literal| literal.nestedTraversal())
-        {
-            let traversal = self.lower_nested_traversal(&nested);
-            self.steps.push(Step::PropertyTraversal { key, traversal });
-            return;
-        }
-        self.visit_genericArgument(&value);
-        let Some(value) = self.pop_value() else {
-            return;
-        };
-        self.steps.push(Step::Property { key, value });
+        self.steps.push(Step::PropertyNative{cardinality,key,value,meta});
     }
 }

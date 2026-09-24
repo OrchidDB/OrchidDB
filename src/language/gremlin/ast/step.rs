@@ -9,6 +9,7 @@ pub enum Step {
     DynamicMerge { edge: bool, criteria: MutationArgument, options: std::collections::BTreeMap<String,MutationArgument> },
     AddDynamicV { label: MutationArgument },
     AddDynamicE { label: MutationArgument, from: Option<MutationArgument>, to: Option<MutationArgument> },
+    PropertyNative { cardinality: String, key: MutationArgument, value: MutationArgument, meta: Vec<(String, GValue)> },
     PropertyDynamic { key: MutationArgument, value: MutationArgument },
     MergeE {
         criteria: Option<MergeVertexMap>,
@@ -458,6 +459,8 @@ pub struct MergeVertexMap {
     pub out_vertex: Option<GValue>,
     pub in_vertex: Option<GValue>,
     pub properties: std::collections::BTreeMap<String, GValue>,
+    pub cardinalities: std::collections::BTreeMap<String,String>,
+    pub default_cardinality: Option<String>,
     pub single_properties: std::collections::BTreeSet<String>,
 }
 

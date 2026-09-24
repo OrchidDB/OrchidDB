@@ -7,16 +7,7 @@ use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn lower_add_vertex(input: Node, label: &str, lo: &Lowerer) -> Node {
-    Node::GraphCreate {
-        graph: "default".into(),
-        nodes: vec![CreateNode {
-            bind: Some(CURRENT.into()),
-            label: label.into(),
-            properties: partition_properties(lo),
-        }],
-        edges: vec![],
-        input: input.boxed(),
-    }
+    write_call(input,"gremlin.mutation.add_vertex",vec![IrExpr::lit_str(label),partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null))])
 }
 
 pub(super) fn lower_property(input: Node, key: &str, value: &GValue) -> GremlinPlanResult<Node> {
@@ -249,4 +240,11 @@ pub(super) fn lower_dynamic_property(
         "gremlin.mutation.property",
         vec![IrExpr::Binding(CURRENT.into()), key, value],
     ))
+}
+
+pub(super) fn lower_native_property(input:Node,cardinality:&str,key:&crate::language::gremlin::ast::MutationArgument,value:&crate::language::gremlin::ast::MutationArgument,meta:&[(String,GValue)],lo:&mut Lowerer,ctx:&super::context::TraversalContext)->GremlinPlanResult<Node>{
+    let (input,key)=argument(input,key,lo,ctx)?;
+    let (input,value)=argument(input,value,lo,ctx)?;
+    let meta=gvalue_to_expr(&GValue::Map(meta.iter().cloned().collect()))?;
+    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(cardinality),meta]))
 }
