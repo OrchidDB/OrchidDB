@@ -200,47 +200,96 @@ impl LoweringVisitor {
             TraversalMethod_optionContextAll::TraversalMethod_option_Merge_TraversalContext(_)
         ) {
             self.promote_merge();
-            let (option, value) = match ctx {
-                TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) => {
-                    let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
-                    let value =
-                        match self.parse_merge_map(c.genericMapNullableArgument(), false, true) {
-                            Ok(value) => MutationArgument::Literal(
-                                value.map(|m| m.literal()).unwrap_or(GValue::Null),
-                            ),
-                            Err(error) => {
-                                self.fail(error);
-                                return;
-                            }
-                        };
-                    (option, value)
-                }
-                TraversalMethod_optionContextAll::TraversalMethod_option_Merge_TraversalContext(
-                    c,
-                ) => {
-                    let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
-                    let Some(nested) = c.nestedTraversal() else {
+            let edge = matches!(
+                self.steps.last(),
+                Some(Step::DynamicMerge { edge: true, .. })
+            );
+            let mut map_metadata = None;
+            let map_argument = match ctx {
+                    TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) => Some((
+                        c.genericMapNullableArgument(),
+                        c.traversalMerge().map(|t| t.get_text()).unwrap_or_default(),
+                        None,
+                    )),
+                    TraversalMethod_optionContextAll::TraversalMethod_option_Merge_Map_CardinalityContext(c) => Some((
+                        c.genericMapNullableArgument(),
+                        c.traversalMerge().map(|t| t.get_text()).unwrap_or_default(),
+                        c.traversalCardinality().map(|c| c.get_text().rsplit('.').next().unwrap_or("list").to_string()),
+                    )),
+                    _ => None,
+                };
+            let (option, value) = if let Some((argument, option, default_cardinality)) = map_argument {
+                    if edge && default_cardinality.is_some() {
+                        self.fail(GremlinError::Unsupported("mergeE does not support vertex property cardinality".into()));
                         return;
+                    }
+                    let mut map = match self.parse_merge_map(argument, !edge, edge) {
+                        Ok(map) => map,
+                        Err(error) => { self.fail(error); return; }
                     };
-                    (
-                        option,
-                        MutationArgument::Traversal(self.lower_nested_traversal(&nested)),
-                    )
-                }
-                _ => {
+                    if let Some(map) = map.as_mut() { map.default_cardinality = default_cardinality; }
+                    let value = MutationArgument::Literal(map.as_ref().map(|map| map.literal()).unwrap_or(GValue::Null));
+                    map_metadata = map;
+                    (option, value)
+                } else if let TraversalMethod_optionContextAll::TraversalMethod_option_Merge_TraversalContext(c) = ctx {
+                    let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
+                    let Some(nested) = c.nestedTraversal() else { return; };
+                    (option, MutationArgument::Traversal(self.lower_nested_traversal(&nested)))
+                } else {
                     self.fail(GremlinError::Unsupported("merge option form".into()));
                     return;
-                }
-            };
+                };
             if let Some(Step::DynamicMerge { options, .. }) = self.steps.last_mut() {
-                options.insert(option.rsplit('.').next().unwrap_or("").into(), value);
+                let option = option.rsplit('.').next().unwrap_or("");
+                // Replacing an option also replaces its cardinality settings.
+                options.remove(&format!("{option}Cardinalities"));
+                options.remove(&format!("{option}Cardinality"));
+                if let Some(map) = map_metadata {
+                    options.insert(
+                        format!("{option}Cardinalities"),
+                        MutationArgument::Literal(GValue::Map(
+                            map.cardinalities
+                                .into_iter()
+                                .map(|(key, value)| (key, GValue::String(value)))
+                                .collect(),
+                        )),
+                    );
+                    if let Some(default) = map.default_cardinality {
+                        options.insert(
+                            format!("{option}Cardinality"),
+                            MutationArgument::Literal(GValue::String(default)),
+                        );
+                    }
+                }
+                options.insert(option.into(), value);
             }
             return;
         }
-        let (argument,option,default_cardinality)=match ctx {
-            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c)=>(c.genericMapNullableArgument(),c.traversalMerge().map(|t|t.get_text()).unwrap_or_default(),None),
-            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_Map_CardinalityContext(c)=>(c.genericMapNullableArgument(),c.traversalMerge().map(|t|t.get_text()).unwrap_or_default(),c.traversalCardinality().map(|c|c.get_text().rsplit('.').next().unwrap_or("list").to_string())),
-            _=>{self.fail(GremlinError::Unsupported("mergeV option requires a map".into()));return}
+        let (argument, option, default_cardinality) = match ctx {
+            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) => (
+                c.genericMapNullableArgument(),
+                c.traversalMerge().map(|t| t.get_text()).unwrap_or_default(),
+                None,
+            ),
+            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_Map_CardinalityContext(
+                c,
+            ) => (
+                c.genericMapNullableArgument(),
+                c.traversalMerge().map(|t| t.get_text()).unwrap_or_default(),
+                c.traversalCardinality().map(|c| {
+                    c.get_text()
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or("list")
+                        .to_string()
+                }),
+            ),
+            _ => {
+                self.fail(GremlinError::Unsupported(
+                    "mergeV option requires a map".into(),
+                ));
+                return;
+            }
         };
         let edge = matches!(self.steps.last(), Some(Step::MergeE { .. }));
         let mut value = match self.parse_merge_map(argument, !edge, edge) {
@@ -250,7 +299,9 @@ impl LoweringVisitor {
                 return;
             }
         };
-        if let Some(map)=value.as_mut(){map.default_cardinality=default_cardinality;}
+        if let Some(map) = value.as_mut() {
+            map.default_cardinality = default_cardinality;
+        }
         let Some(
             Step::MergeV {
                 on_create,

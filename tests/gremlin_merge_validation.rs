@@ -236,3 +236,24 @@ fn ordinary_id_properties_do_not_replace_public_element_identity() {
         assert_eq!(graph.properties(&element, &["id".into()]).len(), 1);
     }
 }
+
+#[test]
+fn dynamic_merge_options_retain_and_replace_cardinality_settings() {
+    let graph = PropertyGraph::new();
+    let vertex = run("g.mergeV(__.constant(['name':'alice'])).option(Merge.onCreate,['age':Cardinality.set(31)])", &graph).unwrap().remove(0);
+    for cardinality in ["list", "set"] {
+        run(&format!("g.mergeV(__.constant(['name':'alice'])).option(Merge.onMatch,['age':Cardinality.{cardinality}(32)])"), &graph).unwrap();
+    }
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 2);
+    run(
+        "g.mergeV(__.constant(['name':'alice'])).option(Merge.onMatch,['age':33],single)",
+        &graph,
+    )
+    .unwrap();
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 1);
+    // Replacing the static option with a traversal must discard its old single default.
+    run("g.mergeV(['name':'alice']).option(Merge.onMatch,['age':34],single).option(Merge.onMatch,__.constant(['age':35]))", &graph).unwrap();
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 2);
+    run("g.mergeV(__.constant(['name':'alice'])).option(Merge.onMatch,['age':Cardinality.list(36)],single)", &graph).unwrap();
+    assert_eq!(graph.properties(&vertex, &["age".into()]).len(), 3);
+}
