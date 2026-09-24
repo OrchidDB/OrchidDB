@@ -393,7 +393,8 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphShortestPath { input, .. }
             | Node::GraphDistinct { input, .. }
             | Node::GraphSort { input, .. }
-            | Node::GraphSlice { input, .. }
+            | Node::GraphSample { input, .. }
+        | Node::GraphSlice { input, .. }
             | Node::GraphSliceExpr { input, .. }
             | Node::GraphBarrier { input, .. }
             | Node::GraphUnwind { input, .. }

@@ -107,6 +107,7 @@ pub(super) fn cypher_list_type_name(value: &Value) -> String {
         Value::MapEntry(_) => "MAP_ENTRY".into(),
         Value::TypedMap(_) => "MAP".into(),
         Value::BulkSet(_) => "BULKSET".into(),
+        Value::Set(_) => "SET".into(),
         Value::Token(_) => "TOKEN".into(),
         Value::Direction(_) => "DIRECTION".into(),
         Value::Null => "NULL".to_string(),
@@ -374,7 +375,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::BigDecimal(n) => n.to_string(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_list_to_string)
@@ -693,7 +694,7 @@ pub(super) fn gremlin_local_range(value: &Value, low: i64, high: i64) -> Value {
     let count = if high == -1 { usize::MAX } else { (high.max(0) as usize).saturating_sub(start) };
     let set = crate::ir::value::as_gremlin_set(value);
     if let Some(items) = set.or_else(|| match value {
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Some(items.as_slice()),
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => Some(items.as_slice()),
         _ => None,
     }) {
         if high != -1 && high - low == 1 {
@@ -711,7 +712,7 @@ pub(super) fn gremlin_local_range(value: &Value, low: i64, high: i64) -> Value {
 
 pub(super) fn gremlin_local_tail(value: &Value, count: i64) -> Value {
     let len = match value {
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => items.len(),
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => items.len(),
         Value::TypedMap(items) => items.len(),
         Value::Map(items) => crate::ir::value::as_gremlin_set(value).map_or(items.len(), |items| items.len()),
         _ => return value.clone(),

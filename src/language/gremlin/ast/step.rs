@@ -350,6 +350,8 @@ pub enum Step {
     /// projection is unproductive and surfaces NULL rather than dropping the
     /// traverser. The default Gremlin strategy stack drops those rows.
     WithProductiveByStrategy,
+    /// Reset every random step, including children, to the given Java seed.
+    WithSeedStrategy(i64),
     /// Partition assigned to newly created graph elements.
     WithPartitionWrite {
         key: String,

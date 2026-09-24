@@ -28,7 +28,7 @@ use super::procedures::{lower_call, lower_call_with_option, lower_fail, lower_gr
 use super::project::{lower_constant, lower_id, lower_label, lower_project, lower_values};
 use super::property_object::{
     lower_element, lower_element_map, lower_properties, lower_properties_value, lower_property_map,
-    lower_value_map, lower_value_map_tokens,
+    lower_value_map, lower_value_map_tokens, lower_value_map_modulators,
 };
 use super::reduce::{lower_aggregate, lower_count, lower_fold, lower_unfold};
 use super::repeat::lower_repeat;
@@ -180,7 +180,7 @@ where
         Step::Skip(n) => Ok(lower_skip(input, *n)),
         Step::Tail(n) => Ok(lower_tail(input, *n)),
         Step::Limit(fetch) => Ok(lower_limit_or_sample(input, *fetch)),
-        Step::Sample(fetch) => Ok(lower_sample(input, *fetch, steps)),
+        Step::Sample(fetch) => lower_sample(input, *fetch, steps, lo, ctx),
 
         // ----- count / aggregate / fold -----
         Step::Count => Ok(lower_count(input)),
@@ -368,7 +368,10 @@ where
             Ok(lower_properties_value(input, keys, lo))
         }
         Step::Properties(keys) => Ok(lower_properties(input, keys, lo)),
-        Step::ValueMap(keys) => Ok(lower_value_map(input, keys)),
+        Step::ValueMap(keys) => {
+            let input = lower_value_map(input, keys);
+            lower_value_map_modulators(input, steps, lo, ctx)
+        },
         Step::ElementMap(keys) => Ok(lower_element_map(input, keys)),
         Step::PropertyMap(keys) => Ok(lower_property_map(input, keys)),
         Step::ValueMapTokens {
@@ -376,14 +379,8 @@ where
             include_id,
             include_label,
         } => {
-            let unfold_values = consume_unfold_by(steps);
-            Ok(lower_value_map_tokens(
-                input,
-                keys,
-                *include_id,
-                *include_label,
-                unfold_values,
-            ))
+            let input = lower_value_map_tokens(input, keys, *include_id, *include_label, false);
+            lower_value_map_modulators(input, steps, lo, ctx)
         }
         Step::AggregateAs(label) => lower_aggregate_as(input, label, steps, lo, ctx),
         Step::AggregateLocal(label) => {lo.side_effect_local_labels.insert(label.clone());lower_aggregate_as(input,label,steps,lo,ctx)},
@@ -406,13 +403,11 @@ where
         Step::Format(parts) => lower_format(input, parts, steps, lo, ctx),
         Step::Fail(message) => lower_fail(input, message.as_deref()),
         // `coin(p)` — keep each row with probability p.
-        Step::Coin(p) => Ok(Node::GraphFilter {
-            condition: crate::ir::expr::IrExpr::Call {
-                name: "coin_keep".into(),
-                args: vec![crate::ir::expr::IrExpr::Lit(crate::ir::expr::Lit::Float(
-                    *p,
-                ))],
-            },
+        Step::Coin(p) => Ok(Node::GraphSample {
+            kind: crate::ir::plan::SampleKind::Coin(*p),
+            seed: lo.random_seed,
+            step_id: lo.fresh("coin"),
+            weight: None,
             input: input.boxed(),
         }),
         // `index()` emits `(item, index)` pairs by default. Its indexer
@@ -451,6 +446,16 @@ where
             let merge_map = !matches!(steps.peek(), Some(Step::Unfold));
             lower_local_order(input, by, merge_map)
         }
+        Step::LocalScoped(inner) if matches!(inner.as_ref(), Step::Sample(_)) => {
+            let Step::Sample(amount) = inner.as_ref() else { unreachable!() };
+            Ok(Node::GraphSample {
+                kind: crate::ir::plan::SampleKind::Local(*amount),
+                seed: lo.random_seed,
+                step_id: lo.fresh("sample_local"),
+                weight: None,
+                input: input.boxed(),
+            })
+        }
         Step::LocalScoped(inner) => lower_local_scoped(input, inner, lo),
         Step::PathFrom(label) => Ok(lower_path_from(input, label)),
         Step::PathTo(label) => Ok(lower_path_to(input, label)),
@@ -484,6 +489,7 @@ where
         | Step::WithSideEffect { .. }
         | Step::WithStrategy { .. }
         | Step::WithPartitionWrite { .. }
+        | Step::WithSeedStrategy(_)
         | Step::WithProductiveByStrategy => Ok(input),
         // Mid-traversal `V/E/inject` rebinds the source. We approximate by
         // running the spawn through `source_node` over a fresh seed and
@@ -541,20 +547,6 @@ fn cap_feeds_local_collection_step(step: Option<&Step>) -> bool {
     )
 }
 
-fn consume_unfold_by<'a, I>(steps: &mut Peekable<I>) -> bool
-where
-    I: Iterator<Item = &'a Step>,
-{
-    let Some(Step::By(spec)) = steps.peek() else {
-        return false;
-    };
-    let is_unfold = matches!(spec.traversal.as_deref(), Some([Step::Unfold]));
-    if is_unfold {
-        steps.next();
-    }
-    is_unfold
-}
-
 fn consume_call_options<'a, I>(steps: &mut Peekable<I>) -> Vec<super::procedures::CallOption>
 where
     I: Iterator<Item = &'a Step>,
@@ -587,15 +579,17 @@ where
         .rsplit('.')
         .next()
         .is_some_and(|part| part.eq_ignore_ascii_case("indexer"));
-    let is_map = matches!(
-        value,
-        Some(crate::language::gremlin::semantics::GValue::String(value))
-            if value.rsplit('.').next().is_some_and(|part| part.eq_ignore_ascii_case("map"))
-    );
-    if is_indexer && is_map {
+    use crate::language::gremlin::semantics::GValue;
+    let is_map = match value {
+        Some(GValue::Int(1) | GValue::Long(1) | GValue::Byte(1) | GValue::Short(1)) => true,
+        Some(GValue::String(value)) => value
+            .rsplit('.')
+            .next()
+            .is_some_and(|part| part.eq_ignore_ascii_case("map")),
+        _ => false,
+    };
+    if is_indexer {
         steps.next();
-        true
-    } else {
-        false
     }
+    is_indexer && is_map
 }

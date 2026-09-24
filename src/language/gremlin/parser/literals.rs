@@ -712,6 +712,19 @@ pub(super) fn first_boolean_arg(raw: &str) -> Option<bool> {
 }
 
 pub(super) fn value_map_token_selection(value: Option<&GValue>) -> (bool, bool) {
+    // Bytecode/remote traversals send the WithOptions constants as integers.
+    if let Some(GValue::Bool(include)) = value {
+        return (*include, *include);
+    }
+    let bits = match value {
+        Some(GValue::Int(bits) | GValue::Long(bits)) => Some(*bits),
+        Some(GValue::Byte(bits)) => Some(i64::from(*bits)),
+        Some(GValue::Short(bits)) => Some(i64::from(*bits)),
+        _ => None,
+    };
+    if let Some(bits) = bits {
+        return (bits & 1 != 0, bits & 2 != 0);
+    }
     let Some(GValue::String(value)) = value else {
         return (true, true);
     };
@@ -724,7 +737,8 @@ pub(super) fn value_map_token_selection(value: Option<&GValue>) -> (bool, bool) 
     {
         "id" | "ids" => (true, false),
         "label" | "labels" => (false, true),
-        "tokens" => (true, true),
+        "none" | "keys" | "values" => (false, false),
+        "tokens" | "all" => (true, true),
         _ => (true, true),
     }
 }

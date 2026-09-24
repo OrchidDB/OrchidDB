@@ -71,7 +71,7 @@ fn display_for_as_string(v: &Value) -> String {
             rel_type,
             tinker_node_id(dst_label, *dst_id)
         ),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)
@@ -87,7 +87,7 @@ fn display_for_as_string_container(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => display_string_for_as_string_container(s),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_as_string_container)

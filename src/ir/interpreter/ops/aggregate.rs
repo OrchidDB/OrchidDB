@@ -2,7 +2,7 @@
 //!
 //! Extracted from `interpreter.rs` lines 1120..1361.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::{AggCall, AggKind, IrExpr};
@@ -128,7 +128,11 @@ pub(crate) fn group_map_op(
         };
         entries.push((key, value));
     }
-    let map = if entries
+    let ordered_members = matches!(value, GroupValue::Aggregate(agg) if agg.alias == "__group_stream_members");
+    let map = if ordered_members {
+        super::java_hashmap::java_hashmap_order(&mut entries);
+        Value::TypedMap(entries)
+    } else if entries
         .iter()
         .all(|(key, _)| matches!(key, Value::String(_)))
     {

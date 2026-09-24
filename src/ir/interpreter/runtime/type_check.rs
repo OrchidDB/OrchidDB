@@ -13,6 +13,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         .to_ascii_lowercase();
     match value {
         Value::BulkSet(_) => matches!(normalised.as_str(), "bulkset" | "set" | "collection"),
+        Value::Set(_) => matches!(normalised.as_str(), "set" | "collection"),
         Value::Null => normalised == "null",
         Value::MapEntry(_) => matches!(normalised.as_str(), "entry" | "map.entry" | "java.util.map$entry"),
         Value::Token(_) => normalised == "token",
@@ -43,14 +44,11 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
             "string" | "char" | "character" => !is_uuid_tagged(value),
             _ => false,
         },
-        Value::List(_) => matches!(normalised.as_str(), "list" | "set" | "graph"),
+        Value::List(_) => matches!(normalised.as_str(), "list" | "collection" | "graph"),
         // `tree()` materializes its result as a nested Map, and a
         // `subgraph()` cap surfaces as a Map of edges; accept those
         // type tags as Map-shaped values. `traverser` and `bulkset`
         // are also commonly typed as Map at this layer.
-        Value::Map(_) if crate::ir::value::as_gremlin_set(value).is_some() => {
-            matches!(normalised.as_str(), "set" | "bulkset" | "collection")
-        }
         Value::Map(_) | Value::TypedMap(_) => matches!(
             normalised.as_str(),
             "map" | "tree" | "graph" | "bulkset" | "traverser"

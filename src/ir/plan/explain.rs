@@ -308,6 +308,10 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
             writeln!(buf, "GraphSort").ok();
             write_node(buf, input, depth + 1);
         }
+        Node::GraphSample { kind, seed, step_id, weight, input } => {
+            writeln!(buf, "GraphSample(kind=[{kind:?}], seed=[{seed:?}], step=[{step_id}], weight=[{weight:?}])").ok();
+            write_node(buf, input, depth + 1);
+        }
         Node::GraphSlice { slice, input, .. } => {
             writeln!(
                 buf,

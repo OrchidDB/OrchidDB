@@ -31,6 +31,7 @@ const V_TOKEN: u8 = 24;
 const V_DIRECTION: u8 = 25;
 const V_BULK_SET: u8 = 26;
 const V_MAP_ENTRY: u8 = 27;
+const V_SET: u8 = 28;
 
 // ---------------- primitive writers ----------------
 
@@ -232,8 +233,8 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_u8(out, V_DIRECTION);
             put_str(out, value);
         }
-        Value::BulkSet(items) => {
-            put_u8(out, V_BULK_SET);
+        Value::BulkSet(items) | Value::Set(items) => {
+            put_u8(out, if matches!(value, Value::Set(_)) { V_SET } else { V_BULK_SET });
             put_values(out, items);
         }
         Value::Path(items) => {
@@ -305,6 +306,7 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
         V_TOKEN => Value::Token(r.str()?),
         V_DIRECTION => Value::Direction(r.str()?),
         V_BULK_SET => Value::BulkSet(decode_values(r)?),
+        V_SET => crate::ir::value::gremlin_set(decode_values(r)?),
         other => return Err(format!("unknown value tag {other}")),
     })
 }
@@ -530,6 +532,16 @@ mod typed_map_tests {
 #[cfg(test)]
 mod bulkset_codec_tests {
     use super::*;
+    #[test]
+    fn native_set_roundtrip_preserves_kind_and_typed_members() {
+        let value = crate::ir::value::gremlin_set(vec![Value::Long(1), Value::Int(1)]);
+        let decoded = decode_value_bytes(&encode_value_bytes(&value)).unwrap();
+        assert_eq!(decoded, value);
+        assert!(matches!(decoded, Value::Set(_)));
+        assert_ne!(encode_value_bytes(&value), encode_value_bytes(&Value::List(vec![Value::Long(1), Value::Int(1)])));
+        let map = Value::Map(BTreeMap::from([("__gremlin_set".into(), Value::List(vec![Value::Int(1)]))]));
+        assert!(matches!(decode_value_bytes(&encode_value_bytes(&map)).unwrap(), Value::Map(_)));
+    }
     #[test]
     fn bulkset_roundtrip_keeps_duplicates_and_distinct_kind() {
         let value = Value::BulkSet(vec![Value::Int(1), Value::Int(1), Value::Long(1)]);

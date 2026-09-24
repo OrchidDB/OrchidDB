@@ -567,9 +567,11 @@ pub(super) fn tagged_value(value: &Value) -> String {
         Value::String(value) => value.clone(),
         Value::Node { label, id } => format!("v[{label}#{id}]"),
         Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
             let prefix = if matches!(value, Value::Path(_)) {
                 "p"
+            } else if matches!(value, Value::Set(_)) {
+                "s"
             } else {
                 "l"
             };
@@ -633,7 +635,7 @@ pub(super) fn cypher_plain_value(value: &Value) -> String {
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let body = items.iter().map(cypher_plain_value).collect::<Vec<_>>();
             format!("[{}]", body.join(","))
         }
@@ -759,7 +761,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Node { label, id } => format!("{label}#{id}"),
         Value::Edge { rel_type, id, .. } => format!("{rel_type}#{id}"),
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_list_to_string)

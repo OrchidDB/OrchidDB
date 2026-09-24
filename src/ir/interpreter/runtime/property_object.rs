@@ -132,6 +132,12 @@ pub(crate) fn eval_property_object(name: &str, args: &[Value], graph: &PropertyG
         return Value::List(pairs);
     }
     if name == "element_map" || name == "value_map_tokens" {
+        // PropertyMapStep uses insertion order when cycling by() modulators.
+        for key in &resolved_keys {
+            if let Some(value) = map.remove(key) {
+                tokens.push((Value::String(key.clone()), value));
+            }
+        }
         tokens.extend(map.into_iter().map(|(key, value)| (Value::String(key), value)));
         Value::TypedMap(tokens)
     } else { Value::Map(map) }
@@ -250,4 +256,62 @@ fn endpoint_token(graph: &PropertyGraph, label: &str, id: i64) -> Value {
         (Value::Token("id".into()), super::graph::gremlin_user_id(graph, &node)),
         (Value::Token("label".into()), Value::String(label.to_string())),
     ])
+}
+
+/// Enumerate the map in traversal-ring order without exposing order metadata.
+fn ordered_value_map_entries(value: &Value) -> Vec<(Value, Value)> {
+    match value {
+        Value::TypedMap(entries) => entries.clone(),
+        Value::Map(map) => {
+            let mut keys = Vec::new();
+            if let Some(Value::List(order)) = map.get(STRUCT_ORDER_KEY) {
+                for key in order {
+                    if let Value::String(key) = key {
+                        if map.contains_key(key) && !keys.contains(key) {
+                            keys.push(key.clone());
+                        }
+                    }
+                }
+            }
+            for key in map.keys() {
+                if key != STRUCT_ORDER_KEY && !keys.contains(key) {
+                    keys.push(key.clone());
+                }
+            }
+            keys.into_iter().map(|key| (Value::String(key.clone()), map[&key].clone())).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub(super) fn value_map_modulator_entries(args: &[Value]) -> Value {
+    let [map, Value::Int(slot), Value::Int(count)] = args else { return Value::List(vec![]); };
+    if *count <= 0 { return Value::List(vec![]); }
+    Value::List(ordered_value_map_entries(map).into_iter().enumerate()
+        .filter(|(index, _)| *index as i64 % count == *slot)
+        .map(|(_, (key, value))| Value::Map([
+            ("key".to_string(), key), ("value".to_string(), value)
+        ].into())).collect())
+}
+
+pub(super) fn value_map_modulator_result(args: &[Value]) -> Value {
+    let [original, Value::List(results)] = args else { return Value::Null; };
+    let entries = ordered_value_map_entries(original).into_iter().filter_map(|(key, _)| {
+        results.iter().find_map(|result| match result {
+            Value::List(pair) if pair.len() == 2 && pair[0] == key && !matches!(pair[1], Value::Null) =>
+                Some((key.clone(), pair[1].clone())),
+            _ => None,
+        })
+    }).collect::<Vec<_>>();
+    if matches!(original, Value::TypedMap(_)) {
+        Value::TypedMap(entries)
+    } else {
+        let order = entries.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+        let mut map = entries.into_iter().filter_map(|(key, value)| match key {
+            Value::String(key) => Some((key, value)),
+            _ => None,
+        }).collect::<std::collections::BTreeMap<_, _>>();
+        if !order.is_empty() { map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order)); }
+        Value::Map(map)
+    }
 }

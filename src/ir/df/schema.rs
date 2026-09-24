@@ -189,6 +189,7 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
         }
         Node::GraphFilter { input, .. }
         | Node::GraphSort { input, .. }
+        | Node::GraphSample { input, .. }
         | Node::GraphSlice { input, .. }
         | Node::GraphSliceExpr { input, .. }
         | Node::GraphBarrier { input, .. }

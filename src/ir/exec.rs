@@ -731,6 +731,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
         | GraphSort { input, .. }
+        | GraphSample { input, .. }
         | GraphSlice { input, .. }
         | GraphSliceExpr { input, .. }
         | GraphBarrier { input, .. }
@@ -812,6 +813,7 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
         | GraphSort { input, .. }
+        | GraphSample { input, .. }
         | GraphSlice { input, .. }
         | GraphSliceExpr { input, .. }
         | GraphBarrier { input, .. }

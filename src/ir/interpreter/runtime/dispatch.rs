@@ -20,7 +20,7 @@ use super::graph::{
     gremlin_visible_vertex_property_values, gremlin_within, local_order_by_key, path_last_label,
     path_last_value, revive_value_map_entry, select_binding_by_pop, tree_value,
 };
-use super::lists::{display_for_list_to_string, list_semantic_eq};
+use super::lists::display_for_list_to_string;
 use super::maps::{
     is_map_entry, runtime_list, slice_map_entries, visible_map_keys, visible_map_values,
 };
@@ -85,6 +85,12 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         "value_map" | "value_map_tokens" | "element_map" | "property_map" | "properties_list"
     ) {
         return Ok(eval_algorithm_property_object(name, &args, graph));
+    }
+    if name == "value_map_modulator_entries" {
+        return Ok(super::property_object::value_map_modulator_entries(&args));
+    }
+    if name == "value_map_modulator_result" {
+        return Ok(super::property_object::value_map_modulator_result(&args));
     }
     if name == "property_element" {
         return Ok(eval_property_element(&args));
@@ -250,17 +256,14 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             other.clone(),
             Value::Int(0),
         ])])),
-        ("index_map", [Value::List(items)]) => Ok(Value::Map(
+        ("index_map", [Value::List(items)]) => Ok(Value::TypedMap(
             items
                 .iter()
                 .enumerate()
-                .map(|(index, item)| (format!("d[{index}].i"), item.clone()))
+                .map(|(index, item)| (Value::Int(index as i64), item.clone()))
                 .collect(),
         )),
-        ("index_map", [other]) => Ok(Value::Map(BTreeMap::from([(
-            "d[0].i".to_string(),
-            other.clone(),
-        )]))),
+        ("index_map", [other]) => Ok(Value::TypedMap(vec![(Value::Int(0), other.clone())])),
         // ----- hasValue helper: stringify any-property -----
         ("any_property", [Value::Node { label, id }]) => {
             let mut combined = Vec::new();
@@ -295,6 +298,15 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             }
         }
         ("any_property", _) => Ok(Value::Null),
+        // Preserve heterogeneous values and requested-key order in one pass.
+        ("requested_property_values", [element, Value::List(keys)]) if keys.is_empty() => eval_call("all_property_values", vec![element.clone()], graph),
+        ("requested_property_values", [element, Value::List(keys)]) => Ok(Value::List(
+            keys.iter().filter_map(|key| {
+                let Value::String(key) = key else { return None; };
+                let value = graph_element_property(graph, element, key);
+                (!matches!(value, Value::Null)).then_some(value)
+            }).collect(),
+        )),
         // ----- values() with no keys — list of all property values -----
         ("all_property_values", [Value::Node { label, id }]) => Ok(Value::List(
             graph
@@ -762,15 +774,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("local_order_by_key", [items, Value::String(key), Value::String(dir)]) => {
             Ok(local_order_by_key(graph, items, key, dir))
         }
-        ("local_dedup", [Value::List(items)]) => {
-            let mut out: Vec<Value> = Vec::new();
-            for item in items {
-                if !out.contains(item) {
-                    out.push(item.clone());
-                }
-            }
-            Ok(Value::List(out))
-        }
+        ("local_dedup", [Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items)]) =>
+            Ok(crate::ir::value::gremlin_set(items.clone())),
         ("local_count", [value]) if runtime_list(value).is_some() => Ok(Value::Long(runtime_list(value).unwrap().len() as i64)),
         ("local_count", [Value::Map(items)]) => Ok(Value::Long(items.len() as i64)),
         ("local_sum", [value]) if runtime_list(value).is_some() => Ok(reduce_list_numeric(&runtime_list(value).unwrap(), "sum")),

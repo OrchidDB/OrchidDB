@@ -33,6 +33,7 @@ pub(super) fn value_type_name(value: &Value) -> &'static str {
         Value::Edge { .. } => "REL",
         Value::List(_) => "LIST",
         Value::BulkSet(_) => "BULKSET",
+        Value::Set(_) => "SET",
         Value::MapEntry(_) => "MAP_ENTRY",
         Value::Map(_) | Value::TypedMap(_) => "STRUCT",
         Value::Token(_) => "TOKEN",

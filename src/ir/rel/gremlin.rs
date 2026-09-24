@@ -87,7 +87,8 @@ pub(super) fn has_per_input_barrier(node: &Node) -> bool {
     while let Some(node) = stack.pop() {
         if matches!(
             node,
-            Node::GraphSlice { .. }
+            Node::GraphSample { .. }
+                | Node::GraphSlice { .. }
                 | Node::GraphSliceExpr { .. }
                 | Node::GraphAggregate { .. }
                 | Node::GraphGroupMap { .. }

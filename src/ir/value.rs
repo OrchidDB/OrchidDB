@@ -15,32 +15,158 @@ use num_traits::FromPrimitive;
 pub const STRUCT_ORDER_KEY: &str = "__new_graph_struct_order";
 pub const STRUCT_TYPES_KEY: &str = "__new_graph_struct_types";
 
-/// Gremlin Set marker. A `Value::Map` whose only entry is this key
-/// (holding a `Value::List`) represents an order-preserving,
-/// deduplicated Set — Gremlin `{a, b}` literals and Set-typed
-/// side-effect bags. Cypher never produces this shape.
-pub const GREMLIN_SET_KEY: &str = "__gremlin_set";
-
-/// Build a Gremlin Set value (order-preserving, caller-deduplicated).
+/// Build a native Set, retaining encounter order and typed member identity.
 pub fn gremlin_set(items: Vec<Value>) -> Value {
-    let mut map = BTreeMap::new();
-    map.insert(GREMLIN_SET_KEY.to_string(), Value::List(items));
-    Value::Map(map)
+    let mut seen = std::collections::BTreeSet::new();
+    let mut unique = Vec::new();
+    for item in items {
+        if seen.insert(set_member_key(&item)) {
+            unique.push(item);
+        }
+    }
+    Value::Set(unique)
 }
 
-/// If `value` is a Gremlin Set marker map, return its items.
+/// Return native Set members; ordinary maps never represent Sets.
 pub fn as_gremlin_set(value: &Value) -> Option<&[Value]> {
-    let Value::Map(map) = value else { return None };
-    if map.len() != 1 {
-        return None;
-    }
-    match map.get(GREMLIN_SET_KEY) {
-        Some(Value::List(items)) => Some(items),
+    match value {
+        Value::Set(items) => Some(items),
         _ => None,
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+fn set_eq(left: &[Value], right: &[Value]) -> bool {
+    if left.len() != right.len() { return false; }
+    let mut left = left.iter().map(set_member_key).collect::<Vec<_>>();
+    let mut right = right.iter().map(set_member_key).collect::<Vec<_>>();
+    left.sort();
+    right.sort();
+    left == right
+}
+
+/// Exact native identity within a Gremlin Set. This deliberately differs from
+/// numeric predicates and shared scalar equality: boxed NaNs are equal,
+/// signed zeros and numeric widths differ, and BigDecimal scale matters.
+/// Equality, hashing and distinct all use this recursive key so nested native
+/// containers cannot disagree about member identity. This is not a wire codec.
+pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
+    fn framed(tag: u8, parts: impl IntoIterator<Item = Vec<u8>>) -> Vec<u8> {
+        let mut out = vec![tag];
+        for part in parts {
+            out.extend_from_slice(&(part.len() as u64).to_be_bytes());
+            out.extend(part);
+        }
+        out
+    }
+    fn map_key(entries: impl IntoIterator<Item = (Value, Value)>) -> Vec<u8> {
+        let mut pairs = entries.into_iter().map(|(key, value)| {
+            framed(27, [set_member_key(&key), set_member_key(&value)])
+        }).collect::<Vec<_>>();
+        pairs.sort();
+        framed(8, pairs)
+    }
+    let scalar = |tag, bytes| framed(tag, [bytes]);
+    match value {
+        Value::Null => vec![0],
+        Value::Bool(v) => scalar(1, vec![u8::from(*v)]),
+        Value::Byte(v) => scalar(12, v.to_be_bytes().to_vec()),
+        Value::UInt8(v) => scalar(18, v.to_be_bytes().to_vec()),
+        Value::Short(v) => scalar(13, v.to_be_bytes().to_vec()),
+        Value::UInt16(v) => scalar(19, v.to_be_bytes().to_vec()),
+        Value::Int(v) => scalar(2, v.to_be_bytes().to_vec()),
+        Value::UInt32(v) => scalar(20, v.to_be_bytes().to_vec()),
+        Value::Long(v) => scalar(14, v.to_be_bytes().to_vec()),
+        Value::UInt64(v) => scalar(21, v.to_be_bytes().to_vec()),
+        Value::Float32(v) => scalar(15, (if v.is_nan() { f32::NAN } else { *v }).to_be_bytes().to_vec()),
+        Value::Float(v) => scalar(3, (if v.is_nan() { f64::NAN } else { *v }).to_be_bytes().to_vec()),
+        Value::BigInt(v) => scalar(10, v.to_signed_bytes_be()),
+        Value::UInt128(v) => scalar(22, v.to_signed_bytes_be()),
+        Value::BigDecimal(v) => {
+            let (integer, scale) = v.as_bigint_and_exponent();
+            framed(11, [integer.to_signed_bytes_be(), scale.to_be_bytes().to_vec()])
+        }
+        Value::String(v) => scalar(4, v.as_bytes().to_vec()),
+        Value::DateTime(v) => scalar(16, v.as_bytes().to_vec()),
+        Value::Token(v) => scalar(24, v.as_bytes().to_vec()),
+        Value::Direction(v) => scalar(25, v.as_bytes().to_vec()),
+        Value::InternalId { table, offset } => framed(17, [table.to_be_bytes().to_vec(), offset.to_be_bytes().to_vec()]),
+        Value::Node { label, id } => framed(5, [label.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
+        Value::Edge { rel_type, id, .. } => framed(6, [rel_type.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
+        Value::List(items) => framed(7, items.iter().map(set_member_key)),
+        Value::Path(items) => framed(9, items.iter().map(set_member_key)),
+        Value::Set(items) | Value::BulkSet(items) => {
+            let mut parts = items.iter().map(set_member_key).collect::<Vec<_>>();
+            parts.sort();
+            framed(if matches!(value, Value::Set(_)) { 28 } else { 26 }, parts)
+        }
+        Value::MapEntry(pair) => framed(27, [set_member_key(&pair.0), set_member_key(&pair.1)]),
+        Value::Map(map) => map_key(map.iter().map(|(key, value)| (Value::String(key.clone()), value.clone()))),
+        Value::TypedMap(entries) => map_key(entries.iter().cloned()),
+    }
+}
+
+#[cfg(test)]
+mod native_set_tests {
+    use super::*;
+    #[test]
+    fn native_set_identity_is_unordered_typed_and_not_a_marker_map() {
+        let a = gremlin_set(vec![Value::Int(1), Value::Long(1), Value::Int(1)]);
+        let b = gremlin_set(vec![Value::Long(1), Value::Int(1)]);
+        assert_eq!(a, b);
+        assert_eq!(a.three_valued_eq(&b), Some(true));
+        assert_eq!(as_gremlin_set(&a).unwrap().len(), 2);
+        assert_ne!(a, Value::List(vec![Value::Int(1), Value::Long(1)]));
+        assert_ne!(gremlin_set(vec![Value::Int(1)]), gremlin_set(vec![Value::Long(1)]));
+        let map = Value::Map(BTreeMap::from([("__gremlin_set".into(), Value::List(vec![Value::Int(1)]))]));
+        assert!(as_gremlin_set(&map).is_none());
+        assert_ne!(map, gremlin_set(vec![Value::Int(1)]));
+        assert_eq!(gremlin_set(vec![a.clone(), b]), Value::Set(vec![a]));
+    }
+
+    #[test]
+    fn native_set_dedup_retains_java_floating_identity() {
+        let value = gremlin_set(vec![Value::Float(f64::NAN), Value::Float(f64::NAN), Value::Float(0.0), Value::Float(-0.0)]);
+        assert_eq!(as_gremlin_set(&value).unwrap().len(), 3);
+        assert_eq!(value, value.clone());
+    }
+
+    #[test]
+    fn native_set_nested_nan_identity_uses_one_canonical_key() {
+        let left = Value::Float(f64::from_bits(0x7ff8_0000_0000_0001));
+        let right = Value::Float(f64::from_bits(0x7ff8_0000_0000_0002));
+        assert_ne!(left, left.clone()); // Shared scalar equality is unchanged.
+        let containers = |nan: Value| vec![
+            nan.clone(),
+            Value::List(vec![Value::List(vec![nan.clone()])]),
+            Value::Path(vec![nan.clone()]),
+            Value::Map(BTreeMap::from([("n".into(), nan.clone())])),
+            Value::TypedMap(vec![(nan.clone(), Value::List(vec![nan.clone()]))]),
+            Value::MapEntry(Box::new((nan.clone(), nan.clone()))),
+            Value::BulkSet(vec![nan.clone(), nan]),
+        ];
+        for (a, b) in containers(left).into_iter().zip(containers(right)) {
+            assert_eq!(set_member_key(&a), set_member_key(&b));
+            assert_eq!(as_gremlin_set(&gremlin_set(vec![a.clone(), b.clone()])).unwrap().len(), 1);
+            assert_eq!(gremlin_set(vec![a]), gremlin_set(vec![b]));
+        }
+        assert_eq!(set_member_key(&Value::Float32(f32::from_bits(0x7fc0_0001))), set_member_key(&Value::Float32(f32::from_bits(0x7fc0_0002))));
+    }
+
+    #[test]
+    fn native_set_members_preserve_java_map_entry_and_decimal_identity() {
+        let a = Value::Map(BTreeMap::from([("x".into(), Value::Int(1)), ("y".into(), Value::Long(2))]));
+        let b = Value::TypedMap(vec![(Value::String("y".into()), Value::Long(2)), (Value::String("x".into()), Value::Int(1))]);
+        assert_eq!(set_member_key(&a), set_member_key(&b));
+        assert_eq!(as_gremlin_set(&gremlin_set(vec![a.clone(), b])).unwrap().len(), 1);
+        assert_ne!(set_member_key(&a), set_member_key(&Value::MapEntry(Box::new((Value::String("x".into()), Value::Int(1))))));
+        let decimal = |s: &str| Value::BigDecimal(s.parse().unwrap());
+        assert_eq!(decimal("1.0"), decimal("1.00")); // Existing shared equality.
+        assert_ne!(set_member_key(&decimal("1.0")), set_member_key(&decimal("1.00")));
+        assert_eq!(as_gremlin_set(&gremlin_set(vec![decimal("1.0"), decimal("1.00")])).unwrap().len(), 2);
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Value {
     /// Cypher `null` / SPARQL unbound. Distinct from `Unproductive`.
     Null,
@@ -91,6 +217,8 @@ pub enum Value {
         projected_properties: Option<Vec<String>>,
     },
     List(Vec<Value>),
+    /// Native Gremlin Set; member identity is typed and iteration retains encounter order.
+    Set(Vec<Value>),
     Map(BTreeMap<String, Value>),
     /// Gremlin maps may use graph objects, numbers, and tokens as keys.
     TypedMap(Vec<(Value, Value)>),
@@ -103,6 +231,42 @@ pub enum Value {
     /// Path objects produced by `pathMaterialization=NodesAndRelationships`.
     /// The first element is always a node; nodes and edges alternate.
     Path(Vec<Value>),
+}
+
+// Keep exact runtime equality for existing types while making Set identity
+// independent of insertion order, including Sets nested in lists and maps.
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Byte(a), Self::Byte(b)) => a == b,
+            (Self::UInt8(a), Self::UInt8(b)) => a == b,
+            (Self::Short(a), Self::Short(b)) => a == b,
+            (Self::UInt16(a), Self::UInt16(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) | (Self::Long(a), Self::Long(b)) => a == b,
+            (Self::UInt32(a), Self::UInt32(b)) => a == b,
+            (Self::UInt64(a), Self::UInt64(b)) => a == b,
+            (Self::Float32(a), Self::Float32(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => a == b,
+            (Self::BigInt(a), Self::BigInt(b)) | (Self::UInt128(a), Self::UInt128(b)) => a == b,
+            (Self::BigDecimal(a), Self::BigDecimal(b)) => a == b,
+            (Self::String(a), Self::String(b)) | (Self::DateTime(a), Self::DateTime(b))
+            | (Self::Token(a), Self::Token(b)) | (Self::Direction(a), Self::Direction(b)) => a == b,
+            (Self::InternalId { table: a, offset: x }, Self::InternalId { table: b, offset: y }) => (a,x) == (b,y),
+            (Self::Node { label: a, id: x }, Self::Node { label: b, id: y }) => (a,x) == (b,y),
+            (Self::Edge { rel_type:a,id:b,src_label:c,src_id:d,dst_label:e,dst_id:f,projected_properties:g },
+             Self::Edge { rel_type:h,id:i,src_label:j,src_id:k,dst_label:l,dst_id:m,projected_properties:n }) =>
+                (a,b,c,d,e,f,g) == (h,i,j,k,l,m,n),
+            (Self::List(a), Self::List(b)) | (Self::Path(a), Self::Path(b))
+            | (Self::BulkSet(a), Self::BulkSet(b)) => a == b,
+            (Self::Set(a), Self::Set(b)) => set_eq(a,b),
+            (Self::Map(a), Self::Map(b)) => a == b,
+            (Self::TypedMap(a), Self::TypedMap(b)) => a == b,
+            (Self::MapEntry(a), Self::MapEntry(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl Value {
@@ -149,6 +313,7 @@ impl Value {
             Self::Node { .. } => "node",
             Self::Edge { .. } => "edge",
             Self::List(_) => "list",
+            Self::Set(_) => "set",
             Self::Map(_) => "map",
             Self::TypedMap(_) => "map",
             Self::MapEntry(_) => "map entry",
@@ -309,6 +474,7 @@ impl Value {
             (Self::List(a), Self::List(b)) | (Self::Path(a), Self::Path(b)) => {
                 semantic_slice_eq(a, b)
             }
+            (Self::Set(a), Self::Set(b)) => set_eq(a, b),
             (Self::BulkSet(a), Self::BulkSet(b)) => {
                 let mut remaining = b.iter().collect::<Vec<_>>();
                 a.len() == b.len()

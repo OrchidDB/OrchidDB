@@ -563,6 +563,13 @@ pub struct GraphPlan {
     pub root: Box<Node>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SampleKind {
+    Coin(f64),
+    Global(u64),
+    Local(u64),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     // -------- output boundary --------
@@ -834,6 +841,15 @@ pub enum Node {
     },
     GraphSort {
         keys: Vec<SortKey>,
+        input: Box<Node>,
+    },
+    /// Stateful Gremlin coin and local/global sampling. The step id survives
+    /// correlated-plan cloning, so child invocations share the step's RNG.
+    GraphSample {
+        kind: SampleKind,
+        seed: Option<i64>,
+        step_id: String,
+        weight: Option<IrExpr>,
         input: Box<Node>,
     },
     GraphSlice {

@@ -65,6 +65,9 @@ fn hash_value_u64(value: &Value) -> u64 {
         Value::List(items) | Value::Path(items) => items.iter().fold(u64::MAX, |hash, item| {
             combine_hash_scalar(hash, hash_value_u64(item))
         }),
+        Value::Set(_) => crate::ir::value::set_member_key(value).into_iter().fold(
+            murmurhash64(28), |hash, byte| combine_hash_scalar(hash, murmurhash64(u64::from(byte)))
+        ),
         Value::BulkSet(items) => {
             let mut hashes = items.iter().map(hash_value_u64).collect::<Vec<_>>();
             hashes.sort_unstable();
@@ -186,6 +189,25 @@ fn bytes_to_lower_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod typed_map_tests {
     use super::*;
+    #[test]
+    fn native_set_hash_is_order_independent() {
+        let a = crate::ir::value::gremlin_set(vec![Value::Int(1), Value::Long(2)]);
+        let b = crate::ir::value::gremlin_set(vec![Value::Long(2), Value::Int(1)]);
+        assert_eq!(hash_value_u64(&a), hash_value_u64(&b));
+        assert_ne!(hash_value_u64(&a), hash_value_u64(&Value::List(vec![Value::Int(1), Value::Long(2)])));
+    }
+    #[test]
+    fn native_set_hash_canonicalizes_nested_nan_bits() {
+        let a = Value::Float(f64::from_bits(0x7ff8_0000_0000_0001));
+        let b = Value::Float(f64::from_bits(0x7ff8_0000_0000_0002));
+        for (a, b) in [(a.clone(), b.clone()), (Value::List(vec![a.clone()]), Value::List(vec![b.clone()])),
+            (Value::Map(BTreeMap::from([("n".into(), a)])), Value::TypedMap(vec![(Value::String("n".into()), b)]))] {
+            let a = crate::ir::value::gremlin_set(vec![a]);
+            let b = crate::ir::value::gremlin_set(vec![b]);
+            assert_eq!(a, b);
+            assert_eq!(hash_value_u64(&a), hash_value_u64(&b));
+        }
+    }
     #[test]
     fn typed_map_hash_is_order_independent_and_preserves_tokens() {
         let entries = vec![

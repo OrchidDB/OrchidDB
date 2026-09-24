@@ -239,13 +239,6 @@ impl ColumnBuilder {
     }
 
     fn push(&mut self, value: Value) {
-        // Gremlin Set marker maps surface as their item list — the
-        // harness strips `s[...]` tags to comma-joined text, which is
-        // exactly the list rendering. Cypher never produces this shape.
-        let value = match crate::ir::value::as_gremlin_set(&value) {
-            Some(items) => Value::List(items.to_vec()),
-            None => value,
-        };
         self.values.push(value);
     }
 
@@ -419,6 +412,7 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
             dst_id,
             projected_properties.as_deref(),
         )),
+        Value::Set(items) => Value::Set(items.into_iter().map(|item| expand_element(item, graph)).collect()),
         Value::BulkSet(items) => Value::BulkSet(
             items
                 .into_iter()
@@ -538,6 +532,7 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                     .collect::<Vec<_>>()
             ),
         ),
+        Value::Set(items) => tagged("set", json!(items.iter().map(|v| gremlin_typed_value(v, graph)).collect::<Vec<_>>())),
         Value::BulkSet(items) => tagged(
             "bulkset",
             json!(
@@ -563,17 +558,6 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
         Value::Token(token) => tagged("token", json!(token)),
         Value::Direction(direction) => tagged("direction", json!(direction)),
         Value::Map(map) => {
-            if let Some(items) = crate::ir::value::as_gremlin_set(value) {
-                return tagged(
-                    "set",
-                    json!(
-                        items
-                            .iter()
-                            .map(|v| gremlin_typed_value(v, graph))
-                            .collect::<Vec<_>>()
-                    ),
-                );
-            }
             tagged(
                 "map",
                 json!(
@@ -610,6 +594,7 @@ fn gremlin_display_element(value: Value, graph: &PropertyGraph) -> Value {
             rel_type,
             gremlin_node_name(graph, &dst_label, dst_id)
         )),
+        Value::Set(items) => Value::Set(items.into_iter().map(|item| gremlin_display_element(item, graph)).collect()),
         Value::BulkSet(items) => Value::BulkSet(
             items
                 .into_iter()
@@ -733,7 +718,7 @@ fn format_property_value(value: &Value) -> String {
         Value::BigDecimal(d) => d.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::BulkSet(items) | Value::Set(items) => {
             let body: Vec<String> = items.iter().map(format_property_value).collect();
             format!("[{}]", body.join(","))
         }
@@ -1082,6 +1067,19 @@ mod typed_transport_tests {
 #[cfg(test)]
 mod bulkset_native_tests {
     use super::*;
+    use std::collections::BTreeMap;
+    #[test]
+    fn native_set_payload_preserves_kind_and_ordinary_maps() {
+        let graph = PropertyGraph::new();
+        let value = crate::ir::value::gremlin_set(vec![Value::Int(7), Value::Long(7), Value::Int(7)]);
+        let payload = gremlin_typed_value(&value, &graph);
+        assert_eq!(payload["type"], "set");
+        assert_eq!(payload["value"].as_array().unwrap().len(), 2);
+        assert_eq!(payload["value"][0]["type"], "int");
+        assert_eq!(payload["value"][1]["type"], "long");
+        let map = Value::Map(BTreeMap::from([("__gremlin_set".into(), Value::List(vec![Value::Int(1)]))]));
+        assert_eq!(gremlin_typed_value(&map, &graph)["type"], "map");
+    }
     #[test]
     fn bulkset_native_payload_preserves_runtime_kind_and_duplicates() {
         let payload = gremlin_typed_value(

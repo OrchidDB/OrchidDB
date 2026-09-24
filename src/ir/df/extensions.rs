@@ -971,3 +971,23 @@ ir_extension! {
         }
     },
 }
+
+// Sampling remains an interpreter operator but round-trips through HEP.
+ir_extension! {
+    GraphSample {
+        kind: crate::ir::plan::SampleKind,
+        seed: Option<i64>,
+        step_id: String,
+        weight: Option<IrExpr>,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphSample {
+            kind: s.kind,
+            seed: s.seed,
+            step_id: s.step_id.clone(),
+            weight: s.weight.clone(),
+            input: Box::new(c.remove(0)),
+        }
+    },
+}
