@@ -33,6 +33,7 @@ pub(crate) fn repeat_op(
     emit_mode: &EmitMode,
     emit_seed_predicate: Option<&IrExpr>,
     emit_seed_traversal: Option<&Node>,
+    until_first: bool,
     until: Option<&IrExpr>,
     until_traversal: Option<&Node>,
     _path: Option<&str>,
@@ -64,6 +65,7 @@ pub(crate) fn repeat_op(
         emit_mode,
         emit_seed_predicate,
         emit_seed_traversal,
+        until_first,
         until,
         until_traversal,
         _path,
@@ -98,6 +100,7 @@ fn repeat_op_inner(
     emit_mode: &EmitMode,
     emit_seed_predicate: Option<&IrExpr>,
     emit_seed_traversal: Option<&Node>,
+    until_first: bool,
     until: Option<&IrExpr>,
     until_traversal: Option<&Node>,
     _path: Option<&str>,
@@ -122,6 +125,18 @@ fn repeat_op_inner(
     for row in &mut frontier {
         row.bindings.insert("__loops".into(), Value::Int(0));
         if let Some(name) = loop_name { row.bindings.insert(format!("__loops:{name}"), Value::Int(0)); }
+    }
+    if until_first {
+        let mut continuing = Vec::new();
+        for row in frontier {
+            let done = if let Some(predicate) = until {
+                matches!(eval(predicate, &row, graph)?, Value::Bool(true))
+            } else if let Some(probe) = until_traversal {
+                !run_body_with_frontier(probe, vec![row.clone()], graph, ctx)?.is_empty()
+            } else { false };
+            if done { out.push(row); } else { continuing.push(row); }
+        }
+        frontier = continuing;
     }
     if emit_each_iteration {
         if let Some(seed_predicate) = emit_seed_predicate {
@@ -427,6 +442,14 @@ pub(crate) fn run_with_frontier(
             sort_op(keys, rows, graph)
         }
         Node::GraphSlice { slice, input } => {
+            if let Node::GraphSideEffect { label, value_input, value, seed, reducer, eager: false, input: source } = input.as_ref() {
+                if let Some(fetch) = slice.fetch.filter(|_| slice.tail.is_none()) {
+                    let rows = run_with_frontier(source, frontier, graph, ctx)?;
+                    let consumed = slice_op(&crate::ir::plan::Slice { offset: 0, fetch: Some(slice.offset.saturating_add(fetch)), tail: None }, rows)?;
+                    let rows = ctx.write_side_effect(label, value_input, value, seed, reducer, false, consumed, graph)?;
+                    return slice_op(slice, rows);
+                }
+            }
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             slice_op(slice, rows)
         }
@@ -549,6 +572,7 @@ pub(crate) fn run_with_frontier(
             loop_name,
             times,
             emit,
+            until_first,
             until,
             until_traversal,
             path,
@@ -567,6 +591,7 @@ pub(crate) fn run_with_frontier(
                 emit,
                 prefix_predicate.as_ref(),
                 prefix_traversal.as_deref(),
+                *until_first,
                 until.as_ref(),
                 until_traversal.as_deref(),
                 path.as_deref(),
