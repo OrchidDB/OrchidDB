@@ -30,3 +30,15 @@ For Crabgraph only, add **Passed runtime**, the sum of `elapsed_ms` for records 
 - Preserve Arrow buffers when the result already consists of one batch.
 - Hash Arrow types directly instead of allocating temporary debug strings for scan-cache keys.
 - Run background conformance against copied, committed binaries while subsequent source edits continue. Each result belongs to its captured revision; never merge cases across revisions. Avoid compilation during timing-sensitive runs.
+
+## Second logical optimization batch
+
+Implement all five changes before the next full conformance run:
+
+1. **Required bindings:** residual SQL IR operators declare dependencies and writes. Propagate required return bindings through projections, filters, expansion, unwind, ordering, and slicing. Prune inside the physical kernel before encoding Arrow output. Opaque functions, JVM operators, reducers, and writes retain their complete inputs.
+2. **Predicate movement:** move total, deterministic predicates across compatible total read operators when their dependencies are not overwritten. Scope replacement, effects, fallible expressions, ordering, and limits remain fences.
+3. **Projection simplification:** compose adjacent binding/literal projections; preserve simultaneous alias evaluation, alias shadowing, missing-versus-null behavior, and bulk. Precompute common-expression slots and identity-copy elimination once during planning. Fallible/opaque expressions preserve their evaluation order and count.
+4. **Shared SQL-island analysis:** analyze purity and complexity bottom-up once. Memoize lowering for original immutable nodes within a query and Gremlin label scope. Failed parent attempts reuse already-lowered children. Use borrowed nodes and unique source aliases; correlated scopes and temporary rewritten nodes bypass the memo. No graph data or plans survive into another query.
+5. **Correlated batching:** distribute eligible pure row-wise subplans over one frontier, with a private identity per input occurrence. Group results back in original input order before applying existing inner/optional/semi/anti/scalar semantics. Reset child bulk to one and apply parent bulk on the join. Reductions, scope replacement, effects, and opaque callbacks keep their existing execution behavior.
+
+Focused checks cover duplicate values and fan-out, non-unit bulk, projection shadowing, null/missing fields, suppressed-error hazards, mutation visibility, rollback, and query-local cache lifetime. After this complete batch, run the full suite locally against a committed build. Compare total, mean, median, and matched scenario improvements against the 1,511-pass bcfad49 baseline (189.31 seconds wall time).

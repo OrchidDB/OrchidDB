@@ -4,6 +4,9 @@ use super::*;
 
 impl LoweringContext<'_> {
     pub(super) fn lower_node(&mut self, node: &Node) -> RelResult<LoweredNode> {
+        self.memoized_lower_node(node)
+    }
+    pub(super) fn lower_node_inner(&mut self, node: &Node) -> RelResult<LoweredNode> {
         use Node::*;
         let lowered = match node {
             GraphReturn {

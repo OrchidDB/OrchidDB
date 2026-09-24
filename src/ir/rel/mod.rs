@@ -9,6 +9,7 @@
 
 pub mod dag;
 pub mod runtime;
+mod island_planner;
 mod scans;
 use scans::*;
 
@@ -216,6 +217,7 @@ enum BindingShape {
 
 #[derive(Debug)]
 struct LoweringContext<'a> {
+    island_memo: Option<island_planner::SharedMemo>,
     graph: &'a PropertyGraph,
     options: RelBackendOptions,
     policy: GraphPlanPolicy,
@@ -265,6 +267,7 @@ impl RelBackend {
             )));
         }
         let mut ctx = LoweringContext {
+            island_memo: None,
             graph,
             options: self.options.clone(),
             policy: plan.policy.clone(),

@@ -539,6 +539,8 @@ fn group_members_source() -> Subplan {
         plan: kernel("GroupMembers", vec![], |_, s| Ok(s.frontier.clone())),
         prepared: Default::default(),
         observable: false,
+        batchable: false,
+        batch_names: Default::default(),
         barrier: false,
         group_barrier: false,
         group_split: None,

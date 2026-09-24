@@ -48,7 +48,10 @@ pub(crate) struct State {
     pub graph: PropertyGraph,
     pub context: ExecutionContext,
     pub frontier: Vec<Row>,
+    pub batch_key: Option<String>,
 }
+mod optimize;
+
 type Kernel = dyn Fn(Vec<Vec<Row>>, &mut State) -> IrResult<Vec<Row>> + Send + Sync;
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 fn failure(e: impl ToString) -> DataFusionError {
@@ -119,6 +122,7 @@ pub(crate) struct RowKernel {
     relational_input: Option<Vec<String>>,
     /// Adjacent unary kernels may retain rows in memory without reordering evaluation.
     fuse_unary: bool,
+    contract: Option<optimize::Contract>,
 }
 impl fmt::Debug for RowKernel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -199,8 +203,9 @@ fn kernel(
             ),
             kernel: Arc::new(operation),
             relational_input: None,
+            contract: None,
             fuse_unary: matches!(name,
-                "Bind" | "Filter" | "Project" | "CurrentProject" | "Return"
+                "Bind" | "Filter" | "Project" | "CurrentProject" | "Return" | "RetainBindings"
                 | "Expand" | "PathFilter" | "CorrelatedInput"
                 | "NodeScan" | "RelScan" | "Values" | "OneRow" | "Empty"
             ),
@@ -363,11 +368,12 @@ struct Compiler<'a> {
     graph: &'a PropertyGraph,
     policy: crate::ir::policy::GraphPlanPolicy,
     sql: bool,
+    islands: super::island_planner::SharedMemo,
 }
 impl Compiler<'_> {
     fn lower(&self, node: &Node) -> Result<LogicalPlan> {
         if self.sql
-            && snapshot_safe(node)
+            && self.islands.lock().unwrap().safe(node)
             && !matches!(
                 node,
                 Node::GraphReturn { .. }
@@ -376,10 +382,9 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             )
         {
-            let graph_plan = GraphPlan::new(self.policy.clone(), node.clone());
             if let Ok(lowered) = RelBackend::new()
                 .preserving_traverser_state()
-                .lower(&graph_plan, self.graph)
+                .lower_island(&self.policy, node, self.graph, self.islands.clone())
             {
                 let mut adapter =
                     match kernel("DecodeTraversers", vec![lowered.plan], |mut inputs, _| {
@@ -401,7 +406,7 @@ impl Compiler<'_> {
                 return Ok(plan);
             }
         }
-        self.lower_kernel(node)
+        self.lower_kernel(node).map(|plan| optimize::annotate(plan, node))
     }
     fn lower_kernel(&self, node: &Node) -> Result<LogicalPlan> {
         use crate::ir::interpreter::ops::*;
@@ -448,7 +453,7 @@ pub async fn execute_rows_with_jvm(
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local=graph.clone();
-    let result=execute_rows_inner(plan, &local, jvm, None, None).await?;
+    let result=execute_rows_inner(plan, &local, jvm, None, None, false).await?;
     if !crate::ir::jvm::contains_computer(&plan.root) {graph.restore_execution_overlay(&local);}
     Ok(result)
 }
@@ -458,13 +463,21 @@ async fn execute_rows_inner(
     jvm: JvmExecution,
     timeout: Option<std::time::Duration>,
     resources: Option<&super::dag::DagSession>,
+    prune_return: bool,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),
         sql: !has_mutating_branches(&plan.root),
+        islands: super::island_planner::IslandMemo::new(&plan.root),
     };
-    let logical = fuse_unary_kernels(compiler.lower(&plan.root).map_err(|e| e.to_string())?).map_err(|e|e.to_string())?;
+    let needed = if prune_return { match plan.root.as_ref() {
+        Node::GraphReturn {fields,..} => Some(fields.iter().cloned().collect()), _=>None
+    }} else {None};
+    let logical = optimize::optimize(compiler.lower(&plan.root).map_err(|e| e.to_string())?, needed.as_ref()).map_err(|e|e.to_string())?;
+    // Lowering memo entries may include abandoned candidate sources. The
+    // executable DAG owns the sources it uses; release the compiler before I/O.
+    drop(compiler);
     let mut context = ExecutionContext::default();
     context.jvm = jvm;
     context.sql_timeout = timeout;
@@ -472,6 +485,7 @@ async fn execute_rows_inner(
         graph: graph.clone(),
         context,
         frontier: vec![Row::new()],
+        batch_key: None,
     }));
     let lowered = LoweredPlan {
         plan: logical,
@@ -1374,18 +1388,7 @@ impl Compiler<'_> {
     }
 }
 
-fn snapshot_safe(node: &Node) -> bool {
-    use crate::ir::analysis::{Effect, children, node_effect};
-    if node_effect(node) != Effect::Pure
-        || matches!(
-            node,
-            Node::GraphCorrelate { .. } | Node::GraphValues { bulk: Some(_), .. }
-        )
-    {
-        return false;
-    }
-    children(node).into_iter().all(snapshot_safe)
-}
+
 pub(crate) mod control;
 
 /// Execute one statement atomically, including language result conversion.
@@ -1405,7 +1408,7 @@ pub(crate) async fn execute_with_session(
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
-    let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources).await?;
+    let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources, true).await?;
     let (fields, form) = match plan.root.as_ref() {
         Node::GraphReturn {
             fields,
