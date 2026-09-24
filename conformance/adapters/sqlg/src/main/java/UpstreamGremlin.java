@@ -198,6 +198,7 @@ public class UpstreamGremlin {
  static class Context implements World {
   boolean allowNullPropertyValues;
   final Map<String,Object> typedParameters=new LinkedHashMap<>();
+  final Map<String,String> parameterDefinitions=new LinkedHashMap<>(),predicateDefinitions=new LinkedHashMap<>();
   GremlinGroovyScriptEngine scriptEngine; CrabJvmExecutor executor;
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
   public GraphTraversalSource getGraphTraversalSource(GraphData data) {
@@ -210,7 +211,7 @@ public class UpstreamGremlin {
     if(backend.equals("reference")){fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerTextSearchFactory(fixture));fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerDegreeCentralityFactory(fixture));graph=fixture;return fixture.traversal();}
     if(jvmProfile()){
      graph=CrabGraph.open();
-     copyFixture(fixture,graph);fixture.close();
+     ((CrabGraph)graph).atomicMutation(()->copyFixture(fixture,graph));fixture.close();
      if(graph.features().graph().supportsTransactions())graph.tx().commit();
      source=backend.equals("crabgraph-computer")?graph.traversal().withComputer():graph.traversal();
      return source;
@@ -306,6 +307,17 @@ public class UpstreamGremlin {
   // Upstream uses immutable Collections.emptySet; side effect seeds are mutable.
   return converted instanceof Set<?> set?new LinkedHashSet<>(set):converted;
  }
+ /** Count assertions retain the original parser and parameter substitution. */
+ static void prepareAssertionParameters(StepDefinition steps,String script)throws Exception{
+  Context context=context(steps);
+  for(var parameter:context.parameterDefinitions.entrySet()){
+   String name=parameter.getKey();
+   if(!Pattern.compile("\\b"+Pattern.quote(name)+"\\b").matcher(script).find())continue;
+   String predicate=context.predicateDefinitions.get(name);
+   if(predicate==null)steps.usingTheParameterXDefinedAsX(name,parameter.getValue());
+   else steps.usingTheParameterXOfPX(name,predicate,parameter.getValue());
+  }
+ }
  static Traversal<?,?> jvmTraversal(StepDefinition steps,String script)throws Exception{
   var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
   String updated=(String)path.invoke(steps,script);boolean remote=hasInlineLambda(updated);
@@ -343,9 +355,10 @@ public class UpstreamGremlin {
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
   else if(t.equals("the graph initializer of")){if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
-  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile())context(def).typedParameters.put(m.group(1),typedParameter(def,unquote(m.group(2))));else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
+  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
   else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(jvmProfile()){
-   Bindings values=bindings(def,false);values.put("__value",typedParameter(def,unquote(m.group(3))));
+   String raw=unquote(m.group(3));context(def).parameterDefinitions.put(m.group(1),raw);context(def).predicateDefinitions.put(m.group(1),m.group(2));
+   Bindings values=bindings(def,false);values.put("__value",typedParameter(def,raw));
    context(def).typedParameters.put(m.group(1),scriptEngine(def).eval("P."+m.group(2)+"(__value)",values));
   }else def.usingTheParameterXOfPX(m.group(1),m.group(2),unquote(m.group(3)));}
   else if(t.equals("the traversal of"))defineTraversal(def,doc);
@@ -354,7 +367,7 @@ public class UpstreamGremlin {
    List<List<String>> table=new ArrayList<>();for(var row:s.get("table")){List<String> r=new ArrayList<>();for(var c:row)r.add(c.asText());table.add(r);}var dt=DataTable.create(table);
    switch(t){case "the result should be unordered"->def.theResultShouldBeUnordered(dt);case "the result should be ordered"->def.theResultShouldBeOrdered(dt);case "the result should be of"->def.theResultShouldBeOf(dt);default->throw new IllegalArgumentException("Unmapped step: "+t);}
   }else if((m=Pattern.compile("the result should have a count of (\\d+)").matcher(t)).matches())def.theResultShouldHaveACountOf(Integer.parseInt(m.group(1)));
-  else if((m=Pattern.compile("(?:debug )?the graph should return (\\d+) for count of (.+)").matcher(t)).matches())def.theGraphShouldReturnForCountOf(Integer.parseInt(m.group(1)),unquote(m.group(2)));
+  else if((m=Pattern.compile("(?:debug )?the graph should return (\\d+) for count of (.+)").matcher(t)).matches()){String script=unquote(m.group(2));if(jvmProfile())prepareAssertionParameters(def,script);def.theGraphShouldReturnForCountOf(Integer.parseInt(m.group(1)),script);}
   else if(t.equals("the result should be empty"))def.theResultShouldBeEmpty();
   else if(t.equals("the traversal will raise an error"))def.theTraversalWillRaiseAnError();
   else if((m=Pattern.compile("the traversal will raise an error with message (\\w+) text of (.+)").matcher(t)).matches())def.theTraversalWillRaiseAnErrorWithMessage(m.group(1),unquote(m.group(2)));
