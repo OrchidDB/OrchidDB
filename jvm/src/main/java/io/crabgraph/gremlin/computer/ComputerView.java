@@ -85,7 +85,12 @@ public final class ComputerView implements Graph {
     @Override public void close() {
         // Reads may lazily open a transaction in the native provider. Never end a
         // transaction that was already open when the caller submitted the job.
-        if (!publishedOriginal && ownsSourceTransaction && source.tx().isOpen()) source.tx().rollback();
+        boolean interrupted = Thread.interrupted();
+        try {
+            if (!publishedOriginal && ownsSourceTransaction && source.tx().isOpen()) source.tx().rollback();
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
     }
 
     private static UnsupportedOperationException immutable() {
@@ -117,6 +122,7 @@ public final class ComputerView implements Graph {
         boolean transactional = target.features().graph().supportsTransactions();
         try {
             if (transactional && !target.tx().isOpen()) target.tx().open();
+            Runnable copyGraph = () -> {
             if (persist != GraphComputer.Persist.NOTHING) {
                 Map<Object, Vertex> vertices = new HashMap<>();
                 vertices().forEachRemaining(vertex -> {
@@ -131,6 +137,9 @@ public final class ComputerView implements Graph {
                     edge.properties().forEachRemaining(property -> copy.property(property.key(), property.value()));
                 });
             }
+            };
+            if (target instanceof CrabGraph) ((CrabGraph) target).atomicMutation(copyGraph);
+            else copyGraph.run();
             interrupted();
             if (transactional) target.tx().commit();
             close();
