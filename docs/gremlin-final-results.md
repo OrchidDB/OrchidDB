@@ -82,6 +82,19 @@ are unchanged. Results record source revisions, binary/JAR hashes and the
 original scenario identifiers. Source and executable identity are captured
 before execution. The native and JVM build manifests accompany the artifacts.
 
+All three complete original Java suites have zero failures and timeouts:
+
+| Original suite | Passed occurrences | Upstream exclusions | Total occurrences |
+| --- | ---: | ---: | ---: |
+| ProcessStandardSuite | 920 | 17 | 937 |
+| StructureStandardSuite | 656 | 287 | 943 |
+| ProcessComputerSuite | 700 | 168 | 868 |
+
+These are test occurrences, preserving repeated upstream suite entries and
+parameterized invocations. StructureStandardSuite covers 831 unique tests
+(573 passed, 258 excluded). Per-test requirements and exclusion reasons remain
+in the raw reports.
+
 The complete original `ProcessComputerSuite` records **700 passed and 168
 upstream exclusions across 868 test occurrences**, with zero failures or
 timeouts. Those occurrences cover 852 unique tests (695 passed, 157 excluded);
