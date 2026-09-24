@@ -172,12 +172,12 @@ fn arrow_reserved_columns_are_never_materialized_as_jvm_user_properties() {
         );
         assert_eq!(properties(&mut store, &edge, &[key]), json!([]));
     }
-    let null = call(
+    let null_property = call(
         &mut store,
         json!({"op":"setProperty","owner":edge["handle"],
         "key":"__src_id","value":{"type":"null"}}),
     );
-    assert_eq!(properties(&mut store, &edge, &["__src_id"]), json!([null]));
+    assert_eq!(properties(&mut store, &edge, &["__src_id"]), json!([null_property]));
     assert_eq!(
         store.graph.edge_endpoints("link", 0),
         Some(("node".into(), 0, "node".into(), 1))
