@@ -140,18 +140,12 @@ where
 /// a sub-traversal probe (for emit) or `lit(false)` (for until).
 fn try_until_steps_to_expr(steps: &[Step]) -> GremlinPlanResult<Option<crate::ir::expr::IrExpr>> {
     use super::predicates::predicate_to_expr;
-    use crate::ir::policy::PropertyMissing;
     let cur = || IrExpr::Binding("current".into());
     Ok(Some(match steps {
-        [Step::Has { key, predicate }] => predicate_to_expr(
-            IrExpr::property("current", key.clone(), PropertyMissing::DropUnproductive),
-            predicate,
-        )?,
-        [Step::HasNot { key }] => IrExpr::IsNull(Box::new(IrExpr::property(
-            "current",
-            key.clone(),
-            PropertyMissing::NullOnMissing,
-        ))),
+        // Property predicates must visit every native property record, including
+        // stored nulls. Reuse the child traversal's presence-aware lowering.
+        [Step::Has { .. }] => return Ok(None),
+        [Step::HasNot { key }] => super::filter::property_presence_expr(key, false),
         [Step::HasId { ids }] => {
             let mut parts = Vec::with_capacity(ids.len());
             for v in ids {

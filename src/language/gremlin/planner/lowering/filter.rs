@@ -32,11 +32,7 @@ pub(super) fn lower_has(input: Node, key: &str, predicate: &Predicate) -> Gremli
 
 pub(super) fn lower_has_not(input: Node, key: &str) -> GremlinPlanResult<Node> {
     Ok(Node::GraphFilter {
-        condition: IrExpr::IsNull(Box::new(IrExpr::property(
-            CURRENT,
-            key.to_string(),
-            PropertyMissing::NullOnMissing,
-        ))),
+        condition: property_presence_expr(key, false),
         input: input.boxed(),
     })
 }
@@ -61,12 +57,19 @@ pub(super) fn lower_has_key_any(input: Node, keys: &[String]) -> GremlinPlanResu
     })
 }
 
+pub(super) fn property_presence_expr(key: &str, present: bool) -> IrExpr {
+    IrExpr::Binary {
+        op: if present { crate::ir::expr::BinaryOp::Gt } else { crate::ir::expr::BinaryOp::Eq },
+        lhs: Box::new(IrExpr::Call { name: "size".into(), args: vec![IrExpr::Call {
+            name: "requested_property_values".into(),
+            args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::List(vec![IrExpr::lit_str(key)])],
+        }] }),
+        rhs: Box::new(IrExpr::lit_int(0)),
+    }
+}
+
 fn has_key_expr(key: &str) -> IrExpr {
-    let element_match = IrExpr::IsNotNull(Box::new(IrExpr::property(
-        CURRENT,
-        key.to_string(),
-        PropertyMissing::NullOnMissing,
-    )));
+    let element_match = property_presence_expr(key, true);
     let property_map_match = IrExpr::Binary {
         op: crate::ir::expr::BinaryOp::Eq,
         lhs: Box::new(IrExpr::property(

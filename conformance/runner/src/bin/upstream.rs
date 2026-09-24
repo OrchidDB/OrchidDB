@@ -48,7 +48,7 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
   item["properties"].as_object().ok_or("Fixture properties must be an object")?.iter()
    .map(|(key,value)|fixture_property(value,item["property_types"][key].as_str()).map(|v|(key.clone(),v))).collect()
  }
- let graph=PropertyGraph::new();let mut nodes=BTreeMap::new();
+ let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));let mut nodes=BTreeMap::new();
  for n in req["nodes"].as_array().ok_or("Fixture nodes must be an array")?{
   let v=graph.insert_node(n["label"].as_str().ok_or("Fixture node label missing")?,if n["property_records"].is_array(){BTreeMap::new()}else{properties(n)?});
   graph.set_element_public_id(&v,fixture_property(&n["id"],n["id_type"].as_str())?).map_err(|e|e.to_string())?;
@@ -111,7 +111,7 @@ async fn main(){
  let op=req["op"].as_str().unwrap_or("cypher");
  let result:Result<Value,String>=match op{
  "fixture"=>fixture_graph(&req).and_then(|graph|engine.replace_graph(graph).map(|_|json!({"ok":true}))),
- "reset"=>engine.replace_graph(PropertyGraph::new()).map(|_|json!({"ok":true})),
+ "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
  "rdf"=>rdf(&req).await,
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())},
  _=>{

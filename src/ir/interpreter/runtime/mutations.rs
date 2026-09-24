@@ -101,18 +101,22 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                         BTreeMap::new(),
                     )?;
                 } else {
-                    graph.set_property(element, &key, value)?;
+                    graph.set_gremlin_property(element, &key, value)?;
                 }
             }
             Ok(element.clone())
         }
         ("gremlin.mutation.add_vertex", [name, props]) => {
-            let element = graph.insert_node(label(name)?, properties(props)?);
+            let props = properties(props)?;
+            let element = graph.insert_node(label(name)?, props.clone());
+            for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
             graph.assign_generated_public_id(&element)?;
             Ok(element)
         }
         ("gremlin.mutation.add_edge", [name, src, dst, props]) => {
-            let element = graph.insert_edge(label(name)?, src, dst, properties(props)?)?;
+            let props = properties(props)?;
+            let element = graph.insert_edge(label(name)?, src, dst, props.clone())?;
+            for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
             graph.assign_generated_public_id(&element)?;
             Ok(element)
         }
@@ -151,7 +155,7 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                             meta.clone(),
                         )?;
                     } else {
-                        graph.set_property(target, key, value.clone())?;
+                        graph.set_gremlin_property(target, key, value.clone())?;
                     }
                 }
                 _ => return Err(error("Property key must be a String or T.id")),
@@ -167,7 +171,7 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                     "Property key can not be a hidden key: {key}"
                 )));
             }
-            graph.set_property(target, key, value.clone())?;
+            graph.set_gremlin_property(target, key, value.clone())?;
             Ok(target.clone())
         }
         _ => Err(error(format!("Invalid mutation procedure: {name}"))),
@@ -273,17 +277,17 @@ pub(crate) fn matches(
     validate(&map, edge, false)?;
     for (key, expected) in map {
         let actual = match key {
-            Value::String(key) if matches!(element, Value::Node { .. }) => {
+            Value::String(key) => {
                 let found = graph.properties(element, &[key]).iter().any(|property| {
-                    matches!(property, Value::VertexProperty { value, .. }
-                        if value.three_valued_eq(&expected) == Some(true))
+                    matches!(property, Value::VertexProperty { value, .. } | Value::Property { value, .. }
+                        if (value.as_ref() == &Value::Null && expected == Value::Null)
+                            || value.three_valued_eq(&expected) == Some(true))
                 });
                 if !found {
                     return Ok(false);
                 }
                 continue;
             }
-            Value::String(key) => super::graph::graph_element_property(graph, element, &key),
             Value::Token(key) if key == "id" => super::graph::gremlin_user_id(graph, element),
             Value::Token(key) if key == "label" => match element {
                 Value::Node { label, .. } => Value::String(label.clone()),
@@ -388,11 +392,12 @@ fn merge_create(
             name,
             &endpoint(src, out, graph)?,
             &endpoint(dst, input, graph)?,
-            props,
+            props.clone(),
         )?
     } else {
-        graph.insert_node(name, props)
+        graph.insert_node(name, props.clone())
     };
+    for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
     graph.assign_generated_public_id(&element)?;
     if let Some(id) = public_id {
         graph.set_element_public_id(&element, id)?;

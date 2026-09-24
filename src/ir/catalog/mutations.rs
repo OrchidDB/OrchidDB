@@ -174,6 +174,10 @@ impl PropertyGraph {
                 if overlay.deleted_edges.contains(&edge_key) {
                     return Ok(());
                 }
+                if let Some(keys) = overlay.edge_null_properties.get_mut(&edge_key) {
+                    keys.remove(&key);
+                    if keys.is_empty() { overlay.edge_null_properties.remove(&edge_key); }
+                }
                 self.pending.borrow_mut().edges.insert(edge_key.clone());
                 if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
                     if matches!(value, Value::Null) {
@@ -251,6 +255,12 @@ impl PropertyGraph {
                 let mut overlay = self.overlay.borrow_mut();
                 if overlay.deleted_edges.contains(&edge_key) {
                     return Ok(());
+                }
+                if replace {
+                    overlay.edge_null_properties.remove(&edge_key);
+                } else if let Some(keys) = overlay.edge_null_properties.get_mut(&edge_key) {
+                    for key in properties.keys() { keys.remove(key); }
+                    if keys.is_empty() { overlay.edge_null_properties.remove(&edge_key); }
                 }
                 self.pending.borrow_mut().edges.insert(edge_key.clone());
                 if let Some(edge) = overlay.inserted_edges.get_mut(&edge_key) {
