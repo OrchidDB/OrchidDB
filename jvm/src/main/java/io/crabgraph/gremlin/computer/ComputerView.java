@@ -24,6 +24,12 @@ public final class ComputerView implements Graph {
     private final Map<String, VertexComputeKey> computeKeys = new LinkedHashMap<>();
     private final Map<Object, Map<String, List<ComputeProperty<?>>>> computed = new LinkedHashMap<>();
     private final Set<Object> legalVertices = new HashSet<>();
+    // The execution lease makes source records immutable for this view's lifetime.
+    // Cache native-backed records, never a detached/reference graph implementation.
+    private final Map<Object, Vertex> sourceVertices = new LinkedHashMap<>();
+    private final Map<Object, List<VertexProperty<?>>> sourceVertexProperties = new HashMap<>();
+    private final Map<Object, List<Property<?>>> sourceEdgeProperties = new HashMap<>();
+    private final Map<Object, List<Property<?>>> sourceMetaProperties = new HashMap<>();
     private final Map<Object, Set<Object>> legalEdges = new HashMap<>();
     private final Map<Object, Set<Object>> legalProperties = new HashMap<>();
     private final GraphFilter filter;
@@ -38,6 +44,7 @@ public final class ComputerView implements Graph {
             source.vertices().forEachRemaining(vertex -> {
                 if (!this.filter.legalVertex(vertex)) return;
                 legalVertices.add(vertex.id());
+                sourceVertices.put(vertex.id(), vertex);
                 if (this.filter.hasEdgeFilter()) {
                     Set<Object> ids = new HashSet<>();
                     this.filter.legalEdges(vertex).forEachRemaining(edge -> ids.add(edge.id()));
@@ -69,7 +76,9 @@ public final class ComputerView implements Graph {
     }
 
     @Override public Iterator<Vertex> vertices(Object... ids) {
-        return IteratorUtils.map(IteratorUtils.filter(source.vertices(ids), this::legalVertex), ViewVertex::new);
+        Iterator<Vertex> vertices = ids.length == 0 ? sourceVertices.values().iterator()
+                : IteratorUtils.filter(source.vertices(ids), this::legalVertex);
+        return IteratorUtils.map(vertices, ViewVertex::new);
     }
     @Override public Iterator<Edge> edges(Object... ids) {
         return IteratorUtils.map(IteratorUtils.filter(source.edges(ids), edge ->
@@ -103,7 +112,17 @@ public final class ComputerView implements Graph {
         return !filter.hasVertexPropertyFilter() || legalProperties.getOrDefault(vertex.id(), Collections.emptySet()).contains(property.id());
     }
     private static boolean requested(String key, String... keys) {
-        return keys.length == 0 || Arrays.asList(keys).contains(key);
+        return keys == null || keys.length == 0 || Arrays.asList(keys).contains(key);
+    }
+
+    private List<VertexProperty<?>> sourceProperties(Vertex vertex) {
+        return sourceVertexProperties.computeIfAbsent(vertex.id(), ignored -> new ArrayList<VertexProperty<?>>(IteratorUtils.list(vertex.<Object>properties())));
+    }
+    private List<Property<?>> sourceProperties(Edge edge) {
+        return sourceEdgeProperties.computeIfAbsent(edge.id(), ignored -> new ArrayList<Property<?>>(IteratorUtils.list(edge.<Object>properties())));
+    }
+    private List<Property<?>> sourceProperties(VertexProperty<?> property) {
+        return sourceMetaProperties.computeIfAbsent(property.id(), ignored -> new ArrayList<Property<?>>(IteratorUtils.list(property.<Object>properties())));
     }
 
     /**
@@ -125,12 +144,21 @@ public final class ComputerView implements Graph {
             Runnable copyGraph = () -> {
             if (persist != GraphComputer.Persist.NOTHING) {
                 Map<Object, Vertex> vertices = new HashMap<>();
-                vertices().forEachRemaining(vertex -> {
+                List<Vertex> sourceVertices = IteratorUtils.list(vertices());
+                sourceVertices.forEach(vertex -> {
                     interrupted();
                     Vertex copy = target.addVertex(T.id, vertex.id(), T.label, vertex.label());
                     vertices.put(vertex.id(), copy);
-                    vertex.properties().forEachRemaining(property -> copyProperty(copy, property));
+                    vertex.properties().forEachRemaining(property -> {
+                        if (!generatedPropertyId(property)) copyProperty(copy, property);
+                    });
                 });
+                // Reserve every existing/explicit ID before the provider allocates
+                // IDs for new compute properties on any vertex.
+                sourceVertices.forEach(vertex -> vertex.properties().forEachRemaining(property -> {
+                    interrupted();
+                    if (generatedPropertyId(property)) copyProperty(vertices.get(vertex.id()), property);
+                }));
                 if (persist == GraphComputer.Persist.EDGES) edges().forEachRemaining(edge -> {
                     interrupted();
                     Edge copy = vertices.get(edge.outVertex().id()).addEdge(edge.label(), vertices.get(edge.inVertex().id()), T.id, edge.id());
@@ -195,8 +223,16 @@ public final class ComputerView implements Graph {
     private static void interrupted() {
         if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Graph computation interrupted");
     }
+    private static boolean generatedPropertyId(VertexProperty<?> property) {
+        return property instanceof ComputerView.ComputeProperty<?> && ((ComputerView.ComputeProperty<?>) property).generatedId;
+    }
     private static void copyProperty(Vertex target, VertexProperty<?> property) {
-        VertexProperty<?> copy = target.property(VertexProperty.Cardinality.list, property.key(), property.value(), T.id, property.id());
+        // Computation-local IDs are not provider IDs. Let the native graph allocate
+        // generated property identity according to its configured ID manager.
+        boolean generated = generatedPropertyId(property);
+        VertexProperty<?> copy = generated
+                ? target.property(VertexProperty.Cardinality.list, property.key(), property.value())
+                : target.property(VertexProperty.Cardinality.list, property.key(), property.value(), T.id, property.id());
         property.properties().forEachRemaining(meta -> copy.property(meta.key(), meta.value()));
     }
 
@@ -236,8 +272,8 @@ public final class ComputerView implements Graph {
             Map<String, List<ComputeProperty<?>>> properties = computed.computeIfAbsent(id(), ignored -> new LinkedHashMap<>());
             List<ComputeProperty<?>> list = properties.computeIfAbsent(key, ignored -> {
                 List<ComputeProperty<?>> existing = new ArrayList<>();
-                if (cardinality != VertexProperty.Cardinality.single) vertex.properties(key).forEachRemaining(property -> {
-                    if (retained(vertex, property)) existing.add(new ComputeProperty<>(this, property));
+                if (cardinality != VertexProperty.Cardinality.single) sourceProperties(vertex).forEach(property -> {
+                    if (property.key().equals(key) && retained(vertex, property)) existing.add(new ComputeProperty<>(this, property));
                 });
                 return existing;
             });
@@ -249,7 +285,7 @@ public final class ComputerView implements Graph {
                 }
             }
             Object propertyId = ElementHelper.getIdValue(values).orElseGet(() -> UUID.randomUUID().toString());
-            ComputeProperty<V> property = new ComputeProperty<>(this, propertyId, key, value);
+            ComputeProperty<V> property = new ComputeProperty<>(this, propertyId, key, value, ElementHelper.getIdValue(values).isEmpty());
             ElementHelper.attachProperties(property, values);
             list.add(property);
             return property;
@@ -257,8 +293,10 @@ public final class ComputerView implements Graph {
         @Override public <V> Iterator<VertexProperty<V>> properties(String... keys) {
             List<VertexProperty<V>> result = new ArrayList<>();
             Map<String, List<ComputeProperty<?>>> properties = computed.getOrDefault(id(), Collections.emptyMap());
-            vertex.<V>properties(keys).forEachRemaining(property -> {
-                if (!properties.containsKey(property.key()) && retained(vertex, property)) result.add(new SourceProperty<>(this, property));
+            boolean allComputed = keys != null && keys.length > 0 && Arrays.stream(keys).allMatch(properties::containsKey);
+            if (!allComputed) sourceProperties(vertex).forEach(property -> {
+                if (requested(property.key(), keys) && !properties.containsKey(property.key()) && retained(vertex, property))
+                    result.add(new SourceProperty<>(this, (VertexProperty<V>) property));
             });
             properties.forEach((key, list) -> {
                 if (requested(key, keys)) list.forEach(property -> result.add((VertexProperty<V>) property));
@@ -282,7 +320,8 @@ public final class ComputerView implements Graph {
             return IteratorUtils.map(edge.vertices(direction), ViewVertex::new);
         }
         @Override public <V> Iterator<Property<V>> properties(String... keys) {
-            return IteratorUtils.map(edge.<V>properties(keys), property -> new ReadProperty<>(this, property));
+            return IteratorUtils.map(IteratorUtils.filter(sourceProperties(edge).iterator(), property -> requested(property.key(), keys)),
+                    property -> new ReadProperty<>(this, (Property<V>) property));
         }
         @Override public String toString() { return StringFactory.edgeString(this); }
     }
@@ -296,14 +335,15 @@ public final class ComputerView implements Graph {
         @Override public boolean isPresent() { return property.isPresent(); }
         @Override public Vertex element() { return owner; }
         @Override public <U> Iterator<Property<U>> properties(String... keys) {
-            return IteratorUtils.map(property.<U>properties(keys), meta -> new ReadProperty<>(this, meta));
+            return IteratorUtils.map(IteratorUtils.filter(sourceProperties(property).iterator(), meta -> requested(meta.key(), keys)),
+                    meta -> new ReadProperty<>(this, (Property<U>) meta));
         }
         @Override public void remove() {
             checkKey(key());
             Map<String, List<ComputeProperty<?>>> properties = computed.computeIfAbsent(owner.id(), ignored -> new LinkedHashMap<>());
             List<ComputeProperty<?>> list = properties.computeIfAbsent(key(), ignored -> {
                 List<ComputeProperty<?>> copy = new ArrayList<>();
-                owner.vertex.properties(key()).forEachRemaining(p -> { if (retained(owner.vertex, p)) copy.add(new ComputeProperty<>(owner, p)); });
+                sourceProperties(owner.vertex).forEach(p -> { if (p.key().equals(key()) && retained(owner.vertex, p)) copy.add(new ComputeProperty<>(owner, p)); });
                 return copy;
             });
             list.removeIf(p -> Objects.equals(p.id(), id()));
@@ -314,12 +354,15 @@ public final class ComputerView implements Graph {
     private final class ComputeProperty<V> implements VertexProperty<V> {
         final ViewVertex owner;
         final Object id;
+        final boolean generatedId;
         final String key;
         final V value;
         final Map<String, Object> meta = new LinkedHashMap<>();
-        ComputeProperty(ViewVertex owner, Object id, String key, V value) { this.owner = owner; this.id = id; this.key = key; this.value = value; }
+        ComputeProperty(ViewVertex owner, Object id, String key, V value, boolean generatedId) {
+            this.owner = owner; this.id = id; this.key = key; this.value = value; this.generatedId = generatedId;
+        }
         ComputeProperty(ViewVertex owner, VertexProperty<V> property) {
-            this(owner, property.id(), property.key(), property.value());
+            this(owner, property.id(), property.key(), property.value(), false);
             property.properties().forEachRemaining(p -> meta.put(p.key(), p.value()));
         }
         @Override public Object id() { return id; }
