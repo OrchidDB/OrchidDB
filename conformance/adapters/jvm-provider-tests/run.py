@@ -23,6 +23,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--jvm', type=Path, default=REPO / 'jvm')
     parser.add_argument('--store', type=Path)
+    parser.add_argument('--jvm-jar', type=Path, help='Frozen production provider artifact')
+    parser.add_argument('--jvm-classpath', type=Path, help='Frozen dependency classpath file')
     parser.add_argument('--java', default=os.environ.get('CONFORMANCE_JAVA', 'java'))
     parser.add_argument('--inventory', action='store_true')
     parser.add_argument('--computer', action='store_true', help='Use GraphComputer for class/method selections')
@@ -34,11 +36,11 @@ def main():
     if not args.inventory:
         if not args.store or not args.store.is_file():
             parser.error('--store must identify the actual production crabgraph-jvm-store binary')
-        cp.append(str(args.jvm / 'target/classes'))
-        for dependency_file in [args.jvm / 'classpath.txt', args.jvm / 'target/classpath.txt']:
+        cp.append(str(args.jvm_jar) if args.jvm_jar else str(args.jvm / 'target/classes'))
+        for dependency_file in ([args.jvm_classpath] if args.jvm_classpath else [args.jvm / 'classpath.txt', args.jvm / 'target/classpath.txt']):
             if dependency_file.exists():
                 cp.append(dependency_file.read_text().strip())
-    command = [args.java, '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '--add-opens=java.base/java.util=ALL-UNNAMED',
+    command = [args.java, '-Dis.testing=true', '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '-Dbuild.dir=' + str(ROOT / 'target/upstream-data'), '--add-opens=java.base/java.util=ALL-UNNAMED',
                '--add-opens=java.base/java.lang=ALL-UNNAMED',
                '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED',
                '-cp', os.pathsep.join(cp), 'io.crabgraph.conformance.ProviderSuite',
@@ -61,6 +63,8 @@ def main():
         report['run_complete'] = report.get('run_complete', False) and exit_code in (0, 1)
         report['process_exit_code'] = exit_code
         report['store_sha256'] = digest(args.store) if args.store else None
+        report['provider_jar_sha256'] = digest(args.jvm_jar) if args.jvm_jar else None
+        report['jvm_flags'] = [arg for arg in command[1:] if arg.startswith('-D') or arg.startswith('--add-opens')]
         report['java_version'] = subprocess.run([args.java, '-version'], capture_output=True, text=True).stderr
         report['harness_source_sha256'] = {
             str(p.relative_to(ROOT)): digest(p) for p in sorted((ROOT / 'src').rglob('*.java'))}
