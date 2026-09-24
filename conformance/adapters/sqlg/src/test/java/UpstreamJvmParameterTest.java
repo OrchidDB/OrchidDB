@@ -36,6 +36,20 @@ public class UpstreamJvmParameterTest {
    assertEquals(10,simple.call(7));assertEquals(10,braced.call(7));
   } finally {context.afterEachScenario();}
  }
+ @Test public void originalGraphCountAssertionReceivesItsReferencedParameters() throws Exception {
+  UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
+  try {
+   steps.givenTheXGraph("modern");UpstreamGremlin.backend="crabgraph-jvm";
+   var json=UpstreamGremlin.json;
+   UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","using the parameter vid1 defined as \"v[marko].id\"")));
+   UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","using the parameter unused defined as \"c[it.get()]\"")));
+   UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","the graph should return 3 for count of \"g.V(vid1).outE()\"")));
+   Map<?,?> originals=(Map<?,?>)UpstreamGremlin.field(steps,"stringParameters");
+   assertTrue(originals.containsKey("vid1"));assertFalse(originals.containsKey("unused"));
+   try {UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","the graph should return 4 for count of \"g.V(vid1).outE()\"")));fail("Original assertion must reject an incorrect count");}
+   catch(AssertionError expected){assertTrue(expected.getMessage().contains("expected:<4>"));}
+  } finally {context.afterEachScenario();UpstreamGremlin.backend="reference";}
+ }
  @Test public void fixtureCopyPreservesPublicIdsCardinalityAndMetadata() throws Exception {
   try(TinkerGraph fixture=TinkerFactory.createTheCrew();TinkerGraph copy=TinkerGraph.open()){
    UpstreamGremlin.copyFixture(fixture,copy);
