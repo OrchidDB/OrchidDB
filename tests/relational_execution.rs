@@ -187,3 +187,106 @@ async fn ranking_windows_allow_unordered_and_ordered_dedup() {
         assert_eq!(visible(actual), visible(expected), "{query}");
     }
 }
+
+#[tokio::test]
+async fn batched_apply_preserves_occurrences_bulk_and_optional_results() {
+    use new_graph::ir::expr::{IrExpr, Lit, BinaryOp};
+    use new_graph::ir::plan::{Node, ApplyKind, ProjectMode, ProjectErrorPolicy, ProjectionItem};
+    use new_graph::ir::policy::{GraphPlanPolicy, OptionalMissing};
+    for kind in [ApplyKind::Inner,ApplyKind::Optional,ApplyKind::Semi,ApplyKind::Anti,ApplyKind::Scalar] {
+        let right=Node::GraphProject {
+            mode:ProjectMode::PreserveVisible,error_policy:ProjectErrorPolicy::PropagateError,
+            items:vec![ProjectionItem {alias:"answer".into(),expr:IrExpr::Binding("current".into())}],
+            input:Box::new(Node::GraphFilter {
+                condition:IrExpr::Binary {op:BinaryOp::Eq,lhs:Box::new(IrExpr::Binding("current".into())),rhs:Box::new(IrExpr::Lit(Lit::Int(1)))},
+                input:Box::new(Node::GraphCorrelate {bindings:vec!["current".into()]}),
+            }),
+        };
+        let root=Node::GraphApply {kind,correlation:vec!["current".into()],outputs:vec!["answer".into()],optional_missing:OptionalMissing::Null,
+            left:Box::new(Node::GraphValues {bindings:vec!["current".into()],rows:vec![vec![Value::Int(1)],vec![Value::Int(1)],vec![Value::Int(2)]],bulk:Some(vec![2,3,4])}),right:Box::new(right)};
+        let plan=GraphPlan::new(GraphPlanPolicy::gremlin(),root);
+        let graph=PropertyGraph::new();
+        let expected=new_graph::ir::interpreter::execute_rows(&plan,&graph).unwrap();
+        let (actual,stats)=execute_rows_with_jvm(&plan,&graph,JvmExecution::default()).await.unwrap();
+        assert!(stats.physical_plan.contains("BatchableLateralApply"),"{}",stats.physical_plan);
+        assert_eq!(actual.len(),expected.len(),"{kind:?}");
+        for (a,b) in actual.iter().zip(expected) {assert_eq!(a.bindings,b.bindings,"{kind:?}");assert_eq!(a.bulk,b.bulk,"{kind:?}");}
+    }
+}
+
+#[tokio::test]
+async fn projection_composition_preserves_shadowing_and_missing_bindings() {
+    use new_graph::ir::expr::{IrExpr, Lit};
+    use new_graph::ir::plan::{Node, ProjectMode, ProjectErrorPolicy, ProjectionItem};
+    use new_graph::ir::policy::GraphPlanPolicy;
+    let item=|alias:&str,expr|ProjectionItem {alias:alias.into(),expr};
+    for mode in [ProjectMode::PreserveVisible,ProjectMode::ReplaceScope] {
+        let root=Node::GraphProject {mode,error_policy:ProjectErrorPolicy::PropagateError,
+            items:vec![item("x",IrExpr::Binding("y".into())),item("missing",IrExpr::Binding("missing".into())),item("copy",IrExpr::Binding("y".into()))],
+            input:Box::new(Node::GraphProject {mode:ProjectMode::PreserveVisible,error_policy:ProjectErrorPolicy::PropagateError,
+                items:vec![item("x",IrExpr::Lit(Lit::Int(9))),item("y",IrExpr::Binding("x".into()))],
+                input:Box::new(Node::GraphValues {bindings:vec!["x".into()],rows:vec![vec![Value::Int(1)]],bulk:Some(vec![3])})})};
+        let plan=GraphPlan::new(GraphPlanPolicy::gremlin(),root); let graph=PropertyGraph::new();
+        let expected=new_graph::ir::interpreter::execute_rows(&plan,&graph).unwrap();
+        let (actual,stats)=execute_rows_with_jvm(&plan,&graph,JvmExecution::default()).await.unwrap();
+        assert!(stats.physical_plan.contains("CollapsedProject"),"{}",stats.physical_plan);
+        assert_eq!(actual[0].bindings,expected[0].bindings);assert_eq!(actual[0].bulk,3);
+        assert_eq!(actual[0].bindings["missing"],Value::Null);
+    }
+}
+
+#[tokio::test]
+async fn required_bindings_preserve_projection_inputs_and_errors() {
+    use new_graph::ir::expr::{IrExpr, Lit, BinaryOp};
+    use new_graph::ir::plan::{Node, ProjectMode, ProjectErrorPolicy, ProjectionItem};
+    use new_graph::ir::policy::{GraphPlanPolicy,ResultForm,PropertyMissing};
+    let source=||Node::GraphValues {bindings:vec!["x".into(),"unused".into()],rows:vec![vec![Value::Int(2),Value::String("large payload".repeat(100))]],bulk:Some(vec![2])};
+    let project=|expr|Node::GraphProject {mode:ProjectMode::PreserveVisible,error_policy:ProjectErrorPolicy::PropagateError,
+        items:vec![ProjectionItem {alias:"answer".into(),expr}],input:Box::new(source())};
+    let graph=PropertyGraph::new();
+    let plan=GraphPlan::new(GraphPlanPolicy::gremlin(),Node::GraphReturn {fields:vec!["answer".into()],result_form:ResultForm::TraverserStream,
+        input:Box::new(project(IrExpr::Binary {op:BinaryOp::Add,lhs:Box::new(IrExpr::Binding("x".into())),rhs:Box::new(IrExpr::Lit(Lit::Int(1)))}))});
+    let expected=new_graph::ir::interpreter::execute(&plan,&graph).unwrap();
+    let (actual,stats)=new_graph::ir::rel::runtime::execute(&plan,&graph,None).await.unwrap();
+    assert_eq!(actual.batch,expected.batch);
+    assert!(stats.physical_plan.contains("Pruned("),"{}",stats.physical_plan);
+    // A filter rejecting every row must not suppress a preceding expression
+    // error, even when the failed alias is absent from the return fields.
+    let error_plan=GraphPlan::new(GraphPlanPolicy::gremlin(),Node::GraphReturn {fields:vec!["x".into()],result_form:ResultForm::TraverserStream,
+        input:Box::new(Node::GraphFilter {condition:IrExpr::Lit(Lit::Bool(false)),input:Box::new(project(IrExpr::Property {binding:"missing".into(),name:"p".into(),policy:PropertyMissing::Error}))})});
+    assert!(new_graph::ir::interpreter::execute(&error_plan,&graph).is_err());
+    let error=new_graph::ir::rel::runtime::execute(&error_plan,&graph,None).await.unwrap_err();
+    assert!(error.contains("missing") || error.contains("property"),"{error}");
+}
+
+#[tokio::test]
+async fn pure_filter_moves_before_unrelated_projection() {
+    use new_graph::ir::expr::{IrExpr,Lit,BinaryOp};
+    use new_graph::ir::plan::{Node,ProjectMode,ProjectErrorPolicy,ProjectionItem};
+    use new_graph::ir::policy::GraphPlanPolicy;
+    let root=Node::GraphFilter {condition:IrExpr::Binary {op:BinaryOp::Eq,lhs:Box::new(IrExpr::Binding("x".into())),rhs:Box::new(IrExpr::Lit(Lit::Int(1)))},
+        input:Box::new(Node::GraphProject {mode:ProjectMode::PreserveVisible,error_policy:ProjectErrorPolicy::PropagateError,
+            items:vec![ProjectionItem {alias:"answer".into(),expr:IrExpr::Lit(Lit::String("payload".repeat(100)))}],
+            input:Box::new(Node::GraphValues {bindings:vec!["x".into()],rows:vec![vec![Value::Int(1)],vec![Value::Int(2)]],bulk:Some(vec![2,3])})})};
+    let plan=GraphPlan::new(GraphPlanPolicy::gremlin(),root);let graph=PropertyGraph::new();
+    let expected=new_graph::ir::interpreter::execute_rows(&plan,&graph).unwrap();
+    let (actual,stats)=execute_rows_with_jvm(&plan,&graph,JvmExecution::default()).await.unwrap();
+    assert!(stats.physical_plan.contains("Values -> Filter"),"{}",stats.physical_plan);
+    assert_eq!(actual.len(),1);assert_eq!(actual[0].bindings,expected[0].bindings);assert_eq!(actual[0].bulk,2);
+}
+
+#[tokio::test]
+async fn batched_fanout_keeps_duplicate_outputs_and_parent_bulk() {
+    use new_graph::ir::expr::IrExpr;
+    use new_graph::ir::plan::{Node,ApplyKind};
+    use new_graph::ir::policy::{GraphPlanPolicy,OptionalMissing};
+    let list=Value::List(vec![Value::Int(1),Value::Int(1)]);
+    let plan=GraphPlan::new(GraphPlanPolicy::gremlin(),Node::GraphApply {kind:ApplyKind::Inner,correlation:vec!["current".into()],outputs:vec!["answer".into()],optional_missing:OptionalMissing::Null,
+        left:Box::new(Node::GraphValues {bindings:vec!["current".into()],rows:vec![vec![list.clone()],vec![list]],bulk:Some(vec![2,3])}),
+        right:Box::new(Node::GraphUnwind {input_expr:IrExpr::Binding("current".into()),bind:"answer".into(),outer:false,
+            input:Box::new(Node::GraphCorrelate {bindings:vec!["current".into()]})})});
+    let graph=PropertyGraph::new();let expected=new_graph::ir::interpreter::execute_rows(&plan,&graph).unwrap();
+    let (actual,stats)=execute_rows_with_jvm(&plan,&graph,JvmExecution::default()).await.unwrap();
+    assert!(stats.physical_plan.contains("BatchableLateralApply"));assert_eq!(actual.len(),4);
+    for (a,b) in actual.iter().zip(expected) {assert_eq!(a.bindings,b.bindings);assert_eq!(a.bulk,b.bulk);}
+}

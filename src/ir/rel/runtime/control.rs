@@ -13,6 +13,8 @@ struct Subplan {
     plan: LogicalPlan,
     prepared: Arc<Mutex<Option<PreparedSubplan>>>,
     observable: bool,
+    batchable: bool,
+    batch_names: std::collections::BTreeSet<String>,
     barrier: bool,
     group_barrier: bool,
     group_split: Option<(Box<Subplan>, Box<Subplan>)>,
@@ -31,6 +33,12 @@ impl Subplan {
         graph: &PropertyGraph,
         ctx: &mut ExecutionContext,
     ) -> IrResult<Vec<Row>> {
+        self.run_internal(frontier, graph, ctx, None)
+    }
+    fn run_internal(
+        &self, frontier: Vec<Row>, graph: &PropertyGraph,
+        ctx: &mut ExecutionContext, batch_key: Option<String>,
+    ) -> IrResult<Vec<Row>> {
         let runtime = tokio::runtime::Handle::current();
         let error = |e: DataFusionError| InterpretError::Runtime(e.to_string());
         // A query-local slot caches the physical operators, never their output.
@@ -44,6 +52,7 @@ impl Subplan {
             graph: graph.clone(),
             context: std::mem::take(ctx),
             frontier,
+            batch_key,
         };
         let prepared = if let Some(prepared) = cached {
             *prepared
@@ -152,11 +161,14 @@ impl Compiler<'_> {
             graph: self.graph,
             policy: self.policy.clone(),
             sql: false,
+            islands: self.islands.clone(),
         };
         Ok(Subplan {
-            plan: fuse_unary_kernels(compiler.lower(node)?)?,
+            plan: optimize::optimize(compiler.lower(node)?, None)?,
             prepared: Default::default(),
             observable: observable(node),
+            batchable: optimize::batchable(node),
+            batch_names: if optimize::batchable(node) {optimize::batch_names(node)} else {Default::default()},
             barrier: ops::choose::contains_barrier(node),
             group_barrier: ops::aggregate::split_group_prefix(&mut node.clone()).is_some(),
             group_split: None,
@@ -178,7 +190,7 @@ impl Compiler<'_> {
                             let mut row = Row::new();
                             row.bulk = outer.bulk;
                             for (key, value) in &outer.bindings {
-                                if bindings.contains(key)
+                                if state.batch_key.as_ref() == Some(key) || bindings.contains(key)
                                     || [
                                         "__path",
                                         "__path_labels",
@@ -215,8 +227,9 @@ impl Compiler<'_> {
                 let outputs = outputs.clone();
                 let optional_missing = *optional_missing;
                 let right = self.subplan(right)?;
+                let name=if right.batchable {"BatchableLateralApply"} else {"LateralApply"};
                 Ok(kernel(
-                    "LateralApply",
+                    name,
                     vec![self.lower(left)?],
                     move |mut inputs, state| {
                         apply_op(
@@ -541,6 +554,28 @@ fn apply_op(
 ) -> IrResult<Vec<Row>> {
     let _ = correlation;
     let mut out = Vec::new();
+    // Occurrence identities, rather than value-based grouping, retain duplicate
+    // outer rows. Batching never crosses a reducer, write, JVM or scope fence.
+    let mut grouped = if right.batchable && outer.len() > 1 {
+        let key = loop {
+            let key=format!("\0crabgraph_apply_{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+            if !right.batch_names.contains(&key) && outer.iter().all(|r| !r.bindings.contains_key(&key)) {break key;}
+        };
+        let frontier=outer.iter().enumerate().map(|(index,row)| {
+            let mut probe=row.clone(); probe.bulk=1;
+            probe.bindings.insert(key.clone(), Value::UInt64(index as u64)); probe
+        }).collect();
+        let rows=right.run_internal(frontier,graph,ctx,Some(key.clone()))?;
+        let mut groups=vec![Vec::new();outer.len()];
+        for mut row in rows {
+            let Some(Value::UInt64(index))=row.bindings.remove(&key) else {
+                return Err(InterpretError::Runtime("batched subplan lost occurrence identity".into()));
+            };
+            let group=groups.get_mut(index as usize).ok_or_else(|| InterpretError::Runtime("invalid occurrence identity".into()))?;
+            group.push(row);
+        }
+        Some(groups.into_iter())
+    } else {None};
     for outer_row in outer {
         ctx.charge(1)?;
         // A correlated child runs on a split representing one traverser.
@@ -548,7 +583,9 @@ fn apply_op(
         // side effects (TraversalUtil.prepare resets the split bulk to one).
         let mut probe = outer_row.clone();
         probe.bulk = 1;
-        let inner_rows = run_with_outer(right, &probe, graph, ctx)?;
+        let inner_rows = if let Some(groups)=&mut grouped {
+            groups.next().expect("one group per input occurrence")
+        } else {run_with_outer(right, &probe, graph, ctx)?};
 
         ctx.charge(inner_rows.len() as u64)?;
         match kind {
