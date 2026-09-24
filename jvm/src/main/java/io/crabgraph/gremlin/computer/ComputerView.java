@@ -215,14 +215,23 @@ public final class ComputerView implements Graph {
         }
     }
     private void writeOriginalProperties() {
+        Map<Object, Vertex> targets = new LinkedHashMap<>();
         for (Map.Entry<Object, Map<String, List<ComputeProperty<?>>>> vertex : computed.entrySet()) {
             interrupted();
             Vertex target = source.vertices(vertex.getKey()).next();
+            targets.put(vertex.getKey(), target);
             for (Map.Entry<String, List<ComputeProperty<?>>> entry : vertex.getValue().entrySet()) {
                 // Include empty lists: removing a compute property is a persisted mutation.
                 IteratorUtils.list(target.properties(entry.getKey())).forEach(VertexProperty::remove);
-                entry.getValue().forEach(property -> copyProperty(target, property));
             }
+        }
+        // Reserve explicit IDs across every vertex before allocating generated IDs,
+        // just as NEW publication does. All phases share the native savepoint.
+        for (boolean generated : new boolean[]{false, true}) {
+            computed.forEach((id, properties) -> properties.values().forEach(list -> list.forEach(property -> {
+                interrupted();
+                if (property.generatedId == generated) copyProperty(targets.get(id), property);
+            })));
         }
         interrupted();
     }
