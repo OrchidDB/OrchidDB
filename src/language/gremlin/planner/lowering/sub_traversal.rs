@@ -72,7 +72,11 @@ fn initialize_source_state(node: Node, lo: &Lowerer) -> Node {
     }
     let mut node = Node::GraphProject { mode: ProjectMode::PreserveVisible,
         items: config, error_policy: ProjectErrorPolicy::PropagateError, input: node.boxed() };
-    for label in lo.side_effect_bags.keys() {
+    // Seeds belong to the traversal, including named groupCount reducers and
+    // reads that occur before the first writer or cap step.
+    let labels: std::collections::BTreeSet<_> = lo.side_effect_bags.keys()
+        .chain(lo.side_effect_seeds.keys()).collect();
+    for label in labels {
         let seed = lo.side_effect_seeds.get(label).and_then(super::literals::gvalue_to_value)
             .unwrap_or_else(|| crate::ir::value::Value::BulkSet(Vec::new()));
         node = Node::GraphSideEffect { label: label.clone(),

@@ -92,3 +92,83 @@ fn merge_writes_and_repeat_presence_use_null_feature_contract() {
         }
     }
 }
+
+#[test]
+fn null_overrides_shadow_arrow_columns_without_turning_other_rows_into_properties() {
+    use arrow::array::{ArrayRef, Int64Array};
+    use new_graph::ir::{edges_from_columns, nodes_from_columns};
+    use std::sync::Arc;
+    let mut graph = graph();
+    graph.add_nodes(nodes_from_columns("item", vec![("x", Arc::new(Int64Array::from(vec![Some(7), None])) as ArrayRef)]));
+    graph.add_edges(edges_from_columns("link", "item", "item", vec![0,1], vec![1,0],
+        vec![("x", Arc::new(Int64Array::from(vec![Some(7),None])) as ArrayRef)])).unwrap();
+    let vertex = values(&graph,"g.V().has('x',7)")[0].clone();
+    let edge = values(&graph,"g.E().has('x',7)")[0].clone();
+    graph.set_gremlin_property(&vertex,"x",Value::Null).unwrap();
+    graph.set_gremlin_property(&edge,"x",Value::Null).unwrap();
+    let restored = decode_graph(&encode_graph(&graph).unwrap()).unwrap();
+    for source in ["g.V()","g.E()"] {
+        count(&restored,&format!("{source}.has('x')"),1);
+        count(&restored,&format!("{source}.hasNot('x')"),1);
+        count(&restored,&format!("{source}.has('x',null)"),1);
+        assert_eq!(values(&restored,&format!("{source}.values('x')")),vec![Value::Null]);
+        values(&restored,&format!("{source}.properties('x').drop()"));
+        count(&restored,&format!("{source}.hasNot('x')"),2);
+    }
+}
+
+#[test]
+fn merge_null_criteria_match_presence_and_repeat_checks_absence() {
+    let graph = graph();
+    values(&graph,"g.addV('item').property('name','one').property('x',null).as('a').addV('item').property('name','two').addE('link').from('a').property('x',null)");
+    count(&graph,"g.mergeV(['x':null])",1);
+    count(&graph,"g.V()",2);
+    count(&graph,"g.mergeE(['x':null])",1);
+    count(&graph,"g.E()",1);
+    assert_eq!(values(&graph,"g.V().has('name','one').until(hasNot('x')).repeat(out()).values('name')"),vec![Value::String("two".into())]);
+    assert_eq!(values(&graph,"g.V().has('name','two').repeat(in()).until(has('x',null)).values('name')"),vec![Value::String("one".into())]);
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn durable_null_properties_survive_incremental_reopen_and_transaction_rollback() {
+    use new_graph::engine::GraphEngine;
+    async fn assert_count(engine: &mut GraphEngine, query: &str, expected: i64) {
+        let result = engine.gremlin(&format!("{query}.count()")).await.unwrap();
+        let column = result.returned.batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+        assert_eq!(column.value(0), expected, "{query}");
+    }
+    let path = std::env::temp_dir().join(format!("crabgraph-null-{}-{}.duckdb", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    {
+        let mut engine = GraphEngine::open(&path).unwrap();
+        engine.replace_graph(graph()).unwrap();
+        engine.gremlin("g.addV('item').property('x',null,'meta',null).as('a').addV('item').addE('link').from('a').property('x',null)").await.unwrap();
+    }
+    {
+        let mut engine = GraphEngine::open(&path).unwrap();
+        for query in ["g.V().has('x',null)","g.E().has('x',null)","g.V().properties('x').has('meta',null)"] {
+            assert_count(&mut engine, query, 1).await;
+        }
+        engine.begin().unwrap();
+        engine.gremlin("g.V().properties('x').drop()").await.unwrap();
+        engine.gremlin("g.E().properties('x').drop()").await.unwrap();
+        assert_count(&mut engine,"g.V().has('x')",0).await;
+        engine.rollback().unwrap();
+        assert_count(&mut engine,"g.V().properties('x').has('meta',null)",1).await;
+        assert_count(&mut engine,"g.E().has('x',null)",1).await;
+        // The persisted write policy must survive reopen as well as old records.
+        engine.gremlin("g.V().hasNot('x').property('x',null)").await.unwrap();
+        assert_count(&mut engine,"g.V().has('x',null)",2).await;
+        engine.begin().unwrap();
+        engine.gremlin("g.E().properties('x').drop()").await.unwrap();
+        engine.commit().unwrap();
+    }
+    {
+        let mut engine = GraphEngine::open(&path).unwrap();
+        assert_count(&mut engine,"g.V().has('x',null)",2).await;
+        assert_count(&mut engine,"g.E().has('x')",0).await;
+        assert_count(&mut engine,"g.E()",1).await;
+    }
+    std::fs::remove_file(path).unwrap();
+}

@@ -80,9 +80,9 @@ pub(super) fn lower_constant(input: Node, value: &GValue) -> GremlinPlanResult<N
 }
 
 /// `project("a", "b", ...)` — fan one input row into a single map row
-/// whose entries are `{label: by-key}`. We consume up to N trailing
-/// `by(...)` modulators (one per label); missing modulators default to
-/// `current`.
+/// whose entries are `{label: by-key}`. Trailing `by(...)` modulators
+/// form a traversal ring, cycled across the keys and reset for each row.
+/// An empty ring defaults to `current`.
 ///
 /// Each `by(__.t)` lowers via `apply_by_spec` to a fresh probe binding
 /// joined onto the input via `Apply Optional`. Once all keys resolve,
@@ -100,10 +100,14 @@ where
 {
     let mut input = input;
     let mut entries: Vec<IrExpr> = Vec::with_capacity(labels.len() * 3);
-    for label in labels {
-        let spec = consume_by(steps);
+    let mut modulators = Vec::new();
+    while let Some(spec) = consume_by(steps) {
+        modulators.push(spec);
+    }
+    for (index, label) in labels.iter().enumerate() {
+        let spec = (!modulators.is_empty()).then(|| &modulators[index % modulators.len()]);
         let (next_input, value_expr, productive) = match spec {
-            Some(spec) => apply_project_by_spec(input, &spec, lo, ctx)?,
+            Some(spec) => apply_project_by_spec(input, spec, lo, ctx)?,
             None => (input, IrExpr::Binding(CURRENT.into()), IrExpr::lit_bool(true)),
         };
         input = next_input;

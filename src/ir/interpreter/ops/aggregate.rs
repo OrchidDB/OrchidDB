@@ -914,10 +914,15 @@ pub(crate) fn group_side_effect_value(
             graph,
             ctx,
         )
-        .map(|mut rows| {
-            rows.pop()
+        .and_then(|mut rows| {
+            let value = rows.pop()
                 .and_then(|mut row| row.bindings.remove("current"))
-                .unwrap_or(Value::Map(BTreeMap::new()))
+                .unwrap_or(Value::Map(BTreeMap::new()));
+            if matches!(state.reducer, GroupValue::CountBulk) {
+                merge_group_count_seed(ctx.side_effects.get(label), value)
+            } else {
+                Ok(value)
+            }
         })
     };
     if let Ok(value) = &result {
@@ -925,6 +930,36 @@ pub(crate) fn group_side_effect_value(
     }
     ctx.group_side_effects.insert(label.to_string(), state);
     result.map(Some)
+}
+
+/// The registered map is the initial reducer value. Merge it with accumulated
+/// contributions when publishing, never with a previously published result:
+/// repeated reads and cache invalidation must not add the seed again.
+fn merge_group_count_seed(seed: Option<&Value>, counts: Value) -> IrResult<Value> {
+    let Some(seed) = seed else { return Ok(counts) };
+    let mut entries = match seed {
+        Value::Map(entries) => entries.iter()
+            .map(|(key, value)| (Value::String(key.clone()), value.clone())).collect::<Vec<_>>(),
+        Value::TypedMap(entries) => entries.clone(),
+        _ => return Err(InterpretError::Type("groupCount side-effect seed must be a map".into())),
+    };
+    let counts = match counts {
+        Value::Map(entries) => entries.into_iter().map(|(key, value)| (Value::String(key), value)).collect(),
+        Value::TypedMap(entries) => entries,
+        _ => unreachable!("groupCount produces a map"),
+    };
+    for (key, count) in counts {
+        if let Some((_, value)) = entries.iter_mut().find(|(existing, _)| existing == &key) {
+            let (Value::Long(initial), Value::Long(count)) = (&*value, count) else {
+                return Err(InterpretError::Type("groupCount side-effect counts must be longs".into()));
+            };
+            // Match the JVM Long reducer, including its signed overflow behavior.
+            *value = Value::Long(initial.wrapping_add(count));
+        } else {
+            entries.push((key, count));
+        }
+    }
+    Ok(Value::map_from_entries(entries))
 }
 
 /// Called only after the planner proves the value traversal cannot observe

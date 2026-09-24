@@ -23,6 +23,7 @@ pub(super) mod select;
 pub(super) mod slice;
 pub(super) mod sort;
 pub(super) mod source;
+pub(super) mod stream;
 pub(super) mod unwind;
 
 pub(super) mod sample;

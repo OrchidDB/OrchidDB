@@ -390,13 +390,8 @@ pub(crate) fn run_with_context(
             sort_op(keys, rows, graph)
         }
         Node::GraphSlice { slice, input } => {
-            if let Node::GraphSideEffect { label, value_input, value, seed, reducer, eager: false, input: source } = input.as_ref() {
-                if let Some(fetch) = slice.fetch.filter(|_| slice.tail.is_none()) {
-                    let rows = run_with_context(source, graph, ctx)?;
-                    let consumed = slice_op(&crate::ir::plan::Slice { offset: 0, fetch: Some(slice.offset.saturating_add(fetch)), tail: None }, rows)?;
-                    let rows = ctx.write_side_effect(label, value_input, value, seed, reducer, false, consumed, graph)?;
-                    return slice_op(slice, rows);
-                }
+            if let Some(result) = super::ops::stream::bounded_lazy_pipeline(input, slice, None, graph, ctx) {
+                return result;
             }
             let rows = run_with_context(input, graph, ctx)?;
             slice_op(slice, rows)
@@ -704,13 +699,17 @@ pub(crate) fn procedure_call_op(
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
-    if name == "gremlin.io.read" {
+    if matches!(name, "gremlin.io.read" | "gremlin.io.write") {
         for row in upstream {
             let values = args.iter().map(|arg| eval(&arg.value, &row, graph)).collect::<IrResult<Vec<_>>>()?;
             let [Value::String(path), Value::String(reader)] = values.as_slice() else {
-                return Err(InterpretError::Runtime("io.read requires path and reader strings".into()));
+                return Err(InterpretError::Runtime("io requires path and codec strings".into()));
             };
-            super::runtime::import::read(graph, path, reader)?;
+            if name == "gremlin.io.read" {
+                super::runtime::import::read(graph, path, reader)?;
+            } else {
+                super::runtime::export::write(graph, path, reader)?;
+            }
         }
         return Ok(vec![]);
     }

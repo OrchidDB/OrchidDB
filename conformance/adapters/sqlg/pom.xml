@@ -3,6 +3,7 @@
 <properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
 <dependencies>
 <dependency><groupId>net.crabgraph</groupId><artifactId>crabgraph-jvm</artifactId><version>0.1.0</version></dependency>
+<dependency><groupId>net.crabgraph</groupId><artifactId>crabgraph-jvm-codecs</artifactId><version>0.1.0</version></dependency>
 <dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.17.0</version></dependency>
 <dependency><groupId>org.apache.tinkerpop</groupId><artifactId>gremlin-test</artifactId><version>3.7.4</version></dependency>
 <dependency><groupId>org.apache.tinkerpop</groupId><artifactId>gremlin-driver</artifactId><version>3.7.4</version></dependency>
