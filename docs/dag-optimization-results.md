@@ -1,6 +1,22 @@
 # SQL IR DAG optimization results
 
-## Full-suite result
+## Latest full-suite result: five logical optimizations
+
+All five changes were implemented before running the full suite: required-binding pruning, predicate movement, projection simplification, query-local SQL-island lowering reuse, and occurrence-preserving correlated batching. Execution remains SQL IR on DuckDB/DataFusion, including JVM operators.
+
+| Metric | Previous (bcfad49) | Latest (4fbcab3) |
+| --- | ---: | ---: |
+| Conformance | 1,511 / 1,511 | 1,511 / 1,511 |
+| Suite wall time | 189.31 s | 178.56 s |
+| Passed scenario total | 187.76 s | 177.39 s |
+| Mean scenario time | 124.26 ms | 117.40 ms |
+| Median scenario time | 28.69 ms | 25.92 ms |
+
+**931 scenarios were faster.** Mean scenario time fell 5.5%, median 9.6%, and suite wall time 5.7%. The leaderboard displays the latest passed total for Crabgraph only. [Per-scenario measurements](performance/gremlin-logical-before-after.json) retain both revisions and binary identities.
+
+The full run used one engine instance (54459), a clean committed build, unchanged upstream assertions and deadlines, and the same dev profile (`debug=0`). There was no concurrent compilation. Focused verification passed 44 checks covering mapped writes/rollback, binding dependencies, projection shadowing, errors, SQL-lowering cache lifetime, correlated duplicates, fan-out, optional/semi/anti/scalar semantics, and bulk.
+
+## First optimization batch
 
 Both revisions passed **1,511 / 1,511** pinned Apache TinkerPop scenarios, each through one uninterrupted Crabgraph instance with unchanged upstream assertions. The same dev profile (`debug=0`) was used, without concurrent compilation. These are recorded local suite measurements, including fixture setup and assertions.
 
@@ -11,7 +27,7 @@ Both revisions passed **1,511 / 1,511** pinned Apache TinkerPop scenarios, each 
 | Mean scenario time | 238.27 ms | 124.26 ms |
 | Median scenario time | 61.58 ms | 28.69 ms |
 
-Passed scenario time fell **47.8%**; the median fell **53.4%**. **1,447 of 1,511 scenarios were faster.** The existing leaderboard displays the 187.76-second passed total for Crabgraph only. [Per-scenario before/after measurements](performance/gremlin-suite-before-after.json) retain every timing and binary identity.
+Passed scenario time fell **47.8%**; the median fell **53.4%**. **1,447 of 1,511 scenarios were faster.** That batch recorded a 187.76-second passed total. [Per-scenario before/after measurements](performance/gremlin-suite-before-after.json) retain every timing and binary identity.
 
 Intermediate runs exposed an invalid generated window frame and a deadline-sensitive large traversal. Explicit ROWS frames restored valid optimization; subsequent shared-overhead work retained the unchanged deadline. Only the final complete passing run replaces published conformance evidence.
 
