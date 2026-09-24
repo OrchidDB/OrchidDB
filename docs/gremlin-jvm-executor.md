@@ -147,5 +147,7 @@ null-as-removal policy.
 The original Gherkin assertions remain in the pinned upstream test library.
 `--engine crabgraph-jvm` and `--engine crabgraph-computer` select separate local
 conformance profiles; `--engine crabgraph` continues to measure Rust traversal
-execution. Java-only upstream placeholders retain their original Gherkin
-exclusions and are reported by the separate Java provider harness.
+execution. For the 15 Java-only upstream placeholders, the JVM adapter invokes
+the original pinned JUnit counterparts through the Java provider harness. Each
+scenario records its Java assertion source, outcome, timing and build provenance;
+the original Gherkin placeholder text remains unchanged.
