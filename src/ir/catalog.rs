@@ -784,9 +784,22 @@ impl PropertyGraph {
         ))
     }
 
+    /// Resolve one live edge address through the native row/overlay indexes.
+    /// Unlike enumerating `edge_ids`, this does not scan the relationship table.
+    pub(crate) fn live_edge_endpoints(
+        &self,
+        rel_type: &str,
+        edge_row: i64,
+    ) -> Option<(String, i64, String, i64)> {
+        if !self.overlay.borrow().edge_is_live(rel_type, edge_row) {
+            return None;
+        }
+        self.edge_endpoints(rel_type, edge_row)
+    }
+
     /// Whether `(label, id)` names a live node: present in the base table or
     /// inserted via the overlay, and not deleted.
-    fn node_is_live(&self, label: &str, id: i64) -> bool {
+    pub(crate) fn node_is_live(&self, label: &str, id: i64) -> bool {
         let node_key = (label.to_string(), id);
         let overlay = self.overlay.borrow();
         if overlay.deleted_nodes.contains(&node_key) {
