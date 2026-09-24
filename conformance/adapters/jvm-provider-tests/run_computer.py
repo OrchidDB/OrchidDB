@@ -57,6 +57,7 @@ def main():
     parser.add_argument('--upstream', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True, help='New report directory')
     parser.add_argument('--inventory', type=Path, help='Reuse a pinned harness inventory')
+    parser.add_argument('--inventory-only', action='store_true', help='Validate selection without executing tests')
     parser.add_argument('--harness-classes', type=Path, default=ROOT / 'target/classes')
     parser.add_argument('--harness-classpath', type=Path, default=ROOT / 'target/classpath.txt')
     parser.add_argument('--java', default=os.environ.get('CONFORMANCE_JAVA', 'java'))
@@ -140,8 +141,19 @@ def main():
         'effective_classpath': cp, 'java_flags': flags,
         'java_version': subprocess.run([java, '-version'], capture_output=True, text=True).stderr,
         'cases': [], 'class_processes': [], 'run_complete': False,
+        'inventory_only': args.inventory_only,
     }
     write_json(out / 'provenance.json', report)
+    if args.inventory_only:
+        for index, name, occurrence, rows in groups:
+            report['cases'].extend(dict(row, suite_class_index=index,
+                                        suite_class_occurrence=occurrence) for row in rows)
+        report['counts'] = {'not-run': len(report['cases'])}
+        report['run_complete'] = True
+        report['finished_at'] = now()
+        write_json(out / 'aggregate.json', report)
+        print(json.dumps(report['counts']), flush=True)
+        return 0
 
     def run_class(item):
         index, name, occurrence, expected = item
