@@ -1716,6 +1716,23 @@ impl<'input> GremlinVisitor<'input> for LoweringVisitor {
         if let Some(token)=ctx.traversalT(){self.value_stack.push(GValue::Token(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
         if let Some(token)=ctx.traversalDirection(){self.value_stack.push(GValue::DirectionToken(token.get_text().rsplit('.').next().unwrap_or("").into()));return;}
         if let Some(token)=ctx.traversalMerge(){self.value_stack.push(GValue::Token(format!("Merge.{}",token.get_text().rsplit('.').next().unwrap_or(""))));return;}
+        if let Some(cardinality) = ctx.traversalCardinality() {
+            let Some(inner) = cardinality.genericLiteral() else {
+                self.fail(GremlinError::Unsupported("A cardinality value requires a wrapped value".into()));
+                return;
+            };
+            if inner.nestedTraversal().is_some() {
+                self.fail(GremlinError::Unsupported("Cardinality payload must be a value, not a nested traversal".into()));
+                return;
+            }
+            self.visit_genericLiteral(&inner);
+            if let Some(value) = self.pop_value() {
+                let name = cardinality.get_text().split('(').next().unwrap_or("")
+                    .rsplit('.').next().unwrap_or("").to_string();
+                self.value_stack.push(GValue::CardinalityValue { cardinality: name, value: Box::new(value) });
+            }
+            return;
+        }
         if let Some(num) = ctx.numericLiteral() {
             if let Some(int_lit) = num.integerLiteral() {
                 match parse_typed_integer_literal(&int_lit.get_text()) {
