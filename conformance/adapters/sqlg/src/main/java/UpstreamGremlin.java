@@ -28,7 +28,10 @@ public class UpstreamGremlin {
  static class Bridge {
   Process process; BufferedReader output; BufferedWriter input;
   Bridge() throws Exception {
-   process=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+   var builder=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT);
+   builder.environment().put("CRABGRAPH_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
+   builder.environment().put("CRABGRAPH_GREMLIN_IO_CLASSPATH",System.getProperty("java.class.path"));
+   process=builder.start();
    output=new BufferedReader(new InputStreamReader(process.getInputStream()));input=new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
   }
   synchronized JsonNode send(Object request) throws Exception {
@@ -224,7 +227,7 @@ public class UpstreamGremlin {
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
   public void afterEachScenario(){try{if(graph!=null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
-  public String changePathToDataFile(String path){return "conformance/upstream/cache/tinkerpop/"+path;}
+  public String changePathToDataFile(String path){return new File("conformance/upstream/cache/tinkerpop",path).getAbsolutePath();}
  }
  static Object field(StepDefinition steps,String name)throws Exception{var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);return f.get(steps);}
  static String unquote(String x)throws Exception{return json.readValue(x,String.class);}

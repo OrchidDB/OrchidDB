@@ -6,6 +6,8 @@ use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    /// File import; only executable after the read() modulator.
+    Io { path: String, reader: Option<String>, read: bool },
     DynamicMerge { edge: bool, criteria: MutationArgument, options: std::collections::BTreeMap<String,MutationArgument> },
     AddDynamicV { label: MutationArgument },
     AddDynamicE { label: MutationArgument, from: Option<MutationArgument>, to: Option<MutationArgument> },

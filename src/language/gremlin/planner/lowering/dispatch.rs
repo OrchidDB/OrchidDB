@@ -64,6 +64,7 @@ where
     I: Iterator<Item = &'a Step>,
 {
     match step {
+        Step::Io { .. } => Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("io() must start a traversal".into())),
         Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(input,*edge,criteria,options,lo,ctx,false),
         Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(input,label,lo,ctx),
         Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx),

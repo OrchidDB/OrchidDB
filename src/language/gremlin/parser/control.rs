@@ -7,7 +7,7 @@ use super::literals::{
     constant_value_from_steps, direction_from_text, has_local_scope_arg,
     parse_integer_literal_signed_unsigned, value_map_token_selection,
 };
-use super::{CallArg, Direction, GValue, LoweringVisitor, Predicate, Rc, Step};
+use super::{CallArg, Direction, GValue, GremlinError, LoweringVisitor, Predicate, Rc, Step};
 use crate::grammar::generated::gremlin::gremlinparser::*;
 #[allow(non_snake_case)]
 impl LoweringVisitor {
@@ -338,6 +338,16 @@ impl LoweringVisitor {
             self.steps.push(Step::Identity);
             return;
         };
+        if let Some(Step::Io { reader, read: false, .. }) = self.steps.last_mut() {
+            if matches!(key.as_str(), "IO.reader" | "~tinkerpop.io.reader") {
+                if let Some(GValue::String(value)) = value {
+                    *reader = Some(value.strip_prefix("IO.").unwrap_or(&value).to_string());
+                    return;
+                }
+            }
+            self.fail(GremlinError::Parse("io() requires a supported reader option".into()));
+            return;
+        }
         if self.apply_value_map_with_option(&key, value.as_ref()) {
             return;
         }

@@ -22,7 +22,7 @@ pub(super) fn verify(tokens: &[GremlinToken]) -> Result<()> {
         }
         if read_only && query.windows(3).any(|w| {
             w[0].text == "." && w[2].text == "(" && matches!(w[1].text.as_str(),
-                "addV" | "addE" | "mergeV" | "mergeE" | "property" | "drop")
+                "addV" | "addE" | "mergeV" | "mergeE" | "property" | "drop" | "read")
         }) {
             return Err(GremlinParseError::Parse(
                 "The provided traversal has a mutating step and thus is not read only".into()));
