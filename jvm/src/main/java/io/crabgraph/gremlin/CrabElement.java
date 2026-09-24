@@ -10,7 +10,7 @@ abstract class CrabElement implements Element {
     final Map<String,Object> record;
     CrabElement(CrabGraph graph,Map<String,Object> record) { this.graph=graph; this.record=record; }
     Object handle() { return record.get("handle"); }
-    @Override public Object id() { return graph.decode(record.get("id")); }
+    @Override public Object id() { return graph.elementId(record); }
     @Override public String label() { return (String)record.get("label"); }
     @Override public Graph graph() { return graph; }
     @Override public void remove() { graph.request("remove","owner",handle()); }
@@ -37,7 +37,7 @@ final class CrabVertex extends CrabElement implements Vertex {
         ElementHelper.validateLabel(label);
         if(!(inVertex instanceof CrabVertex)||inVertex.graph()!=graph) throw new IllegalArgumentException("Edge endpoint belongs to a different native session");
         Map<String,Object> args=CrabCodec.fields("out",handle(),"in",((CrabVertex)inVertex).handle(),"label",label,"properties",graph.properties(keyValues));
-        ElementHelper.getIdValue(keyValues).ifPresent(id->args.put("id",CrabCodec.encode(id)));
+        ElementHelper.getIdValue(keyValues).ifPresent(id->args.put("id",graph.encodeId(id,"edge")));
         List<Object> pairs=new ArrayList<>(); args.forEach((k,v)->{pairs.add(k);pairs.add(v);});
         return graph.decode(graph.request("addEdge",pairs.toArray()));
     }
@@ -52,7 +52,7 @@ final class CrabVertex extends CrabElement implements Vertex {
     @Override public <V> VertexProperty<V> property(VertexProperty.Cardinality cardinality,String key,V value,Object... keyValues) {
         ElementHelper.validateProperty(key,value);
         Map<String,Object> args=CrabCodec.fields("owner",handle(),"key",key,"value",graph.encodeValue(value),"cardinality",cardinality.name(),"meta",graph.properties(keyValues));
-        ElementHelper.getIdValue(keyValues).ifPresent(id->args.put("id",CrabCodec.encode(id)));
+        ElementHelper.getIdValue(keyValues).ifPresent(id->args.put("id",graph.encodeId(id,"vertex_property")));
         List<Object> pairs=new ArrayList<>(); args.forEach((k,v)->{pairs.add(k);pairs.add(v);});
         return graph.decode(graph.request("setVertexProperty",pairs.toArray()));
     }
