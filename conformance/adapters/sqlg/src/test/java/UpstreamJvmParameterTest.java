@@ -50,6 +50,39 @@ public class UpstreamJvmParameterTest {
    catch(AssertionError expected){assertTrue(expected.getMessage().contains("expected:<4>"));}
   } finally {context.afterEachScenario();UpstreamGremlin.backend="reference";}
  }
+ @Test public void capturedIdsSurviveElementDeletionBeforeOriginalCountAssertions() throws Exception {
+  UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
+  try {
+   steps.givenTheXGraph("modern");UpstreamGremlin.backend="crabgraph-jvm";
+   UpstreamGremlin.step(steps,UpstreamGremlin.json.valueToTree(Map.of("text","using the parameter vid1 defined as \"v[marko].id\"")));
+   context.graph.traversal().V(context.typedParameters.get("vid1")).drop().iterate();
+   UpstreamGremlin.step(steps,UpstreamGremlin.json.valueToTree(Map.of("text","the graph should return 0 for count of \"g.V(vid1)\"")));
+  } finally {context.afterEachScenario();UpstreamGremlin.backend="reference";}
+ }
+ @Test public void directionAliasesRemainTypedInsideRecursiveMapParameters() throws Exception {
+  UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
+  try {
+   steps.givenTheXGraph("modern");
+   Map<?,?> values=(Map<?,?>)UpstreamGremlin.typedParameter(steps,"m[{\"D[from]\":\"v[marko]\",\"D[to]\":{\"nested\":[\"D[IN]\",\"D[from]\"]}}]");
+   assertTrue(values.get(Direction.OUT) instanceof Vertex);
+   assertEquals(List.of(Direction.IN,Direction.OUT),((Map<?,?>)values.get(Direction.IN)).get("nested"));
+  } finally {context.afterEachScenario();}
+ }
+ @Test public void nullCompilerTypesSelectGremlinOverloadsWithoutChangingLiterals() throws Exception {
+  UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
+  try {
+   steps.givenTheXGraph("empty");
+   assertEquals(1,UpstreamGremlin.jvmTraversal(steps,"g.mergeV(null).option(Merge.onCreate,null)").toList().size());
+   assertEquals(1,UpstreamGremlin.jvmTraversal(steps,"g.mergeV([:]).option(Merge.onMatch,null)").toList().size());
+   assertEquals(1,UpstreamGremlin.jvmTraversal(steps,"g.mergeV(__.constant([:]))").toList().size());
+   assertEquals(Arrays.asList(null,null),UpstreamGremlin.jvmTraversal(steps,"g.inject(null,null)").toList());
+   var injected=UpstreamGremlin.jvmTraversal(steps,"g.inject(1).inject(null,null)").toList();
+   assertEquals(3,injected.size());assertEquals(2,Collections.frequency(injected,null));assertEquals(1,Collections.frequency(injected,1));
+   assertEquals(List.of("mergeV(null)"),UpstreamGremlin.jvmTraversal(steps,"g.inject('mergeV(null)')").toList());
+   try{UpstreamGremlin.jvmTraversal(steps,"g.mergeE(null)").toList();fail("An edge still requires endpoints");}
+   catch(IllegalArgumentException expected){assertTrue(expected.getMessage().contains("Out Vertex not specified"));}
+  } finally {context.afterEachScenario();}
+ }
  @Test public void fixtureCopyPreservesPublicIdsCardinalityAndMetadata() throws Exception {
   try(TinkerGraph fixture=TinkerFactory.createTheCrew();TinkerGraph copy=TinkerGraph.open()){
    UpstreamGremlin.copyFixture(fixture,copy);

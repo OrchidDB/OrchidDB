@@ -37,8 +37,8 @@ public class UpstreamGremlin {
   Process process; BufferedReader output; BufferedWriter input;
   Bridge() throws Exception {
    var builder=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT);
-   builder.environment().put("CRABGRAPH_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
-   builder.environment().put("CRABGRAPH_GREMLIN_IO_CLASSPATH",System.getProperty("java.class.path"));
+   builder.environment().putIfAbsent("CRABGRAPH_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
+   builder.environment().putIfAbsent("CRABGRAPH_GREMLIN_IO_CLASSPATH",System.getProperty("java.class.path"));
    process=builder.start();
    output=new BufferedReader(new InputStreamReader(process.getInputStream()));input=new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
   }
@@ -196,7 +196,8 @@ public class UpstreamGremlin {
  }
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
-  boolean allowNullPropertyValues;
+  boolean allowNullPropertyValues,directionAliasesInstalled;
+  final Map<String,RuntimeException> assertionParameterErrors=new LinkedHashMap<>();
   final Map<String,Object> typedParameters=new LinkedHashMap<>();
   final Map<String,String> parameterDefinitions=new LinkedHashMap<>(),predicateDefinitions=new LinkedHashMap<>();
   GremlinGroovyScriptEngine scriptEngine; CrabJvmExecutor executor;
@@ -291,7 +292,52 @@ public class UpstreamGremlin {
   bindings.put("g",source);return bindings;
  }
  static GremlinGroovyScriptEngine scriptEngine(StepDefinition steps)throws Exception{
-  Context context=context(steps);if(context.scriptEngine==null)context.scriptEngine=new GremlinGroovyScriptEngine();return context.scriptEngine;
+  Context context=context(steps);if(context.scriptEngine==null)context.scriptEngine=new GremlinGroovyScriptEngine(nullArgumentTypes());return context.scriptEngine;
+ }
+ /** Supply the null argument types chosen by Gremlin grammar instead of Groovy extension overloads. */
+ static org.apache.tinkerpop.gremlin.groovy.jsr223.GroovyCustomizer nullArgumentTypes(){
+  return ()->new org.codehaus.groovy.control.customizers.CompilationCustomizer(org.codehaus.groovy.control.CompilePhase.SEMANTIC_ANALYSIS){
+   @Override public void call(org.codehaus.groovy.control.SourceUnit source,org.codehaus.groovy.classgen.GeneratorContext generator,org.codehaus.groovy.ast.ClassNode node){
+    new org.codehaus.groovy.ast.ClassCodeExpressionTransformer(){
+     @Override protected org.codehaus.groovy.control.SourceUnit getSourceUnit(){return source;}
+     @Override public org.codehaus.groovy.ast.expr.Expression transform(org.codehaus.groovy.ast.expr.Expression expression){
+      if(expression instanceof org.codehaus.groovy.ast.expr.MethodCallExpression call&&call.getArguments() instanceof org.codehaus.groovy.ast.expr.TupleExpression tuple){
+       var arguments=tuple.getExpressions();String method=call.getMethodAsString();int index=-1;
+       if(("mergeV".equals(method)||"mergeE".equals(method))&&arguments.size()==1)index=0;
+       if("option".equals(method)&&arguments.size()==2&&arguments.get(0) instanceof org.codehaus.groovy.ast.expr.PropertyExpression property&&
+          property.getObjectExpression() instanceof org.codehaus.groovy.ast.expr.ClassExpression type&&
+          type.getType().getName().equals(org.apache.tinkerpop.gremlin.process.traversal.Merge.class.getName()))index=1;
+       if("inject".equals(method))for(int i=0;i<arguments.size();i++)
+        if(arguments.get(i) instanceof org.codehaus.groovy.ast.expr.ConstantExpression value&&value.isNullExpression())
+         arguments.set(i,new org.codehaus.groovy.ast.expr.CastExpression(org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE,value));
+       if(index>=0&&arguments.get(index) instanceof org.codehaus.groovy.ast.expr.ConstantExpression constant&&constant.isNullExpression())
+        arguments.set(index,new org.codehaus.groovy.ast.expr.CastExpression(org.codehaus.groovy.ast.ClassHelper.make(Map.class),constant));
+      }
+      return super.transform(expression);
+     }
+    }.visitClass(node);
+   }
+  };
+ }
+ /** Extend upstream's enum decoder with Direction's public Java aliases, including nested maps. */
+ static void installDirectionAliases(StepDefinition steps)throws Exception{
+  Context context=context(steps);if(context.directionAliasesInstalled)return;
+  var converters=(List<org.javatuples.Pair<Pattern,java.util.function.Function<String,Object>>>)field(steps,"objectMatcherConverters");
+  for(int i=0;i<converters.size();i++)if(converters.get(i).getValue0().pattern().equals("D\\[(.*)\\]")){
+   Pattern pattern=converters.get(i).getValue0();
+   converters.set(i,org.javatuples.Pair.with(pattern,name->{
+    try{Object value=Direction.class.getField(name).get(null);if(value instanceof Direction)return value;}
+    catch(ReflectiveOperationException ignored){}
+    throw new IllegalArgumentException("Unknown Direction: "+name);
+   }));
+  }
+  context.directionAliasesInstalled=true;
+ }
+ static void cacheAssertionParameter(StepDefinition steps,String name,String raw,String predicate)throws Exception{
+  context(steps).assertionParameterErrors.remove(name);
+  try{
+   if(predicate==null)steps.usingTheParameterXDefinedAsX(name,raw);else steps.usingTheParameterXOfPX(name,predicate,raw);
+  }catch(RuntimeException error){context(steps).assertionParameterErrors.put(name,error);}
  }
  static Object typedParameter(StepDefinition steps,String value)throws Exception{
   if(value.startsWith("c[")&&value.endsWith("]")){
@@ -301,6 +347,7 @@ public class UpstreamGremlin {
    if(!(closure instanceof Closure))throw new IllegalArgumentException("Lambda parameter did not compile to a Closure");
    return closure;
   }
+  installDirectionAliases(steps);
   var converter=StepDefinition.class.getDeclaredMethod("convertToObject",Object.class);converter.setAccessible(true);
   Object converted;
   try{converted=converter.invoke(steps,value);}catch(InvocationTargetException error){throw (Exception)error.getCause();}
@@ -313,9 +360,7 @@ public class UpstreamGremlin {
   for(var parameter:context.parameterDefinitions.entrySet()){
    String name=parameter.getKey();
    if(!Pattern.compile("\\b"+Pattern.quote(name)+"\\b").matcher(script).find())continue;
-   String predicate=context.predicateDefinitions.get(name);
-   if(predicate==null)steps.usingTheParameterXDefinedAsX(name,parameter.getValue());
-   else steps.usingTheParameterXOfPX(name,predicate,parameter.getValue());
+   RuntimeException error=context.assertionParameterErrors.get(name);if(error!=null)throw error;
   }
  }
  static Traversal<?,?> jvmTraversal(StepDefinition steps,String script)throws Exception{
@@ -355,11 +400,12 @@ public class UpstreamGremlin {
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
   else if(t.equals("the graph initializer of")){if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
-  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
+  else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);cacheAssertionParameter(def,m.group(1),raw,null);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
   else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(jvmProfile()){
    String raw=unquote(m.group(3));context(def).parameterDefinitions.put(m.group(1),raw);context(def).predicateDefinitions.put(m.group(1),m.group(2));
    Bindings values=bindings(def,false);values.put("__value",typedParameter(def,raw));
    context(def).typedParameters.put(m.group(1),scriptEngine(def).eval("P."+m.group(2)+"(__value)",values));
+   cacheAssertionParameter(def,m.group(1),raw,m.group(2));
   }else def.usingTheParameterXOfPX(m.group(1),m.group(2),unquote(m.group(3)));}
   else if(t.equals("the traversal of"))defineTraversal(def,doc);
   else if(t.equals("iterated to list"))iterate(def,false);else if(t.equals("iterated next"))iterate(def,true);
