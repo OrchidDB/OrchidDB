@@ -32,15 +32,15 @@ def render(out):
  html=['<div class="report-meta"><span>6,533 upstream scenarios · 3 products · free editions</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
  html.append('<nav class="language-tabs" aria-label="Query languages">'+''.join('<a href="#language-'+suite+'" data-language-tab="'+suite+'">'+label+'<span>'+str(len({c['feature'] for c in cases if c['suite']==suite}))+' features</span></a>' for suite,label in [('tinkerpop','Gremlin'),('opencypher','Cypher'),('rdf','SPARQL')])+'</nav>')
  html.append('<div class="comparison-controls" hidden><label class="feature-search">Find a graph feature<input id="comparison-search" type="search" placeholder="Try count, shortest path, aggregation…" autocomplete="off"></label><label>Results<select id="comparison-filter"><option value="all">All outcomes</option><option value="differences">Different outcomes</option><option value="failures">Failures / timeouts</option><option value="adapter">Adapter limitations</option><option value="unexecuted">Skipped / unsupported</option><option value="crab-wins">Crabgraph passes; peer fails</option><option value="peer-wins">Peer passes; Crabgraph fails</option></select></label><button id="comparison-reset" type="button">Reset</button></div>')
- html.append('<div class="feature-browser" id="cases"><aside class="feature-index" hidden><div class="index-heading">FEATURES <span id="comparison-count" role="status"></span></div><nav id="feature-list" aria-label="Graph features"></nav><p id="empty-features" hidden>No matching features. Try another search or reset the filters.</p></aside><div class="feature-stage"><div id="empty-stage" hidden>No features match these filters.</div>')
+ html.append('<p class="matrix-legend"><span><i class="complete"></i>All passed</span><span><i class="mixed"></i>Some passed</span><span><i class="failed"></i>No passes; failures recorded</span><span><i class="unknown"></i>Not evaluated</span></p><p class="matrix-note">Cells show passed / total upstream scenarios. Select a cell for individual results and timings. All features are listed below.</p><p id="comparison-count" role="status"></p><div class="feature-browser" id="cases"><div class="feature-stage"><p id="empty-stage" hidden>No features match these filters.</p>')
  groups=defaultdict(list)
  for c in cases:groups[(c['suite'],c['feature'])].append(c)
  export=[];current_suite=None
- for (suite,feature),members in groups.items():
+ for (suite,feature),members in sorted(groups.items(),key=lambda item:{'tinkerpop':0,'opencypher':1,'rdf':2}[item[0][0]]):
   if suite!=current_suite:
-   if current_suite is not None:html.append('</section>')
+   if current_suite is not None:html.append('</table></div></section>')
    current_suite=suite
-   html.append('<section class="language-group" id="language-'+suite+'" data-suite="'+suite+'"><h2 class="language-heading">'+{'opencypher':'Cypher','tinkerpop':'Gremlin','rdf':'SPARQL'}[suite]+'</h2>')
+   html.append('<section class="language-group" id="language-'+suite+'" data-suite="'+suite+'"><h2 class="language-heading">'+{'opencypher':'Cypher','tinkerpop':'Gremlin','rdf':'SPARQL'}[suite]+'</h2><div class="feature-matrix-scroll"><table class="feature-matrix"><thead><tr><th scope="col">Feature</th>'+''.join('<th scope="col">'+PRODUCTS[p]+'<small>'+e(str(runs.get((p,suite),{}).get('build',{}).get('version','Local build')))+'</small></th>' for p in SUITE_PRODUCTS[suite])+'</tr></thead>')
   group_id=hashlib.sha256((suite+'/'+feature).encode()).hexdigest()[:20]
   feature_dir=download/'features';feature_dir.mkdir(exist_ok=True)
   evidence_url='/downloads/conformance/features/'+group_id+'.json'
@@ -51,7 +51,7 @@ def render(out):
   if suite=='rdf':short=feature.split('/')[-1].replace('-',' ').capitalize()
   display_version=catalog['sources'][suite]['version'] if suite!='rdf' else ('1.0' if feature.startswith('sparql10/') else '1.1')
   language={'opencypher':'Cypher','tinkerpop':'Gremlin','rdf':'SPARQL'}[suite]
-  html.append('<article class="feature-card" id="'+feature_id+'" data-suite="'+suite+'" data-name="'+e(short)+'" data-language-name="'+language+'"><header class="feature-heading"><div class="feature-kicker">'+language+' <span> / '+e(display_version)+'</span></div><h2>'+e(short)+'</h2><p>'+str(len(members))+' original upstream scenarios · <a href="'+e(members[0]['source'])+'">Test specification ↗</a> · <a class="feature-permalink" href="#'+feature_id+'">Permalink</a></p></header><div class="support-grid" data-count="'+str(len(SUITE_PRODUCTS[suite]))+'" style="--product-count:'+str(len(SUITE_PRODUCTS[suite]))+'" aria-label="Feature results by product">')
+  html.append('<tbody class="feature-card" id="'+feature_id+'" data-suite="'+suite+'" data-name="'+e(short)+'" data-language-name="'+language+'"><tr class="feature-matrix-row"><th scope="row"><a href="#tests-'+group_id+'">'+e(short)+'</a><small>'+str(len(members))+' scenarios · '+e(display_version)+' · <a href="'+e(members[0]['source'])+'">Source ↗</a></small></th>')
   for product in SUITE_PRODUCTS[suite]:
    name=PRODUCTS[product]
    counts=Counter(get(product,c)['status'] for c in members)
@@ -61,8 +61,8 @@ def render(out):
    version=runs.get((product,suite),{}).get('build',{}).get('version','Local build' if product=='crabgraph' else 'Version not recorded')
    note=' · '.join(str(counts[k])+' '+{'fail':'failed','timeout':'timed out','skipped':'skipped','adapter-error':'adapter limitations','unsupported':'unsupported','not-applicable':'not applicable','stale':'stale','not-run':'not run'}[k] for k in LABELS if k!='pass' and counts[k]) or 'Every scenario passed'
    bars=''.join('<span class="segment '+k+'" style="width:'+str(v/total*100)+'%" title="'+str(v)+' '+e(LABELS[k])+'"></span>' for k,v in counts.items())
-   html.append('<div class="support-column"><h3>'+name+'<small>'+e(str(version))+'</small></h3><a class="support-cell '+state+'" href="#tests-'+group_id+'" data-product-focus="'+product+'"><span class="support-label">'+label+'</span><strong>'+str(passed)+'<span> / '+str(total)+'</span></strong><span class="support-caption">scenarios passed</span><span class="support-note">'+e(note)+'</span><span class="support-action">Inspect results ↗</span></a><div class="result-strip" aria-hidden="true">'+bars+'</div></div>')
-  html.append('</div><div class="matrix-legend"><span><i class="complete"></i>All passed</span><span><i class="mixed"></i>Mixed results</span><span><i class="failed"></i>Failures recorded</span><span><i class="unknown"></i>Not evaluated</span></div><p class="feature-context">Results for this feature’s full upstream corpus. Skips and adapter limitations stay in the denominator. Select a product to inspect its results.</p><details class="upstream-group" id="tests-'+group_id+'"><summary>Individual scenarios <span>'+str(len(members))+' tests · expected results, actual output &amp; timing</span></summary><div class="comparison-scroll" tabindex="0" role="region" aria-label="'+e(feature)+'"><table class="comparison-table"><caption>'+e(SUITES[suite])+'</caption><thead><tr><th scope="col">Upstream scenario</th>'+''.join('<th scope="col">'+n+'</th>' for n in (PRODUCTS[p] for p in SUITE_PRODUCTS[suite]))+'</tr></thead><tbody>')
+   html.append('<td><a class="matrix-cell '+state+'" href="#tests-'+group_id+'" data-product-focus="'+product+'"><strong>'+str(passed)+' / '+str(total)+'</strong><span>'+label+'</span><small>'+e(note)+'</small></a></td>')
+  html.append('</tr><tr class="feature-evidence-row"><td colspan="'+str(len(SUITE_PRODUCTS[suite])+1)+'"><details class="upstream-group" id="tests-'+group_id+'"><summary>'+e(short)+' — individual scenarios</summary><div class="comparison-scroll" tabindex="0" role="region" aria-label="'+e(feature)+'"><table class="comparison-table"><caption>'+e(SUITES[suite])+'</caption><thead><tr><th scope="col">Upstream scenario</th>'+''.join('<th scope="col">'+PRODUCTS[p]+'</th>' for p in SUITE_PRODUCTS[suite])+'</tr></thead><tbody>')
   for c in members:
    results={p:get(p,c) for p in SUITE_PRODUCTS[suite]};statuses=[r['status'] for r in results.values() if r['status'] in ['pass','fail','timeout']];flags=[]
    if len(set(statuses))>1:flags.append('differences')
@@ -81,8 +81,8 @@ def render(out):
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
     export.append([c['id'],suite,c['name'],p,status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
    html.append('</tr>')
-  html.append('</tbody></table></div></details></article>')
- html.append('</section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
+  html.append('</tbody></table></div></details></td></tr></tbody>')
+ html.append('</table></div></section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
  for suite,title in SUITES.items():
   subset=[c for c in cases if c['suite']==suite]
   html.append('<h3>'+title+' · '+str(len(subset))+' scenarios</h3><div class="comparison-scroll summary-scroll" tabindex="0" role="region" aria-label="'+title+' result totals"><table class="comparison-table"><caption>'+e(catalog['sources'][suite]['version'])+'</caption><thead><tr>'+''.join('<th scope="col">'+PRODUCTS[p]+'</th>' for p in SUITE_PRODUCTS[suite])+'</tr></thead><tbody><tr>')
