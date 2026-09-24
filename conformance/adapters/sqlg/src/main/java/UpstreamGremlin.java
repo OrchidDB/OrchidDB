@@ -179,14 +179,32 @@ public class UpstreamGremlin {
  }
  static Object field(StepDefinition steps,String name)throws Exception{var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);return f.get(steps);}
  static String unquote(String x)throws Exception{return json.readValue(x,String.class);}
+ static boolean hasInlineLambda(String script) {
+  // Ignore string contents: a property value containing "Lambda.function(...)"
+  // does not require a remote execution capability.
+  String code=script.replaceAll("'([^'\\\\]|\\\\.)*'|\"([^\"\\\\]|\\\\.)*\"", "");
+  return Pattern.compile("\\bLambda\\s*\\.\\s*\\w+\\s*\\(").matcher(code).find();
+ }
+ static void defineTraversal(StepDefinition def,String script)throws Exception {
+  def.theTraversalOf(script);
+  if(field(def,"traversal")==null&&field(def,"error")!=null&&hasInlineLambda(script))
+   throw new AssumptionViolatedException("unsupported-feature: remote-lambda: the gremlin-language execution profile cannot compile inline Lambda expressions; compiler diagnostic: "+field(def,"error"), (Throwable)field(def,"error"));
+ }
+ static void iterate(StepDefinition def,boolean next)throws Exception {
+  // StepDefinition stores compilation errors; calling iteration on its absent
+  // traversal would replace the useful diagnostic with NullPointerException.
+  // Leave the error available to the original upstream assertions.
+  if(field(def,"traversal")==null&&field(def,"error")!=null)return;
+  if(next)def.iteratedNext();else def.iteratedToList();
+ }
  static void step(StepDefinition def,JsonNode s)throws Exception{
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
   else if(t.equals("the graph initializer of"))def.theGraphInitializerOf(doc);
   else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches())def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));
   else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches())def.usingTheParameterXOfPX(m.group(1),m.group(2),unquote(m.group(3)));
-  else if(t.equals("the traversal of"))def.theTraversalOf(doc);
-  else if(t.equals("iterated to list"))def.iteratedToList();else if(t.equals("iterated next"))def.iteratedNext();
+  else if(t.equals("the traversal of"))defineTraversal(def,doc);
+  else if(t.equals("iterated to list"))iterate(def,false);else if(t.equals("iterated next"))iterate(def,true);
   else if(t.startsWith("the result should be ")&&s.has("table")){
    List<List<String>> table=new ArrayList<>();for(var row:s.get("table")){List<String> r=new ArrayList<>();for(var c:row)r.add(c.asText());table.add(r);}var dt=DataTable.create(table);
    switch(t){case "the result should be unordered"->def.theResultShouldBeUnordered(dt);case "the result should be ordered"->def.theResultShouldBeOrdered(dt);case "the result should be of"->def.theResultShouldBeOf(dt);default->throw new IllegalArgumentException("Unmapped step: "+t);}
