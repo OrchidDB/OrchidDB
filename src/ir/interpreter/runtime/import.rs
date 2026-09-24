@@ -131,7 +131,6 @@ struct Vertex {
 #[derive(Debug)]
 struct Edge {
     id: Value,
-    key: String,
     label: String,
     src: String,
     dst: String,
@@ -196,7 +195,6 @@ impl Import {
                         }
                         import.edges.push(Edge {
                             id,
-                            key: edge_key,
                             label: label.clone(),
                             src: key.clone(),
                             dst: identity(field(edge, "inV")?)?.1,
@@ -221,42 +219,35 @@ impl Import {
     }
 
     fn apply(self, graph: &PropertyGraph) -> IrResult<()> {
-        // IDs and property record metadata remain in staging for the native
-        // property catalog. Reject unsupported multiplicity rather than flatten.
-        for vertex in &self.vertices {
-            for records in vertex.properties.values() {
-                if records.len() > 1 || records.iter().any(|p| !p.meta.is_empty()) {
-                    return Err(error("Import requires native multi/meta-property storage"));
-                }
-            }
-        }
+        use crate::ir::catalog::Cardinality;
         let mut vertices = BTreeMap::new();
         for vertex in self.vertices {
-            let props = vertex
-                .properties
-                .into_iter()
-                .filter_map(|(key, mut records)| {
-                    records.pop().map(|p| {
-                        let _ = p.id;
-                        (key, p.value)
-                    })
-                })
-                .collect();
-            let element = graph.insert_node(vertex.label, props);
-            let _ = vertex.id;
+            let element = graph.insert_node(vertex.label, BTreeMap::new());
+            graph.set_element_public_id(&element, vertex.id)?;
+            for (key, records) in vertex.properties {
+                for record in records {
+                    let property = graph.set_vertex_property(
+                        &element, &key, record.value, Cardinality::List, record.meta,
+                    )?;
+                    if let Some(id) = record.id {
+                        graph.set_vertex_property_public_id(&property, id)?;
+                    }
+                }
+            }
             vertices.insert(vertex.key, element);
         }
         for edge in self.edges {
-            graph.insert_edge(
+            let element = graph.insert_edge(
                 edge.label,
                 &vertices[&edge.src],
                 &vertices[&edge.dst],
                 edge.properties,
             )?;
-            let _ = (edge.id, edge.key);
+            graph.set_element_public_id(&element, edge.id)?;
         }
         Ok(())
     }
+
 }
 
 pub(crate) fn read(graph: &PropertyGraph, path: &str, reader: &str) -> IrResult<()> {
