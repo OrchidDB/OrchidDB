@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.*;
 
-/** One private native process; interruptions and protocol failures terminate the session. */
+/** One private native process; interrupted requests are drained before another request is accepted. */
 final class CrabSession implements AutoCloseable {
     private final Process process;
     private final BufferedWriter input;
@@ -30,6 +30,7 @@ final class CrabSession implements AutoCloseable {
     }
     synchronized Object call(Map<String,Object> request) {
         if(closed) throw new IllegalStateException("Native graph is closed");
+        if(Thread.currentThread().isInterrupted()) throw new CancellationException("Native request cancelled before submission");
         try {
             input.write(mapper.writeValueAsString(request)); input.newLine(); input.flush();
             Object reply=replies.poll(Long.getLong("crabgraph.native.timeoutSeconds",120),TimeUnit.SECONDS);
@@ -39,8 +40,29 @@ final class CrabSession implements AutoCloseable {
             if(!Boolean.TRUE.equals(response.get("ok"))) throw new NativeOperationException(String.valueOf(response.get("error")));
             return response.get("value");
         } catch(NativeOperationException e) { throw e; }
-        catch(InterruptedException e) { close(); Thread.currentThread().interrupt(); throw new IllegalStateException("Native operation cancelled; session terminated",e); }
+        catch(InterruptedException e) {
+            CancellationException cancellation=new CancellationException("Native operation cancelled");
+            try { drainInterruptedReply(); }
+            catch(IOException failedRecovery) { close(); cancellation.addSuppressed(failedRecovery); }
+            finally { Thread.currentThread().interrupt(); }
+            throw cancellation;
+        }
         catch(IOException e) { close(); throw new IllegalStateException("Native protocol failure; session terminated",e); }
+    }
+    private void drainInterruptedReply() throws IOException {
+        long timeout=Long.getLong("crabgraph.native.cancelDrainMillis",5000);
+        long deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeout);
+        while(true) {
+            long remaining=deadline-System.nanoTime();
+            if(remaining<=0) throw new IOException("Timed out resynchronizing cancelled native request");
+            try {
+                Object reply=replies.poll(remaining,TimeUnit.NANOSECONDS);
+                if(!(reply instanceof String)) throw new IOException("Native session disconnected while cancelling",reply instanceof Exception?(Exception)reply:null);
+                Map<String,Object> response=mapper.readValue((String)reply,new TypeReference<Map<String,Object>>(){});
+                if(!(response.get("ok") instanceof Boolean)) throw new IOException("Invalid native response while cancelling");
+                return;
+            } catch(InterruptedException repeated) { /* Keep draining the already-submitted operation. */ }
+        }
     }
     void abort() {
         closed=true; process.destroyForcibly();

@@ -13,6 +13,114 @@ public class CrabGraphTest {
         executable=System.getenv("CRABGRAPH_JVM_STORE");
         Assume.assumeTrue("CRABGRAPH_JVM_STORE is required for native integration",executable!=null);
     }
+    @Test public void configuredDefaultCardinalityAppliesToTraversalCreationAndFreshGraphs() {
+        org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+        config.setProperty("crabgraph.native.executable",executable);
+        config.setProperty(CrabGraph.DEFAULT_CARDINALITY,"list");
+        try(CrabGraph graph=CrabGraph.open(config); CrabGraph fresh=graph.freshGraph()) {
+            assertEquals(VertexProperty.Cardinality.list,graph.features().vertex().getCardinality("x"));
+            Vertex v=graph.traversal().addV().property("x",1).property("x",2).next();
+            assertEquals(Long.valueOf(2),graph.traversal().V(v).properties("x").count().next());
+            Vertex constructed=graph.addVertex("x",1,"x",2);
+            assertEquals(Long.valueOf(2),graph.traversal().V(constructed).properties("x").count().next());
+            assertEquals(VertexProperty.Cardinality.list,fresh.features().vertex().getCardinality("x"));
+            Vertex child=fresh.addVertex("x",1,"x",2);
+            assertEquals(Long.valueOf(2),fresh.traversal().V(child).properties("x").count().next());
+        }
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex v=graph.traversal().addV().property("x",1).property("x",2).next();
+            assertEquals(Long.valueOf(1),graph.traversal().V(v).properties("x").count().next());
+            assertEquals(Integer.valueOf(2),v.value("x"));
+        }
+    }
+    @Test public void configuredIdManagersCoerceSuppliedIdsAndPreserveTypedDefaults() {
+        org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+        config.setProperty("crabgraph.native.executable",executable);
+        config.setProperty(CrabGraph.VERTEX_ID_MANAGER,"LONG");
+        config.setProperty(CrabGraph.EDGE_ID_MANAGER,"INTEGER");
+        config.setProperty(CrabGraph.VERTEX_PROPERTY_ID_MANAGER,"INTEGER");
+        try(CrabGraph graph=CrabGraph.open(config); CrabGraph fresh=graph.freshGraph()) {
+            Vertex v=graph.addVertex(T.id,"42");
+            assertEquals(Long.valueOf(42),v.id());
+            assertEquals(v,graph.vertices(42.0d).next());
+            assertEquals(v,graph.vertices("42").next());
+            Edge edge=v.addEdge("self",v,T.id,"31");
+            assertEquals(Integer.valueOf(31),edge.id());
+            assertEquals(edge,graph.edges(31L).next());
+            VertexProperty<Integer> property=v.property(VertexProperty.Cardinality.single,"x",1,T.id,"81");
+            assertEquals(Integer.valueOf(81),property.id());
+            assertFalse(graph.features().vertex().supportsStringIds());
+            assertTrue(graph.features().vertex().supportsNumericIds());
+            assertTrue(graph.features().vertex().willAllowId("42"));
+            assertFalse(graph.features().vertex().willAllowId("arbitrary"));
+            assertEquals(Long.valueOf(43),fresh.addVertex(T.id,"43").id());
+        }
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex number=graph.addVertex(T.id,1), text=graph.addVertex(T.id,"1");
+            assertEquals(Integer.valueOf(1),number.id()); assertEquals("1",text.id());
+            assertEquals(number,graph.vertices(1).next()); assertEquals(text,graph.vertices("1").next());
+            assertTrue(graph.features().vertex().supportsStringIds());
+        }
+    }
+    @Test public void numericStringLookupPrefersExactTypedStringIdentity() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex numeric=graph.addVertex(T.id,7);
+            assertEquals(numeric,graph.vertices("7").next());
+            Vertex text=graph.addVertex(T.id,"7");
+            assertEquals(text,graph.vertices("7").next());
+            assertEquals(numeric,graph.vertices(7).next());
+            Edge numericEdge=numeric.addEdge("self",numeric,T.id,9);
+            assertEquals(numericEdge,graph.edges("9").next());
+            Edge textEdge=numeric.addEdge("self",numeric,T.id,"9");
+            assertEquals(textEdge,graph.edges("9").next());
+            assertEquals(numericEdge,graph.edges(9).next());
+            assertFalse(graph.vertices("not-a-number").hasNext());
+        }
+    }
+    @Test public void bulkImportDefersReaderCommitsAndPreservesCallerTransaction() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            graph.bulkLoad(()->{graph.addVertex(T.id,"committed"); graph.tx().commit(); graph.addVertex(T.id,"also-committed");});
+            assertFalse(graph.tx().isOpen());
+            graph.tx().rollback();
+            assertTrue(graph.vertices("committed").hasNext());
+            graph.addVertex(T.id,"callers-pending");
+            graph.bulkLoad(()->{graph.addVertex(T.id,"loaded-pending");graph.tx().commit();});
+            graph.tx().rollback();
+            assertFalse(graph.vertices("callers-pending").hasNext());
+            assertFalse(graph.vertices("loaded-pending").hasNext());
+            assertTrue(graph.vertices("also-committed").hasNext());
+        }
+    }
+    @Test public void cancelledAtomicMutationRollsBackWithInterruptFlagPreserved() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            graph.addVertex(T.id,"before");
+            try {
+                graph.atomicMutation(()->{
+                    graph.addVertex(T.id,"during"); Thread.currentThread().interrupt();
+                    throw new java.util.concurrent.CancellationException("cancelled");
+                }); fail();
+            } catch(java.util.concurrent.CancellationException expected) {
+                assertTrue(Thread.interrupted());
+            } finally { Thread.interrupted(); }
+            assertTrue(graph.vertices("before").hasNext()); assertFalse(graph.vertices("during").hasNext());
+        }
+    }
+    @Test public void nullPropertyKeySelectsNothingAndMixedKeysIgnoreNull() {
+        try(CrabGraph graph=CrabGraph.open(executable)) {
+            Vertex v=graph.addVertex("x",1);
+            VertexProperty<Object> vp=v.property("x"); vp.property("meta",2);
+            Edge edge=v.addEdge("self",v,"weight",3);
+            for(Element element:Arrays.asList(v,vp,edge)) {
+                assertFalse(element.properties((String)null).hasNext());
+                assertFalse(element.properties(null,null).hasNext());
+                assertTrue(element.properties((String[])null).hasNext());
+            }
+            assertEquals("x",v.properties(null,"x").next().key());
+            assertEquals("meta",vp.properties(null,"meta").next().key());
+            assertEquals("weight",edge.properties(null,"weight").next().key());
+            assertEquals(Long.valueOf(0),graph.traversal().V().has((String)null).count().next());
+        }
+    }
     @Test public void traversesAndMutatesNativeElementsWithTypedProperties() {
         try(CrabGraph graph=CrabGraph.open(executable)) {
             Vertex a=graph.addVertex(T.id,"a",T.label,"person","name","Ada","age",31);
