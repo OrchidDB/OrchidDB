@@ -15,6 +15,12 @@ pub(super) fn lower_as(input: Node, label: &str) -> Node {
     let input = Node::GraphProject {
         mode: ProjectMode::PreserveVisible,
         items: vec![ProjectionItem {
+            alias: "__path_labels".into(),
+            expr: IrExpr::Call { name: "path_attach_label".into(), args: vec![
+                IrExpr::Binding("__path_labels".into()), IrExpr::Binding("__path".into()),
+                IrExpr::lit_str(label),
+            ] },
+        }, ProjectionItem {
             alias: select_history_binding(label),
             expr: IrExpr::Call {
                 name: "select_history_append".into(),
@@ -49,28 +55,13 @@ where
     // Side-effect labels: `select(label)` of a groupCount/group/aggregate
     // side effect keeps stream cardinality and attaches the side-effect
     // value (map or bag list) to every traverser.
-    if lo.group_count_side_effects.contains(label) {
-        let cap = Node::GraphCap {
-            labels: vec![label.to_string()],
-            input: Node::GraphCorrelate {
-                bindings: vec![CURRENT.to_string()],
-            }
-            .boxed(),
-        };
-        return Ok(attach_scalar_current(input, cap));
-    }
-    // Consume-once: after the map is attached the traverser IS the map, and
-    // a repeated `select(label)` picks the map key instead (TinkerPop
-    // resolves map keys before side effects on map-shaped traversers).
-    if let Some(map_node) = lo.group_side_effect_maps.remove(label) {
-        return Ok(attach_scalar_current(input, map_node));
-    }
-    if lo.side_effect_bags.contains_key(label) {
-        if let Some(bag_list) =
-            super::side_effects::lower_side_effect_bag_as_list(input.clone(), label, lo)
-        {
-            return Ok(attach_scalar_current(input, bag_list));
+    if lo.group_count_side_effects.contains(label) || lo.side_effect_bags.contains_key(label) {
+        let mut input = Node::GraphReadSideEffect { label: label.to_string(), input: input.boxed() };
+        if let Some(spec) = consume_by(steps) {
+            let (next, expr) = apply_by_spec(input, &spec, lo, ctx)?;
+            input = replace_current(next, expr);
         }
+        return Ok(input);
     }
     if let Some(input) = lower_side_effect_value(input.clone(), label, lo) {
         return Ok(input);
@@ -184,13 +175,13 @@ where
 /// half. Non-map inputs degrade to an empty list.
 pub(super) fn lower_select_column(input: Node, column: MapColumn) -> Node {
     let helper = match column {
-        MapColumn::Keys => "map_keys",
-        MapColumn::Values => "map_values",
+        MapColumn::Keys => "gremlin_column_keys",
+        MapColumn::Values => "gremlin_column_values",
     };
     Node::GraphCurrentProject {
         expr: IrExpr::Call {
             name: helper.into(),
-            args: vec![IrExpr::Binding(CURRENT.into())],
+            args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::Binding("__path_labels".into())],
         },
         fields: vec![CURRENT.to_string()],
         input: input.boxed(),
@@ -226,16 +217,6 @@ fn filter_label_present(input: Node, label: &str) -> Node {
 
 /// Attach the (single-row) result of `right` to every row of `input` as
 /// the new `current`, preserving stream cardinality and other bindings.
-fn attach_scalar_current(input: Node, right: Node) -> Node {
-    Node::GraphApply {
-        kind: crate::ir::plan::ApplyKind::Scalar,
-        correlation: vec![CURRENT.to_string()],
-        outputs: vec![CURRENT.to_string()],
-        optional_missing: crate::ir::policy::OptionalMissing::Null,
-        left: input.boxed(),
-        right: right.boxed(),
-    }
-}
 
 fn replace_current(input: Node, expr: IrExpr) -> Node {
     Node::GraphProject {

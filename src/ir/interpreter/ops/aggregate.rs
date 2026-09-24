@@ -112,10 +112,18 @@ pub(crate) fn group_map_op(
         group_rows.retain(|row| !row.bindings.contains_key("__gremlin_group_empty"));
         let value = match value {
             GroupValue::CountBulk => {
-                let total: u64 = group_rows.iter().map(|row| row.bulk).sum();
+                let total = checked_bulk_total(&group_rows)?;
                 Value::Long(total as i64)
             }
-            GroupValue::Traversal { traversal } => {
+            GroupValue::Traversal {
+                traversal,
+                bulk_current,
+            } => {
+                let group_rows = if *bulk_current && group_suffix_is_pure(traversal) {
+                    compact_group_current(group_rows)?
+                } else {
+                    group_rows
+                };
                 let mut probe = traversal.as_ref().clone();
                 let value = if split_group_prefix(&mut probe).is_some() {
                     // The final reduction can have a post-processing suffix;
@@ -231,7 +239,7 @@ pub(crate) fn compute_aggregate(
             Ok(Value::Long(count))
         }
         AggKind::CountBulk => {
-            let total: u64 = rows.iter().map(|r| r.bulk).sum();
+            let total = checked_bulk_total(rows)?;
             Ok(Value::Long(total as i64))
         }
         AggKind::CountDistinct => {
@@ -516,6 +524,14 @@ pub(crate) fn compute_aggregate(
     }
 }
 
+fn checked_bulk_total(rows: &[Row]) -> IrResult<u64> {
+    rows.iter().try_fold(0u64, |total, row| {
+        total.checked_add(row.bulk).ok_or_else(|| {
+            InterpretError::ExecutionLimit("aggregate traverser bulk overflow".into())
+        })
+    })
+}
+
 fn add_weighted_integer(total: i64, value: i64, weight: u64) -> IrResult<i64> {
     i64::try_from(i128::from(total) + i128::from(value) * i128::from(weight))
         .map_err(|_| InterpretError::Runtime("integer sum overflow".into()))
@@ -744,7 +760,7 @@ pub(crate) fn group_side_effect_write(
     graph: &PropertyGraph,
 ) -> IrResult<()> {
     let (prefix, reducer, reducing) = match value {
-        GroupValue::Traversal { traversal } => {
+        GroupValue::Traversal { traversal, .. } => {
             let mut suffix = traversal.as_ref().clone();
             let prefix = split_group_prefix(&mut suffix);
             let reducing = prefix.is_some();
@@ -760,6 +776,9 @@ pub(crate) fn group_side_effect_write(
                 Some(prefix),
                 GroupValue::Traversal {
                     traversal: suffix.boxed(),
+                    // Prefix evaluation may introduce bindings used by the
+                    // reducer (for example a nested group's computed key).
+                    bulk_current: false,
                 },
                 reducing,
             )
@@ -795,6 +814,18 @@ pub(crate) fn group_side_effect_write(
         }
     }
     for (key, members) in groups {
+        let members = if matches!(
+            value,
+            GroupValue::Traversal {
+                bulk_current: true,
+                ..
+            }
+        ) && prefix.as_ref().is_none_or(group_suffix_is_pure)
+        {
+            compact_group_current(members)?
+        } else {
+            members
+        };
         let contributions = match &prefix {
             Some(prefix) if reducing => run_group_traversal(prefix, members, graph, ctx)?,
             Some(prefix) => {
@@ -828,13 +859,15 @@ pub(crate) fn group_side_effect_write(
             .expect("group registered");
         state.cached = None;
         if matches!(state.reducer, GroupValue::CountBulk) {
-            let bulk = contributions.iter().map(|row| row.bulk).sum::<u64>();
+            let bulk = checked_bulk_total(&contributions)?;
             if let Some(existing) = state
                 .rows
                 .iter_mut()
                 .find(|row| row.bindings.get(GROUP_KEY) == Some(&key))
             {
-                existing.bulk += bulk;
+                existing.bulk = existing.bulk.checked_add(bulk).ok_or_else(|| {
+                    InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+                })?;
             } else {
                 let mut row = Row::new().with(GROUP_KEY, key);
                 row.bulk = bulk;
@@ -890,6 +923,38 @@ pub(crate) fn group_side_effect_value(
     }
     ctx.group_side_effects.insert(label.to_string(), state);
     result.map(Some)
+}
+
+/// Called only after the planner proves the value traversal cannot observe
+/// member order or inherited labels/path/sack/loop state. Preserve multiplicity
+/// in bulk; weighted reducers and graph expansion consume that bulk directly.
+fn compact_group_current(rows: Vec<Row>) -> IrResult<Vec<Row>> {
+    if rows.iter().any(|row| {
+        row.bindings.contains_key("__sack")
+            || row.bindings.get("__bulk_enabled") == Some(&Value::Bool(false))
+    }) {
+        return Ok(rows);
+    }
+    let mut compacted: Vec<Row> = Vec::new();
+    let mut positions = BTreeMap::<Vec<u8>, usize>::new();
+    for mut row in rows {
+        let key = encode_value(row.bindings.get("current").unwrap_or(&Value::Null));
+        if let Some(index) = positions.get(&key) {
+            let previous = &mut compacted[*index];
+            previous.bulk = previous.bulk.checked_add(row.bulk).ok_or_else(|| {
+                InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+            })?;
+        } else {
+            row.bindings.retain(|binding, _| {
+                binding == "current"
+                    || binding == "__bulk_enabled"
+                    || binding == "__gremlin_bulk_safe"
+            });
+            positions.insert(key, compacted.len());
+            compacted.push(row);
+        }
+    }
+    Ok(compacted)
 }
 
 fn run_group_traversal(

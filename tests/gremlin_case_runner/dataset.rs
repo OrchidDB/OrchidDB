@@ -644,7 +644,12 @@ impl ValueKind {
             | Value::List(_)
             | Value::Map(_)
             | Value::Path(_)
-            | Value::Null => Self::Value,
+            | Value::Null
+            | Value::TypedMap(_)
+            | Value::MapEntry(_)
+            | Value::BulkSet(_)
+            | Value::Token(_)
+            | Value::Direction(_) => Self::Value,
         }
     }
 }

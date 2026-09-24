@@ -172,6 +172,8 @@ pub enum Step {
     NormSackBarrier,
     /// Traversal source bulk policy.
     WithBulk(bool),
+    /// Disable the standard label-liveness strategy.
+    WithoutPathRetraction,
     /// `simplePath()` / `cyclicPath()`: traverser-state filters; compile-time
     /// no-op since we don't track per-traverser paths.
     SimplePath,

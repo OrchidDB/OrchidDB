@@ -151,3 +151,68 @@ async fn named_group_count_unproductive_key_preserves_parent_traversers() {
     assert_eq!(rows[0][0]["value"].as_array().unwrap().len(), 1);
     assert_eq!(rows[0][0]["value"][0][1], json!({"type":"long","value":1}));
 }
+
+#[tokio::test]
+async fn current_only_nested_group_reductions_preserve_duplicate_multiplicity() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node("person", BTreeMap::new());
+    let b = graph.insert_node("software", BTreeMap::new());
+    graph
+        .insert_edge(
+            "created",
+            &a,
+            &b,
+            BTreeMap::from([("weight".into(), GValue::Int(3))]),
+        )
+        .unwrap();
+    engine.replace_graph(graph).unwrap();
+    for prefix in ["g", "g.withBulk(false)"] {
+        let rows = native(&mut engine, &format!("{prefix}.inject(1,2,3).V().hasLabel('person').group().by(T.label).by(__.bothE().group().by(T.label).by(__.values('weight').sum()))")).await;
+        assert_eq!(
+            rows[0][0]["value"][0][1]["value"][0][1],
+            json!({"type":"long","value":9})
+        );
+    }
+    let named = native(&mut engine, "g.inject(1,2,3).V().hasLabel('person').group('m').by(T.label).by(__.bothE().group().by(T.label).by(__.values('weight').sum())).cap('m')").await;
+    assert_eq!(
+        named[0][0]["value"][0][1]["value"][0][0]["value"],
+        "created"
+    );
+    assert_eq!(named[0][0]["value"][0][1]["value"][0][1]["value"], 9);
+    let rows = native(
+        &mut engine,
+        "g.inject(2,1,2).group().by(__.constant('key')).by(__.fold())",
+    )
+    .await;
+    assert_eq!(
+        rows[0][0]["value"][0][1]["value"],
+        json!([{"type":"int","value":2},{"type":"int","value":1},{"type":"int","value":2}])
+    );
+}
+
+#[tokio::test]
+async fn named_group_count_after_short_repeat_preserves_walk_bulk() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let graph = PropertyGraph::new();
+    let a = graph.insert_node(
+        "song",
+        BTreeMap::from([("kind".into(), GValue::String("a".into()))]),
+    );
+    let b = graph.insert_node(
+        "song",
+        BTreeMap::from([("kind".into(), GValue::String("b".into()))]),
+    );
+    for _ in 0..2 {
+        graph.insert_edge("next", &a, &b, BTreeMap::new()).unwrap();
+    }
+    engine.replace_graph(graph).unwrap();
+    for prefix in ["g", "g.withBulk(false)"] {
+        let rows = native(&mut engine, &format!("{prefix}.V().repeat(__.both('next')).times(2).group('m').by('kind').by(__.count()).cap('m')")).await;
+        let entries = rows[0][0]["value"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        for entry in entries {
+            assert_eq!(entry[1], json!({"type":"long","value":4}));
+        }
+    }
+}

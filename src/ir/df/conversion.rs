@@ -157,6 +157,7 @@ fn node_to_plan_with_policy(
             loop_name,
             times,
             emit,
+            until_first,
             until,
             until_traversal,
             path,
@@ -169,6 +170,7 @@ fn node_to_plan_with_policy(
             loop_name: loop_name.clone(),
             times: *times,
             emit: emit.clone(),
+            until_first: *until_first,
             until: until.clone(),
             until_traversal: until_traversal.clone(),
             path: path.clone(),
@@ -274,6 +276,9 @@ fn node_to_plan_with_policy(
             schema,
             inputs: vec![node_to_plan(input)?],
         }),
+        Node::GraphGroupSideEffect { label, key, value, key_input, input } => extension(GraphGroupSideEffect {
+            label: label.clone(), key: key.clone(), value: value.clone(), key_input: key_input.clone(), schema, inputs: vec![node_to_plan(input)?],
+        }),
         Node::GraphGroupCountSideEffect { label, key, input } => {
             extension(GraphGroupCountSideEffect {
                 label: label.clone(),
@@ -282,6 +287,13 @@ fn node_to_plan_with_policy(
                 inputs: vec![node_to_plan(input)?],
             })
         }
+        Node::GraphSideEffect { label, value_input, value, seed, reducer, eager, input } => extension(GraphSideEffect {
+            label: label.clone(), value_input: value_input.clone(), value: value.clone(), seed: seed.clone(), reducer: reducer.clone(), eager: *eager,
+            schema, inputs: vec![node_to_plan(input)?],
+        }),
+        Node::GraphReadSideEffect { label, input } => extension(GraphReadSideEffect {
+            label: label.clone(), schema, inputs: vec![node_to_plan(input)?],
+        }),
         Node::GraphCap { labels, input } => extension(GraphCap {
             labels: labels.clone(),
             schema,
@@ -728,6 +740,11 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphCurrentProject,
         GraphAggregate,
         GraphGroupMap,
+        GraphGroupSideEffect,
+        GraphGroupCountSideEffect,
+        GraphSideEffect,
+        GraphReadSideEffect,
+        GraphCap,
         GraphShortestPath,
         GraphDistinct,
         GraphSort,

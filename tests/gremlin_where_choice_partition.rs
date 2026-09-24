@@ -233,3 +233,87 @@ fn implicit_where_projects_labels_and_shared_side_effect_values() {
         &["3"],
     );
 }
+
+#[test]
+fn stream_branches_do_not_replay_upstream_or_dispatch_writers() {
+    let graph = PropertyGraph::new();
+    for branch in [
+        "union(__.identity(),__.identity())",
+        "choose(__.is(1),__.identity(),__.identity())",
+        "branch(__.identity()).option(1,__.fold()).option(Pick.any,__.identity())",
+    ] {
+        assert_rows(
+            &graph,
+            &format!("g.inject(1).store('x').{branch}.cap('x').unfold().count()"),
+            &["1"],
+        );
+    }
+    assert_rows(
+        &graph,
+        "g.inject(1).branch(__.sideEffect(__.store('dispatch')).identity()).option(1,__.identity()).option(Pick.any,__.identity()).cap('dispatch').unfold().count()",
+        &["1"],
+    );
+}
+
+#[test]
+fn stream_branch_barriers_see_all_matches_and_skip_empty_arms() {
+    let graph = PropertyGraph::new();
+    assert_rows(
+        &graph,
+        "g.inject(1,2,3).choose(P.gt(1),__.fold(),__.fold()).count()",
+        &["2"],
+    );
+    assert_rows(
+        &graph,
+        "g.inject(1,2,3).choose(__.is(P.gt(1)),__.fold(),__.fold()).count()",
+        &["2"],
+    );
+    assert_rows(
+        &graph,
+        "g.inject(1,2).choose(__.constant(1)).option(1,__.count())",
+        &["2"],
+    );
+    assert_rows(
+        &graph,
+        "g.inject(1).branch(__.identity()).option(0,__.fold()).count()",
+        &["0"],
+    );
+    assert_rows(
+        &graph,
+        "g.inject(1,2).as('a').union(__.identity(),__.identity()).select('a')",
+        &["1", "1", "2", "2"],
+    );
+    assert_rows(
+        &graph,
+        "g.inject(1,2).branch(__.identity()).option(__.is(1),__.constant('yes')).option(Pick.none,__.constant('no'))",
+        &["yes", "no"],
+    );
+}
+
+#[cfg(feature = "duckdb")]
+#[tokio::test]
+async fn branch_mutation_source_runs_once_and_empty_reducer_arm_stays_empty() {
+    for branch in [
+        "union(__.identity(),__.identity())",
+        "choose(__.identity(),__.identity(),__.identity())",
+        "branch(__.constant(1)).option(1,__.fold()).option(Pick.any,__.identity())",
+    ] {
+        let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+        engine
+            .gremlin(&format!("g.addV('audit').{branch}.count()"))
+            .await
+            .unwrap();
+        let result = engine.gremlin("g.V().count()").await.unwrap();
+        assert_eq!(
+            format::lines_from_batch(&result.returned),
+            vec!["1"],
+            "{branch}"
+        );
+    }
+    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let result = engine
+        .gremlin("g.inject(1).branch(__.identity()).option(0,__.fold()).count()")
+        .await
+        .unwrap();
+    assert_eq!(format::lines_from_batch(&result.returned), vec!["0"]);
+}

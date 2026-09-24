@@ -55,6 +55,10 @@ pub(super) fn lower_group(
         )?;
         GroupValue::Traversal {
             traversal: traversal.boxed(),
+            bulk_current: current_only_reduction(value_steps)
+                && lo.subgraph_vertex_filter.is_none()
+                && lo.subgraph_edge_filter.is_none()
+                && lo.subgraph_vertex_property_filter.is_none(),
         }
     } else if let Some(agg) = value_by
         .as_ref()
@@ -90,4 +94,45 @@ fn group_value_aggregate(spec: &BySpec) -> GremlinPlanResult<Option<AggCall>> {
         )),
         distinct: false,
     }))
+}
+
+/// Bulking is legal only when member order and all inherited traverser state
+/// are unobservable. Keep this allowlist deliberately small: in particular,
+/// fold, slices, branches, labels, paths, loops, sacks and writers are excluded.
+pub(super) fn current_only_reduction(steps: &[Step]) -> bool {
+    for (index, step) in steps.iter().enumerate() {
+        match step {
+            Step::Count | Step::Aggregate(_) => return index + 1 == steps.len(),
+            Step::Group => {
+                let [Step::By(key), Step::By(value)] = &steps[index + 1..] else {
+                    return false;
+                };
+                return key
+                    .traversal
+                    .as_ref()
+                    .is_none_or(|steps| steps.iter().all(current_only_projection))
+                    && value
+                        .traversal
+                        .as_ref()
+                        .is_some_and(|steps| current_only_reduction(steps));
+            }
+            _ if current_only_projection(step) => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
+pub(super) fn current_only_projection(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::ExpandVertex { .. }
+            | Step::ExpandEdge { .. }
+            | Step::EndpointVertex { .. }
+            | Step::Values(_)
+            | Step::Id
+            | Step::Label
+            | Step::Identity
+            | Step::Constant(_)
+    )
 }

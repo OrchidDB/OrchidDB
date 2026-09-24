@@ -37,7 +37,10 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphCurrentProject { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupMap { input, .. }
+        | GraphGroupSideEffect { input, .. }
         | GraphGroupCountSideEffect { input, .. }
+        | GraphSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
         | GraphCap { input, .. }
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
@@ -117,7 +120,10 @@ pub(super) fn unsupported_node_name(node: &Node) -> &'static str {
         Node::GraphSetProperty { .. } => "GraphSetProperty",
         Node::GraphDelete { .. } => "GraphDelete",
         Node::GraphGroupMap { .. } => "GraphGroupMap",
+        Node::GraphGroupSideEffect { .. } => "GraphGroupSideEffect",
         Node::GraphGroupCountSideEffect { .. } => "GraphGroupCountSideEffect",
+        Node::GraphSideEffect { .. } => "GraphSideEffect",
+        Node::GraphReadSideEffect { .. } => "GraphReadSideEffect",
         Node::GraphCap { .. } => "GraphCap",
         Node::GraphShortestPath { .. } => "GraphShortestPath",
         Node::GraphSliceExpr { .. } => "GraphSliceExpr",

@@ -35,7 +35,7 @@ use super::repeat::lower_repeat;
 use super::select::{lower_as, lower_select_column, lower_select_label, lower_select_multi};
 use super::side_effects::{
     lower_aggregate_as, lower_cap, lower_cap_multi, lower_group_as, lower_group_count_as,
-    lower_sack_op, lower_sack_read, lower_side_effect_bag_as_list, lower_subgraph, lower_tree,
+    lower_sack_op, lower_sack_read, lower_subgraph, lower_tree,
 };
 use super::slice::{
     lower_dedup, lower_dedup_labels, lower_limit_or_sample, lower_order, lower_range, lower_sample,
@@ -190,28 +190,20 @@ where
         Step::Fold => Ok(lower_fold(input)),
         Step::Unfold => Ok(lower_unfold(input)),
         Step::Discard | Step::None => Ok(lower_discard_or_none(input)),
-        Step::Barrier => Ok(input),
+        Step::Barrier | Step::NormSackBarrier => Ok(Node::GraphBarrier {
+            partition: Vec::new(), order: Vec::new(), slice: crate::ir::plan::Slice::NONE,
+            materialize: true,
+            bulk_policy: crate::ir::plan::BarrierBulkPolicy::Gremlin {
+                normalize_sack: matches!(step, Step::NormSackBarrier),
+            },
+            input: input.boxed(),
+        }),
         Step::SimplePath => Ok(super::path::lower_path_filter(input, steps, lo, false)),
         Step::CyclicPath => Ok(super::path::lower_path_filter(input, steps, lo, true)),
 
         // ----- subqueries -----
         Step::WhereTraversal(sub) => lower_where_traversal(input, sub, lo, ctx),
         Step::NotTraversal(sub) => lower_not_traversal(input, sub, lo, ctx),
-        Step::Local(sub) | Step::SideEffect(sub) if is_side_effect_only(sub) => {
-            // `local(aggregate("a"))` / `sideEffect(aggregate("a"))` — the
-            // sub-traversal only attaches a side-effect-bag binding. Inline
-            // it onto the outer rows so a later cap("a") can read the bag;
-            // wrapping in GraphApply would drop the binding.
-            if matches!(step, Step::Local(_)) {
-                mark_local_aggregate_labels(sub, lo);
-            }
-            let mut node = input;
-            let mut iter = sub.iter().peekable();
-            while let Some(step) = iter.next() {
-                node = lower_step_with_context(node, step, &mut iter, lo, ctx)?;
-            }
-            Ok(node)
-        }
         Step::Local(sub) => lower_local_or_map(input, sub, lo, ctx, ChildTraversalKind::Local),
         Step::Map(sub) => lower_local_or_map(input, sub, lo, ctx, ChildTraversalKind::Map),
         Step::FlatMap(sub) => lower_local_or_map(input, sub, lo, ctx, ChildTraversalKind::FlatMap),
@@ -385,20 +377,18 @@ where
                 unfold_values,
             ))
         }
-        Step::AggregateAs(label) => lower_aggregate_as(input, label, steps, lo, ctx),
-        Step::AggregateLocal(label) => {lo.side_effect_local_labels.insert(label.clone());lower_aggregate_as(input,label,steps,lo,ctx)},
+        Step::AggregateAs(label) => lower_aggregate_as(input, label, true, steps, lo, ctx),
+        Step::AggregateLocal(label) => lower_aggregate_as(input, label, false, steps, lo, ctx),
         Step::Cap(label) => Ok(lower_cap(input, label, lo)),
         Step::CapMulti(labels) => Ok(lower_cap_multi(input, labels, lo)),
         Step::Sack => Ok(lower_sack_read(input)),
         Step::SackOp(op) => lower_sack_op(input, *op, steps, lo, ctx),
         Step::Subgraph(label) => Ok(lower_subgraph(input, label)),
         Step::Tree(Some(label)) => {
-            // `tree(label)` is a side effect: the stream continues
-            // unchanged and a later `select(label)` / `cap(label)`
-            // attaches the tree map.
-            let map_node = lower_tree(input.clone(), None);
-            lo.group_side_effect_maps.insert(label.clone(), map_node);
-            Ok(input)
+            lo.side_effect_bags.insert(label.clone(), label.clone());
+            Ok(Node::GraphSideEffect { value_input: Node::GraphCorrelate { bindings: vec!["__gremlin_group_members".into()] }.boxed(), label: label.clone(),
+                value: crate::ir::expr::IrExpr::Binding(super::context::PATH.into()),
+                seed: crate::ir::value::Value::List(Vec::new()), reducer: "tree".into(), eager: true, input: input.boxed() })
         }
         Step::Tree(label) => Ok(lower_tree(input, label.as_deref())),
         Step::GroupAs(label) => lower_group_as(input, label, steps, lo, ctx),
@@ -461,7 +451,7 @@ where
         // (works for Compare/Range/Outside; Within/TextLike degrade to
         // Identity).
         Step::WhereString { label, predicate } => {
-            super::filter::lower_where_string(input, label, predicate, steps, lo.productive_by)
+            super::filter::lower_where_string(input, label, predicate, steps, lo, ctx)
         }
         // `by(...)` modulators that aren't peephole-merged with the
         // preceding step (select/path/aggregate/sack/...): we don't yet
@@ -480,6 +470,7 @@ where
             traversal,
         } => lower_call_with_option(input.clone(), key, value.as_ref(), traversal.as_deref())
             .map(|node| node.unwrap_or(input)),
+        Step::WithBulk(_) | Step::WithoutPathRetraction => Ok(input),
         Step::WithSack { .. }
         | Step::WithSideEffect { .. }
         | Step::WithStrategy { .. }
@@ -493,52 +484,6 @@ where
             super::sources::lower_mid_traversal_spawn(input, step, lo, ctx)
         }
     }
-}
-
-/// True when `sub` is composed only of side-effect-attaching steps,
-/// i.e. lowering them inline preserves outer rows 1:1 and only adds
-/// per-row bag bindings. Lets `local(aggregate("a"))` and friends
-/// flatten so a later `cap("a")` can read the bag.
-fn is_side_effect_only(sub: &[Step]) -> bool {
-    if sub.is_empty() {
-        return false;
-    }
-    sub.iter().all(|s| match s {
-        Step::AggregateAs(_) | Step::AggregateLocal(_)
-        | Step::By(_)
-        | Step::SackOp(_)
-        | Step::GroupCountAs(_)
-        | Step::GroupAs(_) => true,
-        // `sideEffect(local(aggregate(..)))` — nested wrappers that only
-        // attach side-effect bags are themselves side-effect-only.
-        Step::Local(inner) | Step::SideEffect(inner) => is_side_effect_only(inner),
-        _ => false,
-    })
-}
-
-/// Record which side-effect labels are written by a lazy
-/// (`local(...)`-wrapped) aggregate. `Operator.assign` reducers keep only
-/// the final write for lazy aggregates.
-fn mark_local_aggregate_labels(sub: &[Step], lo: &mut Lowerer) {
-    for s in sub {
-        match s {
-            Step::AggregateAs(label) | Step::AggregateLocal(label) => {
-                lo.side_effect_local_labels.insert(label.clone());
-            }
-            Step::Local(inner) | Step::SideEffect(inner) => {
-                mark_local_aggregate_labels(inner, lo);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn cap_feeds_local_collection_step(step: Option<&Step>) -> bool {
-    matches!(
-        step,
-        Some(Step::LocalScoped(inner))
-            if matches!(inner.as_ref(), Step::Aggregate(_) | Step::Count | Step::Order | Step::Dedup)
-    )
 }
 
 fn consume_unfold_by<'a, I>(steps: &mut Peekable<I>) -> bool
