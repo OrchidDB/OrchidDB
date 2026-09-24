@@ -22,7 +22,10 @@ pub(super) fn source_node(
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
     let node = match step {
-        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(Node::GraphValues { bindings: vec![], rows: vec![vec![]], bulk: None }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
+        Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(Node::GraphValues{bindings:vec![CURRENT.into()],rows:vec![vec![crate::ir::value::Value::Null]],bulk:None},*edge,criteria,options,lo,ctx,true),
+        Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(Node::GraphValues {bindings:vec![],rows:vec![vec![]],bulk:None},label,lo,ctx),
+        Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(Node::GraphValues {bindings:vec![],rows:vec![vec![]],bulk:None},label,from.as_ref(),to.as_ref(),lo,ctx),
+        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(Node::GraphValues { bindings: vec![], rows: vec![vec![]], bulk: None }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx, true),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(Node::GraphValues {
             bindings: vec![], rows: vec![vec![]], bulk: None,
         }, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
@@ -170,14 +173,22 @@ pub(super) fn lower_mid_traversal_spawn(
     use crate::ir::policy::OptionalMissing;
 
     let spawn_node = source_node(spawn, lo, ctx)?;
-    Ok(Node::GraphApply {
+    let previous = lo.fresh("spawn_previous");
+    let input = Node::GraphProject { mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem { alias: previous.clone(), expr: IrExpr::Binding(CURRENT.into()) }],
+        error_policy: ProjectErrorPolicy::PropagateError, input: input.boxed() };
+    let spawned = Node::GraphApply {
         kind: ApplyKind::Inner,
         correlation: vec![CURRENT.into()],
         outputs: vec![CURRENT.into()],
         optional_missing: OptionalMissing::Null,
         left: input.boxed(),
         right: spawn_node.boxed(),
-    })
+    };
+    Ok(Node::GraphProject { mode: ProjectMode::PreserveVisible,
+        items: vec![ProjectionItem { alias: "__path".into(), expr: IrExpr::Call {
+            name: "path_append_after".into(), args: vec![IrExpr::Binding("__path".into()), IrExpr::Binding(previous), IrExpr::Binding(CURRENT.into())] } }],
+        error_policy: ProjectErrorPolicy::PropagateError, input: spawned.boxed() })
 }
 
 /// Mid-traversal `inject(values...)` — concat the literal stream onto

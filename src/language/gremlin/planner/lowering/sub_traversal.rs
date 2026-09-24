@@ -123,6 +123,16 @@ pub(super) fn lower_child_traversal(
     })
 }
 
+/// Union arms receive the complete incoming stream, so barriers such as
+/// count/fold aggregate across all traversers entering that arm.
+pub(super) fn lower_stream_child_traversal(input: Node, steps: &[Step], lo: &mut Lowerer, parent: &TraversalContext, kind: ChildTraversalKind) -> GremlinPlanResult<Node> {
+    let ctx = lo.child_context(parent, kind);
+    lo.enter_context(ctx, |lo, ctx| {
+        let rewritten = rewrite_infix_connectives(steps);
+        lower_remaining_steps(input, rewritten.as_deref().unwrap_or(steps), lo, ctx)
+    })
+}
+
 fn lower_correlated_traversal_with_context(
     steps: &[Step],
     lo: &mut Lowerer,

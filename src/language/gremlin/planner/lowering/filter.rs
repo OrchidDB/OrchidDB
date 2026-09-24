@@ -526,6 +526,14 @@ pub(super) fn lower_not_traversal(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    // A scalar filter can be negated directly, retaining the undefined
+    // comparison result that a row-existence anti-join would discard.
+    if let [Step::Is { predicate }] = sub {
+        return Ok(Node::GraphFilter {
+            condition: IrExpr::Not(Box::new(predicate_to_expr(IrExpr::Binding(CURRENT.into()), predicate)?)),
+            input: input.boxed(),
+        });
+    }
     let sub = anchor_where_labels(sub);
     Ok(Node::GraphApply {
         kind: ApplyKind::Anti,

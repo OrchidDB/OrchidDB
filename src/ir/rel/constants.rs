@@ -535,6 +535,7 @@ pub(super) fn constant_result_expr(
 
 pub(super) fn tagged_value(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", tagged_value(&pair.0), tagged_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -598,6 +599,7 @@ pub(super) fn tagged_value(value: &Value) -> String {
 
 pub(super) fn cypher_plain_value(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", cypher_plain_value(&pair.0), cypher_plain_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -723,6 +725,7 @@ pub(super) fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::MapEntry(pair) => format!("{}={}", display_for_list_to_string(&pair.0), display_for_list_to_string(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(

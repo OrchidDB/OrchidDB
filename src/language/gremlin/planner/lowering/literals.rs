@@ -7,7 +7,7 @@ use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
     Ok(match value {
-        GValue::VertexRef { .. } => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("native vertex reference requires runtime evaluation".into())),
+        GValue::Token(_) | GValue::DirectionToken(_) | GValue::TypedMap(_) | GValue::VertexRef { .. } => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("native vertex reference requires runtime evaluation".into())),
         GValue::Null => Lit::Null,
         GValue::Bool(b) => Lit::Bool(*b),
         GValue::Int(n) | GValue::Long(n) => Lit::Int(*n),
@@ -32,6 +32,9 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
 
 pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     Ok(match value {
+        GValue::Token(token) => IrExpr::Call {name:"gremlin_token_literal".into(),args:vec![IrExpr::lit_str(token)]},
+        GValue::DirectionToken(token) => IrExpr::Call {name:"gremlin_direction_literal".into(),args:vec![IrExpr::lit_str(token)]},
+        GValue::TypedMap(entries) => IrExpr::Call { name:"map_literal".into(),args:vec![IrExpr::List(entries.iter().map(|(k,_)|gvalue_to_expr(k)).collect::<GremlinPlanResult<_>>()?),IrExpr::List(entries.iter().map(|(_,v)|gvalue_to_expr(v)).collect::<GremlinPlanResult<_>>()?)]},
         GValue::VertexRef { id, label } => IrExpr::Call { name: "gremlin_vertex_ref".into(), args: vec![gvalue_to_expr(id)?, IrExpr::lit_str(label)] },
         GValue::Byte(_) | GValue::Short(_) | GValue::Long(_) |
         GValue::BigInt(_) | GValue::Float32(_) | GValue::BigDecimal(_) => IrExpr::Call {
@@ -84,6 +87,9 @@ pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
 
 pub(super) fn gvalue_to_value(value: &GValue) -> Option<Value> {
     Some(match value {
+        GValue::Token(token) => Value::Token(token.clone()),
+        GValue::DirectionToken(token) => Value::Direction(token.clone()),
+        GValue::TypedMap(entries) => Value::map_from_entries(entries.iter().map(|(k,v)|Some((gvalue_to_value(k)?,gvalue_to_value(v)?))).collect::<Option<_>>()?),
         GValue::VertexRef { .. } => return None,
         GValue::Null => Value::Null,
         GValue::Bool(b) => Value::Bool(*b),

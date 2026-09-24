@@ -38,6 +38,55 @@ where
         Some(spec) => apply_by_spec(input, &spec, lo, ctx)?,
         None => (input, IrExpr::Binding(CURRENT.into())),
     };
+    if matches!(kind, AstAggKind::Sum) {
+        let non_null = lo.fresh("sum_non_null");
+        let total = lo.fresh("sum_total");
+        let aggregate = Node::GraphAggregate {
+            group: vec![],
+            aggs: vec![
+                AggCall {
+                    kind: AggKind::Sum,
+                    alias: CURRENT.into(),
+                    arg: Some(arg.clone()),
+                    distinct: false,
+                },
+                AggCall {
+                    kind: AggKind::CountIf,
+                    alias: non_null.clone(),
+                    arg: Some(IrExpr::IsNotNull(Box::new(arg))),
+                    distinct: false,
+                },
+                AggCall {
+                    kind: AggKind::CountBulk,
+                    alias: total.clone(),
+                    arg: None,
+                    distinct: false,
+                },
+            ],
+            fields: vec![CURRENT.into(), non_null.clone(), total.clone()],
+            input: input.boxed(),
+        };
+        let nonempty = Node::GraphFilter {
+            condition: IrExpr::Binary {
+                op: crate::ir::expr::BinaryOp::Gt,
+                lhs: Box::new(IrExpr::Binding(total)),
+                rhs: Box::new(IrExpr::lit_int(0)),
+            },
+            input: aggregate.boxed(),
+        };
+        return Ok(Node::GraphProject {
+            mode: crate::ir::plan::ProjectMode::ReplaceCurrent,
+            items: vec![crate::ir::plan::ProjectionItem {
+                alias: CURRENT.into(),
+                expr: IrExpr::Call {
+                    name: "gremlin_sum_result".into(),
+                    args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::Binding(non_null)],
+                },
+            }],
+            error_policy: crate::ir::plan::ProjectErrorPolicy::PropagateError,
+            input: nonempty.boxed(),
+        });
+    }
     Ok(Node::GraphAggregate {
         group: Vec::new(),
         aggs: vec![AggCall {

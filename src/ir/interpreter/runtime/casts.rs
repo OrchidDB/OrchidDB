@@ -14,13 +14,14 @@ pub(crate) fn cast_to_string(v: &Value) -> Value {
 
 pub(crate) fn cast_list_to_string(v: &Value) -> Value {
     match v {
-        Value::List(items) => Value::List(items.iter().map(cast_to_string).collect()),
+        Value::List(items) => Value::List(items.iter().map(|item| if matches!(item, Value::Null) { Value::Null } else { cast_to_string(item) }).collect()),
         other => cast_to_string(other),
     }
 }
 
 fn display_for_as_string(v: &Value) -> String {
     match v {
+        Value::MapEntry(entry) => format!("{}={}", display_for_as_string(&entry.0), display_for_as_string(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -213,7 +214,7 @@ fn normalize_collection_spacing(text: &str) -> String {
 fn display_map_for_as_string(map: &std::collections::BTreeMap<String, Value>) -> String {
     if let (Some(Value::String(key)), Some(value)) = (map.get("key"), map.get("value")) {
         if map.contains_key("element") {
-            return format!("str[vp[{key}->{}]]", display_property_value(value));
+            return format!("vp[{key}->{}]", display_property_value(value));
         }
     }
     if let Some(value) = union_display_value(map) {

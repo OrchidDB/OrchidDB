@@ -54,23 +54,9 @@ pub(super) fn lower_mid_traversal_union(
     let Some(first) = iter.next() else {
         return Ok(input);
     };
-    let mut acc = Node::GraphApply {
-        kind: ApplyKind::Inner,
-        correlation: vec![CURRENT.into()],
-        outputs: vec![CURRENT.into()],
-        optional_missing: OptionalMissing::Null,
-        left: input.clone().boxed(),
-        right: lower_child_traversal(first, lo, ctx, ChildTraversalKind::UnionArm)?.boxed(),
-    };
+    let mut acc = super::sub_traversal::lower_stream_child_traversal(input.clone(), first, lo, ctx, ChildTraversalKind::UnionArm)?;
     for next in iter {
-        let arm = Node::GraphApply {
-            kind: ApplyKind::Inner,
-            correlation: vec![CURRENT.into()],
-            outputs: vec![CURRENT.into()],
-            optional_missing: OptionalMissing::Null,
-            left: input.clone().boxed(),
-            right: lower_child_traversal(next, lo, ctx, ChildTraversalKind::UnionArm)?.boxed(),
-        };
+        let arm = super::sub_traversal::lower_stream_child_traversal(input.clone(), next, lo, ctx, ChildTraversalKind::UnionArm)?;
         acc = Node::GraphUnion {
             all: true,
             align: UnionAlign::ByPosition,

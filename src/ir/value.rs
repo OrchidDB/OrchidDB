@@ -94,6 +94,8 @@ pub enum Value {
     Map(BTreeMap<String, Value>),
     /// Gremlin maps may use graph objects, numbers, and tokens as keys.
     TypedMap(Vec<(Value, Value)>),
+    /// Native Gremlin Map.Entry, distinct from a map with key/value properties.
+    MapEntry(Box<(Value, Value)>),
     /// Gremlin multiset, preserving repeated values and a distinct runtime type.
     BulkSet(Vec<Value>),
     Token(String),
@@ -149,6 +151,7 @@ impl Value {
             Self::List(_) => "list",
             Self::Map(_) => "map",
             Self::TypedMap(_) => "map",
+            Self::MapEntry(_) => "map entry",
             Self::BulkSet(_) => "bulkset",
             Self::Token(_) => "token",
             Self::Direction(_) => "direction",
@@ -320,6 +323,7 @@ impl Value {
             }
             (Self::Map(a), Self::Map(b)) => semantic_map_eq(a, b),
             (Self::Token(a), Self::Token(b)) | (Self::Direction(a), Self::Direction(b)) => a == b,
+            (Self::MapEntry(a), Self::MapEntry(b)) => a.0.three_valued_eq(&b.0) == Some(true) && a.1.three_valued_eq(&b.1) == Some(true),
             (Self::TypedMap(a), Self::TypedMap(b)) => {
                 a.len() == b.len()
                     && a.iter().all(|(key, value)| {

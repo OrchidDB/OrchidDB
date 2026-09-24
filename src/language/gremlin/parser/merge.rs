@@ -1,6 +1,6 @@
 //! Literal merge maps keep T tokens separate from ordinary string keys.
 use super::*;
-use crate::language::gremlin::ast::MergeVertexMap;
+use crate::language::gremlin::ast::{MergeVertexMap, MutationArgument};
 
 impl LoweringVisitor {
     fn parse_merge_map<'input>(
@@ -138,10 +138,98 @@ impl LoweringVisitor {
             Err(error) => self.fail(error),
         }
     }
+    pub(super) fn dynamic_merge(&mut self, edge: bool, steps: Vec<Step>) {
+        self.steps.push(Step::DynamicMerge {
+            edge,
+            criteria: MutationArgument::Traversal(steps),
+            options: Default::default(),
+        });
+    }
+
+    fn promote_merge(&mut self) {
+        let Some(step) = self.steps.last().cloned() else {
+            return;
+        };
+        let (edge, criteria, on_create, on_match) = match step {
+            Step::MergeV {
+                criteria,
+                on_create,
+                on_match,
+            } => (false, criteria, on_create, on_match),
+            Step::MergeE {
+                criteria,
+                on_create,
+                on_match,
+            } => (true, criteria, on_create, on_match),
+            _ => return,
+        };
+        let mut options = BTreeMap::new();
+        for (key, value) in [("onCreate", on_create), ("onMatch", on_match)] {
+            if let Some(value) = value {
+                options.insert(
+                    key.into(),
+                    MutationArgument::Literal(value.map(|m| m.literal()).unwrap_or(GValue::Null)),
+                );
+            }
+        }
+        *self.steps.last_mut().unwrap() = Step::DynamicMerge {
+            edge,
+            criteria: MutationArgument::Literal(
+                criteria.map(|m| m.literal()).unwrap_or(GValue::Null),
+            ),
+            options,
+        };
+    }
+
     pub(super) fn lower_merge_vertex_option<'input>(
         &mut self,
         ctx: &TraversalMethod_optionContextAll<'input>,
     ) {
+        if matches!(
+            self.steps.last(),
+            Some(Step::DynamicMerge { .. } | Step::MergeE { .. })
+        ) || matches!(
+            ctx,
+            TraversalMethod_optionContextAll::TraversalMethod_option_Merge_TraversalContext(_)
+        ) {
+            self.promote_merge();
+            let (option, value) = match ctx {
+                TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) => {
+                    let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
+                    let value =
+                        match self.parse_merge_map(c.genericMapNullableArgument(), false, true) {
+                            Ok(value) => MutationArgument::Literal(
+                                value.map(|m| m.literal()).unwrap_or(GValue::Null),
+                            ),
+                            Err(error) => {
+                                self.fail(error);
+                                return;
+                            }
+                        };
+                    (option, value)
+                }
+                TraversalMethod_optionContextAll::TraversalMethod_option_Merge_TraversalContext(
+                    c,
+                ) => {
+                    let option = c.traversalMerge().map(|t| t.get_text()).unwrap_or_default();
+                    let Some(nested) = c.nestedTraversal() else {
+                        return;
+                    };
+                    (
+                        option,
+                        MutationArgument::Traversal(self.lower_nested_traversal(&nested)),
+                    )
+                }
+                _ => {
+                    self.fail(GremlinError::Unsupported("merge option form".into()));
+                    return;
+                }
+            };
+            if let Some(Step::DynamicMerge { options, .. }) = self.steps.last_mut() {
+                options.insert(option.rsplit('.').next().unwrap_or("").into(), value);
+            }
+            return;
+        }
         let TraversalMethod_optionContextAll::TraversalMethod_option_Merge_MapContext(c) = ctx
         else {
             self.fail(GremlinError::Unsupported(

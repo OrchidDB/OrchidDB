@@ -189,7 +189,7 @@ pub(super) fn lower_merge_vertex(
 }
 
 /// Edge merge keeps endpoint identity distinct from ordinary properties.
-pub(super) fn lower_merge_edge(
+fn lower_merge_edge_legacy(
     input: Node,
     criteria: Option<&MergeVertexMap>,
     on_create: Option<&Option<MergeVertexMap>>,
@@ -393,4 +393,182 @@ fn endpoint_id_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
         GValue::VertexRef { .. } => Ok(call("gremlin_id", vec![gvalue_to_expr(value)?])),
         _ => gvalue_to_expr(value),
     }
+}
+
+pub(super) fn lower_dynamic_merge(
+    input: Node,
+    edge: bool,
+    criteria: &crate::language::gremlin::ast::MutationArgument,
+    options: &std::collections::BTreeMap<String, crate::language::gremlin::ast::MutationArgument>,
+    lo: &mut super::context::Lowerer,
+    ctx: &super::context::TraversalContext,
+    start: bool,
+) -> GremlinPlanResult<Node> {
+    use super::mutations::{argument, write_call};
+    use crate::ir::plan::{ApplyKind, Direction, ProjectErrorPolicy, ProjectMode, ProjectionItem};
+    use crate::ir::policy::OptionalMissing;
+    use crate::language::gremlin::ast::MutationArgument;
+    let (input, criteria_expr) = argument(input, criteria, lo, ctx)?;
+    let criteria_bind = lo.fresh("merge_criteria");
+    let original = lo.fresh("merge_original");
+    let mut input = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![
+            ProjectionItem {
+                alias: criteria_bind.clone(),
+                expr: criteria_expr,
+            },
+            ProjectionItem {
+                alias: original.clone(),
+                expr: IrExpr::Binding(CURRENT.into()),
+            },
+        ],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    };
+    let mut endpoint_exprs = vec![];
+    let mut bindings = vec![CURRENT.into(), criteria_bind.clone(), original.clone()];
+    for key in ["outV", "inV"] {
+        let expr = if let Some(value) = options.get(key) {
+            let (next, expr) = argument(input, value, lo, ctx)?;
+            input = next;
+            expr
+        } else {
+            IrExpr::Lit(crate::ir::expr::Lit::Null)
+        };
+        let binding = lo.fresh("merge_endpoint");
+        input = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![ProjectionItem {
+                alias: binding.clone(),
+                expr,
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: input.boxed(),
+        };
+        endpoint_exprs.push(IrExpr::Binding(binding.clone()));
+        bindings.push(binding);
+    }
+    let correlate = Node::GraphCorrelate {
+        bindings: bindings.clone(),
+    };
+    let scan = if edge {
+        Node::GraphRelScan {
+            graph: "default".into(),
+            binding: CURRENT.into(),
+            types: LabelExpr::Any,
+            dir: Direction::Out,
+        }
+    } else {
+        Node::GraphNodeScan {
+            graph: "default".into(),
+            binding: CURRENT.into(),
+            labels: LabelExpr::Any,
+        }
+    };
+    let scan = if edge {
+        super::subgraph_strategy::apply_edge_subgraph(scan, lo, ctx)?
+    } else {
+        super::subgraph_strategy::apply_vertex_subgraph(scan, lo, ctx)?
+    };
+    let matches = Node::GraphApply {
+        kind: ApplyKind::Inner,
+        correlation: bindings.clone(),
+        outputs: vec![CURRENT.into()],
+        optional_missing: OptionalMissing::Null,
+        left: correlate.clone().boxed(),
+        right: scan.boxed(),
+    };
+    let criterion = IrExpr::Binding(criteria_bind.clone());
+    let mut matching = Node::GraphFilter {
+        condition: call(
+            "gremlin_merge_matches",
+            vec![
+                IrExpr::Binding(CURRENT.into()),
+                criterion.clone(),
+                endpoint_exprs[0].clone(),
+                endpoint_exprs[1].clone(),
+            ],
+        ),
+        input: matches.boxed(),
+    };
+    if let Some(value) = options.get("onMatch") {
+        let matched = lo.fresh("merge_matched");
+        matching = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![ProjectionItem {
+                alias: matched.clone(),
+                expr: IrExpr::Binding(CURRENT.into()),
+            }],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: matching.boxed(),
+        };
+        if !start {
+            matching = Node::GraphProject {
+                mode: ProjectMode::ReplaceCurrent,
+                items: vec![ProjectionItem {
+                    alias: CURRENT.into(),
+                    expr: IrExpr::Binding(original),
+                }],
+                error_policy: ProjectErrorPolicy::PropagateError,
+                input: matching.boxed(),
+            };
+        }
+        let (next, value) = argument(matching, value, lo, ctx)?;
+        matching = write_call(
+            next,
+            "gremlin.mutation.merge_update",
+            vec![IrExpr::Binding(matched), value],
+        );
+    }
+    let (create_input, create_value) = if let Some(value) = options.get("onCreate") {
+        argument(correlate, value, lo, ctx)?
+    } else {
+        (correlate, IrExpr::Lit(crate::ir::expr::Lit::Null))
+    };
+    let partition = gvalue_to_expr(&GValue::Map(lo.partition_write.iter().cloned().collect()))?;
+    let create = write_call(
+        create_input,
+        "gremlin.mutation.merge_create",
+        vec![
+            criterion,
+            create_value,
+            IrExpr::lit_bool(edge),
+            endpoint_exprs[0].clone(),
+            endpoint_exprs[1].clone(),
+            partition,
+        ],
+    );
+    Ok(Node::GraphMerge {
+        correlation: bindings,
+        outputs: vec![CURRENT.into()],
+        input: input.boxed(),
+        match_arm: matching.boxed(),
+        create_arm: create.boxed(),
+    })
+}
+
+pub(super) fn lower_merge_edge(
+    input: Node,
+    criteria: Option<&MergeVertexMap>,
+    on_create: Option<&Option<MergeVertexMap>>,
+    on_match: Option<&Option<MergeVertexMap>>,
+    lo: &mut super::context::Lowerer,
+    ctx: &super::context::TraversalContext,
+    start: bool,
+) -> GremlinPlanResult<Node> {
+    use crate::language::gremlin::ast::MutationArgument;
+    let criteria = MutationArgument::Literal(criteria.map(|m| m.literal()).unwrap_or(GValue::Null));
+    let mut options = std::collections::BTreeMap::new();
+    for (key, value) in [("onCreate", on_create), ("onMatch", on_match)] {
+        if let Some(value) = value {
+            options.insert(
+                key.into(),
+                MutationArgument::Literal(
+                    value.as_ref().map(|m| m.literal()).unwrap_or(GValue::Null),
+                ),
+            );
+        }
+    }
+    lower_dynamic_merge(input, true, &criteria, &options, lo, ctx, start)
 }

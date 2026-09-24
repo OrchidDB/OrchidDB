@@ -30,6 +30,7 @@ const V_TYPED_MAP: u8 = 23;
 const V_TOKEN: u8 = 24;
 const V_DIRECTION: u8 = 25;
 const V_BULK_SET: u8 = 26;
+const V_MAP_ENTRY: u8 = 27;
 
 // ---------------- primitive writers ----------------
 
@@ -214,6 +215,7 @@ fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_u8(out, V_MAP);
             put_map(out, map);
         }
+        Value::MapEntry(pair) => { put_u8(out, V_MAP_ENTRY); encode_value(out, &pair.0); encode_value(out, &pair.1); }
         Value::TypedMap(entries) => {
             put_u8(out, V_TYPED_MAP);
             put_u64(out, entries.len() as u64);
@@ -291,6 +293,7 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
         V_LIST => Value::List(decode_values(r)?),
         V_MAP => Value::Map(decode_map(r)?),
         V_PATH => Value::Path(decode_values(r)?),
+        V_MAP_ENTRY => Value::MapEntry(Box::new((decode_value(r)?,decode_value(r)?))),
         V_TYPED_MAP => {
             let count = r.count()?;
             let mut entries = Vec::with_capacity(count);
@@ -542,5 +545,16 @@ mod bulkset_codec_tests {
                 Value::Long(1)
             ]))
         );
+    }
+}
+
+#[cfg(test)]
+mod entry_codec_tests {
+    use super::*;
+    #[test]
+    fn map_entry_roundtrip_preserves_native_key_and_value_types() {
+        let entry=Value::MapEntry(Box::new((Value::Token("id".into()),Value::Long(42))));
+        assert_eq!(decode_value_bytes(&encode_value_bytes(&entry)).unwrap(),entry);
+        assert_ne!(encode_value_bytes(&entry),encode_value_bytes(&Value::TypedMap(vec![(Value::Token("id".into()),Value::Long(42))])));
     }
 }

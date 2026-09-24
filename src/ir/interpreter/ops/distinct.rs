@@ -113,6 +113,14 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.extend_from_slice(&(value.len() as u64).to_be_bytes());
             buf.extend_from_slice(value.as_bytes());
         }
+        Value::MapEntry(pair) => {
+            buf.push(27);
+            for value in [&pair.0, &pair.1] {
+                let encoded = encode_value(value);
+                buf.extend_from_slice(&(encoded.len() as u64).to_be_bytes());
+                buf.extend(encoded);
+            }
+        }
         Value::TypedMap(entries) => {
             let strings: Option<std::collections::BTreeMap<String, Value>> = entries
                 .iter()

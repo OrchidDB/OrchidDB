@@ -39,6 +39,7 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         return rendered;
     }
     match v {
+        Value::MapEntry(entry) => format!("{}={}", display_for_concat(&entry.0), display_for_concat(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -148,6 +149,7 @@ fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
 
 pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
     match v {
+        Value::MapEntry(entry) => format!("{}={}", display_for_kuzu_map_item(&entry.0), display_for_kuzu_map_item(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -273,6 +275,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
         return display_for_concat(v);
     }
     match v {
+        Value::MapEntry(entry) => format!("{}={}", display_for_tagged_container(&entry.0), display_for_tagged_container(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(

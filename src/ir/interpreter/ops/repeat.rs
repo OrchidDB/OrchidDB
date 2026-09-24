@@ -297,7 +297,7 @@ pub(crate) fn run_with_frontier(
                     }
                 }
                 for (binding, value) in &outer.bindings {
-                    if binding.starts_with("__loops:") && !row.bindings.contains_key(binding) {
+                    if (binding.starts_with("__loops:") || binding.starts_with("__gremlin_select_history_")) && !row.bindings.contains_key(binding) {
                         row.bindings.insert(binding.clone(), value.clone());
                     }
                 }
@@ -619,6 +619,10 @@ pub(crate) fn run_with_frontier(
         } => {
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             super::mutation::merge_op(outputs, rows, match_arm, create_arm, graph, ctx)
+        }
+        Node::GraphProcedureCall {name,args,yields,input,..} => {
+            let rows=match input {Some(input)=>run_with_frontier(input,frontier,graph,ctx)?,None=>vec![Row::new()]};
+            super::super::run::procedure_call_op(name,args,yields,rows,graph)
         }
         // Sources without correlation behave normally.
         other => run_with_context(other, graph, ctx),

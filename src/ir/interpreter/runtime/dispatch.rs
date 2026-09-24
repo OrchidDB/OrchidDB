@@ -37,6 +37,20 @@ use super::type_check::typeof_matches;
 
 pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
     match (name, args.as_slice()) {
+        ("local_limit", [value,count])=>return Ok(super::lists::gremlin_local_range(value,0,count.as_i64().unwrap_or(0))),
+        ("gremlin_merge_matches",[element,criteria,out,input])=>return Ok(Value::Bool(super::mutations::matches(element,criteria,out,input,graph)?)),
+        ("gremlin_token_literal", [Value::String(token)]) => return Ok(Value::Token(token.clone())),
+        ("gremlin_direction_literal", [Value::String(token)]) => return Ok(Value::Direction(token.clone())),
+        ("list_merge" | "gremlin_traversal_list_merge", [lhs,rhs]) => return super::lists::gremlin_merge(lhs,rhs,name.starts_with("gremlin_traversal")),
+        ("local_order", [value]) if crate::ir::value::as_gremlin_set(value).is_some() => {
+            let mut items = crate::ir::value::as_gremlin_set(value).unwrap().to_vec();
+            items.sort_by(compare_values);
+            return Ok(Value::List(items));
+        }
+        ("local_mean", [value]) if !matches!(value, Value::List(_) | Value::BulkSet(_)) && crate::ir::value::as_gremlin_set(value).is_none() => {
+            return Ok(reduce_list_numeric(&[value.clone()], "mean"));
+        }
+        ("gremlin_sum_result", [sum, count]) => return Ok(if count.as_i64() == Some(0) { Value::Null } else { match sum { Value::Int(n) => Value::Long(*n), other => other.clone() } }),
         ("gremlin_vertex_ref", [id, Value::String(_label)]) => return super::graph::resolve_gremlin_vertex_reference(graph, id),
         ("local_tail", [value, count]) => return Ok(super::lists::gremlin_local_tail(value, count.as_i64().unwrap_or(0))),
         ("local_range", [value, low, high]) => return Ok(super::lists::gremlin_local_range(value, low.as_i64().unwrap_or(0), high.as_i64().unwrap_or(-1))),
@@ -341,6 +355,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("map_values", [Value::TypedMap(entries)]) => Ok(Value::List(entries.iter().map(|(_, value)| value.clone()).collect())),
         ("map_get_display", [Value::TypedMap(entries), key]) => Ok(entries.iter().find(|(candidate, _)| candidate == key).map(|(_, value)| value.clone()).unwrap_or(Value::Null)),
         ("local_count", [Value::TypedMap(entries)]) => Ok(Value::Long(entries.len() as i64)),
+        ("map_keys", [Value::MapEntry(pair)]) => Ok(pair.0.clone()),
+        ("map_values", [Value::MapEntry(pair)]) => Ok(pair.1.clone()),
         ("map_keys", [Value::Map(map)]) if is_map_entry(map) => Ok(Value::List(vec![
             map.get("key").cloned().unwrap_or(Value::Null),
         ])),
@@ -590,17 +606,24 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         }
         ("map_get_display", [_, _]) => Ok(Value::Null),
         ("local_order_merge_map", [original, ordered]) => {
-            if matches!(original, Value::Map(_)) {
+            if matches!(original, Value::Map(_) | Value::TypedMap(_)) && crate::ir::value::as_gremlin_set(original).is_none() {
                 if let Value::List(items) = ordered {
-                    let mut merged = BTreeMap::new();
+                    let mut merged: Vec<(Value, Value)> = Vec::new();
                     for item in items {
-                        if let Value::Map(entry) = item {
-                            for (k, v) in entry {
-                                merged.insert(k.clone(), v.clone());
-                            }
+                        let entries = match item {
+                            Value::MapEntry(entry) => vec![(entry.0.clone(), entry.1.clone())],
+                            // Legacy ordering produced one-entry maps. Preserve their
+                            // actual entries without interpreting key/value field names.
+                            Value::Map(entry) => entry.iter().map(|(k,v)|(Value::String(k.clone()),v.clone())).collect(),
+                            Value::TypedMap(entries) => entries.clone(),
+                            _ => continue,
+                        };
+                        for (key, value) in entries {
+                            if let Some((_, existing)) = merged.iter_mut().find(|(existing, _)| *existing == key) { *existing = value; }
+                            else { merged.push((key, value)); }
                         }
                     }
-                    return Ok(Value::Map(merged));
+                    return Ok(Value::TypedMap(merged));
                 }
             }
             Ok(ordered.clone())
@@ -609,7 +632,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Value::Null => Value::List(vec![Value::Null]),
             Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Value::List(items.clone()),
             Value::TypedMap(entries) => Value::List(entries.iter().map(|(key, value)|
-                Value::Map(BTreeMap::from([("key".into(), key.clone()), ("value".into(), value.clone())]))
+                Value::MapEntry(Box::new((key.clone(), value.clone())))
             ).collect()),
             // Gremlin Set marker maps unfold to their items.
             set if crate::ir::value::as_gremlin_set(set).is_some() => {
@@ -619,10 +642,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
                 entries
                     .iter()
                     .map(|(k, v)| {
-                        let mut entry = std::collections::BTreeMap::new();
-                        entry.insert("key".to_string(), Value::String(k.clone()));
-                        entry.insert("value".to_string(), v.clone());
-                        Value::Map(entry)
+                        Value::MapEntry(Box::new((Value::String(k.clone()), v.clone())))
                     })
                     .collect(),
             ),

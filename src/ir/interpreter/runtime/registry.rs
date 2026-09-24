@@ -367,6 +367,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "gremlin_traversal_list_difference",
     "gremlin_traversal_list_disjunct",
     "gremlin_traversal_list_product",
+    "gremlin_sum_result",
     "gremlin_cast_date",
     "gremlin_cast_int",
     "gremlin_dedup_key",

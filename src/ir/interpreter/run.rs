@@ -589,13 +589,23 @@ pub(crate) fn run_with_context(
 /// Unknown procedure names return a single empty row per upstream row
 /// rather than failing — that lets a query whose `YIELD` columns are
 /// only used as scalars still produce a result rather than aborting.
-fn procedure_call_op(
+pub(crate) fn procedure_call_op(
     name: &str,
     args: &[crate::ir::plan::ProcedureArg],
     yields: &[String],
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if name.starts_with("gremlin.mutation.") {
+        let mut result=Vec::with_capacity(upstream.len());
+        for mut row in upstream {
+            let values=args.iter().map(|arg|eval(&arg.value,&row,graph)).collect::<IrResult<Vec<_>>>()?;
+            let value=super::runtime::mutations::call(name,&values,graph)?;
+            if let Some(binding)=yields.first(){row.bindings.insert(binding.clone(),value);}
+            result.push(row);
+        }
+        return Ok(result);
+    }
     let _ = args;
     let normalized = name.to_ascii_lowercase();
     if yields.is_empty() {

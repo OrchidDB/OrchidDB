@@ -16,6 +16,7 @@ mod graph;
 mod hashing;
 mod lists;
 mod maps;
+pub(crate) mod mutations;
 mod numeric;
 mod path;
 mod property_object;

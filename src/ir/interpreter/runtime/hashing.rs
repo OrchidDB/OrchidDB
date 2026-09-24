@@ -75,6 +75,7 @@ fn hash_value_u64(value: &Value) -> u64 {
         Value::Map(map) => hash_struct_map_u64(map),
         Value::Token(value) => combine_hash_scalar(murmurhash64(24), hash_string_u64(value)),
         Value::Direction(value) => combine_hash_scalar(murmurhash64(25), hash_string_u64(value)),
+        Value::MapEntry(pair) => combine_hash_scalar(combine_hash_scalar(murmurhash64(27), hash_value_u64(&pair.0)), hash_value_u64(&pair.1)),
         Value::TypedMap(entries) => {
             let strings: Option<BTreeMap<String, Value>> = entries
                 .iter()

@@ -254,7 +254,7 @@ impl LoweringVisitor {
     ) {
         if matches!(
             self.steps.last(),
-            Some(Step::MergeV { .. } | Step::MergeE { .. })
+            Some(Step::MergeV { .. } | Step::MergeE { .. } | Step::DynamicMerge { .. })
         ) {
             self.lower_merge_vertex_option(ctx);
             return;
