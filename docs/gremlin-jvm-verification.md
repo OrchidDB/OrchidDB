@@ -18,8 +18,8 @@ parameter scenarios passed. The remote lambda scenario uses embedded
 `RemoteConnection` bytecode submission. Native graph mutations, property identity,
 typed values and transaction state remain owned by Crabgraph.
 
-The same final source passed 60 supplemental JVM integration tests with zero
-failures or skips. Coverage includes native transactions, competing writers,
+The same final source passed 63 supplemental JVM integration tests with zero
+failures or skips. Coverage includes native transactions, competing writers, committed readers,
 GraphMigrator cleanup, cancellation, persistence, callback failures, typed
 properties, GraphFactory contracts, services and GraphComputer publication.
 The adapter separately passed 23 Java and four Python tests. Supplemental tests
@@ -27,24 +27,29 @@ are not added to the upstream scenario count.
 
 | Artifact | Provenance |
 | --- | --- |
-| JVM source | `4b84efa72228c659efc997d0086082f731bd93bb`, clean before execution |
-| JVM jar SHA-256 | `de52da802e8fb334563d4b7491eeead06bb112034fc5137c09fea54e0ba2024d` |
-| Combined native source | `1d09c57964dacf17f48dd68c88db4e58ccc1fc27` |
-| Native binary SHA-256 | `eb4c4a6ed4f9a15062898c7cdddb7d69b18f4dce6f5c4f467c496f158e45bb91` |
-| Full result SHA-256 | `04bdbc7b93f8aa3d740dc489095906d35d4c84d44627050decb64653e3b12a71` |
+| JVM source | `cbd8fa37e26a76a723d76df27abb04a2474f5820`, clean before execution |
+| JVM jar SHA-256 | `ca4cd84c245611bc0edcbdc1ef197a3cf43df70b7ecadea63f66b638ea0cf468` |
+| Combined native source | `2ae5e7529a9054be57a853759ec61100f9f1b811` |
+| Native binary SHA-256 | `7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354` |
+| Full result SHA-256 | `982f3d9e788a906641c4c82aa2725a9a88d6f909771472b7fc97eb41b7a22001` |
 
-Local evidence is in `/tmp/gremlin-final-jvm-4b84efa/`: `full1511.json`, its JSONL
+Local evidence is in `/tmp/gremlin-final-jvm-cbd8fa3/`: `full1511.json`, its JSONL
 stream, `manifest.json`, `verification-summary.json`, frozen classpaths and
 `jvm-test-reports/`. The native build manifest is in
-`/tmp/gremlin-final-store-integrated-1d09c57/`. These paths describe local artifacts;
+`/tmp/gremlin-committed-read-native-2ae5e75/`. These paths describe local artifacts;
 publication is a separate integration step.
 
 Earlier diagnostic runs remain preserved. The final candidate fixes all 18
 failures and the timeout recorded by the first complete frozen JVM run, with no
 passing scenario regressions. The large grateful-graph aggregation now passes
-with the original 90-second deadline; its focused run took 12.8 seconds including
+with the original 90-second deadline; its final full-suite run took 12.0 seconds including
 fixture loading. Indexed native handle lookup and bounded property records remove
 repeated table scans and serialization. No expected result or deadline changed.
+
+The final pair also passed all 29 targeted original Java tests: seven
+multithreaded transaction tests, 12 element-ID strategy tests and 10 traversal
+interruption tests. These are separate Java evidence, not additional Gherkin
+passes. Broad Java-suite outcomes are published separately.
 
 See [the production executor guide](gremlin-jvm-executor.md) for build commands,
 configuration, transaction ownership and API limitations.
