@@ -66,14 +66,24 @@ where
     match step {
         Step::Io { .. } => Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("io() must start a traversal".into())),
         Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(input,*edge,criteria,options,lo,ctx,false),
-        Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(input,label,lo,ctx),
+        Step::AddDynamicV { label } => {
+            super::mutations::lower_vertex_with_properties(input, label, steps, lo, ctx)
+        }
         Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx),
         Step::PropertyNative {cardinality,key,value,meta} => super::mutations::lower_native_property(input,cardinality,key,value,meta,lo,ctx),
         Step::PropertyDynamic { key,value } => super::mutations::lower_dynamic_property(input,key,value,lo,ctx),
         Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx, false),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
         Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref(), lo)),
-        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label, lo)),
+        Step::AddV { label } => super::mutations::lower_vertex_with_properties(
+            input,
+            &crate::language::gremlin::ast::MutationArgument::Literal(
+                crate::language::gremlin::semantics::GValue::String(label.clone()),
+            ),
+            steps,
+            lo,
+            ctx,
+        ),
         Step::Property { key, value } => super::mutations::lower_property(input, key, value),
         Step::PropertyTraversal { key, traversal } => super::mutations::lower_property_traversal(input, key, traversal, lo, ctx),
         Step::Drop => Ok(super::mutations::lower_drop(input)),

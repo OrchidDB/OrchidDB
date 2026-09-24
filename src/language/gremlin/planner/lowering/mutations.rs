@@ -246,5 +246,97 @@ pub(super) fn lower_native_property(input:Node,cardinality:&str,key:&crate::lang
     let (input,key)=argument(input,key,lo,ctx)?;
     let (input,value)=argument(input,value,lo,ctx)?;
     let meta=gvalue_to_expr(&GValue::Map(meta.iter().cloned().collect()))?;
-    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(cardinality),meta]))
+    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(if cardinality == "default" {"list"} else {cardinality}),meta]))
+}
+
+
+/// Fold addV property parameters exactly where GraphTraversal.property does:
+/// their child traversals observe the incoming object, before vertex creation.
+pub(super) fn lower_vertex_with_properties<'a, I>(
+    input: Node,
+    label: &crate::language::gremlin::ast::MutationArgument,
+    steps: &mut std::iter::Peekable<I>,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node>
+where
+    I: Iterator<Item = &'a crate::language::gremlin::ast::Step>,
+{
+    use crate::ir::plan::{ProjectErrorPolicy, ProjectMode, ProjectionItem};
+    use crate::language::gremlin::ast::{MutationArgument, Step};
+    let (mut input, label) = argument(input, label, lo, ctx)?;
+    let mut parameters = Vec::new();
+    let mut remaining = Vec::new();
+    while matches!(
+        steps.peek(),
+        Some(Step::PropertyNative { .. } | Step::As(_))
+    ) {
+        let step = steps.next().expect("peeked a property or label");
+        let Step::PropertyNative {
+            cardinality,
+            key,
+            value,
+            meta,
+        } = step
+        else {
+            remaining.push(step);
+            continue;
+        };
+        let foldable = meta.is_empty()
+            && (matches!(
+                key,
+                MutationArgument::Traversal(_) | MutationArgument::Literal(GValue::Token(_))
+            ) || (cardinality == "default"
+                && matches!(key, MutationArgument::Literal(GValue::String(_)))));
+        if !foldable {
+            remaining.push(step);
+            continue;
+        }
+        let (next, key) = argument(input, key, lo, ctx)?;
+        let (next, value) = argument(next, value, lo, ctx)?;
+        let key_binding = lo.fresh("vertex_property_key");
+        let value_binding = lo.fresh("vertex_property_value");
+        input = Node::GraphProject {
+            mode: ProjectMode::PreserveVisible,
+            items: vec![
+                ProjectionItem {
+                    alias: key_binding.clone(),
+                    expr: key,
+                },
+                ProjectionItem {
+                    alias: value_binding.clone(),
+                    expr: value,
+                },
+            ],
+            error_policy: ProjectErrorPolicy::PropagateError,
+            input: next.boxed(),
+        };
+        parameters.push((IrExpr::Binding(key_binding), IrExpr::Binding(value_binding)));
+    }
+    let mut node = write_call(
+        input,
+        "gremlin.mutation.add_vertex",
+        vec![
+            label,
+            partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null)),
+        ],
+    );
+    for (key, value) in parameters {
+        node = write_call(
+            node,
+            "gremlin.mutation.property_native",
+            vec![
+                IrExpr::Binding(CURRENT.into()),
+                key,
+                value,
+                IrExpr::lit_str("list"),
+                gvalue_to_expr(&GValue::Map(Default::default()))?,
+            ],
+        );
+    }
+    let mut remaining = remaining.into_iter().peekable();
+    while let Some(step) = remaining.next() {
+        node = super::dispatch::lower_step_with_context(node, step, &mut remaining, lo, ctx)?;
+    }
+    Ok(node)
 }

@@ -30,6 +30,23 @@ pub(super) fn lower_source_traversal_with_context(
     let (first, rest) = steps
         .split_first()
         .ok_or_else(|| GremlinPlanError::Parse("empty traversal".to_string()))?;
+    if matches!(first, Step::AddV { .. } | Step::AddDynamicV { .. }) {
+        let seed = super::sources::with_initial_sack(
+            Node::GraphValues {
+                bindings: vec![CURRENT.into()],
+                rows: vec![vec![crate::ir::value::Value::Null]],
+                bulk: None,
+            },
+            lo,
+            ctx,
+        )?;
+        let mut remaining = rest.iter().peekable();
+        let mut node = lower_step_with_context(seed, first, &mut remaining, lo, ctx)?;
+        while let Some(step) = remaining.next() {
+            node = lower_step_with_context(node, step, &mut remaining, lo, ctx)?;
+        }
+        return Ok(node);
+    }
     let mut rest = rest;
     let mut call_options = Vec::new();
     if matches!(first, Step::Call(name, _) if name == "tinker.search") {
