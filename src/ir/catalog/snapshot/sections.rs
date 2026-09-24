@@ -230,6 +230,12 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         write_section(&mut out, tag, &b);
     }
 
+    write_section(&mut out, 0x22, &binary::encode_value_bytes(&Value::Bool(ov.allow_null_property_values)));
+    let nulls = Value::List(ov.edge_null_properties.iter().map(|((label, id), keys)| {
+        Value::List(vec![Value::String(label.clone()), Value::Long(*id),
+            Value::List(keys.iter().cloned().map(Value::String).collect())])
+    }).collect());
+    write_section(&mut out, 0x21, &binary::encode_value_bytes(&nulls));
     let mut state = Vec::new();
     let mut keys = std::collections::BTreeSet::new();
     keys.extend(ov.vertex_properties.keys().cloned());
@@ -314,6 +320,30 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
         let sub = r.blob()?;
         let mut sr = Reader::new(sub);
         match tag {
+            0x22 => {
+                let Value::Bool(enabled) = binary::decode_value_bytes(sub)? else {
+                    return Err("Invalid null property feature".into());
+                };
+                ov.allow_null_property_values = enabled;
+                continue;
+            }
+            0x21 => {
+                let Value::List(edges) = binary::decode_value_bytes(sub)? else {
+                    return Err("Invalid null edge properties".into());
+                };
+                for edge in edges {
+                    let Value::List(fields) = edge else { return Err("Invalid null edge property record".into()); };
+                    let [Value::String(label), Value::Long(id), Value::List(keys)] = fields.as_slice() else {
+                        return Err("Invalid null edge property fields".into());
+                    };
+                    let keys = keys.iter().map(|key| match key {
+                        Value::String(key) => Ok(key.clone()),
+                        _ => Err("Invalid null edge property key".to_string()),
+                    }).collect::<Result<_, _>>()?;
+                    ov.edge_null_properties.insert((label.clone(), *id), keys);
+                }
+                continue;
+            }
             0x20 => {
                 let value = binary::decode_value_bytes(sub)?;
                 let Value::List(fields) = value else {return Err("Invalid native property state".into())};

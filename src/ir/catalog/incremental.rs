@@ -60,8 +60,12 @@ const T_INSERTED_KEYS: i64 = 2;
 const T_OVERRIDE_KEYS: i64 = 3;
 
 const T_NATIVE: i64 = 7;
-const ENTITY_TAGS: [i64; 5] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE];
-const EDGE_TAGS: [i64; 7] = [
+const T_NULL_VALUES: i64 = 9;
+const ENTITY_TAGS: [i64; 6] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE,T_NULL_VALUES];
+const T_NULL_PROPERTIES: i64 = 8;
+const EDGE_TAGS: [i64; 9] = [
+    T_NULL_VALUES,
+    T_NULL_PROPERTIES,
     T_NATIVE,
     T_INSERTED,
     T_OVERRIDES,
@@ -382,7 +386,7 @@ impl PropertyGraph {
 }
 
 fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
-    let mut fields = vec![field(T_NATIVE, ov.native_node_state(key))];
+    let mut fields = vec![field(T_NATIVE, ov.native_node_state(key)), field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values))];
     if let Some(props) = ov.inserted_nodes.get(key) {
         fields.push(field(T_INSERTED, Value::Map(props.clone())));
     }
@@ -400,6 +404,10 @@ fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
 
 fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     let mut fields = vec![field(T_NATIVE, ov.public_ids.get(&(true,key.0.clone(),key.1)).cloned().unwrap_or(Value::Null))];
+    fields.push(field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values)));
+    if let Some(keys) = ov.edge_null_properties.get(key) {
+        fields.push(field(T_NULL_PROPERTIES, Value::List(keys.iter().cloned().map(Value::String).collect())));
+    }
     if let Some(edge) = ov.inserted_edges.get(key) {
         let inserted = Value::List(vec![
             Value::String(edge.src_label.clone()),
@@ -521,6 +529,9 @@ fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &ENTITY_TAGS)?;
     let key = (record.name.clone(), record.id);
+    if let Some(value) = fields.get(&T_NULL_VALUES) {
+        ov.allow_null_property_values = decode_flag(value)?;
+    }
 
     if let Some(state) = fields.get(&T_NATIVE) {ov.restore_native_node_state(key.clone(),state)?;}
     ov.inserted_nodes.remove(&key);
@@ -552,9 +563,21 @@ fn apply_edge(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &EDGE_TAGS)?;
     let key = (record.name.clone(), record.id);
+    if let Some(value) = fields.get(&T_NULL_VALUES) {
+        ov.allow_null_property_values = decode_flag(value)?;
+    }
 
     ov.public_ids.remove(&(true,key.0.clone(),key.1));
     if let Some(value) = fields.get(&T_NATIVE).filter(|v| ***v != Value::Null) {ov.public_ids.insert((true,key.0.clone(),key.1),(*value).clone());}
+    ov.edge_null_properties.remove(&key);
+    if let Some(value) = fields.get(&T_NULL_PROPERTIES) {
+        let Value::List(keys) = value else { return Err("Invalid null property keys".into()); };
+        let keys = keys.iter().map(|key| match key {
+            Value::String(key) => Ok(key.clone()),
+            _ => Err("Invalid null property key".to_string()),
+        }).collect::<Result<_, _>>()?;
+        ov.edge_null_properties.insert(key.clone(), keys);
+    }
     ov.inserted_edges.remove(&key);
     ov.edge_property_overrides.remove(&key);
     ov.deleted_edges.remove(&key);
