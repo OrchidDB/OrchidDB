@@ -86,6 +86,12 @@ and release it on the same executing thread. Separate graph instances own
 separate native processes. Concurrent traversal access to a single direct Graph
 is not an advertised provider feature.
 
+The provider keeps bounded native adjacency and property records between reads.
+Every mutation, transaction completion, native error and close invalidates these
+caches; atomic mutation blocks bypass them. Set JVM system properties
+`crabgraph.native.adjacencyCacheSize=0` or `crabgraph.native.propertyCacheSize=0`
+to disable either cache. Defaults are 4,096 and 16,384 requests respectively.
+
 `freshGraph()` creates an independent in-memory native graph. A returned
 GraphComputer result graph must be closed by its owner and can outlive the source
 graph. Executor close/cancellation explicitly terminates its entire graph family,
