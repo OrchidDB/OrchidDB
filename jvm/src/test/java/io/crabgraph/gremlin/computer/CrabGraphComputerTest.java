@@ -241,8 +241,75 @@ public class CrabGraphComputerTest {
         assertEquals(77L, v.<Long>value("computed").longValue());
     }
 
+    @Test public void failedOriginalPublicationRestoresComputePropertiesAndCallerTransaction() throws Exception {
+        Vertex v = vertex("publication-failure");
+        v.property(VertexProperty.Cardinality.single, "computed", 77L, T.id, "original-compute-property");
+        graph.tx().commit();
+        v.property(VertexProperty.Cardinality.single, "caller-write", "still-pending");
+        ExecutionException error = assertThrows(ExecutionException.class, () -> computer().program(new CountingProgram() {
+            @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                super.execute(vertex, messenger, memory);
+                if (!memory.isInitialIteration())
+                    vertex.property(VertexProperty.Cardinality.single, "computed", new Object());
+            }
+        }).result(GraphComputer.ResultGraph.ORIGINAL).persist(GraphComputer.Persist.VERTEX_PROPERTIES)
+                .submit().get(20, TimeUnit.SECONDS));
+        // Execution completed, then publication removed the old property and failed to
+        // encode the replacement. The native savepoint must undo that partial mutation.
+        assertTrue(error.getCause() instanceof IllegalArgumentException);
+        assertTrue(graph.tx().isOpen());
+        Vertex restored = graph.vertices(v.id()).next();
+        assertEquals(77L, restored.<Long>value("computed").longValue());
+        assertEquals("original-compute-property", restored.property("computed").id());
+        assertEquals("still-pending", restored.value("caller-write"));
+        graph.tx().rollback();
+        restored = graph.vertices(v.id()).next();
+        assertEquals(77L, restored.<Long>value("computed").longValue());
+        assertFalse(restored.property("caller-write").isPresent());
+    }
+
     @Test public void cancellationInterruptsWorkerAndDoesNotPublishProperties() throws Exception {
+        assertCancellationPreservesSource(false);
+    }
+
+    @Test public void cancellationClosesOwnedReadTransactionWithoutClosingNativeSource() throws Exception {
+        assertCancellationPreservesSource(true);
+    }
+
+    @Test public void cancellationDuringRepeatedNativeReadsPreservesSessionAndCallerWrites() throws Exception {
+        Vertex v = vertex("read-cancel");
+        graph.tx().commit();
+        v.property(VertexProperty.Cardinality.single, "caller-write", "pending");
+        for (int attempt = 0; attempt < 5; attempt++) {
+            CountDownLatch firstRead = new CountDownLatch(1), stopped = new CountDownLatch(1);
+            Future<ComputerResult> future = computer().program(new CountingProgram() {
+                @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                    try {
+                        while (!Thread.currentThread().isInterrupted()) {
+                            // These ordinary source properties require a real native RPC.
+                            vertex.properties("name").forEachRemaining(property -> assertEquals("renamed-read-cancel", property.value()));
+                            firstRead.countDown();
+                        }
+                        throw new CancellationException("Interrupted native read loop");
+                    } finally { stopped.countDown(); }
+                }
+            }).result(GraphComputer.ResultGraph.ORIGINAL).persist(GraphComputer.Persist.NOTHING).submit();
+            assertTrue(firstRead.await(10, TimeUnit.SECONDS));
+            Thread.sleep(10L);
+            assertTrue(future.cancel(true));
+            assertTrue(stopped.await(10, TimeUnit.SECONDS));
+            assertThrows(CancellationException.class, future::get);
+            assertTrue(graph.tx().isOpen());
+            assertEquals("pending", graph.vertices(v.id()).next().value("caller-write"));
+            assertEquals("renamed-read-cancel", graph.vertices(v.id()).next().value("name"));
+        }
+        graph.tx().rollback();
+        assertFalse(graph.vertices(v.id()).next().property("caller-write").isPresent());
+    }
+
+    private void assertCancellationPreservesSource(boolean committed) throws Exception {
         Vertex v = vertex("cancel"); v.property("computed", 88L);
+        if (committed) graph.tx().commit();
         CountDownLatch started = new CountDownLatch(1), stopped = new CountDownLatch(1);
         Future<ComputerResult> future = computer().program(new CountingProgram() {
             @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
