@@ -249,10 +249,22 @@ pub(super) fn lower_local_or_map(
     ctx: &TraversalContext,
     kind: ChildTraversalKind,
 ) -> GremlinPlanResult<Node> {
-    if matches!(kind, ChildTraversalKind::SideEffect) {
-        return Ok(input);
-    }
     let right = lower_child_traversal(sub, lo, ctx, kind)?;
+    if matches!(kind, ChildTraversalKind::SideEffect) {
+        // The child is materialized once, including mutations on every result.
+        // Its cardinality and current value must not replace the parent row.
+        return Ok(Node::GraphApply {
+            kind: ApplyKind::Optional,
+            correlation: vec![CURRENT.into()],
+            outputs: Vec::new(),
+            optional_missing: OptionalMissing::Null,
+            left: input.boxed(),
+            right: Node::GraphSlice {
+                slice: Slice { offset: 0, fetch: Some(1), tail: None },
+                input: right.boxed(),
+            }.boxed(),
+        });
+    }
     let right = if matches!(kind, ChildTraversalKind::Map) {
         Node::GraphSlice {
             slice: Slice {
