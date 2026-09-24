@@ -1,0 +1,44 @@
+name: Publish static websites
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'conformance/results/**'
+      - 'conformance/data/**'
+      - 'conformance/probes.json'
+      - 'conformance/compare.py'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: websites-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: websites
+      url: https://docs.crabgraph.net/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Authenticate with personal AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CRABGRAPH_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CRABGRAPH_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Build and publish static sites and committed results
+        run: bash website/scripts/deploy.sh
+      - name: Record published sites
+        run: |
+          echo 'Published https://crabgraph.net/ and https://docs.crabgraph.net/' >> "$GITHUB_STEP_SUMMARY"

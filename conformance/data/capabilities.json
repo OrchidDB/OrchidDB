@@ -1,0 +1,1106 @@
+[
+  {
+    "category": "Languages and graph model",
+    "title": "Cypher",
+    "cells": {
+      "crabgraph": {
+        "text": "Native frontend",
+        "source": "https://docs.crabgraph.net/concepts.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Native dialect",
+        "source": "https://docs.ladybugdb.com/cypher/difference/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "Cypher 5 / 25",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "openCypher 9",
+        "source": "https://docs.puppygraph.com/reference/cypher-query-language/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Gremlin",
+    "cells": {
+      "crabgraph": {
+        "text": "Native frontend",
+        "source": "https://docs.crabgraph.net/concepts.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Read traversals",
+        "source": "https://docs.puppygraph.com/reference/gremlin-query-language/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "TinkerPop 3.7.4",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "SPARQL and RDF datasets",
+    "cells": {
+      "crabgraph": {
+        "text": "Native frontend / datasets",
+        "source": "https://docs.crabgraph.net/rdf.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "ISO GQL feature accounting",
+    "cells": {
+      "neo4j": {
+        "text": "Published feature list",
+        "source": "https://neo4j.com/docs/cypher-manual/current/appendix/gql-conformance/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Property graph storage",
+    "cells": {
+      "crabgraph": {
+        "text": "Managed or mapped",
+        "source": "https://docs.crabgraph.net/concepts.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Typed node / rel tables",
+        "source": "https://docs.ladybugdb.com/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "Native store",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "External tables",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "SQL-backed graph",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Multiple labels per vertex",
+    "cells": {
+      "neo4j": {
+        "text": "Supported",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "One node table",
+        "source": "https://docs.ladybugdb.com/cypher/difference/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Schema definition",
+    "cells": {
+      "crabgraph": {
+        "text": "Graph mapping",
+        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Required DDL",
+        "source": "https://docs.ladybugdb.com/cypher/difference/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "Topology schema",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Default variable path semantics",
+    "cells": {
+      "ladybug": {
+        "text": "Walk; default max 30",
+        "source": "https://docs.ladybugdb.com/cypher/difference/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Relationship uniqueness",
+        "source": "https://docs.puppygraph.com/reference/cypher-query-language/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "GraphComputer / OLAP API",
+    "cells": {
+      "sqlg": {
+        "text": "Not supported",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Graph variables",
+    "cells": {
+      "sqlg": {
+        "text": "Not supported",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Vertex multi-properties",
+    "cells": {
+      "sqlg": {
+        "text": "Not supported",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Vertex meta-properties",
+    "cells": {
+      "sqlg": {
+        "text": "Not supported",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Languages and graph model",
+    "title": "Threaded transactions",
+    "cells": {
+      "sqlg": {
+        "text": "Not supported",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Graph over existing tables",
+    "cells": {
+      "crabgraph": {
+        "text": "Declarative mapping",
+        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "External RDBMS integration",
+        "source": "https://docs.ladybugdb.com/extensions/attach/rdbms/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "External source schema",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "SQL views and query sources",
+    "cells": {
+      "crabgraph": {
+        "text": "View / SQL mapping",
+        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "SQL_QUERY via extension",
+        "source": "https://docs.ladybugdb.com/extensions/attach/rdbms/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Composite graph identifiers",
+    "cells": {
+      "crabgraph": {
+        "text": "Composite keys",
+        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "User-defined identifiers",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Mapped relationship endpoints",
+    "cells": {
+      "crabgraph": {
+        "text": "Source / destination key maps",
+        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "External schema",
+        "source": "https://docs.puppygraph.com/reference/cypher-query-language/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Ontology mapping",
+    "cells": {
+      "crabgraph": {
+        "text": "Classes and predicates",
+        "source": "https://docs.crabgraph.net/rdf.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Named RDF graphs",
+    "cells": {
+      "crabgraph": {
+        "text": "Dataset API",
+        "source": "https://docs.crabgraph.net/rdf.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "RDF term identity",
+    "cells": {
+      "crabgraph": {
+        "text": "IRI / blank / literal terms",
+        "source": "https://docs.crabgraph.net/rdf.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Apache Arrow result batches",
+    "cells": {
+      "crabgraph": {
+        "text": "Native result format",
+        "source": "https://docs.crabgraph.net/rust-api.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Python Arrow export",
+        "source": "https://docs.ladybugdb.com/client-apis/python/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "PostgreSQL",
+    "cells": {
+      "crabgraph": {
+        "text": "SQL backend",
+        "source": "https://docs.crabgraph.net/execution.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "SQL backend",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "DuckDB",
+    "cells": {
+      "crabgraph": {
+        "text": "SQL backend",
+        "source": "https://docs.crabgraph.net/execution.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Apache Iceberg",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Delta Lake",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Apache Hudi",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Elasticsearch",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "BigQuery",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Redshift",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Snowflake",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer edition",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "SQLite",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "ADBC sources",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Azure storage",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "JSON",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "Unity Catalog",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "HTTP file access",
+    "cells": {
+      "ladybug": {
+        "text": "Extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "H2",
+    "cells": {
+      "sqlg": {
+        "text": "SQL backend",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "HSQLDB",
+    "cells": {
+      "sqlg": {
+        "text": "SQL backend",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "MySQL",
+    "cells": {
+      "sqlg": {
+        "text": "SQL backend",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "MariaDB",
+    "cells": {
+      "sqlg": {
+        "text": "SQL backend",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Data access and integration",
+    "title": "More than two simultaneous sources",
+    "cells": {
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Vector similarity index",
+    "cells": {
+      "ladybug": {
+        "text": "HNSW extension",
+        "source": "https://docs.ladybugdb.com/extensions/vector/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "Vector index",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "PostgreSQL pgvector",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Full-text search",
+    "cells": {
+      "ladybug": {
+        "text": "BM25 extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "Full-text indexes",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "PostgreSQL text search",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Graph algorithm library",
+    "cells": {
+      "ladybug": {
+        "text": "algo extension",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "Separate GDS Community plugin",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "extension",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "LLM embeddings",
+    "cells": {
+      "ladybug": {
+        "text": "llm extension; provider API",
+        "source": "https://docs.ladybugdb.com/extensions/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Range / text / point indexes",
+    "cells": {
+      "neo4j": {
+        "text": "Search-performance indexes",
+        "source": "https://neo4j.com/docs/cypher-manual/current/indexes/search-performance-indexes/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Property uniqueness constraints",
+    "cells": {
+      "neo4j": {
+        "text": "Community",
+        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Property existence constraints",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Property type constraints",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Node and relationship key constraints",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Indexing and analytics",
+    "title": "Primary key constraint",
+    "cells": {
+      "ladybug": {
+        "text": "Node table primary key",
+        "source": "https://docs.ladybugdb.com/cypher/difference/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Explicit transaction API",
+    "cells": {
+      "crabgraph": {
+        "text": "Begin / commit / rollback",
+        "source": "https://docs.crabgraph.net/transactions.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Read / write transactions",
+        "source": "https://docs.ladybugdb.com/cypher/transaction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "neo4j": {
+        "text": "ACID transactions",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "Database transactions",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Concurrent writers",
+    "cells": {
+      "ladybug": {
+        "text": "One active writer",
+        "source": "https://docs.ladybugdb.com/cypher/transaction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "SQL pushdown",
+    "cells": {
+      "crabgraph": {
+        "text": "Hybrid / SQL-only modes",
+        "source": "https://docs.crabgraph.net/execution.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "Optimized traversal steps",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Explain and execution plans",
+    "cells": {
+      "crabgraph": {
+        "text": "Backend and plan diagnostics",
+        "source": "https://docs.crabgraph.net/execution.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Parameterized queries",
+    "cells": {
+      "crabgraph": {
+        "text": "Typed parameter binding",
+        "source": "https://docs.crabgraph.net/parameters.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Gremlin graph mutation",
+    "cells": {
+      "puppygraph": {
+        "text": "Read-only Gremlin interface",
+        "source": "https://docs.puppygraph.com/reference/gremlin-query-language/",
+        "kind": "unavailable",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "TinkerPop mutation API",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Batch / streaming insertion",
+    "cells": {
+      "sqlg": {
+        "text": "Batch modes",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Execution and transactions",
+    "title": "Partitioning",
+    "cells": {
+      "sqlg": {
+        "text": "PostgreSQL partition support",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Embedded use",
+    "cells": {
+      "crabgraph": {
+        "text": "Rust library",
+        "source": "https://docs.crabgraph.net/rust-api.html",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "ladybug": {
+        "text": "Embedded engine",
+        "source": "https://docs.ladybugdb.com/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "sqlg": {
+        "text": "JVM library",
+        "source": "https://sqlg.org/docs/3.1.6/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Docker single-node deployment",
+    "cells": {
+      "neo4j": {
+        "text": "Community",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Developer",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "High-availability cluster",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      },
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Online backups",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Role-based access control",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "LDAP / Active Directory",
+    "cells": {
+      "neo4j": {
+        "text": "Enterprise",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Single sign-on",
+    "cells": {
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Basic username / password",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Advanced graph explorer",
+    "cells": {
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Basic graph explorer",
+    "cells": {
+      "puppygraph": {
+        "text": "Developer",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "documented",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Monitoring sensors / Datadog",
+    "cells": {
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "AWS AMI distribution",
+    "cells": {
+      "puppygraph": {
+        "text": "Enterprise",
+        "source": "https://www.puppygraph.com/pricing",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  },
+  {
+    "category": "Deployment and security",
+    "title": "Horizontal sharding",
+    "cells": {
+      "neo4j": {
+        "text": "Infinigraph subscription",
+        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
+        "kind": "enterprise",
+        "reviewed": "2026-09-23"
+      }
+    }
+  }
+]

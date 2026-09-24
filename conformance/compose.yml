@@ -1,0 +1,28 @@
+name: crabgraph-conformance
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: conformance
+      POSTGRES_PASSWORD: conformance-local-only
+      POSTGRES_DB: conformance
+    ports: ['127.0.0.1:15433:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U conformance']
+      interval: 3s
+      retries: 40
+  neo4j:
+    image: neo4j:2026.09.0-community@sha256:29efb5ebfb51ec75545a945bc3ac0bdfbeb6bc2686a8ae5053fe0f4dcc926441
+    environment:
+      NEO4J_AUTH: neo4j/conformance-local-only
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+    ports: ['127.0.0.1:17687:7687']
+  puppygraph:
+    image: puppygraph/puppygraph:1.11.1@sha256:4a9307207a5fbbc6231056819990f3de77f0e232641fd24fc15ac207fdc7c11f
+    environment:
+      PUPPYGRAPH_USERNAME: puppygraph
+      PUPPYGRAPH_PASSWORD: conformance-local-only
+      QUERY_TIMEOUT: 30s
+    ports: ['127.0.0.1:18081:8081', '127.0.0.1:18182:8182', '127.0.0.1:17688:7687']
