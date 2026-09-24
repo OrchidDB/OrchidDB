@@ -278,3 +278,11 @@ fn vertex_property_strategy_evaluates_native_metadata_without_affecting_edge_pro
         vec![Value::Bool(true), Value::Bool(true)]
     );
 }
+
+#[test]
+fn null_string_cast_and_repeat_predicates_preserve_public_identity() {
+    let graph = PropertyGraph::new();
+    assert_eq!(values(&graph, "g.inject(null,1).asString()"), vec![Value::Null, Value::String("1".into())]);
+    values(&graph, "g.addV('x').property(T.id,100).as('a').addV('x').property(T.id,200).addE('link').from('a')");
+    assert_eq!(values(&graph, "g.V(100).repeat(out()).until(hasId(200)).id()"), vec![Value::Int(200)]);
+}

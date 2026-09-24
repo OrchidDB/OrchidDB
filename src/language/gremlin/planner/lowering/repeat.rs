@@ -199,7 +199,7 @@ fn try_until_steps_to_expr(steps: &[Step]) -> GremlinPlanResult<Option<crate::ir
                             super::helpers::element_token_filter("current", s).unwrap_or_else(
                                 || IrExpr::Binary {
                                     op: crate::ir::expr::BinaryOp::Eq,
-                                    lhs: Box::new(IrExpr::Id("current".into())),
+                                    lhs: Box::new(IrExpr::Call { name: "gremlin_id".into(), args: vec![cur()] }),
                                     rhs: Box::new(IrExpr::lit_str(s.clone())),
                                 },
                             ),
@@ -209,7 +209,7 @@ fn try_until_steps_to_expr(steps: &[Step]) -> GremlinPlanResult<Option<crate::ir
                         if let Ok(lit) = super::literals::gvalue_to_lit(v) {
                             parts.push(IrExpr::Binary {
                                 op: crate::ir::expr::BinaryOp::Eq,
-                                lhs: Box::new(IrExpr::Id("current".into())),
+                                lhs: Box::new(IrExpr::Call { name: "gremlin_id".into(), args: vec![cur()] }),
                                 rhs: Box::new(IrExpr::Lit(lit)),
                             });
                         }
@@ -219,7 +219,7 @@ fn try_until_steps_to_expr(steps: &[Step]) -> GremlinPlanResult<Option<crate::ir
             super::helpers::or_chain(parts)
         }
         [Step::HasIdPredicate { predicate }] => {
-            predicate_to_expr(IrExpr::Id("current".into()), predicate)?
+            predicate_to_expr(IrExpr::Call { name: "gremlin_id".into(), args: vec![cur()] }, predicate)?
         }
         [Step::HasLabel(labels)] => super::helpers::any_label("current", labels),
         [Step::Is { predicate }] => predicate_to_expr(cur(), predicate)?,
