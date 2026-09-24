@@ -166,9 +166,10 @@ public final class CrabGraph implements Graph {
                 if(hit!=null) return hit;
             }
             Object value=session.call(request);
-            if(cache&&!closed) {
+            if(cache) {
                 value=immutableRecord(value);
-                adjacencyCache.put(immutableRecord(request),value);
+                Object key=immutableRecord(request);
+                synchronized(adjacencyCache) { if(!closed) adjacencyCache.put(key,value); }
             }
             return value;
         } catch(RuntimeException|Error failure) { adjacencyCache.clear(); throw failure; }
