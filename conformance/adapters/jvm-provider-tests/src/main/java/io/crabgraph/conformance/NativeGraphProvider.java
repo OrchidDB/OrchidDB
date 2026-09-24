@@ -82,6 +82,16 @@ public class NativeGraphProvider extends AbstractGraphProvider {
             return (Graph) Class.forName("io.crabgraph.gremlin.CrabGraph").getMethod("open",Configuration.class).invoke(null,configuration);
         } catch (ReflectiveOperationException | java.io.IOException e) { throw new IllegalStateException("Cannot open production CrabGraph", e); }
     }
+    @Override public void loadGraphData(Graph graph, LoadGraphWith data, Class test, String method) {
+        if (data == null) return;
+        Runnable load=()->super.loadGraphData(graph,data,test,method);
+        try { graph.getClass().getMethod("bulkLoad",Runnable.class).invoke(graph,load); }
+        catch (java.lang.reflect.InvocationTargetException e) {
+            if(e.getCause() instanceof RuntimeException failure) throw failure;
+            if(e.getCause() instanceof Error failure) throw failure;
+            throw new IllegalStateException("Native fixture load failed",e.getCause());
+        } catch (ReflectiveOperationException e) { throw new IllegalStateException("Production bulkLoad API is required",e); }
+    }
     @Override public GraphTraversalSource traversal(Graph graph) {
         return computer ? graph.traversal().withComputer() : graph.traversal();
     }
