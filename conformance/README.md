@@ -164,3 +164,16 @@ starting results. The leaderboard shows the change in passes and the exact cases
 passed by a peer but not by the current engine; its JSON download includes those
 case IDs. Updating complete local result artifacts updates the leaderboard during
 the next documentation publication. No test suite runs in GitHub Actions.
+
+### Gherkin placeholders
+
+The `crabgraph-jvm` adapter executes the 15 pinned Java counterparts when it
+encounters Apache's non-executable Gherkin placeholders. Set
+`CONFORMANCE_TINKERPOP_SOURCE` to the pinned TinkerPop checkout, or use the
+`CONFORMANCE_UPSTREAM_CACHE/tinkerpop` checkout created by `upstream/fetch.py`.
+Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
+and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
+runs the original JUnit methods locally. It records per-test timings, assertion
+source and native/provider binary provenance. Failed assertions, assumptions,
+and incomplete runs never become passing results. The existing product union
+counts each scenario once; supplemental test totals remain separate.

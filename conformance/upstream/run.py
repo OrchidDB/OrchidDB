@@ -78,8 +78,13 @@ class Gremlin:
   d=ROOT/'adapters/sqlg';classpath=os.environ.get('CONFORMANCE_GREMLIN_CLASSPATH')
   if not classpath:classpath=str(d/'target/classes')+os.pathsep+(d/'classpath.txt').read_text().strip()
   self.classpath=classpath
+  from java_assertions import JavaAssertions
+  self.java_assertions=JavaAssertions(classpath) if engine=='crabgraph-jvm' else None
   self.engine=engine;self.command=[os.environ.get('CONFORMANCE_JAVA','java'),'--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED','--add-opens=java.base/java.lang=ALL-UNNAMED','--add-opens=java.base/java.util=ALL-UNNAMED','--add-opens=java.base/java.lang.invoke=ALL-UNNAMED','-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'UpstreamGremlin',engine];self.process=None
  def run(self,case):
+  if self.java_assertions is not None:
+   result=self.java_assertions.run(case)
+   if result is not None:return result
   if self.process is None or self.process.p.poll() is not None:self.process=Process(self.command,ROOT/f'upstream-{self.engine}-gremlin.log',True)
   return self.process.send(case,timeout=45 if 'grateful' not in str(case['steps']) else 90)
  def close(self):
@@ -137,6 +142,7 @@ def main():
  content={'schema_version':3,'engine':args.engine,'suite':args.suite,'source':catalog['sources'][args.suite],'started_at':started,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'environment':{'system':platform.system(),'architecture':platform.machine(),'python':platform.python_version(),'logical_cpus':os.cpu_count()},'coverage':{'catalog_cases':len([c for c in catalog['cases'] if c['suite']==args.suite]),'recorded_cases':len(results),'filtered':bool(args.limit or args.filter or args.case)},'results':results}
  if args.suite=='tinkerpop':
   content['execution_profile']=execution_profile(args.engine)
+  if args.engine=='crabgraph-jvm':content['execution_profile']['placeholder_assertions']='Pinned original Apache JUnit counterparts; per-case source and execution evidence recorded'
   content['coverage']['excluded_capabilities']=capability_summary(results)
  content['build']=build
  output.write_text(json.dumps(content,indent=2)+'\n')
