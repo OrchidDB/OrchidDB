@@ -381,8 +381,6 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "gremlin_traversal_list_merge",
     "gremlin_traversal_list_product",
     "gremlin_unfold_items",
-    "gremlin_visible_vertex_properties",
-    "gremlin_visible_vertex_property_values",
     "gremlin_within",
     "hash",
     "haversin",

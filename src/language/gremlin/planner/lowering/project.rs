@@ -14,7 +14,10 @@ use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
-pub(super) fn lower_values(input: Node, keys: &[String], _lo: &Lowerer) -> GremlinPlanResult<Node> {
+pub(super) fn lower_values(input: Node, keys: &[String], lo: &mut Lowerer, ctx: &TraversalContext) -> GremlinPlanResult<Node> {
+    if lo.subgraph_vertex_property_filter.is_some() {
+        return super::property_object::lower_properties_value(input, keys, lo, ctx);
+    }
     let project = Node::GraphCurrentProject {
         expr: IrExpr::Call {name:"requested_property_values".into(),args:vec![IrExpr::Binding(CURRENT.into()),IrExpr::List(keys.iter().map(|key|IrExpr::lit_str(key)).collect())]},
         fields:vec![CURRENT.into()],input:input.boxed(),

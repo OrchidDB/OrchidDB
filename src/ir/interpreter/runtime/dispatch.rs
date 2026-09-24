@@ -17,7 +17,7 @@ use super::datetime::{date_add_value, date_diff_value};
 use super::graph::{
     eval_algorithm_property_object, format_placeholder, graph_element_property, gremlin_math_bin,
     gremlin_order_key, gremlin_scan_order, gremlin_user_id,
-    gremlin_visible_vertex_property_values, gremlin_within, local_order_by_key, path_last_label,
+    gremlin_within, local_order_by_key, path_last_label,
     path_last_value, revive_value_map_entry, select_binding_by_pop, tree_value,
 };
 use super::lists::{display_for_list_to_string, list_semantic_eq};
@@ -106,7 +106,8 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
     match (canonical.as_ref(), args.as_slice()) {
         ("element_kind", [Value::Node { .. }]) => Ok(Value::String("Vertex".into())),
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
-        ("element_kind", [_]) => Ok(Value::String("VertexProperty".into())),
+        ("element_kind", [Value::VertexProperty { .. }]) => Ok(Value::String("VertexProperty".into())),
+        ("element_kind", [_]) => Ok(Value::String("Property".into())),
         ("gremlin_id", [value]) => Ok(gremlin_user_id(graph, value)),
         // Projection modulators return the same identity as id().
         ("gremlin_id_token", [value]) => Ok(gremlin_user_id(graph, value)),
@@ -116,21 +117,6 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
             Ok(Value::Bool(gremlin_within(needle, candidates)))
         }
         ("gremlin_math_bin", [Value::String(op), lhs, rhs]) => Ok(gremlin_math_bin(op, lhs, rhs)),
-        ("gremlin_visible_vertex_property_values", [target, Value::String(key)]) => Ok(
-            Value::List(gremlin_visible_vertex_property_values(graph, target, key)),
-        ),
-        ("gremlin_visible_vertex_properties", [target, Value::String(key)]) => Ok(Value::List(
-            gremlin_visible_vertex_property_values(graph, target, key)
-                .into_iter()
-                .map(|value| {
-                    let mut map = BTreeMap::new();
-                    map.insert("key".to_string(), Value::String(key.clone()));
-                    map.insert("value".to_string(), value);
-                    map.insert("element".to_string(), target.clone());
-                    Value::Map(map)
-                })
-                .collect(),
-        )),
         ("tinker_degree_centrality", [Value::Node { label, id }, Value::String(direction)]) => {
             let edges = if direction == "OUT" {
                 graph.out_edges(label, *id, &[])
