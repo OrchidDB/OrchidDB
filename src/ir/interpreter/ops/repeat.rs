@@ -474,13 +474,8 @@ pub(crate) fn run_with_frontier(
             super::sample::sample_op(*kind, weight.as_ref(), rows, graph, rng)
         }
         Node::GraphSlice { slice, input } => {
-            if let Node::GraphSideEffect { label, value_input, value, seed, reducer, eager: false, input: source } = input.as_ref() {
-                if let Some(fetch) = slice.fetch.filter(|_| slice.tail.is_none()) {
-                    let rows = run_with_frontier(source, frontier, graph, ctx)?;
-                    let consumed = slice_op(&crate::ir::plan::Slice { offset: 0, fetch: Some(slice.offset.saturating_add(fetch)), tail: None }, rows)?;
-                    let rows = ctx.write_side_effect(label, value_input, value, seed, reducer, false, consumed, graph)?;
-                    return slice_op(slice, rows);
-                }
+            if let Some(result) = super::stream::bounded_lazy_pipeline(input, slice, Some(frontier), graph, ctx) {
+                return result;
             }
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             slice_op(slice, rows)
