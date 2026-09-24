@@ -26,6 +26,15 @@ fn string(value: &Json) -> IrResult<String> {
         .map(str::to_owned)
         .ok_or_else(|| error("GraphSON expected string"))
 }
+// GraphSON X writes arbitrary-precision values as JSON numbers. Accept older
+// string payloads too, retaining the original numeric text and decimal scale.
+fn number_text(value: &Json) -> IrResult<String> {
+    match value {
+        Json::String(v) => Ok(v.clone()),
+        Json::Number(v) => Ok(v.to_string()),
+        _ => Err(error("GraphSON expected number or numeric string")),
+    }
+}
 fn object(value: &Json) -> IrResult<&serde_json::Map<String, Json>> {
     value
         .as_object()
@@ -70,16 +79,17 @@ fn decode(value: &Json) -> IrResult<Value> {
             "g:Float" => Value::Float32(float(v)? as f32),
             "g:Double" => Value::Float(float(v)?),
             "gx:BigInteger" => Value::BigInt(
-                string(v)?
+                number_text(v)?
                     .parse()
                     .map_err(|_| error("Invalid BigInteger"))?,
             ),
             "gx:BigDecimal" => Value::BigDecimal(
-                string(v)?
+                number_text(v)?
                     .parse()
                     .map_err(|_| error("Invalid BigDecimal"))?,
             ),
             "g:List" => Value::List(array(v)?.iter().map(decode).collect::<IrResult<_>>()?),
+            "g:Set" => crate::ir::value::gremlin_set(array(v)?.iter().map(decode).collect::<IrResult<_>>()?),
             "g:Map" => {
                 let entries = array(v)?;
                 if entries.len() % 2 != 0 {
@@ -241,9 +251,12 @@ impl Import {
                 edge.label,
                 &vertices[&edge.src],
                 &vertices[&edge.dst],
-                edge.properties,
+                BTreeMap::new(),
             )?;
             graph.set_element_public_id(&element, edge.id)?;
+            for (key, value) in edge.properties {
+                graph.set_gremlin_property(&element, &key, value)?;
+            }
         }
         Ok(())
     }
