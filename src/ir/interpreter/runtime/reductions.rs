@@ -153,6 +153,10 @@ pub(crate) fn fold_reduce_op(items: &[Value], seed: &Value, op: &str) -> Value {
 
 pub(crate) fn apply_sack_op(lhs: &Value, rhs: &Value, op: &str) -> Value {
     use Value::*;
+    if matches!(op, "sum" | "minus" | "mult" | "div" | "min" | "max")
+        && (matches!(lhs, BigInt(_) | BigDecimal(_)) || matches!(rhs, BigInt(_) | BigDecimal(_))) {
+        return apply_exact_sack_op(lhs, rhs, op);
+    }
     match (op, lhs, rhs) {
         ("sum", Int(a), Int(b)) => Int(a + b),
         ("sum", Long(a), Long(b)) => Long(a + b),
@@ -224,6 +228,52 @@ pub(crate) fn apply_sack_op(lhs: &Value, rhs: &Value, op: &str) -> Value {
     }
 }
 
+// NumberHelper promotes a BigInteger plus any floating type to BigDecimal.
+// Never round these operands through f64 (sacks can exceed the floating range).
+fn apply_exact_sack_op(lhs: &Value, rhs: &Value, op: &str) -> Value {
+    use num_traits::Zero;
+    fn decimal(value: &Value) -> Option<bigdecimal::BigDecimal> {
+        match value {
+            Value::BigDecimal(n) => Some(n.clone()),
+            Value::BigInt(n) => Some(bigdecimal::BigDecimal::from(n.clone())),
+            Value::Byte(n) => Some((*n as i64).into()),
+            Value::Short(n) => Some((*n as i64).into()),
+            Value::Int(n) | Value::Long(n) => Some((*n).into()),
+            Value::Float(n) => format!("{n:?}").parse().ok(),
+            Value::Float32(n) => format!("{:?}", *n as f64).parse().ok(),
+            _ => None,
+        }
+    }
+    let (Some(a), Some(b)) = (decimal(lhs), decimal(rhs)) else { return Value::Null; };
+    if op == "div" && b.is_zero() { return Value::Null; }
+    let floating = matches!(lhs, Value::BigDecimal(_) | Value::Float(_) | Value::Float32(_))
+        || matches!(rhs, Value::BigDecimal(_) | Value::Float(_) | Value::Float32(_));
+    if !floating {
+        let a = a.with_scale(0).into_bigint_and_exponent().0;
+        let b = b.with_scale(0).into_bigint_and_exponent().0;
+        return Value::BigInt(match op {
+            "sum" => a + b, "minus" => a - b, "mult" => a * b,
+            "div" => a / b, "min" => a.min(b), "max" => a.max(b), _ => return Value::Null,
+        });
+    }
+    let a_scale = a.as_bigint_and_exponent().1;
+    let b_scale = b.as_bigint_and_exponent().1;
+    let preferred_scale = a_scale - b_scale;
+    let result = match op {
+        "sum" => a + b, "minus" => a - b, "mult" => a * b,
+        "div" => {
+            let result = (a / b).normalized();
+            result.with_scale(preferred_scale.max(result.as_bigint_and_exponent().1))
+        },
+        "min" => a.min(b), "max" => a.max(b), _ => return Value::Null,
+    };
+    Value::BigDecimal(match op {
+        "sum" | "minus" => result.with_scale(a_scale.max(b_scale)),
+        "mult" => result.with_scale(a_scale + b_scale),
+        _ => result,
+    })
+}
+
 fn apply_numeric_sack_op(lhs: &Value, rhs: &Value, op: &str) -> Value {
     let Some(a) = numeric_f64(lhs) else {
         return Value::Null;
@@ -260,5 +310,29 @@ fn numeric_f64(value: &Value) -> Option<f64> {
         Value::Float32(n) => Some(*n as f64),
         Value::Float(n) => Some(*n),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod exact_sack_tests {
+    use super::*;
+    #[test]
+    fn huge_sacks_normalize_without_float_conversion() {
+        let huge = Value::BigInt(num_bigint::BigInt::from(10).pow(1000));
+        let total = apply_sack_op(&Value::Float(0.0), &apply_sack_op(&huge, &Value::Long(2), "mult"), "sum");
+        let ratio = apply_sack_op(&huge, &total, "div");
+        let Value::BigDecimal(ratio) = ratio else { panic!("exact decimal required") };
+        assert_eq!(ratio.to_string(), "0.5");
+        let quotient=apply_sack_op(&huge,&Value::Int(3),"div");
+        assert_eq!(quotient,Value::BigInt(num_bigint::BigInt::from(10).pow(1000)/3));
+    }
+    #[test]
+    fn decimal_sack_operations_preserve_scale() {
+        let a=Value::BigDecimal("1.00".parse().unwrap());
+        let b=Value::BigDecimal("2.0".parse().unwrap());
+        for (op,expected) in [("sum","3.00"),("mult","2.000"),("div","0.5")] {
+            let Value::BigDecimal(value)=apply_sack_op(&a,&b,op) else {panic!("decimal required")};
+            assert_eq!(value.to_string(),expected);
+        }
     }
 }

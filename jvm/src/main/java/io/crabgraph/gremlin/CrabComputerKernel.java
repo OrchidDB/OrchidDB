@@ -23,9 +23,10 @@ final class CrabComputerKernel {
         }
         GraphTraversal<Vertex,Vertex> seed=graph.traversal().withComputer(org.apache.tinkerpop.gremlin.process.computer.Computer.compute()
             .persist(org.apache.tinkerpop.gremlin.process.computer.GraphComputer.Persist.EDGES)
-            .result(org.apache.tinkerpop.gremlin.process.computer.GraphComputer.ResultGraph.NEW)).V()
-            .filter(t->counts.containsKey(t.get().id()))
-            .sideEffect(t->t.asAdmin().setBulk(counts.get(t.get().id())));
+            .result(org.apache.tinkerpop.gremlin.process.computer.GraphComputer.ResultGraph.NEW)).V();
+        if(Boolean.TRUE.equals(CrabCodec.decode(rows.get(0).get("__crabgraph_traverser_priors"),graph)))
+            seed=seed.filter(t->counts.containsKey(t.get().id()))
+                .sideEffect(t->t.asAdmin().setBulk(counts.get(t.get().id())));
         SimpleBindings bindings=new SimpleBindings();
         if(!rows.isEmpty())rows.get(0).forEach((key,value)->bindings.put(key,CrabCodec.decode(value,graph)));
         bindings.put("traversal",seed);

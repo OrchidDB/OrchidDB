@@ -244,6 +244,16 @@ pub(super) fn lower_local_or_map(
     } else {
         right
     };
+    if matches!(kind, ChildTraversalKind::Map) {
+        let result=lo.fresh("map_result");
+        let right=Node::GraphProject {mode:ProjectMode::PreserveVisible,
+            items:vec![ProjectionItem {alias:result.clone(),expr:IrExpr::Binding(CURRENT.into())}],
+            error_policy:ProjectErrorPolicy::PropagateError,input:right.boxed()};
+        return Ok(super::project::project_value_with_path(Node::GraphApply {
+            kind:ApplyKind::Inner,correlation:vec![CURRENT.into()],outputs:vec![result.clone()],
+            optional_missing:OptionalMissing::Null,left:input.boxed(),right:right.boxed(),
+        },IrExpr::Binding(result)));
+    }
     Ok(Node::GraphApply {
         kind: ApplyKind::Inner,
         correlation: vec![CURRENT.into()],

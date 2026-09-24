@@ -40,6 +40,10 @@ fn literal(v: &Value) -> Result<GValue, String> {
     };
     Ok(
         match v["type"].as_str().ok_or("Missing native value type")? {
+            "sack_callbacks" => GValue::SackCallbacks {
+                supplier: v["supplier"].as_str().ok_or("Expected supplier callback")?.into(),
+                split: v.get("split").map(|s| s.as_str().map(str::to_owned).ok_or("Expected split callback")).transpose()?,
+            },
             "null" => GValue::Null,
             "string" => GValue::String(value.as_str().ok_or("Expected string")?.into()),
             "boolean" => GValue::Bool(value.as_bool().ok_or("Expected boolean")?),
@@ -61,6 +65,11 @@ fn literal(v: &Value) -> Result<GValue, String> {
             "vertex" => GValue::VertexRef {
                 id: Box::new(literal(&v["id"])?),
                 label: v["label"].as_str().unwrap_or("vertex").into(),
+            },
+            "vertex_property" => GValue::VertexPropertyRef {
+                id: Box::new(literal(&v["id"])?),
+                owner: Box::new(literal(&v["owner"])?),
+                key: v["key"].as_str().ok_or("Expected vertex property key")?.into(),
             },
             "edge" => GValue::EdgeRef {
                 id: Box::new(literal(&v["id"])?),

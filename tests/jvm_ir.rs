@@ -553,3 +553,26 @@ async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
     assert_eq!(rows[0][0]["value"], 21);
     assert_eq!(rows[0][0]["type"], "long");
 }
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn sack_supplier_split_and_update_are_relational_jvm_operators() {
+    use new_graph::engine::{ExecutionBackend, GraphEngine};
+    use new_graph::language::gremlin::{GremlinBinding, semantics::GValue};
+    use std::collections::HashMap;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    engine.gremlin("g.addV('a').as('a').addV('b').as('b').addE('link').from('a').to('b')").await.unwrap();
+    let bindings=HashMap::from([
+        ("config".into(),GremlinBinding::Value(GValue::SackCallbacks {
+            supplier:"{ -> 7 }".into(), split:Some("{ sack -> sack + 10 }".into()),
+        })),
+        ("update".into(),GremlinBinding::Lambda("sack, vertex -> sack + vertex.label().length()".into())),
+    ]);
+    let result=engine.gremlin_with_bindings("g.withSack(config).V().hasLabel('a').out().sack(update).sack()",&bindings).await.unwrap();
+    assert_eq!(result.backend,ExecutionBackend::Hybrid);
+    assert_eq!(result.returned.batch.num_rows(),1);
+    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0),0).unwrap(),"18");
+    let failed=HashMap::from([("update".into(),GremlinBinding::Lambda("sack, vertex -> vertex.property('lost',true); throw new IllegalStateException('sack callback failed')".into()))]);
+    assert!(engine.gremlin_with_bindings("g.withSack(1).V().sack(update)",&failed).await.is_err());
+    assert_eq!(engine.gremlin("g.V().has('lost')").await.unwrap().returned.batch.num_rows(),0);
+}

@@ -3,12 +3,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class UpstreamLiteralTransportTest {
- @Test public void decimalAndDoubleHaveDistinctNativeLiterals() {
-  var translator=new UpstreamGremlin.GrammarTypeTranslator();
-  assertEquals("1M",translator.getSyntax(new BigDecimal("1")));
-  assertEquals("1.0D",translator.getSyntax(Double.valueOf(1)));
-  assertEquals("12345678901234567890.00000001M",translator.getSyntax(new BigDecimal("12345678901234567890.00000001")));
-  assertEquals("NaN",translator.getSyntax(Double.NaN));
+ @Test public void decimalAndDoubleHaveDistinctNativeLiterals() throws Exception {
+  try(var callbacks=new io.crabgraph.gremlin.CrabCallbackRegistry()) {
+   var translator=new io.crabgraph.gremlin.CrabBytecodeTranslator(callbacks);
+   var code=new org.apache.tinkerpop.gremlin.process.traversal.Bytecode();
+   code.addStep("inject",new BigDecimal("1"),Double.valueOf(1),new BigDecimal("12345678901234567890.00000001"),Double.NaN);
+   assertEquals("g.inject(1M,1.0D,12345678901234567890.00000001M,NaN)",org.apache.tinkerpop.gremlin.process.traversal.translator.GroovyTranslator.of("g",translator).translate(code).getScript());
+  }
  }
  @Test public void nativeEntriesRemainDistinctFromMaps() throws Exception {
   var entry=UpstreamGremlin.nativeValue(UpstreamGremlin.json.readTree("{\"type\":\"entry\",\"value\":[{\"type\":\"long\",\"value\":42},{\"type\":\"string\",\"value\":\"x\"}]}"));

@@ -211,6 +211,7 @@ pub(super) struct Lowerer {
     /// per-row binding so `sack()` and `sack(op).by(...)` can stay
     /// traverser-local instead of global.
     pub(super) sack_initial: Option<GValue>,
+    pub(super) sack_split: Option<String>,
     pub(super) sack_merge: Option<SackOp>,
     pub(super) bulk_enabled: bool,
     pub(super) bulk_safe: bool,
@@ -250,6 +251,7 @@ impl Lowerer {
             random_seed: None,
             partition_write: None,
             sack_initial: None,
+            sack_split: None,
             sack_merge: None,
             bulk_enabled: true,
             bulk_safe: false,

@@ -73,6 +73,9 @@ pub(super) fn with_initial_sack(
     let Some(initial) = lo.sack_initial.as_ref() else {
         return Ok(node);
     };
+    if let crate::language::gremlin::semantics::GValue::SackCallbacks { supplier, .. } = initial {
+        return Ok(sack_callback(node, format!("({supplier}).call()")));
+    }
     Ok(Node::GraphProject {
         mode: ProjectMode::PreserveVisible,
         items: vec![ProjectionItem {
@@ -243,4 +246,15 @@ pub(super) fn values_node(values: &[crate::language::gremlin::semantics::GValue]
     }
     Ok(Node::GraphUnwind { input_expr: IrExpr::List(values.iter().map(gvalue_to_expr).collect::<GremlinPlanResult<_>>()?), bind: CURRENT.into(), outer: false,
         input: Node::GraphValues { bindings: vec![], rows: vec![vec![]], bulk: None }.boxed() })
+}
+
+/// Sack callbacks are ordinary JVM map kernels in the relational DAG.
+pub(super) fn sack_callback(node: Node, script: String) -> Node {
+    Node::GraphJvm {
+        operation: crate::ir::jvm::JvmOperation {
+            script, output: SACK.into(), mode: crate::ir::jvm::JvmMode::Map,
+            arguments: vec![ProjectionItem { alias: SACK.into(), expr: IrExpr::Binding(SACK.into()) },
+                ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(CURRENT.into()) }],
+        }, input: node.boxed(),
+    }
 }

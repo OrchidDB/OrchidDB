@@ -123,7 +123,11 @@ pub(super) fn lower_has_id_predicate(
         value: GValue::String(token),
     } = predicate
     {
-        if let Some(condition) = element_token_filter(CURRENT, token) {
+        if let Some(condition) = element_token_filter(CURRENT, token).or_else(|| Some(IrExpr::Binary {
+            op: crate::ir::expr::BinaryOp::Eq,
+            lhs: Box::new(IrExpr::Call {name:"cast_string".into(),args:vec![IrExpr::Call {name:"gremlin_id".into(),args:vec![IrExpr::Binding(CURRENT.into())]}]}),
+            rhs: Box::new(IrExpr::lit_str(token.clone())),
+        })) {
             let condition = match op {
                 crate::language::gremlin::semantics::CompareOp::Eq => condition,
                 crate::language::gremlin::semantics::CompareOp::Neq => {

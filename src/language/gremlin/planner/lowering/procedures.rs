@@ -31,7 +31,7 @@ pub(super) fn lower_call(
     args: &[CallArg],
     options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
-    if matches!(name, "crabgraph.jvm" | "crabgraph.jvm.computer") {
+    if matches!(name, "crabgraph.jvm" | "crabgraph.jvm.computer" | "crabgraph.jvm.sack") {
         let invalid = || GremlinPlanError::Unsupported("call('crabgraph.jvm', ['script': code, 'mode': 'map'|'flatMap'|'filter', 'bindings': map]) requires trusted code and literal options".into());
         fn entries(value: &GValue) -> Option<Vec<(&str, &GValue)>> {
             match value {
@@ -53,6 +53,9 @@ pub(super) fn lower_call(
             _ => return Err(invalid()),
         }};
         let mut arguments = vec![ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(CURRENT.into()) }];
+        if name == "crabgraph.jvm.sack" {
+            arguments.push(ProjectionItem { alias: "__sack".into(), expr: IrExpr::Binding("__sack".into()) });
+        }
         if let Some(bindings) = get("bindings") {
             for (key,value) in entries(bindings).ok_or_else(invalid)? {
                 if matches!(key,"current"|"g"|"graph") { return Err(invalid()); }
@@ -60,7 +63,7 @@ pub(super) fn lower_call(
             }
         }
         return Ok(Node::GraphJvm {
-            operation: crate::ir::jvm::JvmOperation { script: script.clone(), output: CURRENT.into(), mode, arguments },
+            operation: crate::ir::jvm::JvmOperation { script: script.clone(), output: if name == "crabgraph.jvm.sack" { "__sack" } else { CURRENT }.into(), mode, arguments },
             input: input.boxed(),
         });
     }
