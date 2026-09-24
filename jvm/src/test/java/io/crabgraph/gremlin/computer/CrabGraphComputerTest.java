@@ -328,6 +328,24 @@ public class CrabGraphComputerTest {
         assertEquals(88L, v.<Long>value("computed").longValue());
     }
 
+    @Test public void mutableBroadcastReducersRemainIsolatedUntilSuperstepEnds() throws Exception {
+        vertex("first"); vertex("second");
+        ComputerResult result = computer().program(new CountingProgram() {
+            @Override public void setup(Memory memory) { memory.set("bag", new ArrayList<>()); }
+            @Override public Set<MemoryComputeKey> getMemoryComputeKeys() {
+                return new HashSet<>(List.of(MemoryComputeKey.of("bag", Operator.addAll, true, false)));
+            }
+            @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                assertEquals(memory.getIteration() * 2, memory.<List<?>>get("bag").size());
+                memory.add("bag", new ArrayList<>(List.of(vertex.id())));
+            }
+            @Override public boolean terminate(Memory memory) { return memory.getIteration() == 1; }
+        }).result(GraphComputer.ResultGraph.ORIGINAL).persist(GraphComputer.Persist.NOTHING)
+                .submit().get(20, TimeUnit.SECONDS);
+        assertEquals(4, result.memory().<List<?>>get("bag").size());
+        assertEquals(1, result.memory().getIteration());
+    }
+
     @Test public void submittedComputerCannotBeReused() throws Exception {
         vertex("once");
         GraphComputer computer = computer().program(new CountingProgram()).result(GraphComputer.ResultGraph.ORIGINAL)
