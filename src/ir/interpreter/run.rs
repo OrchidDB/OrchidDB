@@ -34,6 +34,7 @@ use super::{InterpretError, IrResult, Row};
 
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
+    pub(crate) random_steps: BTreeMap<String, super::ops::sample::JavaRandom>,
     pub(crate) group_counts: BTreeMap<String, Vec<(Value, u64)>>,
     pub(crate) step_state: Vec<StepStateFrame>,
     step_limit: Option<u64>,
@@ -102,6 +103,7 @@ impl ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
+            random_steps: BTreeMap::new(),
             group_counts: BTreeMap::new(),
             step_state: Vec::new(),
             step_limit: std::env::var(Self::STEP_LIMIT_ENV)
@@ -411,6 +413,12 @@ pub(crate) fn run_with_context(
         } => {
             let upstream = run_with_context(input, graph, ctx)?;
             path_pattern_op(path, selector, parts, upstream, graph)
+        }
+        Node::GraphSample { kind, seed, step_id, weight, input } => {
+            let rows = run_with_context(input, graph, ctx)?;
+            let rng = ctx.random_steps.entry(step_id.clone())
+                .or_insert_with(|| super::ops::sample::JavaRandom::new(*seed));
+            super::ops::sample::sample_op(*kind, weight.as_ref(), rows, graph, rng)
         }
         Node::GraphBarrier {
             partition,

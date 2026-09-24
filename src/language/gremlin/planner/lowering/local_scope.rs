@@ -31,7 +31,7 @@ pub(super) fn lower_local_scoped(
 ) -> GremlinPlanResult<Node> {
     let helper_call: IrExpr = match inner {
         Step::Tail(n) => call("local_tail", vec![cur(), int(*n as i64)]),
-        Step::Limit(n) | Step::Sample(n) => call("local_limit", vec![cur(), int(*n as i64)]),
+        Step::Limit(n) => call("local_limit", vec![cur(), int(*n as i64)]),
         Step::Skip(n) => call("local_skip", vec![cur(), int(*n as i64)]),
         Step::Range { low, high } => call(
             "local_range",

@@ -19,6 +19,19 @@ fn call_error(name: &str, args: &[Value]) -> String {
         .to_string()
 }
 
+#[test]
+fn native_set_local_dedup_returns_a_typed_collection() {
+    let value = call("local_dedup", &[Value::List(vec![Value::Int(1), Value::Long(1), Value::Int(1)])]);
+    assert_eq!(value, Value::Set(vec![Value::Int(1), Value::Long(1)]));
+    assert_eq!(call("local_count", &[value.clone()]), Value::Long(2));
+    assert_eq!(call("local_dedup", &[value.clone()]), value);
+    assert!(super::type_check::typeof_matches(&value, "set"));
+    assert!(!super::type_check::typeof_matches(&Value::List(vec![]), "set"));
+    let map = Value::Map(BTreeMap::from([("__gremlin_set".into(), Value::List(vec![Value::Int(1)]))]));
+    assert!(!super::type_check::typeof_matches(&map, "set"));
+    assert_eq!(call("local_dedup", &[map.clone()]), map);
+}
+
 fn call_with_graph(name: &str, args: &[Value], graph: &PropertyGraph) -> Value {
     eval_call(name, args.to_vec(), graph).unwrap_or(Value::Null)
 }

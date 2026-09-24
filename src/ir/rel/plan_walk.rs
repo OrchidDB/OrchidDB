@@ -42,6 +42,7 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
         | GraphSort { input, .. }
+        | GraphSample { input, .. }
         | GraphSlice { input, .. }
         | GraphSliceExpr { input, .. }
         | GraphBarrier { input, .. }
@@ -121,6 +122,7 @@ pub(super) fn unsupported_node_name(node: &Node) -> &'static str {
         Node::GraphCap { .. } => "GraphCap",
         Node::GraphShortestPath { .. } => "GraphShortestPath",
         Node::GraphSliceExpr { .. } => "GraphSliceExpr",
+        Node::GraphSample { .. } => "GraphSample",
         Node::GraphBarrier { .. } => "GraphBarrier",
         Node::GraphApply { .. } => "GraphApply",
         Node::GraphUnwind { .. } => "GraphUnwind",

@@ -258,6 +258,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphDistinct { input, .. }
         | GraphSort { input, .. }
         | GraphSlice { input, .. }
+        | GraphSample { input, .. }
         | GraphSliceExpr { input, .. }
         | GraphBarrier { input, .. }
         | GraphUnwind { input, .. }

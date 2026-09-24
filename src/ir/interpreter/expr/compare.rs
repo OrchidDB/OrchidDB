@@ -34,6 +34,7 @@ fn orderability_tag(v: &Value) -> u8 {
         Value::Token(_) => 11,
         Value::Direction(_) => 12,
         Value::BulkSet(_) => 13,
+        Value::Set(_) => 15,
         Value::MapEntry(_) => 14,
         Value::Node { .. } => 8,
         Value::Edge { .. } => 9,
@@ -76,11 +77,16 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         ) => (tx, ox).cmp(&(ty, oy)),
         (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
         (Value::List(x), Value::List(y)) => compare_slices(x, y),
-        (Value::BulkSet(x), Value::BulkSet(y)) => {
+        (Value::BulkSet(x), Value::BulkSet(y)) | (Value::Set(x), Value::Set(y)) => {
+            let is_set = matches!(a, Value::Set(_));
             let item_cmp = |a: &Value, b: &Value| {
                 compare_values(a, b).then_with(|| {
-                    super::super::ops::distinct::encode_value(a)
-                        .cmp(&super::super::ops::distinct::encode_value(b))
+                    if is_set {
+                        crate::ir::value::set_member_key(a).cmp(&crate::ir::value::set_member_key(b))
+                    } else {
+                        super::super::ops::distinct::encode_value(a)
+                            .cmp(&super::super::ops::distinct::encode_value(b))
+                    }
                 })
             };
             let mut x = x.iter().collect::<Vec<_>>();

@@ -129,7 +129,7 @@ fn lower_group_stream_value(
         key: key_expr,
         value: GroupValue::Aggregate(AggCall {
             kind: AggKind::CollectTraversers,
-            alias: "value".to_string(),
+            alias: "__group_stream_members".to_string(),
             arg: Some(IrExpr::Binding(CURRENT.into())),
             distinct: false,
         }),

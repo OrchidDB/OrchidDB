@@ -65,9 +65,11 @@ pub(crate) fn compare_for_sort(lhs: &Value, rhs: &Value, key: &SortKey) -> std::
             },
         };
     }
-    let cmp = lhs
-        .three_valued_cmp(rhs)
-        .unwrap_or_else(|| compare_values(lhs, rhs));
+    let cmp = if matches!(&key.expr, crate::ir::expr::IrExpr::Call { name, .. } if name == "gremlin_order_key") {
+        crate::ir::gremlin_semantics::compare_order_keys(lhs, rhs)
+    } else {
+        lhs.three_valued_cmp(rhs).unwrap_or_else(|| compare_values(lhs, rhs))
+    };
     match key.dir {
         SortDir::Asc => cmp,
         SortDir::Desc => cmp.reverse(),

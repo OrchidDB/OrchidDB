@@ -1336,6 +1336,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
                     | Value::TypedMap(_)
             | Value::MapEntry(_)
                     | Value::BulkSet(_)
+            | Value::Set(_)
                     | Value::Token(_)
                     | Value::Direction(_)
                     | Value::Path(_)
@@ -1382,6 +1383,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
             | Value::TypedMap(_)
             | Value::MapEntry(_)
             | Value::BulkSet(_)
+            | Value::Set(_)
             | Value::Token(_)
             | Value::Direction(_)
             | Value::Path(_) => {

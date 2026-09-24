@@ -392,6 +392,12 @@ pub(crate) fn run_with_frontier(
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             sort_op(keys, rows, graph)
         }
+        Node::GraphSample { kind, seed, step_id, weight, input } => {
+            let rows = run_with_frontier(input, frontier, graph, ctx)?;
+            let rng = ctx.random_steps.entry(step_id.clone())
+                .or_insert_with(|| super::sample::JavaRandom::new(*seed));
+            super::sample::sample_op(*kind, weight.as_ref(), rows, graph, rng)
+        }
         Node::GraphSlice { slice, input } => {
             let rows = run_with_frontier(input, frontier, graph, ctx)?;
             slice_op(slice, rows)

@@ -146,6 +146,7 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
                 buf.extend(value);
             }
         }
+        Value::Set(_) => return crate::ir::value::set_member_key(v),
         Value::BulkSet(items) => {
             buf.push(26);
             let mut encoded = items.iter().map(encode_value).collect::<Vec<_>>();
@@ -268,6 +269,29 @@ mod typed_map_tests {
 #[cfg(test)]
 mod bulkset_tests {
     use super::*;
+    #[test]
+    fn native_set_distinct_is_unordered_and_keeps_member_widths() {
+        let a = crate::ir::value::gremlin_set(vec![Value::Int(1), Value::Long(1)]);
+        let b = crate::ir::value::gremlin_set(vec![Value::Long(1), Value::Int(1)]);
+        assert_eq!(encode_value(&a), encode_value(&b));
+        assert_ne!(encode_value(&a), encode_value(&Value::List(vec![Value::Int(1), Value::Long(1)])));
+        assert_ne!(encode_value(&a), encode_value(&Value::BulkSet(vec![Value::Int(1), Value::Long(1)])));
+        assert_ne!(encode_value(&crate::ir::value::gremlin_set(vec![Value::Int(1)])), encode_value(&crate::ir::value::gremlin_set(vec![Value::Long(1)])));
+        assert_eq!(super::super::super::expr::compare_values(&a, &b), std::cmp::Ordering::Equal);
+    }
+    #[test]
+    fn native_set_distinct_canonicalizes_nested_nan_bits() {
+        let a = Value::Float(f64::from_bits(0x7ff8_0000_0000_0001));
+        let b = Value::Float(f64::from_bits(0x7ff8_0000_0000_0002));
+        assert_ne!(encode_value(&a), encode_value(&b)); // Scalar keys are unchanged.
+        for (a, b) in [(a.clone(), b.clone()), (Value::List(vec![a]), Value::List(vec![b]))] {
+            let a = crate::ir::value::gremlin_set(vec![a]);
+            let b = crate::ir::value::gremlin_set(vec![b]);
+            assert_eq!(a, b);
+            assert_eq!(encode_value(&a), encode_value(&b));
+            assert_eq!(super::super::super::expr::compare_values(&a, &b), std::cmp::Ordering::Equal);
+        }
+    }
     #[test]
     fn bulkset_distinct_retains_multiplicity_and_ignores_order() {
         let a = Value::BulkSet(vec![Value::Int(1), Value::Int(2), Value::Int(1)]);

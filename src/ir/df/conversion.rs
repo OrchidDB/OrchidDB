@@ -326,6 +326,10 @@ fn node_to_plan_with_policy(
             schema,
             inputs: vec![node_to_plan(input)?],
         }),
+        Node::GraphSample { kind, seed, step_id, weight, input } => extension(GraphSample {
+            kind: *kind, seed: *seed, step_id: step_id.clone(), weight: weight.clone(),
+            schema, inputs: vec![node_to_plan(input)?],
+        }),
         Node::GraphSlice { slice, input } => extension(GraphSlice {
             slice: slice.clone(),
             schema,
@@ -731,6 +735,7 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphShortestPath,
         GraphDistinct,
         GraphSort,
+        GraphSample,
         GraphSlice,
         GraphSliceExpr,
         GraphBarrier,

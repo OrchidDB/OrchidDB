@@ -1,13 +1,11 @@
 //! Graph properties, Gremlin ordering, and shortest paths.
 
-use super::lists::list_semantic_eq;
 use super::maps::{runtime_list, visible_map_keys};
 use super::numeric::value_as_f64;
 use super::property_object::eval_property_object;
 use super::strings::display_for_concat;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::element_id::element_internal_id;
-use crate::ir::interpreter::expr::compare_values;
 use crate::ir::plan::Direction;
 use crate::ir::value::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -161,6 +159,15 @@ pub(super) fn gremlin_order_key(graph: &PropertyGraph, value: &Value) -> Value {
     // `[rank, class_key]` pair — list comparison is lexicographic, so
     // cross-class ordering follows the rank and same-class pairs fall
     // through to the class key.
+    // Order.asc/desc normalizes a top-level Enum to its name before applying
+    // GremlinValueComparator. Nested enums remain typed objects.
+    let normalized;
+    let value = match value {
+        Value::Token(name) | Value::Direction(name) => {
+            normalized = Value::String(name.clone()); &normalized
+        }
+        value => value,
+    };
     let (rank, key) = gremlin_orderability_parts(graph, value);
     Value::List(vec![Value::Int(rank), key])
 }
@@ -170,11 +177,13 @@ pub(super) fn gremlin_order_key(graph: &PropertyGraph, value: &Value) -> Value {
 /// VertexProperty < Property < Path < Set < List < Map < unknown.
 fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Value) {
     if let Some(items) = crate::ir::value::as_gremlin_set(value) {
-        return (11, Value::List(items.to_vec()));
+        let mut keys = items.iter().map(|item| nested_order_key(graph,item)).collect::<Vec<_>>();
+        keys.sort_by(crate::ir::gremlin_semantics::compare_order_keys);
+        return (11, Value::List(keys));
     }
     match value {
-        Value::TypedMap(_) => (13, value.clone()),
-        Value::MapEntry(_) => (14, value.clone()),
+        Value::TypedMap(entries) => (13, map_order_key(graph, entries.iter().map(|(key,value)| (key.clone(),value.clone())).collect())),
+        Value::MapEntry(entry) => (14, Value::List(vec![nested_order_key(graph,&entry.0), nested_order_key(graph,&entry.1)])),
         Value::Token(_) | Value::Direction(_) => (14, value.clone()),
         Value::Null => (0, Value::Null),
         Value::Bool(_) => (1, value.clone()),
@@ -199,8 +208,9 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
                 (4, value.clone())
             }
         }
-        Value::Node { .. } | Value::InternalId { .. } => (6, gremlin_scan_order(graph, value)),
-        Value::Edge { .. } => (7, gremlin_scan_order(graph, value)),
+        Value::Node { .. } => (6, gremlin_user_id(graph, value)),
+        Value::InternalId { .. } => (6, value.clone()),
+        Value::Edge { .. } => (7, gremlin_user_id(graph, value)),
         Value::Map(map) => {
             // Property objects: VertexProperty (rank 8) orders by id;
             // Property on an edge (rank 9) orders by (key, value).
@@ -215,13 +225,31 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
             }
             match map.get("__order").or_else(|| map.get("__id")) {
                 Some(order) => (8, order.clone()),
-                None => (13, value.clone()),
+                None => (13, map_order_key(graph, visible_map_keys(map).into_iter().filter_map(|key| map.get(&key).map(|value| (Value::String(key),value.clone()))).collect())),
             }
         }
-        Value::Path(_) => (10, value.clone()),
-        Value::List(_) => (12, value.clone()),
+        Value::Path(items) => (10, Value::List(items.iter().map(|item| {
+            let (rank, key) = gremlin_orderability_parts(graph, item);
+            Value::List(vec![Value::Int(rank), key])
+        }).collect())),
+        Value::List(items) => (12, Value::List(items.iter().map(|item| {
+            let (rank, key) = gremlin_orderability_parts(graph, item);
+            Value::List(vec![Value::Int(rank), key])
+        }).collect())),
         Value::BulkSet(_) => (11, value.clone()),
+        Value::Set(_) => (11, value.clone()),
     }
+}
+
+fn nested_order_key(graph: &PropertyGraph, value: &Value) -> Value {
+    let (rank,key) = gremlin_orderability_parts(graph,value);
+    Value::List(vec![Value::Int(rank),key])
+}
+
+fn map_order_key(graph: &PropertyGraph, entries: Vec<(Value,Value)>) -> Value {
+    let mut entries = entries.into_iter().map(|(key,value)| (nested_order_key(graph,&key),nested_order_key(graph,&value))).collect::<Vec<_>>();
+    entries.sort_by(|a,b| crate::ir::gremlin_semantics::compare_order_keys(&a.0,&b.0));
+    Value::List(entries.into_iter().map(|(key,value)| Value::List(vec![key,value])).collect())
 }
 
 pub(super) fn local_order_by_key(
@@ -243,7 +271,7 @@ pub(super) fn local_order_by_key(
                 }
             })
             .collect::<Vec<_>>();
-        keyed.sort_by(|(_, a), (_, b)| compare_values(a, b));
+        keyed.sort_by(|(_, a), (_, b)| crate::ir::gremlin_semantics::compare_order_keys(&gremlin_order_key(graph, a), &gremlin_order_key(graph, b)));
         if desc {
             keyed.reverse();
         }
@@ -259,7 +287,7 @@ pub(super) fn local_order_by_key(
             let sort_value = match key { "value" | "values" => entry_value.clone(), _ => entry_key.clone() };
             (Value::MapEntry(Box::new((entry_key,entry_value))),sort_value)
         }).collect::<Vec<_>>();
-        keyed.sort_by(|(_,a),(_,b)| compare_values(a,b));
+        keyed.sort_by(|(_,a),(_,b)| crate::ir::gremlin_semantics::compare_order_keys(&gremlin_order_key(graph, a), &gremlin_order_key(graph, b)));
         if desc { keyed.reverse(); }
         return Value::List(keyed.into_iter().map(|(entry,_)|entry).collect());
     }

@@ -698,6 +698,40 @@ impl<'a> LoweringContext<'a> {
                 };
                 self.lower_comparison_or_binary(plan, &args[0], op, &args[1])
             }
+            IrExpr::Call { name, args } if name == "gremlin_compare" && args.len() == 3 => {
+                let IrExpr::Lit(Lit::String(op)) = &args[0] else {
+                    return Err(RelError::Unsupported("dynamic Gremlin comparison".into()));
+                };
+                let lhs = self.lower_expr(plan, &args[1])?;
+                let rhs = self.lower_expr(plan, &args[2])?;
+                let left_type = lhs.get_type(plan.schema())?;
+                let right_type = rhs.get_type(plan.schema())?;
+                let integer = |ty: &DataType| matches!(ty, DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64);
+                let equality = op == "eq" || op == "neq";
+                let safe = integer(&left_type) && integer(&right_type)
+                    || left_type == right_type && (left_type == DataType::Boolean || equality && matches!(left_type, DataType::Utf8 | DataType::LargeUtf8));
+                if !safe {
+                    // Floating/decimal promotion, signed zero and compound values
+                    // require NumberHelper/native Gremlin comparability.
+                    return Err(RelError::Unsupported("Gremlin comparison requires native promotion".into()));
+                }
+                let operator = match op.as_str() {
+                    "eq" => BinaryOp::Eq, "neq" => BinaryOp::Neq,
+                    "lt" => BinaryOp::Lt, "lte" => BinaryOp::Lte,
+                    "gt" => BinaryOp::Gt, "gte" => BinaryOp::Gte,
+                    _ => return Err(RelError::Unsupported("unknown Gremlin comparison".into())),
+                };
+                if equality {
+                    let both_null = Expr::and(lhs.clone().is_null(), rhs.clone().is_null());
+                    let equal = Expr::or(both_null, datafusion::functions::core::expr_fn::coalesce(vec![binary(lhs, BinaryOp::Eq, rhs), lit(false)]));
+                    Ok(if op == "neq" { Expr::Not(Box::new(equal)) } else { equal })
+                } else { Ok(binary(lhs, operator, rhs)) }
+            }
+            IrExpr::Call { name, .. } if name == "requested_property_values" => {
+                Err(RelError::Unsupported(
+                    "Heterogeneous Gremlin property values require native runtime values".into(),
+                ))
+            }
             IrExpr::Call { name, args } => {
                 let args = args
                     .iter()

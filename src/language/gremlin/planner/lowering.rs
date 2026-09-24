@@ -136,6 +136,10 @@ where
                 lo.partition_write = Some((key.clone(), value.clone()));
                 steps.next();
             }
+            Step::WithSeedStrategy(seed) => {
+                lo.random_seed = Some(*seed);
+                steps.next();
+            }
             Step::WithProductiveByStrategy => {
                 lo.productive_by = true;
                 steps.next();

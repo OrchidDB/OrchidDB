@@ -75,7 +75,7 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         Value::Null => "null".to_string(),
         Value::Node { label, id } => format!("v[{label}#{id}]"),
         Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_tagged_container)
@@ -183,7 +183,7 @@ pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
         Value::BigDecimal(n) => n.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
-        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
                 .iter()
                 .map(display_for_kuzu_map_item)
@@ -323,7 +323,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
             rel_type,
             display_node_name(dst_label, *dst_id)
         ),
-        Value::List(items) | Value::BulkSet(items) => {
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
                 .iter()
                 .map(display_for_tagged_container)

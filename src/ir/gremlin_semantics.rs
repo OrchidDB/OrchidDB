@@ -61,10 +61,10 @@ pub fn numeric_cmp(left: &Value, right: &Value) -> Option<Ordering> {
     }
     let bits = lb.max(rb);
     if (lf || rf) && bits <= 32 {
-        return (double(left)? as f32).partial_cmp(&(double(right)? as f32));
+        return Some((double(left)? as f32).total_cmp(&(double(right)? as f32)));
     }
     if (lf || rf) && bits <= 64 {
-        return double(left)?.partial_cmp(&double(right)?);
+        return Some(double(left)?.total_cmp(&double(right)?));
     }
     // BigDecimal has no infinities; NumberHelper orders them explicitly.
     for (value, reverse) in [(left, false), (right, true)] {
@@ -87,6 +87,18 @@ pub fn equals(left: &Value, right: &Value) -> bool {
         return numeric_cmp(left, right) == Some(Ordering::Equal);
     }
     match (left, right) {
+        (Value::Set(a), Value::Set(b)) => {
+            let mut remaining = b.iter().collect::<Vec<_>>();
+            a.len() == b.len()
+                && a.iter().all(|value| {
+                    if let Some(index) = remaining.iter().position(|other| equals(value, other)) {
+                        remaining.remove(index);
+                        true
+                    } else {
+                        false
+                    }
+                })
+        }
         (Value::List(a), Value::List(b)) | (Value::Path(a), Value::Path(b)) => {
             a.len() == b.len() && a.iter().zip(b).all(|(a, b)| equals(a, b))
         }
@@ -186,6 +198,8 @@ mod tests {
             &Value::Float32(0.4)
         ));
         assert!(!equals(&Value::Float(f64::NAN), &Value::Float(f64::NAN)));
+        assert!(!equals(&Value::Float(-0.0), &Value::Float(0.0)));
+        assert_eq!(numeric_cmp(&Value::Float(-0.0), &Value::Int(0)), Some(Ordering::Less));
         assert_eq!(
             predicate("gt", &Value::Float(f64::NAN), &Value::Int(0)),
             Value::Null

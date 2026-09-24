@@ -162,6 +162,10 @@ where
             apply_by_spec(input, &spec, lo, ctx)?
         };
         input = new_input;
+        let expr = match expr {
+            IrExpr::Call { ref name, .. } if name == "gremlin_order_key" => expr,
+            expr => IrExpr::Call { name: "gremlin_order_key".into(), args: vec![expr] },
+        };
         keys.push(SortKey {
             expr,
             dir: dir.clone(),
@@ -232,12 +236,26 @@ pub(super) fn lower_limit_or_sample(input: Node, fetch: u64) -> Node {
     }
 }
 
-pub(super) fn lower_sample<'a, I>(input: Node, fetch: u64, steps: &mut Peekable<I>) -> Node
+pub(super) fn lower_sample<'a, I>(
+    input: Node, fetch: u64, steps: &mut Peekable<I>, lo: &mut Lowerer, ctx: &TraversalContext,
+) -> GremlinPlanResult<Node>
 where
     I: Iterator<Item = &'a Step>,
 {
-    while consume_by(steps).is_some() {}
-    lower_limit_or_sample(input, fetch)
+    let (input, weight) = match consume_by(steps) {
+        Some(spec) => {
+            let (input, weight) = apply_by_spec(input, &spec, lo, ctx)?;
+            (input, Some(weight))
+        }
+        None => (input, None),
+    };
+    Ok(Node::GraphSample {
+        kind: crate::ir::plan::SampleKind::Global(fetch),
+        seed: lo.random_seed,
+        step_id: lo.fresh("sample"),
+        weight,
+        input: input.boxed(),
+    })
 }
 
 pub(super) fn consume_local_order_by<'a, I>(steps: &mut Peekable<I>)

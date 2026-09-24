@@ -139,7 +139,7 @@ pub fn node_effect(node: &Node) -> Effect {
             ..
         } => Effect::ReadProcedure,
         Node::GraphService { .. } => Effect::ExternalRead,
-        Node::GraphGroupCountSideEffect { .. } | Node::GraphCap { .. } => Effect::QueryLocalState,
+        Node::GraphGroupCountSideEffect { .. } | Node::GraphCap { .. } | Node::GraphSample { .. } => Effect::QueryLocalState,
         Node::GraphExtension { .. } => Effect::OpaqueExtension,
         _ => Effect::Pure,
     }
@@ -162,6 +162,7 @@ fn operator_name(node: &Node) -> &'static str {
         Node::GraphProcedureCall { .. } => "GraphProcedureCall",
         Node::GraphGroupCountSideEffect { .. } => "GraphGroupCountSideEffect",
         Node::GraphCap { .. } => "GraphCap",
+        Node::GraphSample { .. } => "GraphSample",
         Node::GraphService { .. } => "GraphService",
         Node::GraphExtension { .. } => "GraphExtension",
         _ => "Graph IR node",
@@ -198,6 +199,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphShortestPath { input, .. }
         | GraphDistinct { input, .. }
         | GraphSort { input, .. }
+        | GraphSample { input, .. }
         | GraphSlice { input, .. }
         | GraphSliceExpr { input, .. }
         | GraphBarrier { input, .. }

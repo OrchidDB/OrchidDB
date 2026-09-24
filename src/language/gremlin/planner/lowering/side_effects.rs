@@ -487,6 +487,7 @@ fn visit_writers(node: &Node, alias: &str, out: &mut Vec<Node>) {
         | Node::GraphAggregate { input, .. }
         | Node::GraphDistinct { input, .. }
         | Node::GraphSort { input, .. }
+        | Node::GraphSample { input, .. }
         | Node::GraphSlice { input, .. }
         | Node::GraphSliceExpr { input, .. }
         | Node::GraphBarrier { input, .. }

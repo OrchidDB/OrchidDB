@@ -103,6 +103,23 @@ impl LoweringVisitor {
                     .classType()
                     .map(|ct| ct.get_text())
                     .unwrap_or_default();
+                if class_name == "SeedStrategy" {
+                    for cfg in strat.configuration_all() {
+                        let key = cfg.keyword().map(|k| k.get_text())
+                            .or_else(|| cfg.nakedKey().map(|k| k.get_text())).unwrap_or_default();
+                        if key == "seed" {
+                            if let Some(arg) = cfg.genericArgument() {
+                                let text = arg.get_text();
+                                if let Ok(seed) = text.trim_end_matches(['L', 'l']).parse::<i64>() {
+                                    self.steps.push(Step::WithSeedStrategy(seed));
+                                } else {
+                                    self.fail(super::GremlinError::Parse(format!("invalid SeedStrategy seed: {text}")));
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
                 if class_name == "ProductiveByStrategy" {
                     self.steps.push(Step::WithProductiveByStrategy);
                     continue;
