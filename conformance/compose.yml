@@ -2,6 +2,7 @@ name: crabgraph-conformance
 services:
   postgres:
     image: postgres:15
+    command: [postgres, -c, statement_timeout=10000]
     environment:
       POSTGRES_USER: conformance
       POSTGRES_PASSWORD: conformance-local-only
