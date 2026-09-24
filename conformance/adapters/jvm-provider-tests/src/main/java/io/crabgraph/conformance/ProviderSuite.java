@@ -141,7 +141,10 @@ public final class ProviderSuite {
             @Override public void testFailure(Failure f) { record(f.getDescription()).put("status","fail").put("error",f.getTrace()); }
             @Override public void testAssumptionFailure(Failure f) { record(f.getDescription()).put("status","skipped").put("reason",f.getMessage()); }
             @Override public void testIgnored(Description d) {
-                active.remove(d);
+                // GremlinProcessRunner may emit started before ignored. Reuse
+                // that active invocation, but retain separate repeated skips.
+                ObjectNode row=active.get(d);
+                if (row == null || !row.path("status").asText().equals("running")) active.remove(d);
                 record(d).put("status","skipped").put("reason","JUnit @Ignore");
             }
             @Override public void testFinished(Description d) {
