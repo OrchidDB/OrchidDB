@@ -115,6 +115,7 @@ public final class ProviderSuite {
         }
         RunListener listener = new RunListener() {
             final Map<Description,ObjectNode> active = new HashMap<>();
+            final Map<Description,Long> started = new HashMap<>();
             private ObjectNode record(Description d) {
                 return active.computeIfAbsent(d, key -> {
                     ObjectNode row = cases.addObject();
@@ -136,6 +137,7 @@ public final class ProviderSuite {
                 // Parameterized runners can expose the same description for
                 // distinct invocations. Preserve every execution separately.
                 active.remove(d);
+                started.put(d, System.nanoTime());
                 record(d); checkpoint();
             }
             @Override public void testFailure(Failure f) { record(f.getDescription()).put("status","fail").put("error",f.getTrace()); }
@@ -145,10 +147,12 @@ public final class ProviderSuite {
                 // that active invocation, but retain separate repeated skips.
                 ObjectNode row=active.get(d);
                 if (row == null || !row.path("status").asText().equals("running")) active.remove(d);
-                record(d).put("status","skipped").put("reason","JUnit @Ignore");
+                record(d).put("status","skipped").put("reason","JUnit @Ignore").put("elapsed_ms",0.0);
             }
             @Override public void testFinished(Description d) {
                 ObjectNode row=record(d);
+                Long before=started.remove(d);
+                row.put("elapsed_ms", before == null ? 0.0 : (System.nanoTime()-before)/1e6);
                 if (row.path("status").asText().equals("running")) row.put("status","pass");
                 System.err.println(row.get("status").asText()+" "+d);
                 checkpoint();
