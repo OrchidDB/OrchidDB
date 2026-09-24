@@ -19,7 +19,13 @@ abstract class CrabElement implements Element {
         return graph.decode(graph.request("setProperty","owner",handle(),"key",key,"value",graph.encodeValue(value)));
     }
     @Override public <V> Iterator<? extends Property<V>> properties(String... keys) {
-        return graph.records(graph.request("properties","owner",handle(),"keys",Arrays.asList(keys)));
+        return propertyRecords(keys);
+    }
+    <P> Iterator<P> propertyRecords(String... keys) {
+        List<String> selected=new ArrayList<>();
+        if(keys!=null) for(String key:keys) if(key!=null) selected.add(key);
+        if(keys!=null && keys.length>0 && selected.isEmpty()) return Collections.emptyIterator();
+        return graph.records(graph.request("properties","owner",handle(),"keys",selected));
     }
     @Override public boolean equals(Object other) { return ElementHelper.areEqual(this,other); }
     @Override public int hashCode() { return ElementHelper.hashCode(this); }
@@ -51,7 +57,7 @@ final class CrabVertex extends CrabElement implements Vertex {
         return graph.decode(graph.request("setVertexProperty",pairs.toArray()));
     }
     @Override public <V> Iterator<VertexProperty<V>> properties(String... keys) {
-        return graph.records(graph.request("properties","owner",handle(),"keys",Arrays.asList(keys)));
+        return propertyRecords(keys);
     }
     @Override public Iterator<Edge> edges(Direction direction,String... labels) {
         return graph.records(graph.request("adjacent","vertex",handle(),"direction",direction.name(),"labels",Arrays.asList(labels)));
@@ -75,7 +81,7 @@ final class CrabEdge extends CrabElement implements Edge {
         return result.iterator();
     }
     @Override public <V> Iterator<Property<V>> properties(String... keys) {
-        return graph.records(graph.request("properties","owner",handle(),"keys",Arrays.asList(keys)));
+        return propertyRecords(keys);
     }
     @Override public String toString() { return StringFactory.edgeString(this); }
 }
@@ -88,7 +94,7 @@ final class CrabVertexProperty<V> extends CrabElement implements VertexProperty<
     @Override public boolean isPresent() { return true; }
     @Override public Vertex element() { return graph.decode(record.get("owner")); }
     @Override public <U> Iterator<Property<U>> properties(String... keys) {
-        return graph.records(graph.request("properties","owner",handle(),"keys",Arrays.asList(keys)));
+        return propertyRecords(keys);
     }
     @Override public String toString() { return StringFactory.propertyString(this); }
 }
