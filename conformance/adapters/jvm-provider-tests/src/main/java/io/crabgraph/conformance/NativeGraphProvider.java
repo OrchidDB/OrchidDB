@@ -24,7 +24,9 @@ public class NativeGraphProvider extends AbstractGraphProvider {
         return computer ? graph.traversal().withComputer() : graph.traversal();
     }
     @Override public void clear(Graph graph, Configuration configuration) throws Exception {
-        if (graph != null) graph.close();
+        if (graph == null) return;
+        try { graph.getClass().getMethod("closeFamily").invoke(graph); }
+        catch (NoSuchMethodException absent) { graph.close(); }
     }
     @Override public Set<Class> getImplementations() {
         Set<Class> result = new HashSet<>(CORE_IMPLEMENTATIONS);
