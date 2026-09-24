@@ -42,6 +42,21 @@ impl<'a> LoweringContext<'a> {
         alias: &str,
         expr: &IrExpr,
     ) -> RelResult<Vec<Expr>> {
+        if self.options.mapping.is_some() {
+            // A label bound once is fully represented by its relational element
+            // columns. Repeated labels still require real traverser history.
+            if let Some(label) = alias.strip_prefix("__gremlin_select_history_")
+                && self.gremlin_label_binds.get(label).copied() == Some(1)
+                && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
+            {
+                return Ok(Vec::new());
+            }
+            if alias == "__path_labels"
+                && matches!(expr, IrExpr::Call { name, .. } if name == "path_attach_label")
+            {
+                return Ok(Vec::new());
+            }
+        }
         if self.options.tolerate_internal_path_state
             && alias.starts_with("__gremlin_select_history_")
             && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")

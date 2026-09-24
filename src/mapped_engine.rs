@@ -7,13 +7,13 @@
 //! with the mapping installed (so node/edge scans resolve against the user's
 //! own tables and views), unparsed to DuckDB SQL, and executed there.
 //!
-//! The `cypher`, `gremlin`, and `sparql` methods accept only reads. Mutations
-//! (`CREATE`, `MERGE`, `SET`, `DELETE`, write procedures) are rejected by
-//! recursively walking the [`GraphPlan`] operator tree — never by inspecting
-//! the source string, and never by falling back to the in-memory
-//! interpreter, whose catalog overlay would silently discard writes.
+//! Cypher and Gremlin mutations resolve identities and properties through the
+//! same mapping as reads. SQL read regions supply the rows for transactional
+//! INSERT, UPDATE, and DELETE statements on the mapped physical tables.
+//! No managed property-graph overlay is used for mapped writes.
 //!
-//! Explicit native property updates use [`MappedGraphEngine::cypher_update`].
+//! [`MappedGraphEngine::cypher_update`] also provides affected-row counts for
+//! individual property assignments.
 
 mod update;
 mod write;
@@ -98,7 +98,7 @@ impl MappedGraphEngine {
             .map_err(|err| err.to_string())
     }
 
-    /// Run a Cypher read query against the mapped schema.
+    /// Run a Cypher query or mutation against the mapped schema.
     pub async fn cypher(&mut self, query: &str) -> Result<ReturnedBatches, String> {
         self.cypher_with_params(query, &BTreeMap::new()).await
     }
@@ -118,7 +118,7 @@ impl MappedGraphEngine {
         self.run_plan(&plan).await
     }
 
-    /// Run a Gremlin read traversal against the mapped schema.
+    /// Run a Gremlin traversal or mutation against the mapped schema.
     pub async fn gremlin(&mut self, query: &str) -> Result<ReturnedBatches, String> {
         let plan = self.with_functions(|| {
             let traversal = parse_traversal(query).map_err(|err| err.to_string())?;
@@ -201,8 +201,7 @@ impl MappedGraphEngine {
 }
 
 /// Reject mutation-shaped plans before they reach the relational lowering.
-/// This engine has no write mapping from graph identities to source tables,
-/// so graph mutations must fail before executing any query.
+/// Read-only planning and SQL explain must not execute write boundaries.
 fn reject_mutations(plan: &GraphPlan) -> Result<(), String> {
     match find_mutation(plan.root.as_ref()) {
         Some(kind) => Err(format!(

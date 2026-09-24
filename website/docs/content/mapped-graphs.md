@@ -107,3 +107,7 @@ let friends = graph.gremlin(
 ```
 
 Alice follows bob and carol. See [query recipes](/recipes.html) for aggregation, filtering, and additional traversals over this dataset.
+
+## Write through the mapping
+
+Use `cypher` and `gremlin` to insert, update, and delete rows in the same mapped tables. Node labels select node tables; relationship types select relationship tables and endpoint columns. See [mapped writes](/updates.html) for examples, identity rules, and transaction behavior.

@@ -6,8 +6,7 @@
 //! onto graph labels and edge types with a `GraphMapping` and stood up in an
 //! in-memory DuckDB database through `MappedGraphEngine::execute_sql`. Real
 //! Cypher, Gremlin, and SPARQL queries then run against that schema, and the
-//! engine's mutation rejection is exercised to prove writes are neither
-//! persisted as SQL nor silently discarded by an interpreter fallback.
+//! writes persist in the same mapped SQL tables.
 
 use std::sync::Arc;
 
@@ -257,12 +256,9 @@ async fn explain_cypher_returns_generated_sql_referencing_user_tables() {
 }
 
 #[tokio::test]
-async fn mutation_queries_are_rejected_and_data_is_untouched() {
+async fn unsupported_merge_is_rejected_and_data_is_untouched() {
     let mut engine = setup_engine().await;
     for query in [
-        "CREATE (:Person {name: 'dave'})",
-        "MATCH (p:Person) SET p.age = 99",
-        "MATCH (p:Person) DELETE p",
         "MERGE (p:Person {name: 'dave'})",
     ] {
         let err = engine.cypher(query).await.expect_err(query);

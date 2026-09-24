@@ -364,20 +364,10 @@ fn quoted_mapping() -> Arc<GraphMapping> {
 }
 
 #[tokio::test]
-async fn cypher_read_path_still_rejects_set() {
+async fn cypher_mutations_update_the_same_mapped_rows() {
     let mut engine = setup_engine().await;
-    let err = engine
-        .cypher("MATCH (p:Person) SET p.age = 99")
-        .await
-        .expect_err("cypher() must stay read-only");
-    assert!(
-        err.contains("mutation"),
-        "expected the read path to reject the mutation, got: {err}"
-    );
-    let result = engine
-        .cypher("MATCH (p:Person) RETURN count(p) AS n")
-        .await
-        .expect("count after read rejection");
+    engine.cypher("MATCH (p:Person) SET p.age = 99").await.unwrap();
+    let result = engine.cypher("MATCH (p:Person) WHERE p.age=99 RETURN count(p) AS n").await.unwrap();
     assert_eq!(lines(&result.batch), vec!["3"]);
 }
 
