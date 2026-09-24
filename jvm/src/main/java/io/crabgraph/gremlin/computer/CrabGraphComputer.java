@@ -71,12 +71,14 @@ public final class CrabGraphComputer implements GraphComputer {
             thread.setDaemon(true);
             return thread;
         });
-        try { return service.submit(this::execute); }
+        Thread submittingThread=Thread.currentThread();
+        boolean callerTransactionOpen=graph.features().graph().supportsTransactions()&&graph.tx().isOpen();
+        try { return service.submit(()->execute(submittingThread,callerTransactionOpen)); }
         finally { service.shutdown(); }
     }
 
-    private ComputerResult execute() throws Exception {
-        try (AutoCloseable lease = graph instanceof CrabGraph ? ((CrabGraph) graph).executionLease() : () -> {}) {
+    private ComputerResult execute(Thread submittingThread,boolean callerTransactionOpen) throws Exception {
+        try (AutoCloseable lease = graph instanceof CrabGraph ? ((CrabGraph) graph).executionLease(submittingThread,callerTransactionOpen) : () -> {}) {
             interrupted();
             return executeLeased();
         }

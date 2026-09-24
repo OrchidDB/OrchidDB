@@ -93,6 +93,15 @@ final class CrabVertexProperty<V> extends CrabElement implements VertexProperty<
     @Override public V value() { return graph.decode(record.get("value")); }
     @Override public boolean isPresent() { return true; }
     @Override public Vertex element() { return graph.decode(record.get("owner")); }
+    @Override public void remove() {
+        Iterator<VertexProperty<Object>> current=element().properties(key());
+        while(current.hasNext()) {
+            VertexProperty<?> property=current.next();
+            if(property instanceof CrabElement&&Objects.equals(handle(),((CrabElement)property).handle())) {
+                super.remove(); return;
+            }
+        }
+    }
     @Override public <U> Iterator<Property<U>> properties(String... keys) {
         return propertyRecords(keys);
     }
@@ -107,7 +116,15 @@ final class CrabProperty<V> implements Property<V> {
     @Override public V value() { return graph.decode(record.get("value")); }
     @Override public boolean isPresent() { return true; }
     @Override public Element element() { return graph.decode(record.get("owner")); }
-    @Override public void remove() { graph.request("remove","owner",record.get("handle")); }
+    @Override public void remove() {
+        Iterator<? extends Property<Object>> current=element().properties(key());
+        while(current.hasNext()) {
+            Property<?> property=current.next();
+            if(property instanceof CrabProperty&&Objects.equals(record.get("handle"),((CrabProperty<?>)property).record.get("handle"))) {
+                graph.request("remove","owner",record.get("handle")); return;
+            }
+        }
+    }
     @Override public boolean equals(Object other) { return ElementHelper.areEqual(this,other); }
     @Override public int hashCode() { return ElementHelper.hashCode(this); }
     @Override public String toString() { return StringFactory.propertyString(this); }
