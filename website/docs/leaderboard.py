@@ -17,28 +17,11 @@ def render(cases, get_result, runs, root, download):
         (download / 'parity-baseline.json').write_bytes(baseline_path.read_bytes())
     report = {'baseline_recorded_at': baseline.get('recorded_at'), 'suites': {}}
     html = ['<section id="leaderboard" class="leaderboard"><h2>Current leaderboard</h2>',
-            '<p>Ranked by passed upstream scenarios within each language. Crabgraph Gremlin includes native Rust, JVM OLTP and GraphComputer results, counting each scenario once when any profile passes; individual execution results remain in the matrix. Peer-only passes are cases another compared engine passes that this engine has not passed.</p>',
+            '<p>Ranked by passed upstream scenarios within each language. Crabgraph is compared as one product, with one recorded outcome per scenario from a single suite run; execution details are available in the evidence. Peer-only passes are cases another compared engine passes that this engine has not passed.</p>',
             '<div class="leaderboard-scroll"><table class="leaderboard-table"><thead><tr><th>Language</th><th>Rank</th><th>Engine</th><th>Passed / total</th><th>Peer-only passes</th><th>Run (UTC)</th></tr></thead>']
     for suite, title, products in SUITES:
         subset = [case for case in cases if case['suite'] == suite]
         results = {product: [get_result(product, case) for case in subset] for product in products}
-        if suite == 'tinkerpop':
-            profiles = ('crabgraph', 'crabgraph-jvm', 'crabgraph-computer')
-            combined = []
-            for case in subset:
-                candidates = [(profile, get_result(profile, case)) for profile in profiles]
-                profile, result = next(((profile, result) for profile, result in candidates
-                                        if result['status'] == 'pass'), candidates[0])
-                combined.append({**result, 'id': case['id'], 'execution_profile': profile})
-            results['crabgraph'] = combined
-            profile_runs = {profile: {key: value for key, value in runs.get((profile, suite), {}).items()
-                                      if key != 'results'} for profile in profiles}
-            combined_run = {
-                'aggregation': 'One result per scenario; pass if any recorded execution profile passes.',
-                'finished_at': max((run.get('finished_at', '') for run in profile_runs.values()), default=''),
-                'execution_profiles': profile_runs, 'results': combined,
-            }
-            (download / 'crabgraph-combined-tinkerpop.json').write_text(json.dumps(combined_run, indent=2) + '\n')
         passes = {product: {r['id'] for r in values if r['status'] == 'pass'} for product, values in results.items()}
         order = sorted(products, key=lambda product: -len(passes[product]))
         report['suites'][suite] = {'total': len(subset), 'products': {}}
@@ -48,9 +31,8 @@ def render(cases, get_result, runs, root, download):
             rank = 1 + sum(len(passes[other]) > passed for other in products)
             peers = set().union(*(passes[other] for other in products if other != product))
             gaps = sorted(peers - passes[product])
-            is_combined = product == 'crabgraph' and suite == 'tinkerpop'
-            run = combined_run if is_combined else runs.get((product, suite), {})
-            evidence = 'crabgraph-combined-tinkerpop' if is_combined else f'{product}-{suite}'
+            run = runs.get((product, suite), {})
+            evidence = f'{product}-{suite}'
             report['suites'][suite]['products'][product] = {
                 'rank': rank if len(products) > 1 else None, 'passed': passed,
                 'counts': dict(Counter(r['status'] for r in results[product])),

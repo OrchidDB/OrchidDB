@@ -39,7 +39,7 @@ def main():
                 assert result['status'] in STATUS, f'{path}: unknown outcome'
                 assert result['elapsed_ms'] >= 0, f'{path}: negative time'
                 if result.get('assertion_source', {}).get('kind') == 'java-counterpart':
-                    assert engine == 'crabgraph-jvm' and suite == 'tinkerpop', path
+                    assert engine in ('crabgraph', 'crabgraph-jvm') and suite == 'tinkerpop', path
                     case = cases[result['id']]
                     mapping = counterpart(case, selection)
                     assert mapping is not None, f'{path}: unmapped Java counterpart'
