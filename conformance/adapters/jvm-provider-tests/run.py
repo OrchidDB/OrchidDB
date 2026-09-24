@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parent
@@ -33,7 +34,10 @@ def main():
     args = parser.parse_args()
     subprocess.run(['mvn', '-q', '-f', str(ROOT / 'pom.xml'), 'package',
                     'dependency:build-classpath', '-Dmdep.outputFile=target/classpath.txt'], check=True)
-    cp = [str(ROOT / 'target/classes'), (ROOT / 'target/classpath.txt').read_text().strip()]
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    harness_jar = args.output.with_suffix('.harness.jar').resolve()
+    shutil.copyfile(ROOT / 'target/crabgraph-provider-tests-0.1.0.jar', harness_jar)
+    cp = [str(harness_jar), (ROOT / 'target/classpath.txt').read_text().strip()]
     if not args.inventory:
         if not args.store or not args.store.is_file():
             parser.error('--store must identify the actual production crabgraph-jvm-store binary')
@@ -59,6 +63,7 @@ def main():
         'working_tree_modified': bool(subprocess.check_output(['git', '-C', str(REPO), 'status', '--porcelain'], text=True).strip()),
         'harness_working_tree_modified': bool(subprocess.check_output(['git', '-C', str(REPO), 'status', '--porcelain', '--', str(ROOT)], text=True).strip()),
         'harness_source_sha256': {str(p.relative_to(ROOT)): digest(p) for p in sorted((ROOT / 'src').rglob('*.java'))},
+        'harness_jar_sha256': digest(harness_jar),
         'provider_source_commit': args.provider_source_commit,
         'provider_jar_sha256': digest(args.jvm_jar) if args.jvm_jar else None,
         'store_sha256': digest(args.store) if args.store else None,
