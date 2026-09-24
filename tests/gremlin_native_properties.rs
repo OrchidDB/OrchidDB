@@ -242,3 +242,39 @@ async fn scalar_element_strings_keep_public_ids_across_sql_boundaries() {
     .unwrap();
     assert_eq!(rows[0][0]["value"], "e[link][left-route->right]");
 }
+
+#[test]
+fn vertex_property_strategy_evaluates_native_metadata_without_affecting_edge_properties() {
+    let graph = PropertyGraph::new();
+    values(
+        &graph,
+        "g.addV('sensor').property(list,'reading',7,'approved',true).property(list,'reading',9,'approved',false).as('a').addV('sensor').property(list,'reading',11,'approved',true).addE('link').from('a').property('reading',13)",
+    );
+    let strategy =
+        "g.withStrategies(new SubgraphStrategy(vertexProperties: __.has('approved',true)))";
+    assert_eq!(
+        values(&graph, &format!("{strategy}.V().values('reading')")),
+        vec![Value::Int(7), Value::Int(11)]
+    );
+    assert_eq!(
+        values(
+            &graph,
+            &format!("{strategy}.V().properties('reading').value()")
+        ),
+        vec![Value::Int(7), Value::Int(11)]
+    );
+    assert_eq!(
+        values(
+            &graph,
+            &format!("{strategy}.E().properties('reading').value()")
+        ),
+        vec![Value::Int(13)]
+    );
+    assert_eq!(
+        values(
+            &graph,
+            &format!("{strategy}.V().properties('reading').properties('approved').value()")
+        ),
+        vec![Value::Bool(true), Value::Bool(true)]
+    );
+}

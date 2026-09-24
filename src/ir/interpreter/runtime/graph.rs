@@ -264,38 +264,6 @@ fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value
     }
 }
 
-pub(super) fn gremlin_visible_vertex_property_values(
-    graph: &PropertyGraph,
-    target: &Value,
-    key: &str,
-) -> Vec<Value> {
-    if key != "location" {
-        let value = graph_element_property(graph, target, key);
-        return if matches!(value, Value::Null) {
-            Vec::new()
-        } else {
-            vec![value]
-        };
-    }
-    let Value::Node { label, id } = target else {
-        return Vec::new();
-    };
-    let name = match graph.node_property(label, *id, "name") {
-        Value::String(name) => name,
-        _ => return Vec::new(),
-    };
-    let visible = match name.as_str() {
-        "stephen" => &["purcellville"][..],
-        "matthias" => &["baltimore", "oakland", "seattle"][..],
-        "daniel" => &["aachen"][..],
-        _ => &[][..],
-    };
-    visible
-        .iter()
-        .map(|location| Value::String((*location).to_string()))
-        .collect()
-}
-
 pub(super) fn eval_algorithm_property_object(
     name: &str,
     args: &[Value],

@@ -120,7 +120,7 @@ where
         Step::OtherVertex => lower_other_vertex(input, lo, ctx),
 
         // ----- value projection -----
-        Step::Values(keys) => lower_values(input, keys, lo),
+        Step::Values(keys) => lower_values(input, keys, lo, ctx),
         Step::PropertyKey | Step::PropertyValue => Ok(Node::GraphCurrentProject {
             expr: crate::ir::expr::IrExpr::Call {
                 name: if matches!(step, Step::PropertyKey) { "property_key" } else { "property_value" }.into(),
@@ -385,9 +385,9 @@ where
         }),
         Step::Properties(keys) if matches!(steps.peek(), Some(Step::Identity)) => {
             steps.next();
-            Ok(lower_properties_value(input, keys, lo))
+            lower_properties_value(input, keys, lo, ctx)
         }
-        Step::Properties(keys) => Ok(lower_properties(input, keys, lo)),
+        Step::Properties(keys) => lower_properties(input, keys, lo, ctx),
         Step::ValueMap(keys) => Ok(lower_value_map(input, keys)),
         Step::ElementMap(keys) => Ok(lower_element_map(input, keys)),
         Step::PropertyMap(keys) => Ok(lower_property_map(input, keys)),
