@@ -57,9 +57,9 @@ are needed. Unknown paths return the static 404 page with HTTP status 404.
 
 ## Publishing
 
-The repository workflow `.github/workflows/website.yml` validates pull requests
-and publishes both sites on every push to `main`. It also supports manual runs
-on `main`. It reads `CRABGRAPH_AWS_ACCESS_KEY_ID` and
+The repository workflow `.github/workflows/website.yml` builds and publishes
+both static sites when documentation or committed evidence changes on `main`.
+It runs no tests or validation jobs. It also supports manual runs on `main`. It reads `CRABGRAPH_AWS_ACCESS_KEY_ID` and
 `CRABGRAPH_AWS_SECRET_ACCESS_KEY` from GitHub Actions secrets, configured from
 the owner's `personal` AWS profile.
 
@@ -69,5 +69,5 @@ For a manual deployment from the repository root:
 AWS_PROFILE=personal bash website/scripts/deploy.sh
 ```
 
-The script builds and validates the documentation, uploads public assets, and
+The script builds the documentation, uploads public assets, and
 invalidates both CloudFront distributions. It preserves unrelated bucket keys.
