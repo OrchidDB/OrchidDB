@@ -69,7 +69,7 @@ fn hash_value_u64(value: &Value) -> u64 {
         Value::List(items) | Value::Path(items) => items.iter().fold(u64::MAX, |hash, item| {
             combine_hash_scalar(hash, hash_value_u64(item))
         }),
-        Value::Set(_) => crate::ir::value::set_member_key(value).into_iter().fold(
+        Value::Set(_) | Value::CardinalityValue {..} => crate::ir::value::set_member_key(value).into_iter().fold(
             murmurhash64(28), |hash, byte| combine_hash_scalar(hash, murmurhash64(u64::from(byte)))
         ),
         Value::BulkSet(items) => {

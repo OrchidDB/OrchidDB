@@ -541,6 +541,7 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
         ),
         Value::VertexProperty {id,owner,key,value:property_value} => json!({"type":"vertex_property","id":gremlin_typed_value(&graph.element_public_id(value),graph),"owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(property_value,graph),"properties":graph.properties(value,&[]).iter().filter_map(|p|if let Value::Property{key,value,..}=p {Some(json!({"key":key,"value":gremlin_typed_value(value,graph)}))}else{None}).collect::<Vec<_>>()}),
         Value::Property {owner,key,value} => json!({"type":"property","owner":gremlin_typed_value(owner,graph),"key":key,"value":gremlin_typed_value(value,graph)}),
+        Value::CardinalityValue {cardinality,value} => tagged("cardinality_value", json!({"cardinality":cardinality,"value":gremlin_typed_value(value,graph)})),
         Value::MapEntry(pair) => tagged("entry", json!([gremlin_typed_value(&pair.0, graph), gremlin_typed_value(&pair.1, graph)])),
         Value::TypedMap(entries) => tagged(
             "map",
@@ -685,6 +686,7 @@ fn format_property_value(value: &Value) -> String {
     match value {
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",format_property_value(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",format_property_value(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]",format_property_value(value)),
         Value::MapEntry(pair) => format!("{}={}", format_property_value(&pair.0), format_property_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -1113,5 +1115,22 @@ mod traverser_bulk_tests {
         let returned = finalize_return(&["current".into()], ResultForm::RowSet,
             vec![row], &graph, &GraphPlanPolicy::cypher()).unwrap();
         assert_eq!(returned.batch.num_rows(), 1);
+    }
+}
+
+#[cfg(test)]
+mod cardinality_value_tests {
+    use super::*;
+
+    #[test]
+    fn cardinality_value_typed_output_retains_recursive_payload_and_kind() {
+        let graph=PropertyGraph::new();
+        let value=Value::CardinalityValue {cardinality:"list".into(),value:Box::new(Value::List(vec![Value::Long(7),Value::Null]))};
+        let output=gremlin_typed_value(&value,&graph);
+        assert_eq!(output["type"],"cardinality_value");
+        assert_eq!(output["value"]["cardinality"],"list");
+        assert_eq!(output["value"]["value"]["type"],"list");
+        assert_eq!(output["value"]["value"]["value"][0]["type"],"long");
+        assert_eq!(output["value"]["value"]["value"][1]["type"],"null");
     }
 }

@@ -47,6 +47,12 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         ("property_value" | "property_key", [_]) => return Err(InterpretError::Runtime("key()/value() requires a Property or Map.Entry".into())),
         ("local_limit", [value,count])=>return Ok(super::lists::gremlin_local_range(value,0,count.as_i64().unwrap_or(0))),
         ("gremlin_merge_matches",[element,criteria,out,input])=>return Ok(Value::Bool(super::mutations::matches(element,criteria,out,input,graph)?)),
+        ("gremlin_cardinality_value", [Value::String(cardinality), value]) => {
+            if !matches!(cardinality.as_str(), "single" | "list" | "set") {
+                return Err(InterpretError::Runtime(format!("Invalid cardinality: {cardinality}")));
+            }
+            return Ok(Value::CardinalityValue {cardinality:cardinality.clone(),value:Box::new(value.clone())});
+        },
         ("gremlin_token_literal", [Value::String(token)]) => return Ok(Value::Token(token.clone())),
         ("gremlin_direction_literal", [Value::String(token)]) => return Ok(Value::Direction(token.clone())),
         ("list_merge" | "gremlin_traversal_list_merge", [lhs,rhs]) => return super::lists::gremlin_merge(lhs,rhs,name.starts_with("gremlin_traversal")),
