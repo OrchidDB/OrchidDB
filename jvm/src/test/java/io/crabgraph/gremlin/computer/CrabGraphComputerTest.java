@@ -1,6 +1,7 @@
 package io.crabgraph.gremlin.computer;
 
 import io.crabgraph.gremlin.CrabGraph;
+import org.apache.commons.configuration2.BaseConfiguration;
 import org.apache.tinkerpop.gremlin.process.computer.*;
 import org.apache.tinkerpop.gremlin.process.computer.traversal.step.map.ConnectedComponent;
 import org.apache.tinkerpop.gremlin.process.computer.traversal.step.map.PageRank;
@@ -181,6 +182,64 @@ public class CrabGraphComputerTest {
             assertEquals(Map.of("red-tag", List.of("red", "one"), "blue-tag", List.of("blue", "two")), tags);
             assertEquals(2L, output.vertices(a.id()).next().<Long>value("computed").longValue());
         }
+    }
+
+    @Test public void publicationUsesProviderIdsForGeneratedPropertiesAndPreservesExplicitIds() throws Exception {
+        graph.closeFamily();
+        BaseConfiguration config = new BaseConfiguration();
+        config.setProperty("crabgraph.native.executable", System.getenv("CRABGRAPH_JVM_STORE"));
+        config.setProperty(CrabGraph.VERTEX_ID_MANAGER, "INTEGER");
+        config.setProperty(CrabGraph.EDGE_ID_MANAGER, "INTEGER");
+        config.setProperty(CrabGraph.VERTEX_PROPERTY_ID_MANAGER, "INTEGER");
+        graph = CrabGraph.open(config);
+        Vertex source = graph.addVertex(T.id, 7);
+        source.property(VertexProperty.Cardinality.single, "source-tag", "preserved", T.id, 43);
+        ComputerResult result = computer().program(new CountingProgram() {
+            @Override public Set<VertexComputeKey> getVertexComputeKeys() {
+                Set<VertexComputeKey> keys = new HashSet<>(super.getVertexComputeKeys());
+                keys.add(VertexComputeKey.of("explicit", false));
+                return keys;
+            }
+            @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                super.execute(vertex, messenger, memory);
+                vertex.property(VertexProperty.Cardinality.single, "explicit", 42L, T.id, 97);
+            }
+        }).result(GraphComputer.ResultGraph.NEW).persist(GraphComputer.Persist.VERTEX_PROPERTIES)
+                .submit().get(20, TimeUnit.SECONDS);
+        try (Graph output = result.graph()) {
+            Vertex vertex = output.vertices(7).next();
+            assertEquals(43, vertex.property("source-tag").id());
+            assertEquals("preserved", vertex.value("source-tag"));
+            assertEquals(97, vertex.property("explicit").id());
+            assertEquals(42L, vertex.<Long>value("explicit").longValue());
+            assertEquals(1L, vertex.<Long>value("computed").longValue());
+            assertTrue(vertex.property("computed").id() instanceof Number);
+            assertTrue(output.features().vertex().properties().willAllowId(vertex.property("computed").id()));
+            assertFalse(source.property("computed").isPresent());
+        }
+    }
+
+    @Test public void originalPublicationReservesExplicitIdsBeforeGeneratedIds() throws Exception {
+        Vertex source = vertex("source");
+        source.property(VertexProperty.Cardinality.single, "source-tag", "preserved", T.id, 43L);
+        ComputerResult result = computer().program(new CountingProgram() {
+            @Override public Set<VertexComputeKey> getVertexComputeKeys() {
+                Set<VertexComputeKey> keys = new HashSet<>(super.getVertexComputeKeys());
+                keys.add(VertexComputeKey.of("explicit", false));
+                return keys;
+            }
+            @Override public void execute(Vertex vertex, Messenger<Long> messenger, Memory memory) {
+                super.execute(vertex, messenger, memory);
+                vertex.property(VertexProperty.Cardinality.single, "explicit", 42L, T.id, 44L);
+            }
+        }).result(GraphComputer.ResultGraph.ORIGINAL).persist(GraphComputer.Persist.VERTEX_PROPERTIES)
+                .submit().get(20, TimeUnit.SECONDS);
+        assertSame(graph, result.graph());
+        assertEquals(44L, source.property("explicit").id());
+        assertEquals(42L, source.<Long>value("explicit").longValue());
+        assertEquals(1L, source.<Long>value("computed").longValue());
+        assertNotEquals(source.property("explicit").id(), source.property("computed").id());
+        assertEquals("preserved", source.value("source-tag"));
     }
 
     @Test public void graphFilterRestrictsExecutionAndNewResultGraph() throws Exception {

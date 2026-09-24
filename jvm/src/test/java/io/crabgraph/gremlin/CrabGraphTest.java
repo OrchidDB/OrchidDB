@@ -28,9 +28,23 @@ public class CrabGraphTest {
             assertEquals(Long.valueOf(2),fresh.traversal().V(child).properties("x").count().next());
         }
         try(CrabGraph graph=CrabGraph.open(executable)) {
-            Vertex v=graph.traversal().addV().property("x",1).property("x",2).next();
+            Vertex v=graph.traversal().addV().next();
+            v.property("x",1); v.property("x",2);
             assertEquals(Long.valueOf(1),graph.traversal().V(v).properties("x").count().next());
             assertEquals(Integer.valueOf(2),v.value("x"));
+        }
+    }
+    @Test public void constructorDuplicatePropertiesAlwaysUseListCardinality() {
+        for(String cardinality:Arrays.asList("single","list","set")) {
+            org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+            config.setProperty("crabgraph.native.executable",executable);
+            config.setProperty(CrabGraph.DEFAULT_CARDINALITY,cardinality);
+            try(CrabGraph graph=CrabGraph.open(config)) {
+                Vertex direct=graph.addVertex("x",1,"x",1);
+                Vertex folded=graph.traversal().addV().property("x",1).property("x",2).next();
+                assertEquals(Arrays.asList(1,1),graph.traversal().V(direct).values("x").toList());
+                assertEquals(Arrays.asList(1,2),graph.traversal().V(folded).values("x").toList());
+            }
         }
     }
     @Test public void configuredIdManagersCoerceSuppliedIdsAndPreserveTypedDefaults() {
@@ -60,6 +74,59 @@ public class CrabGraphTest {
             assertEquals(Integer.valueOf(1),number.id()); assertEquals("1",text.id());
             assertEquals(number,graph.vertices(1).next()); assertEquals(text,graph.vertices("1").next());
             assertTrue(graph.features().vertex().supportsStringIds());
+        }
+    }
+    @Test public void configuredNumericManagersGenerateVertexAndEdgeIds() {
+        for(String vertexManager:Arrays.asList("INTEGER","LONG")) {
+            org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+            config.setProperty("crabgraph.native.executable",executable);
+            config.setProperty(CrabGraph.VERTEX_ID_MANAGER,vertexManager);
+            config.setProperty(CrabGraph.EDGE_ID_MANAGER,vertexManager.equals("INTEGER")?"LONG":"INTEGER");
+            try(CrabGraph graph=CrabGraph.open(config)) {
+                Vertex supplied=graph.addVertex(T.id,0), generated=graph.addVertex();
+                Edge edge=supplied.addEdge("link",generated);
+                assertEquals(vertexManager.equals("INTEGER")?Integer.class:Long.class,generated.id().getClass());
+                assertEquals(vertexManager.equals("INTEGER")?Long.class:Integer.class,edge.id().getClass());
+                assertNotEquals(((Number)supplied.id()).longValue(),((Number)generated.id()).longValue());
+                assertNotEquals(((Number)generated.id()).longValue(),((Number)edge.id()).longValue());
+                assertEquals(generated,graph.vertices(generated.id()).next());
+                assertEquals(edge,graph.edges(edge.id()).next());
+            }
+        }
+    }
+    @Test public void numericAutoIdsSkipSuppliedCollisionsAcrossRollbackAndPersistentReopen() throws Exception {
+        Path directory=Files.createTempDirectory("crabgraph-numeric-ids-");
+        org.apache.commons.configuration2.BaseConfiguration config=new org.apache.commons.configuration2.BaseConfiguration();
+        config.setProperty("crabgraph.native.executable",executable);
+        config.setProperty("crabgraph.native.path",directory.resolve("graph.ngsp").toString());
+        config.setProperty(CrabGraph.VERTEX_ID_MANAGER,"LONG");
+        config.setProperty(CrabGraph.EDGE_ID_MANAGER,"INTEGER");
+        Set<Long> surviving=new HashSet<>();
+        try {
+            try(CrabGraph graph=CrabGraph.open(config)) {
+                Vertex a=graph.addVertex(T.id,0),b=graph.addVertex(T.id,1);
+                a.addEdge("supplied",b,T.id,2);
+                Vertex generated=graph.addVertex();
+                Edge generatedEdge=a.addEdge("generated",generated);
+                graph.tx().commit();
+                long rolledBack=((Number)graph.addVertex().id()).longValue(); graph.tx().rollback();
+                Vertex afterRollback=graph.addVertex();
+                assertTrue(((Number)afterRollback.id()).longValue()>rolledBack);
+                graph.tx().commit();
+                graph.vertices().forEachRemaining(v->assertTrue(surviving.add(((Number)v.id()).longValue())));
+                graph.edges().forEachRemaining(e->assertTrue(surviving.add(((Number)e.id()).longValue())));
+                assertEquals(Integer.class,generatedEdge.id().getClass());
+            }
+            try(CrabGraph graph=CrabGraph.open(config)) {
+                Vertex generated=graph.addVertex();
+                Edge edge=graph.vertices(0).next().addEdge("reopened",generated);
+                assertTrue(surviving.add(((Number)generated.id()).longValue()));
+                assertTrue(surviving.add(((Number)edge.id()).longValue()));
+                assertEquals(Long.class,generated.id().getClass()); assertEquals(Integer.class,edge.id().getClass());
+                graph.tx().commit();
+            }
+        } finally {
+            try(java.util.stream.Stream<Path> files=Files.walk(directory)) { files.sorted(Comparator.reverseOrder()).forEach(path->{try{Files.deleteIfExists(path);}catch(Exception ignored){}}); }
         }
     }
     @Test public void numericStringLookupPrefersExactTypedStringIdentity() {
