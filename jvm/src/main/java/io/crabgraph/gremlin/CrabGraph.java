@@ -27,6 +27,7 @@ public final class CrabGraph implements Graph {
     private final CrabSession session;
     private final boolean persistent;
     private final boolean committedReadsSupported;
+    private final boolean nullPropertyValues;
     private RuntimeValues runtime = new RuntimeValues();
     
     private Configuration configuration = new BaseConfiguration();
@@ -56,6 +57,14 @@ public final class CrabGraph implements Graph {
     }
     private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality,
                       IdManager vertexIds,IdManager edgeIds,IdManager propertyIds) {
+        this(executable,path,family,cardinality,vertexIds,edgeIds,propertyIds,null);
+    }
+    static CrabGraph forIr(java.io.BufferedReader source, java.io.OutputStream sink) {
+        return new CrabGraph("IR-owned",null,null,VertexProperty.Cardinality.single,
+                IdManager.ANY,IdManager.ANY,IdManager.ANY,new CrabSession(source,sink));
+    }
+    private CrabGraph(String executable,Path path,RuntimeValues family,VertexProperty.Cardinality cardinality,
+                      IdManager vertexIds,IdManager edgeIds,IdManager propertyIds,CrabSession borrowed) {
         vertexIdManager=vertexIds; edgeIdManager=edgeIds; vertexPropertyIdManager=propertyIds;
         defaultCardinality=Objects.requireNonNull(cardinality,"default vertex-property cardinality");
         this.executable=Objects.requireNonNull(executable,"native executable");
@@ -64,7 +73,7 @@ public final class CrabGraph implements Graph {
             try { java.nio.file.Files.createDirectories(path.toAbsolutePath().getParent()); }
             catch(java.io.IOException e) { throw new IllegalStateException("Cannot create native graph directory",e); }
         }
-        session=new CrabSession(executable,path);
+        session=borrowed==null?new CrabSession(executable,path):borrowed;
         if(family!=null) runtime=family;
         synchronized(runtime) {
             if(runtime.closed) { session.abort(); throw new IllegalStateException("Graph family is closed"); }
@@ -73,6 +82,7 @@ public final class CrabGraph implements Graph {
         try {
             Object hello=session.call(fields("op","hello","version",1));
             committedReadsSupported=hello instanceof Map&&Boolean.TRUE.equals(((Map<?,?>)hello).get("committedReads"));
+            nullPropertyValues=!(hello instanceof Map)||!Boolean.FALSE.equals(((Map<?,?>)hello).get("nullPropertyValues"));
         } catch(RuntimeException failure) { session.close(); releaseRuntime(); throw failure; }
         configuration.setProperty(Graph.GRAPH,CrabGraph.class.getName());
         configuration.setProperty(DEFAULT_CARDINALITY,defaultCardinality.name());
@@ -102,7 +112,7 @@ public final class CrabGraph implements Graph {
     }
     public CrabGraph freshGraph() {
         if(closed || runtime.closed) throw new IllegalStateException("Graph family is closed");
-        return new CrabGraph(executable,null,runtime,defaultCardinality,vertexIdManager,edgeIdManager,vertexPropertyIdManager);
+        return new CrabGraph(executable,null,runtime,defaultCardinality,vertexIdManager,edgeIdManager,vertexPropertyIdManager,session.isBorrowed()?session.fork():null);
     }
     public Object encodeValue(Object value) { return CrabCodec.encode(value,this); }
     public Object decodeValue(Object value) { return CrabCodec.decode(value,this); }
@@ -459,7 +469,7 @@ public final class CrabGraph implements Graph {
         @Override public boolean supportsStringIds() { return vertexIdManager==IdManager.ANY; }
         @Override public boolean willAllowId(Object id) { return vertexIdManager.allows(id); }
         @Override public VertexProperty.Cardinality getCardinality(String key) { return defaultCardinality; }
-        @Override public boolean supportsNullPropertyValues() { return true; }
+        @Override public boolean supportsNullPropertyValues() { return nullPropertyValues; }
         @Override public boolean supportsUuidIds() { return false; }
         @Override public boolean supportsCustomIds() { return false; }
         @Override public boolean supportsAnyIds() { return false; }
@@ -469,7 +479,7 @@ public final class CrabGraph implements Graph {
         private final Features.EdgePropertyFeatures properties=new NativeEdgePropertyFeatures();
         @Override public boolean supportsStringIds() { return edgeIdManager==IdManager.ANY; }
         @Override public boolean willAllowId(Object id) { return edgeIdManager.allows(id); }
-        @Override public boolean supportsNullPropertyValues() { return true; }
+        @Override public boolean supportsNullPropertyValues() { return nullPropertyValues; }
         @Override public boolean supportsUuidIds() { return false; }
         @Override public boolean supportsCustomIds() { return false; }
         @Override public boolean supportsAnyIds() { return false; }
@@ -501,7 +511,7 @@ public final class CrabGraph implements Graph {
     public final class NativeVertexPropertyFeatures implements Features.VertexPropertyFeatures,NativeDataFeatures {
         @Override public boolean supportsStringIds() { return vertexPropertyIdManager==IdManager.ANY; }
         @Override public boolean willAllowId(Object id) { return vertexPropertyIdManager.allows(id); }
-        @Override public boolean supportsNullPropertyValues() { return true; }
+        @Override public boolean supportsNullPropertyValues() { return nullPropertyValues; }
         @Override public boolean supportsUuidIds() { return false; }
         @Override public boolean supportsCustomIds() { return false; }
         @Override public boolean supportsAnyIds() { return false; }

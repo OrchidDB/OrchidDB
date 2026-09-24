@@ -264,6 +264,13 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
                 fields
             }
         },
+        Node::GraphJvm { operation, input } => {
+            let mut out = schema_fields_for_node(input);
+            if operation.mode != crate::ir::jvm::JvmMode::Filter {
+                upsert_field(&mut out, semantic_field(&operation.output, arrow::datatypes::DataType::Utf8, true, "value"));
+            }
+            out
+        }
         Node::GraphCurrentProject {
             expr,
             fields,

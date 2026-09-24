@@ -10,7 +10,6 @@
 //! The wire format is versioned and length-delimited so corrupt or truncated
 //! input is rejected rather than silently mis-parsed.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -112,7 +111,7 @@ impl PropertyGraph {
                 SEC_NODES => graph.nodes = parse_nodes(payload)?,
                 SEC_EDGES => graph.edges = parse_edges(payload)?,
                 SEC_EDGE_TABLES => graph.edge_tables = parse_edge_tables(payload)?,
-                SEC_OVERLAY => graph.overlay = RefCell::new(parse_overlay(payload)?),
+                SEC_OVERLAY => graph.overlay = super::SnapshotCell::new(parse_overlay(payload)?),
                 _ => return Err(format!("unknown snapshot section {tag}")),
             }
         }
@@ -183,7 +182,7 @@ impl PropertyGraph {
     }
 }
 
-mod binary;
+pub(crate) mod binary;
 mod sections;
 
 use binary::*;

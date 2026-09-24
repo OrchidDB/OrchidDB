@@ -236,6 +236,10 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
             writeln!(buf, "GraphProject(mode=[{mode:?}], fields=[{names}])").ok();
             write_node(buf, input, depth + 1);
         }
+        Node::GraphJvm { operation, input } => {
+            writeln!(buf, "GraphJvm(mode=[{:?}], output=[{}], effect=[graph])", operation.mode, operation.output).ok();
+            write_node(buf, input, depth + 1);
+        }
         Node::GraphCurrentProject { input, fields, .. } => {
             writeln!(buf, "GraphCurrentProject(fields=[{}])", fields.join(", ")).ok();
             write_node(buf, input, depth + 1);

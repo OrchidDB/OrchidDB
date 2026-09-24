@@ -1,5 +1,7 @@
 # JVM executor over native Crabgraph storage
 
+For JVM fragments inside a managed query, see [relational DAG execution](sql-ir-datafusion-execution.md). The standalone profile described below remains available.
+
 `crabgraph-jvm` is an explicit execution profile. TinkerPop 3.7.4 executes traversals
 and Groovy callbacks in the JVM; a `CrabGraph` provider performs every graph read
 and mutation through a private `crabgraph-jvm-store` process backed by Crabgraph's

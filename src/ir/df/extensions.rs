@@ -401,6 +401,16 @@ ir_extension! {
 }
 
 ir_extension! {
+    GraphJvm {
+        operation: crate::ir::jvm::JvmOperation,
+    }
+    rebuild(s, c) {
+        let mut c = c;
+        Node::GraphJvm { operation: s.operation.clone(), input: Box::new(c.remove(0)) }
+    },
+}
+
+ir_extension! {
     GraphCurrentProject {
         expr: IrExpr,
         fields: Vec<String>,

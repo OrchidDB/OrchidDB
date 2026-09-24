@@ -2,8 +2,8 @@
 //! `pageRank`, `peerPressure`, `connectedComponent`, `fail`.
 //!
 //! Search and degree centrality use graph execution helpers. GraphComputer
-//! steps require the JVM execution profile; native lowering rejects them
-//! rather than returning partial paths or fabricated compute properties.
+//! steps require their explicit GraphComputer execution contract. JVM scalar
+//! calls lower to GraphJvm nodes over the caller's native graph state.
 
 use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
 use super::literals::gvalue_to_expr;
@@ -31,6 +31,39 @@ pub(super) fn lower_call(
     args: &[CallArg],
     options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
+    if name == "crabgraph.jvm" {
+        let invalid = || GremlinPlanError::Unsupported("call('crabgraph.jvm', ['script': code, 'mode': 'map'|'flatMap'|'filter', 'bindings': map]) requires trusted code and literal options".into());
+        fn entries(value: &GValue) -> Option<Vec<(&str, &GValue)>> {
+            match value {
+                GValue::Map(values) => Some(values.iter().map(|(key,value)| (key.as_str(),value)).collect()),
+                GValue::TypedMap(values) => values.iter().map(|(key,value)| match key { GValue::String(key) => Some((key.as_str(),value)), _ => None }).collect(),
+                _ => None,
+            }
+        }
+        let [CallArg::Value(parameters)] = args else { return Err(invalid()); };
+        let parameters = entries(parameters).ok_or_else(invalid)?;
+        if !options.is_empty() || parameters.iter().any(|(key,_)| !matches!(*key,"script"|"mode"|"bindings")) { return Err(invalid()); }
+        let get = |key| parameters.iter().find_map(|(name,value)| (*name == key).then_some(*value));
+        let Some(GValue::String(script)) = get("script") else { return Err(invalid()); };
+        let mode = match get("mode") {
+            None => crate::ir::jvm::JvmMode::Map,
+            Some(GValue::String(mode)) if mode == "map" => crate::ir::jvm::JvmMode::Map,
+            Some(GValue::String(mode)) if mode == "flatMap" => crate::ir::jvm::JvmMode::FlatMap,
+            Some(GValue::String(mode)) if mode == "filter" => crate::ir::jvm::JvmMode::Filter,
+            _ => return Err(invalid()),
+        };
+        let mut arguments = vec![ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(CURRENT.into()) }];
+        if let Some(bindings) = get("bindings") {
+            for (key,value) in entries(bindings).ok_or_else(invalid)? {
+                if matches!(key,"current"|"g"|"graph") { return Err(invalid()); }
+                arguments.push(ProjectionItem { alias: key.into(), expr: gvalue_to_expr(value)? });
+            }
+        }
+        return Ok(Node::GraphJvm {
+            operation: crate::ir::jvm::JvmOperation { script: script.clone(), output: CURRENT.into(), mode, arguments },
+            input: input.boxed(),
+        });
+    }
     if name == "tinker.search" {
         return Err(GremlinPlanError::Unsupported(
             "tinker.search can only be used as a traversal source".into(),
@@ -101,6 +134,10 @@ pub(super) fn lower_call_source(
         }));
     }
 
+    if name == "crabgraph.jvm" {
+        let input = Node::GraphValues { bindings: vec![CURRENT.into()], rows: vec![vec![Value::Null]], bulk: None };
+        return lower_call(input, name, args, options).map(Some);
+    }
     if name == "tinker.search" {
         return lower_search_source(args, options, lo, ctx).map(Some);
     }

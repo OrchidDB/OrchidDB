@@ -7,6 +7,8 @@
 //! base relational scans, joins, projections, filters, and aggregates that
 //! DataFusion can execute directly.
 
+pub mod dag;
+pub mod runtime;
 mod scans;
 use scans::*;
 
@@ -386,6 +388,7 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphDelete { input, .. }
             | Node::GraphFilter { input, .. }
             | Node::GraphCurrentProject { input, .. }
+            | Node::GraphJvm { input, .. }
             | Node::GraphAggregate { input, .. }
             | Node::GraphGroupMap { input, .. }
             | Node::GraphGroupSideEffect { input, .. }

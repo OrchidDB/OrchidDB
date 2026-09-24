@@ -357,7 +357,7 @@ pub(super) fn encode_str_list(list: &[String]) -> Vec<u8> {
 /// Encode a single [`Value`] into a standalone byte buffer using the
 /// snapshot value codec. Exposed to the incremental overlay codec so it can
 /// reuse the exact same tag-complete (including NaN bit patterns) encoding.
-pub(in crate::ir::catalog) fn encode_value_bytes(value: &Value) -> Vec<u8> {
+pub(crate) fn encode_value_bytes(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
     encode_value(&mut out, value);
     out
@@ -365,7 +365,7 @@ pub(in crate::ir::catalog) fn encode_value_bytes(value: &Value) -> Vec<u8> {
 
 /// Decode exactly one [`Value`] from `data`, rejecting any trailing bytes.
 /// Exposed to the incremental overlay codec.
-pub(in crate::ir::catalog) fn decode_value_bytes(data: &[u8]) -> Result<Value, String> {
+pub(crate) fn decode_value_bytes(data: &[u8]) -> Result<Value, String> {
     let mut r = Reader::new(data);
     let value = decode_value(&mut r)?;
     finish(&r)?;

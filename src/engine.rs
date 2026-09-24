@@ -1,8 +1,8 @@
 //! Durable managed graphs with transactional writes and observable execution.
 //!
 //! DuckDB owns the committed checkpoint and incremental overlay records.
-//! SQL-compatible reads execute in DuckDB; hybrid reads and mutations retain
-//! the Graph IR runtime's semantics.
+//! Queries lower to a relational DAG. DataFusion executes residual operators
+//! and schedules explicit DuckDB regions.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,10 +12,8 @@ use duckdb::{Connection, params};
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::catalog::incremental::IncrementalRecord;
-use crate::ir::exec::{
-    ExecStats, IslandTarget, SqlTarget, contains_mutation, execute_with_islands,
-};
-use crate::ir::interpreter::{ReturnedBatches, execute};
+use crate::ir::exec::{ExecStats, contains_mutation};
+use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::plan::GraphPlan;
 use crate::ir::rel::{RelBackend, sql};
 use crate::ir::value::Value;
@@ -37,6 +35,7 @@ pub enum ExecutionBackend {
     DuckDb,
     Hybrid,
     GraphRuntime,
+    DataFusion,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +56,7 @@ pub struct GraphEngine {
     failed_transaction: bool,
     read_mode: ReadMode,
     backend: RelBackend,
-    target: Box<dyn IslandTarget>,
+    sql_timeout: Option<Duration>,
     strict_executor: sql::DuckDbExecutor,
 }
 
@@ -147,7 +146,7 @@ impl GraphEngine {
             failed_transaction: false,
             read_mode: ReadMode::Hybrid,
             backend: RelBackend::new(),
-            target: Box::new(SqlTarget::duckdb()),
+            sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
         };
         engine.refresh()?;
@@ -159,11 +158,9 @@ impl GraphEngine {
     }
 
     /// Bound each DuckDB query and its setup. This does not impose a runtime
-    /// deadline on residual Graph IR operators or snapshot serialization.
+    /// deadline on residual DataFusion operators or snapshot serialization.
     pub fn set_sql_timeout(&mut self, timeout: Duration) {
-        self.target = Box::new(SqlTarget::new(sql::SqlDialect::DuckDb, move || {
-            Ok(sql::DuckDbExecutor::with_timeout(timeout))
-        }));
+        self.sql_timeout = Some(timeout);
         self.strict_executor = sql::DuckDbExecutor::with_timeout(timeout);
     }
 
@@ -463,16 +460,17 @@ impl GraphEngine {
             }
             // A failed statement cannot leave partially applied CREATE/SET/DELETE.
             let before = self.graph.clone();
-            let returned = match execute(plan, &self.graph) {
-                Ok(returned) => returned,
-                Err(error) => {
-                    self.graph = before;
-                    if automatic {
-                        let _ = self.rollback();
+            let (returned, dag_stats) =
+                match crate::ir::rel::runtime::execute(plan, &self.graph, self.sql_timeout).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.graph = before;
+                        if automatic {
+                            let _ = self.rollback();
+                        }
+                        return Err(error.to_string());
                     }
-                    return Err(error.to_string());
-                }
-            };
+                };
             if let Err(error) = self.persist() {
                 self.graph = before;
                 if automatic {
@@ -485,8 +483,12 @@ impl GraphEngine {
             }
             return Ok(QueryResult {
                 returned,
-                backend: ExecutionBackend::GraphRuntime,
-                stats: ExecStats::default(),
+                backend: if dag_stats.duckdb_regions > 0 {
+                    ExecutionBackend::Hybrid
+                } else {
+                    ExecutionBackend::DataFusion
+                },
+                stats: dag_stats.into(),
             });
         }
         if !self.in_transaction {
@@ -494,7 +496,9 @@ impl GraphEngine {
         }
         let (returned, stats) = match self.read_mode {
             ReadMode::Hybrid => {
-                execute_with_islands(plan, &self.graph, &self.backend, self.target.as_ref()).await?
+                let (returned, stats) =
+                    crate::ir::rel::runtime::execute(plan, &self.graph, self.sql_timeout).await?;
+                (returned, stats.into())
             }
             ReadMode::SqlOnly => {
                 let lowered = self
@@ -514,12 +518,12 @@ impl GraphEngine {
                 (returned, stats)
             }
         };
-        let backend = if stats.interpreted_ops == 0 {
+        let backend = if stats.datafusion_ops == 0 {
             ExecutionBackend::DuckDb
         } else if stats.islands > 0 {
             ExecutionBackend::Hybrid
         } else {
-            ExecutionBackend::GraphRuntime
+            ExecutionBackend::DataFusion
         };
         Ok(QueryResult {
             returned,

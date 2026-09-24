@@ -153,9 +153,8 @@ fn solver_ordered_patterns(patterns: &[Vec<Step>]) -> Vec<Vec<Step>> {
     let mut ordered = Vec::with_capacity(binding.len());
     let mut bound: Vec<String> = Vec::new();
     while !binding.is_empty() {
-        let idx = binding
-            .iter()
-            .position(|p| bound.contains(&start_label(p)))
+        let idx = selective_bound_pattern(&binding, &bound, filters.is_empty())
+            .or_else(|| binding.iter().position(|p| bound.contains(&start_label(p))))
             .or_else(|| {
                 if ordered.is_empty() {
                     // First pick: prefer a root — a start label no other
@@ -183,6 +182,89 @@ fn solver_ordered_patterns(patterns: &[Vec<Step>]) -> Vec<Vec<Step>> {
     }
     ordered.extend(filters);
     ordered
+}
+
+/// A literal filter should run as soon as its label is available. Prefer the
+/// dependency chain leading to such a filter before expanding an independent
+/// branch, avoiding a large Cartesian frontier. Restrict this rule to plain
+/// navigation and literal filters: stateful steps retain their original order.
+fn selective_bound_pattern(
+    patterns: &[Vec<Step>],
+    bound: &[String],
+    no_other_filters: bool,
+) -> Option<usize> {
+    use crate::language::gremlin::semantics::{CompareOp, GValue, Predicate};
+    use std::collections::BTreeMap;
+    if !no_other_filters {
+        return None;
+    }
+    let labels: Vec<_> = patterns.iter().flat_map(|p| pattern_outputs(p)).collect();
+    let literal_filter = |step: &Step| {
+        matches!(step,
+        Step::Has {predicate:Predicate::Compare {op:CompareOp::Eq,value:GValue::String(value)},..}
+        if !labels.contains(value) && !bound.contains(value))
+    };
+    if !patterns.iter().flatten().all(|step| {
+        matches!(
+            step,
+            Step::As(_)
+                | Step::ExpandVertex { .. }
+                | Step::ExpandEdge { .. }
+                | Step::EndpointVertex { .. }
+        ) || literal_filter(step)
+    }) {
+        return None;
+    }
+    let mut distances = BTreeMap::<String, usize>::new();
+    for pattern in patterns {
+        if pattern.iter().any(&literal_filter) {
+            if let Some(Step::As(label)) = pattern.first() {
+                distances.insert(label.clone(), 0);
+            }
+        }
+    }
+    if distances.is_empty() {
+        return None;
+    }
+    for _ in 0..patterns.len() {
+        for pattern in patterns {
+            let Some(Step::As(start)) = pattern.first() else {
+                continue;
+            };
+            if let Some(distance) = pattern_outputs(pattern)
+                .iter()
+                .filter(|l| *l != start)
+                .filter_map(|l| distances.get(l))
+                .min()
+                .copied()
+            {
+                let entry = distances.entry(start.clone()).or_insert(usize::MAX);
+                *entry = (*entry).min(distance.saturating_add(1));
+            }
+        }
+    }
+    patterns
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| matches!(p.first(),Some(Step::As(label)) if bound.contains(label)))
+        .min_by_key(|(_, p)| {
+            if p.iter().any(&literal_filter) {
+                0
+            } else {
+                let Some(Step::As(start)) = p.first() else {
+                    return usize::MAX;
+                };
+                pattern_outputs(p)
+                    .iter()
+                    .filter(|l| *l != start)
+                    .filter_map(|l| distances.get(l))
+                    .min()
+                    .copied()
+                    .unwrap_or(usize::MAX)
+                    .saturating_add(1)
+            }
+        })
+        .map(|(i, _)| i)
 }
 
 /// Walk the pattern collecting `as(label)` declarations so the wrapping
@@ -274,4 +356,72 @@ fn collect_option_outputs(option: &TraversalOption, labels: &mut Vec<String>) {
         collect_steps_outputs(sub, labels);
     }
     collect_steps_outputs(&option.traversal, labels);
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use crate::language::gremlin::semantics::{Direction, GValue, Predicate};
+    fn path(a: &str, b: &str) -> Vec<Step> {
+        vec![
+            Step::As(a.into()),
+            Step::ExpandVertex {
+                direction: Direction::Out,
+                edge_labels: vec![],
+            },
+            Step::As(b.into()),
+        ]
+    }
+    fn filter(a: &str, value: &str) -> Vec<Step> {
+        vec![
+            Step::As(a.into()),
+            Step::Has {
+                key: "name".into(),
+                predicate: Predicate::eq(GValue::String(value.into())),
+            },
+        ]
+    }
+    #[test]
+    fn selective_dependency_precedes_independent_expansion() {
+        let patterns = vec![
+            path("a", "b"),
+            path("a", "c"),
+            path("b", "d"),
+            path("c", "e"),
+            filter("d", "one"),
+            filter("e", "two"),
+        ];
+        let ordered = solver_ordered_patterns(&patterns);
+        assert_eq!(
+            ordered,
+            vec![
+                patterns[0].clone(),
+                patterns[2].clone(),
+                patterns[4].clone(),
+                patterns[1].clone(),
+                patterns[3].clone(),
+                patterns[5].clone()
+            ]
+        );
+    }
+    #[test]
+    fn stateful_steps_and_label_valued_predicates_disable_selectivity_rule() {
+        let patterns = vec![
+            path("a", "b"),
+            vec![Step::As("b".into()), Step::Drop],
+            filter("b", "value"),
+        ];
+        assert_eq!(
+            selective_bound_pattern(&patterns, &["a".into(), "b".into()], true),
+            None
+        );
+        assert_eq!(
+            selective_bound_pattern(
+                &[path("a", "b"), filter("b", "a")],
+                &["a".into(), "b".into()],
+                true
+            ),
+            None
+        );
+    }
 }

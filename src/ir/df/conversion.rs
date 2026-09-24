@@ -242,6 +242,9 @@ fn node_to_plan_with_policy(
             schema,
             inputs: vec![node_to_plan(input)?],
         }),
+        Node::GraphJvm { operation, input } => extension(GraphJvm {
+            operation: operation.clone(), schema, inputs: vec![node_to_plan(input)?],
+        }),
         Node::GraphCurrentProject {
             expr,
             fields,
@@ -742,6 +745,7 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphFilter,
         GraphProject,
         GraphCurrentProject,
+        GraphJvm,
         GraphAggregate,
         GraphGroupMap,
         GraphGroupSideEffect,

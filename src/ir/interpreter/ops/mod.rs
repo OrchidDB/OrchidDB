@@ -4,28 +4,28 @@
 //! [`crate::ir::plan::Node`]; the pipeline is wired together by
 //! [`super::run::run`].
 
-pub(super) mod aggregate;
-pub(super) mod apply;
-pub(super) mod barrier;
-pub(super) mod choose;
-pub(super) mod coalesce;
-pub(super) mod collect;
-pub(super) mod distinct;
-pub(super) mod expand;
-pub(super) mod join;
-pub(super) mod list_comprehension;
-pub(super) mod mutation;
-pub(super) mod path_pattern;
-pub(super) mod project;
-pub(super) mod quantifier;
-pub(super) mod repeat;
-pub(super) mod select;
-pub(super) mod slice;
-pub(super) mod sort;
-pub(super) mod source;
-pub(super) mod stream;
-pub(super) mod unwind;
+pub(crate) mod aggregate;
+pub(crate) mod apply;
+pub(crate) mod barrier;
+pub(crate) mod choose;
+pub(crate) mod coalesce;
+pub(crate) mod collect;
+pub(crate) mod distinct;
+pub(crate) mod expand;
+pub(crate) mod join;
+pub(crate) mod list_comprehension;
+pub(crate) mod mutation;
+pub(crate) mod path_pattern;
+pub(crate) mod project;
+pub(crate) mod quantifier;
+pub(crate) mod repeat;
+pub(crate) mod select;
+pub(crate) mod slice;
+pub(crate) mod sort;
+pub(crate) mod source;
+pub(crate) mod stream;
+pub(crate) mod unwind;
 
-pub(super) mod sample;
+pub(crate) mod sample;
 
-pub(super) mod java_hashmap;
+pub(crate) mod java_hashmap;

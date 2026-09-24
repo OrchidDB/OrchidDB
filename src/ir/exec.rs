@@ -1,3 +1,9 @@
+//! Legacy reference island planner used by comparison tests.
+//!
+//! Production managed queries use `ir::rel::runtime`: a relational DAG
+//! scheduled by DataFusion, with explicit DuckDB regions and native kernels.
+//! The historical rewrite below remains available as a reference implementation.
+//!
 //! Hybrid executable plans: SQL islands spliced into a Graph IR plan.
 //!
 //! The relational backend ([`crate::ir::rel`]) is all-or-nothing — it lowers
@@ -194,6 +200,8 @@ pub fn default_target() -> Box<dyn IslandTarget> {
 /// What the partitioner did, for tests and for the harness to report.
 #[derive(Debug, Clone, Default)]
 pub struct ExecStats {
+    /// Operators executed by the DataFusion relational DAG.
+    pub datafusion_ops: usize,
     /// Subtrees executed relationally.
     pub islands: usize,
     /// Rows those islands returned in total.
@@ -217,7 +225,7 @@ impl ExecStats {
     /// This is the metric that gates retiring the interpreter: it can be
     /// deleted once every case in the corpus reports `true`.
     pub fn fully_pushed_down(&self) -> bool {
-        self.islands >= 1 && self.interpreted_ops == 0
+        self.islands >= 1 && self.interpreted_ops == 0 && self.datafusion_ops == 0
     }
 }
 
@@ -300,6 +308,7 @@ pub async fn execute_with_islands(
                 island_rows: rows,
                 residual_ops: 0,
                 interpreted_ops: 0,
+                datafusion_ops: 0,
                 declined: Vec::new(),
             },
         ));
@@ -414,6 +423,11 @@ async fn try_island(
 /// because the catalog remains the source of truth for property reads, so
 /// carrying them would only risk disagreeing with it.
 fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
+    let (bindings, rows) = batch_to_bindings(returned)?;
+    Some(Node::GraphValues { bindings, rows, bulk: None })
+}
+
+pub(crate) fn batch_to_bindings(returned: &ReturnedBatches) -> Option<(Vec<String>, Vec<Vec<Value>>)> {
     let batch = &returned.batch;
     let schema = batch.schema();
     let names: Vec<String> = schema
@@ -597,11 +611,7 @@ fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
         rows.push(out);
     }
 
-    Some(Node::GraphValues {
-        bindings,
-        rows,
-        bulk: None,
-    })
+    Some((bindings, rows))
 }
 
 /// Decode one Arrow cell into a [`Value`], or `None` if the type has no
@@ -756,6 +766,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphDelete { input, .. }
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupCountSideEffect { input, .. }
         | GraphReadSideEffect { input, .. }
@@ -853,6 +864,7 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
         | GraphDelete { input, .. }
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupCountSideEffect { input, .. }
         | GraphReadSideEffect { input, .. }
@@ -911,5 +923,11 @@ fn children_mut(node: &mut Node) -> Vec<&mut Node> {
         GraphProcedureCall { input, .. } => input.iter_mut().map(|node| node.as_mut()).collect(),
         GraphExtension { inputs, .. } => inputs.iter_mut().collect(),
         _ => Vec::new(),
+    }
+}
+
+impl From<crate::ir::rel::dag::DagStats> for ExecStats {
+    fn from(stats:crate::ir::rel::dag::DagStats)->Self {
+        Self {islands:stats.duckdb_regions,datafusion_ops:stats.datafusion_operators,residual_ops:stats.datafusion_operators,..Default::default()}
     }
 }

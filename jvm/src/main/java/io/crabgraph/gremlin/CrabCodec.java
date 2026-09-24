@@ -25,6 +25,11 @@ public final class CrabCodec {
         }
         if (value instanceof CrabProperty) return ((CrabProperty<?>)value).record;
         String type;
+        if (value instanceof org.apache.tinkerpop.gremlin.process.traversal.Path path) {
+            List<Object> items=new ArrayList<>();
+            for(Object item:path.objects()) items.add(encode(item,graph));
+            return fields("type","path","value",items);
+        }
         if (value instanceof String) type="string";
         else if (value instanceof Boolean) type="boolean";
         else if (value instanceof Byte) type="byte";
@@ -77,6 +82,11 @@ public final class CrabCodec {
             case "edge": return new CrabEdge(graph,record);
             case "vertex_property": return new CrabVertexProperty<>(graph,record);
             case "property": return new CrabProperty<>(graph,record);
+            case "path": {
+                var path=org.apache.tinkerpop.gremlin.process.traversal.step.util.MutablePath.make();
+                for(Object item:(List<?>)value) path.extend(decode(item,graph),Collections.emptySet());
+                return path;
+            }
             case "list": case "set": {
                 Collection<Object> result=type.equals("set")?new LinkedHashSet<>():new ArrayList<>();
                 for(Object item:(List<?>)value) result.add(decode(item,graph));

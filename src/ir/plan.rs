@@ -583,6 +583,13 @@ pub enum SampleKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
+    /// An explicit interpreter/JVM boundary. The JVM receives evaluated typed
+    /// arguments; bindings, traverser bulk and hidden state stay in the interpreter.
+    /// Trusted scripts may mutate the caller's graph, so this is an effect fence.
+    GraphJvm {
+        operation: crate::ir::jvm::JvmOperation,
+        input: Box<Node>,
+    },
     // -------- output boundary --------
     /// `GraphReturn(fields, resultForm)` — the result-shape boundary.
     GraphReturn {

@@ -129,7 +129,7 @@ fn consume(
     Ok(())
 }
 
-fn range_movable(node: &Node) -> bool {
+pub(crate) fn range_movable(node: &Node) -> bool {
     matches!(
         node,
         Node::GraphProject { .. }
@@ -149,7 +149,7 @@ fn pure(node: &Node) -> bool {
     node_effect(node) == Effect::Pure && children(node).into_iter().all(pure)
 }
 
-fn take_stream_input(node: &mut Node) -> Option<Box<Node>> {
+pub(crate) fn take_stream_input(node: &mut Node) -> Option<Box<Node>> {
     let input = match node {
         Node::GraphFilter { input, .. }
         | Node::GraphProject { input, .. }

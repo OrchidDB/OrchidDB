@@ -250,6 +250,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphDelete { input, .. }
         | GraphFilter { input, .. }
         | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
         | GraphAggregate { input, .. }
         | GraphGroupMap { input, .. }
         | GraphGroupSideEffect { input, .. }
