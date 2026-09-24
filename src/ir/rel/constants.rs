@@ -121,6 +121,7 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
         "now",
         "nextval",
         "currval",
+        "tinker_search",
     ];
     if DENY.contains(&normalized.as_str()) {
         return false;
@@ -824,7 +825,12 @@ mod folding_tests {
 
     #[test]
     fn engine_calls_are_not_interpreter_constants_even_with_null_arguments() {
-        for name in ["unknown_function", "stats", "uuid_extract_version"] {
+        for name in [
+            "unknown_function",
+            "stats",
+            "uuid_extract_version",
+            "tinker_search",
+        ] {
             let call = IrExpr::Call {
                 name: name.into(),
                 args: vec![IrExpr::Lit(Lit::Null)],

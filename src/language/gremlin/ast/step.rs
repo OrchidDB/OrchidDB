@@ -73,6 +73,10 @@ pub enum Step {
     /// current edge was reached.
     OtherVertex,
     Values(Vec<String>),
+    /// `value()` reads a Property value, distinct from values("value") meta-properties.
+    PropertyValue,
+    /// `key()` reads a Property or Map.Entry key.
+    PropertyKey,
     /// `id()`: project the current element's id as a scalar.
     Id,
     /// `label()`: project the current element's label as a scalar string.

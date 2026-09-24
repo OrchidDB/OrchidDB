@@ -36,7 +36,15 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    if name == "tinker_search" {
+        return super::search::search(&args, graph);
+    }
     match (name, args.as_slice()) {
+        ("property_value", [Value::VertexProperty {value,..} | Value::Property {value,..}]) => return Ok(value.as_ref().clone()),
+        ("property_key", [Value::VertexProperty {key,..} | Value::Property {key,..}]) => return Ok(Value::String(key.clone())),
+        ("property_value", [Value::MapEntry(pair)]) => return Ok(pair.1.clone()),
+        ("property_key", [Value::MapEntry(pair)]) => return Ok(pair.0.clone()),
+        ("property_value" | "property_key", [_]) => return Err(InterpretError::Runtime("key()/value() requires a Property or Map.Entry".into())),
         ("local_limit", [value,count])=>return Ok(super::lists::gremlin_local_range(value,0,count.as_i64().unwrap_or(0))),
         ("gremlin_merge_matches",[element,criteria,out,input])=>return Ok(Value::Bool(super::mutations::matches(element,criteria,out,input,graph)?)),
         ("gremlin_token_literal", [Value::String(token)]) => return Ok(Value::Token(token.clone())),

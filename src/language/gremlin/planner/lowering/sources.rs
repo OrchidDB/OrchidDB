@@ -20,6 +20,7 @@ pub(super) fn source_node(
     step: &Step,
     lo: &mut Lowerer,
     ctx: &TraversalContext,
+    call_options: &[super::procedures::CallOption],
 ) -> GremlinPlanResult<Node> {
     let node = match step {
         Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(Node::GraphValues{bindings:vec![CURRENT.into()],rows:vec![vec![crate::ir::value::Value::Null]],bulk:None},*edge,criteria,options,lo,ctx,true),
@@ -49,7 +50,7 @@ pub(super) fn source_node(
             apply_edge_subgraph(filter_by_ids(scan, ids), lo, ctx)
         }
         Step::Inject(values) => values_node(values),
-        Step::Call(name, args) => lower_call_source(name, args)?.ok_or_else(|| {
+        Step::Call(name, args) => lower_call_source(name, args, call_options, lo, ctx)?.ok_or_else(|| {
             GremlinPlanError::Unsupported(format!("unsupported source call `{name}`"))
         }),
         Step::Union(branches) => lower_source_union(branches, lo, ctx),
@@ -172,7 +173,7 @@ pub(super) fn lower_mid_traversal_spawn(
     use crate::ir::plan::ApplyKind;
     use crate::ir::policy::OptionalMissing;
 
-    let spawn_node = source_node(spawn, lo, ctx)?;
+    let spawn_node = source_node(spawn, lo, ctx, &[])?;
     let previous = lo.fresh("spawn_previous");
     let input = Node::GraphProject { mode: ProjectMode::PreserveVisible,
         items: vec![ProjectionItem { alias: previous.clone(), expr: IrExpr::Binding(CURRENT.into()) }],
