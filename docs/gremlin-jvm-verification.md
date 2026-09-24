@@ -49,7 +49,14 @@ repeated table scans and serialization. No expected result or deadline changed.
 The final pair also passed all 29 targeted original Java tests: seven
 multithreaded transaction tests, 12 element-ID strategy tests and 10 traversal
 interruption tests. These are separate Java evidence, not additional Gherkin
-passes. Broad Java-suite outcomes are published separately.
+passes. Both broad provider suites completed on the same frozen jar and native
+binary with zero failures: ProcessStandardSuite recorded 920 passes and 17
+exclusions across 937 invocations; StructureStandardSuite recorded 656 passes and
+287 exclusions across 943 invocations (831 unique test IDs). These counts retain
+upstream parameterized invocations and feature exclusions. Their source, harness
+and result hashes are indexed in
+`/tmp/gremlin-provider-final-evidence-manifest.json` and published as separate Java
+evidence.
 
 See [the production executor guide](gremlin-jvm-executor.md) for build commands,
 configuration, transaction ownership and API limitations.
