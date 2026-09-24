@@ -193,6 +193,11 @@ public class UpstreamGremlin {
      source=backend.equals("crabgraph-computer")?graph.traversal().withComputer():graph.traversal();
      return source;
     }
+    if(backend.equals("janusgraph")){
+     var config=new BaseConfiguration();config.setProperty("storage.backend","inmemory");
+     graph=(Graph)Class.forName("org.janusgraph.core.JanusGraphFactory").getMethod("open",org.apache.commons.configuration2.Configuration.class).invoke(null,config);
+     copyJanusFixture(fixture,graph);fixture.close();graph.tx().commit();source=graph.traversal();return source;
+    }
     if(backend.equals("sqlg")){
      String key=data==null?"empty":data.name();
      if(cachedSqlg!=null && key.equals(cachedFixture)){fixture.close();graph=cachedSqlg;return graph.traversal();}
@@ -258,6 +263,22 @@ public class UpstreamGremlin {
    List<Object> properties=new ArrayList<>(List.of(T.id,e.id()));
    e.properties().forEachRemaining(p->{properties.add(p.key());properties.add(p.value());});
    vertices.get(e.outVertex().id()).addEdge(e.label(),vertices.get(e.inVertex().id()),properties.toArray());
+  });
+ }
+ /** Preserve input cardinality and metadata while allowing JanusGraph to assign its own IDs. */
+ static void copyJanusFixture(Graph fixture,Graph target) {
+  Map<Object,Vertex> vertices=new HashMap<>();
+  fixture.vertices().forEachRemaining(v->{
+   Vertex copy=target.addVertex(T.label,v.label());vertices.put(v.id(),copy);
+   v.properties().forEachRemaining(p->{
+    List<Object> meta=new ArrayList<>();p.properties().forEachRemaining(m->{meta.add(m.key());meta.add(m.value());});
+    long count=org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils.count(v.properties(p.key()));
+    copy.property(count>1?VertexProperty.Cardinality.list:VertexProperty.Cardinality.single,p.key(),p.value(),meta.toArray());
+   });
+  });
+  fixture.edges().forEachRemaining(e->{
+   List<Object> props=new ArrayList<>();e.properties().forEachRemaining(p->{props.add(p.key());props.add(p.value());});
+   vertices.get(e.outVertex().id()).addEdge(e.label(),vertices.get(e.inVertex().id()),props.toArray());
   });
  }
  static void setField(StepDefinition steps,String name,Object value)throws Exception{
@@ -439,11 +460,11 @@ public class UpstreamGremlin {
   else throw new IllegalArgumentException("Unmapped upstream step: "+t);
  }
  public static void main(String[]args)throws Exception{
-  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("reference")&&!jvmProfile())bridge=new Bridge();
+  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("janusgraph")&&!backend.equals("reference")&&!jvmProfile())bridge=new Bridge();
   var input=new BufferedReader(new InputStreamReader(System.in));String line;
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
-   JsonNode javaAssertion=backend.equals("crabgraph")?NativeJUnitAssertions.mapping(request.get("id").asText()):null;
+   JsonNode javaAssertion=(backend.equals("crabgraph")||backend.equals("janusgraph"))?NativeJUnitAssertions.mapping(request.get("id").asText()):null;
    try{if(javaAssertion!=null){failedStep="original upstream Java assertion";context.currentStep=failedStep;NativeJUnitAssertions.run(javaAssertion,context);}else{for(var tag:request.get("tags"))if(tag.asText().equals("@AllowNullPropertyValues"))context.allowNullPropertyValues=true;
    for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("crabgraph-computer")&&!backend.equals("crabgraph")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("crabgraph")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
    for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}}

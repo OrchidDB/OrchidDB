@@ -50,20 +50,27 @@ final class NativeJUnitAssertions {
         if(!result.wasSuccessful())throw new AssertionError(result.getFailures().stream().map(Failure::getTrace).reduce("",(a,b)->a+b));
         if(!assumptions.isEmpty())throw new AssumptionViolatedException(assumptions.toString());
         if(result.getRunCount()!=1||result.getIgnoreCount()!=0)throw new IllegalStateException("Expected exactly one original JUnit test: "+result.getRunCount());
-        if(context.queryTransports.isEmpty())throw new IllegalStateException("Original assertion made no requests to Crabgraph");
+        if(UpstreamGremlin.backend.equals("crabgraph")&&context.queryTransports.isEmpty())throw new IllegalStateException("Original assertion made no requests to Crabgraph");
     }
     /** TinkerGraph loads input fixtures only. Every traversal is submitted to the same native process. */
     static final class FixtureProvider extends AbstractGraphProvider {
         final UpstreamGremlin.Context context;
+        LoadGraphWith.GraphData data;
         FixtureProvider(UpstreamGremlin.Context context){this.context=context;}
         @Override public Map<String,Object> getBaseConfiguration(String name,Class<?> test,String method,LoadGraphWith.GraphData data){
+            this.data=data;
             return Map.of(Graph.GRAPH,TinkerGraph.class.getName(),
                 TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER,"INTEGER",
                 TinkerGraph.GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER,"INTEGER",
                 TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER,"LONG");
         }
-        @Override public GraphTraversalSource traversal(Graph graph){return context.remoteSource();}
+        @Override public Graph openTestGraph(Configuration config) {
+            if(UpstreamGremlin.backend.equals("janusgraph")){context.getGraphTraversalSource(data);return context.graph;}
+            return super.openTestGraph(config);
+        }
+        @Override public GraphTraversalSource traversal(Graph graph){return UpstreamGremlin.backend.equals("crabgraph")?context.remoteSource():graph.traversal();}
         @Override public void loadGraphData(Graph graph,LoadGraphWith data,Class test,String method){
+            if(UpstreamGremlin.backend.equals("janusgraph"))return;
             if(data!=null)super.loadGraphData(graph,data,test,method);
             List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
             graph.vertices().forEachRemaining(v->nodes.add(UpstreamGremlin.fixtureNode(v,"crabgraph")));
@@ -73,7 +80,7 @@ final class NativeJUnitAssertions {
                 if(response.has("error"))throw new IllegalStateException(response.get("error").asText());
             }catch(Exception error){throw new IllegalStateException("Original Java fixture load failed",error);}
         }
-        @Override public void clear(Graph graph,Configuration config)throws Exception{if(graph!=null)graph.close();}
+        @Override public void clear(Graph graph,Configuration config)throws Exception{if(graph!=null){graph.close();if(context.graph==graph){context.graph=null;context.source=null;}}}
         @Override public Set<Class> getImplementations(){return Set.of(TinkerGraph.class);}
     }
 }

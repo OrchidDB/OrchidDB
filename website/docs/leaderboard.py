@@ -4,7 +4,7 @@ from collections import Counter
 from html import escape
 from pathlib import Path
 
-PRODUCTS = {'crabgraph': 'Crabgraph', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph'}
+PRODUCTS = {'crabgraph': 'Crabgraph', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph'}
 SUITES = [('tinkerpop', 'Gremlin', tuple(PRODUCTS)),
           ('opencypher', 'Cypher', ('crabgraph', 'puppygraph')),
           ('rdf', 'SPARQL', ('crabgraph',))]
