@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
@@ -40,7 +41,10 @@ def main():
         for dependency_file in ([args.jvm_classpath] if args.jvm_classpath else [args.jvm / 'classpath.txt', args.jvm / 'target/classpath.txt']):
             if dependency_file.exists():
                 cp.append(dependency_file.read_text().strip())
-    command = [args.java, '-Dis.testing=true', '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '-Dbuild.dir=' + str(ROOT / 'target/upstream-data'), '--add-opens=java.base/java.util=ALL-UNNAMED',
+    # Upstream tests can open additional named graphs without first clearing them.
+    # Keep every run isolated from concurrent runs and interrupted-run snapshots.
+    test_data_dir = tempfile.mkdtemp(prefix=args.output.stem + '-', suffix='-data', dir=args.output.parent.resolve())
+    command = [args.java, '-Dis.testing=true', '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '-Dbuild.dir=' + test_data_dir, '--add-opens=java.base/java.util=ALL-UNNAMED',
                '--add-opens=java.base/java.lang=ALL-UNNAMED',
                '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED',
                '-cp', os.pathsep.join(cp), 'io.crabgraph.conformance.ProviderSuite',
