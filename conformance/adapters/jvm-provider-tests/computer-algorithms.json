@@ -1,0 +1,159 @@
+{
+  "cases": [
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals",
+      "java_method": "g_V_connectedComponent_hasXcomponentX",
+      "source_sha256": "bb58d61698790274b8a45bf0978462ad98de2381102748c898205e28bd2501f1"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals",
+      "java_method": "g_V_dedup_connectedComponent_hasXcomponentX",
+      "source_sha256": "bb58d61698790274b8a45bf0978462ad98de2381102748c898205e28bd2501f1"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals",
+      "java_method": "g_V_hasLabelXsoftwareX_connectedComponent_project_byXnameX_byXcomponentX",
+      "source_sha256": "bb58d61698790274b8a45bf0978462ad98de2381102748c898205e28bd2501f1"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ConnectedComponentTest$Traversals",
+      "java_method": "g_V_connectedComponent_withXEDGES_bothEXknowsXX_withXPROPERTY_NAME_clusterX_project_byXnameX_byXclusterX",
+      "source_sha256": "bb58d61698790274b8a45bf0978462ad98de2381102748c898205e28bd2501f1"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_pageRank_hasXpageRankX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_outXcreatedX_pageRank_withXedges_bothEX_withXpropertyName_projectRankXwithXtimes_0X_valueMapXname_projectRankX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_pageRank_order_byXpageRank_descX_byXnameX_name",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_pageRank_withXedges_outEXknowsXX_withXpropertyName_friendRankX_project_byXnameX_byXvaluesXfriendRankX_mathX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_pageRank_order_byXpageRank_descX_name_limitX2X",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_hasLabelXpersonX_pageRank_withXpropertyName_pageRankX_project_byXnameX_byXvaluesXpageRankX_mathX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_pageRank_withXpropertyName_pageRankX_asXaX_outXknowsX_pageRank_asXbX_selectXa_bX_by_byXmathX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_hasLabelXsoftwareX_hasXname_rippleX_pageRankX1X_withXedges_inEXcreatedXX_withXtimes_1X_withXpropertyName_priorsX_inXcreatedX_unionXboth__identityX_valueMapXname_priorsX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest$Traversals",
+      "java_method": "g_V_outXcreatedX_groupXmX_byXlabelX_pageRankX1X_withXPROPERTY_NAME_pageRankXX_withXEDGES_inEXX_withXTIMES_1X_inXcreatedX_groupXmX_byXpageRankX_capXmX",
+      "source_sha256": "4987f20f5405c38a0a236ad3a5155b3e116bfe704daee6b2e01291e52d6fecf9"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest$Traversals",
+      "java_method": "g_V_peerPressure_hasXclusterX",
+      "source_sha256": "1e4a3bb7ec4f23aaccb1c952883e5e1970f9c9ef59e5d8f733345282509bb92c"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest$Traversals",
+      "java_method": "g_V_peerPressure_withXpropertyName_clusterX_withXedges_outEXknowsXX_pageRankX1X_withXpropertyName_rankX_withXedges_outEXknowsXX_withXtimes_2X_group_byXclusterX_byXrank_sumX_limitX100X",
+      "source_sha256": "1e4a3bb7ec4f23aaccb1c952883e5e1970f9c9ef59e5d8f733345282509bb92c"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest$Traversals",
+      "java_method": "g_V_hasXname_rippleX_inXcreatedX_peerPressure_withXedges_outEX_withXpropertyName_clusterX_repeatXunionXidentity__bothX_timesX2X_dedup_valueMapXname_clusterX",
+      "source_sha256": "1e4a3bb7ec4f23aaccb1c952883e5e1970f9c9ef59e5d8f733345282509bb92c"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_both_dedup_shortestPath",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_edgesIncluded",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_directionXINX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_edgesXoutEX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_edgesIncluded_edgesXoutEX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_markoX_shortestPath",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_targetXhasXname_markoXX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_shortestPath_targetXvaluesXnameX_isXmarkoXX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_markoX_shortestPath_targetXhasLabelXsoftwareXX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_markoX_shortestPath_targetXhasXname_joshXX_distanceXweightX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_danielX_shortestPath_targetXhasXname_stephenXX_edgesXbothEXusesXX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXsong_name_MIGHT_AS_WELLX_shortestPath_targetXhasXsong_name_MAYBE_YOU_KNOW_HOW_I_FEELXX_edgesXoutEXfollowedByXX_distanceXweightX",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_markoX_shortestPath_maxDistanceX1X",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    },
+    {
+      "java_class": "org.apache.tinkerpop.gremlin.process.traversal.step.map.ShortestPathTest$Traversals",
+      "java_method": "g_V_hasXname_vadasX_shortestPath_distanceXweightX_maxDistanceX1_3X",
+      "source_sha256": "2e20f27ae2ccf029a08cb5513bb7aefa79338e4abc9457ace1f0ceb3a343b415"
+    }
+  ]
+}
