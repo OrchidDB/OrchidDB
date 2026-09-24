@@ -58,6 +58,16 @@
       },
       "run_complete": true,
       "upstream_assertions": false
+    },
+    {
+      "label": "Original StructureStandardSuite (943 test occurrences; 831 unique tests)",
+      "file": "structure-standard.json",
+      "counts": {
+        "pass": 656,
+        "skipped": 287
+      },
+      "run_complete": true,
+      "upstream_assertions": true
     }
   ]
 }
