@@ -46,7 +46,7 @@ def execution_profile(engine):
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('CRABGRAPH_JVM_STORE',str(REPO/'target/debug/crabgraph-jvm-store')))
- artifacts=[Path(entry) for entry in classpath.split(os.pathsep) if 'crabgraph-jvm' in Path(entry).name and entry.endswith('.jar')]
+ artifacts=[Path(entry) for entry in classpath.split(os.pathsep) if Path(entry).name=='crabgraph-jvm-0.1.0.jar']
  if len(artifacts)!=1:raise RuntimeError('Expected one pinned crabgraph-jvm jar in conformance classpath')
  return {'native_store':file_identity(binary),'jvm_bridge':file_identity(artifacts[0]),
          'adapter_source':file_identity(ROOT/'adapters/sqlg/src/main/java/UpstreamGremlin.java'),
