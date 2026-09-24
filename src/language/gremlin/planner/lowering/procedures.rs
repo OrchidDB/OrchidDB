@@ -506,3 +506,18 @@ pub(super) fn lower_fail(_input: Node, message: Option<&str>) -> GremlinPlanResu
         message.unwrap_or("")
     )))
 }
+
+/// A write procedure participates in GraphEngine statement rollback/persistence.
+pub(super) fn lower_import(path: &str, reader: Option<&str>, read: bool) -> GremlinPlanResult<Node> {
+    use crate::ir::plan::{ProcedureArg, ProcedureMode};
+    if !read {
+        return Err(GremlinPlanError::Unsupported("io() requires read(); file writing is not supported".into()));
+    }
+    Ok(Node::GraphProcedureCall {
+        name: "gremlin.io.read".into(),
+        args: [path, reader.unwrap_or("")].into_iter().map(|value| ProcedureArg {
+            name: None, value: IrExpr::lit_str(value),
+        }).collect(),
+        yields: vec![], mode: ProcedureMode::Write, input: None,
+    })
+}

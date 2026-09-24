@@ -23,6 +23,7 @@ pub(super) fn source_node(
     call_options: &[super::procedures::CallOption],
 ) -> GremlinPlanResult<Node> {
     let node = match step {
+        Step::Io { path, reader, read } => super::procedures::lower_import(path, reader.as_deref(), *read),
         Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(Node::GraphValues{bindings:vec![CURRENT.into()],rows:vec![vec![crate::ir::value::Value::Null]],bulk:None},*edge,criteria,options,lo,ctx,true),
         Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(Node::GraphValues {bindings:vec![],rows:vec![vec![]],bulk:None},label,lo,ctx),
         Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(Node::GraphValues {bindings:vec![],rows:vec![vec![]],bulk:None},label,from.as_ref(),to.as_ref(),lo,ctx),
