@@ -716,8 +716,11 @@ name = "crabgraph-conformance-runner"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "datafusion",
+ "duckdb",
  "new-graph",
  "serde_json",
+ "spargebra",
  "tokio",
 ]
 

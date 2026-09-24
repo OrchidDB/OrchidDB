@@ -2,6 +2,10 @@
 <groupId>net.crabgraph</groupId><artifactId>conformance-sqlg</artifactId><version>1.0</version>
 <properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
 <dependencies>
+<dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.17.0</version></dependency>
+<dependency><groupId>org.apache.tinkerpop</groupId><artifactId>gremlin-test</artifactId><version>3.7.4</version></dependency>
+<dependency><groupId>org.apache.tinkerpop</groupId><artifactId>gremlin-driver</artifactId><version>3.7.4</version></dependency>
+<dependency><groupId>com.google.inject</groupId><artifactId>guice</artifactId><version>4.2.3</version></dependency>
 <dependency><groupId>org.apache.tinkerpop</groupId><artifactId>tinkergraph-gremlin</artifactId><version>3.7.4</version></dependency>
 <dependency><groupId>org.umlg</groupId><artifactId>sqlg-postgres</artifactId><version>3.1.6</version></dependency>
 <dependency><groupId>org.umlg</groupId><artifactId>sqlg-c3p0</artifactId><version>3.1.6</version></dependency>

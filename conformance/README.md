@@ -1,98 +1,136 @@
-# Graph engine comparison
+# Upstream graph conformance comparison
 
-Static report: https://docs.crabgraph.net/conformance.html
+Published report: https://docs.crabgraph.net/conformance.html
 
-## Scope
+Compare **Crabgraph, SQLg and PuppyGraph**, using free editions. The primary
+corpus is the original upstream test data and assertions:
 
-Five free editions, 194 exact query probes, 72 sourced capability rows, and an
-inventory of all 7,302 imported Ladybug/TinkerPop cases. These are separate evidence
-sets. Imported cases are not counted as cross-product passes. A query error does
-not prove that the product cannot express the operation in another dialect.
-The probes do not certify complete language conformance or benchmark performance.
+| Suite | Pinned version | Scenarios | Compared interfaces |
+| --- | --- | ---: | --- |
+| openCypher TCK | 2024.3 | 3,897 | Crabgraph, PuppyGraph |
+| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | All three |
+| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | Crabgraph |
 
-All 73 Gremlin expectations are checked against TinkerGraph 3.7.4. Neo4j is
-explicitly queried in Cypher 5 mode. The fixture is four people and four KNOWS
-edges, including a cycle and an absent property. SQLg uses PostgreSQL 15;
-PuppyGraph maps a separate PostgreSQL schema. Ladybug declares typed tables.
-Mutating probes use rollback for Crabgraph, Ladybug, Neo4j and SQLg.
-PuppyGraph exposes read queries against the fixture.
+Every one of the 6,533 scenarios has a recorded outcome for every product.
+An absent language interface is not counted as a query failure. The report also
+contains 51 sourced capability rows, with paid features marked separately.
+This is a compatibility comparison for these versions and profiles, not a
+certification or a claim to cover every product feature.
 
-## Reproduce
+## Run locally
 
-Requires Python 3.12, Java 21, Maven, Docker Compose and Rust (for Crabgraph).
-These adapters **initialize and delete data** in their disposable fixture databases.
-Use only the dedicated containers and test credentials below. Do not point them
-at an existing application database.
+**Tests run only on the local workstation. GitHub Actions only builds and
+publishes static documentation and committed results.**
+
+Requires Python 3.12, Java 21, Maven, Docker Compose, and Rust. These adapters
+replace data in their disposable fixture databases; use the dedicated local
+containers, not an application database. Run suites sequentially: PuppyGraph
+suites share a mapped fixture schema.
 
 ```sh
 python3.12 -m venv .venv-conformance
 . .venv-conformance/bin/activate
 pip install -r conformance/requirements.txt
+python conformance/upstream/fetch.py
+python conformance/upstream/catalog.py
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
+CARGO_TARGET_DIR="$PWD/target" cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 docker compose -f conformance/compose.yml up -d
 python conformance/wait_ready.py
-PUPPY_JDBC=jdbc:postgresql://postgres:5432/conformance python conformance/setup_puppy.py
-python conformance/catalog.py
-for engine in reference ladybug neo4j puppygraph sqlg; do
-  python conformance/run.py --engine "$engine"
+# PostgreSQL address as seen from the PuppyGraph container:
+export PUPPY_JDBC=jdbc:postgresql://postgres:5432/conformance
+python conformance/run.py --engine reference --suite tinkerpop
+for engine in crabgraph sqlg puppygraph; do
+  for suite in opencypher tinkerpop rdf; do
+    python conformance/run.py --engine "$engine" --suite "$suite"
+  done
 done
-CARGO_TARGET_DIR="$PWD/target" cargo build --locked --manifest-path conformance/runner/Cargo.toml
-python conformance/run.py --engine crabgraph
+python -m unittest discover -s conformance/upstream -p 'test_*.py'
 python conformance/validate.py
 python website/docs/build.py
 python website/docs/check.py
-docker compose -f conformance/compose.yml down -v
 ```
 
-Use `CONFORMANCE_JAVA=/path/to/java` if Java 21 is not the default. Use
-`CRABGRAPH_CONFORMANCE_BIN=/path/to/binary` to select a built Crabgraph adapter.
-`CONFORMANCE_READ_MODE=sql-only` runs the Crabgraph SQL-only variant; save it with
-`--output /tmp/crabgraph-sql-only.json` so the hybrid snapshot is preserved.
-`--filter cypher.paths` selects matching probe IDs. Filtered output must be saved
-separately; validation rejects incomplete snapshots.
+Set `JAVA_HOME` to Java 21 for Maven; optionally set `CONFORMANCE_JAVA` to the
+Java executable. `CONFORMANCE_UPSTREAM_CACHE` overrides the upstream source
+cache. `fetch.py` checks the exact immutable revisions and unmodified upstream
+trees. Licenses and notices are in `upstream/licenses/`.
 
-## Evidence format
+For installations using the earlier database container, apply the query bound:
 
-- `catalog.py` → `probes.json`: fixture, query, expected rows, order and mutation flags.
-- `results/*.json`: version, timestamps, probe hashes, actual rows/errors, elapsed
-  adapter time and Crabgraph backend. The initial Crabgraph snapshot is a modified
-  local repository build; its binary SHA-256 is recorded. It is not a released build.
-- `capabilities.py` → `data/capabilities.json`: reviewed availability, primary source,
-  review date, paid edition / extension / documented-unavailable classifications.
-- `inventory.py` → `data/inventory.json`: every imported case, group, source path,
-  dataset and content digest. Inventory generation does not execute those cases.
-- `validate.py`: requires complete adapter coverage, current probe hashes, no
-  harness failures, and a passing TinkerGraph reference run.
+```sh
+docker compose -f conformance/compose.yml exec -T postgres psql -U conformance -d conformance -c "ALTER DATABASE conformance SET statement_timeout='10s'"
+```
 
-Each probe runs three consecutive times by default (`--repetitions` changes this).
-The report shows median client wall time and exports minimum, maximum and every
-sample. The first run is included; no warmup is performed. Network and embedded
-adapter overhead differs. This tiny fixture is not a scalability benchmark.
-`data/investigations.json` records semantic review separately from observations.
-A mismatch is not automatically a product defect.
+Subset runs require a separate output, keeping the published full run intact:
 
-Results distinguish pass, different rows, query rejection, timeout and harness
-failure. The comparator preserves row multiplicity, nulls, booleans and nested list
-order. Unordered top-level results use multiset equality. Numeric comparisons use
-relative and absolute tolerance 1e-9. Graph elements and unsupported Arrow values
-are not silently coerced to primitive matches. A killed/timed-out adapter cannot
-supply delayed output to a later probe.
+```sh
+python conformance/run.py --engine sqlg --suite tinkerpop --filter Count --output /tmp/sqlg-count.json
+```
 
-## Updating the published comparison
+`--resume` continues an interrupted JSONL journal. Only resume with unchanged
+binaries, harness, source pins and runtime configuration. Completed `.json`
+artifacts are committed; caches, logs, temporary journals and compiled adapters
+are ignored. The static site renders these artifacts without starting engines.
 
-Run the suite locally using the commands above. Review result differences, then
-commit the result JSON and any accompanying investigation notes. GitHub Actions
-only builds and publishes the static sites from committed evidence; it does not
-run the conformance engines. Publication uses the existing personal AWS secrets.
+## Assertions and fixtures
 
-The Crabgraph snapshot records a local modified build and its binary hash. Do not
-relabel it as a released build. Changed probes invalidate old snapshots and must
-be rerun locally before publishing. Run `python conformance/investigate.py` to
-reproduce the SQLg optimizer investigation against the disposable local database.
+- **Gremlin:** Cucumber compiles the original Apache feature files, including
+  Scenario Outlines. Unmodified `gremlin-test` `StepDefinition` methods execute
+  their assertions. Fixtures come from `TinkerFactory`. The TinkerGraph
+  reference run checks the same harness. Standard non-GraphComputer/non-null
+  profiles and upstream skips are preserved. PuppyGraph fixture mappings retain
+  upstream integer widths; Crabgraph result transport retains Arrow numeric widths. The JVM structure and
+  GraphComputer test suites are outside this Gherkin comparison.
+- **Cypher:** the adapter executes original GIVEN/WHEN/THEN steps, result
+  tables and side-effect assertions. It preserves duplicates and ordered-result
+  requirements. Expected error type/detail/phase must be classified before an
+  error assertion can pass: an arbitrary exception is insufficient. PuppyGraph
+  fixtures use Neo4j solely to materialize GIVEN statements, then map that graph
+  into PostgreSQL. Neo4j supplies no expected answers and is not a compared
+  product. PuppyGraph declares openCypher 9; the newer TCK can exercise semantics
+  beyond that declared version.
+- **SPARQL:** original W3C manifests supply queries, data, named graphs and
+  expected artifacts. Syntax tests use the engine parser. Result comparison
+  preserves RDF term identity, duplicates, unbound variables and blank-node
+  mappings; graph results use RDF isomorphism. Update APIs, protocol tests,
+  entailment and remote-service fixtures have explicit applicability outcomes.
 
-Add an independently justified expectation with each new test. Check Gremlin
-against the reference; use standards examples or manually derived Cypher/SPARQL
-results. Add dialect equivalents as separate probes, with an explanation. Expand
-fixtures for constraints, temporal/spatial values, RDF datasets, recovery,
-concurrency and operational capabilities. Edition claims require manual source
-review on upgrades. Never turn an unassessed cell into an unsupported claim.
+Typed graph transport, fixture property types or unavailable service fixtures
+can prevent an assertion from being evaluated faithfully. Those outcomes are
+recorded separately from semantic failures. The adapters do not rewrite upstream
+expectations to match a product. Archived bespoke probes live under `legacy/`
+and contribute no primary-suite passes or failures.
+
+## Evidence and timing
+
+Each result includes a stable upstream ID, case hash, outcome, elapsed time,
+and available actual output/diagnostic. The catalog preserves original steps,
+expectations and pinned source links. Runs record source revisions, runtime
+information and engine version or Crabgraph binary hash. The Crabgraph run is a
+local working-tree build, not a release benchmark.
+
+Outcomes: `pass`, `fail`, `unsupported`, `skipped`, `not-applicable`,
+`adapter-error`, `timeout`. The page additionally detects missing/stale evidence.
+A failed assertion is an investigation lead; it can involve an engine, adapter
+or version mismatch. Unsupported transport is never silently counted as a pass.
+
+Times are one local execution per scenario, including fixture/adapter work.
+Gremlin step and Cypher query measurements are included where available.
+Gremlin scenario deadlines are 45 seconds (90 for grateful fixtures), Crabgraph
+SQL queries have an 8-second bound, PostgreSQL statements 10 seconds, and
+PuppyGraph queries 30 seconds. These are diagnostic timings, not controlled
+cross-product performance rankings.
+
+## Updating the report
+
+1. Change source pins deliberately, fetch sources and regenerate the catalog.
+2. Rebuild the adapters and run the suites locally against recorded versions.
+3. Validate evidence locally; investigate differences using linked cases and
+   raw outputs. Keep adapter limitations distinct from product defects.
+4. Commit the catalog, source pins and `upstream-results/*.json` with docs changes.
+   The publication workflow renders and uploads static files only.
+
+The one-page report supports outcome/suite/search filters and deep links.
+Individual evidence panels fetch static JSON files; all rows, source links and
+JSON downloads remain available without JavaScript.

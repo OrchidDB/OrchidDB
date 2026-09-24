@@ -1,0 +1,5 @@
+{
+ "opencypher": {"url":"https://github.com/opencypher/openCypher.git","revision":"677cbafabb8c3c5eed458fd3b1ec0daec8d67d23","version":"2024.3","directory":"tck/features","license":"Apache-2.0"},
+ "tinkerpop": {"url":"https://github.com/apache/tinkerpop.git","revision":"fa698ba2aba8967dcd17eb61cb13648b934fab5b","version":"3.7.4","directory":"gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features","license":"Apache-2.0"},
+ "rdf": {"url":"https://github.com/w3c/rdf-tests.git","revision":"369a90d1a60c021b746df2e411da0ff36258a758","version":"SPARQL 1.0 and 1.1; pinned repository revision","directory":"sparql","license":"See upstream LICENSE.md"}
+}

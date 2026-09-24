@@ -9,18 +9,6 @@
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
-      "ladybug": {
-        "text": "Native dialect",
-        "source": "https://docs.ladybugdb.com/cypher/difference/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "Cypher 5 / 25",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "openCypher 9",
         "source": "https://docs.puppygraph.com/reference/cypher-query-language/",
@@ -67,35 +55,11 @@
   },
   {
     "category": "Languages and graph model",
-    "title": "ISO GQL feature accounting",
-    "cells": {
-      "neo4j": {
-        "text": "Published feature list",
-        "source": "https://neo4j.com/docs/cypher-manual/current/appendix/gql-conformance/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Languages and graph model",
     "title": "Property graph storage",
     "cells": {
       "crabgraph": {
         "text": "Managed or mapped",
         "source": "https://docs.crabgraph.net/concepts.html",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "Typed node / rel tables",
-        "source": "https://docs.ladybugdb.com/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "Native store",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -115,35 +79,11 @@
   },
   {
     "category": "Languages and graph model",
-    "title": "Multiple labels per vertex",
-    "cells": {
-      "neo4j": {
-        "text": "Supported",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "One node table",
-        "source": "https://docs.ladybugdb.com/cypher/difference/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Languages and graph model",
     "title": "Schema definition",
     "cells": {
       "crabgraph": {
         "text": "Graph mapping",
         "source": "https://docs.crabgraph.net/mapping-reference.html",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "Required DDL",
-        "source": "https://docs.ladybugdb.com/cypher/difference/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -159,12 +99,6 @@
     "category": "Languages and graph model",
     "title": "Default variable path semantics",
     "cells": {
-      "ladybug": {
-        "text": "Walk; default max 30",
-        "source": "https://docs.ladybugdb.com/cypher/difference/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Relationship uniqueness",
         "source": "https://docs.puppygraph.com/reference/cypher-query-language/",
@@ -243,12 +177,6 @@
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
-      "ladybug": {
-        "text": "External RDBMS integration",
-        "source": "https://docs.ladybugdb.com/extensions/attach/rdbms/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "External source schema",
         "source": "https://www.puppygraph.com/pricing",
@@ -264,12 +192,6 @@
       "crabgraph": {
         "text": "View / SQL mapping",
         "source": "https://docs.crabgraph.net/mapping-reference.html",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "SQL_QUERY via extension",
-        "source": "https://docs.ladybugdb.com/extensions/attach/rdbms/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -356,12 +278,6 @@
         "source": "https://docs.crabgraph.net/rust-api.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "Python Arrow export",
-        "source": "https://docs.ladybugdb.com/client-apis/python/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
       }
     }
   },
@@ -372,12 +288,6 @@
       "crabgraph": {
         "text": "SQL backend",
         "source": "https://docs.crabgraph.net/execution.html",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -405,12 +315,6 @@
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Developer edition",
         "source": "https://www.puppygraph.com/pricing",
@@ -423,12 +327,6 @@
     "category": "Data access and integration",
     "title": "Apache Iceberg",
     "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Developer edition",
         "source": "https://www.puppygraph.com/pricing",
@@ -441,12 +339,6 @@
     "category": "Data access and integration",
     "title": "Delta Lake",
     "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Developer edition",
         "source": "https://www.puppygraph.com/pricing",
@@ -517,78 +409,6 @@
   },
   {
     "category": "Data access and integration",
-    "title": "SQLite",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
-    "title": "ADBC sources",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
-    "title": "Azure storage",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
-    "title": "JSON",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
-    "title": "Unity Catalog",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
-    "title": "HTTP file access",
-    "cells": {
-      "ladybug": {
-        "text": "Extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Data access and integration",
     "title": "H2",
     "cells": {
       "sqlg": {
@@ -651,18 +471,6 @@
     "category": "Indexing and analytics",
     "title": "Vector similarity index",
     "cells": {
-      "ladybug": {
-        "text": "HNSW extension",
-        "source": "https://docs.ladybugdb.com/extensions/vector/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "Vector index",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "sqlg": {
         "text": "PostgreSQL pgvector",
         "source": "https://sqlg.org/docs/3.1.6/",
@@ -675,123 +483,9 @@
     "category": "Indexing and analytics",
     "title": "Full-text search",
     "cells": {
-      "ladybug": {
-        "text": "BM25 extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "Full-text indexes",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "sqlg": {
         "text": "PostgreSQL text search",
         "source": "https://sqlg.org/docs/3.1.6/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Graph algorithm library",
-    "cells": {
-      "ladybug": {
-        "text": "algo extension",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "Separate GDS Community plugin",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "extension",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "LLM embeddings",
-    "cells": {
-      "ladybug": {
-        "text": "llm extension; provider API",
-        "source": "https://docs.ladybugdb.com/extensions/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Range / text / point indexes",
-    "cells": {
-      "neo4j": {
-        "text": "Search-performance indexes",
-        "source": "https://neo4j.com/docs/cypher-manual/current/indexes/search-performance-indexes/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Property uniqueness constraints",
-    "cells": {
-      "neo4j": {
-        "text": "Community",
-        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Property existence constraints",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Property type constraints",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Node and relationship key constraints",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Indexing and analytics",
-    "title": "Primary key constraint",
-    "cells": {
-      "ladybug": {
-        "text": "Node table primary key",
-        "source": "https://docs.ladybugdb.com/cypher/difference/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -807,33 +501,9 @@
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
-      "ladybug": {
-        "text": "Read / write transactions",
-        "source": "https://docs.ladybugdb.com/cypher/transaction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
-      "neo4j": {
-        "text": "ACID transactions",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "sqlg": {
         "text": "Database transactions",
         "source": "https://sqlg.org/docs/3.1.6/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Execution and transactions",
-    "title": "Concurrent writers",
-    "cells": {
-      "ladybug": {
-        "text": "One active writer",
-        "source": "https://docs.ladybugdb.com/cypher/transaction/",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -933,12 +603,6 @@
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
-      "ladybug": {
-        "text": "Embedded engine",
-        "source": "https://docs.ladybugdb.com/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "sqlg": {
         "text": "JVM library",
         "source": "https://sqlg.org/docs/3.1.6/",
@@ -951,12 +615,6 @@
     "category": "Deployment and security",
     "title": "Docker single-node deployment",
     "cells": {
-      "neo4j": {
-        "text": "Community",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "documented",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Developer",
         "source": "https://www.puppygraph.com/pricing",
@@ -969,51 +627,9 @@
     "category": "Deployment and security",
     "title": "High-availability cluster",
     "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      },
       "puppygraph": {
         "text": "Enterprise",
         "source": "https://www.puppygraph.com/pricing",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Deployment and security",
-    "title": "Online backups",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Deployment and security",
-    "title": "Role-based access control",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Deployment and security",
-    "title": "LDAP / Active Directory",
-    "cells": {
-      "neo4j": {
-        "text": "Enterprise",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
         "kind": "enterprise",
         "reviewed": "2026-09-23"
       }
@@ -1086,18 +702,6 @@
       "puppygraph": {
         "text": "Enterprise",
         "source": "https://www.puppygraph.com/pricing",
-        "kind": "enterprise",
-        "reviewed": "2026-09-23"
-      }
-    }
-  },
-  {
-    "category": "Deployment and security",
-    "title": "Horizontal sharding",
-    "cells": {
-      "neo4j": {
-        "text": "Infinigraph subscription",
-        "source": "https://neo4j.com/docs/operations-manual/current/introduction/",
         "kind": "enterprise",
         "reviewed": "2026-09-23"
       }

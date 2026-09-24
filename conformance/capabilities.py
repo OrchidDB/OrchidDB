@@ -14,7 +14,9 @@ SOURCES={
 }
 ROWS=[]
 def cell(text,source,kind='documented'):return {'text':text,'source':SOURCES[source],'kind':kind,'reviewed':'2026-09-23'}
-def add(group,title,**cells):ROWS.append({'category':group,'title':title,'cells':{k:cell(*v) for k,v in cells.items()}})
+def add(group,title,**cells):
+ cells={k:v for k,v in cells.items() if k in {'crabgraph','sqlg','puppygraph'}}
+ if cells:ROWS.append({'category':group,'title':title,'cells':{k:cell(*v) for k,v in cells.items()}})
 add('Languages and graph model','Cypher',crabgraph=('Native frontend','crab'),ladybug=('Native dialect','ldiff'),neo4j=('Cypher 5 / 25','neo'),puppygraph=('openCypher 9','puppy'))
 add('Languages and graph model','Gremlin',crabgraph=('Native frontend','crab'),puppygraph=('Read traversals','pgremlin'),sqlg=('TinkerPop 3.7.4','sqlg'))
 add('Languages and graph model','SPARQL and RDF datasets',crabgraph=('Native frontend / datasets','rdf'))

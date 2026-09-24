@@ -5,10 +5,10 @@ on:
     branches: [main]
     paths:
       - 'website/**'
-      - 'conformance/results/**'
+      - 'conformance/upstream-results/*.json'
+      - 'conformance/upstream/catalog.json'
+      - 'conformance/upstream/sources.json'
       - 'conformance/data/**'
-      - 'conformance/probes.json'
-      - 'conformance/compare.py'
       - '.github/workflows/website.yml'
   workflow_dispatch:
 

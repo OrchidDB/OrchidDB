@@ -1,0 +1,103 @@
+"""W3C manifest adapter. Uses original data/query/result files, preserving RDF terms."""
+import io,json,re,time
+from pathlib import Path
+import rdflib
+from rdflib import Graph,URIRef,BNode,Literal
+from rdflib.query import Result
+from rdflib.compare import isomorphic
+from fetch import CACHE
+from run import Process,ROOT,REPO
+rdflib.NORMALIZE_LITERALS=False
+XSD='http://www.w3.org/2001/XMLSchema#'
+RS=rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/result-set#')
+def term(v):
+ if v is None:return None
+ if isinstance(v,URIRef):return {'type':'uri','value':str(v)}
+ if isinstance(v,BNode):return {'type':'bnode','value':str(v)}
+ return {'type':'literal','value':str(v),'datatype':str(v.datatype or (rdflib.RDF.langString if v.language else rdflib.XSD.string)),'lang':v.language.lower() if v.language else None}
+def fromterm(t):
+ if t['type']=='uri':return URIRef(t['value'])
+ if t['type']=='bnode':return BNode(t['value'])
+ return Literal(t['value'],lang=t.get('lang'),datatype=None if t.get('lang') else t.get('datatype'),normalize=False)
+def matchterm(a,b,mapping):
+ if a is None or b is None:return a is b
+ if a.get('type')=='bnode' and b.get('type')=='bnode':
+  left=a['value'];right=b['value']
+  if left in mapping:return mapping[left]==right
+  if right in mapping.values():return False
+  mapping[left]=right;return True
+ return a==b
+def rows_equal(actual,expected,ordered):
+ if len(actual)!=len(expected):return False
+ def visit(index,remaining,mapping):
+  if index==len(expected):return True
+  candidates=[index] if ordered else remaining
+  for i in candidates:
+   if i not in remaining:continue
+   a=actual[i];b=expected[index];m=dict(mapping)
+   if len(a)==len(b) and all(matchterm(x,y,m) for x,y in zip(a,b)):
+    if visit(index+1,remaining-{i},m):return True
+  return False
+ return visit(0,set(range(len(actual))),{})
+def expected(path):
+ ext=path.suffix.lower()
+ if ext in ['.srx','.srj']:
+  with path.open('rb') as f:r=Result.parse(f,format='xml' if ext=='.srx' else 'json')
+  if r.type=='ASK':return {'boolean':bool(r.askAnswer)}
+  return {'variables':[str(v) for v in r.vars],'rows':[[term(row.get(v)) for v in r.vars] for row in r.bindings]}
+ graph=Graph().parse(path,format='turtle' if ext=='.ttl' else None)
+ roots=list(graph.subjects(rdflib.RDF.type,RS.ResultSet))
+ if roots:
+  root=roots[0];boolean=graph.value(root,RS.boolean)
+  if boolean is not None:return {'boolean':bool(boolean.toPython())}
+  variables=[str(x) for x in graph.objects(root,RS.resultVariable)];solutions=list(graph.objects(root,RS.solution));solutions.sort(key=lambda s:int(graph.value(s,RS.index) or 0));rows=[]
+  for s in solutions:
+   values={str(graph.value(b,RS.variable)):term(graph.value(b,RS.value)) for b in graph.objects(s,RS.binding)};rows.append([values.get(v) for v in variables])
+  return {'variables':variables,'rows':rows}
+ return {'graph':[[term(s),term(p),term(o)] for s,p,o in graph]}
+class Sparql:
+ def __init__(self):self.process=None
+ def run(self,case):
+  types=case['types'];base=CACHE/'rdf'
+  if any('Update' in t for t in types):return {'status':'unsupported','reason':'Crabgraph RDF adapter exposes read queries; SPARQL Update interface unavailable'}
+  if any('Protocol' in t or 'ServiceDescription' in t or 'CSV' in t for t in types):return {'status':'not-applicable','reason':'This case tests an HTTP protocol or wire serializer; the compared Crabgraph API is embedded'}
+  if '/entailment/' in case['path']:return {'status':'skipped','reason':'Upstream entailment profile requires a separately configured reasoning dataset'}
+  if case.get('result_file','') and case['result_file'].endswith(('.tsv','.csv')):return {'status':'not-applicable','reason':'Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms'}
+  path=base/case['query_file'];query=path.read_text()
+  if re.search(r'\bSERVICE\b',query,re.I):return {'status':'skipped','reason':'Upstream federated SERVICE fixture endpoint is not installed locally','query':query}
+  if self.process is None or self.process.p.poll() is not None:self.process=Process([str(REPO/'target/debug/upstream')],ROOT/'upstream-crabgraph-rdf.log')
+  negative=any('Negative' in t for t in types);syntax=any('Syntax' in t for t in types)
+  if syntax:
+   before=time.monotonic();actual=self.process.send({'op':'sparql-syntax','query':query,'base':path.resolve().as_uri()})
+   passed=('error' in actual)==negative
+   return {'status':'pass' if passed else 'fail','query':query,'expected':{'parses':not negative},'actual':actual,'query_ms':round((time.monotonic()-before)*1000,3),'assertion':'W3C positive/negative query syntax; no query evaluation'}
+  quads=[]
+  for filename,name in [(f,None) for f in case['data']]+[(r['file'],r['name']) for r in case['named']]:
+   if not filename:return {'status':'adapter-error','reason':'Manifest graph fixture has no file'}
+   data=Graph().parse(base/filename)
+   for triple in data:
+    row=[name]
+    for v in triple:
+     t=term(v);row.extend([t['value'],{'uri':'IRI','bnode':'BLANK','literal':'LITERAL'}[t['type']],t.get('datatype'),t.get('lang')])
+    quads.append(row)
+  if not case['result_file']:return {'status':'adapter-error','reason':'No supported result artifact in manifest'}
+  want=expected(base/case['result_file'])
+  effective='BASE <'+path.resolve().as_uri()+'>\n'+query
+  before=time.monotonic();actual=self.process.send({'op':'rdf','query':effective,'quads':quads},timeout=25);duration=round((time.monotonic()-before)*1000,3)
+  if 'error' in actual:passed=False
+  elif 'boolean' in want:passed=actual.get('boolean')==want['boolean']
+  elif 'graph' in want:
+   if 'graph' not in actual:passed=False
+   else:
+    a=Graph();b=Graph()
+    for triple in actual['graph']:a.add(tuple(fromterm(t) for t in triple))
+    for triple in want['graph']:b.add(tuple(fromterm(t) for t in triple))
+    passed=isomorphic(a,b)
+  else:
+   if set(actual.get('variables',[]))!=set(want['variables']):passed=False
+   else:
+    rows=[[r[actual['variables'].index(v)] for v in want['variables']] for r in actual['rows']]
+    passed=rows_equal(rows,want['rows'],bool(re.search(r'\bORDER\s+BY\b',query,re.I)))
+  return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.resolve().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; RDF term identity and global blank-node bijection / graph isomorphism'}
+ def close(self):
+  if self.process:self.process.close()

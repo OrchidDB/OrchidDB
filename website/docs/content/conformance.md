@@ -1,6 +1,6 @@
-Compare Crabgraph, Ladybug, Neo4j, PuppyGraph and SQLg, with executable query evidence and edition-specific capabilities on one page.
-## Read the comparison
+Compare Crabgraph, SQLg and PuppyGraph using pinned openCypher TCK, Apache TinkerPop gremlin-test and W3C SPARQL tests.
+## Upstream compatibility evidence
 
-The comparison brings together exact query results, reviewed product capabilities and the complete imported corpus inventory. Community and free editions are the baseline. Paid features are marked Enterprise, and source links identify the evidence for each claim.
+This comparison uses independently maintained test scenarios and expected results. It records the original upstream identifiers, fixtures, source revisions, expected output, actual output and diagnostics. The comparison covers Crabgraph, SQLg and PuppyGraph, using free editions and marking paid capabilities separately.
 
-Search for a feature or filter for differences in either direction. Open a result to inspect the query, expected rows, actual rows and engine error. Tests preserve duplicate rows, nulls and ordering requirements. Each run records its product version and date. Download the fixture, raw results, capability evidence and corpus inventory to reproduce or extend the comparison.
+All upstream scenarios appear in the report, including cases that were skipped or could not be executed. Passes, failures, unsupported interfaces, adapter limitations and timeouts are distinct outcomes. Timing records local scenario wall time and available query or step measurements. Everything runs locally; GitHub Actions only builds and publishes the static documentation and committed evidence. Download the full catalog and result files for reproducibility and investigation.

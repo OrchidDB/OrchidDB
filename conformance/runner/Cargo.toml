@@ -8,3 +8,6 @@ new-graph = { path = "../.." }
 arrow = "58.2.0"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+datafusion = "53.1.0"
+duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow"] }
+spargebra = "0.4.7"
