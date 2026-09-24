@@ -1,20 +1,18 @@
 //! Procedure-style steps: `call(name, args...)`, `shortestPath`,
 //! `pageRank`, `peerPressure`, `connectedComponent`, `fail`.
 //!
-//! None of these are implemented for real — `shortestPath` etc. need
-//! a graph-algorithm library and `call` needs a procedure registry —
-//! but we can at least parse them through to a clean IR shape so the
-//! conformance harness reports the *runtime* gap rather than dropping
-//! the whole query at the planner. Each lowers to an `IrExpr::Call`
-//! against a placeholder helper; the interpreter returns `Null` for
-//! unknown algorithm names, which keeps the surrounding chain runnable.
+//! Search is a graph-backed start service. Degree centrality and shortest
+//! path use graph execution helpers; other algorithm/procedure names retain
+//! their existing unsupported/placeholder behavior.
 
-use super::context::CURRENT;
-use super::literals::{gvalue_to_expr, gvalue_to_value};
+use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
+use super::literals::gvalue_to_expr;
+use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::{
-    Direction, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem,
+    ApplyKind, Direction, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice,
 };
+use crate::ir::policy::OptionalMissing;
 use crate::ir::value::Value;
 use crate::language::gremlin::ast::{CallArg, Step};
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
@@ -35,6 +33,11 @@ pub(super) fn lower_call(
     args: &[CallArg],
     options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
+    if name == "tinker.search" {
+        return Err(GremlinPlanError::Unsupported(
+            "tinker.search can only be used as a traversal source".into(),
+        ));
+    }
     if is_degree_centrality(name) {
         return Ok(Node::GraphProject {
             mode: ProjectMode::ReplaceCurrent,
@@ -77,7 +80,13 @@ pub(super) fn lower_call(
     })
 }
 
-pub(super) fn lower_call_source(name: &str, args: &[CallArg]) -> GremlinPlanResult<Option<Node>> {
+pub(super) fn lower_call_source(
+    name: &str,
+    args: &[CallArg],
+    options: &[CallOption],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Option<Node>> {
     if name.is_empty() || name == "--list" {
         let rows = if name == "--list" && !args.is_empty() {
             vec![vec![Value::String("tinker.search".into())]]
@@ -95,26 +104,7 @@ pub(super) fn lower_call_source(name: &str, args: &[CallArg]) -> GremlinPlanResu
     }
 
     if name == "tinker.search" {
-        let query = search_arg(args);
-        let ids: Vec<i64> = match query.as_deref() {
-            Some("vada") => vec![1],
-            Some(_) => vec![0],
-            None => vec![1],
-        };
-        let rows = ids
-            .into_iter()
-            .map(|id| {
-                vec![Value::Node {
-                    label: "person".into(),
-                    id,
-                }]
-            })
-            .collect();
-        return Ok(Some(Node::GraphValues {
-            bindings: vec![CURRENT.into()],
-            rows,
-            bulk: None,
-        }));
+        return lower_search_source(args, options, lo, ctx).map(Some);
     }
 
     Ok(None)
@@ -235,26 +225,97 @@ fn call_arg_mentions_out(arg: &CallArg) -> bool {
     }
 }
 
-fn search_arg(args: &[CallArg]) -> Option<String> {
+/// Keep search parameters in the IR until execution so the service sees
+/// graph mutations, bound maps, and values produced by child traversals.
+fn lower_search_source(
+    args: &[CallArg],
+    options: &[CallOption],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let mut input = Node::GraphValues {
+        bindings: vec![CURRENT.into()],
+        rows: vec![vec![Value::Null]],
+        bulk: None,
+    };
+    let mut parameters = Vec::new();
     for arg in args {
-        match arg {
-            CallArg::Map(text) if text == "xx1" => return Some("marko".into()),
-            CallArg::Traversal(steps) if format!("{steps:?}").contains("vada") => {
-                return Some("vada".into());
+        parameters.push(match arg {
+            CallArg::Value(value) => gvalue_to_expr(value)?,
+            CallArg::Traversal(steps) => search_parameter_traversal(&mut input, steps, lo, ctx)?,
+            CallArg::Map(text) => {
+                return Err(GremlinPlanError::Unsupported(format!(
+                    "unresolved call map argument: {text}"
+                )));
             }
-            CallArg::Value(value) => return Some(display_gvalue(value)),
-            _ => {}
-        }
+        });
     }
-    None
+    for option in options {
+        let value = if let Some(steps) = &option.traversal {
+            search_parameter_traversal(&mut input, steps, lo, ctx)?
+        } else if let Some(value) = &option.value {
+            gvalue_to_expr(value)?
+        } else {
+            IrExpr::Lit(crate::ir::expr::Lit::Bool(true))
+        };
+        parameters.push(IrExpr::Call {
+            name: "map_literal".into(),
+            args: vec![
+                IrExpr::List(vec![IrExpr::lit_str(&option.key)]),
+                IrExpr::List(vec![value]),
+            ],
+        });
+    }
+    let project = Node::GraphCurrentProject {
+        expr: IrExpr::Call {
+            name: "tinker_search".into(),
+            args: parameters,
+        },
+        fields: vec![CURRENT.into()],
+        input: input.boxed(),
+    };
+    Ok(Node::GraphUnwind {
+        input_expr: IrExpr::Binding(CURRENT.into()),
+        bind: CURRENT.into(),
+        outer: false,
+        input: project.boxed(),
+    })
 }
 
-fn display_gvalue(value: &GValue) -> String {
-    match gvalue_to_value(value) {
-        Some(Value::String(value)) => value,
-        Some(other) => format!("{other:?}"),
-        None => value.as_sql_literal_debug(),
-    }
+fn search_parameter_traversal(
+    input: &mut Node,
+    steps: &[Step],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<IrExpr> {
+    let binding = lo.fresh("search_parameter");
+    let child = lower_child_traversal(steps, lo, ctx, ChildTraversalKind::ByModulator)?;
+    let right = Node::GraphProject {
+        mode: ProjectMode::ReplaceScope,
+        items: vec![ProjectionItem {
+            alias: binding.clone(),
+            expr: IrExpr::Binding(CURRENT.into()),
+        }],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: Node::GraphSlice {
+            slice: Slice {
+                offset: 0,
+                fetch: Some(1),
+                tail: None,
+            },
+            input: child.boxed(),
+        }
+        .boxed(),
+    };
+    *input = Node::GraphApply {
+        kind: ApplyKind::Scalar,
+        correlation: vec![CURRENT.into()],
+        outputs: vec![binding.clone()],
+        optional_missing: OptionalMissing::Null,
+        left: input.clone().boxed(),
+        right: right.boxed(),
+    };
+    Ok(IrExpr::Binding(binding))
 }
 
 pub(super) fn lower_graph_algorithm(
@@ -444,4 +505,19 @@ pub(super) fn lower_fail(_input: Node, message: Option<&str>) -> GremlinPlanResu
         "fail({}) is not yet lowered",
         message.unwrap_or("")
     )))
+}
+
+/// A write procedure participates in GraphEngine statement rollback/persistence.
+pub(super) fn lower_import(path: &str, reader: Option<&str>, read: bool) -> GremlinPlanResult<Node> {
+    use crate::ir::plan::{ProcedureArg, ProcedureMode};
+    if !read {
+        return Err(GremlinPlanError::Unsupported("io() requires read(); file writing is not supported".into()));
+    }
+    Ok(Node::GraphProcedureCall {
+        name: "gremlin.io.read".into(),
+        args: [path, reader.unwrap_or("")].into_iter().map(|value| ProcedureArg {
+            name: None, value: IrExpr::lit_str(value),
+        }).collect(),
+        yields: vec![], mode: ProcedureMode::Write, input: None,
+    })
 }

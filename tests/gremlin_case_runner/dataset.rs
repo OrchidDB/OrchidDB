@@ -641,6 +641,8 @@ impl ValueKind {
             | Value::InternalId { .. }
             | Value::Node { .. }
             | Value::Edge { .. }
+            | Value::VertexProperty { .. }
+            | Value::Property { .. }
             | Value::List(_)
             | Value::Set(_)
             | Value::Map(_)

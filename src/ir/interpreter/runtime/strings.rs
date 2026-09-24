@@ -39,6 +39,8 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         return rendered;
     }
     match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_concat(&entry.0), display_for_concat(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -149,6 +151,8 @@ fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
 
 pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
     match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_kuzu_map_item(&entry.0), display_for_kuzu_map_item(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -242,32 +246,7 @@ fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<Stri
 /// (`{element, key, value, ...}`) renders as `vp[owner-key->value]` for
 /// vertex properties and `p[key->value]` for edge properties.
 fn display_property_object(v: &Value) -> Option<String> {
-    let Value::Map(map) = v else { return None };
-    if !(map.contains_key("element") && map.contains_key("key") && map.contains_key("value")) {
-        return None;
-    }
-    let key = match map.get("key") {
-        Some(Value::String(k)) => k.clone(),
-        Some(other) => display_for_tagged_container(other),
-        None => return None,
-    };
-    let value = display_for_tagged_container(map.get("value")?);
-    match map.get("element")? {
-        Value::Node { label, id } => Some(format!(
-            "vp[{}-{key}->{value}]",
-            display_node_name(label, *id)
-        )),
-        Value::Edge { .. } => Some(format!("p[{key}->{value}]")),
-        Value::String(owner) if owner.contains("->") => Some(format!("p[{key}->{value}]")),
-        Value::String(owner) => {
-            let owner = owner
-                .strip_prefix("v[")
-                .and_then(|s| s.strip_suffix(']'))
-                .unwrap_or(owner);
-            Some(format!("vp[{owner}-{key}->{value}]"))
-        }
-        _ => None,
-    }
+    match v {Value::VertexProperty{key,value,..}=>Some(format!("vp[{key}->{}]",display_for_concat(value))),Value::Property{key,value,..}=>Some(format!("p[{key}->{}]",display_for_concat(value))),_=>None}
 }
 
 pub(crate) fn display_for_tagged_container(v: &Value) -> String {
@@ -275,6 +254,8 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
         return display_for_concat(v);
     }
     match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_tagged_container(&entry.0), display_for_tagged_container(&entry.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),

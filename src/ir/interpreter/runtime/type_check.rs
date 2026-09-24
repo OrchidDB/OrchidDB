@@ -15,7 +15,10 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::BulkSet(_) => matches!(normalised.as_str(), "bulkset" | "set" | "collection"),
         Value::Set(_) => matches!(normalised.as_str(), "set" | "collection"),
         Value::Null => normalised == "null",
-        Value::MapEntry(_) => matches!(normalised.as_str(), "entry" | "map.entry" | "java.util.map$entry"),
+        Value::MapEntry(_) => matches!(
+            normalised.as_str(),
+            "entry" | "map.entry" | "java.util.map$entry"
+        ),
         Value::Token(_) => normalised == "token",
         Value::Direction(_) => normalised == "direction",
         Value::Bool(_) => matches!(normalised.as_str(), "boolean" | "bool"),
@@ -54,6 +57,11 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
             "map" | "tree" | "graph" | "bulkset" | "traverser"
         ),
         Value::Path(_) => normalised == "path",
+        Value::VertexProperty { .. } => matches!(
+            normalised.as_str(),
+            "vertexproperty" | "vertex_property" | "property" | "element"
+        ),
+        Value::Property { .. } => normalised == "property",
         Value::Node { .. } => matches!(normalised.as_str(), "vertex" | "node"),
         Value::Edge { .. } => matches!(normalised.as_str(), "edge" | "relationship"),
     }

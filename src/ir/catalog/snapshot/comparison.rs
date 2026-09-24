@@ -35,7 +35,10 @@ impl PropertyGraph {
         }
         let a = self.overlay.borrow();
         let b = other.overlay.borrow();
-        a.inserted_nodes == b.inserted_nodes
+        a.vertex_properties == b.vertex_properties
+            && a.next_property_id == b.next_property_id
+            && a.public_ids == b.public_ids
+            && a.inserted_nodes == b.inserted_nodes
             && a.node_property_overrides == b.node_property_overrides
             && a.deleted_nodes == b.deleted_nodes
             && inserted_edges_eq(&a.inserted_edges, &b.inserted_edges)

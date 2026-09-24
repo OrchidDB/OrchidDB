@@ -704,6 +704,16 @@ pub(crate) fn procedure_call_op(
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if name == "gremlin.io.read" {
+        for row in upstream {
+            let values = args.iter().map(|arg| eval(&arg.value, &row, graph)).collect::<IrResult<Vec<_>>>()?;
+            let [Value::String(path), Value::String(reader)] = values.as_slice() else {
+                return Err(InterpretError::Runtime("io.read requires path and reader strings".into()));
+            };
+            super::runtime::import::read(graph, path, reader)?;
+        }
+        return Ok(vec![]);
+    }
     if name.starts_with("gremlin.mutation.") {
         let mut result=Vec::with_capacity(upstream.len());
         for mut row in upstream {

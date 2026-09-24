@@ -27,7 +27,7 @@ use super::path::{lower_path, lower_path_from, lower_path_to};
 use super::procedures::{lower_call, lower_call_with_option, lower_fail, lower_graph_algorithm};
 use super::project::{lower_constant, lower_id, lower_label, lower_project, lower_values};
 use super::property_object::{
-    lower_element, lower_element_map, lower_properties, lower_properties_value, lower_property_map,
+    lower_element, lower_element_map, lower_properties, lower_property_map,
     lower_value_map, lower_value_map_tokens, lower_value_map_modulators,
 };
 use super::reduce::{lower_aggregate, lower_count, lower_fold, lower_unfold};
@@ -64,14 +64,26 @@ where
     I: Iterator<Item = &'a Step>,
 {
     match step {
+        Step::Io { .. } => Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("io() must start a traversal".into())),
         Step::DynamicMerge {edge,criteria,options} => super::merge::lower_dynamic_merge(input,*edge,criteria,options,lo,ctx,false),
-        Step::AddDynamicV { label } => super::mutations::lower_dynamic_vertex(input,label,lo,ctx),
+        Step::AddDynamicV { label } => {
+            super::mutations::lower_vertex_with_properties(input, label, steps, lo, ctx)
+        }
         Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx),
+        Step::PropertyNative {cardinality,key,value,meta} => super::mutations::lower_native_property(input,cardinality,key,value,meta,lo,ctx),
         Step::PropertyDynamic { key,value } => super::mutations::lower_dynamic_property(input,key,value,lo,ctx),
         Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx, false),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
         Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref(), lo)),
-        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label, lo)),
+        Step::AddV { label } => super::mutations::lower_vertex_with_properties(
+            input,
+            &crate::language::gremlin::ast::MutationArgument::Literal(
+                crate::language::gremlin::semantics::GValue::String(label.clone()),
+            ),
+            steps,
+            lo,
+            ctx,
+        ),
         Step::Property { key, value } => super::mutations::lower_property(input, key, value),
         Step::PropertyTraversal { key, traversal } => super::mutations::lower_property_traversal(input, key, traversal, lo, ctx),
         Step::Drop => Ok(super::mutations::lower_drop(input)),
@@ -108,7 +120,13 @@ where
         Step::OtherVertex => lower_other_vertex(input, lo, ctx),
 
         // ----- value projection -----
-        Step::Values(keys) => lower_values(input, keys, lo),
+        Step::Values(keys) => lower_values(input, keys, lo, ctx),
+        Step::PropertyKey | Step::PropertyValue => Ok(super::project::project_value_with_path(input,
+            crate::ir::expr::IrExpr::Call {
+                name: if matches!(step, Step::PropertyKey) { "property_key" } else { "property_value" }.into(),
+                args: vec![crate::ir::expr::IrExpr::Binding("current".into())],
+            },
+        )),
         Step::Id => Ok(lower_id(input)),
         Step::Label => Ok(lower_label(input)),
         Step::Identity => Ok(input),
@@ -355,11 +373,7 @@ where
             fields: vec!["current".to_string()],
             input: input.boxed(),
         }),
-        Step::Properties(keys) if matches!(steps.peek(), Some(Step::Identity)) => {
-            steps.next();
-            Ok(lower_properties_value(input, keys, lo))
-        }
-        Step::Properties(keys) => Ok(lower_properties(input, keys, lo)),
+        Step::Properties(keys) => lower_properties(input, keys, lo, ctx),
         Step::ValueMap(keys) => {
             let input = lower_value_map(input, keys);
             lower_value_map_modulators(input, steps, lo, ctx)

@@ -9,104 +9,37 @@ use super::helpers::{apply_project_by_spec, consume_by};
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::{Node, ProjectErrorPolicy, ProjectMode, ProjectionItem};
-use crate::ir::policy::PropertyMissing;
 use crate::language::gremlin::ast::Step;
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
-pub(super) fn lower_values(
-    input: Node,
-    keys: &[String],
-    lo: &mut Lowerer,
-) -> GremlinPlanResult<Node> {
-    if keys.len() == 1 {
-        if has_vertex_property_filter(lo) && keys[0] == "location" {
-            let project = Node::GraphCurrentProject {
-                expr: IrExpr::Call {
-                    name: "gremlin_visible_vertex_property_values".into(),
-                    args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_str("location")],
-                },
-                fields: vec![CURRENT.to_string()],
-                input: input.boxed(),
-            };
-            return Ok(Node::GraphUnwind {
-                input_expr: IrExpr::Binding(CURRENT.into()),
-                bind: CURRENT.into(),
-                outer: false,
-                input: project.boxed(),
-            });
-        }
-        Ok(current_project_property(input, &keys[0]))
-    } else {
-        // A relational UNION coerces heterogeneous property columns to one
-        // SQL type. Keep each requested value native and fan out once per
-        // input traverser instead; this also avoids replaying mutations.
-        let value = lo.fresh("property_value");
-        let unwound = Node::GraphUnwind {
-            input_expr: IrExpr::Call {
-                name: "requested_property_values".into(),
-                args: vec![
-                    IrExpr::Binding(CURRENT.into()),
-                    IrExpr::List(keys.iter().map(|key| IrExpr::lit_str(key)).collect()),
-                ],
-            },
-            bind: value.clone(),
-            outer: false,
-            input: input.boxed(),
-        };
-        Ok(Node::GraphProject {
-            mode: ProjectMode::ReplaceCurrent,
-            items: vec![
-                ProjectionItem {
-                    alias: CURRENT.into(),
-                    expr: IrExpr::Binding(value.clone()),
-                },
-                ProjectionItem {
-                    alias: PATH.into(),
-                    expr: IrExpr::Call {
-                        name: "path_append_after".into(),
-                        args: vec![
-                            IrExpr::Binding(PATH.into()),
-                            IrExpr::Binding(CURRENT.into()),
-                            IrExpr::Binding(value),
-                        ],
-                    },
-                },
-            ],
-            error_policy: ProjectErrorPolicy::PropagateError,
-            input: unwound.boxed(),
-        })
+pub(super) fn lower_values(input: Node, keys: &[String], lo: &mut Lowerer, ctx: &TraversalContext) -> GremlinPlanResult<Node> {
+    if lo.subgraph_vertex_property_filter.is_some() {
+        return super::property_object::lower_properties_value(input, keys, lo, ctx);
     }
-}
-
-fn has_vertex_property_filter(lo: &Lowerer) -> bool {
-    lo.subgraph_vertex_property_filter.is_some()
-}
-
-fn current_project_property(input: Node, key: &str) -> Node {
-    let expr = IrExpr::property(CURRENT, key.to_string(), PropertyMissing::DropUnproductive);
-    let input = Node::GraphFilter {
-        condition: IrExpr::IsNotNull(Box::new(expr.clone())),
+    // Fan out native records without coercion or replaying the input traversal.
+    let value = lo.fresh("property_value");
+    let unwound = Node::GraphUnwind {
+        input_expr: IrExpr::Call {
+            name: "requested_property_values".into(),
+            args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::List(keys.iter().map(IrExpr::lit_str).collect())],
+        },
+        bind: value.clone(),
+        outer: false,
         input: input.boxed(),
     };
+    Ok(project_value_with_path(unwound, IrExpr::Binding(value)))
+}
+
+pub(super) fn project_value_with_path(input: Node, value: IrExpr) -> Node {
     Node::GraphProject {
         mode: ProjectMode::ReplaceCurrent,
         items: vec![
-            ProjectionItem {
-                alias: CURRENT.into(),
-                expr: expr.clone(),
-            },
-            ProjectionItem {
-                alias: PATH.into(),
-                expr: IrExpr::Call {
-                    name: "path_append_after".into(),
-                    args: vec![
-                        IrExpr::Binding(PATH.into()),
-                        IrExpr::Binding(CURRENT.into()),
-                        expr,
-                    ],
-                },
-            },
+            ProjectionItem { alias: CURRENT.into(), expr: value.clone() },
+            ProjectionItem { alias: PATH.into(), expr: IrExpr::Call {
+                name: "path_append_after".into(),
+                args: vec![IrExpr::Binding(PATH.into()), IrExpr::Binding(CURRENT.into()), value],
+            } },
         ],
         error_policy: ProjectErrorPolicy::PropagateError,
         input: input.boxed(),

@@ -121,6 +121,15 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
         "now",
         "nextval",
         "currval",
+        "tinker_search",
+        "gremlin_cast_string",
+        "requested_property_values",
+        "properties_list",
+        "property_map",
+        "value_map",
+        "value_map_tokens",
+        "element_map",
+        "gremlin_id",
     ];
     if DENY.contains(&normalized.as_str()) {
         return false;
@@ -535,6 +544,8 @@ pub(super) fn constant_result_expr(
 
 pub(super) fn tagged_value(value: &Value) -> String {
     match value {
+        Value::VertexProperty { key, value, .. } => format!("vp[{key}->{}]", tagged_value(value)),
+        Value::Property { key, value, .. } => format!("p[{key}->{}]", tagged_value(value)),
         Value::MapEntry(pair) => format!("{}={}", tagged_value(&pair.0), tagged_value(&pair.1)),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
@@ -601,7 +612,15 @@ pub(super) fn tagged_value(value: &Value) -> String {
 
 pub(super) fn cypher_plain_value(value: &Value) -> String {
     match value {
-        Value::MapEntry(pair) => format!("{}={}", cypher_plain_value(&pair.0), cypher_plain_value(&pair.1)),
+        Value::VertexProperty { key, value, .. } => {
+            format!("vp[{key}->{}]", cypher_plain_value(value))
+        }
+        Value::Property { key, value, .. } => format!("p[{key}->{}]", cypher_plain_value(value)),
+        Value::MapEntry(pair) => format!(
+            "{}={}",
+            cypher_plain_value(&pair.0),
+            cypher_plain_value(&pair.1)
+        ),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -727,7 +746,17 @@ pub(super) fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
-        Value::MapEntry(pair) => format!("{}={}", display_for_list_to_string(&pair.0), display_for_list_to_string(&pair.1)),
+        Value::VertexProperty { key, value, .. } => {
+            format!("vp[{key}->{}]", display_for_list_to_string(value))
+        }
+        Value::Property { key, value, .. } => {
+            format!("p[{key}->{}]", display_for_list_to_string(value))
+        }
+        Value::MapEntry(pair) => format!(
+            "{}={}",
+            display_for_list_to_string(&pair.0),
+            display_for_list_to_string(&pair.1)
+        ),
         Value::Token(name) => format!("t[{name}]"),
         Value::Direction(name) => format!("D[{name}]"),
         Value::TypedMap(entries) => format!(
@@ -826,7 +855,20 @@ mod folding_tests {
 
     #[test]
     fn engine_calls_are_not_interpreter_constants_even_with_null_arguments() {
-        for name in ["unknown_function", "stats", "uuid_extract_version"] {
+        for name in [
+            "unknown_function",
+            "stats",
+            "uuid_extract_version",
+            "tinker_search",
+            "gremlin_cast_string",
+            "requested_property_values",
+            "properties_list",
+            "property_map",
+            "value_map",
+            "value_map_tokens",
+            "element_map",
+            "gremlin_id",
+        ] {
             let call = IrExpr::Call {
                 name: name.into(),
                 args: vec![IrExpr::Lit(Lit::Null)],

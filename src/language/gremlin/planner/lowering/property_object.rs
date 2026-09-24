@@ -170,54 +170,110 @@ pub(super) fn lower_element(input: Node) -> Node {
 /// `properties(keys...)` — fan-out: one row per (current, key) pair
 /// where the property exists. Returns a list traverser via
 /// `GraphUnwind` over a list-shaped helper.
-pub(super) fn lower_properties(input: Node, keys: &[String], lo: &mut Lowerer) -> Node {
-    if lo.subgraph_vertex_property_filter.is_some() && keys.len() == 1 && keys[0] == "location" {
-        let project = Node::GraphCurrentProject {
-            expr: IrExpr::Call {
-                name: "gremlin_visible_vertex_properties".to_string(),
-                args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::lit_str("location")],
-            },
-            fields: vec![CURRENT.to_string()],
-            input: input.boxed(),
-        };
-        return Node::GraphUnwind {
-            input_expr: IrExpr::Binding(CURRENT.into()),
-            bind: CURRENT.into(),
-            outer: false,
-            input: project.boxed(),
-        };
-    }
+pub(super) fn lower_properties(
+    input: Node,
+    keys: &[String],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node> {
     let property = lo.fresh("property");
     let unwound = Node::GraphUnwind {
         input_expr: IrExpr::Call {
             name: "properties_list".into(),
-            args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::List(keys.iter().map(IrExpr::lit_str).collect()), IrExpr::lit_bool(true), IrExpr::lit_bool(true), IrExpr::lit_bool(false)],
+            args: vec![IrExpr::Binding(CURRENT.into()), IrExpr::List(keys.iter().map(IrExpr::lit_str).collect())],
         },
         bind: property.clone(),
         outer: false,
         input: input.boxed(),
     };
-    Node::GraphProject {
-        mode: ProjectMode::ReplaceCurrent,
-        items: vec![
-            ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(property.clone()) },
-            ProjectionItem { alias: PATH.into(), expr: IrExpr::Call { name: "path_append_after".into(), args: vec![IrExpr::Binding(PATH.into()), IrExpr::Binding(CURRENT.into()), IrExpr::Binding(property)] } },
-        ],
-        error_policy: ProjectErrorPolicy::PropagateError,
-        input: unwound.boxed(),
-    }
+    let projected = super::project::project_value_with_path(unwound, IrExpr::Binding(property));
+    filter_vertex_properties(projected, lo, ctx)
 }
 
-pub(super) fn lower_properties_value(input: Node, keys: &[String], lo: &mut Lowerer) -> Node {
-    Node::GraphCurrentProject {
-        expr: IrExpr::property(
-            CURRENT,
-            "value".to_string(),
-            PropertyMissing::DropUnproductive,
-        ),
-        fields: vec![CURRENT.to_string()],
-        input: lower_properties(input, keys, lo).boxed(),
-    }
+/// SubgraphStrategy evaluates its child traversal against native vertex
+/// properties. Edge and meta-properties retain their ordinary visibility.
+fn filter_vertex_properties(
+    input: Node,
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let Some(predicate) = lo.subgraph_vertex_property_filter.take() else {
+        return Ok(input);
+    };
+    let is_vertex_property = IrExpr::Binary {
+        op: crate::ir::expr::BinaryOp::Eq,
+        lhs: Box::new(IrExpr::Call {
+            name: "element_kind".into(),
+            args: vec![IrExpr::Binding(CURRENT.into())],
+        }),
+        rhs: Box::new(IrExpr::lit_str("VertexProperty")),
+    };
+    let native = Node::GraphFilter {
+        condition: is_vertex_property.clone(),
+        input: Node::GraphCorrelate {
+            bindings: vec![CURRENT.into()],
+        }
+        .boxed(),
+    };
+    // Strategy evaluation itself must not recursively apply the same strategy.
+    let filtered = super::filter::lower_where_traversal(native, &predicate, lo, ctx);
+    lo.subgraph_vertex_property_filter = Some(predicate);
+    Ok(Node::GraphApply {
+        kind: ApplyKind::Semi,
+        correlation: vec![CURRENT.into()],
+        outputs: vec![],
+        optional_missing: OptionalMissing::Null,
+        left: input.boxed(),
+        right: Node::GraphUnion {
+            all: true,
+            align: UnionAlign::ByPosition,
+            left: Node::GraphFilter {
+                condition: IrExpr::Not(Box::new(is_vertex_property)),
+                input: Node::GraphCorrelate {
+                    bindings: vec![CURRENT.into()],
+                }
+                .boxed(),
+            }
+            .boxed(),
+            right: filtered?.boxed(),
+        }
+        .boxed(),
+    })
+}
+
+pub(super) fn lower_properties_value(
+    input: Node,
+    keys: &[String],
+    lo: &mut Lowerer,
+    ctx: &TraversalContext,
+) -> GremlinPlanResult<Node> {
+    // values() filters native properties internally but only appends the
+    // resulting value to the caller's path, not the intermediate property.
+    let previous = lo.fresh("property_owner");
+    let previous_path = lo.fresh("property_owner_path");
+    let saved = Node::GraphProject {
+        mode: ProjectMode::PreserveVisible,
+        items: vec![
+            ProjectionItem { alias: previous.clone(), expr: IrExpr::Binding(CURRENT.into()) },
+            ProjectionItem { alias: previous_path.clone(), expr: IrExpr::Binding(PATH.into()) },
+        ],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: input.boxed(),
+    };
+    let filtered = lower_properties(saved, keys, lo, ctx)?;
+    let value = IrExpr::Call { name: "property_value".into(), args: vec![IrExpr::Binding(CURRENT.into())] };
+    Ok(Node::GraphProject {
+        mode: ProjectMode::ReplaceCurrent,
+        items: vec![
+            ProjectionItem { alias: CURRENT.into(), expr: value.clone() },
+            ProjectionItem { alias: PATH.into(), expr: IrExpr::Call {
+                name: "path_append_after".into(),
+                args: vec![IrExpr::Binding(previous_path), IrExpr::Binding(previous), value],
+            } },
+        ],
+        error_policy: ProjectErrorPolicy::PropagateError,
+        input: filtered.boxed(),
+    })
 }
 
 fn project_map(input: Node, helper: &str, keys: &[String]) -> Node {

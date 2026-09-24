@@ -55,7 +55,7 @@ const OV_INSERTED_EDGE_KEYS: u8 = 0x1E;
 const OV_OVERRIDE_EDGE_KEYS: u8 = 0x1F;
 
 fn is_overlay_tag(tag: u8) -> bool {
-    (0x10..=0x1F).contains(&tag)
+    (0x10..=0x20).contains(&tag)
 }
 
 impl PropertyGraph {
@@ -188,7 +188,6 @@ mod sections;
 
 use binary::*;
 use sections::*;
-#[cfg(any(feature = "duckdb", test))]
 pub(super) use binary::{decode_value_bytes, encode_value_bytes};
 
 #[cfg(test)]

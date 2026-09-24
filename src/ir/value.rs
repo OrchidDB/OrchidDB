@@ -92,6 +92,8 @@ pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
         Value::InternalId { table, offset } => framed(17, [table.to_be_bytes().to_vec(), offset.to_be_bytes().to_vec()]),
         Value::Node { label, id } => framed(5, [label.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
         Value::Edge { rel_type, id, .. } => framed(6, [rel_type.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
+        Value::VertexProperty { id, .. } => scalar(0x40, id.to_be_bytes().to_vec()),
+        Value::Property { key, value, .. } => framed(0x41, [key.as_bytes().to_vec(), set_member_key(value)]),
         Value::List(items) => framed(7, items.iter().map(set_member_key)),
         Value::Path(items) => framed(9, items.iter().map(set_member_key)),
         Value::Set(items) | Value::BulkSet(items) => {
@@ -216,6 +218,10 @@ pub enum Value {
         /// means render the edge's full catalog property bag.
         projected_properties: Option<Vec<String>>,
     },
+    /// Persisted vertex property; identity is independent of owner/key/value.
+    VertexProperty { id: i64, owner: Box<Value>, key: String, value: Box<Value> },
+    /// Edge or meta-property. Owner can itself be a VertexProperty.
+    Property { owner: Box<Value>, key: String, value: Box<Value> },
     List(Vec<Value>),
     /// Native Gremlin Set; member identity is typed and iteration retains encounter order.
     Set(Vec<Value>),
@@ -255,6 +261,9 @@ impl PartialEq for Value {
             | (Self::Token(a), Self::Token(b)) | (Self::Direction(a), Self::Direction(b)) => a == b,
             (Self::InternalId { table: a, offset: x }, Self::InternalId { table: b, offset: y }) => (a,x) == (b,y),
             (Self::Node { label: a, id: x }, Self::Node { label: b, id: y }) => (a,x) == (b,y),
+            (Self::VertexProperty { id: a, .. }, Self::VertexProperty { id: b, .. }) => a == b,
+            (Self::Property { key: a, value: x, .. }, Self::Property { key: b, value: y, .. }) =>
+                a == b && set_member_key(x) == set_member_key(y),
             (Self::Edge { rel_type:a,id:b,src_label:c,src_id:d,dst_label:e,dst_id:f,projected_properties:g },
              Self::Edge { rel_type:h,id:i,src_label:j,src_id:k,dst_label:l,dst_id:m,projected_properties:n }) =>
                 (a,b,c,d,e,f,g) == (h,i,j,k,l,m,n),
@@ -312,6 +321,8 @@ impl Value {
             Self::String(_) => "string",
             Self::Node { .. } => "node",
             Self::Edge { .. } => "edge",
+            Self::VertexProperty { .. } => "vertex property",
+            Self::Property { .. } => "property",
             Self::List(_) => "list",
             Self::Set(_) => "set",
             Self::Map(_) => "map",
@@ -387,6 +398,9 @@ impl Value {
             _ => {}
         }
         Some(match (self, other) {
+            (Self::VertexProperty{id:a,..},Self::VertexProperty{id:b,..})=>a==b,
+            (Self::Property{key:a,value:x,..},Self::Property{key:b,value:y,..})=>a==b && set_member_key(x)==set_member_key(y),
+
             (a, b) if numeric_decimal(a).is_some() || numeric_decimal(b).is_some() => {
                 match (numeric_decimal(a), numeric_decimal(b)) {
                     (Some(a), Some(b)) => a == b,

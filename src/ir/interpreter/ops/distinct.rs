@@ -92,6 +92,11 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(0);
             buf.extend_from_slice(&id.to_be_bytes());
         }
+        Value::VertexProperty { id, .. } => {
+            buf.push(0x40);
+            buf.extend_from_slice(&id.to_be_bytes());
+        }
+        Value::Property { .. } => return crate::ir::value::set_member_key(v),
         Value::List(items) => {
             buf.push(7);
             for item in items {

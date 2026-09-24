@@ -11,6 +11,10 @@ pub(super) fn hash_function_value(value: &Value) -> Value {
 
 fn hash_value_u64(value: &Value) -> u64 {
     match value {
+        Value::VertexProperty {id,..} => murmurhash64(*id as u64),
+        Value::Property { .. } => crate::ir::value::set_member_key(value).into_iter().fold(
+            murmurhash64(0x41), |hash, byte| combine_hash_scalar(hash, murmurhash64(u64::from(byte)))
+        ),
         Value::Null => u64::MAX,
         Value::Bool(value) => murmurhash64(u64::from(*value)),
         Value::Byte(value) => murmurhash64(*value as u64),

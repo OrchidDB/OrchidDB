@@ -30,7 +30,38 @@ pub(super) fn lower_source_traversal_with_context(
     let (first, rest) = steps
         .split_first()
         .ok_or_else(|| GremlinPlanError::Parse("empty traversal".to_string()))?;
-    let node = source_node(first, lo, ctx)?;
+    // Vertex source modulators must be lowered with the source step, while
+    // retaining the same sack, bulk and shared side-effect initialization as
+    // read sources. The complete remaining-step path also preserves liveness.
+    if matches!(first, Step::AddV { .. } | Step::AddDynamicV { .. }) {
+        let seed = super::sources::with_initial_sack(
+            Node::GraphValues {
+                bindings: vec![CURRENT.into()],
+                rows: vec![vec![crate::ir::value::Value::Null]],
+                bulk: None,
+            },
+            lo,
+            ctx,
+        )?;
+        let seed = initialize_source_state(seed, lo);
+        return lower_remaining_steps(seed, steps, lo, ctx);
+    }
+    let mut rest = rest;
+    let mut call_options = Vec::new();
+    if matches!(first, Step::Call(name, _) if name == "tinker.search") {
+        while let Some((Step::WithOption { key, value, traversal }, tail)) = rest.split_first() {
+            call_options.push(super::procedures::CallOption {
+                key: key.clone(), value: value.clone(), traversal: traversal.clone(),
+            });
+            rest = tail;
+        }
+    }
+    let node = source_node(first, lo, ctx, &call_options)?;
+    let node = initialize_source_state(node, lo);
+    lower_remaining_steps(node, rest, lo, ctx)
+}
+
+fn initialize_source_state(node: Node, lo: &Lowerer) -> Node {
     let mut config = vec![
         ProjectionItem { alias: "__bulk_enabled".into(), expr: IrExpr::lit_bool(lo.bulk_enabled) },
         ProjectionItem { alias: "__gremlin_bulk_safe".into(), expr: IrExpr::lit_bool(lo.bulk_safe) },
@@ -48,8 +79,7 @@ pub(super) fn lower_source_traversal_with_context(
             value_input: Node::GraphCorrelate { bindings: vec!["__gremlin_group_members".into()] }.boxed(),
             value: IrExpr::Binding(CURRENT.into()), seed, reducer: "register".into(), eager: true, input: node.boxed() };
     }
-
-    lower_remaining_steps(node, rest, lo, ctx)
+    node
 }
 
 /// ConnectiveStrategy-style rewrite: fold infix `.and()` / `.or()` markers
@@ -294,6 +324,16 @@ fn collect_step_refs(step: &Step, bindings: &mut Vec<String>) {
         | Step::Until(sub)
         | Step::ListOpTraversal(_, sub) => collect_label_refs(sub, bindings),
         Step::Emit(Some(sub)) => collect_label_refs(sub, bindings),
+        Step::PropertyTraversal { traversal, .. } => collect_label_refs(traversal, bindings),
+        Step::PropertyDynamic { key, value } | Step::PropertyNative { key, value, .. } => {
+            for argument in [key, value] {
+                match argument {
+                    crate::language::gremlin::ast::MutationArgument::Traversal(sub) => collect_label_refs(sub, bindings),
+                    crate::language::gremlin::ast::MutationArgument::Label(label) => push_binding(bindings, label),
+                    crate::language::gremlin::ast::MutationArgument::Literal(_) => {}
+                }
+            }
+        }
         Step::Match(patterns) => {
             for pattern in patterns {
                 collect_label_refs(pattern, bindings);
