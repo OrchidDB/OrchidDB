@@ -110,11 +110,12 @@ impl LoweringVisitor {
             ));
             return;
         };
-        if value
+        if let Some(nested) = value
             .genericLiteral()
-            .is_some_and(|literal| literal.nestedTraversal().is_some())
+            .and_then(|literal| literal.nestedTraversal())
         {
-            self.fail(GremlinError::Unsupported("property traversal value".into()));
+            let traversal = self.lower_nested_traversal(&nested);
+            self.steps.push(Step::PropertyTraversal { key, traversal });
             return;
         }
         self.visit_genericArgument(&value);

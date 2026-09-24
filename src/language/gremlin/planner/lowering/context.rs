@@ -205,6 +205,7 @@ pub(super) struct Lowerer {
     /// ProductiveByStrategy: when set, an unproductive `by(...)` projection
     /// surfaces NULL instead of dropping the row.
     pub(super) productive_by: bool,
+    pub(super) partition_write: Option<(String, GValue)>,
     /// Root `withSack(initial)` value. The runtime carries it as a hidden
     /// per-row binding so `sack()` and `sack(op).by(...)` can stay
     /// traverser-local instead of global.
@@ -249,6 +250,7 @@ impl Lowerer {
             subgraph_vertex_property_filter: None,
             subgraph_check_adjacent_vertices: true,
             productive_by: false,
+            partition_write: None,
             sack_initial: None,
             side_effect_bags: BTreeMap::new(),
             side_effect_seeds: BTreeMap::new(),

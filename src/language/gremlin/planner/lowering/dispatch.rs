@@ -64,10 +64,13 @@ where
     I: Iterator<Item = &'a Step>,
 {
     match step {
-        Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref()),
-        Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref())),
-        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label)),
+        Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
+        Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
+        Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref(), lo)),
+        Step::AddV { label } => Ok(super::mutations::lower_add_vertex(input, label, lo)),
         Step::Property { key, value } => super::mutations::lower_property(input, key, value),
+        Step::PropertyTraversal { key, traversal } => super::mutations::lower_property_traversal(input, key, traversal, lo, ctx),
+        Step::Drop => Ok(super::mutations::lower_drop(input)),
         // ----- filters that don't fit the simple scalar predicate path -----
         Step::HasLabel(labels) => lower_has_label(input, labels),
         Step::Has { key, predicate } => lower_has(input, key, predicate),
@@ -383,6 +386,7 @@ where
             ))
         }
         Step::AggregateAs(label) => lower_aggregate_as(input, label, steps, lo, ctx),
+        Step::AggregateLocal(label) => {lo.side_effect_local_labels.insert(label.clone());lower_aggregate_as(input,label,steps,lo,ctx)},
         Step::Cap(label) => Ok(lower_cap(input, label, lo)),
         Step::CapMulti(labels) => Ok(lower_cap_multi(input, labels, lo)),
         Step::Sack => Ok(lower_sack_read(input)),
@@ -479,6 +483,7 @@ where
         Step::WithSack { .. }
         | Step::WithSideEffect { .. }
         | Step::WithStrategy { .. }
+        | Step::WithPartitionWrite { .. }
         | Step::WithProductiveByStrategy => Ok(input),
         // Mid-traversal `V/E/inject` rebinds the source. We approximate by
         // running the spawn through `source_node` over a fresh seed and
@@ -499,7 +504,7 @@ fn is_side_effect_only(sub: &[Step]) -> bool {
         return false;
     }
     sub.iter().all(|s| match s {
-        Step::AggregateAs(_)
+        Step::AggregateAs(_) | Step::AggregateLocal(_)
         | Step::By(_)
         | Step::SackOp(_)
         | Step::GroupCountAs(_)
@@ -517,7 +522,7 @@ fn is_side_effect_only(sub: &[Step]) -> bool {
 fn mark_local_aggregate_labels(sub: &[Step], lo: &mut Lowerer) {
     for s in sub {
         match s {
-            Step::AggregateAs(label) => {
+            Step::AggregateAs(label) | Step::AggregateLocal(label) => {
                 lo.side_effect_local_labels.insert(label.clone());
             }
             Step::Local(inner) | Step::SideEffect(inner) => {

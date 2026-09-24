@@ -390,3 +390,156 @@ pub(crate) fn regex_match_literal(haystack: &str, pattern: &str) -> bool {
     }
     false
 }
+
+/// Gremlin string steps validate their input independently of Cypher functions.
+pub(crate) fn gremlin_string_call(
+    op: &str,
+    args: &[Value],
+) -> crate::ir::interpreter::IrResult<Value> {
+    use crate::ir::interpreter::InterpretError;
+    let current = args.first().unwrap_or(&Value::Null);
+    if let Some(scalar) = op.strip_prefix("local_") {
+        if let Value::List(items) = current {
+            return items
+                .iter()
+                .map(|item| {
+                    let mut nested = args.to_vec();
+                    nested[0] = item.clone();
+                    gremlin_string_call(scalar, &nested).map_err(|_| {
+                        InterpretError::Runtime(format!(
+                            "The {}(local) step can only take string or list of strings",
+                            gremlin_step_name(scalar)
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List);
+        }
+        return gremlin_string_call(scalar, args);
+    }
+    if op == "reverse" {
+        return Ok(match current {
+            Value::String(s) => Value::String(s.chars().rev().collect()),
+            Value::List(items) | Value::Path(items) | Value::BulkSet(items) => {
+                Value::List(items.iter().rev().cloned().collect())
+            }
+            other => other.clone(),
+        });
+    }
+    if op == "conjoin" {
+        let items = match current {
+            Value::List(items) | Value::Path(items) | Value::BulkSet(items) => Some(items.clone()),
+            _ => crate::ir::value::as_gremlin_set(current).map(|items| items.to_vec()),
+        }.ok_or_else(|| InterpretError::Runtime(
+            if matches!(current, Value::Null) { "Incoming traverser for conjoin step can't be null".into() }
+            else { format!("conjoin step can only take an array or an Iterable type for incoming traversers, encountered {}", current.type_name()) }))?;
+        let delim = match args.get(1) {
+            Some(Value::String(s)) => s.as_str(),
+            _ => "",
+        };
+        return Ok(Value::String(
+            items
+                .iter()
+                .filter(|v| !matches!(v, Value::Null))
+                .map(display_for_concat)
+                .collect::<Vec<_>>()
+                .join(delim),
+        ));
+    }
+    if op == "concat" {
+        if args
+            .iter()
+            .any(|v| !matches!(v, Value::String(_) | Value::Null))
+        {
+            return Err(InterpretError::Runtime(
+                "String concat() can only take string as argument".into(),
+            ));
+        }
+        let joined: String = args
+            .iter()
+            .filter_map(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        return Ok(if args.iter().all(|v| matches!(v, Value::Null)) {
+            Value::Null
+        } else {
+            Value::String(joined)
+        });
+    }
+    if matches!(current, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let Value::String(s) = current else {
+        return Err(InterpretError::Runtime(format!(
+            "The {}() step can only take string as argument",
+            gremlin_step_name(op)
+        )));
+    };
+    let str_arg = |i| match args.get(i) {
+        Some(Value::String(s)) => s.as_str(),
+        _ => "",
+    };
+    Ok(match op {
+        "length" => Value::Int(s.encode_utf16().count() as i64),
+        "lcase" => Value::String(s.to_lowercase()),
+        "ucase" => Value::String(s.to_uppercase()),
+        "trim" => Value::String(s.trim().into()),
+        "ltrim" => Value::String(s.trim_start().into()),
+        "rtrim" => Value::String(s.trim_end().into()),
+        "substring" => {
+            let units: Vec<u16> = s.encode_utf16().collect();
+            let start = normalize_substring_index(
+                args.get(1).and_then(Value::as_i64).unwrap_or(0),
+                units.len() as i64,
+            ) as usize;
+            let end = args
+                .get(2)
+                .and_then(Value::as_i64)
+                .map(|n| normalize_substring_index(n, units.len() as i64) as usize)
+                .unwrap_or(units.len())
+                .max(start);
+            Value::String(String::from_utf16_lossy(&units[start..end]))
+        }
+        "replace" => Value::String(if str_arg(1).is_empty() {
+            s.clone()
+        } else {
+            s.replace(str_arg(1), str_arg(2))
+        }),
+        "split_ws" => Value::List(
+            s.split_whitespace()
+                .map(|v| Value::String(v.into()))
+                .collect(),
+        ),
+        "split" => Value::List(if matches!(args.get(1), Some(Value::Null)) {
+            s.split_whitespace()
+                .map(|v| Value::String(v.into()))
+                .collect()
+        } else if str_arg(1).is_empty() {
+            s.chars().map(|v| Value::String(v.to_string())).collect()
+        } else {
+            s.split(str_arg(1))
+                .map(|v| Value::String(v.into()))
+                .collect()
+        }),
+        _ => {
+            return Err(InterpretError::Unsupported(format!(
+                "Gremlin string operation {op}"
+            )));
+        }
+    })
+}
+
+fn gremlin_step_name(op: &str) -> &str {
+    match op {
+        "lcase" => "toLower",
+        "ucase" => "toUpper",
+        "ltrim" => "lTrim",
+        "rtrim" => "rTrim",
+        other => other,
+    }
+}

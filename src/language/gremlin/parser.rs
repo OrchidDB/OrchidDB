@@ -8,6 +8,7 @@ mod legacy_tokens;
 mod predicates;
 mod projection;
 mod source;
+mod strategy_validation;
 mod visitor;
 use literals::{option_key_text, parse_pick_key};
 
@@ -84,7 +85,9 @@ pub fn parse_traversal_with_bindings(
     lexer.remove_error_listeners();
     lexer.add_error_listener(Box::new(errors.listener()));
 
-    let token_stream = CommonTokenStream::new(legacy_tokens::LegacyTokens::new(lexer));
+    let lexer = legacy_tokens::LegacyTokens::new(lexer);
+    let literal_overrides = lexer.literals.clone();
+    let token_stream = CommonTokenStream::new(lexer);
     let mut parser = GremlinParser::new(token_stream);
     parser.remove_error_listeners();
     parser.add_error_listener(Box::new(errors.listener()));
@@ -94,7 +97,9 @@ pub fn parse_traversal_with_bindings(
         .map_err(|err| GremlinError::Parse(err.to_string()))?;
     errors.into_result()?;
 
+    strategy_validation::verify(&tokenize(input)?)?;
     let mut visitor = LoweringVisitor::new(bindings.clone());
+    visitor.literal_overrides = literal_overrides.borrow().clone();
     visitor.visit_queryList(&root);
     let mut traversal = visitor.finish()?;
     // `withoutStrategies(ConnectiveStrategy)` disables the infix
@@ -240,12 +245,14 @@ struct LoweringVisitor {
     /// Lookups go through `binding_value()`; absent entries fall back to the
     /// "lower to NULL/0/empty" defaults.
     bindings: HashMap<String, GValue>,
+    literal_overrides: BTreeMap<isize, GValue>,
 }
 
 impl LoweringVisitor {
     fn new(bindings: HashMap<String, GValue>) -> Self {
         Self {
             bindings,
+            literal_overrides: BTreeMap::new(),
             steps: Vec::new(),
             errors: Vec::new(),
             string_stack: Vec::new(),

@@ -165,17 +165,14 @@ pub enum StringOp {
     /// `replace(old, new)`.
     Replace { old: String, new: String },
     /// `concat(s)` — append literal string.
-    Concat(String),
+    Concat(Option<String>),
     /// `concat(__.traversal)` — append the result of evaluating a sub-
-    /// traversal. The planner runs the traversal per input row and casts
-    /// the result to text before appending.
+    /// traversal. The traversal runs per input row and must yield a string.
     ConcatTraversal(Vec<Step>),
     /// `conjoin(delim)` — joins a List traverser with `delim` into a single
-    /// string. On a non-list scalar, behaves like `Concat(delim)` (TinkerPop
-    /// raises an error for non-iterable inputs but we degrade gracefully).
+    /// string. Non-iterable inputs raise an error.
     Conjoin(String),
-    /// `split(delimiter)` — degenerate to identity at the SQL layer (we
-    /// can't fan a row out to a list traverser yet).
+    /// `split(delimiter)` produces a list of strings.
     Split(Option<String>),
 }
 

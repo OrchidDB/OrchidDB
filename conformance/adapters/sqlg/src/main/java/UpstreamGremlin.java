@@ -51,6 +51,22 @@ public class UpstreamGremlin {
  /** Keep upstream literal translation; omit Groovy's inject(null) overload cast. */
  static class GrammarTypeTranslator extends GroovyTranslator.LanguageTypeTranslator {
   GrammarTypeTranslator(){super(false);}
+  @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(Set<?> value) {
+   script.append("{");int i=0;for(Object item:value){if(i++>0)script.append(",");convertToScript(item);}return script.append("}");
+  }
+  @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(org.apache.tinkerpop.gremlin.process.traversal.strategy.TraversalStrategyProxy<?> value) {
+   if(!value.getStrategyClass().equals(org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.PartitionStrategy.class))return super.produceScript(value);
+   if(value.getConfiguration().isEmpty())return produceScript(value.getStrategyClass());
+   script.append("new ");produceScript(value.getStrategyClass());script.append("(");int i=0;
+   for(var entry:org.apache.commons.configuration2.ConfigurationConverter.getMap(value.getConfiguration()).entrySet()) {
+    if(i++>0)script.append(", ");script.append(entry.getKey().toString()).append(": ");
+    Object argument=entry.getValue();
+    // Strategy grammar defines readPartitions as a string list; it is a set in Java configuration.
+    if(entry.getKey().equals("readPartitions")&&argument instanceof Set<?> items)argument=new ArrayList<>(items);
+    convertToScript(argument);
+   }
+   return script.append(")");
+  }
   @Override protected org.apache.tinkerpop.gremlin.process.traversal.Script produceScript(Map<?,?> value) {
    // The upstream Groovy renderer emits [] for both empty maps and lists.
    // Gremlin-language needs the map literal [:]; use actual Java type identity.

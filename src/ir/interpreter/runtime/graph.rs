@@ -784,3 +784,15 @@ pub(super) fn is_acyclic_path(items: &[Value]) -> bool {
     }
     true
 }
+
+/// Resolve a native reference by the catalog's public element identity. The
+/// reference label is descriptive; it does not change vertex identity.
+pub(super) fn resolve_gremlin_vertex_reference(graph: &PropertyGraph, id: &Value) -> crate::ir::interpreter::IrResult<Value> {
+    for label in graph.labels() {
+        for row in graph.node_ids(&label)? {
+            let vertex = Value::Node { label: label.clone(), id: row };
+            if gremlin_user_id(graph, &vertex).three_valued_eq(id) == Some(true) { return Ok(vertex); }
+        }
+    }
+    Err(crate::ir::interpreter::InterpretError::Runtime(format!("Vertex with id {id:?} does not exist")))
+}

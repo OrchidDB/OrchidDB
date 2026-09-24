@@ -27,6 +27,7 @@ pub enum CompareOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GValue {
+    VertexRef { id: Box<GValue>, label: String },
     Null,
     Bool(bool),
     Int(i64),
@@ -50,6 +51,7 @@ pub enum GValue {
 impl GValue {
     pub fn as_sql_literal_debug(&self) -> String {
         match self {
+            Self::VertexRef { id, label } => format!("new Vertex({}, {:?})", id.as_sql_literal_debug(), label),
             Self::Null => "NULL".to_owned(),
             Self::Bool(value) => value.to_string(),
             Self::Int(value) | Self::Long(value) => value.to_string(),

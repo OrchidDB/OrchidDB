@@ -37,12 +37,16 @@ pub(crate) fn apply_op(
                         if binding == "current" && !outputs.iter().any(|output| output == binding) {
                             continue;
                         }
+                        if binding == "__path"
+                            || binding.starts_with("__gremlin_select_history_")
+                        {
+                            if outputs.iter().any(|output| output == "current") {
+                                row.bindings.insert(binding.clone(), value.clone());
+                            }
+                            continue;
+                        }
                         if binding != "current" {
                             if row.bindings.contains_key(binding) {
-                                if binding == "__path" {
-                                    row.bindings.insert(binding.clone(), value.clone());
-                                    continue;
-                                }
                                 if is_cypher_history_binding(binding) {
                                     row.bindings.insert(binding.clone(), value.clone());
                                     continue;
@@ -89,6 +93,17 @@ pub(crate) fn apply_op(
                                 binding.clone(),
                                 inner.bindings.get(binding).cloned().unwrap_or(Value::Null),
                             );
+                        }
+                        for (binding, value) in &inner.bindings {
+                            if outputs.iter().any(|output| output == "current")
+                                && (binding == "__path"
+                                    || binding.starts_with("__gremlin_select_history_")
+                                    || inner.bindings.contains_key(&format!(
+                                        "__gremlin_select_history_{binding}"
+                                    )))
+                            {
+                                row.bindings.insert(binding.clone(), value.clone());
+                            }
                         }
                         out.push(row);
                     }

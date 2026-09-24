@@ -223,6 +223,12 @@ impl LoweringVisitor {
                     ));
                     return;
                 };
+                if let Some(nested) = value_ctx.genericLiteral().and_then(|lit| lit.nestedTraversal()) {
+                    let mut child = vec![Step::Values(vec![key])];
+                    child.extend(self.lower_nested_traversal(&nested));
+                    self.steps.push(Step::WhereTraversal(child));
+                    return;
+                }
                 self.visit_genericArgument(&value_ctx);
                 let Some(value) = self.pop_value() else {
                     return;
@@ -278,6 +284,13 @@ impl LoweringVisitor {
                     ));
                     return;
                 };
+                if let Some(nested) = value_ctx.genericLiteral().and_then(|lit| lit.nestedTraversal()) {
+                    let mut child = vec![Step::Values(vec![key])];
+                    child.extend(self.lower_nested_traversal(&nested));
+                    self.steps.push(Step::HasLabel(vec![label]));
+                    self.steps.push(Step::WhereTraversal(child));
+                    return;
+                }
                 self.visit_genericArgument(&value_ctx);
                 let Some(value) = self.pop_value() else {
                     return;
@@ -325,6 +338,19 @@ impl LoweringVisitor {
                 // T.key/T.value are property-object filters we don't model.
                 let raw = c.traversalT().map(|t| t.get_text()).unwrap_or_default();
                 let token = raw.strip_prefix("T.").unwrap_or(&raw).trim().to_lowercase();
+                if let Some(nested) = c.genericArgument().and_then(|arg| arg.genericLiteral()).and_then(|lit| lit.nestedTraversal()) {
+                    let projection = match token.as_str() {
+                        "label" => Step::Label,
+                        "id" => Step::Id,
+                        "key" => Step::Values(vec!["key".into()]),
+                        "value" => Step::Values(vec!["value".into()]),
+                        _ => { self.fail(GremlinError::Parse("unknown element token".into())); return; }
+                    };
+                    let mut child = vec![projection];
+                    child.extend(self.lower_nested_traversal(&nested));
+                    self.steps.push(Step::WhereTraversal(child));
+                    return;
+                }
                 let value = c.genericArgument().and_then(|arg| {
                     self.visit_genericArgument(&arg);
                     self.pop_value()

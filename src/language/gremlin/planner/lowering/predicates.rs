@@ -68,6 +68,12 @@ pub(super) fn predicate_to_expr_with_bindings(
                     CompareOp::Lt | CompareOp::Gt => IrExpr::lit_bool(false),
                 });
             }
+            if (matches!(value, GValue::Float(f) if f.is_nan())
+                || matches!(value, GValue::Float32(f) if f.is_nan()))
+                && matches!(op, CompareOp::Eq | CompareOp::Neq)
+            {
+                return Ok(IrExpr::lit_bool(matches!(op, CompareOp::Neq)));
+            }
             // TinkerPop comparability: ordered comparison against NaN is
             // an error, and errors filter the traverser (P.lt(NaN) etc.
             // never match).

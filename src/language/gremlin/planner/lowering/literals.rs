@@ -7,6 +7,7 @@ use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
     Ok(match value {
+        GValue::VertexRef { .. } => return Err(crate::language::gremlin::planner::error::GremlinPlanError::Unsupported("native vertex reference requires runtime evaluation".into())),
         GValue::Null => Lit::Null,
         GValue::Bool(b) => Lit::Bool(*b),
         GValue::Int(n) | GValue::Long(n) => Lit::Int(*n),
@@ -31,6 +32,7 @@ pub(super) fn gvalue_to_lit(value: &GValue) -> GremlinPlanResult<Lit> {
 
 pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     Ok(match value {
+        GValue::VertexRef { id, label } => IrExpr::Call { name: "gremlin_vertex_ref".into(), args: vec![gvalue_to_expr(id)?, IrExpr::lit_str(label)] },
         GValue::Byte(_) | GValue::Short(_) | GValue::Long(_) |
         GValue::BigInt(_) | GValue::Float32(_) | GValue::BigDecimal(_) => IrExpr::Call {
             name: match value {
@@ -80,8 +82,9 @@ pub(super) fn gvalue_to_expr(value: &GValue) -> GremlinPlanResult<IrExpr> {
     })
 }
 
-pub(super) fn gvalue_to_value(value: &GValue) -> Value {
-    match value {
+pub(super) fn gvalue_to_value(value: &GValue) -> Option<Value> {
+    Some(match value {
+        GValue::VertexRef { .. } => return None,
         GValue::Null => Value::Null,
         GValue::Bool(b) => Value::Bool(*b),
         GValue::Int(n) => Value::Int(*n),
@@ -94,14 +97,14 @@ pub(super) fn gvalue_to_value(value: &GValue) -> Value {
         GValue::Float(f) => Value::Float(*f),
         GValue::DateTime(s) => Value::DateTime(s.clone()),
         GValue::String(s) => Value::String(s.clone()),
-        GValue::List(items) => Value::List(items.iter().map(gvalue_to_value).collect()),
+        GValue::List(items) => Value::List(items.iter().map(gvalue_to_value).collect::<Option<Vec<_>>>()?),
         GValue::Set(items) => {
-            crate::ir::value::gremlin_set(items.iter().map(gvalue_to_value).collect())
+            crate::ir::value::gremlin_set(items.iter().map(gvalue_to_value).collect::<Option<Vec<_>>>()?)
         }
         GValue::Map(map) => Value::Map(
             map.iter()
-                .map(|(key, value)| (key.clone(), gvalue_to_value(value)))
-                .collect(),
+                .map(|(key, value)| Some((key.clone(), gvalue_to_value(value)?)))
+                .collect::<Option<_>>()?,
         ),
-    }
+    })
 }
