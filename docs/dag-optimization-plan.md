@@ -9,7 +9,7 @@ Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG
 1. Capture a reproducible baseline from the current commit. Repeated workloads use the same fixtures, query sequence, build profile, and warmup. Record total time and per-query medians, and verify results on every repetition.
 2. Instrument lowering, SQL-region preparation, physical planning, and execution separately. Include region/kernel counts. Do not infer engine performance from adapter timing alone.
 3. Require all 1,511 pinned upstream Gremlin scenarios to pass on one uninterrupted Crabgraph instance. Run mapped-write regression tests for table destinations, identity, and transaction semantics.
-4. Retain an optimization only if the repeated benchmark improves without incorrect results. Record build profile and before/after revisions; do not compare different build profiles as an optimization gain.
+4. The primary performance target is total full-suite runtime with all 1,511 scenarios passing. Small benchmarks are diagnostic only. Batch related improvements before running the whole suite; use focused checks during implementation. Retain changes only when full-suite time improves without losing conformance. Record build profile and before/after revisions; do not compare different build profiles as an optimization gain.
 
 ## Implementation sequence
 

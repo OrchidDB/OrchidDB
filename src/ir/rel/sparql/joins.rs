@@ -120,7 +120,9 @@ impl Lowerer<'_, '_> {
             .into_iter()
             .map(|name| col_exact(name).sort(true, true))
             .collect();
-        let window = df_window::row_number().order_by(order).build()?.alias(&key);
+        let window = df_window::row_number()
+            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+            .order_by(order).build()?.alias(&key);
         let plan = LogicalPlanBuilder::from(sol.plan.clone())
             .window(vec![window])?
             .build()?;
@@ -197,6 +199,7 @@ impl Lowerer<'_, '_> {
         let plan = self.project(env.plan, columns)?;
         let rank = self.fresh("rank");
         let window = df_window::row_number()
+            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
             .partition_by(vec![col_exact(&key)])
             .order_by(vec![col_exact(&pass).sort(false, false)])
             .build()?
@@ -364,6 +367,7 @@ impl Lowerer<'_, '_> {
             let joined = self.join(keyed_copy.clone(), right, true)?;
             let rank = self.fresh("rank");
             let window = df_window::row_number()
+                .window_frame(datafusion::logical_expr::WindowFrame::new(None))
                 .partition_by(vec![col_exact(&key)])
                 .order_by(vec![col_exact(&marker).is_not_null().sort(false, false)])
                 .build()?

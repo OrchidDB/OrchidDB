@@ -164,3 +164,24 @@ async fn fused_unary_kernels_preserve_exact_rows_and_bulk() {
         assert_eq!(a.bulk, b.bulk);
     }
 }
+
+#[tokio::test]
+async fn ranking_windows_allow_unordered_and_ordered_dedup() {
+    for query in [
+        "g.V().dedup().values('name')",
+        "g.V().order().by('name').dedup().values('name')",
+    ] {
+        let graph = graph();
+        let plan = plan(query);
+        let expected = new_graph::ir::interpreter::execute_rows(&plan, &graph.clone()).unwrap();
+        let (actual, _) = execute_rows_with_jvm(&plan, &graph, JvmExecution::default()).await.unwrap();
+        // Compare observable values and multiplicity; internal dedup keys use
+        // different physical representations in SQL and the reference engine.
+        let visible = |rows: Vec<new_graph::ir::interpreter::Row>| {
+            let mut values: Vec<_> = rows.into_iter().map(|row| (format!("{:?}", row.bindings["current"]), row.bulk)).collect();
+            values.sort();
+            values
+        };
+        assert_eq!(visible(actual), visible(expected), "{query}");
+    }
+}

@@ -156,7 +156,9 @@ impl Lowerer<'_, '_> {
             );
         }
         let ord = self.fresh("ord");
-        let window = df_window::row_number().order_by(order).build()?.alias(&ord);
+        let window = df_window::row_number()
+            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+            .order_by(order).build()?.alias(&ord);
         let plan = LogicalPlanBuilder::from(env.plan)
             .window(vec![window])?
             .build()?;

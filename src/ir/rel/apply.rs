@@ -261,7 +261,9 @@ pub(super) fn with_row_identity(
     barrier_id: usize,
 ) -> RelResult<LogicalPlan> {
     let key = unique_internal_alias(&plan, cleanup, "__apply_corr_key_row");
-    let row_number = df_window::row_number().alias(&key);
+    let row_number = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+        .build()?.alias(&key);
     let windowed = LogicalPlanBuilder::from(plan)
         .window(vec![row_number])?
         .build()?;
@@ -289,6 +291,7 @@ pub(super) fn guard_scalar_cardinality(
 ) -> RelResult<LoweredNode> {
     let rank = unique_internal_alias(&right.plan, &BTreeSet::new(), "__apply_scalar_rank");
     let row_number = df_window::row_number()
+        .window_frame(datafusion::logical_expr::WindowFrame::new(None))
         .partition_by(key_cols.iter().map(col_exact).collect())
         .build()?
         .alias(&rank);

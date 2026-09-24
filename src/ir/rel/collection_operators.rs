@@ -346,7 +346,9 @@ impl<'a> LoweringContext<'a> {
             ));
         }
 
-        let row_number = df_window::row_number().alias(row_id.clone());
+        let row_number = df_window::row_number()
+            .window_frame(datafusion::logical_expr::WindowFrame::new(None))
+            .build()?.alias(row_id.clone());
         let numbered = LogicalPlanBuilder::from(input.plan.clone())
             .window(vec![row_number])?
             .build()?;
