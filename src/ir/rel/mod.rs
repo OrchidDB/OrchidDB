@@ -10,6 +10,7 @@
 pub mod dag;
 pub mod runtime;
 mod island_planner;
+mod rules;
 mod scans;
 use scans::*;
 

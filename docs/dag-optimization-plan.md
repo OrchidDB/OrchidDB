@@ -86,3 +86,17 @@ Propagate uniqueness, functional dependencies, cardinality bounds, ordering, and
 5. Assess shared-subplan materialization and temporal specialization after measuring the broader changes. Keep SQL IR DAG → DuckDB regions plus DataFusion residual execution as the sole execution model.
 
 Use focused equivalence checks for duplicate traversers, ordered representatives, graph identity versus property equality, null/missing values, empty lists/groups, zip versus Cartesian expansion, bulk, scalar errors, effects, and mapped writes. Finish the implementation batch before running the full local suite. Acceptance remains all 1,511 scenarios passing on one instance plus improved full-suite total and broad per-scenario timings; no new leaderboard rows or alternate evidence paths.
+
+### First advanced SQL implementation batch
+
+The initial implementation uses named semantic rules in `src/ir/rel/rules.rs`:
+
+- Propagate catalog-generated node/edge identity keys through DataFusion's functional dependencies. Mapped sources receive no inferred key declarations.
+- Eliminate ordered dedup only when a non-null unique determinant proves every key occurs at most once. Keep original input order and payload.
+- For count-only consumers, project semantic distinct keys (including correlation identity) and use relational DISTINCT instead of representative-selection windows. RDF terms retain their identity-aware path.
+- Remove redundant full-row DISTINCT on the membership side of semi/anti SQL IR joins. Existence-only lowering also avoids building graph dedup windows when the representative is unobservable.
+- Fold scalar singleton unwind into a projection, preserving duplicate parents and retaining the existing behavior for shadowing and tagged values. Reuse DataFusion's existing unnest filter-pushdown rule.
+- Remove scalar cardinality guards only with a uniqueness proof; nullable unique columns do not suffice. Native correlated scalar SQL emission remains a follow-on alternative.
+- Analyze SQL eligibility once per logical node, and report lowering, capability, and SQL-preparation boundary reasons with `CRABGRAPH_EXPLAIN_DAG=1`.
+
+The rules run before SQL region placement; the language → Graph IR → SQL IR DAG → DuckDB/DataFusion contract is unchanged. Broader user-declared mapping constraints, timestamps, shared windows, and cost-based materialization remain follow-on work. This batch must pass the focused rule/mapped-write checks and a complete local run before replacing published results.

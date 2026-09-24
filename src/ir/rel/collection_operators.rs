@@ -16,6 +16,9 @@ impl<'a> LoweringContext<'a> {
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
             return self.lower_unwind_dynamic(input, input_expr, bind, outer);
         };
+        if let Some(plan) = rules::fold_singleton_unwind(&input.plan, bind, &values)? {
+            return Ok(input.with_plan(plan));
+        }
         let value_rows = values
             .into_iter()
             .map(|value| vec![value])

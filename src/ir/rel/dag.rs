@@ -131,52 +131,60 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
 /// Unknown or volatile UDFs and extension nodes execute only in DataFusion.
 /// DuckDB eligibility is a planning decision; execution errors are never retried
 /// through another engine, avoiding repeated effects or changed error semantics.
-fn sql_candidate(plan: &LogicalPlan) -> bool {
-    let mut eligible = true;
-    let _ = plan.apply(|node| {
-        if matches!(
-            node,
-            LogicalPlan::Extension(_) | LogicalPlan::EmptyRelation(_)
-        ) || node.schema().fields().is_empty()
-        {
-            eligible = false;
-            return Ok(TreeNodeRecursion::Stop);
-        }
-        for expr in node.expressions() {
-            expr.apply(|expr| {
+/// Analyze each logical node once. A rejected ancestor must not repeatedly
+/// rescan its descendants while partitioning into smaller regions.
+#[derive(Default)]
+struct SqlEligibility {
+    reasons: std::collections::HashMap<usize, Option<&'static str>>,
+}
+impl SqlEligibility {
+    fn visit(&mut self, plan: &LogicalPlan) -> Option<&'static str> {
+        let key = plan as *const LogicalPlan as usize;
+        if let Some(reason) = self.reasons.get(&key) { return *reason; }
+        let mut reason = match plan {
+            LogicalPlan::Extension(_) => Some("residual extension"),
+            LogicalPlan::EmptyRelation(_) => Some("empty relation"),
+            _ if plan.schema().fields().is_empty() => Some("zero-column relation"),
+            _ => None,
+        };
+        for expr in plan.expressions() {
+            let _ = expr.apply(|expr| {
                 if let Expr::ScalarFunction(function) = expr {
-                    let native = function
-                        .func
-                        .name()
-                        .starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
+                    let native = function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
                         || function.func.name() == crate::ir::functions::ENGINE_CAST_FUNCTION;
-                    if !native
-                        && (function.func.signature().volatility
-                            == datafusion::logical_expr::Volatility::Volatile
-                            || function.func.documentation().is_none())
-                    {
-                        eligible = false;
+                    if !native && (function.func.signature().volatility == datafusion::logical_expr::Volatility::Volatile
+                        || function.func.documentation().is_none()) {
+                        reason.get_or_insert("function capability/effect boundary");
                         return Ok(TreeNodeRecursion::Stop);
                     }
                 }
                 Ok(TreeNodeRecursion::Continue)
-            })?;
+            });
         }
-        Ok(if eligible {
-            TreeNodeRecursion::Continue
-        } else {
-            TreeNodeRecursion::Stop
-        })
-    });
-    eligible
+        for input in plan.inputs() {
+            let child = self.visit(input);
+            reason = reason.or(child);
+        }
+        self.reasons.insert(key, reason);
+        reason
+    }
+    fn reason(&self, plan: &LogicalPlan) -> Option<&'static str> {
+        self.reasons[&(plan as *const LogicalPlan as usize)]
+    }
 }
 
 fn partition<'a>(
     plan: &'a LogicalPlan,
     stats: &'a mut DagStats,
+    eligibility: &'a SqlEligibility,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
-        if sql_candidate(plan) {
+        let explain = std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some();
+        let reason = eligibility.reason(plan);
+        if explain && let Some(reason) = reason {
+            eprintln!("DuckDB boundary: {reason}");
+        }
+        if reason.is_none() {
             // The SQL unparser requires an explicit select list for roots such
             // as joins. Unique aliases also handle duplicate qualified names.
             let projected = datafusion::logical_expr::LogicalPlanBuilder::from(plan.clone())
@@ -197,7 +205,11 @@ fn partition<'a>(
                 result_form: crate::ir::policy::ResultForm::RowSet,
                 islands: Default::default(),
             };
-            if let Ok(prepared) = sql::prepare(&candidate, sql::SqlDialect::DuckDb).await {
+            let prepared = sql::prepare(&candidate, sql::SqlDialect::DuckDb).await;
+            if explain && let Err(error) = &prepared {
+                eprintln!("DuckDB boundary: SQL preparation: {error}");
+            }
+            if let Ok(prepared) = prepared {
                 if std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some() {
                     eprintln!("DuckDB candidate: {}", prepared.query);
                 }
@@ -214,7 +226,7 @@ fn partition<'a>(
         }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
-            inputs.push(partition(input, stats).await?);
+            inputs.push(partition(input, stats, eligibility).await?);
         }
         stats.datafusion_operators += 1;
         plan.with_new_exprs(plan.expressions(), inputs)
@@ -352,10 +364,15 @@ pub(crate) async fn execute_with_extensions(
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let optimized = query_state.optimize(&lowered.plan)?;
+    let simplified = super::rules::simplify_existence(lowered.plan.clone())?;
+    let optimized = query_state.optimize(&simplified)?;
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
-    let plan = partition(&optimized, &mut stats).await?;
+    let plan = {
+        let mut eligibility = SqlEligibility::default();
+        eligibility.visit(&optimized);
+        partition(&optimized, &mut stats, &eligibility).await?
+    };
     #[cfg(not(feature = "duckdb"))]
     let plan = {
         let _ = optimized.apply(|_| {

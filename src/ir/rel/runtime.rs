@@ -382,10 +382,14 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             )
         {
-            if let Ok(lowered) = RelBackend::new()
+            let lowered = RelBackend::new()
                 .preserving_traverser_state()
-                .lower_island(&self.policy, node, self.graph, self.islands.clone())
-            {
+                .lower_island(&self.policy, node, self.graph, self.islands.clone());
+            if std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some()
+                && let Err(error) = &lowered {
+                eprintln!("SQL IR lowering boundary: {error}");
+            }
+            if let Ok(lowered) = lowered {
                 let mut adapter =
                     match kernel("DecodeTraversers", vec![lowered.plan], |mut inputs, _| {
                         Ok(inputs.remove(0))
