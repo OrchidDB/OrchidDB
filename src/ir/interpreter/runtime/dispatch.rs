@@ -15,7 +15,7 @@ use super::casts::{
 use super::cypher::cypher_call;
 use super::datetime::{date_add_value, date_diff_value};
 use super::graph::{
-    eval_algorithm_property_object, format_placeholder, graph_element_property, gremlin_math_bin,
+    format_placeholder, graph_element_property, gremlin_math_bin,
     gremlin_order_key, gremlin_scan_order, gremlin_user_id,
     gremlin_within, local_order_by_key, path_last_label,
     path_last_value, revive_value_map_entry, select_binding_by_pop, tree_value,
@@ -28,7 +28,7 @@ use super::path::{
     apply_path_by_keys, apply_path_by_keys_keep_nulls, path_intermediate_pairs, path_pairs,
     project_path_edges, slice_path_at, slice_path_at_value,
 };
-use super::property_object::eval_property_element;
+use super::property_object::{eval_property_element, eval_property_object};
 use super::reductions::{
     apply_sack_op, fold_reduce_op, reduce_list_numeric, reduce_list_orderable,
 };
@@ -92,7 +92,7 @@ pub(in crate::ir::interpreter) fn eval_call(name: &str, args: Vec<Value>, graph:
         name,
         "value_map" | "value_map_tokens" | "element_map" | "property_map" | "properties_list"
     ) {
-        return Ok(eval_algorithm_property_object(name, &args, graph));
+        return Ok(eval_property_object(name, &args, graph));
     }
     if name == "value_map_modulator_entries" {
         return Ok(super::property_object::value_map_modulator_entries(&args));

@@ -18,7 +18,7 @@ use crate::ir::policy::PropertyMissing;
 use crate::ir::value::{STRUCT_ORDER_KEY, Value};
 
 use super::Row;
-use super::runtime::{algorithm_property, eval_call, runtime_list};
+use super::runtime::{eval_call, runtime_list};
 use super::{InterpretError, IrResult};
 
 pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
@@ -46,15 +46,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                 {
                     super::runtime::graph_element_property(graph, &value, name)
                 }
-                Value::Node { label, id } => {
-                    let stored = graph.node_property(&label, id, name);
-                    if matches!(stored, Value::Null) {
-                        algorithm_property(graph, &Value::Node { label, id }, name)
-                            .unwrap_or(Value::Null)
-                    } else {
-                        stored
-                    }
-                }
+                Value::Node { label, id } => graph.node_property(&label, id, name),
                 Value::Edge { rel_type, id, .. } => graph.edge_property(&rel_type, id, name),
                 Value::VertexProperty { .. } | Value::Property { .. } => super::runtime::graph_element_property(graph, &value, name),
                 Value::MapEntry(pair) => match name.as_str() { "key" => pair.0.clone(), "value" => pair.1.clone(), _ => Value::Null },

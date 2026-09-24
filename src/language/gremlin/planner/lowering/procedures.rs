@@ -1,24 +1,22 @@
 //! Procedure-style steps: `call(name, args...)`, `shortestPath`,
 //! `pageRank`, `peerPressure`, `connectedComponent`, `fail`.
 //!
-//! Search is a graph-backed start service. Degree centrality and shortest
-//! path use graph execution helpers; other algorithm/procedure names retain
-//! their existing unsupported/placeholder behavior.
+//! Search and degree centrality use graph execution helpers. GraphComputer
+//! steps require the JVM execution profile; native lowering rejects them
+//! rather than returning partial paths or fabricated compute properties.
 
 use super::context::{CURRENT, ChildTraversalKind, Lowerer, TraversalContext};
 use super::literals::gvalue_to_expr;
 use super::sub_traversal::lower_child_traversal;
 use crate::ir::expr::IrExpr;
 use crate::ir::plan::{
-    ApplyKind, Direction, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice,
+    ApplyKind, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, Slice,
 };
 use crate::ir::policy::OptionalMissing;
 use crate::ir::value::Value;
 use crate::language::gremlin::ast::{CallArg, Step};
 use crate::language::gremlin::planner::error::{GremlinPlanError, GremlinPlanResult};
-use crate::language::gremlin::semantics::{
-    CompareOp, Direction as GremlinDirection, GValue, Predicate,
-};
+use crate::language::gremlin::semantics::GValue;
 
 #[derive(Debug, Clone)]
 pub(super) struct CallOption {
@@ -116,15 +114,6 @@ pub(super) fn lower_call_with_option(
     value: Option<&GValue>,
     _traversal: Option<&[Step]>,
 ) -> GremlinPlanResult<Option<Node>> {
-    if key
-        .rsplit('.')
-        .next()
-        .is_some_and(|suffix| suffix == "edges")
-    {
-        if let Some(direction) = shortest_path_edges_direction(value) {
-            return Ok(Some(apply_shortest_path_direction(input, direction)));
-        }
-    }
     let Some(value) = value else {
         return Ok(None);
     };
@@ -148,53 +137,6 @@ pub(super) fn lower_call_with_option(
         })),
         ("search", GValue::String(_)) => Ok(None),
         _ => Ok(None),
-    }
-}
-
-fn shortest_path_edges_direction(value: Option<&GValue>) -> Option<Direction> {
-    let Some(GValue::String(value)) = value else {
-        return None;
-    };
-    let value = value
-        .rsplit('.')
-        .next()
-        .unwrap_or(value)
-        .to_ascii_uppercase();
-    if value.contains("OUT") {
-        Some(Direction::Out)
-    } else if value.contains("IN") {
-        Some(Direction::In)
-    } else if value.contains("BOTH") {
-        Some(Direction::Both)
-    } else {
-        None
-    }
-}
-
-fn apply_shortest_path_direction(input: Node, direction: Direction) -> Node {
-    match input {
-        Node::GraphShortestPath {
-            source,
-            target,
-            rel_types,
-            max_distance,
-            include_edges,
-            output,
-            all_paths,
-            input,
-            ..
-        } => Node::GraphShortestPath {
-            source,
-            target,
-            direction,
-            rel_types,
-            max_distance,
-            include_edges,
-            output,
-            all_paths,
-            input,
-        },
-        other => other,
     }
 }
 
@@ -319,185 +261,13 @@ fn search_parameter_traversal(
 }
 
 pub(super) fn lower_graph_algorithm(
-    input: Node,
+    _input: Node,
     name: &'static str,
-    options: &[CallOption],
+    _options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
-    if name == "shortestPath" {
-        let mut direction = Direction::Both;
-        let mut rel_types = LabelExpr::Any;
-        let mut max_distance = None;
-        let mut include_edges = false;
-        let mut weighted_distance = false;
-        let mut target_condition = None;
-        for option in options {
-            let suffix = option.key.rsplit('.').next().unwrap_or(&option.key);
-            match suffix {
-                "edges" => {
-                    if let Some(steps) = option.traversal.as_deref() {
-                        if let Some((next_direction, next_rel_types)) =
-                            shortest_path_edges_traversal(steps)
-                        {
-                            direction = next_direction;
-                            rel_types = next_rel_types;
-                            continue;
-                        }
-                    }
-                    if let Some(next_direction) =
-                        shortest_path_edges_direction(option.value.as_ref())
-                    {
-                        direction = next_direction;
-                    }
-                    if let Some(next_rel_types) = shortest_path_edge_labels(option.value.as_ref()) {
-                        rel_types = next_rel_types;
-                    }
-                }
-                "maxDistance" => {
-                    if !weighted_distance {
-                        max_distance = shortest_path_distance(option.value.as_ref());
-                    }
-                }
-                "includeEdges" => include_edges = true,
-                "distance" => {
-                    weighted_distance = true;
-                    max_distance = None;
-                }
-                "target" => {
-                    if target_condition.is_none() {
-                        target_condition = option
-                            .traversal
-                            .as_deref()
-                            .and_then(shortest_path_target_condition);
-                    }
-                }
-                _ => {}
-            }
-        }
-        let shortest = Node::GraphShortestPath {
-            source: CURRENT.into(),
-            target: None,
-            direction,
-            rel_types,
-            max_distance,
-            include_edges,
-            output: CURRENT.into(),
-            all_paths: true,
-            input: input.boxed(),
-        };
-        return Ok(match target_condition {
-            Some(condition) => Node::GraphFilter {
-                condition,
-                input: shortest.boxed(),
-            },
-            None => shortest,
-        });
-    }
-
-    Ok(input)
-}
-
-fn shortest_path_edges_traversal(steps: &[Step]) -> Option<(Direction, LabelExpr)> {
-    let [
-        Step::ExpandEdge {
-            direction,
-            edge_labels,
-        },
-    ] = steps
-    else {
-        return None;
-    };
-    let direction = match direction {
-        GremlinDirection::Out => Direction::Out,
-        GremlinDirection::In => Direction::In,
-        GremlinDirection::Both => Direction::Both,
-    };
-    let labels = if edge_labels.is_empty() {
-        LabelExpr::Any
-    } else {
-        LabelExpr::AnyOf(edge_labels.to_vec())
-    };
-    Some((direction, labels))
-}
-
-fn shortest_path_target_condition(steps: &[Step]) -> Option<IrExpr> {
-    match steps {
-        [Step::Has { key, predicate }] => {
-            let value = predicate_eq_value(predicate)?;
-            Some(IrExpr::Call {
-                name: "path_last_property_eq".into(),
-                args: vec![
-                    IrExpr::Binding(CURRENT.into()),
-                    IrExpr::lit_str(key.clone()),
-                    gvalue_to_expr(value).ok()?,
-                ],
-            })
-        }
-        [Step::HasLabel(labels)] if labels.len() == 1 => Some(IrExpr::Call {
-            name: "path_last_label_eq".into(),
-            args: vec![
-                IrExpr::Binding(CURRENT.into()),
-                IrExpr::lit_str(labels[0].clone()),
-            ],
-        }),
-        [Step::Values(keys), Step::Is { predicate }] if keys.len() == 1 => {
-            let value = predicate_eq_value(predicate)?;
-            Some(IrExpr::Call {
-                name: "path_last_property_eq".into(),
-                args: vec![
-                    IrExpr::Binding(CURRENT.into()),
-                    IrExpr::lit_str(keys[0].clone()),
-                    gvalue_to_expr(value).ok()?,
-                ],
-            })
-        }
-        _ => None,
-    }
-}
-
-fn predicate_eq_value(predicate: &Predicate) -> Option<&GValue> {
-    match predicate {
-        Predicate::Compare {
-            op: CompareOp::Eq,
-            value,
-        } => Some(value),
-        _ => None,
-    }
-}
-
-fn shortest_path_distance(value: Option<&GValue>) -> Option<f64> {
-    match value {
-        Some(GValue::Int(value) | GValue::Long(value)) => Some(*value as f64),
-        Some(GValue::Byte(value)) => Some(*value as f64),
-        Some(GValue::Short(value)) => Some(*value as f64),
-        Some(GValue::Float32(value)) => Some(*value as f64),
-        Some(GValue::Float(value)) => Some(*value),
-        _ => None,
-    }
-}
-
-fn shortest_path_edge_labels(value: Option<&GValue>) -> Option<LabelExpr> {
-    let Some(GValue::String(value)) = value else {
-        return None;
-    };
-    if !value.contains("edge_labels") {
-        return None;
-    }
-    let labels = quoted_strings(value);
-    (!labels.is_empty()).then_some(LabelExpr::AnyOf(labels))
-}
-
-fn quoted_strings(value: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = value;
-    while let Some(start) = rest.find('"') {
-        let after_start = &rest[start + 1..];
-        let Some(end) = after_start.find('"') else {
-            break;
-        };
-        out.push(after_start[..end].to_string());
-        rest = &after_start[end + 1..];
-    }
-    out
+    Err(GremlinPlanError::Unsupported(format!(
+        "{name}() requires the JVM GraphComputer execution profile"
+    )))
 }
 
 pub(super) fn lower_fail(_input: Node, message: Option<&str>) -> GremlinPlanResult<Node> {

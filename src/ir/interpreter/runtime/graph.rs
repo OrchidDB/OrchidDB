@@ -2,75 +2,12 @@
 
 use super::maps::{runtime_list, visible_map_keys};
 use super::numeric::value_as_f64;
-use super::property_object::eval_property_object;
 use super::strings::display_for_concat;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::element_id::element_internal_id;
 use crate::ir::plan::Direction;
 use crate::ir::value::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-
-fn virtual_node_property(graph: &PropertyGraph, label: &str, id: i64, key: &str) -> Option<Value> {
-    let name = match graph.node_property(label, id, "name") {
-        Value::String(name) => name,
-        _ => return None,
-    };
-    match key {
-        "gremlin.connectedComponentVertexProgram.component" | "component" => {
-            Some(Value::String("1".into()))
-        }
-        "gremlin.peerPressureVertexProgram.cluster" => Some(Value::Int(match name.as_str() {
-            "marko" => 1,
-            "vadas" => 2,
-            "lop" | "josh" | "ripple" => 4,
-            "peter" => 6,
-            _ => id + 1,
-        })),
-        "cluster" => Some(Value::Int(match name.as_str() {
-            "marko" => 1,
-            "vadas" => 2,
-            "lop" | "josh" | "ripple" => 4,
-            "peter" => 6,
-            _ => id + 1,
-        })),
-        "gremlin.pageRankVertexProgram.pageRank" => Some(Value::Float(match name.as_str() {
-            "lop" => 1.0,
-            "ripple" => 0.9,
-            "josh" | "vadas" => 0.59,
-            "marko" | "peter" => 0.46,
-            _ => 0.15,
-        })),
-        "pageRank" => Some(Value::Float(match name.as_str() {
-            "vadas" | "josh" => 0.59,
-            "marko" | "peter" => 0.46,
-            "lop" | "ripple" => 0.15,
-            _ => 0.15,
-        })),
-        "projectRank" => Some(Value::Float(match name.as_str() {
-            "lop" => 3.0,
-            "ripple" => 1.0,
-            _ => 0.0,
-        })),
-        "priors" => Some(Value::Float(if name == "josh" { 1.0 } else { 0.0 })),
-        "friendRank" => Some(Value::Float(match name.as_str() {
-            "vadas" | "josh" => 0.21,
-            _ => 0.15,
-        })),
-        "rank" => Some(Value::Float(match name.as_str() {
-            "marko" => 0.5833333333333333,
-            "vadas" | "lop" | "josh" | "ripple" | "peter" => 0.1388888888888889,
-            _ => 0.0,
-        })),
-        _ => None,
-    }
-}
-
-pub(crate) fn algorithm_property(graph: &PropertyGraph, value: &Value, key: &str) -> Option<Value> {
-    match value {
-        Value::Node { label, id } => virtual_node_property(graph, label, *id, key),
-        _ => None,
-    }
-}
 
 pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Value {
     match (value, key) {
@@ -290,99 +227,6 @@ fn local_order_item_key(graph: &PropertyGraph, item: &Value, key: &str) -> Value
     }
 }
 
-pub(super) fn eval_algorithm_property_object(
-    name: &str,
-    args: &[Value],
-    graph: &PropertyGraph,
-) -> Value {
-    let mut value = eval_property_object(name, args, graph);
-    if !matches!(
-        name,
-        "value_map" | "value_map_tokens" | "element_map" | "property_map" | "properties_list"
-    ) {
-        return value;
-    }
-
-    let Some(target) = args.first() else {
-        return value;
-    };
-    let keys = match args.get(1) {
-        Some(Value::List(items)) => items
-            .iter()
-            .filter_map(|v| match v {
-                Value::String(key) => Some(key.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
-    let unfold_values = matches!(args.get(4), Some(Value::Bool(true)));
-    if keys.is_empty() {
-        return value;
-    }
-
-    match name {
-        "properties_list" => {
-            let Value::List(items) = &mut value else {
-                return value;
-            };
-            for key in keys {
-                if !items.iter().any(|item| property_pair_has_key(item, key)) {
-                    if let Some(property_value) = algorithm_property(graph, target, key) {
-                        let mut prop = std::collections::BTreeMap::new();
-                        prop.insert("key".to_string(), Value::String(key.to_string()));
-                        prop.insert("value".to_string(), property_value);
-                        prop.insert("element".to_string(), target.clone());
-                        items.push(Value::Map(prop));
-                    }
-                }
-            }
-            value
-        }
-        _ => {
-            let Value::Map(map) = &mut value else {
-                return value;
-            };
-            for key in keys {
-                if map.contains_key(key) {
-                    continue;
-                }
-                let Some(property_value) = algorithm_property(graph, target, key) else {
-                    continue;
-                };
-                let entry = match name {
-                    "value_map" => Value::String(format!(
-                        "[{}]",
-                        algorithm_value_map_literal(&property_value)
-                    )),
-                    "value_map_tokens" if unfold_values => property_value,
-                    "value_map_tokens" => Value::String(format!(
-                        "[{}]",
-                        algorithm_value_map_literal(&property_value)
-                    )),
-                    "property_map" => {
-                        let mut prop = std::collections::BTreeMap::new();
-                        prop.insert("key".to_string(), Value::String(key.to_string()));
-                        prop.insert("value".to_string(), property_value);
-                        prop.insert("element".to_string(), target.clone());
-                        Value::Map(prop)
-                    }
-                    _ => property_value,
-                };
-                map.insert(key.to_string(), entry);
-            }
-            value
-        }
-    }
-}
-
-fn property_pair_has_key(value: &Value, key: &str) -> bool {
-    matches!(
-        value,
-        Value::Map(map) if matches!(map.get("key"), Some(Value::String(candidate)) if candidate == key)
-    )
-}
-
 /// `valueMap()` stores its per-key values pre-rendered as `["josh"]`
 /// display strings (so the map renders in TinkerPop's form). When a
 /// `select(key)` extracts such an entry back onto the traverser, revive
@@ -418,25 +262,6 @@ pub(super) fn revive_value_map_entry(value: Value) -> Value {
         items.push(item);
     }
     Value::List(items)
-}
-
-fn algorithm_value_map_literal(value: &Value) -> String {
-    match value {
-        Value::String(value) => format!("\"{value}\""),
-        Value::Int(value) | Value::Long(value) => value.to_string(),
-        Value::Float(value) => format_float_literal(*value),
-        Value::Float32(value) => format_float_literal(*value as f64),
-        Value::Bool(value) => value.to_string(),
-        other => format!("{other:?}"),
-    }
-}
-
-fn format_float_literal(value: f64) -> String {
-    if value.is_finite() && value.fract() == 0.0 {
-        format!("{value:.1}")
-    } else {
-        value.to_string()
-    }
 }
 
 pub(crate) fn shortest_paths(
