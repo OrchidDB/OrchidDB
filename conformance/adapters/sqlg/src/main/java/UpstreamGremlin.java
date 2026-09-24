@@ -39,6 +39,33 @@ public class UpstreamGremlin {
  static Map<String,String> propertyTypes(Map<String,Object> props) {
   Map<String,String> types=new LinkedHashMap<>();props.forEach((key,value)->types.put(key,value.getClass().getSimpleName()));return types;
  }
+ /** Preserve the fixture's property records instead of flattening cardinality or metadata. */
+ static Map<String,Object> fixtureNode(Vertex vertex,String targetBackend) {
+  Map<String,Object> properties=new LinkedHashMap<>();
+  List<Object> records=new ArrayList<>();
+  vertex.properties().forEachRemaining(property->{
+   Map<String,Object> meta=new LinkedHashMap<>();
+   property.properties().forEachRemaining(p->meta.put(p.key(),p.value()));
+   if(targetBackend.equals("puppygraph")&&(properties.containsKey(property.key())||!meta.isEmpty()))
+    throw new AssumptionViolatedException("adapter-skip: PuppyGraph fixture mapping cannot preserve multi/meta-properties");
+   properties.putIfAbsent(property.key(),property.value());
+   if(targetBackend.equals("crabgraph"))records.add(Map.of(
+    "id",property.id(),"id_type",property.id().getClass().getSimpleName(),
+    "key",property.key(),"value",property.value(),"type",property.value().getClass().getSimpleName(),
+    "meta",meta,"meta_types",propertyTypes(meta)));
+  });
+  Map<String,Object> result=new LinkedHashMap<>();
+  result.put("id",vertex.id());result.put("id_type",vertex.id().getClass().getSimpleName());
+  result.put("label",vertex.label());result.put("properties",properties);result.put("property_types",propertyTypes(properties));
+  if(targetBackend.equals("crabgraph"))result.put("property_records",records);
+  return result;
+ }
+ static Map<String,Object> fixtureEdge(Edge edge) {
+  Map<String,Object> properties=new LinkedHashMap<>();
+  edge.properties().forEachRemaining(property->properties.put(property.key(),property.value()));
+  return Map.of("id",edge.id(),"id_type",edge.id().getClass().getSimpleName(),"label",edge.label(),
+   "src",edge.outVertex().id(),"dst",edge.inVertex().id(),"properties",properties,"property_types",propertyTypes(properties));
+ }
  static Object typedValue(JsonNode value) {
   if(value.isNull())return null;
   if(value.isObject()&&value.has("$type"))return switch(value.get("$type").asText()){
@@ -168,8 +195,8 @@ public class UpstreamGremlin {
      graph.tx().commit();cachedSqlg=(SqlgGraph)graph;cachedFixture=key;fixture.close();source=graph.traversal();return source;
     }
     List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
-    fixture.vertices().forEachRemaining(v->{Map<String,Object> props=new LinkedHashMap<>();v.properties().forEachRemaining(p->{if(props.containsKey(p.key())||p.properties().hasNext())throw new AssumptionViolatedException("adapter-skip: fixture has multi/meta-properties that the mapping bridge cannot preserve");props.put(p.key(),p.value());});nodes.add(Map.of("id",v.id(),"label",v.label(),"properties",props,"property_types",propertyTypes(props)));});
-    fixture.edges().forEachRemaining(e->{Map<String,Object> props=new LinkedHashMap<>();e.properties().forEachRemaining(p->props.put(p.key(),p.value()));edges.add(Map.of("id",e.id(),"label",e.label(),"src",e.outVertex().id(),"dst",e.inVertex().id(),"properties",props,"property_types",propertyTypes(props)));});
+    fixture.vertices().forEachRemaining(v->nodes.add(fixtureNode(v,backend)));
+    fixture.edges().forEachRemaining(e->edges.add(fixtureEdge(e)));
     var response=bridge.send(Map.of("op","fixture","name",data==null?"empty":data.name().toLowerCase(),"nodes",nodes,"edges",edges));
     if(response.has("error"))throw new IOException("fixture-adapter: "+response.get("error").asText());
     fixture.close();
