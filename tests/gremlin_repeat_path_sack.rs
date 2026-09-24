@@ -309,3 +309,15 @@ fn label_retraction_preserves_repeat_siblings_and_future_pop_reads() {
     assert_eq!(native_values("g.inject(null).as('a').constant(1).as('b').select('b').select('a')"), [Value::Null]);
     assert_eq!(native_values("g.inject(1).as('a').select('a').match(__.as('a').constant(2).as('b')).select('a')"), [Value::Int(1)]);
 }
+
+#[test]
+fn unbounded_stateful_repeat_drains_each_seed_before_requesting_the_next() {
+    let graph = PropertyGraph::new();
+    // A shared seen-set rejects the second seed only after the first has
+    // reached its writer. Input mutation must still execute exactly once.
+    let query = "g.inject(1,2).addV('seed').repeat(__.constant(1).not(__.select('seen').unfold().is(1)).barrier().aggregate('seen').barrier()).cap('seen').unfold()";
+    assert_eq!(results(query, &graph), ["1"]);
+    assert_eq!(results("g.V().hasLabel('seed').count()", &graph), ["2"]);
+    // One incoming traverser with bulk two stays one seed with bulk two.
+    assert_eq!(results("g.inject(1,1).barrier().repeat(__.not(__.select('seen').unfold().is(1)).aggregate('seen')).cap('seen').unfold().count()", &PropertyGraph::new()), ["2"]);
+}

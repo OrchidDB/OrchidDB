@@ -93,6 +93,16 @@ pub(crate) fn repeat_op(
     result
 }
 
+fn has_observable_state(root: &Node) -> bool {
+    use crate::ir::analysis::{Effect, children, node_effect};
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if node_effect(node) != Effect::Pure { return true; }
+        pending.extend(children(node));
+    }
+    false
+}
+
 fn repeat_op_inner(
     loop_name: Option<&str>,
     times: Option<u32>,
@@ -109,6 +119,22 @@ fn repeat_op_inner(
     graph: &PropertyGraph,
     ctx: &mut ExecutionContext,
 ) -> IrResult<Vec<Row>> {
+    // Standard RepeatStep supplies one upstream seed only after its body
+    // has drained. When an unbounded body reads/writes shared state, later
+    // seeds must observe the earlier seed's completed work. The source has
+    // already run once; retain each seed's bulk and the shared step frame.
+    if seed_rows.len() > 1 && times.is_none() && !emit_each_iteration
+        && emit_seed_predicate.is_none() && emit_seed_traversal.is_none()
+        && until.is_none() && until_traversal.is_none() && has_observable_state(body)
+    {
+        let mut rows = Vec::new();
+        for seed in seed_rows {
+            rows.extend(repeat_op_inner(loop_name, times, emit_each_iteration,
+                emit_mode, emit_seed_predicate, emit_seed_traversal, until_first,
+                until, until_traversal, _path, vec![seed], body, graph, ctx)?);
+        }
+        return Ok(rows);
+    }
     // Termination, in priority order:
     //   1. `times = Some(N)` — at most N iterations.
     //   2. `until = Some(p)` — stop when p matches a row (that row is
