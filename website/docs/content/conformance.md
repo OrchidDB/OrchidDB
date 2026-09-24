@@ -1,4 +1,4 @@
-Compare Crabgraph, SQLg and PuppyGraph using pinned openCypher TCK, Apache TinkerPop gremlin-test and W3C SPARQL tests.
+Explore graph features across Crabgraph, SQLg and PuppyGraph.
 ## Upstream compatibility evidence
 
 This comparison uses independently maintained test scenarios and expected results. It records the original upstream identifiers, fixtures, source revisions, expected output, actual output and diagnostics. The comparison covers Crabgraph, SQLg and PuppyGraph, using free editions and marking paid capabilities separately.

@@ -5,6 +5,7 @@ from pathlib import Path
 from html import escape as e
 ROOT=Path(__file__).resolve().parents[2]/'conformance'
 PRODUCTS={'crabgraph':'Crabgraph','sqlg':'SQLg','puppygraph':'PuppyGraph'}
+SUITE_PRODUCTS={'opencypher':('crabgraph','puppygraph'),'tinkerpop':('crabgraph','sqlg','puppygraph'),'rdf':('crabgraph',)}
 SUITES={'opencypher':'openCypher TCK','tinkerpop':'Apache gremlin-test · Gherkin','rdf':'W3C SPARQL 1.0 / 1.1'}
 LABELS={'pass':'Passed','fail':'Failed','unsupported':'Unsupported interface / feature','skipped':'Skipped','not-applicable':'Not applicable','adapter-error':'Adapter limitation / error','timeout':'Timed out','not-run':'Not run','stale':'Stale evidence'}
 def pretty(value,limit=6000):
@@ -18,6 +19,7 @@ def render(out):
  (download/'upstream-sources.json').write_bytes((ROOT/'upstream/sources.json').read_bytes())
  for p in PRODUCTS:
   for suite in SUITES:
+   if p not in SUITE_PRODUCTS[suite]:continue
    path=ROOT/'upstream-results'/f'{p}-{suite}.json'
    if path.exists():
     d=json.loads(path.read_text());runs[p,suite]=d;lookup[p,suite]={r['id']:r for r in d['results']};(download/path.name).write_bytes(path.read_bytes())
@@ -27,63 +29,86 @@ def render(out):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
   if result.get('case_sha256') and result['case_sha256']!=result_fingerprint(c):return {**result,'status':'stale'}
   return result
- html=['<nav class="comparison-jumps" aria-label="Comparison sections"><a href="#summary">Suite results</a><a href="#cases">Every upstream case</a><a href="#capabilities">Product capabilities</a><a href="#method">Method</a><a href="#versions">Versions and downloads</a></nav>',
- '<p>This comparison uses the original openCypher TCK, Apache TinkerPop gremlin-test Gherkin scenarios, and W3C SPARQL manifests. Fixtures and expected results come from pinned upstream revisions. The three products are Crabgraph, SQLg and PuppyGraph, using free editions.</p>',
- '<h2 id="summary">Suite results</h2><p>All '+str(len(cases))+' upstream scenarios are accounted for below. Passes require the scenario’s assertions to succeed. Failures, unsupported interfaces, explicit skips, adapter problems and timeouts remain separate. Counts apply to these pinned suites and execution profiles.</p>',
- '<div class="comparison-scroll summary-scroll" tabindex="0" role="region" aria-label="Suite result totals"><table class="comparison-table"><caption>Recorded outcomes, including scenarios not executed</caption><thead><tr><th scope="col">Upstream suite</th>'+''.join('<th scope="col">'+name+'</th>' for name in PRODUCTS.values())+'</tr></thead><tbody>']
- for suite,title in SUITES.items():
-  subset=[c for c in cases if c['suite']==suite];html.append('<tr><th scope="row">'+title+'<small>'+str(len(subset))+' scenarios · '+e(catalog['sources'][suite]['version'])+'</small></th>')
-  for p in PRODUCTS:
-   counts=Counter(get(p,c)['status'] for c in subset);html.append('<td>'+''.join('<span class="count-line '+status+'">'+str(counts[status])+' '+e(LABELS[status].lower())+'</span>' for status in LABELS if counts[status])+'</td>')
-  html.append('</tr>')
- html.append('</tbody></table></div><p class="timing-note">SQLg is compared on Gremlin; PuppyGraph on Cypher and Gremlin; Crabgraph on all three languages. An absent query interface is not counted as a failed query. The Gherkin comparison does not include TinkerPop’s JVM structure or GraphComputer suites.</p>')
- html.append('<h2 id="cases">Every upstream case</h2><div class="comparison-controls" hidden><label>Search cases<input id="comparison-search" type="search" placeholder="Feature, scenario name or upstream ID"></label><label>Show<select id="comparison-filter"><option value="all">All outcomes</option><option value="differences">Different observed outcomes</option><option value="failures">Failures and timeouts</option><option value="adapter">Adapter limitations / errors</option><option value="unexecuted">Skipped / unsupported</option><option value="crab-wins">Crabgraph passes; peer fails</option><option value="peer-wins">Peer passes; Crabgraph fails</option></select></label><label>Suite<select id="comparison-language"><option value="all">All suites</option>'+''.join('<option value="'+s+'">'+e(t)+'</option>' for s,t in SUITES.items())+'</select></label><button id="comparison-reset" type="button">Reset</button><p id="comparison-count" role="status"></p></div>')
- html.append('<p>Expand a feature group, then a case or result. Each case links to its original source and records the expected and actual output or diagnostic. Time is total local scenario wall time, including fixture and adapter work; query/step measurements are available inside the evidence. These measurements are not a controlled performance benchmark.</p>')
+ html=['<div class="report-meta"><span>6,533 upstream scenarios · 3 products · free editions</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
+ html.append('<nav class="language-tabs" aria-label="Query languages">'+''.join('<a href="#language-'+suite+'" data-language-tab="'+suite+'">'+label+'<span>'+str(len({c['feature'] for c in cases if c['suite']==suite}))+' features</span></a>' for suite,label in [('tinkerpop','Gremlin'),('opencypher','Cypher'),('rdf','SPARQL')])+'</nav>')
+ html.append('<div class="comparison-controls" hidden><label class="feature-search">Find a graph feature<input id="comparison-search" type="search" placeholder="Try count, shortest path, aggregation…" autocomplete="off"></label><label>Results<select id="comparison-filter"><option value="all">All outcomes</option><option value="differences">Different outcomes</option><option value="failures">Failures / timeouts</option><option value="adapter">Adapter limitations</option><option value="unexecuted">Skipped / unsupported</option><option value="crab-wins">Crabgraph passes; peer fails</option><option value="peer-wins">Peer passes; Crabgraph fails</option></select></label><button id="comparison-reset" type="button">Reset</button></div>')
+ html.append('<div class="feature-browser" id="cases"><aside class="feature-index" hidden><div class="index-heading">FEATURES <span id="comparison-count" role="status"></span></div><nav id="feature-list" aria-label="Graph features"></nav><p id="empty-features" hidden>No matching features. Try another search or reset the filters.</p></aside><div class="feature-stage"><div id="empty-stage" hidden>No features match these filters.</div>')
  groups=defaultdict(list)
  for c in cases:groups[(c['suite'],c['feature'])].append(c)
- export=[]
+ export=[];current_suite=None
  for (suite,feature),members in groups.items():
+  if suite!=current_suite:
+   if current_suite is not None:html.append('</section>')
+   current_suite=suite
+   html.append('<section class="language-group" id="language-'+suite+'" data-suite="'+suite+'"><h2 class="language-heading">'+{'opencypher':'Cypher','tinkerpop':'Gremlin','rdf':'SPARQL'}[suite]+'</h2>')
   group_id=hashlib.sha256((suite+'/'+feature).encode()).hexdigest()[:20]
   feature_dir=download/'features';feature_dir.mkdir(exist_ok=True)
   evidence_url='/downloads/conformance/features/'+group_id+'.json'
-  bundle={'cases':{c['id']:c for c in members},'results':{p:{c['id']:get(p,c) for c in members} for p in PRODUCTS}}
+  bundle={'cases':{c['id']:c for c in members},'results':{p:{c['id']:get(p,c) for c in members} for p in SUITE_PRODUCTS[suite]}}
   (feature_dir/(group_id+'.json')).write_text(json.dumps(bundle,ensure_ascii=False)+'\n')
-  html.append('<details class="upstream-group" data-suite="'+suite+'"><summary>'+e(feature)+' <small>'+str(len(members))+' scenarios</small></summary><div class="comparison-scroll" tabindex="0" role="region" aria-label="'+e(feature)+'"><table class="comparison-table"><caption>'+e(SUITES[suite])+'</caption><thead><tr><th scope="col">Upstream scenario</th>'+''.join('<th scope="col">'+n+'</th>' for n in PRODUCTS.values())+'</tr></thead><tbody>')
+  feature_id='feature-'+group_id
+  short=feature.split(' - ',1)[-1]
+  if suite=='rdf':short=feature.split('/')[-1].replace('-',' ').capitalize()
+  display_version=catalog['sources'][suite]['version'] if suite!='rdf' else ('1.0' if feature.startswith('sparql10/') else '1.1')
+  language={'opencypher':'Cypher','tinkerpop':'Gremlin','rdf':'SPARQL'}[suite]
+  html.append('<article class="feature-card" id="'+feature_id+'" data-suite="'+suite+'" data-name="'+e(short)+'" data-language-name="'+language+'"><header class="feature-heading"><div class="feature-kicker">'+language+' <span> / '+e(display_version)+'</span></div><h2>'+e(short)+'</h2><p>'+str(len(members))+' original upstream scenarios · <a href="'+e(members[0]['source'])+'">Test specification ↗</a> · <a class="feature-permalink" href="#'+feature_id+'">Permalink</a></p></header><div class="support-grid" data-count="'+str(len(SUITE_PRODUCTS[suite]))+'" style="--product-count:'+str(len(SUITE_PRODUCTS[suite]))+'" aria-label="Feature results by product">')
+  for product in SUITE_PRODUCTS[suite]:
+   name=PRODUCTS[product]
+   counts=Counter(get(product,c)['status'] for c in members)
+   passed=counts['pass'];failed=counts['fail']+counts['timeout'];total=len(members)
+   state='complete' if passed==total else 'mixed' if passed else 'failed' if failed else 'unknown'
+   label='All passed' if passed==total else 'Mixed results' if passed else 'Failures recorded' if failed else 'Not applicable' if counts['not-applicable']==total else 'Not evaluated'
+   version=runs.get((product,suite),{}).get('build',{}).get('version','Local build' if product=='crabgraph' else 'Version not recorded')
+   note=' · '.join(str(counts[k])+' '+{'fail':'failed','timeout':'timed out','skipped':'skipped','adapter-error':'adapter limitations','unsupported':'unsupported','not-applicable':'not applicable','stale':'stale','not-run':'not run'}[k] for k in LABELS if k!='pass' and counts[k]) or 'Every scenario passed'
+   bars=''.join('<span class="segment '+k+'" style="width:'+str(v/total*100)+'%" title="'+str(v)+' '+e(LABELS[k])+'"></span>' for k,v in counts.items())
+   html.append('<div class="support-column"><h3>'+name+'<small>'+e(str(version))+'</small></h3><a class="support-cell '+state+'" href="#tests-'+group_id+'" data-product-focus="'+product+'"><span class="support-label">'+label+'</span><strong>'+str(passed)+'<span> / '+str(total)+'</span></strong><span class="support-caption">scenarios passed</span><span class="support-note">'+e(note)+'</span><span class="support-action">Inspect results ↗</span></a><div class="result-strip" aria-hidden="true">'+bars+'</div></div>')
+  html.append('</div><div class="matrix-legend"><span><i class="complete"></i>All passed</span><span><i class="mixed"></i>Mixed results</span><span><i class="failed"></i>Failures recorded</span><span><i class="unknown"></i>Not evaluated</span></div><p class="feature-context">Results for this feature’s full upstream corpus. Skips and adapter limitations stay in the denominator. Select a product to inspect its results.</p><details class="upstream-group" id="tests-'+group_id+'"><summary>Individual scenarios <span>'+str(len(members))+' tests · expected results, actual output &amp; timing</span></summary><div class="comparison-scroll" tabindex="0" role="region" aria-label="'+e(feature)+'"><table class="comparison-table"><caption>'+e(SUITES[suite])+'</caption><thead><tr><th scope="col">Upstream scenario</th>'+''.join('<th scope="col">'+n+'</th>' for n in (PRODUCTS[p] for p in SUITE_PRODUCTS[suite]))+'</tr></thead><tbody>')
   for c in members:
-   results={p:get(p,c) for p in PRODUCTS};statuses=[r['status'] for r in results.values() if r['status'] in ['pass','fail','timeout']];flags=[]
+   results={p:get(p,c) for p in SUITE_PRODUCTS[suite]};statuses=[r['status'] for r in results.values() if r['status'] in ['pass','fail','timeout']];flags=[]
    if len(set(statuses))>1:flags.append('differences')
    if any(s in ['fail','timeout'] for s in statuses):flags.append('failures')
    if any(r['status'] in ['adapter-error','stale','not-run'] for r in results.values()):flags.append('adapter')
    if any(r['status'] in ['skipped','unsupported'] for r in results.values()):flags.append('unexecuted')
-   if results['crabgraph']['status']=='pass' and any(results[p]['status']=='fail' for p in ['sqlg','puppygraph']):flags.append('crab-wins')
-   if results['crabgraph']['status']=='fail' and any(results[p]['status']=='pass' for p in ['sqlg','puppygraph']):flags.append('peer-wins')
+   if results['crabgraph']['status']=='pass' and any(p in results and results[p]['status']=='fail' for p in ['sqlg','puppygraph']):flags.append('crab-wins')
+   if results['crabgraph']['status']=='fail' and any(p in results and results[p]['status']=='pass' for p in ['sqlg','puppygraph']):flags.append('peer-wins')
    anchor='case-'+hashlib.sha256(c['id'].encode()).hexdigest()[:16]
-   html.append('<tr class="comparison-row" id="'+anchor+'" data-language="'+suite+'" data-flags="'+' '.join(flags)+'"><th scope="row"><a href="#'+anchor+'">'+e(c['name'])+'</a><small>'+e(c['id'])+'</small><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="upstream"><summary>Scenario and expectation</summary><a href="'+e(c['source'])+'">Pinned upstream source ↗</a> · <a href="'+evidence_url+'">Evidence JSON</a><div class="evidence-content"></div></details></th>')
+   html.append('<tr class="comparison-row" id="'+anchor+'" data-language="'+suite+'" data-flags="'+' '.join(flags)+'"><th scope="row"><a href="#'+anchor+'">'+e(c['name'])+'</a><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="upstream"><summary>Scenario and expectation</summary><a href="'+e(c['source'])+'">Pinned upstream source ↗</a> · <a href="'+evidence_url+'">Evidence JSON</a><div class="evidence-content"></div></details></th>')
    for p,r in results.items():
+    if p not in SUITE_PRODUCTS[suite]:continue
     status=r['status'];elapsed=r.get('elapsed_ms');timing='<span class="timing">'+f'{elapsed:g} ms total</span>' if elapsed is not None and status!='not-applicable' else ''
-    html.append('<td><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+'</summary>')
+    html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+'</summary>')
     if status!='not-run':html.append('<p><a href="/downloads/conformance/'+p+'-'+suite+'.json">Full run JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
     export.append([c['id'],suite,c['name'],p,status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
    html.append('</tr>')
-  html.append('</tbody></table></div></details>')
+  html.append('</tbody></table></div></details></article>')
+ html.append('</section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
+ for suite,title in SUITES.items():
+  subset=[c for c in cases if c['suite']==suite]
+  html.append('<h3>'+title+' · '+str(len(subset))+' scenarios</h3><div class="comparison-scroll summary-scroll" tabindex="0" role="region" aria-label="'+title+' result totals"><table class="comparison-table"><caption>'+e(catalog['sources'][suite]['version'])+'</caption><thead><tr>'+''.join('<th scope="col">'+PRODUCTS[p]+'</th>' for p in SUITE_PRODUCTS[suite])+'</tr></thead><tbody><tr>')
+  for p in SUITE_PRODUCTS[suite]:
+   counts=Counter(get(p,c)['status'] for c in subset)
+   html.append('<td>'+''.join('<span class="count-line '+status+'">'+str(counts[status])+' '+e(LABELS[status].lower())+'</span>' for status in LABELS if counts[status])+'</td>')
+  html.append('</tr></tbody></table></div>')
+ html.append('</details>')
  caps=json.loads((ROOT/'data/capabilities.json').read_text());caps=[{**c,'cells':{p:v for p,v in c['cells'].items() if p in PRODUCTS}} for c in caps];caps=[c for c in caps if c['cells']]
  (download/'capabilities.json').write_text(json.dumps(caps,indent=2)+'\n')
- html.append('<h2 id="capabilities">Product capabilities and editions</h2><p>These linked documentation claims are separate from the executed suite results. Enterprise features are explicitly marked. “Not assessed” is not an unsupported claim.</p><div class="comparison-scroll" tabindex="0" role="region" aria-label="Product capabilities"><table class="comparison-table"><caption>Reviewed documentation · 23 September 2026</caption><thead><tr><th scope="col">Capability</th>'+''.join('<th scope="col">'+n+'</th>' for n in PRODUCTS.values())+'</tr></thead><tbody>')
+ html.append('<details class="report-section" id="capabilities"><summary>Product capabilities and editions <span>51 documented capabilities</span></summary><p>These linked documentation claims are separate from the executed suite results. Enterprise features are explicitly marked. “Not assessed” is not an unsupported claim.</p><div class="comparison-scroll" tabindex="0" role="region" aria-label="Product capabilities"><table class="comparison-table"><caption>Reviewed documentation · 23 September 2026</caption><thead><tr><th scope="col">Capability</th>'+''.join('<th scope="col">'+n+'</th>' for n in PRODUCTS.values())+'</tr></thead><tbody>')
  for c in caps:
   html.append('<tr><th scope="row"><small>'+e(c['category'])+'</small>'+e(c['title'])+'</th>')
   for p in PRODUCTS:
    v=c['cells'].get(p);html.append('<td>'+('<a class="capability '+v['kind']+'" href="'+e(v['source'])+'">'+e(v['text'])+'</a><small>'+('Paid edition' if v['kind']=='enterprise' else 'Documentation evidence')+'</small>' if v else 'Not assessed')+'</td>')
   html.append('</tr>')
- html.append('''</tbody></table></div><h2 id="method">Method and interpretation</h2>
+ html.append('''</tbody></table></div></details><details class="report-section" id="method"><summary>Method and interpretation <span>Sources, fixtures and execution profiles</span></summary>
 <p><strong>Upstream expectations.</strong> The original feature files are compiled with Cucumber’s Gherkin compiler, including Scenario Outline examples. Apache’s unmodified <code>gremlin-test 3.7.4 StepDefinition</code> methods perform Gremlin assertions. The openCypher adapter executes the upstream steps and compares their original result tables and graph side effects. It never treats a generic exception as a passing TCK error-category assertion: unclassified error type, detail or phase is recorded as an adapter limitation.</p>
 <p><strong>RDF semantics.</strong> The W3C adapter loads manifest data and named graphs, checks positive and negative query syntax, and compares SELECT, ASK and graph results with their expected artifacts. It preserves RDF term identity, unbound variables, duplicate rows and global blank-node identity; graph results use isomorphism. Update interfaces, wire protocols, entailment configurations and federated service fixtures are accounted for explicitly.</p>
 <p><strong>Fixtures and interfaces.</strong> SQLg uses PostgreSQL and upstream TinkerFactory fixtures. PuppyGraph maps disposable external PostgreSQL fixture tables; mutation outcomes refer to that configuration. For Cypher fixtures only, a local Neo4j instance materializes upstream GIVEN statements; it supplies no expected answers and is not a compared product. Fixtures that cannot be represented faithfully are excluded with a reason. Crabgraph uses a local repository build in hybrid mode and its RDF dataset API. Its formatted graph-value transport can prevent typed assertions; those cases are adapter limitations, not established semantic defects.</p>
 <p><strong>Versions and scope.</strong> The TCK is pinned to 2024.3, while PuppyGraph documents openCypher 9. A failure in this newer corpus is not by itself evidence of violating a product’s declared version. Gremlin uses the pinned 3.7.4 language profile. W3C coverage is SPARQL 1.0 and 1.1. These are observed compatibility results, not certification or an overall product ranking. A failure deserves investigation of the engine, adapter and language/version contract.</p>
 <p><strong>Local execution only.</strong> Test engines and harnesses run on the local workstation. GitHub Actions only builds and publishes static documentation and committed evidence; it does not run tests or validation jobs. A changed case hash makes old results stale. Version pins, exact source links, complete outcomes and raw diagnostics are downloadable. <a href="https://github.com/henneberger/new-graph/tree/main/conformance">Local reproduction commands and adapter source</a> describe the execution profiles and time limits.</p>
 ''')
- html.append('<h2 id="versions">Versions and downloadable evidence</h2><p><a href="/downloads/conformance/upstream-catalog.json">Complete upstream catalog JSON</a> · <a href="/downloads/conformance/upstream-sources.json">Pinned source revisions</a> · <a href="/downloads/conformance/upstream-comparison.csv">Comparison CSV</a> · <a href="/downloads/conformance/reference-tinkerpop.json">Apache reference-engine check</a></p>')
+ html.append('</details><details class="report-section" id="versions"><summary>Versions and downloadable evidence</summary><p><a href="/downloads/conformance/upstream-catalog.json">Complete upstream catalog JSON</a> · <a href="/downloads/conformance/upstream-sources.json">Pinned source revisions</a> · <a href="/downloads/conformance/upstream-comparison.csv">Comparison CSV</a> · <a href="/downloads/conformance/reference-tinkerpop.json">Apache reference-engine check</a></p>')
  for (p,s),d in runs.items():
   html.append('<details class="version-evidence"><summary>'+PRODUCTS[p]+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Full evidence JSON</a></details>')
+ html.append('</details></div>')
  buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','status','scenario_wall_ms','diagnostic','upstream_source']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
  return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('cases','Upstream cases'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]
