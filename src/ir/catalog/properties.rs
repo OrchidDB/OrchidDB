@@ -169,10 +169,7 @@ impl PropertyGraph {
                 .vertex_properties
                 .get_mut(&address)
                 .and_then(|m| m.get_mut(key))
-                .and_then(|rs| {
-                    rs.iter_mut()
-                        .find(|r| r.value.three_valued_eq(&value) == Some(true))
-                })
+                .and_then(|rs| rs.iter_mut().find(|r| r.value == value))
             {
                 record.meta.extend(meta);
                 let result = Value::VertexProperty {
@@ -394,7 +391,12 @@ impl PropertyGraph {
             .and_then(|m| m.get_mut(key))
             .and_then(|rs| rs.iter_mut().find(|r| r.id == *id))
             .ok_or_else(|| CatalogError::Schema("Vertex property no longer exists".into()))?;
+        let next_id = public_id.as_i64().and_then(|id| id.checked_add(1));
         record.public_id = Some(public_id);
+        if let Some(next) = next_id {
+            ov.next_property_id = ov.next_property_id.max(next);
+        }
+
         self.pending
             .borrow_mut()
             .nodes
@@ -434,46 +436,80 @@ impl PropertyGraph {
                 .nodes
                 .insert((address.1.clone(), address.2));
         }
-        self.overlay
-            .borrow_mut()
-            .public_ids
-            .insert(address, public_id);
+        let mut ov = self.overlay.borrow_mut();
+        if let Some(old) = ov.public_ids.insert(address.clone(), public_id.clone()) {
+            if let Some(entries) = ov.public_id_lookup.get_mut(&public_id_key(&old)) {
+                entries.retain(|entry| entry != &address);
+            }
+        }
+        ov.unassigned_public_ids.remove(&address);
+        ov.public_id_lookup
+            .entry(public_id_key(&public_id))
+            .or_default()
+            .push(address);
         Ok(())
     }
 
     pub fn find_element_by_public_id(&self, public_id: &Value, edge: bool) -> Option<Value> {
+        let mut addresses = Vec::new();
+        {
+            let ov = self.overlay.borrow();
+            addresses.extend(
+                ov.public_id_lookup
+                    .get(&public_id_key(public_id))
+                    .into_iter()
+                    .flatten()
+                    .filter(|(kind, _, _)| *kind == edge)
+                    .cloned(),
+            );
+            addresses.extend(
+                ov.unassigned_public_ids
+                    .iter()
+                    .filter(|(kind, _, _)| *kind == edge)
+                    .cloned(),
+            );
+        }
+        // Legacy Arrow catalogs have implicit identities. Native inserts use
+        // the explicit index above, so fixture/import creation is linear.
         if edge {
-            for rel_type in self.rel_types() {
-                for id in self.edge_ids(&rel_type) {
-                    if let Some((src_label, src_id, dst_label, dst_id)) =
-                        self.edge_endpoints(&rel_type, id)
-                    {
-                        let e = Value::Edge {
-                            rel_type: rel_type.clone(),
-                            id,
-                            src_label,
-                            src_id,
-                            dst_label,
-                            dst_id,
-                            projected_properties: None,
-                        };
-                        if self.element_public_id(&e).three_valued_eq(public_id) == Some(true) {
-                            return Some(e);
-                        }
-                    }
+            for (label, count) in &self.edge_row_counts {
+                for id in 0..*count {
+                    addresses.push((true, label.clone(), id));
                 }
             }
         } else {
-            for label in self.labels() {
-                for id in self.node_ids(&label).unwrap_or_default() {
-                    let v = Value::Node {
-                        label: label.clone(),
-                        id,
-                    };
-                    if self.element_public_id(&v).three_valued_eq(public_id) == Some(true) {
-                        return Some(v);
-                    }
+            for (label, table) in &self.nodes {
+                for id in 0..table.batch.num_rows() as i64 {
+                    addresses.push((false, label.clone(), id));
                 }
+            }
+        }
+        for (edge, name, id) in addresses {
+            let value = if edge {
+                if !self.overlay.borrow().edge_is_live(&name, id) {
+                    continue;
+                }
+                let Some((src_label, src_id, dst_label, dst_id)) = self.edge_endpoints(&name, id)
+                else {
+                    continue;
+                };
+                Value::Edge {
+                    rel_type: name,
+                    id,
+                    src_label,
+                    src_id,
+                    dst_label,
+                    dst_id,
+                    projected_properties: None,
+                }
+            } else {
+                if !self.node_is_live(&name, id) {
+                    continue;
+                }
+                Value::Node { label: name, id }
+            };
+            if self.element_public_id(&value).three_valued_eq(public_id) == Some(true) {
+                return Some(value);
             }
         }
         None
@@ -481,6 +517,26 @@ impl PropertyGraph {
 }
 
 impl GraphOverlay {
+    pub(super) fn rebuild_public_id_lookup(&mut self) {
+        self.public_id_lookup.clear();
+        for (address, id) in &self.public_ids {
+            self.public_id_lookup
+                .entry(public_id_key(id))
+                .or_default()
+                .push(address.clone());
+        }
+        self.unassigned_public_ids = self
+            .inserted_nodes
+            .keys()
+            .map(|(label, id)| (false, label.clone(), *id))
+            .chain(
+                self.inserted_edges
+                    .keys()
+                    .map(|(label, id)| (true, label.clone(), *id)),
+            )
+            .filter(|address| !self.public_ids.contains_key(address))
+            .collect();
+    }
     pub(super) fn native_node_state(&self, key: &(String, i64)) -> Value {
         let records = self
             .vertex_properties
@@ -627,5 +683,28 @@ mod tests {
         again.apply_incremental_records(&records).unwrap();
         assert!(again.properties(&p, &[]).is_empty());
         assert_eq!(again.properties(&v, &[]), vec![p]);
+    }
+}
+
+fn public_id_key(value: &Value) -> String {
+    use bigdecimal::{BigDecimal, FromPrimitive};
+    let number = match value {
+        Value::Byte(v) => Some(BigDecimal::from(*v)),
+        Value::UInt8(v) => Some(BigDecimal::from(*v)),
+        Value::Short(v) => Some(BigDecimal::from(*v)),
+        Value::UInt16(v) => Some(BigDecimal::from(*v)),
+        Value::Int(v) | Value::Long(v) => Some(BigDecimal::from(*v)),
+        Value::UInt32(v) => Some(BigDecimal::from(*v)),
+        Value::UInt64(v) => Some(BigDecimal::from(*v)),
+        Value::BigInt(v) | Value::UInt128(v) => Some(BigDecimal::from(v.clone())),
+        Value::Float32(v) => BigDecimal::from_f32(*v),
+        Value::Float(v) => BigDecimal::from_f64(*v),
+        Value::BigDecimal(v) => Some(v.clone()),
+        _ => None,
+    };
+    if let Some(number) = number {
+        format!("number:{}", number.normalized())
+    } else {
+        format!("{value:?}")
     }
 }

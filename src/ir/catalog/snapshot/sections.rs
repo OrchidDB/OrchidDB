@@ -459,5 +459,6 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
             finish(&sr)?;
         }
     }
+    ov.rebuild_public_id_lookup();
     Ok(ov)
 }
