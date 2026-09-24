@@ -71,7 +71,11 @@ deadline, but its native store is terminated and it cannot commit graph writes.
 Direct `CrabGraph` users control `tx().open()/commit()/rollback()`. Failed native
 operations restore their statement snapshot. Transaction status is thread-local;
 write transactions serialize until their owner commits or rolls back. Other
-threads wait before reading or writing pending native state. A helper thread's
+threads read the last committed native state and wait before starting a write.
+Committed reads bypass the owning writer's caches and retain committed element
+identities, metadata and runtime values while writes are pending. The native
+handshake must advertise this capability; older binaries reject such reads
+explicitly. A helper thread's
 empty transaction cannot complete another thread's writes. Waiting operations
 support interruption and stop when the graph closes. GraphComputer borrows its
 submitting thread's transaction under an exclusive lease and returns ownership
@@ -110,6 +114,9 @@ ordinary single-cardinality default.
 Constructor key/value pairs retain list cardinality, including repeated keys,
 independently of the default used by subsequent property assignments. Numeric
 ID managers generate numeric vertex and edge IDs and skip existing public IDs.
+User property names beginning with `__`, including TinkerPop's `__id` strategy
+key, are supported through the JVM provider. Internal native columns remain
+hidden, and ordinary native property visibility is unchanged.
 
 The JVM provider registers the compatible `tinker.search` and
 `tinker.degree.centrality` service names. These scan actual native properties and
