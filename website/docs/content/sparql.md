@@ -1,14 +1,16 @@
+# SPARQL
+
 Query a graph with RDF vocabulary using an ontology mapping, or query existing RDF quad tables directly.
 
 ## Choose the data model
 
 For a property graph, define an `OntologyMapping` that maps class and predicate IRIs to graph labels and properties. Use it with `GraphEngine::sparql` or `MappedGraphEngine::sparql`.
 
-For existing RDF quad tables, define an `RdfDatasetMapping` and use `RdfGraphEngine::sparql`. The [RDF dataset guide](/rdf.html) covers that workflow.
+For existing RDF quad tables, define an `RdfDatasetMapping` and use `RdfGraphEngine::sparql`. The [RDF dataset guide](rdf.md) covers that workflow.
 
 ## Define a vocabulary
 
-This vocabulary describes the people and social relationships in the [mapped tutorial](/mapped-graphs.html):
+This vocabulary describes the people and social relationships in the [mapped tutorial](mapped-graphs.md):
 
 ```rust
 use new_graph::ir::plan::Direction;
@@ -24,7 +26,7 @@ let ontology = OntologyMapping::new()
     );
 ```
 
-The [ontology guide](/ontology.html) explains identity properties and the builder methods.
+The [ontology guide](ontology.md) explains identity properties and the builder methods.
 
 ## Select properties
 
@@ -80,4 +82,4 @@ OFFSET 0
 
 ## Query named graphs
 
-RDF datasets can include a graph column. Use `GRAPH` to choose a named graph and `FROM` or `FROM NAMED` to define the active dataset for a query. See [RDF datasets](/rdf.html#default-and-named-graphs) for the source mapping and examples.
+RDF datasets can include a graph column. Use `GRAPH` to choose a named graph and `FROM` or `FROM NAMED` to define the active dataset for a query. See [RDF datasets](rdf.md#default-and-named-graphs) for the source mapping and examples.

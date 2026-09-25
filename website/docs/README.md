@@ -1,13 +1,28 @@
 # Crabgraph documentation
 
-The documentation is a static site at https://docs.crabgraph.net/. All pages are
-rendered at build time. Search and copy buttons use local browser JavaScript;
-reading and navigation also work with JavaScript disabled. There are no runtime
-services or third-party asset requests.
+The guides at https://docs.crabgraph.net/ use **mdBook 0.5.4 with the stock
+theme**. No custom guide templates, stylesheets, or JavaScript are loaded.
+mdBook supplies the sidebar, search, themes, code copying, and print view.
 
-## Build and preview
+The detailed conformance explorer is a separate static report at
+`conformance-report.html`, linked from the book. It retains the existing
+feature filters, individual results, and evidence downloads. Its CSS and
+JavaScript do not load in the book.
 
-Python 3.10+ is sufficient; there are no Python package dependencies.
+## Install, build, and preview
+
+Install the pinned mdBook binary on macOS or Linux:
+
+```sh
+bash website/scripts/install-mdbook.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Alternatively, run `cargo install mdbook --version 0.5.4 --locked`.
+Python 3.10+ is needed to package the evidence report; no Python packages
+are required.
+
+From the repository root:
 
 ```sh
 python3 website/docs/build.py
@@ -15,59 +30,64 @@ python3 website/docs/check.py
 python3 -m http.server 5321 --directory website/docs/dist
 ```
 
-Open http://localhost:5321/. Edit the Markdown files in `content/`, assets in
-`assets/`, and navigation in `build.py`. The first line of each content file is
-its summary and meta description. The small renderer supports paragraphs,
-second- and third-level headings, fenced code, tables, bullet lists, notes,
-links, bold text, and inline code. Generated `dist/` output is ignored by Git.
+Open http://localhost:5321/. Set `MDBOOK` to an executable path if mdBook is not
+on `PATH`. The wrapper runs `mdbook build`, packages tutorial downloads and the
+conformance report, and writes the sitemap and plain-text index. It does not
+execute any conformance engines.
 
-Use user-facing task guidance and working examples. Keep development roadmaps
-in the repository's engineering documents. Keep downloadable tutorial files in
-`downloads/` synchronized with the examples in the guides.
+For automatic guide-only rebuilds while editing:
+
+```sh
+mdbook serve website/docs --port 5321
+```
+
+This command builds the book alone. Use `build.py` again before checking or
+publishing so report assets and downloads are included.
+
+## Editing
+
+- Edit chapters in `content/`; each file has its own `# Title`.
+- Edit chapter order and section names in `content/SUMMARY.md`.
+- Use relative `.md` links between chapters; mdBook converts them to `.html`.
+- Configure mdBook in `book.toml`. Keep its theme unmodified.
+- Keep `downloads/` in sync with the tutorials.
+- Preserve the existing chapter filenames so published guide URLs stay stable.
+
+`conformance.html` is now the book's conformance guide. Its language anchors
+remain available and point to the corresponding sections of the detailed
+report. `conformance_page.py` and `leaderboard.py` generate that report from
+committed evidence. Raw download paths remain unchanged.
 
 ## Browser checks
 
-Install Playwright and its Chromium browser in your development environment,
-then run the check against the local preview:
+With the local preview running and Playwright/Chromium installed:
 
 ```sh
 node website/docs/browser-check.mjs
+node website/docs/conformance-check.mjs
 ```
 
-For an existing installation, set `PLAYWRIGHT_MODULE` to its `index.mjs` path.
-`CHROME_PATH` optionally selects an installed Chrome executable. Set `DOCS_URL`
-to test another origin. The check covers every guide at desktop and mobile
-sizes, search, copy buttons, the mobile menu, and navigation without JavaScript.
-Screenshots are written to `/tmp/crabgraph-docs-desktop.png` and
-`/tmp/crabgraph-docs-mobile.png`.
+Set `PLAYWRIGHT_MODULE` to an existing Playwright `index.mjs`, `CHROME_PATH` to
+an installed Chrome executable, or `DOCS_URL` to another preview origin.
+The book check visits every chapter at desktop and mobile widths, checks
+search and code copying, and exercises navigation with and without JavaScript.
+Book screenshots are written to `target/site-review/`; the report checker
+writes screenshots to `/tmp/conformance-explorer-{desktop,mobile}.png`.
 
-## Hosting
+`check.py` verifies generated links, fragments, assets, downloads, and coverage
+of all chapters in the mdBook search index.
 
-- Source files: this directory.
-- Public output: `website/docs/dist/`.
-- S3 prefix: `s3://crabgraph-landing-846199521923/documentation/`.
+## Hosting and publishing
+
+- Public output: `website/docs/dist/` (ignored by Git).
+- Private S3 prefix: `s3://crabgraph-landing-846199521923/documentation/`.
 - CloudFront distribution: `EV4E7ROH7WATO`.
 - CloudFront hostname: `d1lmeetba2mo8q.cloudfront.net`.
 - DNS: Route 53 A and AAAA aliases for `docs.crabgraph.net`.
 - TLS: the existing `crabgraph.net` wildcard ACM certificate.
 
-The distribution reads a private S3 origin through the existing origin access
-identity. Pages use `.html` URLs, so no routing functions or application server
-are needed. Unknown paths return the static 404 page with HTTP status 404.
-
-## Publishing
-
-The repository workflow `.github/workflows/website.yml` builds and publishes
-both static sites when documentation or committed evidence changes on `main`.
-It runs no tests or validation jobs. It also supports manual runs on `main`. It reads `CRABGRAPH_AWS_ACCESS_KEY_ID` and
-`CRABGRAPH_AWS_SECRET_ACCESS_KEY` from GitHub Actions secrets, configured from
-the owner's `personal` AWS profile.
-
-For a manual deployment from the repository root:
-
-```sh
-AWS_PROFILE=personal bash website/scripts/deploy.sh
-```
-
-The script builds the documentation, uploads public assets, and
-invalidates both CloudFront distributions. It preserves unrelated bucket keys.
+The site uses `.html` URLs and needs no application server or routing function.
+GitHub Actions installs pinned mdBook, then uses
+[the deployment script](../scripts/deploy.sh) to build and publish both sites.
+The workflow runs no tests or validation; perform the checks locally first.
+See [the website README](../README.md) for manual publishing instructions.

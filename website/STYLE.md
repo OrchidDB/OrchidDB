@@ -8,13 +8,24 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
 
 ## Visual design
 
-- Use crab-shell red for the logo, primary actions, selected tabs, and conformance figures.
-- Keep warm sand as the main background, shell pink for conformance, and pale sea-glass blue for technical examples. Keep dark colors for text.
-- Keep the entire hero headline one color. Do not restore a tagline above it or section numbering.
-- Preserve the subtle paper texture. Avoid large dark panels, stark white backgrounds, and heavy offset shadows.
-- Use Manrope for headings and prose, and IBM Plex Mono for code and labels. Keep heading line heights comfortable and limit body text width.
-- Check desktop and mobile rendering before publishing design changes.
-- References: [Webflow color and typography](https://webflow.com/blog/color-and-typography-pairings) and [NN/g visual design](https://www.nngroup.com/articles/good-visual-design/).
+- Follow the simple project-site structure of [OpenLineage](https://openlineage.io/).
+- Keep the brand on the left, the six primary links beside it, and Slack, GitHub,
+  and documentation search on the right. Repeat the primary links in the footer,
+  followed by social and source links.
+- Use a centered introduction, About section, usage examples, and participation
+  section. Prefer short paragraphs and ordinary links to feature cards or sales claims.
+- Use a white background, muted blue headings and links, and a solid dark-blue
+  introduction. Use only the 🦀 emoji as the header and footer logo, with an accessible Crabgraph home label. Use system fonts with a monospace font for code.
+- Avoid textures, custom fonts, heavy shadows, and dashboards on the homepage.
+  The header may use the abstract crab graph animation, with pause and reduced-motion
+  support. Simple diagrams should explain actual behavior.
+- Preserve the architecture/IR diagram when changing surrounding artwork or logos.
+- Documentation uses the stock mdBook theme without added guide styles or scripts.
+  The separate conformance report may keep styles needed for its dense evidence tables.
+- Check desktop and mobile rendering, keyboard navigation, and navigation without
+  JavaScript before publishing design changes.
+- Clearly mark future community channels as placeholders. Do not invent destinations
+  or claim that a community organization already exists.
 
 ## Editorial voice
 
@@ -38,9 +49,9 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
 - Give measurements as numerator, denominator, and percentage. Name the corpus, execution path, and date or benchmark snapshot.
 - Prefer `available`, `partial`, and `planned` for status labels. Do not use vague maturity labels such as “enterprise-ready.”
 
-## Product language
+## Project language
 
-- Describe Crabgraph as an embedded graph engine for existing data lakes, built in Rust with DataFusion, Apache Arrow, and DuckDB.
+- Describe Crabgraph as an embedded graph query engine written in Rust, built with DataFusion, Apache Arrow, and DuckDB.
 - Say that it transpiles graph-language plans into SQL islands. Do not imply that every query becomes one SQL statement.
 - Say that the data layer is unopinionated. Users map graph concepts onto relational tables they already own.
 - Lead with the bring-your-own-schema contract. Existing Iceberg tables, warehouse data, relational tables, SQL queries, and views can provide the graph shape without a graph-data copy.

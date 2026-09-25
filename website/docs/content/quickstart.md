@@ -1,3 +1,5 @@
+# Quickstart
+
 Create a small graph, query a relationship, and run the same workflow from Rust.
 
 ## Create a persistent graph
@@ -31,7 +33,7 @@ This traversal returns Bob's name.
 
 ## Embed the workflow
 
-After [setting up the library](/installation.html#use-the-rust-library), place this in your application's `src/main.rs`:
+After [setting up the library](installation.md#use-the-rust-library), place this in your application's `src/main.rs`:
 
 ```rust
 use new_graph::engine::GraphEngine;
@@ -62,4 +64,4 @@ Run `cargo run` in the application directory. It prints `Alice | Bob`.
 
 ## Choose the next workflow
 
-Use [managed graphs](/managed-graphs.html) when Crabgraph owns the graph data. Use [mapped graphs](/mapped-graphs.html) to query existing relational tables with graph syntax. Both workflows return Arrow data, so the surrounding application can use the same result-processing tools.
+Use [managed graphs](managed-graphs.md) when Crabgraph owns the graph data. Use [mapped graphs](mapped-graphs.md) to query existing relational tables with graph syntax. Both workflows return Arrow data, so the surrounding application can use the same result-processing tools.

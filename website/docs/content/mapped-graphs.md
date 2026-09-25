@@ -1,3 +1,5 @@
+# Map existing tables
+
 Expose existing DuckDB tables as a graph, then query them with Cypher and Gremlin.
 
 ## The relational dataset
@@ -19,7 +21,7 @@ Save this as `schema.sql` beside your application's `Cargo.toml`, or download th
 
 ## Register schemas and mappings
 
-Use the dependencies from [installation](/installation.html#use-the-rust-library). This complete `src/main.rs` sets up the tutorial database and queries it:
+Use the dependencies from [installation](installation.md#use-the-rust-library). This complete `src/main.rs` sets up the tutorial database and queries it:
 
 ```rust
 use std::sync::Arc;
@@ -106,8 +108,8 @@ let friends = graph.gremlin(
 ).await?;
 ```
 
-Alice follows bob and carol. See [query recipes](/recipes.html) for aggregation, filtering, and additional traversals over this dataset.
+Alice follows bob and carol. See [query recipes](recipes.md) for aggregation, filtering, and additional traversals over this dataset.
 
 ## Write through the mapping
 
-Use `cypher` and `gremlin` to insert, update, and delete rows in the same mapped tables. Node labels select node tables; relationship types select relationship tables and endpoint columns. See [mapped writes](/updates.html) for examples, identity rules, and transaction behavior.
+Use `cypher` and `gremlin` to insert, update, and delete rows in the same mapped tables. Node labels select node tables; relationship types select relationship tables and endpoint columns. See [mapped writes](updates.md) for examples, identity rules, and transaction behavior.

@@ -1,3 +1,5 @@
+# Managed graphs
+
 Create an application-owned graph with persistence, mutations, and transactional query execution.
 
 ## Open a graph
@@ -28,7 +30,7 @@ WHERE a.name = 'Alice' AND b.name = 'Bob'
 CREATE (a)-[:FOLLOWS]->(b)
 ```
 
-Use [parameters](/parameters.html) for values supplied by your application.
+Use [parameters](parameters.md) for values supplied by your application.
 
 ## Read and update properties
 
@@ -84,4 +86,4 @@ println!("backend: {:?}", result.backend);
 println!("rows: {}", result.returned.batch.num_rows());
 ```
 
-Continue to [transactions and storage](/transactions.html) for multi-statement work, or [execution and plans](/execution.html) for read policies.
+Continue to [transactions and storage](transactions.md) for multi-statement work, or [execution and plans](execution.md) for read policies.

@@ -1,3 +1,5 @@
+# Configuration
+
 Configure engine execution, Cargo features, and development checks for a reproducible integration.
 
 ## Engine settings
@@ -49,4 +51,4 @@ Use the repository's `.github/workflows/ci.yml` for the complete CI integration 
 
 Keep the Cargo lockfile, schema definitions, graph mapping, ontology mapping, and query text under version control with the application. Parameter values are supplied at execution time. Record the execution policy and relevant timeout settings alongside deployment configuration.
 
-For a standalone mapping artifact, use [TOML mappings](/mapping-reference.html#toml-format). For schema evolution, update the registered Arrow schemas when physical column names, types, or nullability change.
+For a standalone mapping artifact, use [TOML mappings](mapping-reference.md#toml-format). For schema evolution, update the registered Arrow schemas when physical column names, types, or nullability change.

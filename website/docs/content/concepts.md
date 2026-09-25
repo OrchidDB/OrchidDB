@@ -1,3 +1,5 @@
+# Core concepts
+
 Understand the graph model, the mapping contract, and how a graph query reaches a relational engine.
 
 ## Nodes and relationships
@@ -20,7 +22,7 @@ Mapped engines use the schemas registered in their mappings to plan queries, whi
 
 Graph IR is the common representation produced by the language frontends. It carries graph operations such as node scans, expansion, filtering, projection, aggregation, and path traversal.
 
-Keeping these operations explicit gives the planner the information needed to preserve language semantics while choosing relational execution. The [execution guide](/execution.html) shows how to inspect this representation.
+Keeping these operations explicit gives the planner the information needed to preserve language semantics while choosing relational execution. The [execution guide](execution.md) shows how to inspect this representation.
 
 ## SQL islands
 
@@ -44,7 +46,7 @@ Arrow results
 
 An ontology mapping associates RDF class and predicate IRIs with graph labels, properties, and relationship types. A graph mapping then associates those concepts with physical tables and columns. This lets SPARQL use the same property graph as Cypher and Gremlin.
 
-When your source is already RDF, use an [RDF dataset mapping](/rdf.html) to connect quad tables directly.
+When your source is already RDF, use an [RDF dataset mapping](rdf.md) to connect quad tables directly.
 
 ## Identity and ordering
 

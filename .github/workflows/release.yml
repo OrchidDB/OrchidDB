@@ -1,0 +1,149 @@
+name: Package Crabgraph release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag matching Cargo.toml (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: '1.93.1'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      commit: ${{ steps.metadata.outputs.commit }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate the tag and package version
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python scripts/release/package.py metadata --tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            executable: crabgraph
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: crabgraph
+          - os: macos-14
+            target: aarch64-apple-darwin
+            executable: crabgraph
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            executable: crabgraph.exe
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_EXECUTABLE: ${{ matrix.executable }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup default "$RUST_VERSION"
+      - name: Build the CLI with bundled DuckDB
+        run: cargo build --locked --release --bin crabgraph --target "$RELEASE_TARGET"
+      - name: Smoke check and package the native binary
+        run: |
+          python scripts/release/package.py archive \
+            --tag "$RELEASE_TAG" --target "$RELEASE_TARGET" \
+            --binary "target/$RELEASE_TARGET/release/$RELEASE_EXECUTABLE" \
+            --output target/release-packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: target/release-packages/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  draft-release:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: target/release-packages
+          merge-multiple: true
+      - name: Verify all archives and collect checksums
+        run: python scripts/release/package.py verify --tag "$RELEASE_TAG" --directory target/release-packages
+      - name: Create or update the draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(target/release-packages/*.tar.gz target/release-packages/*.zip target/release-packages/SHA256SUMS)
+          if existing_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$existing_draft" != true ]]; then
+              echo "Release $RELEASE_TAG is already published; refusing to replace its assets." >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            flags=()
+            if [[ "$RELEASE_PRERELEASE" == true ]]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag --draft "${flags[@]}" \
+              --title "Crabgraph $RELEASE_TAG" \
+              --notes-file scripts/release/NOTES.md
+          fi
+          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

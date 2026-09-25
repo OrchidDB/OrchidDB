@@ -1,3 +1,5 @@
+# Transactions and storage
+
 Group graph changes, control commit boundaries, and maintain a persistent managed graph.
 
 ## Explicit transactions

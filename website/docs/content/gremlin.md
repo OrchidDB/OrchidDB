@@ -1,20 +1,22 @@
+# Gremlin
+
 Traverse nodes and relationships step by step with Gremlin, then project the values your application needs.
 
 ## Conformance
 
-Crabgraph passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gremlin suite. The complete run uses one Crabgraph instance. The [conformance comparison](/conformance.html#language-tinkerpop) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
+Crabgraph passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gremlin suite. The complete run uses one Crabgraph instance. The [conformance comparison](conformance-report.html#language-tinkerpop) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
 
 ## Start a traversal
 
 Crabgraph accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
 
-JVM callbacks and TinkerPop vertex programs execute as operators in the same [SQL IR/DataFusion pipeline](https://github.com/henneberger/new-graph/blob/main/docs/sql-ir-datafusion-execution.md). Typed callbacks can be supplied through `gremlin_with_bindings`. The [compatibility matrix](/conformance.html#language-tinkerpop) reports one Crabgraph outcome per scenario.
+JVM callbacks and TinkerPop vertex programs execute as operators in the same [SQL IR/DataFusion pipeline](https://github.com/henneberger/new-graph/blob/main/docs/sql-ir-datafusion-execution.md). Typed callbacks can be supplied through `gremlin_with_bindings`. The [compatibility matrix](conformance-report.html#language-tinkerpop) reports one Crabgraph outcome per scenario.
 
 ```gremlin
 g.V().hasLabel('Person').values('name')
 ```
 
-`g.V()` starts at vertices, `hasLabel` selects a label, and `values` projects a property. Examples here use the [mapped tutorial](/mapped-graphs.html).
+`g.V()` starts at vertices, `hasLabel` selects a label, and `values` projects a property. Examples here use the [mapped tutorial](mapped-graphs.md).
 
 ## Filter vertices
 
@@ -93,4 +95,4 @@ g.V().hasLabel('Person').has('name', 'alice')
   .repeat(out('FOLLOWS')).times(2).values('name')
 ```
 
-This asks for people reached after exactly two outgoing steps. Use a bound that matches the domain question, and inspect the [execution plan](/execution.html) when integrating a traversal into an application.
+This asks for people reached after exactly two outgoing steps. Use a bound that matches the domain question, and inspect the [execution plan](execution.md) when integrating a traversal into an application.

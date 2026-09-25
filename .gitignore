@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 *.pdf
+
+# Generated mdBook guides and conformance evidence
+/website/docs/dist/

@@ -1,3 +1,5 @@
+# RDF datasets
+
 Map RDF statements in DuckDB tables to a named dataset and query them with SPARQL.
 
 ## Describe a quad source
@@ -17,7 +19,7 @@ A null graph value denotes the default graph. A graph IRI denotes a named graph.
 
 ## Build the RDF engine
 
-Add `duckdb = { version = "1.10502.0", features = ["bundled"] }` to the application dependencies for this connection example, alongside the [base dependencies](/installation.html#use-the-rust-library).
+Add `duckdb = { version = "1.10502.0", features = ["bundled"] }` to the application dependencies for this connection example, alongside the [base dependencies](installation.md#use-the-rust-library).
 
 ```rust
 use std::sync::Arc;

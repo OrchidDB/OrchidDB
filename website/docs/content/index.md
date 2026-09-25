@@ -1,3 +1,5 @@
+# Introduction
+
 Bring graph queries to your data. Learn to map relational tables, query with three graph languages, and embed Crabgraph in a Rust application.
 
 ## Start with your data
@@ -10,12 +12,12 @@ A graph mapping connects your application vocabulary to physical columns. A cust
 
 | Your goal | Start here |
 | --- | --- |
-| Run your first graph query | [Quickstart](/quickstart.html) |
-| Query tables you already own | [Map existing tables](/mapped-graphs.html) |
-| Create and persist a graph | [Managed graphs](/managed-graphs.html) |
-| Query with an RDF vocabulary | [SPARQL](/sparql.html) |
-| Connect existing quad tables | [RDF datasets](/rdf.html) |
-| Embed the engine in Rust | [Rust API](/rust-api.html) |
+| Run your first graph query | [Quickstart](quickstart.md) |
+| Query tables you already own | [Map existing tables](mapped-graphs.md) |
+| Create and persist a graph | [Managed graphs](managed-graphs.md) |
+| Query with an RDF vocabulary | [SPARQL](sparql.md) |
+| Connect existing quad tables | [RDF datasets](rdf.md) |
+| Embed the engine in Rust | [Rust API](rust-api.md) |
 
 ## Three languages, one graph
 
@@ -46,10 +48,14 @@ SELECT ?name WHERE {
 ORDER BY ?name
 ```
 
-The language frontends produce a shared Graph IR. Relational regions become SQL islands, which execute in DuckDB. Read [core concepts](/concepts.html) for the execution model.
+The language frontends produce a shared Graph IR. Relational regions become SQL islands, which execute in DuckDB. Read [core concepts](concepts.md) for the execution model.
 
 ## Follow a learning path
 
-Begin with [installation](/installation.html), run the [quickstart](/quickstart.html), and then build the [mapped graph tutorial](/mapped-graphs.html). It uses a small customer and order dataset that also appears in the [query recipes](/recipes.html).
+Begin with [installation](installation.md), run the [quickstart](quickstart.md), and then build the [mapped graph tutorial](mapped-graphs.md). It uses a small customer and order dataset that also appears in the [query recipes](recipes.md).
 
-For application integration, continue with [typed parameters](/parameters.html), [Arrow results](/results.html), and [transactions](/transactions.html). The [CLI reference](/cli.html), [mapping reference](/mapping-reference.html), and [Rust API](/rust-api.html) provide the details to keep nearby while coding.
+For application integration, continue with [typed parameters](parameters.md), [Arrow results](results.md), and [transactions](transactions.md). The [CLI reference](cli.md), [mapping reference](mapping-reference.md), and [Rust API](rust-api.md) provide the details to keep nearby while coding.
+
+## Project links
+
+[Website](https://crabgraph.net/) · [GitHub](https://github.com/henneberger/new-graph) · [Community](https://crabgraph.net/community.html)

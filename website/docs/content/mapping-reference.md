@@ -1,3 +1,5 @@
+# Mapping reference
+
 Define graph labels, relationship types, identities, and properties with Rust builders or TOML.
 
 ## Node mappings
@@ -95,6 +97,6 @@ age = "age"
 
 ## Design a mapping
 
-Choose names that match your application domain. Keep node IDs stable, match endpoint column types to their node ID types, and expose the properties that queries should use. Use `.with_id(...)` for table-backed relationships that participate in [property updates](/updates.html).
+Choose names that match your application domain. Keep node IDs stable, match endpoint column types to their node ID types, and expose the properties that queries should use. Use `.with_id(...)` for table-backed relationships that participate in [property updates](updates.md).
 
-For SQL-defined labels and reusable physical views, continue to [views and SQL sources](/views.html).
+For SQL-defined labels and reusable physical views, continue to [views and SQL sources](views.md).

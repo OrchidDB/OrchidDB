@@ -1,3 +1,5 @@
+# Views and SQL sources
+
 Use SQL views and query-backed labels to shape a graph over existing relational data.
 
 ## Map a physical view

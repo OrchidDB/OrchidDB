@@ -1,3 +1,5 @@
+# Execution and plans
+
 Inspect Graph IR and generated SQL, choose a read policy, and understand execution statistics.
 
 ## Managed read policies
@@ -78,4 +80,4 @@ This setting applies to individual DuckDB queries and setup work. Treat the SQL 
 
 Language planners produce `GraphPlan` values. `RelBackend` handles relational lowering; SQL preparation turns the lowered plan into a dialect-specific program. `SqlExecutor` provides the execution boundary, and `IslandTarget` determines where a SQL island runs.
 
-Use the engine APIs for application workflows. Use these lower-level types when integrating a custom planner or execution target. See the [Rust API](/rust-api.html#planning-and-execution-apis) for the module map.
+Use the engine APIs for application workflows. Use these lower-level types when integrating a custom planner or execution target. See the [Rust API](rust-api.md#planning-and-execution-apis) for the module map.
