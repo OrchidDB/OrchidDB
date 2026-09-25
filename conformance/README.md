@@ -2,16 +2,16 @@
 
 Published report: https://docs.crabgraph.net/conformance.html
 
-Compare **Crabgraph, SQLg, PuppyGraph and JanusGraph**, using free editions. The primary
+Compare **Crabgraph, Neo4j Community, SQLg, PuppyGraph, JanusGraph and Apache Jena**, using free editions. The primary
 corpus is the original upstream test data and assertions:
 
 | Suite | Pinned version | Scenarios | Compared interfaces |
 | --- | --- | ---: | --- |
-| openCypher TCK | 2024.3 | 3,897 | Crabgraph, PuppyGraph |
-| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | All four |
-| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | Crabgraph |
+| openCypher TCK | 2024.3 | 3,897 | Crabgraph, Neo4j Community, PuppyGraph |
+| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | Crabgraph, SQLg, PuppyGraph, JanusGraph |
+| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | Crabgraph, Apache Jena TDB2 |
 
-Every one of the 6,533 scenarios has a recorded outcome for every product.
+The 6,533 scenarios are grouped by language, with outcomes for the compared interfaces.
 An absent language interface is not counted as a query failure. The report also
 contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
@@ -81,6 +81,30 @@ Java executable. `CONFORMANCE_UPSTREAM_CACHE` overrides the upstream source
 cache. `fetch.py` checks the exact immutable revisions and unmodified upstream
 trees. Licenses and notices are in `upstream/licenses/`.
 
+### Neo4j and Jena
+
+Neo4j Community **2026.09.0** is pinned by image digest in `compose.yml` and
+queried in **Cypher 5** mode through Bolt. The dedicated fixture database is
+reset between scenarios. Do not run its comparison concurrently with PuppyGraph
+fixture setup, which uses the same disposable Neo4j instance.
+
+Apache Jena **6.2.0** uses **TDB2**, a temporary local database, and the unmodified
+ARQ query/update implementation. It is licensed under
+[Apache 2.0](https://github.com/apache/jena/blob/jena-6.2.0/LICENSE).
+Neo4j Community uses [GPLv3](https://neo4j.com/licensing/).
+
+```sh
+docker compose -f conformance/compose.yml up -d neo4j
+python conformance/upstream/run.py --engine neo4j --suite opencypher
+mvn -q -f conformance/adapters/jena/pom.xml package dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
+python conformance/upstream/run.py --engine jena --suite rdf
+```
+
+`CONFORMANCE_NEO4J_URI` and `CONFORMANCE_NEO4J_PASSWORD` override the dedicated
+local defaults. Jena's adapter reads only fixture inputs; the shared Python
+adapter compares results to the original W3C artifacts, including complete update
+datasets. Both engines retain adapter limitations as separate outcomes.
+
 For installations using the earlier database container, apply the query bound:
 
 ```sh
@@ -113,8 +137,8 @@ are ignored. The static site renders these artifacts without starting engines.
   requirements. Expected error type/detail/phase must be classified before an
   error assertion can pass: an arbitrary exception is insufficient. PuppyGraph
   fixtures use Neo4j solely to materialize GIVEN statements, then map that graph
-  into PostgreSQL. Neo4j supplies no expected answers and is not a compared
-  product. PuppyGraph declares openCypher 9; the newer TCK can exercise semantics
+  into PostgreSQL. Neo4j supplies no expected answers; its own comparison executes
+  the original statements directly. PuppyGraph declares openCypher 9; the newer TCK can exercise semantics
   beyond that declared version.
 - **SPARQL:** original W3C manifests supply queries, data, named graphs and
   expected artifacts. Syntax tests use the engine parser. Result comparison

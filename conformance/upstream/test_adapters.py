@@ -4,6 +4,16 @@ from cypher import value,rows_equal,native_value,classified_error_matches
 from sparql import rows_equal as rdf_rows,relocated_graph_name
 from bridge import property_type
 class AdapterTests(unittest.TestCase):
+ def test_driver_temporal_notation_preserves_offset_and_precision(self):
+  from datetime import timezone,timedelta
+  from neo4j.time import Time,DateTime,Duration
+  from cypher_driver import temporal
+  self.assertEqual(temporal(Time(10,35)), '10:35')
+  self.assertEqual(temporal(Time(12,30,14,645876123)), '12:30:14.645876123')
+  self.assertEqual(temporal(DateTime(1980,12,11,12,31,14,tzinfo=timezone(timedelta(hours=-11,minutes=-59)))), '1980-12-11T12:31:14-11:59')
+  self.assertEqual(temporal(Duration(months=13,seconds=3600)), 'P1Y1MT1H')
+  from cypher import normalize
+  self.assertEqual(normalize(Duration(seconds=79200)), 'PT22H')
  def test_fixture_numeric_width(self):
   self.assertEqual(property_type(29,'Integer'),('INTEGER','Int'))
   self.assertEqual(property_type(29,'Long'),('BIGINT','Long'))
