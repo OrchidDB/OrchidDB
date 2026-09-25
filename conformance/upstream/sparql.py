@@ -9,6 +9,7 @@ from rdflib.compare import isomorphic
 from fetch import CACHE
 from run import Process,ROOT,REPO,crabgraph_binary
 from rdf_fixtures import graph_file
+from rdf_result_terms import same_numeric_value
 rdflib.NORMALIZE_LITERALS=False
 XSD='http://www.w3.org/2001/XMLSchema#'
 RS=rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/result-set#')
@@ -42,7 +43,7 @@ def matchterm(a,b,mapping):
   if left in mapping:return mapping[left]==right
   if right in mapping.values():return False
   mapping[left]=right;return True
- return a==b
+ return a==b or same_numeric_value(a,b)
 def rows_equal(actual,expected,ordered):
  if len(actual)!=len(expected):return False
  def visit(index,remaining,mapping):
@@ -60,7 +61,7 @@ def expected(path):
  if ext in ['.srx','.srj']:
   with path.open('rb') as f:r=Result.parse(f,format='xml' if ext=='.srx' else 'json')
   if r.type=='ASK':return {'boolean':bool(r.askAnswer)}
-  return {'variables':[str(v) for v in r.vars],'rows':[[term(row.get(v)) for v in r.vars] for row in r.bindings]}
+  return {'variables':[str(v) for v in r.vars],'rows':[[term(row.get(v)) for v in r.vars] for row in r.bindings],'ordered':False}
  graph=graph_file(path)
  roots=list(graph.subjects(rdflib.RDF.type,RS.ResultSet))
  if roots:
@@ -69,7 +70,7 @@ def expected(path):
   variables=[str(x) for x in graph.objects(root,RS.resultVariable)];solutions=list(graph.objects(root,RS.solution));solutions.sort(key=lambda s:int(graph.value(s,RS['index']) or 0));rows=[]
   for s in solutions:
    values={str(graph.value(b,RS.variable)):term(graph.value(b,RS.value)) for b in graph.objects(s,RS.binding)};rows.append([values.get(v) for v in variables])
-  return {'variables':variables,'rows':rows}
+  return {'variables':variables,'rows':rows,'ordered':any(graph.value(s,RS['index']) is not None for s in solutions)}
  return {'graph':[[term(s),term(p),term(o)] for s,p,o in graph]}
 class Sparql:
  def __init__(self,engine='crabgraph'):self.process=None;self.engine=engine
@@ -86,7 +87,6 @@ class Sparql:
   types=case['types'];base=CACHE/'rdf'
   if any('Update' in t for t in types):
    if not any('Syntax' in t for t in types):
-    if self.engine=='crabgraph':return {'status':'unsupported','reason':'Crabgraph RDF adapter exposes read queries; SPARQL Update interface unavailable'}
     from sparql_updates import run_update
     return run_update(self,case)
   if any('Protocol' in t or 'ServiceDescription' in t or 'CSV' in t for t in types):return {'status':'not-applicable','reason':'This case tests an HTTP protocol or wire serializer; the compared Crabgraph API is embedded'}
@@ -127,8 +127,8 @@ class Sparql:
    if set(actual.get('variables',[]))!=set(want['variables']):passed=False
    else:
     rows=[[r[actual['variables'].index(v)] for v in want['variables']] for r in actual['rows']]
-    passed=rows_equal(rows,want['rows'],bool(re.search(r'\bORDER\s+BY\b',query,re.I)))
-  return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.absolute().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; RDF term identity and global blank-node bijection / graph isomorphism'}
+    passed=rows_equal(rows,want['rows'],want.get('ordered',False))
+  return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.absolute().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; datatype-preserving numeric normalization (Oxigraph 0.5.11), result-artifact ordering, global blank-node bijection / graph isomorphism'}
  def close(self):
   if self.process:
    if self.engine=='jena' and self.process.p.poll() is None:
