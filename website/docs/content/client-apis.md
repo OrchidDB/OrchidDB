@@ -89,7 +89,7 @@ node examples/duckdb-wasm.mjs
 
 Build the [native compiler](installation.md#shared-native-compiler) first. `Compiler.compile(request)` returns a SQL plan. Your `ExecutionEngine.execute(plan)` returns a schema, async Arrow batch iterator, and `close()` method. The `batches(result)` helper closes resources on completion, failure, and early exit.
 
-The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in Node.js; it is not a browser compiler. Compilation is synchronous, so use a worker for latency-sensitive services. JavaScript numbers cannot represent every 64-bit integer exactly; avoid unsafe integer parameters. Follow the producer's batch lifetime contract. npm packaging is configured for `@orchiddb/client`, not published.
+The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in Node.js; it is not a browser compiler. Compilation is synchronous, so use a worker for latency-sensitive services. Pass exact signed 64-bit parameters as `bigint`, for example `9007199254740993n`. Unsafe integer Numbers, non-finite Numbers, and bigint values outside signed int64 are rejected, including inside nested parameters. Follow the producer's batch lifetime contract. npm packaging is configured for `@orchiddb/client`, not published.
 
 ## Elixir
 
@@ -98,12 +98,12 @@ The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in N
 ```sh
 mix deps.get
 # Set ORCHIDDB_NATIVE_LIBRARY using the installation guide.
-mix run examples/compile.exs
+mix run examples/duckdb.exs
 ```
 
 Build the [matching native compiler](installation.md#shared-native-compiler) first. `OrchidDB.compile(request)` returns `{:ok, plan}` or `{:error, reason}`. The C NIF runs compilation on a dirty CPU scheduler.
 
-Optional `OrchidDB.query_arrow(connection, request, callback)` uses ADBC. Its Arrow C Stream pointer is valid only inside the callback and must not escape it. The connection stays caller-owned. Current integration tests verify real Arrow stream ingestion using SQLite as a transport test driver; they do not validate DuckDB/PostgreSQL execution through this adapter. Hex source packaging is configured, not published.
+Optional `OrchidDB.query_arrow(connection, request, callback)` uses ADBC. Its Arrow C Stream pointer is valid only inside the callback and must not escape it. The connection stays caller-owned. Integration tests execute compiled queries through the real DuckDB ADBC driver and verify native Arrow ingestion, large integers, nulls, caller rollback, and cleanup after consumer errors. Hex source packaging is configured, not published.
 
 ## C++
 
