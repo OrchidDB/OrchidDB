@@ -17,6 +17,7 @@ mod solution_ops;
 mod aggregate;
 mod expressions;
 mod term_ops;
+mod service;
 use term_ops::*;
 
 use std::any::Any;
@@ -204,6 +205,10 @@ struct DuckDbFunction {
     name: String,
     return_type: DataType,
     signature: Signature,
+}
+
+pub(super) fn is_duck_function(function: &ScalarUDF) -> bool {
+    function.inner().as_any().is::<DuckDbFunction>()
 }
 
 impl ScalarUDFImpl for DuckDbFunction {
@@ -787,7 +792,7 @@ impl Lowerer<'_, '_> {
             Node::GraphRdfPropertyPath { dataset, graph_scope, subject, object, path, .. } => {
                 self.property_path(dataset, graph_scope, subject, object, path)
             }
-            Node::GraphService { .. } => unsupported("SERVICE requires a federated source stage"),
+            Node::GraphService { endpoint, query, outputs, silent, .. } => self.service(endpoint, query, outputs, *silent),
             Node::GraphApply {
                 kind: ApplyKind::Scalar,
                 outputs,

@@ -605,11 +605,13 @@ fn node_to_plan_with_policy(
         }),
         Node::GraphService {
             endpoint,
+            query,
             silent,
             outputs,
             input,
         } => extension(GraphService {
             endpoint: endpoint.clone(),
+            query: query.clone(),
             silent: *silent,
             outputs: outputs.clone(),
             schema,

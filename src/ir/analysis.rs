@@ -448,6 +448,7 @@ mod tests {
         );
         let service = plan(Node::GraphService {
             endpoint: crate::ir::plan::RdfTerm::Variable("endpoint".into()),
+            query: "SELECT * WHERE {}".into(),
             silent: false,
             outputs: vec![],
             input: Node::GraphOneRow.boxed(),

@@ -594,6 +594,7 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
             silent,
             outputs,
             input,
+            ..
         } => {
             writeln!(
                 buf,

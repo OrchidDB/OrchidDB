@@ -137,6 +137,9 @@ pub struct RdfDatasetMapping {
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     graph_tables: BTreeMap<String, (String, String)>,
     writable_graph_tables: BTreeSet<String>,
+    /// Logical service IRIs and their transport URLs (e.g. a local gateway).
+    pub(crate) service_endpoints: BTreeMap<String, String>,
+    pub(crate) service_reads: bool,
 }
 
 impl fmt::Debug for RdfDatasetMapping {
@@ -149,6 +152,17 @@ impl fmt::Debug for RdfDatasetMapping {
 }
 
 impl RdfDatasetMapping {
+    /// Register a logical service IRI and the URL used for its HTTP transport.
+    pub fn map_service_endpoint(&mut self, iri: impl Into<String>, url: impl Into<String>) -> &mut Self {
+        self.service_reads = true;
+        self.service_endpoints.insert(iri.into(), url.into());
+        self
+    }
+
+    pub fn allow_service_reads(&mut self) -> &mut Self {
+        self.service_reads = true;
+        self
+    }
     pub(crate) fn dataset_sources(&self, dataset: &str) -> &[IriQuadSource] {
         self.sources.get(dataset).map(Vec::as_slice).unwrap_or_default()
     }

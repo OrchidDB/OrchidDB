@@ -13,9 +13,8 @@ use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::ReturnedBatches;
 use crate::ir::policy::ResultForm;
 use crate::ir::rel::rdf::{RdfDatasetMapping, binding_identity_columns};
-use crate::ir::rel::sql::{
-    DuckDbExecutor, PreparedSql, SqlExecutor, execute_prepared, prepare_with_external,
-};
+use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor};
+use crate::ir::rel::sql::source_program::PreparedSourceProgram;
 use crate::ir::rel::{RelBackend, RelBackendOptions};
 use crate::language::sparql::SparqlPlanner;
 
@@ -25,7 +24,7 @@ mod update;
 /// Runs SPARQL queries and explicitly mapped updates against user-owned tables.
 /// The dataset name selects sources registered in `RdfDatasetMapping`.
 pub struct RdfGraphEngine {
-    executor: DuckDbExecutor,
+    resources: crate::ir::rel::dag::DagSession,
     mapping: Arc<RdfDatasetMapping>,
     dataset: String,
     scalar_registered: bool,
@@ -38,7 +37,7 @@ impl RdfGraphEngine {
         dataset: impl Into<String>,
     ) -> Self {
         Self {
-            executor,
+            resources: crate::ir::rel::dag::DagSession::from_executor(executor,mapping.physical_table_names()),
             mapping,
             dataset: dataset.into(),
             scalar_registered: false,
@@ -56,8 +55,10 @@ impl RdfGraphEngine {
     /// Return the executor after queries, for example to inspect the source
     /// tables or continue using the same DuckDB session elsewhere.
     pub fn into_executor(self) -> DuckDbExecutor {
-        self.executor
+        self.resources.into_executor()
     }
+
+    fn executor(&self) -> Result<std::sync::MutexGuard<'_,DuckDbExecutor>,String> { self.resources.executor() }
 
     /// Run a query and decode its result as typed RDF terms: solution rows
     /// for SELECT, a boolean for ASK, and triples for CONSTRUCT.
@@ -77,27 +78,29 @@ impl RdfGraphEngine {
 
     async fn sparql_parsed(&mut self, query: &spargebra::Query) -> Result<ReturnedBatches, String> {
         if !self.scalar_registered {
-            self.executor.connection().map_err(|error| error.to_string())?
+            self.executor()?.connection().map_err(|error| error.to_string())?
                 .register_scalar_function::<scalar::SparqlScalar>("__crabgraph_sparql_scalar")
                 .map_err(|error| error.to_string())?;
             self.scalar_registered = true;
         }
-        let prepared = self.prepare_parsed(query).await?;
-        stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
-            || execute_prepared(&mut self.executor, &prepared)).map_err(|error| error.to_string())
+        let lowered = self.lower_query(query)?;
+        let mut execution = Box::pin(crate::ir::rel::dag::execute_with_extensions(lowered,vec![],None,Some(&self.resources)));
+        futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
+            || std::future::Future::poll(execution.as_mut(),cx))).await
+            .map(|(output,_)|output).map_err(|error|error.to_string())
     }
 
     /// The DuckDB SQL that [`RdfGraphEngine::sparql`] would execute.
     pub async fn sql(&self, query: &str) -> Result<String, String> {
-        Ok(self.prepare(query).await?.query)
+        Ok(self.prepare(query).await?.sql.query)
     }
 
-    async fn prepare(&self, query: &str) -> Result<PreparedSql, String> {
+    async fn prepare(&self, query: &str) -> Result<PreparedSourceProgram, String> {
         let parsed = crate::language::sparql::parse_query(query).map_err(|e| e.to_string())?;
         self.prepare_parsed(&parsed).await
     }
 
-    async fn prepare_parsed(&self, query: &spargebra::Query) -> Result<PreparedSql, String> {
+    async fn prepare_parsed(&self, query: &spargebra::Query) -> Result<PreparedSourceProgram, String> {
         // Typed RDF expressions expand into several correlated SQL columns.
         // Preserve the same session and async execution while allowing the
         // logical planner's synchronous recursion to use a larger stack.
@@ -106,7 +109,23 @@ impl RdfGraphEngine {
             || std::future::Future::poll(preparation.as_mut(), cx))).await
     }
 
-    async fn prepare_inner(&self, query: &spargebra::Query) -> Result<PreparedSql, String> {
+    async fn prepare_inner(&self, query: &spargebra::Query) -> Result<PreparedSourceProgram, String> {
+        let lowered = self.lower_query(query)?;
+        let dialect = self.executor()?.dialect();
+        PreparedSourceProgram::prepare(
+            &lowered,
+            dialect,
+            &self.mapping.physical_table_names(),
+        )
+        .await
+        .map_err(|error| error.to_string())
+    }
+
+    fn lower_query(&self, query: &spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
+        stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,|| self.lower_query_inner(query))
+    }
+
+    fn lower_query_inner(&self, query: &spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
         let plan = SparqlPlanner::new(&self.dataset)
             .plan(query)
             .map_err(|error| error.to_string())?;
@@ -114,16 +133,9 @@ impl RdfGraphEngine {
             rdf_datasets: Some(Arc::clone(&self.mapping)),
             ..RelBackendOptions::default()
         });
-        let lowered = backend
+        backend
             .lower(&plan, &PropertyGraph::new())
-            .map_err(|error| error.to_string())?;
-        prepare_with_external(
-            &lowered,
-            self.executor.dialect(),
-            &self.mapping.physical_table_names(),
-        )
-        .await
-        .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())
     }
 }
 

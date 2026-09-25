@@ -1033,6 +1033,8 @@ pub enum Node {
     /// `endpoint`. Spec §8.13.
     GraphService {
         endpoint: RdfTerm,
+        /// Parsed, resolved service algebra serialized as a SELECT request.
+        query: String,
         silent: bool,
         outputs: Vec<BindingId>,
         input: Box<Node>,

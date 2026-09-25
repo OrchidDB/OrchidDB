@@ -499,11 +499,17 @@ impl SparqlPlanner {
                 inner,
                 silent,
             } => {
+                let query = spargebra::Query::Select {
+                    dataset: None,
+                    pattern: *inner.clone(),
+                    base_iri: self.base_iri.as_ref().map(|iri| oxiri::Iri::parse(iri.clone()).expect("validated query base")),
+                }.to_string();
                 let inner = self.lower_in_scope(inner, RdfGraphScope::ActiveGraph)?;
                 let outputs = inner.variables.iter().cloned().collect();
                 Ok(Lowered {
                     node: Node::GraphService {
                         endpoint: named_term(name),
+                        query,
                         silent: *silent,
                         outputs,
                         input: Box::new(inner.node),

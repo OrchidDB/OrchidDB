@@ -944,6 +944,7 @@ ir_extension! {
     /// remote endpoint.
     GraphService {
         endpoint: RdfTerm,
+        query: String,
         silent: bool,
         outputs: Vec<String>,
     }
@@ -951,6 +952,7 @@ ir_extension! {
         let mut c = c;
         Node::GraphService {
             endpoint: s.endpoint.clone(),
+            query: s.query.clone(),
             silent: s.silent,
             outputs: s.outputs.clone(),
             input: Box::new(c.remove(0)),

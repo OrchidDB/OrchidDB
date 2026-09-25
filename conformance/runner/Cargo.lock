@@ -2408,6 +2408,7 @@ dependencies = [
  "oxiri",
  "oxsdatatypes",
  "regex",
+ "reqwest",
  "serde_json",
  "sha2",
  "spargebra",
