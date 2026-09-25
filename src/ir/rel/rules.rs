@@ -2,7 +2,6 @@
 //! proven properties; they never infer uniqueness from column naming alone.
 use super::*;
 use datafusion::common::Dependency;
-use datafusion::common::tree_node::{Transformed, TreeNode};
 
 /// A non-null unique determinant contained in `keys` proves at most one row
 /// per key, even if the relation carries additional payload columns.
@@ -34,30 +33,21 @@ pub(super) fn unique_on(plan: &LogicalPlan, keys: &[Expr]) -> bool {
 /// Only remove full-row DISTINCT: DISTINCT ON can select a different payload.
 /// This rule retains projections, filters, LIMIT, and all expression evaluation.
 pub(super) fn simplify_existence(plan: LogicalPlan) -> datafusion::common::Result<LogicalPlan> {
-    Ok(plan
-        .transform_up(|plan| {
-            let LogicalPlan::Join(mut join) = plan else {
-                return Ok(Transformed::no(plan));
-            };
-            let right_observed = matches!(join.join_type, JoinType::LeftSemi | JoinType::LeftAnti);
-            let left_observed = matches!(join.join_type, JoinType::RightSemi | JoinType::RightAnti);
-            let input = if right_observed {
-                &mut join.right
-            } else if left_observed {
-                &mut join.left
-            } else {
-                return Ok(Transformed::no(LogicalPlan::Join(join)));
-            };
-            if let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::All(distinct)) =
-                input.as_ref()
-            {
-                *input = distinct.clone();
-                Ok(Transformed::yes(LogicalPlan::Join(join)))
-            } else {
-                Ok(Transformed::no(LogicalPlan::Join(join)))
-            }
-        })?
-        .data)
+    // Dispatch this rule when a membership join is constructed. Queries
+    // without a membership join pay no extra optimizer traversal.
+    let LogicalPlan::Join(mut join) = plan else {
+        return Ok(plan);
+    };
+    let input = match join.join_type {
+        JoinType::LeftSemi | JoinType::LeftAnti => &mut join.right,
+        JoinType::RightSemi | JoinType::RightAnti => &mut join.left,
+        _ => return Ok(LogicalPlan::Join(join)),
+    };
+    if let LogicalPlan::Distinct(datafusion::logical_expr::Distinct::All(distinct)) = input.as_ref()
+    {
+        *input = distinct.clone();
+    }
+    Ok(LogicalPlan::Join(join))
 }
 
 /// Uniqueness makes an order-preserving dedup an identity operation. Keep the

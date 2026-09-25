@@ -233,9 +233,11 @@ impl<'a> LoweringContext<'a> {
             ApplyKind::Anti => JoinType::LeftAnti,
             _ => unreachable!("existence apply only handles semi/anti"),
         };
-        let mut plan = LogicalPlanBuilder::from(left_plan)
-            .join_on(right_plan, join_type, join_exprs)?
-            .build()?;
+        let mut plan = rules::simplify_existence(
+            LogicalPlanBuilder::from(left_plan)
+                .join_on(right_plan, join_type, join_exprs)?
+                .build()?,
+        )?;
         if !cleanup.is_empty() {
             let projections = existing_columns_by_name(&plan, &cleanup);
             plan = LogicalPlanBuilder::from(plan)
