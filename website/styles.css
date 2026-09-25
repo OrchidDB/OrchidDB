@@ -208,3 +208,30 @@ pre { text-align: left; overflow-x: auto; padding: 22px; background: var(--tint)
   .conformance-scores { grid-template-columns: 1fr; gap: 12px; }
   .conformance-scores a { padding: 18px 12px; }
 }
+
+/* Approved Orchid kamon landing design. */
+
+:root{--ink:#352330;--muted:#766770;--link:#83546b;--line:#e1d9dd;--tint:#f7f4f5}body{color:var(--ink)}.site-header{position:relative;max-width:1440px;margin:auto;padding:17px 40px;gap:34px;border-bottom:1px solid #e9e2e5;min-height:82px}.brand{gap:10px;min-width:148px}.wordmark{font-size:21px;font-weight:600;letter-spacing:-.65px}.crest-icon{object-fit:contain;flex-shrink:0}.site-navigation{gap:20px}.primary-nav,.project-nav{gap:18px}.site-header nav a{font-size:12px}.site-search input{width:118px;border-radius:3px;background:transparent;font-size:12px}.hero:after{display:none}.hero-content{max-width:none;margin:0}.hero h1{font-weight:400;letter-spacing:-2.5px}.hero .tagline{line-height:1.5;font-size:19px;color:inherit}.hero p{font-size:15px;line-height:1.9}.button{border:1px solid #352330;background:#352330;font-size:13px;padding:11px 20px;min-width:130px;gap:12px}.button:hover{background:#513849}.hero .button{background:#352330;color:#fff}.hero .button:nth-child(n+2){background:transparent;color:#352330;border-color:#cfc1c8}.hero .button:hover{background:#765568;color:#fff}.actions{gap:12px}.eyebrow{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8a6979;margin-bottom:20px}.home-section{max-width:850px;padding-top:65px}.home-section h2{color:#352330;font-size:29px;font-weight:450;letter-spacing:-.7px}.home-section>p{font-size:15px;line-height:1.9}.usage-section{max-width:1100px}.conformance-section{padding-bottom:25px}.conformance-scores strong{color:#6f445c}.technology-logos{margin-top:32px}.architecture{margin-block:34px}.site-footer{background:#f6f2f3}.site-footer .brand{display:flex;margin:auto;width:max-content}.mapping-step h4 .crest-icon{width:24px;height:24px}.install-section{padding-bottom:0}.hero-crest{display:block;object-fit:contain;width:100%;height:100%}.install-line{font:12px/1.5 ui-monospace,SFMono-Regular,monospace;color:#806e78;margin:28px 0 0;overflow-wrap:anywhere}.install-line a{color:inherit}.hero .tagline,.hero p{max-width:none}
+@media(max-width:1180px) and (min-width:1001px){.site-header{padding-inline:22px;gap:20px}.brand{min-width:130px}.primary-nav,.project-nav{gap:12px}.site-navigation{gap:15px}.site-search input{width:102px}}
+@media(max-width:1000px){.site-header{padding:14px 22px}.site-navigation{padding-top:18px}.site-header nav a{font-size:14px}.brand{min-width:0}.menu-toggle{border-color:#d7c9d0;font-size:12px;padding:6px 12px;color:#352330}.hero h1{letter-spacing:-1.7px}.site-search input{width:145px}}
+@media(max-width:600px){.hero .tagline{font-size:17px}.hero p{font-size:14px}.hero .actions{display:flex;gap:9px;justify-content:center}.hero .button{font-size:12px;padding:10px 13px;min-width:0}.home-section{padding-top:48px}.home-section h2{font-size:26px}.brand .crest-icon{width:33px;height:33px}.wordmark{font-size:20px}.install-line{font-size:10px}.architecture{margin-inline:0}.technology-logos{gap:15px 22px}}
+
+.hero{background:#fff;color:#352330;padding:40px 24px 38px;max-width:1120px;margin:auto;border-bottom:1px solid #d9ccd3}.journal-crest{display:block;width:142px;height:142px;margin:0 auto 22px;object-fit:contain}.hero-content{max-width:770px;margin:auto}.hero h1{font-family:Georgia,serif;font-size:74px;margin-bottom:14px}.hero .tagline{font-size:20px;margin-bottom:16px}.hero p{max-width:660px}.hero .actions{margin-top:24px}.journal-rule{display:flex;justify-content:center;align-items:center;gap:24px;margin-top:37px;color:#8a6b7c;font:11px/1.5 ui-monospace,monospace;letter-spacing:1px}.journal-rule i{font-style:normal;color:#c3aebb}.home-section{padding-top:56px}.site-header{border-bottom:0}.site-footer{border-top:1px solid #e9e2e6;background:white}
+@media(max-width:600px){.hero{padding:30px 24px 33px}.journal-crest{width:120px;height:120px;margin-bottom:18px}.hero h1{font-size:57px}.hero .tagline{font-size:17px}.journal-rule{gap:18px;margin-top:27px}}
+
+
+/* Selected direction: layout 02 + hero palette and crest treatment 03. */
+.hero{max-width:none;background:#30222d;color:#f7f1e7;border-bottom:0}
+.hero .tagline{color:#f1e1e9}
+.hero p{color:#c9b9c2}
+.journal-crest{width:370px;height:370px;margin:0 auto 18px;filter:invert(1);mix-blend-mode:screen;opacity:.88}
+@media(max-width:1000px){.journal-crest{width:300px;height:300px}}
+@media(max-width:760px){.journal-crest{width:170px;height:170px;margin-bottom:16px}}
+.hero .button:first-child{background:#f1e6ec;color:#352330;border-color:#f1e6ec}
+.hero .button:nth-child(n+2){background:transparent;color:#f1e6ec;border-color:#a38695}
+.hero .button:hover{background:#765568;color:#fff}
+.hero .button:focus-visible{outline-color:#f1e6ec;outline-offset:4px}
+.journal-rule{color:#c3a9b8}
+.journal-rule i{color:#ab8f9e}
+
+@media(max-width:600px){.actions .button{min-width:0;padding-inline:10px;overflow-wrap:anywhere}}

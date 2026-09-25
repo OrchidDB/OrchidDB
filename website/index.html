@@ -14,14 +14,13 @@
   <meta property="og:image:alt" content="OrchidDB: An embedded graph query engine written in Rust">
   <link rel="canonical" href="https://orchiddb.com/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=project-site">
+  <link rel="stylesheet" href="/styles.css?v=ink-kamon">
   <script src="/script.js?v=project-site" defer></script>
-  <script src="/hero-graph.js?v=1" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
-  <a class="brand" href="/" aria-label="OrchidDB home"><span aria-hidden="true">🌸</span></a>
+  <a class="brand" href="/" aria-label="OrchidDB home"><img class="crest-icon" src="/assets/logos/orchiddb.svg" alt="" width="38" height="38"><span class="wordmark">OrchidDB</span></a>
   <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation" hidden>Menu</button>
   <div class="site-navigation" id="site-navigation">
     <nav class="primary-nav" aria-label="Main"><a href="https://docs.orchiddb.com/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.orchiddb.com/">Docs</a></nav>
@@ -30,16 +29,11 @@
   </div>
 </header>
 <main id="main" class="home">
-<section class="hero" aria-labelledby="project-title">
-  <canvas class="hero-graph" aria-hidden="true"></canvas>
-  <button class="animation-toggle" type="button" aria-pressed="false" hidden>Pause animation</button>
-  <div class="hero-content">
+<section class="hero"><img class="journal-crest" src="/assets/logos/orchiddb-ink.png" alt="OrchidDB ink crest"><div class="hero-content">
     <h1 id="project-title">OrchidDB</h1>
     <p class="tagline">An embedded graph query engine written in Rust</p>
     <p>Graph queries over your data lake. Map tables to nodes and relationships, then explore them with Cypher, Gremlin, and SPARQL. Keep your data in place and your engine inside your application.</p>
-    <div class="actions"><a class="button" href="#install">Install OrchidDB <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a></div>
-  </div>
-</section>
+    <div class="actions"><a class="button" href="#install">Install OrchidDB <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a></div></div><div class="journal-rule"><span>Cypher</span><i>·</i><span>Gremlin</span><i>·</i><span>SPARQL</span></div></section>
 <section class="home-section" id="about" aria-labelledby="about-title">
   <h2 id="about-title">About the Project</h2>
   <p>OrchidDB brings graph queries to your data lake. Map the tables you already own to nodes, relationships, and properties. An embedded Rust engine plans and executes the query in your application, using DuckDB to access the mapped data.</p>
@@ -100,7 +94,7 @@
         </div>
         <div class="diagram-arrow" aria-hidden="true">→</div>
         <div class="diagram-step mapping-step">
-          <h4><span aria-hidden="true">🌸</span> Graph mapping</h4>
+          <h4><img class="crest-icon" src="/assets/logos/orchiddb.svg" alt="" width="38" height="38"><span class="wordmark">OrchidDB</span> Graph mapping</h4>
           <dl class="mapping-key">
             <div><dt><code>accounts</code></dt><dd>Account nodes</dd></div>
             <div><dt><code>transfers</code></dt><dd>TRANSFERRED_TO relationships</dd></div>
@@ -211,7 +205,7 @@ RETURN a.name, b.name</code></pre>
 </section>
 </main>
 <footer class="site-footer">
-  <a class="brand" href="/" aria-label="OrchidDB home"><span aria-hidden="true">🌸</span></a>
+  <a class="brand" href="/" aria-label="OrchidDB home"><img class="crest-icon" src="/assets/logos/orchiddb.svg" alt="" width="38" height="38"><span class="wordmark">OrchidDB</span></a>
   <nav aria-label="Footer"><a href="https://docs.orchiddb.com/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.orchiddb.com/">Docs</a></nav>
   <nav aria-label="Social and source"><a href="/community.html#mastodon">Mastodon</a><a href="/community.html#twitter">Twitter</a><a href="/community.html#linkedin">LinkedIn</a><a href="/community.html#slack">Slack</a><a href="https://github.com/OrchidDB/OrchidDB">GitHub</a></nav>
   <p>Copyright © 2026 Daniel Henneberger. <a href="https://github.com/OrchidDB/OrchidDB/blob/main/LICENSE.md">License</a></p>
