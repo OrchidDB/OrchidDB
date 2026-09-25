@@ -15,6 +15,7 @@ use super::{context, expressions, names};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProcedureCallAst {
+    pub implicit_arguments: bool,
     pub name: String,
     pub args: Vec<Expr>,
     pub yields: Vec<ProcedureYieldItem>,
@@ -35,6 +36,8 @@ pub(crate) fn lower_in_query_call(ctx: &OC_InQueryCallContext<'_>) -> Result<Cla
         call.yield_all = true;
     }
     Ok(Clause::Call(ProcedureCallClause {
+        implicit_arguments: call.implicit_arguments,
+        signature: None,
         name: call.name,
         args: call.args,
         yields: call.yields,
@@ -76,6 +79,7 @@ pub(crate) fn lower_explicit_procedure_invocation(
         .map(|expr| expressions::lower_expression(expr.as_ref()))
         .collect::<Result<Vec<_>>>()?;
     Ok(ProcedureCallAst {
+        implicit_arguments: false,
         name: lower_procedure_name(name.as_ref())?,
         args,
         yields: Vec::new(),
@@ -91,6 +95,7 @@ pub(crate) fn lower_implicit_procedure_invocation(
         return context::missing("implicit procedure invocation missing name");
     };
     Ok(ProcedureCallAst {
+        implicit_arguments: true,
         name: lower_procedure_name(name.as_ref())?,
         args: Vec::new(),
         yields: Vec::new(),

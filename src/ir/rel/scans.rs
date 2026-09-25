@@ -443,7 +443,8 @@ pub(super) struct PropertyDef {
 /// Encoded structured properties that may carry a native list shadow.
 pub(super) fn list_shadow_candidates(defs: &[PropertyDef]) -> Vec<String> {
     defs.iter()
-        .filter(|def| def.carries_union_tag && def.struct_fields.is_empty())
+        .filter(|def| def.struct_fields.is_empty() && (def.carries_union_tag
+            || matches!(def.data_type, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View)))
         .map(|def| def.name.clone())
         .collect()
 }

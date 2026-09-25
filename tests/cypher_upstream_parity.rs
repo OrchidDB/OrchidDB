@@ -2,6 +2,23 @@
 
 use new_graph::engine::GraphEngine;
 
+#[tokio::test]
+async fn null_slices_survive_sql_output_and_property_lists_stay_typed() {
+    use arrow::array::Array;
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for slice in ["null..null", "1..null", "null..3", "..null", "null.."] {
+        let result = engine.cypher(&format!("WITH [1,2,3] AS xs RETURN xs[{slice}] AS value")).await.unwrap();
+        assert!(result.returned.batch.column(0).is_null(0), "{slice}");
+    }
+    engine.cypher("CREATE (a {id: 7, xs: [2,3]}), (b {id: a.id, xs: [1,4]})").await.unwrap();
+    let result = engine.cypher("MATCH (n) RETURN n.xs AS xs, n.id ORDER BY xs").await.unwrap();
+    let schema = result.returned.batch.schema();
+    let native: serde_json::Value = serde_json::from_str(&schema.metadata()["crabgraph.cypher.typed_rows.v1"]).unwrap();
+    assert_eq!(native[0][0]["type"], "list");
+    assert_eq!(native[0][0]["value"][0]["value"], 1);
+    assert_eq!(native[0][1]["value"], 7);
+}
+
 async fn rows(engine: &mut GraphEngine, query: &str) -> Vec<Vec<String>> {
     let result = engine
         .cypher(query)

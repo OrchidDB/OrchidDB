@@ -420,13 +420,25 @@ impl GraphEngine {
         self.cypher_with_params(query, &BTreeMap::new()).await
     }
 
+    pub fn register_table_procedure(&mut self, name: String, procedure: crate::ir::procedures::TableProcedure) -> EngineResult<()> {
+        procedure.validate()?;
+        std::sync::Arc::make_mut(&mut self.graph.procedures).insert(name,procedure);
+        Ok(())
+    }
+
+    pub fn procedure_catalog(&self) -> &crate::ir::procedures::ProcedureCatalog {
+        &self.graph.procedures
+    }
+
     pub async fn cypher_with_params(
         &mut self,
         query: &str,
         parameters: &BTreeMap<String, Value>,
     ) -> EngineResult<QueryResult> {
         let mut parsed = cypher::parser::parse_query(query).map_err(|e| e.to_string())?;
+        cypher::procedures::prepare(&mut parsed,self.procedure_catalog()).map_err(|e|e.to_string())?;
         cypher::parameters::bind_parameters(&mut parsed, parameters)?;
+        cypher::procedures::prepare(&mut parsed,self.procedure_catalog()).map_err(|e|e.to_string())?;
         let plan = cypher::planner::CypherPlanner::new()
             .plan(&parsed)
             .map_err(|e| e.to_string())?;

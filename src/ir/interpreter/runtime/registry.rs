@@ -284,6 +284,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "cos",
     "cot",
     "cypher_coalesce",
+    "cypher_slice_bound",
     "cypher_merge_valid",
     "cypher_relationship_list",
     "cypher_path",

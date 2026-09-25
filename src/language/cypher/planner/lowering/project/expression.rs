@@ -163,7 +163,13 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                         .classified(CypherSemanticError::IntegerOverflow));
                 }
             }
-            Literal::Float(value) => Lit::Float(*value),
+            Literal::Float(value) => {
+                if value.is_infinite() {
+                    return Err(CypherPlanError::Invalid("Floating point literal exceeds its finite range".into())
+                        .classified(CypherSemanticError::FloatingPointOverflow));
+                }
+                Lit::Float(*value)
+            }
             Literal::String(value) => Lit::String(value.clone()),
         }),
         Expr::List(items) => IrExpr::List(
@@ -297,6 +303,12 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 return Err(CypherPlanError::Invalid(format!(
                     "DISTINCT is only valid for aggregate function `{name}`"
                 )));
+            }
+            if !crate::ir::interpreter::is_known_function(name)
+                && !crate::ir::functions::is_registered_function(name)
+            {
+                return Err(CypherPlanError::Invalid(format!("Unknown function {name}"))
+                    .classified(CypherSemanticError::UnknownFunction));
             }
             IrExpr::Call {
                 name: name.clone(),

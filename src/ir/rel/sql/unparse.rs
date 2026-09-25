@@ -43,6 +43,15 @@ pub(super) fn encode_expression_literals(
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
         match &inner {
+            Expr::Literal(value, _) if value.is_null() && matches!(value.data_type(),
+                DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) => {
+                // The upstream unparser reads list offsets without checking
+                // validity, rendering a typed null list as []. Preserve both
+                // the null value and the type at the SQL boundary.
+                return Ok(Transformed::yes(Expr::Cast(datafusion::logical_expr::Cast::new(
+                    Box::new(lit(ScalarValue::Null)), value.data_type(),
+                ))));
+            }
             Expr::Literal(ScalarValue::Float64(Some(value)), _) if !value.is_finite() => {
                 return Ok(Transformed::yes(non_finite_float_expr(
                     *value,

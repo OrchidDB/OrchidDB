@@ -80,6 +80,7 @@ impl<T: Clone> SnapshotCell<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct PropertyGraph {
+    pub(crate) procedures: Arc<crate::ir::procedures::ProcedureCatalog>,
     /// One timestamp per statement, shared by scalar kernels and SQL planning.
     /// Execution context only; never persisted as graph data.
     statement_clock: SnapshotCell<Option<chrono::DateTime<chrono::Utc>>>,

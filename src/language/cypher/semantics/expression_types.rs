@@ -259,7 +259,9 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
                     "Binder exception: {} has data type {} but (NODE,REL,STRUCT,ANY) was expected.",
                     display_semantic_expr(target),
                     target_kind.cypher_type_name()
-                )).classified(CypherSemanticError::InvalidPropertyAccess));
+                )).classified(if target_kind == BindingKind::Path {
+                    CypherSemanticError::InvalidArgumentType
+                } else { CypherSemanticError::InvalidPropertyAccess }));
             }
             Ok(())
         }
@@ -470,6 +472,30 @@ pub(super) fn validate_function_expr_kind(
     scope: &SemanticScope,
 ) -> CypherPlanResult<()> {
     let lower = name.to_ascii_lowercase();
+    if matches!(lower.as_str(), "labels" | "type") && args.len() == 1 {
+        let kind = projected_expr_kind(&args[0], scope);
+        if matches!(kind, BindingKind::Node | BindingKind::Relationship | BindingKind::Path)
+            && kind != if lower == "labels" { BindingKind::Node } else { BindingKind::Relationship }
+        {
+            return Err(CypherPlanError::Invalid(format!("Invalid graph argument for {name}"))
+                .classified(CypherSemanticError::InvalidArgumentType));
+        }
+    }
+    if lower == "size" && args.iter().any(|arg| matches!(arg, Expr::PatternPredicate(_))) {
+        return Err(CypherPlanError::Invalid("Pattern expressions cannot be used as collections".into())
+            .classified(CypherSemanticError::UnexpectedSyntax));
+    }
+    if matches!(lower.as_str(), "length" | "properties") && args.len() == 1 {
+        let kind = projected_expr_kind(&args[0], scope);
+        let valid = match lower.as_str() {
+            "length" => matches!(kind, BindingKind::Unknown | BindingKind::Value | BindingKind::Path),
+            _ => matches!(kind, BindingKind::Unknown | BindingKind::Value | BindingKind::Node | BindingKind::Relationship),
+        };
+        if !valid || (lower == "length" && matches!(&args[0], Expr::Map(_) | Expr::List(_))) {
+            return Err(CypherPlanError::Invalid(format!("Invalid argument for {name}"))
+                .classified(CypherSemanticError::InvalidArgumentType));
+        }
+    }
     if matches!(lower.as_str(), "in" | "cypher_in") && args.len() == 2 {
         let rhs = projected_expr_kind(&args[1], scope);
         if matches!(rhs, BindingKind::Bool | BindingKind::Int | BindingKind::Float
@@ -821,6 +847,7 @@ pub(super) fn display_order_expr(expr: &Expr) -> String {
 pub(super) fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
     match expr {
         Expr::Variable(binding) => scope.kind(binding).unwrap_or(BindingKind::Unknown),
+        Expr::Literal(Literal::Null) => BindingKind::Unknown,
         // Property names do not determine types. A schema-aware lowering
         // stage can refine them; the language analyzer must keep them dynamic.
         Expr::Property { .. } => BindingKind::Unknown,
@@ -870,9 +897,18 @@ pub(super) fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> Binding
         {
             BindingKind::ListInt
         }
-        Expr::List(items) if !items.is_empty() && items.iter().all(|item|projected_expr_kind(item,scope)==BindingKind::Node) => BindingKind::ListNode,
-        Expr::List(items) if !items.is_empty() && items.iter().all(|item|projected_expr_kind(item,scope)==BindingKind::Relationship) => BindingKind::ListRelationship,
-        Expr::List(_) => BindingKind::ListValue,
+        Expr::List(items) => {
+            // Infer each child once. Re-evaluating nested lists separately
+            // for node and relationship checks makes depth cost exponential.
+            let kinds = items.iter().map(|item| projected_expr_kind(item, scope)).collect::<Vec<_>>();
+            if !kinds.is_empty() && kinds.iter().all(|kind| *kind == BindingKind::Node) {
+                BindingKind::ListNode
+            } else if !kinds.is_empty() && kinds.iter().all(|kind| *kind == BindingKind::Relationship) {
+                BindingKind::ListRelationship
+            } else {
+                BindingKind::ListValue
+            }
+        }
         _ => BindingKind::Value,
     }
 }

@@ -505,12 +505,13 @@ pub(super) fn find_predicate_rhs_len(input: &str) -> usize {
 }
 
 pub(super) fn is_clause_boundary(input: &str) -> bool {
-    let lower = input.to_ascii_lowercase();
+    if !input.starts_with(char::is_whitespace) { return false; }
+    let lower = input.trim_start().to_ascii_lowercase();
     [
-        " return ", " with ", " and ", " or ", " order ", " limit ", " skip ",
+        "return", "with", "and", "or", "order", "limit", "skip",
     ]
     .iter()
-    .any(|needle| lower.starts_with(needle))
+    .any(|needle| lower.strip_prefix(needle).is_some_and(|rest| rest.starts_with(char::is_whitespace)))
 }
 
 pub(super) fn find_operator_outside_quotes(input: &str, operator: &str) -> Option<usize> {

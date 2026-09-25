@@ -99,6 +99,15 @@ pub(super) fn cypher_call(
         return Ok(Some(value));
     }
     match (canonical.as_ref(), args) {
+        ("cypher_slice_bound", [value]) => {
+            use crate::ir::diagnostics::RuntimeDiagnosis;
+            let integer=super::lists::range_integer_arg(value).ok_or_else(||InterpretError::Diagnosed {
+                code:RuntimeDiagnosis::InvalidSliceArgument,message:"SKIP/LIMIT require an integer".into(),
+            })?;
+            if integer<0 {return Err(InterpretError::Diagnosed {code:RuntimeDiagnosis::NegativeIntegerArgument,
+                message:"SKIP/LIMIT require a non-negative integer".into()});}
+            Ok(Some(Value::Int(integer)))
+        }
         ("cypher_order_key", [value]) => Ok(Some(value.clone())),
         // ----- planner-internal helpers -----
         ("cypher_percentile_fraction", [value]) => {

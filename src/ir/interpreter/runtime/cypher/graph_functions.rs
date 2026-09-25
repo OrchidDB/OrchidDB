@@ -39,6 +39,8 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
         })),
         ("cypher_has_label", [Value::Node { label, id }, Value::String(wanted)]) =>
             Ok(Some(Value::Bool(graph.node_labels(label, *id).contains(wanted)))),
+        ("cypher_has_label", [Value::Edge { rel_type, .. }, Value::String(wanted)]) =>
+            Ok(Some(Value::Bool(rel_type == wanted))),
         ("cypher_has_label", [Value::Null, _]) => Ok(Some(Value::Null)),
         ("cypher_has_label", _) => Err(InterpretError::Type("Label predicate requires a node".into())),
         ("labels", [value]) => Ok(Some(match value {

@@ -11,6 +11,28 @@ use std::collections::BTreeMap;
 use crate::ir::value::Value;
 use crate::language::cypher::ast::*;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ParameterBindError {
+    #[error("missing query parameter ${0}")]
+    Missing(String),
+    #[error("{0}")]
+    Invalid(String),
+}
+
+impl From<String> for ParameterBindError {
+    fn from(message:String)->Self {Self::Invalid(message)}
+}
+
+impl ParameterBindError {
+    pub fn classification(&self)->Option<(&'static str,&'static str)> {
+        match self {Self::Missing(_)=>Some(("ParameterMissing","MissingParameter")),Self::Invalid(_)=>None}
+    }
+}
+
+pub fn bind_parameters(query:&mut Query,parameters:&BTreeMap<String,Value>)->Result<(),String> {
+    bind_parameters_with_diagnostics(query,parameters).map_err(|error|error.to_string())
+}
+
 /// Replace every `Expr::Parameter` in `query` with a typed literal, list, or
 /// map expression derived from `parameters`.
 ///
@@ -19,16 +41,16 @@ use crate::language::cypher::ast::*;
 /// Returns an error if a referenced parameter has no value in `parameters`,
 /// or if the value's type cannot be represented as a Cypher literal (for
 /// example a node or edge identifier).
-pub fn bind_parameters(
+pub fn bind_parameters_with_diagnostics(
     query: &mut Query,
     parameters: &BTreeMap<String, Value>,
-) -> Result<(), String> {
+) -> Result<(), ParameterBindError> {
     // Preserve the caller's parsed query when any parameter fails binding.
     *query = bind_query(query.clone(), parameters)?;
     Ok(())
 }
 
-fn bind_query(query: Query, parameters: &BTreeMap<String, Value>) -> Result<Query, String> {
+fn bind_query(query: Query, parameters: &BTreeMap<String, Value>) -> Result<Query, ParameterBindError> {
     Ok(Query {
         clauses: query
             .clauses
@@ -46,14 +68,14 @@ fn bind_query(query: Query, parameters: &BTreeMap<String, Value>) -> Result<Quer
 fn bind_union_branch(
     branch: UnionBranch,
     parameters: &BTreeMap<String, Value>,
-) -> Result<UnionBranch, String> {
+) -> Result<UnionBranch, ParameterBindError> {
     Ok(UnionBranch {
         all: branch.all,
         query: Box::new(bind_query(*branch.query, parameters)?),
     })
 }
 
-fn bind_clause(clause: Clause, parameters: &BTreeMap<String, Value>) -> Result<Clause, String> {
+fn bind_clause(clause: Clause, parameters: &BTreeMap<String, Value>) -> Result<Clause, ParameterBindError> {
     Ok(match clause {
         Clause::Match(clause) => Clause::Match(MatchClause {
             optional: clause.optional,
@@ -68,6 +90,8 @@ fn bind_clause(clause: Clause, parameters: &BTreeMap<String, Value>) -> Result<C
             alias: clause.alias,
         }),
         Clause::Call(clause) => Clause::Call(ProcedureCallClause {
+            implicit_arguments: clause.implicit_arguments,
+            signature: clause.signature,
             name: clause.name,
             args: clause
                 .args
@@ -126,7 +150,7 @@ fn bind_clause(clause: Clause, parameters: &BTreeMap<String, Value>) -> Result<C
     })
 }
 
-fn bind_set_item(item: SetItem, parameters: &BTreeMap<String, Value>) -> Result<SetItem, String> {
+fn bind_set_item(item: SetItem, parameters: &BTreeMap<String, Value>) -> Result<SetItem, ParameterBindError> {
     Ok(match item {
         SetItem::Property { target, key, value } => SetItem::Property {
             target: bind_expr(target, parameters)?,
@@ -148,7 +172,7 @@ fn bind_set_item(item: SetItem, parameters: &BTreeMap<String, Value>) -> Result<
 fn bind_projection(
     projection: ProjectionBody,
     parameters: &BTreeMap<String, Value>,
-) -> Result<ProjectionBody, String> {
+) -> Result<ProjectionBody, ParameterBindError> {
     Ok(ProjectionBody {
         distinct: projection.distinct,
         include_existing: projection.include_existing,
@@ -164,19 +188,43 @@ fn bind_projection(
             .collect::<Result<Vec<_>, _>>()?,
         skip: projection
             .skip
-            .map(|expr| bind_expr(expr, parameters))
+            .map(|expr| bind_slice_expr(expr, parameters))
             .transpose()?,
         limit: projection
             .limit
-            .map(|expr| bind_expr(expr, parameters))
+            .map(|expr| bind_slice_expr(expr, parameters))
             .transpose()?,
     })
+}
+
+fn bind_slice_expr(expr:Expr,parameters:&BTreeMap<String,Value>)->Result<Expr,ParameterBindError> {
+    fn parameterized(expr:&Expr)->bool {
+        match expr {
+            Expr::Parameter(_)=>true,
+            Expr::Unary {expr,..} | Expr::IsNull(expr) | Expr::IsNotNull(expr)=>parameterized(expr),
+            Expr::Property {target,..} | Expr::LabelPredicate {target,..}=>parameterized(target),
+            Expr::Binary {lhs,rhs,..}=>parameterized(lhs)||parameterized(rhs),
+            Expr::StringPredicate {target,pattern,..}=>parameterized(target)||parameterized(pattern),
+            Expr::Function {args,..} | Expr::List(args)=>args.iter().any(parameterized),
+            Expr::Map(fields)=>fields.iter().any(|(_,expr)|parameterized(expr)),
+            Expr::Case {case,arms,otherwise}=>case.as_deref().is_some_and(parameterized)
+                || arms.iter().any(|(a,b)|parameterized(a)||parameterized(b))
+                || otherwise.as_deref().is_some_and(parameterized),
+            Expr::ListComprehension {collection,predicate,map,..}=>parameterized(collection)
+                ||predicate.as_deref().is_some_and(parameterized)||parameterized(map),
+            Expr::Quantifier {collection,predicate,..}=>parameterized(collection)||parameterized(predicate),
+            _=>false,
+        }
+    }
+    let dynamic=parameterized(&expr);
+    let bound=bind_expr(expr,parameters)?;
+    Ok(if dynamic {Expr::Function {name:"cypher_slice_bound".into(),distinct:false,args:vec![bound]}} else {bound})
 }
 
 fn bind_projection_item(
     item: ProjectionItem,
     parameters: &BTreeMap<String, Value>,
-) -> Result<ProjectionItem, String> {
+) -> Result<ProjectionItem, ParameterBindError> {
     Ok(ProjectionItem {
         expr: bind_expr(item.expr, parameters)?,
         alias: item.alias,
@@ -187,14 +235,14 @@ fn bind_projection_item(
 fn bind_sort_item(
     item: SortItem,
     parameters: &BTreeMap<String, Value>,
-) -> Result<SortItem, String> {
+) -> Result<SortItem, ParameterBindError> {
     Ok(SortItem {
         expr: bind_expr(item.expr, parameters)?,
         direction: item.direction,
     })
 }
 
-fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, String> {
+fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, ParameterBindError> {
     Ok(match expr {
         Expr::Star => Expr::Star,
         Expr::Variable(name) => Expr::Variable(name),
@@ -209,7 +257,7 @@ fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, S
         Expr::Parameter(name) => {
             let value = parameters
                 .get(&name)
-                .ok_or_else(|| format!("missing value for parameter `${name}`"))?;
+                .ok_or_else(|| ParameterBindError::Missing(name.clone()))?;
             value_to_expr(value)?
         }
         Expr::Literal(literal) => Expr::Literal(literal),
@@ -223,7 +271,7 @@ fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, S
             entries
                 .into_iter()
                 .map(|(key, value)| Ok((key, bind_expr(value, parameters)?)))
-                .collect::<Result<Vec<_>, String>>()?,
+                .collect::<Result<Vec<_>, ParameterBindError>>()?,
         ),
         Expr::Unary { op, expr } => Expr::Unary {
             op,
@@ -270,7 +318,7 @@ fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, S
                 .map(|(when, then)| {
                     Ok((bind_expr(when, parameters)?, bind_expr(then, parameters)?))
                 })
-                .collect::<Result<Vec<_>, String>>()?,
+                .collect::<Result<Vec<_>, ParameterBindError>>()?,
             otherwise: otherwise
                 .map(|expr| bind_expr_box(expr, parameters))
                 .transpose()?,
@@ -352,14 +400,14 @@ fn bind_expr(expr: Expr, parameters: &BTreeMap<String, Value>) -> Result<Expr, S
 fn bind_expr_box(
     expr: Box<Expr>,
     parameters: &BTreeMap<String, Value>,
-) -> Result<Box<Expr>, String> {
+) -> Result<Box<Expr>, ParameterBindError> {
     Ok(Box::new(bind_expr(*expr, parameters)?))
 }
 
 fn bind_exists_subquery(
     exists: ExistsSubquery,
     parameters: &BTreeMap<String, Value>,
-) -> Result<ExistsSubquery, String> {
+) -> Result<ExistsSubquery, ParameterBindError> {
     Ok(ExistsSubquery {
         query: match exists.query {
             Some(mut query) => {
@@ -379,7 +427,7 @@ fn bind_exists_subquery(
 fn bind_pattern_parts(
     parts: Vec<PatternPart>,
     parameters: &BTreeMap<String, Value>,
-) -> Result<Vec<PatternPart>, String> {
+) -> Result<Vec<PatternPart>, ParameterBindError> {
     parts
         .into_iter()
         .map(|part| bind_pattern_part(part, parameters))
@@ -389,7 +437,7 @@ fn bind_pattern_parts(
 fn bind_pattern_part(
     part: PatternPart,
     parameters: &BTreeMap<String, Value>,
-) -> Result<PatternPart, String> {
+) -> Result<PatternPart, ParameterBindError> {
     Ok(PatternPart {
         variable: part.variable,
         element: bind_pattern_element(part.element, parameters)?,
@@ -399,14 +447,14 @@ fn bind_pattern_part(
 fn bind_pattern_part_box(
     part: Box<PatternPart>,
     parameters: &BTreeMap<String, Value>,
-) -> Result<Box<PatternPart>, String> {
+) -> Result<Box<PatternPart>, ParameterBindError> {
     Ok(Box::new(bind_pattern_part(*part, parameters)?))
 }
 
 fn bind_pattern_element(
     element: PatternElement,
     parameters: &BTreeMap<String, Value>,
-) -> Result<PatternElement, String> {
+) -> Result<PatternElement, ParameterBindError> {
     Ok(PatternElement {
         start: bind_node_pattern(element.start, parameters)?,
         chains: element
@@ -420,7 +468,7 @@ fn bind_pattern_element(
 fn bind_pattern_element_chain(
     chain: PatternElementChain,
     parameters: &BTreeMap<String, Value>,
-) -> Result<PatternElementChain, String> {
+) -> Result<PatternElementChain, ParameterBindError> {
     Ok(PatternElementChain {
         relationship: bind_relationship_pattern(chain.relationship, parameters)?,
         node: bind_node_pattern(chain.node, parameters)?,
@@ -430,7 +478,7 @@ fn bind_pattern_element_chain(
 fn bind_node_pattern(
     node: NodePattern,
     parameters: &BTreeMap<String, Value>,
-) -> Result<NodePattern, String> {
+) -> Result<NodePattern, ParameterBindError> {
     Ok(NodePattern {
         variable: node.variable,
         labels: node.labels,
@@ -444,7 +492,7 @@ fn bind_node_pattern(
 fn bind_relationship_pattern(
     relationship: RelationshipPattern,
     parameters: &BTreeMap<String, Value>,
-) -> Result<RelationshipPattern, String> {
+) -> Result<RelationshipPattern, ParameterBindError> {
     Ok(RelationshipPattern {
         variable: relationship.variable,
         types: relationship.types,
@@ -464,7 +512,7 @@ fn bind_relationship_pattern(
 fn bind_pattern_properties(
     expr: Expr,
     parameters: &BTreeMap<String, Value>,
-) -> Result<Expr, String> {
+) -> Result<Expr, ParameterBindError> {
     if let Expr::Parameter(name) = &expr {
         match parameters.get(name) {
             Some(Value::Map(_)) => {}
@@ -472,9 +520,9 @@ fn bind_pattern_properties(
                 return Err(format!(
                     "pattern parameter ${name} must be a map, got {}",
                     value.type_name()
-                ));
+                ).into());
             }
-            None => return Err(format!("missing query parameter ${name}")),
+            None => return Err(ParameterBindError::Missing(name.clone())),
         }
     }
     bind_expr(expr, parameters)
@@ -483,7 +531,7 @@ fn bind_pattern_properties(
 fn bind_recursive(
     recursive: RecursiveRelationshipPattern,
     parameters: &BTreeMap<String, Value>,
-) -> Result<RecursiveRelationshipPattern, String> {
+) -> Result<RecursiveRelationshipPattern, ParameterBindError> {
     Ok(RecursiveRelationshipPattern {
         rel_variable: recursive.rel_variable,
         node_variable: recursive.node_variable,
@@ -496,7 +544,7 @@ fn bind_recursive(
     })
 }
 
-fn value_to_expr(value: &Value) -> Result<Expr, String> {
+fn value_to_expr(value: &Value) -> Result<Expr, ParameterBindError> {
     Ok(match value {
         Value::Null => Expr::Literal(Literal::Null),
         Value::Bool(value) => Expr::Literal(Literal::Bool(*value)),
@@ -523,13 +571,13 @@ fn value_to_expr(value: &Value) -> Result<Expr, String> {
             entries
                 .iter()
                 .map(|(key, value)| Ok((key.clone(), value_to_expr(value)?)))
-                .collect::<Result<Vec<_>, String>>()?,
+                .collect::<Result<Vec<_>, ParameterBindError>>()?,
         ),
         value => {
             return Err(format!(
                 "unsupported parameter value of type `{}`",
                 value.type_name()
-            ));
+            ).into());
         }
     })
 }

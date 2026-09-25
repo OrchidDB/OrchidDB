@@ -80,6 +80,11 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             IrExpr::Property { binding, name, .. } => {
+                if self.language == Language::Cypher {
+                    if let Some(native) = collections::native_list_property(plan, expr) {
+                        return Ok(native);
+                    }
+                }
                 let col = prop_col(binding, name);
                 if has_exact_col(plan, &col) {
                     Ok(col_exact(col))

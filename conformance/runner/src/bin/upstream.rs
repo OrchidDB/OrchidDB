@@ -75,13 +75,22 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
 }
 // Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.
 // Capture typed planner diagnostics before its public String error boundary.
-fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>)->Result<new_graph::ir::plan::GraphPlan,(String,Option<Value>)>{
+fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&new_graph::ir::procedures::ProcedureCatalog)->Result<new_graph::ir::plan::GraphPlan,(String,Option<Value>)>{
  use new_graph::language::cypher;
  let mut parsed=cypher::parser::parse_query(query).map_err(|e|{
   let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
   (e.to_string(),classification)
  })?;
- cypher::parameters::bind_parameters(&mut parsed,params).map_err(|e|(e,None))?;
+ let plan_error=|e:cypher::planner::CypherPlanError| {
+  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
+  (e.to_string(),classification)
+ };
+ cypher::procedures::prepare(&mut parsed,catalog).map_err(plan_error)?;
+ cypher::parameters::bind_parameters_with_diagnostics(&mut parsed,params).map_err(|e|{
+  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
+  (e.to_string(),classification)
+ })?;
+ cypher::procedures::prepare(&mut parsed,catalog).map_err(plan_error)?;
  cypher::planner::CypherPlanner::new().plan(&parsed).map_err(|e|{
   let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
   (e.to_string(),classification)
@@ -118,12 +127,21 @@ async fn main(){
  "fixture"=>fixture_graph(&req).and_then(|graph|engine.replace_graph(graph).map(|_|json!({"ok":true}))),
  "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
  "rdf"=>rdf(&req).await,
+ "register-procedure"=>{
+  use new_graph::ir::procedures::{ProcedureField,ProcedureSignature,TableProcedure};
+  let fields=|key:&str|req[key].as_array().into_iter().flatten().map(|field|ProcedureField {
+   name:field["name"].as_str().unwrap_or("").into(),type_name:field["type"].as_str().unwrap_or("ANY").into(),nullable:field["nullable"].as_bool().unwrap_or(true)
+  }).collect();
+  let procedure=TableProcedure{signature:ProcedureSignature{inputs:fields("inputs"),outputs:fields("outputs")},
+   rows:req["rows"].as_array().into_iter().flatten().map(|row|row.as_array().into_iter().flatten().map(param).collect()).collect()};
+  engine.register_table_procedure(req["name"].as_str().unwrap_or("").into(),procedure).map(|_|json!({"ok":true}))
+ },
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())},
  _=>{
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");
  let mut classification=None;
- let r=if op=="gremlin"{match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)}}else{match cypher_plan(q,&params){
+ let r=if op=="gremlin"{match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)}}else{match cypher_plan(q,&params,engine.procedure_catalog()){
   Ok(plan)=>engine.execute_plan_with_diagnostics(&plan).await.map_err(|error|{
    classification=error.diagnosis.map(|code|{let (kind,detail,phase)=code.classification();json!({"type":kind,"detail":detail,"phase":phase})});
    error.to_string()

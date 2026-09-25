@@ -174,7 +174,7 @@ impl SemanticAnalyzer {
             if union_mode.is_some_and(|all| all != branch.all) {
                 return Err(CypherPlanError::Invalid(
                     "Binder exception: Union and union all can not be used together.".to_string(),
-                ));
+                ).classified(CypherSemanticError::InvalidClauseComposition));
             }
             let mut branch_scope = initial_scope.clone();
             let branch_outputs = self.analyze_query_with_scope(&branch.query, &mut branch_scope)?;
@@ -253,6 +253,10 @@ impl SemanticAnalyzer {
                         )));
                     }
                     for arg in &clause.args {
+                        if contains_aggregate(arg) {
+                            return Err(CypherPlanError::Invalid("Procedure arguments cannot contain aggregates".into())
+                                .classified(CypherSemanticError::InvalidAggregation));
+                        }
                         self.validate_expr_scope(arg, scope, "procedure argument")?;
                     }
                     let visible = scope.field_set();
@@ -266,7 +270,7 @@ impl SemanticAnalyzer {
                             "procedure `{}` tries to rebind variables already in scope: {}",
                             clause.name,
                             rebound.join(", ")
-                        )));
+                        )).classified(CypherSemanticError::VariableAlreadyBound));
                     }
                     for output in &alias_yields {
                         scope.insert(output.clone(), BindingKind::Unknown);
@@ -353,6 +357,7 @@ impl SemanticAnalyzer {
                     }
                 }
                 Clause::With(clause) => {
+                    aggregates::validate_grouping(&clause.projection)?;
                     validate_with_projection_aliases(&clause.projection)?;
                     let outputs = self.analyze_projection_body(&clause.projection, scope, true)?;
                     if let Some(predicate) = &clause.predicate {
@@ -368,6 +373,7 @@ impl SemanticAnalyzer {
                     result_fields = Some(output_fields);
                 }
                 Clause::Return(clause) => {
+                    aggregates::validate_grouping(&clause.projection)?;
                     let outputs = self.analyze_projection_body(&clause.projection, scope, false)?;
                     result_fields = Some(outputs);
                 }
@@ -485,7 +491,13 @@ impl SemanticAnalyzer {
         if !allow_empty_star && body.include_existing && scope.bindings.is_empty() {
             return Err(CypherPlanError::Invalid(
                 "RETURN or WITH * is not allowed when there are no variables in scope".to_string(),
-            ));
+            ).classified(CypherSemanticError::NoVariablesInScope));
+        }
+        if !body.items.iter().any(|item| contains_aggregate(&item.expr))
+            && body.order_by.iter().any(|item| contains_aggregate(&item.expr))
+        {
+            return Err(CypherPlanError::Invalid("ORDER BY aggregation requires aggregation in the projection".into())
+                .classified(CypherSemanticError::InvalidAggregation));
         }
         for item in &body.items {
             self.validate_expr_scope(&item.expr, scope, "projection expression")?;
@@ -744,6 +756,11 @@ impl SemanticAnalyzer {
     ) -> CypherPlanResult<()> {
         let mut scope = scope_from_candidates(candidates);
         if let Some(query) = &exists.query {
+            if query.clauses.iter().any(|clause| matches!(clause,
+                Clause::Create(_) | Clause::Merge(_) | Clause::Set(_) | Clause::Delete(_))) {
+                return Err(CypherPlanError::Invalid("EXISTS subqueries cannot update the graph".into())
+                    .classified(CypherSemanticError::InvalidClauseComposition));
+            }
             self.analyze_query_with_scope(query, &mut scope)?;
             return Ok(());
         }
