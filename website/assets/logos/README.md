@@ -1,3 +1,16 @@
+# OrchidDB logo
+
+`orchiddb.svg` is the faithful Orchid kamon vector master. Transparent PNGs use
+the same geometry and #352330 ink at 50, 128, 256, 512, and 1024 pixels:
+`orchiddb-50.png`, `orchiddb-128.png`, `orchiddb-256.png`, `orchiddb-512.png`,
+and `orchiddb-1024.png`. `orchiddb.png` is an identical copy of the 1024px version,
+served at https://orchiddb.com/assets/logos/orchiddb.png.
+
+Regenerate with `node website/scripts/export-logo-pngs.mjs` using Playwright.
+The script also accepts `PLAYWRIGHT_MODULE` and `CHROME_PATH`, matching the site
+browser-check setup, and verifies dimensions, transparency, and ink color.
+`orchiddb-ink.png` is the separate approved brush artwork used by the hero.
+
 # Technology logos
 
 Official project artwork, downloaded unmodified on 2026-09-25. These marks
