@@ -42,7 +42,7 @@ the same execution contract.
 
 ### Measured progress
 
-Revision `f3889f1`: **974 pass, zero fail, zero unsupported, 77 skipped,
+Revision `7a09e89`: **974 pass, zero fail, zero unsupported, 77 skipped,
 74 not applicable**. Apache Jena with the same assertion rules: **948 pass,
 26 fail, 77 skipped, 74 not applicable**. These are complete local runs.
 The 974 executed cases all pass; this is not complete coverage of the 1,125-case
@@ -58,6 +58,13 @@ WHERE evaluation, DELETE before INSERT, graph lifecycle, and atomic rollback.
 WITH keeps other named graphs visible and update subqueries preserve all outer
 bindings. Five mapped-write regressions cover physical multi-table effects,
 database constraint failures, graph identity, and nested query scopes.
+
+SPARQL now uses the shared relational DAG executor. External SERVICE sources
+are DataFusion physical children of DuckDB regions, and planning does not fetch
+their data. The complete 974-case executable baseline remains green after this
+migration. Three focused HTTP tests check source execution and failure semantics.
+Federation fixtures and correlated variable endpoints remain the next work;
+these focused tests do not replace the seven upstream SERVICE scenarios.
 
 Shared assertions preserve fixture lexical forms, honor explicit `rs:index`
 ordering and `mf:LaxCardinality`, and use pinned Oxigraph 0.5.11 numeric result
