@@ -1,88 +1,54 @@
 # CLI reference
 
-Run a graph query from your shell, read query files, and inspect a plan with the orchiddb binary.
+The standalone [OrchidDB-cli](https://github.com/OrchidDB/OrchidDB-cli) bundles DuckDB and loads the official Iceberg extension by default. It compiles graph reads to SQL and returns Arrow results.
 
 ## Invocation
 
 ```sh
-orchiddb [OPTIONS]
+orchiddb compile REQUEST.json
+orchiddb query REQUEST.json [--database FILE] [--init SQL_FILE] [--format arrow|table] [--no-iceberg]
+orchiddb --version
 ```
 
-From a source checkout, use `cargo run --features duckdb --bin orchiddb -- [OPTIONS]`. The arguments after `--` are passed to the binary.
+`REQUEST.json` uses [compiler protocol version 1](sql-compiler.md), including language, query, dialect, table schemas, and graph mappings. The CLI executes DuckDB SQL only. `compile` prints SQL without opening a database or installing extensions.
 
-## Options
+## Query options
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--database PATH` | Persistent DuckDB graph file. | Fresh in-memory graph |
-| `--language LANG` | Query language: `cypher` or `gremlin`. | `cypher` |
-| `--query TEXT` | Query supplied directly in the command. | Read file or stdin |
-| `--file PATH` | File containing a query. | Read stdin |
-| `--sql-only` | Require SQL-only read execution. | Hybrid reads |
-| `--explain` | Print Graph IR without executing. | Execute query |
-| `-h`, `--help` | Print help and exit. | — |
+| `--database FILE` | DuckDB database path | In-memory database |
+| `--init SQL_FILE` | Run caller-supplied setup SQL before the query | No setup |
+| `--format arrow` | Arrow IPC stream on stdout | Default output |
+| `--format table` | Human-readable output, one batch at a time | Opt-in |
+| `--no-iceberg` | Skip Iceberg installation/loading | Iceberg enabled |
 
-Value options also accept `--name=value` syntax. Query input precedence is `--query`, then `--file`, then standard input.
+Use space-separated option values. The request is a file, not inline query text. This binary does not accept the legacy managed CLI's `--query`, `--language`, or `--explain` flags.
 
-## Query a database
+## Run the included example
 
-```sh
-orchiddb --database social.duckdb \
-  --query "MATCH (p:Person) RETURN p.name ORDER BY p.name"
-```
-
-To start a fresh ephemeral session:
+From an `OrchidDB-cli` checkout after [installation](installation.md):
 
 ```sh
-orchiddb --query 'RETURN 1 AS value'
+orchiddb query examples/people.json --init examples/setup.sql --format table
+orchiddb compile examples/people.json
+orchiddb query examples/people.json --init examples/setup.sql > people.arrow
 ```
 
-## Read a file
+The setup creates source tables and the request maps them to a `Person` label. Arrow IPC goes to stdout; errors go to stderr. A failure returns a nonzero exit status. See the [quickstart](quickstart.md) for complete input files.
 
-Save one query as `people.cypher`:
+## Iceberg and engine setup
 
-```cypher
-MATCH (p:Person)
-RETURN p.name
-ORDER BY p.name
+Queries first load the cached Iceberg extension or install the signed official extension from DuckDB's extension service. Installation failure is reported; there is no silent fallback. Use `--no-iceberg` for queries that do not need Iceberg.
+
+Your initialization file can configure credentials, plugins, UDFs, attached catalogs, and views:
+
+```sql
+CREATE VIEW people AS
+SELECT id, name FROM iceberg_scan('/path/to/table/metadata/v1.metadata.json');
 ```
 
-Run it with:
+Map that view in your request. Actual storage access requires your own credentials and catalog setup. Setup SQL is executed as supplied. The CLI owns its database connection; applications that already own an engine should use a [language client](client-apis.md).
 
-```sh
-orchiddb --database social.duckdb --file people.cypher
-```
+## Managed runtime CLI
 
-Or send it through stdin:
-
-```sh
-cat people.cypher | orchiddb --database social.duckdb
-```
-
-## Select Gremlin
-
-```sh
-orchiddb --database social.duckdb --language gremlin \
-  --query "g.V().hasLabel('Person').values('name').order()"
-```
-
-## Explain a query
-
-```sh
-orchiddb --explain --query \
-  "MATCH (p:Person)-[:KNOWS]->(friend) RETURN friend.name"
-```
-
-The output is the graph plan. For generated SQL over mapped tables, use the Rust API's `explain_cypher` method.
-
-## Output and shell integration
-
-The CLI writes tab-separated column headers and rows to stdout. Backend diagnostics and errors go to stderr. A failed command exits with a nonzero status.
-
-```sh
-orchiddb --database social.duckdb \
-  --query "MATCH (p:Person) RETURN p.name" \
-  > people.tsv 2> query.log
-```
-
-For application-controlled parameter binding and Arrow-native results, use the [Rust API](rust-api.md).
+Core retains a separate legacy binary behind `--features duckdb`, used by some managed graph examples. Its mutation/query flags are different. The standalone CLI described here supports the SQL compiler's read subset, not the managed runtime's full conformance scope.

@@ -10,7 +10,7 @@ connection, registers functions, mutates a schema, or executes a SQL statement.
 orchiddb = { path = "../orchiddb" }
 ```
 
-The [Java binding](https://github.com/OrchidDB/OrchidDB-java) uses the same compiler.
+All [language clients](client-apis.md) use the same compiler. The [Java binding](https://github.com/OrchidDB/OrchidDB-java) exposes it through JNI.
 Its JNI library uses this configuration: DuckDB and `libduckdb-sys` are absent
 from the native dependency graph. Existing managed engine/CLI builds retain
 their optional `duckdb` feature; it must now be enabled explicitly.
@@ -92,7 +92,7 @@ Regression tests: `cargo test --test sql_compiler --test execution`.
 
 You can execute `CompiledSql.sql` directly. For a common adapter boundary,
 implement `execution::SqlSession`: declare a dialect, a driver error type, and a
-result type that can borrow the session. Its async `query` method executes the
+result type implementing Arrow `RecordBatchReader` that can borrow the session. Its async `query` method executes the
 SQL; `execution::execute` first rejects protocol/dialect mismatches. It performs
 no schema discovery, setup statements, data copying, buffering or commits.
 Futures may stay on the calling thread; `Send` and background scheduling are not
@@ -100,7 +100,7 @@ required. Your adapter controls streaming errors, cancellation and drop cleanup.
 
 The [DuckDB application example](https://github.com/OrchidDB/OrchidDB/tree/main/examples/duckdb-client) declares its own
 driver dependency and implements the interface with a borrowed connection and
-streaming cursor. It registers a SQL function, queries uncommitted caller data,
+native Arrow reader. Retained Rust batches own their buffers after advancing or dropping the reader. It registers a SQL function, queries uncommitted caller data,
 and verifies caller rollback afterward:
 
 ```sh

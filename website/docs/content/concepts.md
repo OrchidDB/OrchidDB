@@ -8,6 +8,10 @@ A node has an identity, labels, and properties. A relationship connects a source
 
 In a mapped graph, these concepts come from your schema. A node's identity can be a table's primary key. Relationship endpoints can be foreign-key columns. Properties can use graph names different from their physical column names.
 
+## Compiler clients and runtime APIs
+
+The [language clients](client-apis.md) compile mapped read queries to SQL without opening a database. Applications execute the SQL on their own engine and consume Arrow batches. These clients do not use the engine types below.
+
 ## Managed and mapped data
 
 | Model | Data ownership | Entry point |

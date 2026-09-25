@@ -1,10 +1,10 @@
 # Introduction
 
-Bring embedded graph queries to your data lake. Learn to map relational tables, query with three graph languages, and embed OrchidDB in a Rust application.
+Bring embedded graph queries to your data lake. Learn to map relational tables, query with three graph languages, and use OrchidDB from Rust, Java, Python, JavaScript/TypeScript, Elixir, or C++.
 
 ## Start with your data
 
-OrchidDB is a graph query layer built in Rust, with DuckDB execution, DataFusion planning, and Apache Arrow results. Describe nodes, relationships, and properties over your existing tables, then ask graph questions in Cypher, Gremlin, or SPARQL.
+OrchidDB is a graph query layer built in Rust, with DataFusion planning and Apache Arrow results. Compile SQL and execute through your own engine, or use the standalone CLI with bundled DuckDB and default Iceberg support. Describe nodes, relationships, and properties over your existing tables, then ask graph questions in Cypher, Gremlin, or SPARQL.
 
 A graph mapping connects your application vocabulary to physical columns. A customer can become a `Person`, an order row can define an `ORDERED` relationship, and a SQL view can expose a selected group of accounts. Your database remains the source of those rows.
 
@@ -49,11 +49,11 @@ SELECT ?name WHERE {
 ORDER BY ?name
 ```
 
-The language frontends produce a shared Graph IR. Relational regions become SQL islands, which execute in DuckDB. Read [core concepts](concepts.md) for the execution model.
+The language frontends produce a shared Graph IR. Compiler-only clients lower supported reads to SQL and return the plan to your application. The optional managed runtime can also execute remaining stages itself. Read [SQL compilation](sql-compiler.md) for the client boundary and [core concepts](concepts.md) for the runtime model.
 
 ## Follow a learning path
 
-Begin with [installation](installation.md), run the [quickstart](quickstart.md), and then build the [mapped graph tutorial](mapped-graphs.md). It uses a small customer and order dataset that also appears in the [query recipes](recipes.md).
+Begin with [installation](installation.md), run the [quickstart](quickstart.md), then choose a [client example](client-apis.md). The separate [mapped graph tutorial](mapped-graphs.md) covers core runtime APIs and a customer/order dataset used in the [query recipes](recipes.md).
 
 For application integration, continue with [typed parameters](parameters.md), [Arrow results](results.md), and [transactions](transactions.md). The [CLI reference](cli.md), [mapping reference](mapping-reference.md), and [Rust API](rust-api.md) provide the details to keep nearby while coding.
 
