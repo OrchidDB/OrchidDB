@@ -155,7 +155,8 @@ presented as execution conformance.
 
 ## Website and copy
 
-The landing page is under `website/`. Its language should continue to follow
+The landing page is maintained in the private `OrchidDB/OrchidDB-landing` repository.
+Documentation remains under `website/docs/` here. Landing copy follows that repository’s
 `website/STYLE.md`: direct technical prose, concrete nouns, measured
 claims, and no em dashes. Keep DataFusion described as the foundation of the
 planner, not as a database. Keep the graph schema and ontology mapping layers

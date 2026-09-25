@@ -172,3 +172,7 @@ License fees are based on organization size:
 | 0-5 people | $100 |
 | 5-50 people | $10,000 |
 | More than 50 people | Requires a separate contract. Contact Daniel Henneberger. |
+
+## Website repositories
+
+Documentation source remains in [website/docs](website/docs/README.md). The landing page and installer are maintained and deployed from the private [OrchidDB/OrchidDB-landing](https://github.com/OrchidDB/OrchidDB-landing) repository.

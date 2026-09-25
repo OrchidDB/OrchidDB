@@ -79,7 +79,8 @@ Rebuild Java artifacts together with the native engine after upgrading.
 
 ## Hosted installer
 
-`https://install.orchiddb.com` serves `website/install/install.sh`. It selects a
+`https://install.orchiddb.com` serves `website/install/install.sh` from the private
+`OrchidDB/OrchidDB-landing` repository. It selects a
 published GitHub release (including prereleases), downloads the matching CLI
 archive and `SHA256SUMS`, verifies the hash, then installs into `~/.local/bin`.
 `ORCHIDDB_VERSION=v0.1.0` pins a release; `ORCHIDDB_INSTALL_DIR` overrides the
@@ -95,7 +96,8 @@ JARs. Replace them with actual SDK artifacts when those packages are released.
 
 The install CDN uses its own CloudFront distribution, the existing private S3
 bucket and wildcard certificate, and Route 53 A/AAAA aliases. Its root serves
-the shell script as text/plain. `website/scripts/provision-installer.py` can
+the shell script as text/plain. In `OrchidDB/OrchidDB-landing`,
+`website/scripts/provision-installer.py` can
 reconcile DNS / create the distribution; `website/scripts/deploy.sh` publishes
 script updates and mock assets and invalidates its cache.
 
@@ -103,3 +105,5 @@ Reference: [DuckDB installation](https://duckdb.org/docs/installation) and
 [DuckDB's installer repository](https://github.com/duckdb/duckdb-install-scripts).
 
 Tests: `python3 -m unittest discover -s scripts/release -p 'test_*.py'`.
+
+Installer regression tests moved with the installer to `OrchidDB/OrchidDB-landing/tests/`. CLI archive packaging and its tests remain here.
