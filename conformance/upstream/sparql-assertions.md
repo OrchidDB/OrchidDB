@@ -8,6 +8,8 @@ SELECT results preserve variable sets, multiplicity, unbound values, RDF
 datatypes, language tags, and a global bijection for blank nodes. Ordering is
 asserted when the expected DAWG result artifact contains `rs:index`, following
 the [W3C test instructions](https://www.w3.org/2009/sparql/docs/tests/).
+Manifests declaring `mf:LaxCardinality` permit duplicate elimination for
+REDUCED results. All other solution assertions preserve multiplicity.
 
 Numeric result literals of the **same datatype** are normalized with pinned
 PyOxigraph 0.5.11's Store implementation. This follows the normalization in
