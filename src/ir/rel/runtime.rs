@@ -1261,7 +1261,7 @@ impl Compiler<'_> {
                     }
                 }))
             }
-            Node::GraphSparqlTriplePattern { .. } => Ok(kernel(
+            Node::GraphSparqlTriplePattern { .. } | Node::GraphSparqlGraphNames { .. } => Ok(kernel(
                 "SparqlTriplePattern",
                 vec![],
                 move |mut inputs, state| {

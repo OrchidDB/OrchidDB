@@ -8,6 +8,7 @@ from rdflib.query import Result
 from rdflib.compare import isomorphic
 from fetch import CACHE
 from run import Process,ROOT,REPO,crabgraph_binary
+from rdf_fixtures import graph_file
 rdflib.NORMALIZE_LITERALS=False
 XSD='http://www.w3.org/2001/XMLSchema#'
 RS=rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/result-set#')
@@ -60,12 +61,12 @@ def expected(path):
   with path.open('rb') as f:r=Result.parse(f,format='xml' if ext=='.srx' else 'json')
   if r.type=='ASK':return {'boolean':bool(r.askAnswer)}
   return {'variables':[str(v) for v in r.vars],'rows':[[term(row.get(v)) for v in r.vars] for row in r.bindings]}
- graph=Graph().parse(path,format='turtle' if ext=='.ttl' else None)
+ graph=graph_file(path)
  roots=list(graph.subjects(rdflib.RDF.type,RS.ResultSet))
  if roots:
   root=roots[0];boolean=graph.value(root,RS.boolean)
   if boolean is not None:return {'boolean':bool(boolean.toPython())}
-  variables=[str(x) for x in graph.objects(root,RS.resultVariable)];solutions=list(graph.objects(root,RS.solution));solutions.sort(key=lambda s:int(graph.value(s,RS.index) or 0));rows=[]
+  variables=[str(x) for x in graph.objects(root,RS.resultVariable)];solutions=list(graph.objects(root,RS.solution));solutions.sort(key=lambda s:int(graph.value(s,RS['index']) or 0));rows=[]
   for s in solutions:
    values={str(graph.value(b,RS.variable)):term(graph.value(b,RS.value)) for b in graph.objects(s,RS.binding)};rows.append([values.get(v) for v in variables])
   return {'variables':variables,'rows':rows}
@@ -92,17 +93,17 @@ class Sparql:
   if '/entailment/' in case['path']:return {'status':'skipped','reason':'Upstream entailment profile requires a separately configured reasoning dataset'}
   if case.get('result_file','') and case['result_file'].endswith(('.tsv','.csv')):return {'status':'not-applicable','reason':'Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms'}
   path=base/case['query_file'];query=path.read_text()
-  if re.search(r'\bSERVICE\b',query,re.I):return {'status':'skipped','reason':'Upstream federated SERVICE fixture endpoint is not installed locally','query':query}
   negative=any('Negative' in t for t in types);syntax=any('Syntax' in t for t in types)
   if syntax:
    before=time.monotonic();actual=self.send({'op':'sparql-syntax','query':query,'base':path.absolute().as_uri(),'update':any('Update' in t for t in types)})
    passed=('error' in actual)==negative
    return {'status':'pass' if passed else 'fail','query':query,'expected':{'parses':not negative},'actual':actual,'query_ms':round((time.monotonic()-before)*1000,3),'assertion':'W3C positive/negative syntax; no query or update evaluation'}
+  if re.search(r'\bSERVICE\b',query,re.I):return {'status':'skipped','reason':'Upstream federated SERVICE fixture endpoint is not installed locally','query':query}
   quads=[]
   for filename,name in [(f,None) for f in case['data']]+[(r['file'],r['name']) for r in case['named']]:
    if not filename:return {'status':'adapter-error','reason':'Manifest graph fixture has no file'}
    name=relocated_graph_name(base,filename,name)
-   data=Graph().parse(base/filename)
+   data=graph_file(base/filename)
    for triple in data:
     row=[name]
     for v in triple:
@@ -111,7 +112,8 @@ class Sparql:
   if not case['result_file']:return {'status':'adapter-error','reason':'No supported result artifact in manifest'}
   want=expected(base/case['result_file'])
   effective='BASE <'+path.absolute().as_uri()+'>\n'+query
-  before=time.monotonic();actual=self.send({'op':'rdf','query':effective,'quads':quads},timeout=25);duration=round((time.monotonic()-before)*1000,3)
+  named_graphs=[relocated_graph_name(base,r['file'],r['name']) for r in case['named']]
+  before=time.monotonic();actual=self.send({'op':'rdf','query':effective,'quads':quads,'named_graphs':named_graphs},timeout=25);duration=round((time.monotonic()-before)*1000,3)
   if 'error' in actual:passed=False
   elif 'boolean' in want:passed=actual.get('boolean')==want['boolean']
   elif 'graph' in want:

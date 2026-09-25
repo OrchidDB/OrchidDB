@@ -7,6 +7,7 @@ import rdflib
 from rdflib import Graph, URIRef, BNode
 from rdflib.compare import isomorphic
 from fetch import CACHE
+from rdf_fixtures import graph_file
 
 MF = rdflib.Namespace('http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#')
 UT = rdflib.Namespace('http://www.w3.org/2009/sparql/tests/test-update#')
@@ -32,7 +33,7 @@ def dataset(graph, root):
     names = []
     for file, name in files:
         if name is not None: names.append(name)
-        for triple in Graph().parse(local(file)):
+        for triple in graph_file(local(file)):
             quads.append([term(URIRef(name)) if name else None] + [term(value) for value in triple])
     return quads, names
 

@@ -173,13 +173,11 @@ impl Lowerer<'_, '_> {
                         AggKind::Avg | AggKind::AvgOrNull | AggKind::AvgOrZero
                     );
                     let dec_value = if is_avg {
-                        cast(
-                            cast(col_exact(name("dec")), DataType::Float64)
-                                / cast(n.clone(), DataType::Float64),
-                            DEC,
-                        )
+                        duck_str("__crabgraph_sparql_scalar", vec![s("decimal_divide"),
+                            cast(col_exact(name("dec")), DataType::Utf8),
+                            cast(n.clone(), DataType::Utf8), s(""), s("")])
                     } else {
-                        col_exact(name("dec"))
+                        decimal_lexical(col_exact(name("dec")))
                     };
                     let dbl_value = if is_avg {
                         col_exact(name("dbl")) / cast(n.clone(), DataType::Float64)
@@ -194,7 +192,7 @@ impl Lowerer<'_, '_> {
                                 rank.clone().eq(int_rank),
                                 integer_lexical(col_exact(name("int"))),
                             ),
-                            (rank.clone().lt_eq(lit(2_i64)), decimal_lexical(dec_value)),
+                            (rank.clone().lt_eq(lit(2_i64)), dec_value),
                         ],
                         Some(double_lexical(dbl_value)),
                     );

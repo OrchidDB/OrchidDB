@@ -104,6 +104,12 @@ async fn rdf(req:&Value)->Result<Value,String>{
  let mut mapping=RdfDatasetMapping::new();
  mapping.register_table("terms",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).map_err(|e|e.to_string())?)).map_typed_quads("default",IriQuadSource::table("terms","s","p","o").graph_column("g").typed_term_columns(RdfTermColumns::new("s","s_kind").datatype("s_dt").language("s_lang"),RdfTermColumns::new("p","p_kind").datatype("p_dt").language("p_lang"),RdfTermColumns::new("o","o_kind").datatype("o_dt").language("o_lang")));
  let conn=duckdb::Connection::open_in_memory().map_err(|e|e.to_string())?;
+ let graphs_schema=Arc::new(Schema::new(vec![Field::new("iri",DataType::Utf8,false)]));
+ mapping.register_table("graph_names",Arc::new(MemTable::try_new(graphs_schema.clone(),vec![vec![RecordBatch::new_empty(graphs_schema)]]).map_err(|e|e.to_string())?)).map_named_graphs("default","graph_names","iri");
+ conn.execute_batch("CREATE TABLE graph_names(iri VARCHAR PRIMARY KEY)").map_err(|e|e.to_string())?;
+ if let Some(names)=req["named_graphs"].as_array(){for name in names{
+  conn.execute("INSERT INTO graph_names VALUES (?) ON CONFLICT DO NOTHING",[name.as_str().ok_or("graph name must be an IRI string")?]).map_err(|e|e.to_string())?;
+ }}
  conn.execute_batch(&format!("CREATE TABLE terms({});",fields.iter().map(|f|format!("{f} VARCHAR")).collect::<Vec<_>>().join(","))).map_err(|e|e.to_string())?;
  if let Some(rows)=req["quads"].as_array(){for row in rows{
  let values=row.as_array().ok_or("quad row must be array")?.iter().map(|v|v.as_str().map(str::to_string)).collect::<Vec<_>>();

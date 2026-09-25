@@ -552,6 +552,10 @@ fn node_to_plan_with_policy(
         }
 
         // -------- SPARQL / RDF --------
+        Node::GraphSparqlGraphNames { dataset, graph_scope } => extension(GraphSparqlGraphNames {
+            dataset: dataset.clone(), graph_scope: graph_scope.clone(),
+            schema, inputs: vec![],
+        }),
         Node::GraphSparqlTriplePattern {
             dataset,
             graph_scope,
@@ -773,6 +777,7 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphExtension,
         // SPARQL / RDF
         GraphSparqlTriplePattern,
+        GraphSparqlGraphNames,
         GraphRdfPropertyPath,
         GraphSparqlMinus,
         GraphService,

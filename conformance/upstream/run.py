@@ -140,6 +140,10 @@ def main():
    root=ROOT/'adapters/jena'
    build['adapter_class']=file_identity(root/'target/classes/JenaAdapter.class')
    build['dependencies']=[file_identity(path) for path in (root/'target/classpath.txt').read_text().strip().split(os.pathsep)]
+ if args.suite=='rdf':
+  import pyoxigraph
+  build['rdf_fixture_parser_version']=pyoxigraph.__version__
+  build['rdf_adapter_sources']=[file_identity(ROOT/'upstream'/name) for name in ('sparql.py','sparql_updates.py','rdf_fixtures.py')]
  if args.engine=='crabgraph' and args.suite=='tinkerpop':
   def classpath_identity(classpath):
    artifacts=[]

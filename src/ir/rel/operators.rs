@@ -41,6 +41,8 @@ impl LoweringContext<'_> {
                 binding, labels, ..
             } => self.lower_node_scan(binding, labels)?,
             GraphRelScan { binding, types, .. } => self.lower_rel_scan(binding, types)?,
+            GraphSparqlGraphNames { .. } => return Err(RelError::Unsupported(
+                "RDF graph enumeration requires typed SPARQL lowering".into())),
             GraphSparqlTriplePattern {
                 dataset,
                 graph_scope,

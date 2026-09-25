@@ -98,7 +98,7 @@ impl SparqlPlanner {
 
     pub(super) fn lower_expression(&self, expr: &Expression) -> IrExpr {
         if self.typed() {
-            expression::lower_typed(expr)
+            expression::lower_typed(expr, self.base_iri.as_deref())
         } else {
             expression::lower(expr)
         }

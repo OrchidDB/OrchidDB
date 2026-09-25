@@ -661,6 +661,20 @@ impl Lowerer<'_, '_> {
                     .build()?;
                 Ok(Sol { plan, ..row })
             }
+            Node::GraphSparqlGraphNames { dataset, graph_scope } => {
+                let (plan, column) = super::rdf::named_graphs(self.ctx, dataset, graph_scope)?;
+                let mut vars = BTreeMap::new();
+                let columns = match graph_scope {
+                    RdfGraphScope::NamedGraphVariable(variable)
+                    | RdfGraphScope::DatasetNamedGraphVariable { variable, .. } => {
+                        vars.insert(variable.clone(), true);
+                        Term::iri(col_exact(column)).aliased(variable)
+                    }
+                    _ => vec![lit(1_i64).alias(self.fresh("graph"))],
+                };
+                Ok(Sol { plan: self.project(plan, columns)?, vars,
+                    keys: BTreeSet::new(), ord: None })
+            }
             Node::GraphSparqlTriplePattern {
                 dataset,
                 graph_scope,

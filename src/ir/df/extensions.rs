@@ -862,6 +862,17 @@ ir_extension! {
 // ============================================================
 
 ir_extension! {
+    /// Named graph domain, including explicitly registered empty graphs.
+    GraphSparqlGraphNames {
+        dataset: String,
+        graph_scope: RdfGraphScope,
+    }
+    rebuild(s, _c) {
+        Node::GraphSparqlGraphNames { dataset: s.dataset.clone(), graph_scope: s.graph_scope.clone() }
+    },
+}
+
+ir_extension! {
     /// `GraphSparqlTriplePattern(...)` — unresolved logical leaf. No children.
     GraphSparqlTriplePattern {
         dataset: String,

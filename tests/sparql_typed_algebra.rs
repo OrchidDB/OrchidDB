@@ -23,6 +23,8 @@ fn engine() -> RdfGraphEngine {
             CREATE TABLE quads (
                 g VARCHAR, s VARCHAR, s_kind VARCHAR, p VARCHAR, p_kind VARCHAR,
                 o VARCHAR, o_kind VARCHAR, o_dt VARCHAR, o_lang VARCHAR);
+            CREATE TABLE graph_names (iri VARCHAR);
+            INSERT INTO graph_names VALUES ('http://example.org/empty');
             INSERT INTO quads VALUES
               (NULL, 'http://example.org/alice', 'IRI', 'http://example.org/name', 'IRI', 'Alice', 'LITERAL', 'http://www.w3.org/2001/XMLSchema#string', NULL),
               (NULL, 'http://example.org/alice', 'IRI', 'http://example.org/nick', 'IRI', 'Alice', 'LITERAL', 'http://www.w3.org/2001/XMLSchema#string', NULL),
@@ -49,6 +51,9 @@ fn engine() -> RdfGraphEngine {
         .collect::<Vec<_>>(),
     ));
     let mut mapping = RdfDatasetMapping::new();
+    mapping.register_table("graph_names", schema_only_provider(Arc::new(Schema::new(vec![
+        Field::new("iri", DataType::Utf8, false)
+    ])))).map_named_graphs("people", "graph_names", "iri");
     mapping
         .register_table("quads", schema_only_provider(schema))
         .map_typed_quads(
@@ -101,6 +106,38 @@ async fn sparql_scalar_contracts_execute_over_mapped_rows() {
         vec![vec![typed("-PT5H30M", "dayTimeDuration"), int("96"), int("128"), typed("true", "boolean"), string("a%20%2F%C3%A9")]]);
     assert_eq!(rows(&mut engine, r#"SELECT (REGEX("x", "[") AS ?invalid) WHERE {}"#).await,
         vec![vec![None]]);
+    assert_eq!(rows(&mut engine, r#"BASE <https://example.org/a/b/>
+        SELECT (IRI("../c") AS ?iri) (ENCODE_FOR_URI("café"@fr) AS ?encoded) WHERE {}"#).await,
+        vec![vec![Some(RdfTermValue::iri("https://example.org/a/c")), string("caf%C3%A9")]]);
+    assert_eq!(rows(&mut engine, "SELECT * WHERE {}" ).await, vec![vec![]]);
+    assert!(rows(&mut engine, "SELECT * WHERE { FILTER(false) }" ).await.is_empty());
+}
+
+#[tokio::test]
+async fn mapped_empty_named_graphs_preserve_the_graph_domain() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, "SELECT * WHERE { GRAPH ?g {} }").await, vec![vec![iri("empty")]]);
+    assert_eq!(rows(&mut engine, "SELECT * WHERE { GRAPH ex:empty {} }").await, vec![vec![]]);
+    assert!(rows(&mut engine, "SELECT * WHERE { GRAPH ex:absent {} }").await.is_empty());
+    assert!(rows(&mut engine, "SELECT * WHERE { GRAPH ex:empty { ?s ?p ?o } }").await.is_empty());
+    assert_eq!(rows(&mut engine, "SELECT * FROM NAMED ex:empty WHERE { GRAPH ?g {} }").await, vec![vec![iri("empty")]]);
+    assert!(rows(&mut engine, "SELECT * FROM NAMED ex:absent WHERE { GRAPH ?g {} }").await.is_empty());
+}
+
+#[tokio::test]
+async fn rdf_datetime_values_and_decimal_division() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, r#"SELECT
+      ("2002-04-02T23:00:00-04:00"^^xsd:dateTime = "2002-04-03T02:00:00-01:00"^^xsd:dateTime AS ?offset)
+      ("1999-12-31T24:00:00"^^xsd:dateTime = "2000-01-01T00:00:00"^^xsd:dateTime AS ?midnight)
+      ("2008-10-01T00:00:00Z"^^xsd:dateTime < "2008-10-03T00:00:00"^^xsd:dateTime AS ?mixed)
+      (11.1 / 5 AS ?decimal) WHERE {}"#).await,
+      vec![vec![typed("true", "boolean"), typed("true", "boolean"), typed("true", "boolean"), typed("2.22", "decimal")]]);
+    assert_eq!(rows(&mut engine, "SELECT (AVG(?v) AS ?mean) WHERE { VALUES ?v { 1.11 3.33 } }").await,
+        vec![vec![typed("2.22", "decimal")]]);
+    assert_eq!(rows(&mut engine, r#"SELECT (xsd:string("0"^^xsd:boolean) AS ?boolean)
+        (xsd:string("1.00"^^xsd:decimal) AS ?decimal) (STR("1.00"^^xsd:decimal) AS ?lexical) WHERE {}"#).await,
+        vec![vec![string("false"), string("1"), string("1.00")]]);
 }
 
 async fn rows(engine: &mut RdfGraphEngine, body: &str) -> Vec<Vec<Option<RdfTermValue>>> {
@@ -589,6 +626,7 @@ fn typed_algebra_is_standard_ir_without_extensions() {
     use new_graph::ir::df::{from_logical_plan, to_logical_plan};
     use new_graph::language::sparql::SparqlPlanner;
     for body in [
+        "SELECT * WHERE { GRAPH ?g {} }",
         "SELECT ?s (COUNT(?o) AS ?c) (GROUP_CONCAT(?o) AS ?g) (SAMPLE(?o) AS ?x) WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(?o) > 1)",
         "SELECT REDUCED ?n WHERE { VALUES (?s ?n) { (ex:a \"x\"@en) (UNDEF 3) } OPTIONAL { ?s ex:age ?a FILTER(?a > ?n) } }",
         "SELECT ?n WHERE { ?s ex:name ?n FILTER(EXISTS { ?s ex:age ?a } || NOT EXISTS { ?s ex:knows ?k }) MINUS { ?s ex:nick ?n } }",

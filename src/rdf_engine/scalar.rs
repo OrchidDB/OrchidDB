@@ -116,6 +116,45 @@ fn replacement(source: &str) -> Option<String> {
 
 fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str) -> Option<String> {
     Some(match op {
+        "resolve_iri" => {
+            if argument.is_empty() {
+                oxiri::Iri::parse(text).ok()?.to_string()
+            } else {
+                oxiri::Iri::parse(argument).ok()?.resolve(text).ok()?.to_string()
+            }
+        }
+        "compare_datetime" => {
+            let left: oxsdatatypes::DateTime = text.parse().ok()?;
+            let right: oxsdatatypes::DateTime = argument.parse().ok()?;
+            match substitute {
+                "eq" => (left == right).to_string(),
+                "ne" => (left != right).to_string(),
+                op => {
+                    let order = left.partial_cmp(&right)?;
+                    match op {
+                        "lt" => order.is_lt(), "le" => !order.is_gt(),
+                        "gt" => order.is_gt(), "ge" => !order.is_lt(),
+                        _ => return None,
+                    }.to_string()
+                }
+            }
+        }
+        "decimal_divide" => {
+            use num_traits::Zero;
+            let left: bigdecimal::BigDecimal = text.parse().ok()?;
+            let right: bigdecimal::BigDecimal = argument.parse().ok()?;
+            if right.is_zero() { return None; }
+            let result = (left / right).normalized().to_plain_string();
+            if result.contains('.') { result } else { format!("{result}.0") }
+        }
+        "cast_string" => match argument.strip_prefix("http://www.w3.org/2001/XMLSchema#") {
+            Some("boolean") => text.parse::<oxsdatatypes::Boolean>().ok()?.to_string(),
+            Some("decimal") => text.parse::<oxsdatatypes::Decimal>().ok()?.to_string(),
+            Some("double") => text.parse::<oxsdatatypes::Double>().ok()?.to_string(),
+            Some("float") => text.parse::<oxsdatatypes::Float>().ok()?.to_string(),
+            Some("integer") => text.parse::<num_bigint::BigInt>().ok()?.to_string(),
+            _ => text.to_owned(),
+        },
         "sha384" => format!("{:x}", Sha384::digest(text.as_bytes())),
         "sha512" => format!("{:x}", Sha512::digest(text.as_bytes())),
         "encode_for_uri" => {

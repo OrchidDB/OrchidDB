@@ -654,10 +654,14 @@ pub enum Node {
     GraphCorrelate {
         bindings: Vec<BindingId>,
     },
-    /// `GraphSparqlTriplePattern(dataset, graphScope, subject, predicate,
-    /// object, outputs)` preserves an unresolved SPARQL triple pattern until
-    /// ontology mapping resolves it to property-graph operators. This is a
-    /// logical boundary, not an RDF storage adapter.
+    /// Named graph domain, including registered empty graphs. A constant
+    /// scope emits an empty binding if that graph exists; a variable scope
+    /// emits each eligible graph name once.
+    GraphSparqlGraphNames {
+        dataset: String,
+        graph_scope: RdfGraphScope,
+    },
+    /// Logical RDF triple pattern resolved against the declared dataset mapping.
     GraphSparqlTriplePattern {
         dataset: String,
         graph_scope: RdfGraphScope,

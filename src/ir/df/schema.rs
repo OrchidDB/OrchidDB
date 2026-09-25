@@ -415,6 +415,12 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
             }
             fields
         }
+        Node::GraphSparqlGraphNames { graph_scope, .. } => match graph_scope {
+            RdfGraphScope::NamedGraphVariable(variable)
+            | RdfGraphScope::DatasetNamedGraphVariable { variable, .. } =>
+                vec![semantic_field(variable, DataType::Utf8, false, "rdf_term")],
+            _ => Vec::new(),
+        },
         Node::GraphSparqlTriplePattern { outputs, .. } => outputs
             .iter()
             .map(|name| semantic_field(name, DataType::Utf8, true, "rdf_term"))

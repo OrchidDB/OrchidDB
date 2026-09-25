@@ -136,7 +136,7 @@ impl SparqlPlanner {
                     left,
                     right,
                     JoinKind::LeftOuter,
-                    optional_expr.as_ref().map(expression::lower_typed),
+                    optional_expr.as_ref().map(|expr| self.lower_expression(expr)),
                 ))
             }
             GraphPattern::LeftJoin {
@@ -174,7 +174,7 @@ impl SparqlPlanner {
                     .into_iter()
                     .map(|conjunct| {
                         self.lift_exists(conjunct, &mut lowered, &scope)
-                            .map(|lifted| expression::lower_typed(&lifted))
+                            .map(|lifted| self.lower_expression(&lifted))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 if !plain.is_empty() {

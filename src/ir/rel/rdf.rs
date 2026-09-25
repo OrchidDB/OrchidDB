@@ -119,6 +119,7 @@ impl IriQuadSource {
 pub struct RdfDatasetMapping {
     sources: BTreeMap<String, Vec<IriQuadSource>>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
+    graph_tables: BTreeMap<String, (String, String)>,
 }
 
 impl fmt::Debug for RdfDatasetMapping {
@@ -166,6 +167,14 @@ impl RdfDatasetMapping {
 
     pub fn physical_table_names(&self) -> BTreeSet<String> {
         self.tables.keys().cloned().collect()
+    }
+
+    /// Map the named graph registry to an existing table and IRI column.
+    /// This preserves graph identity even when a named graph has no triples.
+    pub fn map_named_graphs(&mut self, dataset: impl Into<String>, table: impl Into<String>,
+        column: impl Into<String>) -> &mut Self {
+        self.graph_tables.insert(dataset.into(), (table.into(), column.into()));
+        self
     }
 
     pub fn has_typed_sources(&self) -> bool {
@@ -425,6 +434,37 @@ pub(super) fn quad_source(
         identity: identity_names,
         typed: typed_dataset,
     })
+}
+
+/// Enumerate the named graph domain independently of triple cardinality.
+pub(super) fn named_graphs(ctx: &mut LoweringContext<'_>, dataset: &str,
+    scope: &RdfGraphScope) -> RelResult<(LogicalPlan, String)> {
+    let quads = quad_source(ctx, dataset, &RdfGraphScope::NamedGraphVariable("?__graph".into()))?;
+    let name = quads.names[0].clone();
+    let mut plan = LogicalPlanBuilder::from(quads.plan).project(vec![col_exact(&name)])?.build()?;
+    let mapping = ctx.options.rdf_datasets.as_ref().unwrap();
+    if let Some((table, column)) = mapping.graph_tables.get(dataset) {
+        let provider = mapping.tables.get(table).ok_or_else(|| RelError::Unsupported(
+            format!("named graph registry table `{table}` has no registered provider/schema")))?;
+        let scan = LogicalPlanBuilder::scan(table.clone(), provider_as_source(Arc::clone(provider)), None)?.build()?;
+        let value = iri_column(&scan, column)?;
+        let registry = LogicalPlanBuilder::from(scan).filter(value.clone().is_not_null())?
+            .project(vec![value.alias(&name)])?.build()?;
+        plan = LogicalPlanBuilder::from(plan).union_by_name(registry)?.build()?;
+    }
+    // Keep graph filtering and DISTINCT above the UNION. The SQL unparser
+    // requires a derived-table boundary for modifiers on a set expression.
+    plan = LogicalPlanBuilder::from(plan).alias(format!("__w_sql_cte_graph_names_{}", ctx.scan_counter))?.build()?;
+    ctx.scan_counter += 1;
+    let filter = match scope {
+        RdfGraphScope::NamedGraph(RdfTerm::Iri(iri)) => col_exact(&name).eq(lit(iri.clone())),
+        RdfGraphScope::NamedGraphVariable(_) => lit(true),
+        RdfGraphScope::DatasetNamedGraph { iri, allowed } =>
+            if allowed.contains(iri) { col_exact(&name).eq(lit(iri.clone())) } else { lit(false) },
+        RdfGraphScope::DatasetNamedGraphVariable { allowed, .. } => graph_in(&name, allowed),
+        _ => return Err(RelError::Unsupported("named graph enumeration requires a named graph scope".into())),
+    };
+    Ok((LogicalPlanBuilder::from(plan).filter(filter)?.distinct()?.build()?, name))
 }
 
 pub(super) fn lower_iri_quad_pattern(

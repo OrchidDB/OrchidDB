@@ -166,6 +166,13 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
         BinaryOp::Gt => x.gt(y),
         _ => x.gt_eq(y),
     };
+    let numeric = if matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+        // An ill-typed literal has no numeric value, but identical RDF
+        // terms still compare equal under RDFterm-equal.
+        duck("coalesce", vec![numeric,
+            case(vec![(a.same_term(b), lit(op == BinaryOp::Eq))], Some(null_bool()))],
+            DataType::Boolean)
+    } else { numeric };
     let both_numeric = rank.clone().is_not_null();
     let both_simple = a.is_simple().and(b.is_simple());
     let both_boolean = a
@@ -182,6 +189,12 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
         (both_numeric, numeric),
         (both_simple, ordered(a.value.clone(), b.value.clone())),
         (both_boolean, ordered(a.boolean_value(), b.boolean_value())),
+        (both_datetime, duck_str("__crabgraph_sparql_scalar", vec![
+            s("compare_datetime"), a.value.clone(), b.value.clone(),
+            s(match op { BinaryOp::Eq => "eq", BinaryOp::Neq => "ne",
+                BinaryOp::Lt => "lt", BinaryOp::Lte => "le", BinaryOp::Gt => "gt", _ => "ge" }),
+            s("")
+        ]).eq(s("true"))),
     ];
     if matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
         let equal = op == BinaryOp::Eq;
@@ -197,20 +210,6 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
             lit(!equal),
         ));
         arms.push((known_datatype(a).and(known_datatype(b)), lit(!equal)));
-    } else {
-        // Timezone-free dateTime lexical forms order chronologically.
-        arms.push((
-            both_datetime
-                .and(
-                    a.value
-                        .clone()
-                        .like(s("%Z"))
-                        .eq(b.value.clone().like(s("%Z"))),
-                )
-                .and(a.value.clone().like(s("%+%")).not())
-                .and(b.value.clone().like(s("%+%")).not()),
-            ordered(a.value.clone(), b.value.clone()),
-        ));
     }
     case(arms, Some(null_bool()))
 }
@@ -230,11 +229,12 @@ pub(super) fn arithmetic(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> RelRes
     }
     let zero_divisor = try_cast(b.value.clone(), DataType::Float64).eq(lit(0.0_f64));
     let decimal = if op == BinaryOp::Div {
-        cast(numeric_operands(Some(op), a, b, DataType::Float64), DEC)
+        duck_str("__crabgraph_sparql_scalar", vec![s("decimal_divide"),
+            a.value.clone(), b.value.clone(), s(""), s("")])
     } else if op == BinaryOp::Mul {
-        numeric_operands(Some(op), a, b, DataType::Decimal128(38, 9))
+        decimal_lexical(numeric_operands(Some(op), a, b, DataType::Decimal128(38, 9)))
     } else {
-        numeric_operands(Some(op), a, b, DEC)
+        decimal_lexical(numeric_operands(Some(op), a, b, DEC))
     };
     let mut arms = Vec::new();
     if op == BinaryOp::Div {
@@ -245,7 +245,7 @@ pub(super) fn arithmetic(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> RelRes
             rank.clone().eq(lit(1_i64)),
             integer_lexical(numeric_operands(Some(op), a, b, INT)),
         ),
-        (rank.clone().eq(lit(2_i64)), decimal_lexical(decimal)),
+        (rank.clone().eq(lit(2_i64)), decimal),
     ]);
     let value = case(
         arms,
@@ -287,7 +287,9 @@ pub(super) fn xsd_cast(target: &str, a: &Term) -> RelResult<Term> {
         )
     };
     Ok(match target {
-        "string" => Term::string(value).only_if(
+        "string" => Term::string(duck_str("__crabgraph_sparql_scalar", vec![
+            s("cast_string"), value, duck_str("coalesce", vec![a.dt.clone(), s("")]), s(""), s("")
+        ])).only_if(
             a.kind
                 .clone()
                 .in_list(vec![s(KIND_IRI), s(KIND_LITERAL)], false),

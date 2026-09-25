@@ -17,20 +17,20 @@ pub(crate) const SPARQL_NESTED_EXISTS: &str = "sparql_exists";
 /// Legacy scalar lowering used with ontology mappings, where RDF terms are
 /// represented by mapped property-graph values rather than RDF terms.
 pub(crate) fn lower(expression: &Expression) -> IrExpr {
-    lower_with(expression, false)
+    lower_with(expression, false, None)
 }
 
 /// Lowering that preserves RDF term identity for dataset-backed queries.
-pub(crate) fn lower_typed(expression: &Expression) -> IrExpr {
-    lower_with(expression, true)
+pub(crate) fn lower_typed(expression: &Expression, base: Option<&str>) -> IrExpr {
+    lower_with(expression, true, base)
 }
 
-fn lower_with(expression: &Expression, typed: bool) -> IrExpr {
-    let lower = |expression: &Expression| lower_with(expression, typed);
+fn lower_with(expression: &Expression, typed: bool, base: Option<&str>) -> IrExpr {
+    let lower = |expression: &Expression| lower_with(expression, typed, base);
     let binary = |op: BinaryOp, lhs: &Expression, rhs: &Expression| IrExpr::Binary {
         op,
-        lhs: Box::new(lower_with(lhs, typed)),
-        rhs: Box::new(lower_with(rhs, typed)),
+        lhs: Box::new(lower(lhs)),
+        rhs: Box::new(lower(rhs)),
     };
     match expression {
         Expression::NamedNode(value) if typed => {
@@ -77,6 +77,11 @@ fn lower_with(expression: &Expression, typed: bool) -> IrExpr {
         // IRI, which is case-sensitive.
         Expression::FunctionCall(Function::Custom(iri), args) if typed => {
             call(iri.as_str(), args.iter().map(lower).collect())
+        }
+        Expression::FunctionCall(Function::Iri, args) if typed => {
+            let mut args: Vec<_> = args.iter().map(lower).collect();
+            args.push(IrExpr::lit_str(base.unwrap_or("")));
+            call("sparql_resolve_iri", args)
         }
         Expression::FunctionCall(function, args) => call(
             &function.to_string().to_ascii_lowercase(),

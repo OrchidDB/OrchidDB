@@ -478,6 +478,7 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphEmpty
             | Node::GraphCorrelate { .. }
             | Node::GraphSparqlTriplePattern { .. }
+            | Node::GraphSparqlGraphNames { .. }
             | Node::GraphRdfPropertyPath { .. } => {}
         }
     }

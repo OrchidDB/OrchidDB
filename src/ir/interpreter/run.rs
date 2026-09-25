@@ -656,7 +656,7 @@ pub(crate) fn run_with_context(
         ))),
 
         // -------- SPARQL / RDF --------
-        Node::GraphSparqlTriplePattern { .. } => Err(InterpretError::Unsupported(
+        Node::GraphSparqlTriplePattern { .. } | Node::GraphSparqlGraphNames { .. } => Err(InterpretError::Unsupported(
             "unresolved SPARQL triple patterns must pass through ontology mapping".into(),
         )),
         Node::GraphRdfPropertyPath { .. } => Err(InterpretError::Unsupported(
