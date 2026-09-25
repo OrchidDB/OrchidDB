@@ -101,7 +101,29 @@ pre { margin: 0; overflow-x: auto; font: 500 12px/1.75 var(--mono); }
 .ir-row.hot i { background: var(--red); border-color: var(--red); }
 
 .section-rule { border-bottom: 1px solid var(--line); }
-.premise { display: grid; grid-template-columns: .9fr 1.1fr; gap: 8vw; padding: 100px clamp(32px, 7vw, 100px); }
+.premise { padding: 80px clamp(24px, 5.5vw, 80px); }
+.mapping-example { display: grid; grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1.15fr); gap: 24px; align-items: center; margin-top: 36px; }
+.mapping-tables { display: grid; gap: 24px; min-width: 0; }
+.mapping-tables table { width: 100%; border-collapse: collapse; background: var(--white); text-align: left; font: 12px/1.5 var(--mono); }
+.mapping-tables caption { padding: 0 0 10px; text-align: left; font-weight: 600; }
+.mapping-tables caption span { float: right; color: var(--muted); font: 12px/1.5 var(--sans); }
+.mapping-tables th, .mapping-tables td { padding: 10px 14px; border: 1px solid var(--line); }
+.mapping-tables th { background: var(--sea); font-weight: 500; }
+.mapping-arrow { color: var(--red); text-align: center; font-size: 32px; }
+.mapping-graph { margin: 0; padding: 24px 12px; background: var(--white); border: 1px solid var(--line); }
+.mapping-graph svg { display: block; width: 100%; height: auto; }
+.mapping-graph text { text-anchor: middle; fill: var(--ink); }
+.mapping-node { fill: var(--shell); stroke: var(--red); stroke-width: 1.5; }
+.mapping-edge { fill: none; stroke: var(--blue); stroke-width: 2; }
+.mapping-node-label, .mapping-edge-label, .mapping-property { font: 11px var(--mono); }
+.mapping-node-name { font: 700 20px var(--sans); }
+.mapping-graph figcaption { max-width: 30em; margin: 8px auto 0; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.mapping-write-note { margin: 24px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+@media (max-width: 800px) {
+  .mapping-example { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .mapping-arrow { transform: rotate(90deg); }
+  .mapping-tables th, .mapping-tables td { padding: 10px; }
+}
 .section-number { margin: 0 0 18px; color: var(--red-dark); }
 h2 { margin: 0; font-size: clamp(32px, 3.4vw, 48px); line-height: 1.14; letter-spacing: -.035em; text-wrap: balance; }
 .prose { max-width: 660px; padding-top: 28px; font-size: 18px; line-height: 1.7; }
