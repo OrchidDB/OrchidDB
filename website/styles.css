@@ -221,12 +221,14 @@ pre { text-align: left; overflow-x: auto; padding: 22px; background: var(--tint)
 
 
 /* Selected direction: layout 02 + hero palette and crest treatment 03. */
-.hero{max-width:none;background:#30222d;color:#f7f1e7;border-bottom:0}
+.hero{max-width:none;background:#30222d;color:#f7f1e7;border-bottom:0;padding-top:24px}
 .hero .tagline{color:#f1e1e9}
 .hero p{color:#c9b9c2}
-.journal-crest{width:370px;height:370px;margin:0 auto 18px;filter:invert(1);mix-blend-mode:screen;opacity:.88}
-@media(max-width:1000px){.journal-crest{width:300px;height:300px}}
-@media(max-width:760px){.journal-crest{width:170px;height:170px;margin-bottom:16px}}
+/* Remove transparent image margins without resizing or changing the ink artwork. */
+.journal-crest-frame{--crest-size:370px;position:relative;width:calc(var(--crest-size) * .82);height:calc(var(--crest-size) * .82);margin:0 auto 12px;overflow:hidden}
+.journal-crest{position:absolute;left:50%;top:50%;width:var(--crest-size);height:var(--crest-size);max-width:none;margin:0;transform:translate(-50%,-50%);filter:invert(1);mix-blend-mode:screen;opacity:.88}
+@media(max-width:1000px){.journal-crest-frame{--crest-size:300px}}
+@media(max-width:760px){.journal-crest-frame{--crest-size:170px;margin-bottom:12px}}
 .hero .button:first-child{background:#f1e6ec;color:#352330;border-color:#f1e6ec}
 .hero .button:nth-child(n+2){background:transparent;color:#f1e6ec;border-color:#a38695}
 .hero .button:hover{background:#765568;color:#fff}
