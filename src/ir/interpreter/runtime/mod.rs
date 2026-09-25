@@ -10,6 +10,7 @@ mod cast_scalar;
 mod cast_union;
 mod casts;
 mod cypher;
+pub(crate) use cypher::order::compare as compare_cypher_order;
 mod cypher_conversion;
 mod datetime;
 mod dispatch;

@@ -10,7 +10,7 @@ use crate::language::cypher::ast::{
     Clause, CreateClause, DeleteClause, Expr, MatchClause, MergeClause, NodePattern,
     ProcedureCallClause, SetClause, SetItem, UnwindClause,
 };
-use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult};
+use crate::language::cypher::planner::error::{CypherPlanError, CypherPlanResult, CypherSemanticError};
 use crate::language::cypher::planner::lowering::{
     Lowerer,
     context::{BindingKind, CypherTraversalKind},
@@ -173,21 +173,32 @@ fn lower_create(
     input: Node,
     clause: &CreateClause,
 ) -> CypherPlanResult<Node> {
-    let (node, node_outputs, edge_outputs) =
+    let (node, node_outputs, edge_outputs, path_outputs) =
         lowerer.with_child_traversal(CypherTraversalKind::Create, |lowerer| {
             let mut state = CreateState::default();
             let mut input = input;
             for part in &clause.patterns {
-                if part.variable.is_some() {
-                    return Err(CypherPlanError::Unsupported(
-                        "CREATE path-variable binding is not implemented yet".into(),
-                    ));
+                if let Some(path) = &part.variable {
+                    if lowerer.is_visible(path) || !state.bound.insert(path.clone()) {
+                        return Err(CypherPlanError::Invalid(format!("Variable {path} already exists"))
+                            .classified(CypherSemanticError::VariableAlreadyBound));
+                    }
                 }
                 let element = &part.element;
+                if element.chains.is_empty() && element.start.variable.as_ref().is_some_and(|name|
+                    lowerer.is_visible(name) || state.bound.contains(name)) {
+                    return Err(CypherPlanError::Invalid("A standalone CREATE node must introduce a new variable".into())
+                        .classified(CypherSemanticError::VariableAlreadyBound));
+                }
                 let mut left = create_endpoint(lowerer, &mut state, &mut input, &element.start)?;
+                let mut path_items = vec![IrExpr::Binding(left.clone())];
                 for chain in &element.chains {
                     let right = create_endpoint(lowerer, &mut state, &mut input, &chain.node)?;
                     let rel = &chain.relationship;
+                    if rel.variable.as_ref().is_some_and(|bind| lowerer.is_visible(bind) || state.bound.contains(bind)) {
+                        return Err(CypherPlanError::Invalid("CREATE cannot reuse a bound relationship".into())
+                            .classified(CypherSemanticError::VariableAlreadyBound));
+                    }
                     if rel.types.len() != 1 {
                         return Err(CypherPlanError::Invalid(
                             "Binder exception: Create relationship requires exactly one \
@@ -198,7 +209,7 @@ fn lower_create(
                     if rel.range.explicit {
                         return Err(CypherPlanError::Invalid(
                             "Binder exception: Create relationship must have a single hop.".into(),
-                        ));
+                        ).classified(CypherSemanticError::CreatingVarLength));
                     }
                     if rel.recursive.is_some() {
                         return Err(CypherPlanError::Unsupported(
@@ -213,22 +224,25 @@ fn lower_create(
                                 "Binder exception: Create undirected relationship is not \
                                  supported."
                                     .into(),
-                            ));
+                            ).classified(CypherSemanticError::RequiresDirectedRelationship));
                         }
                     };
                     if let Some(bind) = &rel.variable {
                         if lowerer.is_visible(bind) || state.bound.contains(bind) {
                             return Err(CypherPlanError::Invalid(format!(
                                 "Binder exception: Variable {bind} already exists."
-                            )));
+                            )).classified(CypherSemanticError::VariableAlreadyBound));
                         }
                         state.bound.insert(bind.clone());
                         state.edge_outputs.push(bind.clone());
                     }
                     let properties =
                         lower_create_properties(lowerer, &mut input, rel.properties.as_ref())?;
+                    let edge_binding = rel.variable.clone().unwrap_or_else(|| lowerer.synthetic("create_edge"));
+                    path_items.push(IrExpr::Binding(edge_binding.clone()));
+                    path_items.push(IrExpr::Binding(right.clone()));
                     state.edges.push(CreateEdge {
-                        bind: rel.variable.clone(),
+                        bind: Some(edge_binding),
                         rel_type: rel.types[0].clone(),
                         src,
                         dst,
@@ -236,15 +250,21 @@ fn lower_create(
                     });
                     left = right;
                 }
+                if let Some(path) = &part.variable {
+                    state.paths.push(ProjectionItem { alias: path.clone(), expr: IrExpr::Call {
+                        name: "cypher_path".into(), args: vec![IrExpr::List(path_items)],
+                    }});
+                }
             }
             let CreateState {
                 nodes,
                 edges,
                 node_outputs,
                 edge_outputs,
+                paths,
                 ..
             } = state;
-            let node = Node::GraphCreate {
+            let mut node = Node::GraphCreate {
                 graph: "default".to_string(),
                 nodes,
                 edges,
@@ -253,14 +273,23 @@ fn lower_create(
             lowerer.record_current_imports(lowerer.visible_fields());
             let mut outputs = node_outputs.clone();
             outputs.extend(edge_outputs.iter().cloned());
+            let path_outputs = paths.iter().map(|item|item.alias.clone()).collect::<Vec<_>>();
+            outputs.extend(path_outputs.iter().cloned());
+            if !paths.is_empty() {
+                node = Node::GraphProject { mode: ProjectMode::PreserveVisible,
+                    items: paths, error_policy: ProjectErrorPolicy::PropagateError, input: node.boxed() };
+            }
             lowerer.record_current_outputs(outputs);
-            Ok((node, node_outputs, edge_outputs))
+            Ok((node, node_outputs, edge_outputs, path_outputs))
         })?;
     for output in node_outputs {
         lowerer.add_visible_kind(output, BindingKind::Node);
     }
     for output in edge_outputs {
         lowerer.add_visible_kind(output, BindingKind::Relationship);
+    }
+    for output in path_outputs {
+        lowerer.add_visible_kind(output, BindingKind::Path);
     }
     Ok(node)
 }
@@ -271,6 +300,7 @@ fn lower_create(
 /// self-loops `(a)-[:R]->(a)` reuse the first binding instead of erroring.
 #[derive(Default)]
 struct CreateState {
+    paths: Vec<ProjectionItem>,
     nodes: Vec<CreateNode>,
     edges: Vec<CreateEdge>,
     node_outputs: Vec<BindingId>,
@@ -309,7 +339,7 @@ fn create_endpoint(
             if !pattern.labels.is_empty() || pattern.properties.is_some() {
                 return Err(CypherPlanError::Invalid(format!(
                     "Binder exception: Variable {bind} already exists."
-                )));
+                )).classified(CypherSemanticError::VariableAlreadyBound));
             }
             return Ok(bind.clone());
         }
@@ -342,6 +372,16 @@ fn lower_set(lowerer: &mut Lowerer, input: Node, clause: &SetClause) -> CypherPl
 /// arm carrying `ON MATCH SET`, and a CREATE-shaped arm carrying
 /// `ON CREATE SET`. `GraphMerge` runs the second only when the first is empty.
 fn lower_merge(lowerer: &mut Lowerer, input: Node, clause: &MergeClause) -> CypherPlanResult<Node> {
+    let mut input = input;
+    let element = &clause.pattern.element;
+    for properties in element.start.properties.iter().chain(element.chains.iter().flat_map(|chain|
+        chain.relationship.properties.iter().chain(chain.node.properties.iter()))) {
+        let (next, value) = project::lower_expr_with_input(lowerer, input, properties)?;
+        input = Node::GraphFilter {
+            condition: IrExpr::Call { name: "cypher_merge_valid".into(), args: vec![value] },
+            input: next.boxed(),
+        };
+    }
     let outer_fields = lowerer.visible_fields();
     let outer_visible = lowerer.visible_set();
 
@@ -374,8 +414,16 @@ fn lower_merge(lowerer: &mut Lowerer, input: Node, clause: &MergeClause) -> Cyph
         })
     })?;
 
+    let mut create_pattern = clause.pattern.clone();
+    // An undirected MERGE matches either direction, then creates a forward
+    // relationship only if the complete pattern has no match.
+    for chain in &mut create_pattern.element.chains {
+        if chain.relationship.direction == Direction::Both {
+            chain.relationship.direction = Direction::Out;
+        }
+    }
     let create_clause = CreateClause {
-        patterns: vec![clause.pattern.clone()],
+        patterns: vec![create_pattern],
     };
     let create_arm = lowerer.with_preserved_scope(|lowerer| {
         let arm = Node::GraphCorrelate {

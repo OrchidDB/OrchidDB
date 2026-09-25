@@ -141,11 +141,23 @@ pub(crate) fn delete_op(
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    let mut values = Vec::new();
     for row in &upstream {
         for target in targets {
             let value = eval(target, row, graph)?;
-            graph.delete_value(&value, detach)?;
+            match value {
+                Value::Path(items) => values.extend(items),
+                value => values.push(value),
+            }
         }
+    }
+    // DELETE targets belong to one operation. Remove selected relationships
+    // before checking selected nodes, including the elements of named paths.
+    for value in values.iter().filter(|value|matches!(value, Value::Edge { .. })) {
+        graph.delete_value(value, detach)?;
+    }
+    for value in values.iter().filter(|value|!matches!(value, Value::Edge { .. })) {
+        graph.delete_value(value, detach)?;
     }
     Ok(upstream)
 }

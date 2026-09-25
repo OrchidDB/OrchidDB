@@ -2,6 +2,7 @@
 
 mod graph_functions;
 mod math_functions;
+pub(crate) mod order;
 
 use super::CastMode;
 use super::cast_conversion::{cast_value, strict_cast_to_named_type};
@@ -54,6 +55,15 @@ pub(super) fn cypher_call(
     if let Some(conversion) = name.strip_prefix("cypher_convert.") {
         if let [value] = args {
             super::cypher_conversion::validate(conversion, value)?;
+            if conversion == "toboolean" {
+                if let Value::String(text) = value {
+                    return Ok(Some(match text.trim().to_ascii_lowercase().as_str() {
+                        "true" => Value::Bool(true),
+                        "false" => Value::Bool(false),
+                        _ => Value::Null,
+                    }));
+                }
+            }
             return cypher_call(conversion, args, graph);
         }
     }
@@ -71,7 +81,7 @@ pub(super) fn cypher_call(
             ("datetime.fromepochmillis", [millis]) => crate::ir::temporal::construct("datetime", &Value::Map(std::collections::BTreeMap::from([("epochMillis".into(),millis.clone())]))),
             (kind, [value]) => crate::ir::temporal::construct(kind, value),
             (kind, []) => {
-                let now = chrono::Utc::now();
+                let now = graph.statement_time();
                 let text = match kind { "date" => now.date_naive().to_string(), "localtime" => now.time().to_string(),
                     "localdatetime" => now.naive_utc().to_string().replace(' ', "T"),
                     "time" => format!("{}Z", now.time()), _ => now.to_rfc3339() };
@@ -89,6 +99,7 @@ pub(super) fn cypher_call(
         return Ok(Some(value));
     }
     match (canonical.as_ref(), args) {
+        ("cypher_order_key", [value]) => Ok(Some(value.clone())),
         // ----- planner-internal helpers -----
         ("cypher_percentile_fraction", [value]) => {
             use crate::ir::diagnostics::RuntimeDiagnosis;

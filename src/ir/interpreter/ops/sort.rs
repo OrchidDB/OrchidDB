@@ -67,6 +67,8 @@ pub(crate) fn compare_for_sort(lhs: &Value, rhs: &Value, key: &SortKey) -> std::
     }
     let cmp = if matches!(&key.expr, crate::ir::expr::IrExpr::Call { name, .. } if name == "gremlin_order_key") {
         crate::ir::gremlin_semantics::compare_order_keys(lhs, rhs)
+    } else if matches!(&key.expr, crate::ir::expr::IrExpr::Call { name, .. } if name == "cypher_order_key") {
+        crate::ir::interpreter::runtime::compare_cypher_order(lhs, rhs)
     } else {
         lhs.three_valued_cmp(rhs).unwrap_or_else(|| compare_values(lhs, rhs))
     };

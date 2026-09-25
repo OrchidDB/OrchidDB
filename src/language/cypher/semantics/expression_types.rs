@@ -870,6 +870,8 @@ pub(super) fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> Binding
         {
             BindingKind::ListInt
         }
+        Expr::List(items) if !items.is_empty() && items.iter().all(|item|projected_expr_kind(item,scope)==BindingKind::Node) => BindingKind::ListNode,
+        Expr::List(items) if !items.is_empty() && items.iter().all(|item|projected_expr_kind(item,scope)==BindingKind::Relationship) => BindingKind::ListRelationship,
         Expr::List(_) => BindingKind::ListValue,
         _ => BindingKind::Value,
     }
@@ -881,6 +883,12 @@ pub(super) fn function_result_kind(
     scope: &SemanticScope,
 ) -> BindingKind {
     match name.to_ascii_lowercase().as_str() {
+        "coalesce" => {
+            let mut kinds = args.iter().filter(|arg| !matches!(arg, Expr::Literal(Literal::Null)))
+                .map(|arg|projected_expr_kind(arg,scope));
+            let first = kinds.next().unwrap_or(BindingKind::Unknown);
+            if kinds.all(|kind|kind==first) {first} else {BindingKind::Unknown}
+        }
         "count" | "count_if" | "size" | "length" | "rowid" => BindingKind::Int,
         "id" => BindingKind::Int,
         "avg" | "tofloat" | "to_float" | "todouble" | "to_double" => BindingKind::Float,
