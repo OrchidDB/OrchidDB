@@ -66,9 +66,11 @@ class ReleasePackaging(unittest.TestCase):
             package.verify(args)
         for target in package.TARGETS - {'aarch64-apple-darwin'}:
             self.make_archive(target)
+        import mock_clients
+        mock_clients.generate(self.out)
         with contextlib.redirect_stdout(io.StringIO()):
             package.verify(args)
-        self.assertEqual(len((self.out / 'SHA256SUMS').read_text().splitlines()), 4)
+        self.assertEqual(len((self.out / 'SHA256SUMS').read_text().splitlines()), 7)
         first.write_bytes(b'tampered')
         with self.assertRaisesRegex(ValueError, 'Checksum mismatch'):
             package.verify(args)

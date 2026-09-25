@@ -69,7 +69,17 @@ try {
   await page.locator('[data-copy="install-rust"]').click();
   await page.getByText('Command copied.', {exact:true}).waitFor();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'cargo add orchiddb --git https://github.com/OrchidDB/OrchidDB');
+  for (const language of ['python', 'javascript', 'java']) {
+    await page.locator(`[data-install="${language}"]`).click();
+    const panel = page.locator(`#install-${language}`);
+    assert.equal(await panel.isVisible(), true);
+    assert.match(await panel.innerText(), /Mock download/);
+    assert.equal(await panel.locator('a.button').getAttribute('href'), `https://install.orchiddb.com/mock/orchiddb-${language}-placeholder.zip`);
+  }
   await page.locator('[data-install="cli"]').click();
+  await page.locator('[data-copy="install-cli"]').click();
+  await page.getByText('Command copied.', {exact:true}).waitFor();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'curl -fsSL https://install.orchiddb.com | bash');
   assert.equal(await page.locator('#install-cli').isVisible(), true);
   await page.evaluate(() => scrollTo(0,0));
   const canvas = page.locator('.hero-graph');

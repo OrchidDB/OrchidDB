@@ -25,3 +25,7 @@ archives are available with this release for building the Rust library.
 - [Quickstart](https://docs.orchiddb.com/quickstart.html)
 - [Conformance and scope](https://docs.orchiddb.com/conformance.html)
 - [License](https://github.com/OrchidDB/OrchidDB/blob/main/LICENSE.md)
+
+The release also includes explicitly labeled Python, JavaScript/TypeScript, and Java placeholder ZIPs. These contain documentation and metadata only, not working SDK packages.
+
+Install the CLI with `curl -fsSL https://install.orchiddb.com | bash`, or set `ORCHIDDB_VERSION` to select this exact release. The installer verifies `SHA256SUMS` before installation.

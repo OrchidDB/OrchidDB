@@ -125,6 +125,8 @@ jobs:
           pattern: release-*
           path: target/release-packages
           merge-multiple: true
+      - name: Package explicitly labeled client download placeholders
+        run: python scripts/release/mock_clients.py --output target/release-packages
       - name: Verify all archives and collect checksums
         run: python scripts/release/package.py verify --tag "$RELEASE_TAG" --directory target/release-packages
       - name: Create or update the draft release

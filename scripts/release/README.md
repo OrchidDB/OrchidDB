@@ -1,7 +1,7 @@
 # GitHub release packaging
 
 `release.yml` builds the OrchidDB CLI on native runners and attaches four
-archives plus `SHA256SUMS` to a **draft GitHub release**. It runs on version-tag
+archives, three explicitly labeled client placeholder ZIPs, and `SHA256SUMS` to a **draft GitHub release**. It runs on version-tag
 pushes, or manually for an existing tag. It does not publish a crate to crates.io.
 
 | Archive target | Runner | Format |
@@ -76,3 +76,30 @@ so publishing this manifest unchanged would not ship the local parser changes.
 
 The JVM bridge uses `io.orchiddb` packages and the `orchiddb-jvm-store` binary.
 Rebuild Java artifacts together with the native engine after upgrading.
+
+## Hosted installer
+
+`https://install.orchiddb.com` serves `website/install/install.sh`. It selects a
+published GitHub release (including prereleases), downloads the matching CLI
+archive and `SHA256SUMS`, verifies the hash, then installs into `~/.local/bin`.
+`ORCHIDDB_VERSION=v0.1.0` pins a release; `ORCHIDDB_INSTALL_DIR` overrides the
+destination. Drafts are intentionally inaccessible to anonymous installers.
+Publish the reviewed draft to activate downloads; no version has been fabricated
+or published by the website deployment.
+
+`mock_clients.py` generates deterministic Python, JavaScript/TypeScript, and Java
+placeholder ZIPs with README and JSON metadata only. They are checksummed and
+attached to GitHub releases, and hosted under `install.orchiddb.com/mock/` for
+the landing-page preview. They are not disguised as wheels, npm packages, or
+JARs. Replace them with actual SDK artifacts when those packages are released.
+
+The install CDN uses its own CloudFront distribution, the existing private S3
+bucket and wildcard certificate, and Route 53 A/AAAA aliases. Its root serves
+the shell script as text/plain. `website/scripts/provision-installer.py` can
+reconcile DNS / create the distribution; `website/scripts/deploy.sh` publishes
+script updates and mock assets and invalidates its cache.
+
+Reference: [DuckDB installation](https://duckdb.org/docs/installation) and
+[DuckDB's installer repository](https://github.com/duckdb/duckdb-install-scripts).
+
+Tests: `python3 -m unittest discover -s scripts/release -p 'test_*.py'`.
