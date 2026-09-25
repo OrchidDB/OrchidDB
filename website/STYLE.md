@@ -30,7 +30,7 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
 
 ## Product language
 
-- Describe Crabgraph as an embedded database engine for existing data lakes, built in Rust with DataFusion, Apache Arrow, and DuckDB.
+- Describe Crabgraph as an embedded graph engine for existing data lakes, built in Rust with DataFusion, Apache Arrow, and DuckDB.
 - Say that it transpiles graph-language plans into SQL islands. Do not imply that every query becomes one SQL statement.
 - Say that the data layer is unopinionated. Users map graph concepts onto relational tables they already own.
 - Lead with the bring-your-own-schema contract. Existing Iceberg tables, warehouse data, relational tables, SQL queries, and views can provide the graph shape without a graph-data copy.
