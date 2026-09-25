@@ -48,6 +48,12 @@ pub(super) fn cypher_call(
     args: &[Value],
     graph: &PropertyGraph,
 ) -> IrResult<Option<Value>> {
+    if let Some(conversion) = name.strip_prefix("cypher_convert.") {
+        if let [value] = args {
+            super::cypher_conversion::validate(conversion, value)?;
+            return cypher_call(conversion, args, graph);
+        }
+    }
     // Resolve aliases (`tofloat` / `to_float` / `float`, etc.) to a
     // single canonical spelling so every arm below sees one name.
     if let Some(kind) = name.strip_prefix("cypher_temporal.") {
@@ -406,6 +412,8 @@ pub(super) fn cypher_call(
             Ok(Some(Value::Path(items.iter().skip(1).cloned().collect())))
         }
         ("head" | "tail" | "last", [Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_range", [start, end]) => Ok(Some(super::lists::cypher_range(start, end, &Value::Int(1))?)),
+        ("cypher_range", [start, end, step]) => Ok(Some(super::lists::cypher_range(start, end, step)?)),
         ("range", [start, end]) => Ok(Some(make_range(start, end, &Value::Int(1))?)),
         ("range", [start, end, step]) => Ok(Some(make_range(start, end, step)?)),
         // ----- coalesce(...) — first non-null arg, else null -----

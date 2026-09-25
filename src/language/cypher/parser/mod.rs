@@ -27,10 +27,22 @@ pub mod lowering;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq, Clone)]
 pub enum CypherParseError {
+    #[error("parse: invalid number literal {0}")]
+    InvalidNumberLiteral(String),
     #[error("parse: {0}")]
     Parse(String),
     #[error("unsupported cypher construct: {0}")]
     Unsupported(String),
+}
+
+impl CypherParseError {
+    pub fn classification(&self) -> Option<(&'static str,&'static str)> {
+        match self {
+            Self::Parse(_) => Some(("SyntaxError","UnexpectedSyntax")),
+            Self::InvalidNumberLiteral(_) => Some(("SyntaxError","InvalidNumberLiteral")),
+            Self::Unsupported(_) => None,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, CypherParseError>;
@@ -90,6 +102,17 @@ fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)
     // Check actual lexer tokens so brackets inside strings/comments do not
     // count. Reject resource-exhausting nesting before recursive descent.
     let tokens = tokenize(input)?;
+    // Reject a numeric token immediately followed by identifier characters.
+    // This catches malformed decimal/hex/octal literals without inspecting
+    // strings, comments, or the parser's human-readable error wording.
+    for pair in tokens.windows(2) {
+        let [number,suffix]=pair else {unreachable!()};
+        if matches!(number.symbolic_name,Some("DecimalInteger"|"HexInteger"|"OctalInteger"|"ExponentDecimalReal"|"RegularDecimalReal"))
+            && matches!(suffix.symbolic_name,Some("UnescapedSymbolicName"|"IdentifierStart"|"IdentifierPart"))
+            && number.line==suffix.line && number.column+number.text.len() as isize==suffix.column {
+            return Err(CypherParseError::InvalidNumberLiteral(format!("{}{}",number.text,suffix.text)));
+        }
+    }
     let mut nesting = 0usize;
     for token in &tokens {
         match token.text.as_str() {

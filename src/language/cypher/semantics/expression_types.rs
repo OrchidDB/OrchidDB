@@ -241,37 +241,16 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
         Expr::Property { target, .. } => {
             validate_expr_kinds(target, scope)?;
             let target_kind = projected_expr_kind(target, scope);
-            if matches!(target_kind, BindingKind::StructA) {
-                if let Expr::Property { key, .. } = expr {
-                    if key != "a" {
-                        return Err(CypherPlanError::Invalid(format!(
-                            "Binder exception: Invalid struct field name: {key}."
-                        )));
-                    }
-                }
-                return Ok(());
-            }
-            if matches!(target_kind, BindingKind::Node) {
-                if let Expr::Property { target, key } = expr {
-                    if key == "foo" {
-                        return Err(CypherPlanError::Invalid(format!(
-                            "Binder exception: Cannot find property foo for {}.",
-                            display_semantic_expr(target)
-                        )));
-                    }
-                }
-            }
             if matches!(
                 target_kind,
                 BindingKind::Bool
                     | BindingKind::Int
                     | BindingKind::Float
                     | BindingKind::String
-                    | BindingKind::Date
-                    | BindingKind::Timestamp
-                    | BindingKind::TimestampMs
-                    | BindingKind::Interval
                     | BindingKind::InternalId
+                    | BindingKind::ListValue
+                    | BindingKind::ListNode
+                    | BindingKind::ListRelationship
                     | BindingKind::ListInt
                     | BindingKind::FixedListInt
             ) {
@@ -279,7 +258,7 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
                     "Binder exception: {} has data type {} but (NODE,REL,STRUCT,ANY) was expected.",
                     display_semantic_expr(target),
                     target_kind.cypher_type_name()
-                )));
+                )).classified(CypherSemanticError::InvalidPropertyAccess));
             }
             Ok(())
         }
@@ -455,27 +434,9 @@ pub(super) fn arithmetic_kinds_compatible(
     ) {
         return true;
     }
-    // openCypher list concatenation/append: `list + list`, `list +
-    // element` and `element + list` are all valid `+` forms.
-    if matches!(op, BinaryOp::Add)
-        && (matches!(lhs, BindingKind::ListInt | BindingKind::FixedListInt)
-            && matches!(
-                rhs,
-                BindingKind::Int
-                    | BindingKind::Float
-                    | BindingKind::Bool
-                    | BindingKind::String
-                    | BindingKind::ListInt
-                    | BindingKind::FixedListInt
-            )
-            || matches!(rhs, BindingKind::ListInt | BindingKind::FixedListInt)
-                && matches!(
-                    lhs,
-                    BindingKind::Int | BindingKind::Float | BindingKind::Bool | BindingKind::String
-                ))
-    {
-        return true;
-    }
+    // List concatenation preserves arbitrary element types.
+    let list = |kind| matches!(kind,BindingKind::ListValue | BindingKind::ListInt | BindingKind::FixedListInt | BindingKind::ListNode | BindingKind::ListRelationship);
+    if matches!(op,BinaryOp::Add) && (list(lhs)||list(rhs)) {return true;}
     matches!(
         (op, lhs, rhs),
         (BinaryOp::Mul, BindingKind::Interval, BindingKind::Int)
@@ -550,35 +511,8 @@ pub(super) fn validate_coalesce_static_types(args: &[Expr]) -> CypherPlanResult<
         ));
     }
 
-    let mut expected: Option<String> = None;
-    for arg in args {
-        let Some(actual) = static_expr_type_name(arg)? else {
-            continue;
-        };
-        if let Some(expected_type) = &expected {
-            // Kuzu unifies numeric COALESCE arguments (INT64 + DOUBLE
-            // promotes to DOUBLE) — only genuinely incompatible types
-            // (e.g. INT64 vs STRING) are binder errors.
-            let numeric = |name: &str| matches!(name, "INT64" | "DOUBLE" | "FLOAT");
-            let numeric_list = |name: &str| matches!(name, "INT64[]" | "DOUBLE[]" | "FLOAT[]");
-            let compatible = expected_type == &actual
-                || (numeric(expected_type) && numeric(&actual))
-                || (numeric_list(expected_type) && numeric_list(&actual));
-            if !compatible {
-                return Err(CypherPlanError::Invalid(format!(
-                    "Binder exception: Expression {} has data type {actual} but expected {expected_type}. Implicit cast is not supported.",
-                    display_literal_expr(arg)
-                )));
-            }
-            if (numeric(&actual) && actual == "DOUBLE")
-                || (numeric_list(&actual) && actual == "DOUBLE[]")
-            {
-                expected = Some(actual);
-            }
-        } else {
-            expected = Some(actual);
-        }
-    }
+    // Each argument may have a different type; coalesce preserves the first
+    // non-null value and does not unify or coerce the remaining arguments.
     Ok(())
 }
 
@@ -867,28 +801,9 @@ pub(super) fn display_order_expr(expr: &Expr) -> String {
 pub(super) fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
     match expr {
         Expr::Variable(binding) => scope.kind(binding).unwrap_or(BindingKind::Unknown),
-        Expr::Property { target, key } => {
-            // The key-name heuristic only holds for fixture graph
-            // elements. A nested access (`map.a.b`) or an access on a
-            // literal map/struct value has no fixture-backed type.
-            match &**target {
-                Expr::Property { .. } | Expr::Map(_) => BindingKind::Unknown,
-                Expr::Variable(binding)
-                    if !matches!(
-                        scope.kind(binding),
-                        None | Some(
-                            BindingKind::Node
-                                | BindingKind::Relationship
-                                | BindingKind::RecursiveRelationship
-                                | BindingKind::Unknown
-                        )
-                    ) =>
-                {
-                    BindingKind::Unknown
-                }
-                _ => property_key_kind(key),
-            }
-        }
+        // Property names do not determine types. A schema-aware lowering
+        // stage can refine them; the language analyzer must keep them dynamic.
+        Expr::Property { .. } => BindingKind::Unknown,
         Expr::Literal(Literal::Bool(_)) => BindingKind::Bool,
         Expr::Literal(Literal::Integer(_)) => BindingKind::Int,
         Expr::Literal(Literal::Float(_)) => BindingKind::Float,
@@ -935,43 +850,7 @@ pub(super) fn projected_expr_kind(expr: &Expr, scope: &SemanticScope) -> Binding
         {
             BindingKind::ListInt
         }
-        Expr::Map(items) if items.len() == 1 && items[0].0 == "x" => match &items[0].1 {
-            Expr::Literal(Literal::Integer(_)) => BindingKind::StructInt,
-            Expr::List(values)
-                if values
-                    .iter()
-                    .all(|item| matches!(item, Expr::Literal(Literal::Integer(_)))) =>
-            {
-                BindingKind::StructListInt
-            }
-            _ => BindingKind::Value,
-        },
-        Expr::Map(items) if items.len() == 1 && items[0].0 == "a" => match &items[0].1 {
-            Expr::Literal(Literal::Integer(_)) => BindingKind::StructA,
-            _ => BindingKind::Value,
-        },
-        _ => BindingKind::Value,
-    }
-}
-
-pub(super) fn property_key_kind(key: &str) -> BindingKind {
-    match key.to_ascii_lowercase().as_str() {
-        "id" | "_id" | "age" | "gender" | "year" | "length" | "score" | "orgcode" | "views"
-        | "stars" => BindingKind::Int,
-        "eyesight" | "height" | "mark" | "rating" => BindingKind::Float,
-        "isstudent" | "isworker" | "paid" | "licensevalid" => BindingKind::Bool,
-        "birthdate" | "film" => BindingKind::Date,
-        "registertime" | "release" | "release_ns" | "release_sec" | "release_tz" => {
-            BindingKind::Timestamp
-        }
-        "release_ms" => BindingKind::TimestampMs,
-        "lastjobduration" | "validinterval" | "licensevalidinterval" => BindingKind::Interval,
-        "workedhours" | "coursescoresperterm" | "usednames" => BindingKind::ListInt,
-        "grades" => BindingKind::FixedListInt,
-        "description" => BindingKind::StructDescription,
-        "audience" => BindingKind::MapStringInt,
-        "grade" => BindingKind::UnionMovieGrade,
-        "fname" | "name" | "note" | "comment" | "history" => BindingKind::String,
+        Expr::List(_) => BindingKind::ListValue,
         _ => BindingKind::Value,
     }
 }
@@ -983,7 +862,7 @@ pub(super) fn function_result_kind(
 ) -> BindingKind {
     match name.to_ascii_lowercase().as_str() {
         "count" | "count_if" | "size" | "length" | "rowid" => BindingKind::Int,
-        "id" => BindingKind::InternalId,
+        "id" => BindingKind::Int,
         "avg" | "tofloat" | "to_float" | "todouble" | "to_double" => BindingKind::Float,
         "sum" => args
             .first()

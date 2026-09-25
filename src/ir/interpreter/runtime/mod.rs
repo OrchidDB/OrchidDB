@@ -10,6 +10,7 @@ mod cast_scalar;
 mod cast_union;
 mod casts;
 mod cypher;
+mod cypher_conversion;
 mod datetime;
 mod dispatch;
 mod graph;

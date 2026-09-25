@@ -159,10 +159,8 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 if let Ok(value) = value.parse::<i64>() {
                     Lit::Int(value)
                 } else {
-                    return Ok(IrExpr::Call {
-                        name: "integer_literal".to_string(),
-                        args: vec![IrExpr::Lit(Lit::String(value.clone()))],
-                    });
+                    return Err(CypherPlanError::Invalid(format!("Integer literal out of signed 64-bit range: {value}"))
+                        .classified(CypherSemanticError::IntegerOverflow));
                 }
             }
             Literal::Float(value) => Lit::Float(*value),
@@ -215,6 +213,13 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 })
                 .collect::<CypherPlanResult<_>>()?,
         },
+        Expr::Unary { op: UnaryOp::Neg, expr } if matches!(expr.as_ref(),Expr::Literal(Literal::Integer(_))) => {
+            use num_traits::ToPrimitive;
+            let Expr::Literal(Literal::Integer(value))=expr.as_ref() else {unreachable!()};
+            let value=value.parse::<num_bigint::BigInt>().ok().and_then(|v|(-v).to_i64())
+                .ok_or_else(||CypherPlanError::Invalid("Negated integer literal out of signed 64-bit range".into()).classified(CypherSemanticError::IntegerOverflow))?;
+            IrExpr::Lit(Lit::Int(value))
+        }
         Expr::Unary { op, expr } => match op {
             UnaryOp::Not => IrExpr::Not(Box::new(lower_expr(lowerer, expr)?)),
             UnaryOp::Neg if is_typed_negate_operand(expr) => IrExpr::Call {
@@ -252,6 +257,14 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                 || ["date.", "localtime.", "time.", "localdatetime.", "datetime.", "duration."].iter().any(|prefix| name.to_ascii_lowercase().starts_with(prefix)) {
                 return Ok(IrExpr::Call { name: format!("cypher_temporal.{}", name.to_ascii_lowercase()),
                     args: args.iter().map(|arg| lower_expr(lowerer, arg)).collect::<CypherPlanResult<_>>()? });
+            }
+            if name.eq_ignore_ascii_case("coalesce") || name.eq_ignore_ascii_case("range") {
+                return Ok(IrExpr::Call {name:format!("cypher_{}", name.to_ascii_lowercase()),
+                    args:args.iter().map(|arg|lower_expr(lowerer,arg)).collect::<CypherPlanResult<_>>()?});
+            }
+            if matches!(name.to_ascii_lowercase().as_str(), "toboolean" | "tointeger" | "tofloat" | "tostring") {
+                return Ok(IrExpr::Call {name:format!("cypher_convert.{}", name.to_ascii_lowercase()),
+                    args:args.iter().map(|arg|lower_expr(lowerer,arg)).collect::<CypherPlanResult<_>>()?});
             }
             if name.eq_ignore_ascii_case("id") && args.len() == 1 {
                 return Ok(IrExpr::Call { name: "cypher_id".into(), args: vec![lower_expr(lowerer, &args[0])?] });

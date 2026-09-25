@@ -19,6 +19,9 @@ pub type CypherPlanResult<T> = std::result::Result<T, CypherPlanError>;
 /// Stable semantic categories, independent of diagnostic wording.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CypherSemanticError {
+    InvalidPropertyAccess,
+    IntegerOverflow,
+    NoSingleRelationshipType,
     ColumnNameConflict,
     DifferentColumnsInUnion,
     NoExpressionAlias,
@@ -45,6 +48,9 @@ impl CypherPlanError {
             return None;
         };
         let detail = match code {
+            CypherSemanticError::InvalidPropertyAccess => return Some(("TypeError","InvalidArgumentType")),
+            CypherSemanticError::IntegerOverflow => "IntegerOverflow",
+            CypherSemanticError::NoSingleRelationshipType => "NoSingleRelationshipType",
             CypherSemanticError::ColumnNameConflict => "ColumnNameConflict",
             CypherSemanticError::DifferentColumnsInUnion => "DifferentColumnsInUnion",
             CypherSemanticError::NoExpressionAlias => "NoExpressionAlias",

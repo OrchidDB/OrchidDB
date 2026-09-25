@@ -220,7 +220,7 @@ pub(super) fn constant_value_expr(expr: &IrExpr) -> RelResult<Option<Value>> {
                 Value::BigDecimal(value) => Some(Value::BigDecimal(-value)),
                 _ => None,
             })),
-        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") || name == "cypher_range" => {
             Ok(Some(Value::List(constant_range_values(args)?)))
         }
         IrExpr::Call { name, args } if name == "integer_literal" && args.len() == 1 => {

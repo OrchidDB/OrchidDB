@@ -169,3 +169,13 @@ Temporal scenarios now pass **856 / 1,004**. Their 148 remaining failures group 
 Subsequent commits split temporal responsibilities into `src/ir/temporal/`, preserve heterogeneous Cypher values at SQL boundaries, and validate scoped aggregation and projection/UNION diagnostics. The next implementation batch preserves runtime diagnoses across the same DataFusion/SQL IR pipeline and adds an engine API exposing those diagnoses; the existing string-returning API delegates to it. Percentile validation originates in an explicit Cypher expression, not the test adapter.
 
 The remaining temporal range issue requires representing proleptic Gregorian dates beyond chrono's calendar range; widening integer parsing alone cannot support those values correctly.
+
+### Measured checkpoint: temporal corrections and runtime diagnoses
+
+Local full runs of `94d5535` passed **3,491 / 3,897 Cypher scenarios (89.6%)** and **1,511 / 1,511 Gremlin scenarios**. Cypher recorded 219 failures, 136 adapter errors, 50 skips, and one timeout. All 3,313 previously passing Cypher scenarios remained passing: the gain is 178 without regressions against `575f8e5`.
+
+Temporal scenarios passed **998 / 1,004**. The six remaining failures require wide proleptic Gregorian dates (two) and a consistent statement/transaction clock for repeated current-time constructors (four). A clock must belong to execution context and reach residual kernels; rounding timestamps or special-casing duration expressions would not implement that contract.
+
+The subsequent scalar batch adds signed integer literal bounds, malformed-number diagnostics, relationship creation type validation, dynamic property typing, heterogeneous lazy `coalesce`, strict Cypher list/map indexing, range argument diagnoses and inclusive integer endpoints, and Cypher conversion input domains. These are language-specific IR operations or semantic checks; shared Gremlin casts retain their behavior. Their targeted tests are separate from the full-suite totals above.
+
+The next failure families remain list/quantifier semantics, matching and mutation validation, ordering/query-part scope, procedure registration, and the remaining temporal execution contracts. Continue using unchanged upstream assertions and the single production Crabgraph execution configuration.

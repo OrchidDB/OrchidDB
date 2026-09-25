@@ -7,7 +7,6 @@ use super::maps::{
     visible_map_keys, visible_map_len,
 };
 use super::numeric::{value_as_bigint, value_as_f64};
-use super::string_functions::string_index;
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::interpreter::expr::compare_values;
 use crate::ir::interpreter::{InterpretError, IrResult};
@@ -569,20 +568,22 @@ pub(super) fn cypher_subscript(
     index: &Value,
     graph: &PropertyGraph,
 ) -> IrResult<Value> {
-    if let Some(items) = runtime_list(target) {
-        return match index.as_i64() {
+    use crate::ir::diagnostics::RuntimeDiagnosis;
+    if matches!(target, Value::Null) || matches!(index, Value::Null) {
+        return Ok(Value::Null);
+    }
+    if let Value::List(items) = target {
+        return match range_integer_arg(index) {
             Some(index) => Ok(list_index(&items, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),
-            None => Err(list_extract_type_error()),
+            None => Err(InterpretError::Diagnosed {
+                code: RuntimeDiagnosis::InvalidType,
+                message: "A list index must be an integer".into(),
+            }),
         };
     }
     match (target, index) {
         (Value::Temporal(value), Value::String(key)) => Ok(value.component(key)),
-        (Value::String(text), index) => match index.as_i64() {
-            Some(index) => Ok(string_index(text, index)),
-            None if matches!(index, Value::Null) => Ok(Value::Null),
-            None => Err(list_extract_type_error()),
-        },
         (Value::Map(map), key) if kuzu_map_entries(map).is_some() => {
             Ok(kuzu_map_first(map, key).unwrap_or(Value::Null))
         }
@@ -592,7 +593,14 @@ pub(super) fn cypher_subscript(
             Value::String(key),
         ) => Ok(graph_element_property(graph, target, key)),
         (Value::Null, _) | (_, Value::Null) => Ok(Value::Null),
-        _ => Ok(Value::Null),
+        (Value::Map(_), _) => Err(InterpretError::Diagnosed {
+            code: RuntimeDiagnosis::MapKeyType,
+            message: "A map key must be a string".into(),
+        }),
+        _ => Err(InterpretError::Diagnosed {
+            code: RuntimeDiagnosis::InvalidType,
+            message: "Subscript requires a list with an integer index or a property container with a string key".into(),
+        }),
     }
 }
 
@@ -638,6 +646,26 @@ pub(super) fn string_slice_range(text: &str, start: &Value, end: &Value) -> Stri
     let chars: Vec<char> = text.chars().collect();
     let (s, e) = slice_bounds(chars.len(), start, end);
     chars[s..e].iter().collect()
+}
+
+pub(super) fn cypher_range(start: &Value, end: &Value, step: &Value) -> IrResult<Value> {
+    use crate::ir::diagnostics::RuntimeDiagnosis;
+    if [start, end, step].iter().any(|value| matches!(value, Value::Null)) {
+        return Ok(Value::Null);
+    }
+    if [start, end, step].iter().any(|value| range_integer_arg(value).is_none()) {
+        return Err(InterpretError::Diagnosed {
+            code: RuntimeDiagnosis::ArgumentType,
+            message: "range requires integer arguments".into(),
+        });
+    }
+    if range_integer_arg(step) == Some(0) {
+        return Err(InterpretError::Diagnosed {
+            code: RuntimeDiagnosis::NumberOutOfRange,
+            message: "range step cannot be zero".into(),
+        });
+    }
+    make_range(start, end, step)
 }
 
 pub(super) fn make_range(start: &Value, end: &Value, step: &Value) -> IrResult<Value> {

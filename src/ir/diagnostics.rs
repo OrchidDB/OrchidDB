@@ -5,13 +5,23 @@ use std::error::Error;
 pub enum RuntimeDiagnosis {
     ArgumentType,
     NumberOutOfRange,
+    InvalidType,
+    MapKeyType,
+    InvalidValue,
 }
 
 impl RuntimeDiagnosis {
     pub fn classification(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::InvalidType => return ("TypeError", "InvalidArgumentType", "runtime"),
+            Self::MapKeyType => return ("TypeError", "MapElementAccessByNonString", "runtime"),
+            Self::InvalidValue => return ("TypeError", "InvalidArgumentValue", "runtime"),
+            _ => {}
+        }
         let detail = match self {
             Self::ArgumentType => "InvalidArgumentType",
             Self::NumberOutOfRange => "NumberOutOfRange",
+            Self::InvalidType | Self::MapKeyType | Self::InvalidValue => unreachable!(),
         };
         ("ArgumentError", detail, "runtime")
     }

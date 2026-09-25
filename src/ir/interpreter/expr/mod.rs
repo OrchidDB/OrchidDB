@@ -237,6 +237,13 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             }
             Ok(Value::List(out))
         }
+        IrExpr::Call { name, args } if name=="cypher_coalesce" => {
+            for arg in args {
+                let value=eval(arg,row,graph)?;
+                if value!=Value::Null {return Ok(value);}
+            }
+            Ok(Value::Null)
+        }
         IrExpr::Call { name, args } => {
             let evaluated = args
                 .iter()
