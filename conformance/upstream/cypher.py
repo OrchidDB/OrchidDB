@@ -130,6 +130,8 @@ class Cypher:
  def __init__(self,engine):
   self.engine=engine;self.rust=None;self.driver=None;self.fixture=None;self.seed=None
   if engine=='neo4j':
+   from cypher_driver import install_lossless_temporal_hydration
+   install_lossless_temporal_hydration()
    self.driver=GraphDatabase.driver(os.environ.get('CONFORMANCE_NEO4J_URI','bolt://127.0.0.1:17687'),auth=('neo4j',os.environ.get('CONFORMANCE_NEO4J_PASSWORD','conformance-local-only')))
   if engine=='puppygraph':
    self.driver=GraphDatabase.driver('bolt://127.0.0.1:17688',auth=('puppygraph','conformance-local-only'))
@@ -151,7 +153,23 @@ class Cypher:
     return {'columns':columns,'rows':rows}
   except (ServiceUnavailable,SessionExpired,OSError,TimeoutError):raise
   except ValueError as e:return {'adapter_error':str(e)}
-  except Exception as e:return {'error':str(e),'code':getattr(e,'code',None)}
+  except Exception as e:
+   result={'error':str(e),'code':getattr(e,'code',None)}
+   if self.engine=='neo4j' and result['code']:
+    from neo4j.exceptions import Neo4jError
+    from neo4j_errors import classify,diagnostics
+    result['diagnostics']=diagnostics(e)
+    # EXPLAIN compiles without executing writes, independently of TCK assertions.
+    with self.driver.session() as explain:
+     try:
+      explain.run(Query('CYPHER 5 EXPLAIN '+q,timeout=20),params or {}).consume()
+      phase='runtime'
+     except Neo4jError as compilation:
+      if not getattr(compilation,'code','').startswith('Neo.ClientError.'):
+       raise
+      phase='compile time'
+    result['classification']=classify(result['code'],getattr(e,'message',str(e)),phase,result['diagnostics'])
+   return result
  def snapshot(self):
   if self.engine=="puppygraph":return self.fixture.snapshot()
   queries={'nodes':'MATCH (n) RETURN id(n)','relationships':'MATCH ()-[r]->() RETURN id(r)','labels':'MATCH (n) UNWIND labels(n) AS l RETURN DISTINCT l','node_properties':'MATCH (n) UNWIND keys(n) AS k RETURN id(n),k,n[k]','edge_properties':'MATCH ()-[r]->() UNWIND keys(r) AS k RETURN id(r),k,r[k]'}
