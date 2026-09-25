@@ -1,7 +1,7 @@
 //! Temporal type identity, ordering, display, and snapshot encoding.
 use super::{Result, parse};
 use crate::ir::Value;
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::{cmp::Ordering, fmt};
 #[derive(Debug, Clone, Eq)]
 pub enum TemporalValue {

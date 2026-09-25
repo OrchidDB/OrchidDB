@@ -532,3 +532,12 @@ async fn cypher_temporal_projection_preserves_instant_and_overlap_offset() {
     assert_eq!(rows(&mut engine, "WITH datetime('2017-10-29T02:30+01:00[Europe/Stockholm]') AS d RETURN datetime(toString(d)) = d, d.offsetSeconds").await,
         vec![vec!["true", "3600"]]);
 }
+
+#[tokio::test]
+async fn cypher_mixed_values_keep_types_through_unwind_and_aggregation() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine, "UNWIND [1, 'a', null, [1,2], 0.2, 'b'] AS x RETURN max(x), min(x)").await,
+        vec![vec!["1", "[1,2]"]]);
+    assert_eq!(rows(&mut engine, "UNWIND [1, 'a', [1,2]] AS x WITH collect(x) AS xs RETURN xs[0] = 1, xs[1] = 'a', xs[2] = [1,2]").await,
+        vec![vec!["true", "true", "true"]]);
+}

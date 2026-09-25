@@ -5,6 +5,11 @@ use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, Cyphe
 fn exact_semantic_validators_publish_structured_categories() {
     for (query, detail) in [
         ("RETURN missing", "UndefinedVariable"),
+        ("RETURN 1 AS a, 2 AS a", "ColumnNameConflict"),
+        ("WITH 1 AS a, 2 AS a RETURN a", "ColumnNameConflict"),
+        ("MATCH (a) WITH a, count(*) RETURN a", "NoExpressionAlias"),
+        ("RETURN 1 AS a UNION RETURN 2 AS b", "DifferentColumnsInUnion"),
+        ("RETURN 1 AS a UNION ALL RETURN 2 AS b", "DifferentColumnsInUnion"),
         ("RETURN true AND 12", "InvalidArgumentType"),
         ("RETURN none(x IN ['Clara'] WHERE x % 2 = 0)", "InvalidArgumentType"),
         ("RETURN any(x IN [true, false] WHERE x % 2 = 0)", "InvalidArgumentType"),
@@ -14,6 +19,8 @@ fn exact_semantic_validators_publish_structured_categories() {
             "VariableAlreadyBound",
         ),
         ("RETURN sum(count(*))", "NestedAggregation"),
+        ("MATCH (n) RETURN [x IN [1,2,3] | count(*)]", "InvalidAggregation"),
+        ("MATCH (n) RETURN any(x IN [1,2] WHERE count(*) > x)", "InvalidAggregation"),
         (
             "MATCH (n) WHERE count(n) > 0 RETURN n",
             "InvalidAggregation",
@@ -43,4 +50,10 @@ fn structured_category_keeps_existing_diagnostic_text() {
         CypherPlanError::Invalid("generic plan error".into()).classification(),
         None
     );
+}
+
+#[test]
+fn aggregate_collection_is_allowed_outside_iteration_body() {
+    let query = parse_query("MATCH (n) RETURN [x IN collect(n) | x]").unwrap();
+    CypherPlanner::new().plan(&query).unwrap();
 }

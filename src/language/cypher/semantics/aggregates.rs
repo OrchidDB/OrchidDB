@@ -1,6 +1,6 @@
 //! Aggregate detection across expressions and query clauses.
 
-use super::{Clause, Expr, ProjectionBody, Query, merge_pattern_properties, merge_set_item_exprs};
+use super::{CypherPlanError, CypherPlanResult, CypherSemanticError, Clause, Expr, ProjectionBody, Query, merge_pattern_properties, merge_set_item_exprs};
 pub(super) fn contains_aggregate(expr: &Expr) -> bool {
     match expr {
         Expr::CountStar => true,
@@ -147,4 +147,14 @@ pub(super) fn projection_contains_aggregate(body: &ProjectionBody) -> bool {
             .order_by
             .iter()
             .any(|item| contains_aggregate(&item.expr))
+}
+
+/// An aggregate consumes query rows, not values in one row's list iteration.
+/// Aggregates in the collection expression itself (e.g. collect(n)) remain valid.
+pub(super) fn validate_iteration_aggregate(expr: &Expr) -> CypherPlanResult<()> {
+    if contains_aggregate(expr) {
+        return Err(CypherPlanError::Invalid("Aggregation is not allowed inside a list iteration body".into())
+            .classified(CypherSemanticError::InvalidAggregation));
+    }
+    Ok(())
 }
