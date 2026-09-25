@@ -189,11 +189,11 @@ fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str)
 }
 
 fn compare_values<T: PartialOrd>(op: &str, left: T, right: T) -> Option<String> {
+    let order = left.partial_cmp(&right)?;
     Some(match op {
-        "eq" => left == right,
-        "ne" => left != right,
+        "eq" => order.is_eq(),
+        "ne" => !order.is_eq(),
         op => {
-            let order = left.partial_cmp(&right)?;
             match op {
                 "lt" => order.is_lt(), "le" => !order.is_gt(),
                 "gt" => order.is_gt(), "ge" => !order.is_lt(),

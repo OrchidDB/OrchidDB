@@ -102,10 +102,10 @@ async fn rdf(req:&Value)->Result<Value,String>{
  let schema=Arc::new(Schema::new(fields.iter().map(|n|Field::new(*n,DataType::Utf8,true)).collect::<Vec<_>>()));
  let batch=RecordBatch::new_empty(schema.clone());
  let mut mapping=RdfDatasetMapping::new();
- mapping.register_table("terms",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).map_err(|e|e.to_string())?)).map_typed_quads("default",IriQuadSource::table("terms","s","p","o").graph_column("g").typed_term_columns(RdfTermColumns::new("s","s_kind").datatype("s_dt").language("s_lang"),RdfTermColumns::new("p","p_kind").datatype("p_dt").language("p_lang"),RdfTermColumns::new("o","o_kind").datatype("o_dt").language("o_lang")));
+ mapping.register_table("terms",Arc::new(MemTable::try_new(schema,vec![vec![batch]]).map_err(|e|e.to_string())?)).map_typed_quads("default",IriQuadSource::table("terms","s","p","o").graph_column("g").writable().typed_term_columns(RdfTermColumns::new("s","s_kind").datatype("s_dt").language("s_lang"),RdfTermColumns::new("p","p_kind").datatype("p_dt").language("p_lang"),RdfTermColumns::new("o","o_kind").datatype("o_dt").language("o_lang")));
  let conn=duckdb::Connection::open_in_memory().map_err(|e|e.to_string())?;
  let graphs_schema=Arc::new(Schema::new(vec![Field::new("iri",DataType::Utf8,false)]));
- mapping.register_table("graph_names",Arc::new(MemTable::try_new(graphs_schema.clone(),vec![vec![RecordBatch::new_empty(graphs_schema)]]).map_err(|e|e.to_string())?)).map_named_graphs("default","graph_names","iri");
+ mapping.register_table("graph_names",Arc::new(MemTable::try_new(graphs_schema.clone(),vec![vec![RecordBatch::new_empty(graphs_schema)]]).map_err(|e|e.to_string())?)).map_writable_named_graphs("default","graph_names","iri");
  conn.execute_batch("CREATE TABLE graph_names(iri VARCHAR PRIMARY KEY)").map_err(|e|e.to_string())?;
  if let Some(names)=req["named_graphs"].as_array(){for name in names{
   conn.execute("INSERT INTO graph_names VALUES (?) ON CONFLICT DO NOTHING",[name.as_str().ok_or("graph name must be an IRI string")?]).map_err(|e|e.to_string())?;
@@ -117,6 +117,14 @@ async fn rdf(req:&Value)->Result<Value,String>{
  }}
  let mut executor=DuckDbExecutor::from_connection(conn);executor.set_timeouts(std::time::Duration::from_secs(8),std::time::Duration::from_secs(8));
  let mut engine=RdfGraphEngine::new(executor,Arc::new(mapping),"default");
+ if req["update"].as_bool().unwrap_or(false) {
+  engine.update(req["query"].as_str().unwrap_or(""),req["base"].as_str()).await?;
+  let SparqlResults::Solutions{rows,..}=engine.query("SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }").await? else {return Err("Expected updated dataset rows".into())};
+  let quads=rows.into_iter().map(|row|row.into_iter().map(|v|v.map(term)).collect::<Vec<_>>()).collect::<Vec<_>>();
+  let SparqlResults::Solutions{rows,..}=engine.query("SELECT ?g WHERE { GRAPH ?g {} }").await? else {return Err("Expected updated graph names".into())};
+  let names=rows.into_iter().filter_map(|row|match row.into_iter().next().flatten(){Some(RdfTermValue::Iri(v))=>Some(v),_=>None}).collect::<Vec<_>>();
+  return Ok(json!({"quads":quads,"named_graphs":names}));
+ }
  match engine.query(req["query"].as_str().unwrap_or("")).await? {
  SparqlResults::Boolean(v)=>Ok(json!({"boolean":v})),
  SparqlResults::Solutions{variables,rows}=>Ok(json!({"variables":variables.iter().map(|s|s.trim_start_matches('?')).collect::<Vec<_>>(),"rows":rows.into_iter().map(|r|r.into_iter().map(|v|v.map(term)).collect::<Vec<_>>()).collect::<Vec<_>>()})),

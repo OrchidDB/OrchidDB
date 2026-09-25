@@ -6,6 +6,17 @@ from sparql import expected
 
 
 class ResultFileTests(unittest.TestCase):
+    def test_numeric_assertions_preserve_types_values_and_multiplicity(self):
+        from sparql import matchterm, rows_equal
+        def literal(value, datatype='double'):
+            return {'type':'literal','value':value,'datatype':'http://www.w3.org/2001/XMLSchema#'+datatype,'lang':None}
+        self.assertTrue(matchterm(literal('2E-1'),literal('0.2'),{}))
+        self.assertFalse(matchterm(literal('2E-1'),literal('0.2000000000001'),{}))
+        self.assertFalse(matchterm(literal('1','integer'),literal('1','decimal'),{}))
+        self.assertFalse(matchterm(literal('01','string'),literal('1','string'),{}))
+        self.assertFalse(matchterm(literal('invalid'),literal('0'),{}))
+        self.assertFalse(rows_equal([[literal('1')]],[[literal('1')],[literal('1')]],False))
+
     def test_turtle_numeric_tokens_are_not_converted_to_python_numbers(self):
         from rdf_fixtures import graph_file
         with tempfile.TemporaryDirectory() as directory:
@@ -23,6 +34,7 @@ class ResultFileTests(unittest.TestCase):
                             [rs:index 1; rs:binding [rs:variable "v"; rs:value "first"]].''')
             self.assertEqual([row[0]['value'] for row in expected(path)['rows']],
                              ['first', 'second'])
+            self.assertTrue(expected(path)['ordered'])
 
 
 if __name__ == '__main__':

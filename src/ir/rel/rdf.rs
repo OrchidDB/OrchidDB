@@ -24,6 +24,10 @@ use super::{LoweredNode, LoweringContext, RelError, RelResult, col_exact, resolv
 /// graph column is nullable: NULL denotes the default graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IriQuadSource {
+    /// Writes are opt-in and address this exact source table and columns.
+    pub writable: bool,
+    /// Optional predicate partition, used identically by scans and writes.
+    pub predicate_iri: Option<String>,
     pub table: String,
     pub subject_column: String,
     pub predicate_column: String,
@@ -85,6 +89,8 @@ impl IriQuadSource {
         object_column: impl Into<String>,
     ) -> Self {
         Self {
+            writable: false,
+            predicate_iri: None,
             table: table.into(),
             subject_column: subject_column.into(),
             predicate_column: predicate_column.into(),
@@ -92,6 +98,16 @@ impl IriQuadSource {
             graph_column: None,
             typed_terms: None,
         }
+    }
+
+    pub fn writable(mut self) -> Self {
+        self.writable = true;
+        self
+    }
+
+    pub fn predicate(mut self, iri: impl Into<String>) -> Self {
+        self.predicate_iri = Some(iri.into());
+        self
     }
 
     pub fn graph_column(mut self, column: impl Into<String>) -> Self {
@@ -115,11 +131,12 @@ impl IriQuadSource {
 /// actual data for in-process DataFusion execution. For DuckDB execution the
 /// same table names must exist in DuckDB; pass `physical_table_names()` to
 /// `sql::prepare_with_external`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RdfDatasetMapping {
     sources: BTreeMap<String, Vec<IriQuadSource>>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     graph_tables: BTreeMap<String, (String, String)>,
+    writable_graph_tables: BTreeSet<String>,
 }
 
 impl fmt::Debug for RdfDatasetMapping {
@@ -132,6 +149,20 @@ impl fmt::Debug for RdfDatasetMapping {
 }
 
 impl RdfDatasetMapping {
+    pub(crate) fn dataset_sources(&self, dataset: &str) -> &[IriQuadSource] {
+        self.sources.get(dataset).map(Vec::as_slice).unwrap_or_default()
+    }
+
+    pub(crate) fn writable_graph_table(&self, dataset: &str) -> Option<&(String, String)> {
+        self.writable_graph_tables.contains(dataset).then(|| self.graph_tables.get(dataset)).flatten()
+    }
+
+    /// Register an existing graph registry as a writable mapping target.
+    pub fn map_writable_named_graphs(&mut self, dataset: impl Into<String>, table: impl Into<String>, column: impl Into<String>) -> &mut Self {
+        let dataset = dataset.into();
+        self.writable_graph_tables.insert(dataset.clone());
+        self.map_named_graphs(dataset, table, column)
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -191,12 +222,17 @@ impl RdfDatasetMapping {
                 source.table
             ))
         })?;
-        Ok(LogicalPlanBuilder::scan(
+        let plan = LogicalPlanBuilder::scan(
             source.table.clone(),
             provider_as_source(Arc::clone(provider)),
             None,
         )?
-        .build()?)
+        .build()?;
+        Ok(if let Some(predicate) = &source.predicate_iri {
+            let column = source.typed_terms.as_ref().map(|terms| terms[1].value.as_str()).unwrap_or(&source.predicate_column);
+            let condition = iri_column(&plan, column)?.eq(lit(predicate.clone()));
+            LogicalPlanBuilder::from(plan).filter(condition)?.build()?
+        } else { plan })
     }
 }
 
@@ -413,6 +449,9 @@ pub(super) fn quad_source(
         RdfGraphScope::DatasetNamedGraphVariable { allowed, .. } => graph_in(&names[0], allowed),
         _ => unreachable!("validated RDF graph scope"),
     };
+    // Give the union a relational boundary: the SQL unparser otherwise
+    // attaches or drops an outer WHERE when serializing multiple sources.
+    source = LogicalPlanBuilder::from(source).alias(format!("__rdf_dataset_{scan_id}"))?.build()?;
     source = LogicalPlanBuilder::from(source)
         .filter(graph_filter)?
         .build()?;

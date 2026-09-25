@@ -143,7 +143,7 @@ def main():
  if args.suite=='rdf':
   import pyoxigraph
   build['rdf_fixture_parser_version']=pyoxigraph.__version__
-  build['rdf_adapter_sources']=[file_identity(ROOT/'upstream'/name) for name in ('sparql.py','sparql_updates.py','rdf_fixtures.py')]
+  build['rdf_adapter_sources']=[file_identity(ROOT/'upstream'/name) for name in ('sparql.py','sparql_updates.py','rdf_fixtures.py','rdf_result_terms.py')]
  if args.engine=='crabgraph' and args.suite=='tinkerpop':
   def classpath_identity(classpath):
    artifacts=[]

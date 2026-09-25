@@ -1,4 +1,4 @@
-//! Read-only SPARQL queries over existing DuckDB RDF quad tables.
+//! SPARQL queries and mapped updates over existing DuckDB RDF tables.
 //!
 //! `RdfGraphEngine` accepts an `RdfDatasetMapping` whose registered table
 //! providers describe the source schemas. The table names also exist in the
@@ -20,8 +20,9 @@ use crate::ir::rel::{RelBackend, RelBackendOptions};
 use crate::language::sparql::SparqlPlanner;
 
 mod scalar;
+mod update;
 
-/// Runs SPARQL read queries against user-owned RDF quad tables in DuckDB.
+/// Runs SPARQL queries and explicitly mapped updates against user-owned tables.
 /// The dataset name selects sources registered in `RdfDatasetMapping`.
 pub struct RdfGraphEngine {
     executor: DuckDbExecutor,
