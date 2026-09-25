@@ -186,3 +186,15 @@ async fn graph_lifecycle_and_blank_nodes() {
     };
     assert_eq!(rows.len(), 2);
 }
+
+#[tokio::test]
+async fn with_changes_default_graph_without_hiding_explicit_named_graphs() {
+    let mut engine = engine();
+    engine.update("INSERT DATA { GRAPH <urn:g> { <urn:a> <urn:name> 'A'; <urn:age> 1 } GRAPH <urn:h> { <urn:a> <urn:name> 'B' } }",None).await.unwrap();
+    engine.update("WITH <urn:h> DELETE { GRAPH <urn:g> { ?s <urn:age> ?age } } WHERE { GRAPH <urn:g> { ?s <urn:age> ?age } }",None).await.unwrap();
+    assert_eq!(engine.query("ASK { GRAPH <urn:g> { ?s <urn:age> ?age } }").await.unwrap(),SparqlResults::Boolean(false));
+    assert_eq!(engine.query("ASK { GRAPH <urn:h> { <urn:a> <urn:name> 'B' } }").await.unwrap(),SparqlResults::Boolean(true));
+    engine.update("WITH <urn:h> DELETE { ?s <urn:name> ?name } WHERE { ?s <urn:name> ?name }",None).await.unwrap();
+    assert_eq!(engine.query("ASK { GRAPH <urn:h> { ?s ?p ?o } }").await.unwrap(),SparqlResults::Boolean(false));
+    assert_eq!(engine.query("ASK { GRAPH <urn:g> { <urn:a> <urn:name> 'A' } }").await.unwrap(),SparqlResults::Boolean(true));
+}

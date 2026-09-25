@@ -123,19 +123,39 @@ Current completion work targets read execution and query conformance; new
 
 ## Existing RDF quad tables
 
-`rdf_engine::RdfGraphEngine` runs read-only SPARQL against user-owned DuckDB
-quad tables. Register their schemas with `RdfDatasetMapping`, map one or more
-IRI-quad sources to a dataset name, and give the engine a `DuckDbExecutor` using
+`rdf_engine::RdfGraphEngine` runs SPARQL against user-owned DuckDB tables.
+Register their schemas with `RdfDatasetMapping`, map one or more
+sources to a dataset name, and give the engine a `DuckDbExecutor` using
 the same DuckDB tables. `RdfGraphEngine::sparql` parses, lowers, and executes
 the query without copying source rows or requiring an ontology mapping.
 
-The initial adapter supports IRI-only subject, predicate, object, and named
-graph columns. A null graph value denotes the default graph. It supports
+Sources can use IRI-only columns or typed term columns for IRIs, literals,
+and blank nodes. A null graph value denotes the default graph. Queries support
 variable predicates, joins across triple patterns, `GRAPH`, `FROM`, and
 `FROM NAMED`; selected `FROM` graphs are merged with duplicate triples removed.
-Typed literals, blank nodes, property paths, and federation still need
-additional execution work. Unsupported RDF term types fail explicitly. See
-`tests/rdf_engine.rs` and `tests/sparql_rdf_dataset.rs` for end-to-end examples.
+Property paths, aggregates, and expressions retain their SPARQL semantics
+through Graph IR and SQL IR lowering. See `tests/sparql_typed_algebra.rs` and
+`tests/sparql_property_paths.rs` for examples.
+
+### Mapped SPARQL updates
+
+Call `engine.update(request, base_iri).await` to execute a SPARQL update.
+Writable sources are declared with `IriQuadSource::writable()`. Use
+`.predicate(iri)` to partition predicates across specific tables; the same
+predicate restriction applies to reads and writes. Named graph lifecycle uses
+an existing registry declared with `map_writable_named_graphs`.
+
+Updates write the exact tables and columns in those mappings. Each triple must
+resolve to one writable target. WHERE clauses use the query planner and SQL
+execution path, and their results are captured before DELETE/INSERT effects.
+All deletes precede inserts for an operation; later operations see earlier
+writes. The complete request commits atomically, rolling back every affected
+table if mapping validation or a database constraint fails. Graph creation
+registers a graph name in the mapped registry; it does not create SQL tables.
+
+`tests/sparql_mapped_updates.rs` demonstrates predicate partitions across two
+tables, updates derived from existing values, duplicate prevention, blank-node
+identity, graph lifecycle, and rollback.
 
 ## Release work still required
 - Full Cypher, Gremlin, and mapped SPARQL execution conformance. Current

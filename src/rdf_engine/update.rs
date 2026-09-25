@@ -273,7 +273,7 @@ impl RdfGraphEngine {
                         base_iri: update.base_iri.clone(),
                     };
                     let SparqlResults::Solutions { variables, rows } =
-                        self.query(&query.to_string()).await?
+                        super::decode_results(&self.sparql_parsed(&query).await?)?
                     else {
                         return Err("Update WHERE must return solutions".into());
                     };

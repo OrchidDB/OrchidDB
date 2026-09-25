@@ -267,7 +267,9 @@ impl SparqlPlanner {
                 // variable after evaluating its body, so FILTER/OPTIONAL and
                 // subquery variable scopes cannot see a premature binding.
                 let context = format!("__sq_graph_scope_{}", self.exists_marks.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-                let named_scope = match (name, &self.query_dataset) {
+                // WITH replaces the default graph but keeps all named graphs.
+                // USING/FROM carry an explicit Some(allowed) named graph set.
+                let named_scope = match (name, self.query_dataset.as_ref().filter(|dataset| dataset.named.is_some())) {
                     (NamedNodePattern::NamedNode(value), Some(dataset)) => {
                         RdfGraphScope::DatasetNamedGraph {
                             iri: value.as_str().into(),
