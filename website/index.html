@@ -12,8 +12,8 @@
   <meta property="og:url" content="https://crabgraph.net/">
   <meta property="og:image" content="https://crabgraph.net/og.png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css">
-  <script src="/script.js" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=light-2">
+  <script src="/script.js?v=compact-sources" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -127,70 +127,17 @@
     <section class="existing-data section-rule" id="existing-data">
       <div class="existing-copy">
         <p class="section-number">Data sources</p>
-        <h2>Query tables, views, and Iceberg.</h2>
-        <p>Use DuckDB views to select the data your graph exposes. For Iceberg, DuckDB connects to your catalog and reads the tables through its Iceberg extension. The optional <code>cache_httpfs</code> extension caches remote reads.</p>
-        <p>Cypher and Gremlin use node and edge mappings. SPARQL can map classes and predicates to those graph concepts or use RDF dataset mappings. The example below maps accounts and transfers, then queries them as a graph.</p>
-        <div class="source-chips" aria-label="Example data sources">
-          <span>cache_httpfs</span><span>Apache Iceberg</span><span>Apache Polaris</span><span>DuckDB views</span>
-        </div>
+        <h2>Tables, views, and Iceberg.</h2>
+        <p>Map your existing tables to nodes and relationships. Query them with Cypher, Gremlin, or SPARQL.</p>
+        <p><a href="https://docs.crabgraph.net/mapped-graphs.html">Connect your data →</a></p>
       </div>
-
-      <div class="byos-card" aria-label="Iceberg data mapped into a graph query">
-        <div class="byos-step">
-          <p>EXPOSE EXISTING DATA</p>
-          <pre><code><span class="kw">INSTALL</span> cache_httpfs <span class="kw">FROM</span> community;
-<span class="kw">LOAD</span> cache_httpfs;
-<span class="kw">INSTALL</span> iceberg;  <span class="kw">LOAD</span> iceberg;
-
-<span class="kw">ATTACH</span> <span class="str">'warehouse'</span> <span class="kw">AS</span> lake (
-  TYPE iceberg, ENDPOINT <span class="str">'https://polaris.example/api/catalog'</span>
-);
-
-<span class="kw">CREATE VIEW</span> graph_accounts <span class="kw">AS</span>
-  <span class="kw">SELECT</span> account_id, owner, risk
-  <span class="kw">FROM</span> lake.prod.accounts;
-
-<span class="kw">CREATE VIEW</span> graph_transfers <span class="kw">AS</span>
-  <span class="kw">SELECT</span> transfer_id, from_id, to_id, amount
-  <span class="kw">FROM</span> lake.prod.transfers;</code></pre>
-        </div>
-        <div class="byos-step mapping-step">
-          <p>MAP THE GRAPH SHAPE</p>
-          <pre><code>[node.Account]
-table = <span class="str">"graph_accounts"</span>
-id = <span class="str">"account_id"</span>
-
-[node.Account.properties]
-resource_id = <span class="str">"account_id"</span>
-owner = <span class="str">"owner"</span>
-risk = <span class="str">"risk"</span>
-
-[edge.TRANSFERRED_TO]
-table = <span class="str">"graph_transfers"</span>
-src = <span class="str">"from_id"</span>  ·  dst = <span class="str">"to_id"</span>
-
-<span class="cm"># Ontology: vocabulary → graph shape</span>
-ex:Account  →  Account(resource_id)
-ex:owner    →  Account.owner</code></pre>
-        </div>
-        <div class="byos-step query-step">
-          <p>QUERY IT AS A GRAPH</p>
-          <div class="byos-tabs" role="tablist" aria-label="Bring your own schema query languages">
-            <button type="button" role="tab" aria-selected="true" tabindex="0" data-byos-language="cypher">Cypher</button>
-            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-byos-language="gremlin">Gremlin</button>
-            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-byos-language="sparql">SPARQL</button>
-          </div>
-          <div class="byos-query-panel" role="tabpanel" aria-live="polite">
-            <pre><code id="byos-query"><span class="kw">MATCH</span> (a:Account)-[t:TRANSFERRED_TO]-&gt;(b:Account)
-<span class="kw">RETURN</span> a.owner, b.owner, t.amount</code></pre>
-            <p class="pushdown-label"><span>↓</span> SQL PUSHDOWN</p>
-            <pre class="pushdown-sql"><code id="byos-sql"><span class="kw">SELECT</span> a.owner, b.owner, t.amount
-<span class="kw">FROM</span> graph_accounts a
-<span class="kw">JOIN</span> graph_transfers t <span class="kw">ON</span> t.from_id = a.account_id
-<span class="kw">JOIN</span> graph_accounts b <span class="kw">ON</span> b.account_id = t.to_id</code></pre>
-          </div>
-          <div class="lowering-note"><span>↓</span> Queries read the mapped account and transfer views.</div>
-        </div>
+      <div class="source-mapping" aria-label="Example table mappings">
+        <p class="stage-label">Example mapping</p>
+        <dl>
+          <div><dt><code>accounts</code> table</dt><dd>Account nodes</dd></div>
+          <div><dt><code>transfers</code> table</dt><dd>TRANSFERRED_TO relationships</dd></div>
+        </dl>
+        <p>Columns provide IDs, properties, and relationship endpoints.</p>
       </div>
     </section>
 

@@ -146,44 +146,6 @@
   }
   scheduleCycle();
 
-  const byosExamples = {
-    cypher: {
-      query: `<span class="kw">MATCH</span> (a:Account)-[t:TRANSFERRED_TO]-&gt;(b:Account)\n<span class="kw">RETURN</span> a.owner, b.owner, t.amount`,
-      sql: `<span class="kw">SELECT</span> a.owner, b.owner, t.amount\n<span class="kw">FROM</span> graph_accounts a\n<span class="kw">JOIN</span> graph_transfers t <span class="kw">ON</span> t.from_id = a.account_id\n<span class="kw">JOIN</span> graph_accounts b <span class="kw">ON</span> b.account_id = t.to_id`
-    },
-    gremlin: {
-      query: `g.V().<span class="fn">hasLabel</span>(<span class="str">'Account'</span>).<span class="fn">as</span>(<span class="str">'a'</span>)\n .<span class="fn">outE</span>(<span class="str">'TRANSFERRED_TO'</span>).<span class="fn">as</span>(<span class="str">'t'</span>).<span class="fn">inV</span>().<span class="fn">as</span>(<span class="str">'b'</span>)\n .<span class="fn">select</span>(<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'t'</span>)`,
-      sql: `<span class="kw">SELECT</span> a.*, b.*, t.*\n<span class="kw">FROM</span> graph_accounts a\n<span class="kw">JOIN</span> graph_transfers t <span class="kw">ON</span> t.from_id = a.account_id\n<span class="kw">JOIN</span> graph_accounts b <span class="kw">ON</span> b.account_id = t.to_id`
-    },
-    sparql: {
-      query: `<span class="kw">PREFIX</span> ex: &lt;https://crabgraph.net/schema/&gt;\n<span class="kw">SELECT</span> ?account ?owner <span class="kw">WHERE</span> {\n  ?account a ex:Account ; ex:owner ?owner .\n}`,
-      sql: `<span class="kw">SELECT</span> a.account_id <span class="kw">AS</span> <span class="str">"account"</span>, a.owner <span class="kw">AS</span> <span class="str">"owner"</span>\n<span class="kw">FROM</span> graph_accounts a`
-    }
-  };
-  const byosTabs = [...document.querySelectorAll("[data-byos-language]")];
-  const byosQuery = document.querySelector("#byos-query");
-  const byosSql = document.querySelector("#byos-sql");
-  function selectByos(tab) {
-    const example = byosExamples[tab.dataset.byosLanguage];
-    byosTabs.forEach((item) => {
-      const selected = item === tab;
-      item.setAttribute("aria-selected", String(selected));
-      item.tabIndex = selected ? 0 : -1;
-    });
-    byosQuery.innerHTML = example.query;
-    byosSql.innerHTML = example.sql;
-  }
-  byosTabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => selectByos(tab));
-    tab.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      const offset = event.key === "ArrowRight" ? 1 : -1;
-      const next = byosTabs[(index + offset + byosTabs.length) % byosTabs.length];
-      selectByos(next);
-      next.focus();
-    });
-  });
 
   const button = document.querySelector("[data-copy]");
   if (!button) return;
