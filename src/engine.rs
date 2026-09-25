@@ -440,11 +440,13 @@ impl GraphEngine {
         &mut self, query: &str,
         bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>,
     ) -> EngineResult<QueryResult> {
+        let frontend_phase = crate::ir::rel::profile::Phase::new("frontend");
         let (source, values) = gremlin::callables::prepare(query, bindings).map_err(|e| e.to_string())?;
         let parsed = gremlin::parse_traversal_with_bindings(&source, &values).map_err(|e| e.to_string())?;
         let plan = gremlin::GremlinPlanner::new()
             .plan(&parsed)
             .map_err(|e| e.to_string())?;
+        drop(frontend_phase);
         self.execute_plan(&plan).await
     }
 

@@ -2483,6 +2483,7 @@ dependencies = [
  "datafusion-sql",
  "duckdb",
  "futures",
+ "libc",
  "md-5 0.10.6",
  "num-bigint",
  "num-traits",
