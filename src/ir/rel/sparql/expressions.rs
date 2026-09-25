@@ -152,15 +152,11 @@ impl Lowerer<'_, '_> {
                         valid.push(flags.is_simple());
                         options = flags.value.clone();
                     }
-                    let options = regex_options(options);
                     case(
                         vec![(
                             and_all(valid),
-                            duck(
-                                "regexp_matches",
-                                vec![text.value, pattern.value, options],
-                                DataType::Boolean,
-                            ),
+                            duck_str("__crabgraph_sparql_scalar",
+                                vec![s("regex"), text.value, pattern.value, s(""), options]).eq(s("true")),
                         )],
                         None,
                     )
@@ -525,24 +521,21 @@ impl Lowerer<'_, '_> {
                 if !(3..=4).contains(&terms.len()) {
                     return unsupported("REPLACE expects three or four arguments");
                 }
-                let replacement = match &args[2] {
-                    IrExpr::Lit(Lit::String(value)) => sparql_replacement(value),
-                    _ => return unsupported("REPLACE with a non-constant replacement"),
-                };
                 let text = &terms[0];
-                let mut options = s("g");
-                let mut valid = vec![text.is_string(), terms[1].is_simple()];
+                let mut options = s("");
+                let mut valid = vec![text.is_string(), terms[1].is_simple(), terms[2].is_simple()];
                 if let Some(flags) = terms.get(3) {
                     valid.push(flags.is_simple());
-                    options = duck_str("concat", vec![s("g"), regex_options(flags.value.clone())]);
+                    options = flags.value.clone();
                 }
                 Term {
                     value: duck_str(
-                        "regexp_replace",
+                        "__crabgraph_sparql_scalar",
                         vec![
+                            s("replace"),
                             text.value.clone(),
                             terms[1].value.clone(),
-                            s(&replacement),
+                            terms[2].value.clone(),
                             options,
                         ],
                     ),
@@ -586,6 +579,27 @@ impl Lowerer<'_, '_> {
                 arity(1)?;
                 let a = &terms[0];
                 Term::string(duck_str(name, vec![a.value.clone()])).only_if(a.is_simple())
+            }
+            "sha384" | "sha512" | "encode_for_uri" => {
+                arity(1)?;
+                let a = &terms[0];
+                Term::string(duck_str("__crabgraph_sparql_scalar",
+                    vec![s(name), a.value.clone(), s(""), s(""), s("")])).only_if(a.is_simple())
+            }
+            "timezone" => {
+                arity(1)?;
+                let a = &terms[0];
+                Term::literal(duck_str("__crabgraph_sparql_scalar",
+                    vec![s(name), a.value.clone(), s(""), s(""), s("")]), &xsd("dayTimeDuration"))
+                    .only_if(a.has_datatype(&xsd("dateTime")))
+            }
+            "now" => {
+                arity(0)?;
+                Term::literal(duck_str("strftime", vec![
+                    duck("make_timestamp", vec![duck("epoch_us", vec![
+                        duck("now", vec![], DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, Some("UTC".into())))
+                    ], DataType::Int64)], DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None)),
+                    s("%Y-%m-%dT%H:%M:%S.%fZ")]), &xsd("dateTime"))
             }
             "year" | "month" | "day" | "hours" | "minutes" | "seconds" | "tz" => {
                 arity(1)?;

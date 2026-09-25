@@ -66,32 +66,6 @@ pub(super) fn string_args_compatible(a: &Term, b: &Term) -> Expr {
     )
 }
 
-pub(super) fn regex_options(flags: Expr) -> Expr {
-    // DuckDB regex options: i (case-insensitive), s (dot matches newline),
-    // m (multi-line). SPARQL's `x` has no RE2 counterpart and is dropped.
-    duck_str("replace", vec![flags, s("x"), s("")])
-}
-
-pub(super) fn sparql_replacement(value: &str) -> String {
-    let mut out = String::new();
-    let mut chars = value.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '$' if chars.peek().is_some_and(char::is_ascii_digit) => out.push('\\'),
-            '\\' if chars
-                .peek()
-                .is_some_and(|next| *next == '$' || *next == '\\') =>
-            {
-                out.push(chars.next().expect("peeked"));
-                continue;
-            }
-            _ => {}
-        }
-        out.push(ch);
-    }
-    out
-}
-
 /// Sort keys implementing SPARQL ORDER BY: unbound, blank nodes, IRIs, then
 /// literals; numerics by value, other literals by lexical form.
 pub(super) fn order_keys(term: &Term) -> Vec<Expr> {

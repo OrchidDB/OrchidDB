@@ -56,6 +56,14 @@ pub fn parse_query(source: &str) -> Result<Query, SparqlError> {
     Ok(SparqlParser::new().parse_query(source)?)
 }
 
+pub fn parse_update(source: &str, base_iri: Option<&str>) -> Result<spargebra::Update, SparqlError> {
+    let parser = SparqlParser::new();
+    let parser = if let Some(base) = base_iri {
+        parser.with_base_iri(base).map_err(|error| SparqlError::BaseIri(error.to_string()))?
+    } else { parser };
+    Ok(parser.parse_update(source)?)
+}
+
 pub fn parse_query_with_base(source: &str, base_iri: &str) -> Result<Query, SparqlError> {
     let parser = SparqlParser::new()
         .with_base_iri(base_iri)

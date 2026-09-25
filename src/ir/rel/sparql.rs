@@ -235,6 +235,8 @@ impl ScalarUDFImpl for DuckDbFunction {
 fn duck(name: &str, args: Vec<Expr>, return_type: DataType) -> Expr {
     let volatility = if matches!(name, "random" | "uuid") {
         Volatility::Volatile
+    } else if name == "now" {
+        Volatility::Stable
     } else {
         Volatility::Immutable
     };
