@@ -116,3 +116,14 @@ cargo run --example compile_sql
 Resolve metadata and compile against the same session/schema version used for
 execution. The dialect check cannot distinguish two databases using the same
 SQL dialect; engine identity and routing belong to your application.
+
+### Arrow execution boundary
+
+`SqlSession::Output` implements Arrow 58 `RecordBatchReader`: schema plus an iterator
+of `Result<RecordBatch, ArrowError>`. Drivers export native batches; OrchidDB does
+not convert cells into rows or collect the result. Retaining a Rust batch retains
+its reference-counted buffers across reader advancement and drop. Dropping the
+reader releases the session borrow. Connections, transaction policy, cancellation,
+and extensions remain application-owned. Batch transport does not promise that
+a particular database streams query execution. The DuckDB example uses its native
+`query_arrow` API, which may materialize execution inside DuckDB.

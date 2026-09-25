@@ -6,16 +6,20 @@
 //! the adapter. This is a single-engine boundary, not a federated coordinator.
 use crate::compiler::CompiledSql;
 pub use crate::ir::rel::sql::SqlDialect;
+pub use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
 /// An application-owned session. Results can borrow it (for example a cursor),
-/// or be owned batches/rows. The compiler never buffers or converts results.
+/// and expose native Arrow record batches. The compiler never buffers or converts results.
+/// Retained batches own reference-counted buffers and remain valid after advancing
+/// or dropping the reader. Drivers may materialize execution internally; this
+/// interface guarantees batch transport, not streaming database execution.
 ///
 /// Futures need not be `Send`, allowing thread-confined embedded connections.
 /// Implementations own cancellation and resource cleanup, including on drop.
 #[allow(async_fn_in_trait)]
 pub trait SqlSession {
     type Error;
-    type Output<'session>
+    type Output<'session>: RecordBatchReader
     where
         Self: 'session;
 

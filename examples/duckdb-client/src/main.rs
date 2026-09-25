@@ -1,4 +1,22 @@
-use duckdb::{Connection, Rows, Statement};
+use duckdb::arrow::{
+    array::StringArray,
+    datatypes::SchemaRef,
+    error::ArrowError,
+    record_batch::{RecordBatch, RecordBatchReader},
+};
+use duckdb::{Connection, Statement};
+struct Batches<'a>(duckdb::Arrow<'a>);
+impl Iterator for Batches<'_> {
+    type Item = Result<RecordBatch, ArrowError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(Ok)
+    }
+}
+impl RecordBatchReader for Batches<'_> {
+    fn schema(&self) -> SchemaRef {
+        self.0.get_schema()
+    }
+}
 use orchiddb::{
     compiler::{CompiledSql, compile},
     execution::{SqlSession, execute},
@@ -13,7 +31,7 @@ struct BorrowedDuckDb<'connection> {
 impl SqlSession for BorrowedDuckDb<'_> {
     type Error = duckdb::Error;
     type Output<'session>
-        = Rows<'session>
+        = Batches<'session>
     where
         Self: 'session;
     fn dialect(&self) -> SqlDialect {
@@ -22,9 +40,13 @@ impl SqlSession for BorrowedDuckDb<'_> {
     async fn query<'session>(
         &'session mut self,
         query: &CompiledSql,
-    ) -> Result<Rows<'session>, Self::Error> {
+    ) -> Result<Batches<'session>, Self::Error> {
         self.statement = Some(self.connection.prepare(&query.sql)?);
-        self.statement.as_mut().unwrap().query([])
+        self.statement
+            .as_mut()
+            .unwrap()
+            .query_arrow([])
+            .map(Batches)
     }
 }
 
@@ -59,10 +81,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut rows = execute(&mut session, &compiled).await?;
         let mut names = Vec::new();
-        while let Some(row) = rows.next()? {
-            let name: String = row.get(0)?;
-            println!("{name}");
-            names.push(name);
+        for batch in &mut rows {
+            let batch = batch?;
+            let column = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            for name in column.iter().flatten() {
+                println!("{name}");
+                names.push(name.to_owned());
+            }
         }
         assert_eq!(names, ["ADA", "GRACE"]);
     } // Cursor releases its borrow. No result buffering is imposed by OrchidDB.
