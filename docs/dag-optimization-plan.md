@@ -93,7 +93,7 @@ The initial implementation uses named semantic rules in `src/ir/rel/rules.rs`:
 
 - Propagate catalog-generated node/edge identity keys through DataFusion's functional dependencies. Mapped sources receive no inferred key declarations.
 - Eliminate ordered dedup only when a non-null unique determinant proves every key occurs at most once. Keep original input order and payload.
-- For count-only consumers, project semantic distinct keys (including correlation identity) and use relational DISTINCT instead of representative-selection windows. RDF terms retain their identity-aware path.
+- For count-only consumers, project semantic distinct keys (including correlation identity) and group by those keys instead of using representative-selection windows. Emit grouping directly: DataFusion 53 can incorrectly remove DISTINCT after fan-out when a Multi functional dependency covers the projected columns. RDF terms retain their identity-aware path.
 - Remove redundant full-row DISTINCT on the membership side of semi/anti SQL IR joins. Existence-only lowering also avoids building graph dedup windows when the representative is unobservable.
 - Fold scalar singleton unwind into a projection, preserving duplicate parents and retaining the existing behavior for shadowing and tagged values. Reuse DataFusion's existing unnest filter-pushdown rule.
 - Remove scalar cardinality guards only with a uniqueness proof; nullable unique columns do not suffice. Native correlated scalar SQL emission remains a follow-on alternative.

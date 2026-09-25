@@ -24,7 +24,9 @@ async fn run(query: &str) -> (Vec<Vec<String>>, String) {
     let plan = CypherPlanner::new()
         .plan(&parse_query(query).unwrap())
         .unwrap();
-    let lowered = RelBackend::new().lower(&plan, &graph()).unwrap();
+    let mut lowered = RelBackend::new().lower(&plan, &graph()).unwrap();
+    lowered.plan = datafusion::prelude::SessionContext::new()
+        .state().optimize(&lowered.plan).unwrap();
     let explain = lowered.plan.display_indent().to_string();
     let result = execute_lowered_sql(&mut DuckDbExecutor::default(), &lowered)
         .await
@@ -48,7 +50,7 @@ async fn count_distinct_keeps_null_group_and_avoids_representative_windows() {
         run("UNWIND [1,1,null,null,2] AS x WITH DISTINCT x RETURN count(*) AS n").await;
     assert_eq!(rows, vec![vec!["3"]]);
     assert!(!explain.contains("WindowAggr"), "{explain}");
-    assert!(explain.contains("Distinct"), "{explain}");
+    assert!(explain.contains("groupBy=[[x]]"), "{explain}");
 }
 
 #[tokio::test]
@@ -113,4 +115,19 @@ async fn production_gremlin_distinct_and_existence_keep_bulk_and_duplicates() {
         .unwrap();
         assert_eq!(rows[0][0]["value"], expected, "{query}");
     }
+}
+
+#[tokio::test]
+async fn optimized_fanout_distinct_count_retains_grouping() {
+    // One person has two outgoing edges. Count people once, not edges twice.
+    let (rows, explain) = run(
+        "MATCH (p:Person)-[:KNOWS]->(q) WITH DISTINCT p RETURN count(*) AS n"
+    ).await;
+    assert_eq!(rows, vec![vec!["1"]], "{explain}");
+    assert!(!explain.contains("WindowAggr"), "{explain}");
+    assert!(explain.matches("Aggregate:").count() >= 2, "{explain}");
+    let (rows, _) = run(
+        "MATCH (p:Person)-[:KNOWS]->(q) RETURN count(*) AS n"
+    ).await;
+    assert_eq!(rows, vec![vec!["2"]]);
 }

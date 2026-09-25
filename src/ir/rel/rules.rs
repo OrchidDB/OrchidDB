@@ -113,9 +113,11 @@ impl LoweringContext<'_> {
         if unique_on(&lowered.plan, &unique) {
             return Ok(lowered);
         }
+        // Emit grouping directly. DataFusion 53's ReplaceDistinctWithAggregate
+        // can discard DISTINCT using a Multi dependency inherited from a
+        // fan-out join; that dependency does not prove row uniqueness.
         let plan = LogicalPlanBuilder::from(lowered.plan.clone())
-            .project(unique)?
-            .distinct()?
+            .aggregate(unique, Vec::<Expr>::new())?
             .build()?;
         Ok(lowered.with_plan(plan))
     }
