@@ -4,6 +4,8 @@ use orchiddb::{
     ir::rel::sql::SqlDialect,
 };
 
+use arrow::{datatypes::Schema, record_batch::RecordBatchIterator};
+use std::sync::Arc;
 struct Session {
     calls: usize,
     sql: String,
@@ -11,17 +13,22 @@ struct Session {
 }
 impl SqlSession for Session {
     type Error = &'static str;
-    type Output<'a> = &'a str;
+    type Output<'a> = RecordBatchIterator<
+        std::iter::Empty<Result<arrow::record_batch::RecordBatch, arrow::error::ArrowError>>,
+    >;
     fn dialect(&self) -> SqlDialect {
         SqlDialect::DuckDb
     }
-    async fn query<'a>(&'a mut self, query: &CompiledSql) -> Result<&'a str, Self::Error> {
+    async fn query<'a>(&'a mut self, query: &CompiledSql) -> Result<Self::Output<'a>, Self::Error> {
         self.calls += 1;
         if self.fail {
             return Err("driver failure");
         }
         self.sql = query.sql.clone();
-        Ok(&self.sql)
+        Ok(RecordBatchIterator::new(
+            std::iter::empty(),
+            Arc::new(Schema::empty()),
+        ))
     }
 }
 fn query() -> CompiledSql {
@@ -39,9 +46,11 @@ async fn lends_results_and_preserves_the_callers_session() {
         sql: String::new(),
         fail: false,
     };
-    assert_eq!(execute(&mut session, &query()).await.unwrap(), "SELECT 42");
+    assert_eq!(execute(&mut session, &query()).await.unwrap().count(), 0);
+    assert_eq!(session.sql, "SELECT 42");
     assert_eq!(session.calls, 1);
-    assert_eq!(execute(&mut session, &query()).await.unwrap(), "SELECT 42");
+    assert_eq!(execute(&mut session, &query()).await.unwrap().count(), 0);
+    assert_eq!(session.sql, "SELECT 42");
     assert_eq!(session.calls, 2);
 }
 #[tokio::test]
