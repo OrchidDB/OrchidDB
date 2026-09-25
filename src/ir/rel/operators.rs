@@ -68,6 +68,13 @@ impl LoweringContext<'_> {
             // but its SQL unparser emits an empty SELECT list when it is one
             // side of a cross join. A private, non-null dummy column gives
             // the SQL representation a concrete one-row relation.
+            // External SQL bindings cannot install an internal one-row table.
+            // Project a typed constant so joined SQL has a concrete SELECT list.
+            GraphOneRow if self.options.mapping.is_some() => LoweredNode::new(
+                LogicalPlanBuilder::empty(true)
+                    .project(vec![lit(0_i64).alias("__w_one_row")])?
+                    .build()?,
+            ),
             GraphOneRow => self.scan_batches(
                 "one_row",
                 vec![RecordBatch::try_new(

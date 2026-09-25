@@ -16,6 +16,12 @@ default or named graph selection; other RDF term kinds remain explicit errors.
 Language coverage is partial. Managed writes use the graph runtime and persist
 changed records transactionally in DuckDB, with checkpoints for compaction. See [the engine API and its current limits](docs/engine.md).
 
+For caller-owned SQL engines, [`compiler`](docs/compiler.md) generates SQL from
+schema metadata without connecting to or bundling DuckDB. Build this API with
+`default-features = false`; client bindings own connection setup, execution,
+transactions, and results. DuckDB and PostgreSQL SQL rendering are available;
+cross-engine federation is not implemented.
+
 The Rust package and CLI are named `orchiddb`. Build from this repository;
 no crates.io release has been published. See [installation](https://docs.orchiddb.com/installation.html).
 

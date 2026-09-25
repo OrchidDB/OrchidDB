@@ -6,6 +6,7 @@
 //! `crate::ir::interpreter` runs them against an Apache Arrow backed
 //! `PropertyGraph`.
 
+pub mod compiler;
 pub mod grammar;
 pub mod ir;
 pub mod language;
