@@ -14,7 +14,7 @@ JavaScript do not load in the book.
 Install the pinned mdBook binary on macOS or Linux:
 
 ```sh
-bash website/scripts/install-mdbook.sh
+bash website/docs/install-mdbook.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -87,7 +87,12 @@ of all chapters in the mdBook search index.
 - TLS: the `orchiddb.com` wildcard ACM certificate, also covering legacy domains.
 
 The site uses `.html` URLs and needs no application server or routing function.
-GitHub Actions installs pinned mdBook, then uses
-[the deployment script](../scripts/deploy.sh) to build and publish both sites.
-The workflow runs no tests or validation; perform the checks locally first.
-See [the website README](../README.md) for manual publishing instructions.
+GitHub Actions installs pinned mdBook, then uses [deploy.sh](deploy.sh) to publish only documentation. The workflow is `.github/workflows/docs.yml`; its existing AWS secrets stay in `OrchidDB/OrchidDB`.
+
+Manual publication from the core repository:
+
+```sh
+AWS_PROFILE=personal bash website/docs/deploy.sh
+```
+
+The landing page and installer are maintained/deployed independently from the private [OrchidDB/OrchidDB-landing](https://github.com/OrchidDB/OrchidDB-landing) repository. Docs builds need no checkout or assets from that repository. The docs publishing job writes only `documentation/` and invalidates only the docs distribution.

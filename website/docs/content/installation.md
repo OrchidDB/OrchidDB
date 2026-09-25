@@ -20,7 +20,7 @@ To select an exact release and directory:
 curl -fsSL https://install.orchiddb.com | ORCHIDDB_VERSION=v0.1.0 ORCHIDDB_INSTALL_DIR="$HOME/.local/bin" bash
 ```
 
-Without a version, the installer selects the most recently created published release, including prereleases. Review the [installer source](https://github.com/OrchidDB/OrchidDB/blob/main/website/install/install.sh) or download it before running it. Checksums detect corrupted downloads; they are provided by the same release publisher as the archive.
+Without a version, the installer selects the most recently created published release, including prereleases. Review the [installer source](https://install.orchiddb.com/) or download it before running it. Checksums detect corrupted downloads; they are provided by the same release publisher as the archive.
 
 ## Language clients
 

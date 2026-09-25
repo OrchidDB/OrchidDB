@@ -21,9 +21,9 @@ def build():
         subprocess.run([mdbook, 'clean', str(ROOT)], check=True)
         subprocess.run([mdbook, 'build', str(ROOT)], check=True)
     except FileNotFoundError:
-        raise SystemExit('mdbook is required. Run website/scripts/install-mdbook.sh or set MDBOOK to its executable.')
+        raise SystemExit('mdbook is required. Run website/docs/install-mdbook.sh or set MDBOOK to its executable.')
     shutil.copytree(ROOT / 'downloads', OUT / 'downloads', dirs_exist_ok=True)
-    shutil.copyfile(ROOT.parent / 'favicon.svg', OUT / 'favicon.svg')
+    shutil.copyfile(ROOT / 'assets/favicon.svg', OUT / 'favicon.svg')
 
     # The large evidence explorer stays outside the book and its search index.
     from conformance_page import render

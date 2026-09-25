@@ -1,22 +1,22 @@
-name: Publish static websites
+name: Publish documentation
 
 on:
   push:
     branches: [main]
     paths:
-      - 'website/**'
+      - 'website/docs/**'
       - 'conformance/upstream-results/**'
       - 'conformance/upstream/catalog.json'
       - 'conformance/upstream/sources.json'
       - 'conformance/data/**'
-      - '.github/workflows/website.yml'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: websites-${{ github.ref }}
+  group: documentation-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
           python-version: '3.12'
       - name: Install mdBook
         run: |
-          bash website/scripts/install-mdbook.sh
+          bash website/docs/install-mdbook.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Authenticate with personal AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -41,8 +41,8 @@ jobs:
           aws-access-key-id: ${{ secrets.ORCHIDDB_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.ORCHIDDB_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - name: Build and publish static sites and committed results
-        run: bash website/scripts/deploy.sh
-      - name: Record published sites
+      - name: Build and publish documentation and committed results
+        run: bash website/docs/deploy.sh
+      - name: Record published documentation
         run: |
-          echo 'Published https://orchiddb.com/, https://docs.orchiddb.com/, and https://install.orchiddb.com/' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Published https://docs.orchiddb.com/' >> "$GITHUB_STEP_SUMMARY"
