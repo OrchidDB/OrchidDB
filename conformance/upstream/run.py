@@ -129,6 +129,10 @@ def main():
   build['adapter_source']=file_identity(ROOT/'upstream'/('cypher.py' if args.engine=='neo4j' else 'sparql.py'))
   build['adapter_support']=file_identity(ROOT/'upstream'/('cypher_driver.py' if args.engine=='neo4j' else 'sparql_updates.py'))
   if args.engine=='neo4j':
+   import neo4j
+   build['driver_version']=neo4j.__version__
+   build['adapter_diagnostics']=file_identity(ROOT/'upstream/neo4j_errors.py')
+   build['diagnostic_source_revision']='54a7dcf7c2501b31866199143364c5332da8936f'
    build['image']='neo4j:2026.09.0-community@sha256:29efb5ebfb51ec75545a945bc3ac0bdfbeb6bc2686a8ae5053fe0f4dcc926441'
    with adapter.driver.session() as session:
     build['server_components']=[dict(row) for row in session.run('CALL dbms.components() YIELD name, versions, edition RETURN name, versions, edition')]
