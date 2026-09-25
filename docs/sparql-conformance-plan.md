@@ -42,19 +42,29 @@ the same execution contract.
 
 ### Measured progress
 
-Revision `7a193ee`: **844 pass, 36 fail, 94 unsupported, 77 skipped,
-74 not applicable**. Apache Jena on the same fixture adapter: **914 pass,
-60 fail, 77 skipped, 74 not applicable**. These are complete local runs.
+Revision `f3889f1`: **974 pass, zero fail, zero unsupported, 77 skipped,
+74 not applicable**. Apache Jena with the same assertion rules: **948 pass,
+26 fail, 77 skipped, 74 not applicable**. These are complete local runs.
+The 974 executed cases all pass; this is not complete coverage of the 1,125-case
+catalog. The remaining cases retain their original statuses and denominator.
 
 Implemented query-base IRI resolution, URI encoding, SHA-384/512, regex
 replacement and flags, date-time comparisons, decimal division/averages,
 string casts, variable-free results, named graph enumeration, and a mapped
-registry for empty graph names. SPARQL Update syntax uses the production
-parser. Update execution remains a separate implementation group below.
+registry for empty graph names. Query and update syntax use the production
+parser with three local, regression-tested fixes. Mapped updates now execute
+against explicitly writable tables, including predicate partitions, snapshot
+WHERE evaluation, DELETE before INSERT, graph lifecycle, and atomic rollback.
+WITH keeps other named graphs visible and update subqueries preserve all outer
+bindings. Five mapped-write regressions cover physical multi-table effects,
+database constraint failures, graph identity, and nested query scopes.
 
-Two shared adapter corrections preserve the original fixtures: explicit
-`rs:index` result ordering, and lossless Turtle numeric tokens. Both engines
-use the same parser and assertion rules; RDF literal identity was not relaxed.
+Shared assertions preserve fixture lexical forms, honor explicit `rs:index`
+ordering and `mf:LaxCardinality`, and use pinned Oxigraph 0.5.11 numeric result
+normalization for equal datatypes. Raw actual/expected terms remain recorded;
+there is no epsilon or datatype promotion in assertions. Both engines use the
+same rules. See `conformance/upstream/sparql-assertions.md` for the upstream
+sources and exact comparison contract.
 
 During implementation, run SPARQL only. Save the complete Cypher and Gremlin
 regression suites for the end, as requested by the user.
