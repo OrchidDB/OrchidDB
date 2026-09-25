@@ -537,6 +537,9 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
                 write_node(buf, input, depth + 1);
             }
         }
+        Node::GraphSparqlGraphNames { dataset, graph_scope } => {
+            writeln!(buf, "GraphSparqlGraphNames(dataset=[{dataset}], graphScope=[{graph_scope:?}])").ok();
+        }
         Node::GraphSparqlTriplePattern {
             dataset,
             graph_scope,

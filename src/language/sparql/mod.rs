@@ -76,6 +76,7 @@ pub struct SparqlPlanner {
     dataset: String,
     ontology: Option<Arc<OntologyMapping>>,
     query_dataset: Option<QueryDataset>,
+    base_iri: Option<String>,
     /// Fresh-name source for EXISTS marks nested inside expressions.
     exists_marks: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -92,6 +93,7 @@ impl SparqlPlanner {
             dataset: dataset.into(),
             ontology: None,
             query_dataset: None,
+            base_iri: None,
             exists_marks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
@@ -106,6 +108,12 @@ impl SparqlPlanner {
     }
 
     pub fn plan(&self, query: &Query) -> Result<GraphPlan, SparqlError> {
+        let mut planner = self.clone();
+        planner.base_iri = query.base_iri().map(ToString::to_string);
+        planner.plan_query(query)
+    }
+
+    fn plan_query(&self, query: &Query) -> Result<GraphPlan, SparqlError> {
         match query {
             Query::Select {
                 dataset, pattern, ..

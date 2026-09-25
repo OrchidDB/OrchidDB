@@ -11,6 +11,19 @@ impl SparqlPlanner {
         patterns: &[TriplePattern],
         graph_scope: RdfGraphScope,
     ) -> Lowered {
+        if patterns.is_empty() && matches!(&graph_scope,
+            RdfGraphScope::NamedGraph(_) | RdfGraphScope::NamedGraphVariable(_)
+            | RdfGraphScope::DatasetNamedGraph { .. } | RdfGraphScope::DatasetNamedGraphVariable { .. }) {
+            let variables = match &graph_scope {
+                RdfGraphScope::NamedGraphVariable(variable)
+                | RdfGraphScope::DatasetNamedGraphVariable { variable, .. } =>
+                    BTreeSet::from([variable.clone()]),
+                _ => BTreeSet::new(),
+            };
+            return Lowered { node: Node::GraphSparqlGraphNames {
+                dataset: self.dataset.clone(), graph_scope,
+            }, variables, identity_variables: BTreeSet::new(), projection: None };
+        }
         let mut variables = BTreeSet::new();
         let mut node: Option<Node> = None;
         for pattern in patterns {

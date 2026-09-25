@@ -355,6 +355,13 @@ impl Lowerer<'_, '_> {
                 let a = &terms[0];
                 Term::iri(a.dt.clone()).only_if(a.is_literal())
             }
+            "sparql_resolve_iri" => {
+                arity(2)?;
+                let a = &terms[0];
+                Term::iri(duck_str("__crabgraph_sparql_scalar", vec![
+                    s("resolve_iri"), a.value.clone(), terms[1].value.clone(), s(""), s("")
+                ])).only_if(a.kind.clone().eq(s(KIND_IRI)).or(a.is_simple()))
+            }
             "iri" | "uri" => {
                 arity(1)?;
                 let a = &terms[0];
@@ -584,7 +591,8 @@ impl Lowerer<'_, '_> {
                 arity(1)?;
                 let a = &terms[0];
                 Term::string(duck_str("__crabgraph_sparql_scalar",
-                    vec![s(name), a.value.clone(), s(""), s(""), s("")])).only_if(a.is_simple())
+                    vec![s(name), a.value.clone(), s(""), s(""), s("")]))
+                    .only_if(if name == "encode_for_uri" { a.is_string() } else { a.is_simple() })
             }
             "timezone" => {
                 arity(1)?;

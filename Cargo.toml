@@ -34,6 +34,8 @@ duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow",
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
+oxiri = "0.2"
+oxsdatatypes = "0.2.2"
 postgres = { version = "0.19", optional = true }
 regex = "1"
 sha2 = "0.10"

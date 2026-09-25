@@ -325,6 +325,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphEmpty
         | GraphCorrelate { .. }
         | GraphSparqlTriplePattern { .. }
+        | GraphSparqlGraphNames { .. }
         | GraphRdfPropertyPath { .. } => Vec::new(),
     }
 }

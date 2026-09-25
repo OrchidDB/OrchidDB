@@ -644,7 +644,16 @@ pub fn execute_prepared(
         )));
     }
     let rows = executor.run_with_tables(&prepared.tables, &prepared.setup, &prepared.query)?;
-    let batch = rows_to_batch(&prepared.schema, &rows)?;
+    let batch = if prepared.schema.fields().is_empty() {
+        // SQL represents the empty tuple with a physical unit projection.
+        // Its value is not part of the logical schema, but every row is.
+        RecordBatch::try_new_with_options(
+            Arc::clone(&prepared.schema), Vec::new(),
+            &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows.len())),
+        )?
+    } else {
+        rows_to_batch(&prepared.schema, &rows)?
+    };
     Ok(ReturnedBatches {
         fields: prepared.fields.clone(),
         result_form: prepared.result_form,

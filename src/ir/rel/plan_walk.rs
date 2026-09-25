@@ -121,6 +121,7 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphEmpty
         | GraphCorrelate { .. }
         | GraphSparqlTriplePattern { .. }
+        | GraphSparqlGraphNames { .. }
         | GraphRdfPropertyPath { .. } => Vec::new(),
     }
 }
@@ -129,6 +130,7 @@ pub(super) fn unsupported_node_name(node: &Node) -> &'static str {
     match node {
         Node::GraphCorrelate { .. } => "GraphCorrelate",
         Node::GraphSparqlTriplePattern { .. } => "GraphSparqlTriplePattern",
+        Node::GraphSparqlGraphNames { .. } => "GraphSparqlGraphNames",
         Node::GraphPathPattern { .. } => "GraphPathPattern",
         Node::GraphRdfPropertyPath { .. } => "GraphRdfPropertyPath",
         Node::GraphRepeat { .. } => "GraphRepeat",
