@@ -352,6 +352,7 @@ pub(crate) async fn execute_with_extensions(
     timeout: Option<std::time::Duration>,
     resources: Option<&DagSession>,
 ) -> RelResult<(ReturnedBatches, DagStats)> {
+    let logical_phase = super::profile::Phase::new("logical_optimize");
     let started = std::time::Instant::now();
     let owned;
     let resources = match resources {
@@ -368,6 +369,8 @@ pub(crate) async fn execute_with_extensions(
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
     let optimized = query_state.optimize(&lowered.plan)?;
+    drop(logical_phase);
+    let sql_phase = super::profile::Phase::new("sql_prepare");
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
     let plan = {
@@ -382,6 +385,8 @@ pub(crate) async fn execute_with_extensions(
         });
         optimized.clone()
     };
+    drop(sql_phase);
+    let physical_phase = super::profile::Phase::new("physical_plan");
     let prepared_at = std::time::Instant::now();
     #[cfg(feature = "duckdb")]
     extensions.push(Arc::new(RegionPlanner {
@@ -394,6 +399,8 @@ pub(crate) async fn execute_with_extensions(
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
         .to_string();
+    drop(physical_phase);
+    let _execute_phase = super::profile::Phase::new("dag_execute");
     let planned_at = std::time::Instant::now();
     let schema = physical.schema();
     let mut batches = datafusion::physical_plan::collect(physical, Arc::new(TaskContext::from(&query_state))).await?;

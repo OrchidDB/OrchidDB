@@ -29,6 +29,7 @@ bigdecimal = "0.4"
 datafusion = "53.1.0"
 datafusion-sql = "53.1.0"
 duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow", "vscalar"], optional = true }
+libc = "0.2"
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
