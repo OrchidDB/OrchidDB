@@ -5,10 +5,10 @@ from collections import Counter
 from html import escape
 from pathlib import Path
 
-PRODUCTS = {'crabgraph': 'Crabgraph', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph'}
-SUITES = [('tinkerpop', 'Gremlin', tuple(PRODUCTS)),
-          ('opencypher', 'Cypher', ('crabgraph', 'puppygraph')),
-          ('rdf', 'SPARQL', ('crabgraph',))]
+PRODUCTS = {'crabgraph': 'Crabgraph', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph', 'neo4j': 'Neo4j Community', 'jena': 'Apache Jena TDB2'}
+SUITES = [('tinkerpop', 'Gremlin', ('crabgraph', 'sqlg', 'puppygraph', 'janusgraph')),
+          ('opencypher', 'Cypher', ('crabgraph', 'neo4j', 'puppygraph')),
+          ('rdf', 'SPARQL', ('crabgraph', 'jena'))]
 
 
 def passed_runtime(results):
