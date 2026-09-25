@@ -2,7 +2,9 @@
 use super::*;
 
 pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Option<Value>> {
-    if matches!(name, "cypher_live_property" | "cypher_labels" | "cypher_type") {
+    // A relationship's immutable type belongs to its retained identity and
+    // remains readable after deletion. Properties and node labels do not.
+    if matches!(name, "cypher_live_property" | "cypher_labels") {
         if let Some(value) = args.first() {
             let live = match value {
                 Value::Node { label, id } => graph.node_is_live(label, *id),
