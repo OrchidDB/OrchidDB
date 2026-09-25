@@ -5,6 +5,9 @@ use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, Cyphe
 fn exact_semantic_validators_publish_structured_categories() {
     for (query, detail) in [
         ("RETURN missing", "UndefinedVariable"),
+        ("MATCH (n) WHERE n RETURN n", "InvalidArgumentType"),
+        ("MATCH (n) RETURN (n)-->()", "UnexpectedSyntax"),
+        ("MATCH (n) RETURN [(n)-->(m) WHERE m | m]", "InvalidArgumentType"),
         ("MATCH (n) RETURN foo(n)", "UnknownFunction"),
         ("MATCH (n) RETURN n.x + count(*)", "AmbiguousAggregationExpression"),
         ("MATCH (n) WITH n.x + n.y, count(*) AS c ORDER BY n.x + n.y + count(*) RETURN c", "AmbiguousAggregationExpression"),
@@ -80,7 +83,22 @@ fn aggregate_collection_is_allowed_outside_iteration_body() {
 }
 
 #[test]
+fn pattern_predicates_are_valid_in_predicate_positions() {
+    for query in [
+        "MATCH (n) WHERE (n)-->() RETURN n",
+        "MATCH (n) RETURN [(n)-->(m) WHERE (m)-->() | m]",
+        "MATCH (n) RETURN NOT (n)-->() AS absent",
+    ] {
+        let parsed = parse_query(query).unwrap();
+        CypherPlanner::new().plan(&parsed).unwrap_or_else(|error| panic!("{query}: {error}"));
+    }
+}
+
+#[test]
 fn parser_reports_lexical_and_syntax_categories() {
+    for query in ["RETURN [, ]", "RETURN [1,,2]", "RETURN [1,]"] {
+        assert_eq!(parse_query(query).unwrap_err().classification(), Some(("SyntaxError", "UnexpectedSyntax")), "{query}");
+    }
     for query in ["RETURN 123abc", "RETURN 0x", "RETURN 0x1A2b3j4D5E6f7"] {
         let error=parse_query(query).unwrap_err();
         assert_eq!(error.classification(),Some(("SyntaxError","InvalidNumberLiteral")),"{query}: {error}");

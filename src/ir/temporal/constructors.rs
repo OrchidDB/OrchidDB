@@ -28,6 +28,13 @@ pub fn construct(kind: &str, value: &Value) -> Result<Value> {
         return parse(kind, text).map(Value::Temporal);
     }
     if let Value::Temporal(t) = value {
+        if matches!(t, TemporalValue::WideDate(_) | TemporalValue::WideLocalDateTime(..)) {
+            if kind == "date" { return Ok(Value::Temporal(t.calendar_date().unwrap().date_value())); }
+            if kind == "localdatetime" {
+                return Ok(Value::Temporal(t.calendar_date().unwrap().datetime_value(
+                    t.time().ok_or("Cannot project time")?)));
+            }
+        }
         return Ok(Value::Temporal(match kind {
             "date" => TemporalValue::Date(t.date().ok_or("Cannot project date")?),
             "localtime" => TemporalValue::LocalTime(t.time().ok_or("Cannot project time")?),
@@ -64,6 +71,31 @@ pub fn construct(kind: &str, value: &Value) -> Result<Value> {
     let Value::Map(fields) = value else {
         return Err("Temporal constructor expects a string, map or temporal value".into());
     };
+    if matches!(kind, "date" | "localdatetime") {
+        let inherited = temporal(fields, &["datetime", "date"]).and_then(TemporalValue::calendar_date);
+        let year = number(fields, "year", inherited.map(|date| i64::from(date.year)).unwrap_or(0))?;
+        let year = i32::try_from(year).map_err(|_| "Year outside calendar range")?;
+        if NaiveDate::from_ymd_opt(year, 1, 1).is_none() {
+            let date = super::CalendarDate::new(year, 1, 1)?;
+            let proxy_year = date.representative().year();
+            let mut fields = fields.clone();
+            fields.insert("year".into(), Value::Int(i64::from(proxy_year)));
+            for value in fields.values_mut() {
+                if let Value::Temporal(t) = value {
+                    if let Some(d) = t.calendar_date() {
+                        let d = d.representative();
+                        *t = if let Some(time) = t.time() { TemporalValue::LocalDateTime(d.and_time(time)) }
+                            else { TemporalValue::Date(d) };
+                    }
+                }
+            }
+            let Value::Temporal(proxy) = construct(kind, &Value::Map(fields))? else { unreachable!() };
+            let projected = proxy.date().ok_or("Expected calendar date")?;
+            let date = super::CalendarDate::new(year + projected.year() - proxy_year, projected.month(), projected.day())?;
+            return Ok(Value::Temporal(if kind == "date" { date.date_value() }
+                else { date.datetime_value(proxy.time().ok_or("Expected time")?) }));
+        }
+    }
     let fields = fields
         .iter()
         .filter(|(key, _)| {

@@ -34,6 +34,10 @@ pub enum CypherParseError {
     InvalidArgumentPassingMode,
     #[error("parse: invalid relationship range")]
     InvalidRelationshipPattern,
+    #[error("parse: invalid unicode escape in string literal")]
+    InvalidUnicodeLiteral,
+    #[error("parse: invalid unicode operator character")]
+    InvalidUnicodeCharacter,
     #[error("parse: {0}")]
     Parse(String),
     #[error("unsupported cypher construct: {0}")]
@@ -47,6 +51,8 @@ impl CypherParseError {
             Self::InvalidNumberLiteral(_) => Some(("SyntaxError","InvalidNumberLiteral")),
             Self::InvalidArgumentPassingMode => Some(("SyntaxError","InvalidArgumentPassingMode")),
             Self::InvalidRelationshipPattern => Some(("SyntaxError","InvalidRelationshipPattern")),
+            Self::InvalidUnicodeLiteral => Some(("SyntaxError","InvalidUnicodeLiteral")),
+            Self::InvalidUnicodeCharacter => Some(("SyntaxError","InvalidUnicodeCharacter")),
             Self::Unsupported(_) => None,
         }
     }
@@ -106,6 +112,7 @@ pub fn parse_syntax(input: &str) -> Result<CypherSyntax> {
 }
 
 fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)> {
+    token_validation::validate_source(input)?;
     // Check actual lexer tokens so brackets inside strings/comments do not
     // count. Reject resource-exhausting nesting before recursive descent.
     let tokens = tokenize(input)?;
@@ -113,11 +120,14 @@ fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)
     // Reject a numeric token immediately followed by identifier characters.
     // This catches malformed decimal/hex/octal literals without inspecting
     // strings, comments, or the parser's human-readable error wording.
-    for pair in tokens.windows(2) {
+    for (index, pair) in tokens.windows(2).enumerate() {
         let [number,suffix]=pair else {unreachable!()};
         if matches!(number.symbolic_name,Some("DecimalInteger"|"HexInteger"|"OctalInteger"|"ExponentDecimalReal"|"RegularDecimalReal"))
             && matches!(suffix.symbolic_name,Some("UnescapedSymbolicName"|"IdentifierStart"|"IdentifierPart"))
             && number.line==suffix.line && number.column+number.text.len() as isize==suffix.column {
+            if tokens[index+2..].iter().find(|token| !token.text.trim().is_empty()).is_some_and(|token| token.text == ":") {
+                return Err(CypherParseError::Parse("Map keys must be identifiers or strings".into()));
+            }
             return Err(CypherParseError::InvalidNumberLiteral(format!("{}{}",number.text,suffix.text)));
         }
     }

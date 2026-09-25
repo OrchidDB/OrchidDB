@@ -127,3 +127,8 @@ pub fn is_native_aggregate(name: &str) -> bool {
 pub(crate) fn is_registered_function(name: &str) -> bool {
     selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
 }
+
+pub(crate) fn is_volatile_function(name: &str) -> bool {
+    selected_operator_table().is_ok_and(|catalog| catalog.overloads(name).iter()
+        .any(|overload| overload.stability.as_deref().is_some_and(|stability| stability.eq_ignore_ascii_case("volatile"))))
+}

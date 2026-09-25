@@ -1,6 +1,9 @@
 //! Typed openCypher temporal values. The legacy Gremlin DateTime value
 //! retains its existing representation and semantics.
 mod arithmetic;
+mod wide_arithmetic;
+mod calendar;
+pub use calendar::CalendarDate;
 mod components;
 mod constructors;
 mod parsing;

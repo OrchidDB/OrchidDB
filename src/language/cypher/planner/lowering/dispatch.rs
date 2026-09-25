@@ -328,7 +328,7 @@ fn lower_create_properties(
         let owned = std::mem::replace(input, Node::GraphEmpty);
         let (next, lowered) = project::lower_expr_with_input(lowerer, owned, properties)?;
         *input = next;
-        Ok(Some(lowered))
+        Ok(Some(IrExpr::Call { name: "cypher_property_map".into(), args: vec![lowered] }))
     })
 }
 
@@ -486,7 +486,7 @@ fn lower_set_items(
                         target,
                         key: key.clone(),
                         mode: SetMode::Property,
-                        value,
+                        value: IrExpr::Call { name: "cypher_property_value".into(), args: vec![value] },
                     });
                 }
                 SetItem::Replace { variable, value } | SetItem::Merge { variable, value } => {
@@ -510,7 +510,9 @@ fn lower_set_items(
                         target,
                         key: String::new(),
                         mode,
-                        value: IrExpr::Call { name: "properties".into(), args: vec![value] },
+                        value: IrExpr::Call { name: "cypher_property_map".into(), args: vec![
+                            IrExpr::Call { name: "properties".into(), args: vec![value] }
+                        ] },
                     });
                 }
                 SetItem::Labels { variable, labels, remove } => {
@@ -554,6 +556,7 @@ fn lower_delete(
             detach: clause.detach,
             input: input.boxed(),
         };
+        lowerer.check_live_properties = true;
         lowerer.record_current_imports(lowerer.visible_fields());
         lowerer.record_current_outputs(Vec::new());
         Ok(node)

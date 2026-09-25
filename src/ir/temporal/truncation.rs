@@ -12,6 +12,25 @@ pub fn truncate(kind: &str, unit: &str, input: &Value, overrides: &Value) -> Res
     let Value::Map(overrides) = overrides else {
         return Err("Temporal overrides must be a map".into());
     };
+    if let TemporalValue::WideDate(date) | TemporalValue::WideLocalDateTime(date, _) = input {
+        let mut representative = date.representative();
+        let mut year_delta = date.year - representative.year();
+        if unit.eq_ignore_ascii_case("millennium") {
+            let year = date.year.div_euclid(1000) * 1000;
+            let base = super::CalendarDate::new(year, 1, 1)?;
+            representative = base.representative();
+            year_delta = year - representative.year();
+        }
+        let proxy = if let Some(time) = input.time() { TemporalValue::LocalDateTime(representative.and_time(time)) }
+            else { TemporalValue::Date(representative) };
+        let actual_unit = if unit.eq_ignore_ascii_case("millennium") { "year" } else { unit };
+        let Value::Temporal(result) = truncate(kind, actual_unit, &Value::Temporal(proxy), &Value::Map(overrides.clone()))?
+            else { return Err("Expected temporal truncation result".into()); };
+        let projected = result.date().ok_or("Expected calendar result")?;
+        let date = super::CalendarDate::new(projected.year() + year_delta, projected.month(), projected.day())?;
+        return Ok(Value::Temporal(if let Some(time) = result.time() { date.datetime_value(time) }
+            else { date.date_value() }));
+    }
     let unit = unit.to_ascii_lowercase();
     let date = input.date();
     let time = input.time();
@@ -72,6 +91,7 @@ pub fn truncate(kind: &str, unit: &str, input: &Value, overrides: &Value) -> Res
         }
     };
     let base = match input {
+        TemporalValue::WideDate(_) | TemporalValue::WideLocalDateTime(..) => unreachable!("wide calendar handled above"),
         TemporalValue::Date(_) => TemporalValue::Date(date.ok_or("Date required")?),
         TemporalValue::LocalTime(_) => TemporalValue::LocalTime(time),
         TemporalValue::Time(_, o) => TemporalValue::Time(time, *o),

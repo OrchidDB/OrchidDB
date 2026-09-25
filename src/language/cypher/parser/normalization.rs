@@ -8,9 +8,7 @@ use operators::{
 mod functions;
 use functions::{normalize_keyword_function_names, normalize_named_function_args};
 mod lists;
-use lists::{
-    normalize_colon_slices, normalize_elided_list_elements, normalize_lambda_list_functions,
-};
+use lists::{normalize_colon_slices, normalize_lambda_list_functions};
 
 pub(super) fn normalize_cypher_extensions(input: &str) -> String {
     let (protected, identifiers) = protect_escaped_identifiers(input);
@@ -23,7 +21,6 @@ pub(super) fn normalize_cypher_extensions(input: &str) -> String {
     let normalized = normalize_spaced_unary_signs(&normalized);
     let normalized = normalize_postfix_factorial(&normalized);
     let normalized = normalize_bitwise_operators(&normalized);
-    let normalized = normalize_elided_list_elements(&normalized);
     let mut normalized = normalize_colon_slices(&normalized);
     for (placeholder, original) in identifiers {
         normalized = normalized.replace(&placeholder, &original);

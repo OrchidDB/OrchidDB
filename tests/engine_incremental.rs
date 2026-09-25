@@ -53,6 +53,30 @@ fn cleanup(path: &Path) {
     let _ = std::fs::remove_file(format!("{}.wal", path.display()));
 }
 
+#[tokio::test]
+async fn batched_delta_upserts_preserve_updates_rollback_and_reopen() {
+    let file = path("batched-upserts");
+    {
+        let mut engine = GraphEngine::open(&file).unwrap();
+        engine.cypher("UNWIND range(0,599) AS i CREATE (:Batch {i:i, value:0})").await.unwrap();
+        engine.cypher("MATCH (n:Batch) SET n.value = n.i + 1").await.unwrap();
+        engine.begin().unwrap();
+        engine.cypher("MATCH (n:Batch) DELETE n").await.unwrap();
+        engine.rollback().unwrap();
+        assert_eq!(rows(engine.cypher("MATCH (n:Batch) RETURN count(n), sum(n.value)").await.unwrap()), vec!["600|180300"]);
+    }
+    {
+        let mut engine = GraphEngine::open(&file).unwrap();
+        assert_eq!(rows(engine.cypher("MATCH (n:Batch) RETURN count(n), sum(n.value)").await.unwrap()), vec!["600|180300"]);
+        engine.cypher("MATCH (n:Batch) WHERE n.i < 100 DELETE n").await.unwrap();
+    }
+    {
+        let mut engine = GraphEngine::open(&file).unwrap();
+        assert_eq!(rows(engine.cypher("MATCH (n:Batch) RETURN count(n)").await.unwrap()), vec!["500"]);
+    }
+    cleanup(&file);
+}
+
 /// Read the checkpoint row: `(format_version, revision, payload)`.
 fn read_state(conn: &Connection) -> (i32, Option<i64>, Vec<u8>) {
     let state: (i32, Option<i64>, Vec<u8>) = conn

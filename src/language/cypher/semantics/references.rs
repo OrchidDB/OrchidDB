@@ -153,7 +153,7 @@ pub(super) fn collect_free_variables(
         }
         Expr::PatternPredicate(patterns) => {
             for part in patterns {
-                out.extend(pattern_binding_names(part));
+                out.extend(pattern_binding_names(part).into_iter().filter(|name| !bound.contains(name)));
                 collect_pattern_property_variables(part, bound, out);
             }
         }

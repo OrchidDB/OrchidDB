@@ -1,4 +1,4 @@
-//! Lambda, elided element, and slice syntax rewrites.
+//! Lambda and slice syntax rewrites.
 
 use super::functions::is_identifier_continue;
 pub(super) fn normalize_lambda_list_functions(input: &str) -> String {
@@ -230,89 +230,6 @@ pub(super) fn strip_wrapping_parens(input: &str) -> &str {
     }
 }
 
-pub(super) fn normalize_elided_list_elements(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut index = 0;
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    while index < input.len() {
-        let ch = input[index..].chars().next().unwrap();
-        if let Some(q) = quote {
-            out.push(ch);
-            index += ch.len_utf8();
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == q {
-                quote = None;
-            }
-            continue;
-        }
-        if ch == '\'' || ch == '"' {
-            quote = Some(ch);
-            out.push(ch);
-            index += ch.len_utf8();
-            continue;
-        }
-        if ch == '[' && is_likely_list_literal(input, index) {
-            if let Some(end) = find_matching(input, index, '[', ']') {
-                let inner = &input[index + 1..end];
-                if let Some(rewritten) = rewrite_elided_list_elements(inner) {
-                    out.push('[');
-                    out.push_str(&rewritten);
-                    out.push(']');
-                    index = end + 1;
-                    continue;
-                }
-            }
-        }
-        out.push(ch);
-        index += ch.len_utf8();
-    }
-    out
-}
-
-pub(super) fn is_likely_list_literal(input: &str, open_index: usize) -> bool {
-    if input[..open_index]
-        .chars()
-        .next_back()
-        .is_some_and(|ch| ch.is_whitespace())
-    {
-        return true;
-    }
-    let Some(previous) = input[..open_index]
-        .chars()
-        .rev()
-        .find(|ch| !ch.is_whitespace())
-    else {
-        return true;
-    };
-    !matches!(previous, ')' | ']' | '\'' | '"') && !is_identifier_continue(previous)
-}
-
-pub(super) fn rewrite_elided_list_elements(input: &str) -> Option<String> {
-    if input.trim().is_empty() {
-        return None;
-    }
-    let parts = split_top_level_args(input);
-    if parts.iter().all(|part| !part.is_empty()) {
-        return None;
-    }
-    Some(
-        parts
-            .into_iter()
-            .map(|part| {
-                if part.is_empty() {
-                    "NULL".to_string()
-                } else {
-                    normalize_elided_list_elements(part)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-    )
-}
 
 pub(super) fn top_level_arrow(input: &str) -> Option<usize> {
     let mut paren = 0i32;

@@ -40,6 +40,7 @@ pub struct Lowerer {
     traversal_stack: Vec<CypherTraversalContext>,
     synthetic_counter: usize,
     result_fields: Option<Vec<BindingId>>,
+    pub(crate) check_live_properties: bool,
 }
 
 impl Lowerer {
@@ -50,6 +51,7 @@ impl Lowerer {
             traversal_stack: Vec::new(),
             synthetic_counter: 0,
             result_fields: None,
+            check_live_properties: false,
         }
     }
 

@@ -37,6 +37,11 @@ pub(super) fn validate_grouping(body: &ProjectionBody) -> CypherPlanResult<()> {
     }
     for item in &body.order_by {
         if contains_aggregate(&item.expr) && !visit(&item.expr, &keys, &aliases) {
+            if !body.items.iter().any(|item| !contains_aggregate(&item.expr)
+                && !matches!(item.expr, Expr::Variable(_) | Expr::Property { .. } | Expr::Literal(_))) {
+                return Err(CypherPlanError::Invalid("ORDER BY references a value outside the aggregate projection".into())
+                    .classified(CypherSemanticError::UndefinedVariable));
+            }
             return Err(ambiguous_grouping());
         }
     }
@@ -46,6 +51,23 @@ pub(super) fn validate_grouping(body: &ProjectionBody) -> CypherPlanResult<()> {
 fn ambiguous_grouping() -> CypherPlanError {
     CypherPlanError::Invalid("Aggregate expression contains an implicit grouping key".into())
         .classified(CypherSemanticError::AmbiguousAggregationExpression)
+}
+
+pub(crate) fn contains_volatile(expr: &Expr) -> bool {
+    match expr {
+        Expr::Function { name, args, .. } => matches!(name.to_ascii_lowercase().as_str(), "rand" | "random" | "randomuuid")
+            || crate::ir::functions::is_volatile_function(name) || args.iter().any(contains_volatile),
+        Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr)
+            | Expr::Property { target: expr, .. } => contains_volatile(expr),
+        Expr::Binary { lhs, rhs, .. } | Expr::StringPredicate { target: lhs, pattern: rhs, .. } =>
+            contains_volatile(lhs) || contains_volatile(rhs),
+        Expr::List(items) => items.iter().any(contains_volatile),
+        Expr::Map(items) => items.iter().any(|(_, value)| contains_volatile(value)),
+        Expr::Case { case, arms, otherwise } => case.as_deref().is_some_and(contains_volatile)
+            || arms.iter().any(|(a,b)| contains_volatile(a) || contains_volatile(b))
+            || otherwise.as_deref().is_some_and(contains_volatile),
+        _ => false,
+    }
 }
 
 pub(super) fn contains_aggregate(expr: &Expr) -> bool {

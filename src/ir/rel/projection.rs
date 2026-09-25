@@ -19,6 +19,9 @@ impl<'a> LoweringContext<'a> {
             } else if let Some(star_cols) = star_expansion_columns(plan, field) {
                 projections.extend(star_cols);
             } else if let Some(shape) = has_binding_shape(plan, field) {
+                if self.language == Language::Cypher && self.options.mapping.is_none() {
+                    return Err(RelError::Unsupported("Cypher returned graph values require native identity".into()));
+                }
                 if self.language == Language::Gremlin {
                     projections.push(gremlin_element_display_expr(plan, field)?.alias(field));
                     continue;
