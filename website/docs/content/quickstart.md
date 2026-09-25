@@ -7,7 +7,7 @@ Create a small graph, query a relationship, and run the same workflow from Rust.
 From the repository root, create two people and a relationship:
 
 ```sh
-cargo run --locked --bin orchiddb -- --database social.duckdb --query \
+cargo run --locked --features duckdb --bin orchiddb -- --database social.duckdb --query \
   "CREATE (:Person {name:'Alice'})-[:KNOWS]->(:Person {name:'Bob'})"
 ```
 
@@ -16,7 +16,7 @@ The database file stores the graph between invocations. Run this creation statem
 ## Query the relationship
 
 ```sh
-cargo run --locked --bin orchiddb -- --database social.duckdb --query \
+cargo run --locked --features duckdb --bin orchiddb -- --database social.duckdb --query \
   "MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.name, b.name"
 ```
 
@@ -25,7 +25,7 @@ The result contains Alice and Bob. The CLI prints column names and tab-separated
 Use Gremlin against the same file:
 
 ```sh
-cargo run --bin orchiddb -- --database social.duckdb --language gremlin \
+cargo run --features duckdb --bin orchiddb -- --database social.duckdb --language gremlin \
   --query "g.V().hasLabel('Person').has('name','Alice').out('KNOWS').values('name')"
 ```
 

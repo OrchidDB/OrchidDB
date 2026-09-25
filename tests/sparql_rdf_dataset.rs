@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

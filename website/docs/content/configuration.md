@@ -28,7 +28,7 @@ Treat database connection URLs as application secrets. The managed and mapped Du
 
 ## Build features
 
-The `duckdb` feature is enabled by default. It includes the bundled executor and the high-level engine APIs. The `postgres` feature includes the PostgreSQL SQL executor.
+The default library build has no database driver. Enable the optional `duckdb` feature for managed execution. It includes the bundled executor and the high-level engine APIs. The `postgres` feature includes the PostgreSQL SQL executor.
 
 ```sh
 cargo build --locked
@@ -41,11 +41,11 @@ cargo check --locked --no-default-features --lib
 ```sh
 cargo fmt --all -- --check
 cargo test --locked --lib --bins
-RUST_MIN_STACK=16777216 cargo test --locked \
+RUST_MIN_STACK=16777216 cargo test --locked --features duckdb \
   --test engine --test mapped_engine --test rdf_engine
 ```
 
-Use the repository's `.github/workflows/ci.yml` for the complete CI integration target list.
+See the repository's `docs/verification.md` for local validation and conformance reproduction.
 
 ## Reproduce an application setup
 

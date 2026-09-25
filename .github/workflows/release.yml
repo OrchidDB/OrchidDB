@@ -87,7 +87,7 @@ jobs:
           rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
           rustup default "$RUST_VERSION"
       - name: Build the CLI with bundled DuckDB
-        run: cargo build --locked --release --bin orchiddb --target "$RELEASE_TARGET"
+        run: cargo build --locked --release --features duckdb --bin orchiddb --target "$RELEASE_TARGET"
       - name: Smoke check and package the native binary
         run: |
           python scripts/release/package.py archive \

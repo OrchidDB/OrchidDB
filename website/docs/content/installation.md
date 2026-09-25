@@ -37,27 +37,40 @@ The release workflow also includes these explicitly named placeholder assets in 
 
 Use a Rust toolchain with edition 2024 support, Cargo, Git, and a native C/C++ build toolchain. On macOS, install the Xcode command-line tools. On Linux, install your distribution's C/C++ compiler and development tools.
 
-DuckDB is bundled with the default build. Allow time for its native compilation on the first build. The generated Cypher and Gremlin parsers are included in the repository.
+DuckDB is bundled only when the optional `duckdb` feature is enabled for managed execution or the CLI. Allow time for its native compilation on the first build. The generated Cypher and Gremlin parsers are included in the repository.
 
 ## From source
 
 ```sh
 git clone https://github.com/OrchidDB/OrchidDB.git orchiddb
 cd orchiddb
-cargo build --locked --release --bin orchiddb
+cargo build --locked --release --features duckdb --bin orchiddb
 ./target/release/orchiddb --help
 ```
 
 Install the binary into Cargo's executable directory:
 
 ```sh
-cargo install --locked --path . --bin orchiddb
+cargo install --locked --path . --features duckdb --bin orchiddb
 orchiddb --query 'RETURN 1 AS value'
 ```
 
 Ensure Cargo's executable directory, usually `$HOME/.cargo/bin`, is on your shell's `PATH`.
 
-## Use the Rust library
+## SQL-only Rust library
+
+The default library has no DuckDB driver dependency:
+
+```toml
+[dependencies]
+orchiddb = { git = "https://github.com/OrchidDB/OrchidDB.git" }
+```
+
+See [SQL compilation and caller-owned engines](sql-compiler.md) for the API and examples.
+
+<a id="use-the-rust-library"></a>
+
+## Use the managed Rust library
 
 Create an application beside the repository:
 
@@ -69,7 +82,7 @@ Add these dependencies to `graph-app/Cargo.toml`. Adjust the path to your checko
 
 ```toml
 [dependencies]
-orchiddb = { path = "../orchiddb" }
+orchiddb = { path = "../orchiddb", features = ["duckdb"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 arrow = "58.2.0"
 ```
@@ -80,7 +93,7 @@ The package name is `orchiddb`; the Rust import is `orchiddb`. Use the [quicksta
 
 | Feature | Purpose |
 | --- | --- |
-| `duckdb` | Default feature. Includes the bundled DuckDB executor, engine APIs, and CLI. |
+| `duckdb` | Opt-in. Includes the bundled DuckDB executor, engine APIs, and CLI. |
 | `postgres` | Includes the PostgreSQL SQL executor for lower-level SQL integration. |
 
 To build the core library without default features:
@@ -89,7 +102,7 @@ To build the core library without default features:
 cargo check --locked --no-default-features --lib
 ```
 
-To include the PostgreSQL executor alongside the defaults:
+To include the PostgreSQL executor explicitly:
 
 ```sh
 cargo build --locked --features postgres
@@ -98,7 +111,7 @@ cargo build --locked --features postgres
 ## Run the repository example
 
 ```sh
-cargo run --locked --example managed_graph
+cargo run --locked --features duckdb --example managed_graph
 ```
 
 This example opens an in-memory graph, creates a relationship with a typed parameter, commits it, and prints the query results. Continue to the [quickstart](quickstart.md) for a persistent CLI session and application example.

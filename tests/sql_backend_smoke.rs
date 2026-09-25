@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 //! Real-database SQL execution smoke tests.
 //!
 //! Each test plans a query, lowers it through `RelBackend`, unparses the

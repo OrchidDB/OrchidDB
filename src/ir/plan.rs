@@ -1,9 +1,7 @@
 //! Logical Graph IR plan tree.
 //!
-//! See `docs/graph_ir_language_examples_v0_2_draft.md` §11 for the operator
-//! catalog. Variants are named exactly as the spec prints them so a doc
-//! line like `GraphRepeat(...)` maps to `Node::GraphRepeat { ... }` and to
-//! the `crate::ir::df::GraphRepeat` extension struct without translation.
+//! Operator variants are defined here and correspond to the extension structs
+//! under `crate::ir::df`. See `docs/architecture.md` for lowering boundaries.
 //!
 //! Every operator family from §11 is present so that plans for every
 //! supported language (Cypher, GQL, Gremlin, SPARQL) can be represented

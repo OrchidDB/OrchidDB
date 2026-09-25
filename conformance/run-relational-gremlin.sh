@@ -25,12 +25,12 @@ export ORCHIDDB_GREMLIN_IO_JAVA="$CONFORMANCE_JAVA"
 export ORCHIDDB_GREMLIN_IO_CLASSPATH="$CONFORMANCE_GREMLIN_CLASSPATH"
 
 mvn -q -f jvm/pom.xml test
-cargo test --lib scheduling_tests
-cargo test --test engine --test engine_adversarial --test engine_incremental \
+cargo test --features duckdb --lib scheduling_tests
+cargo test --features duckdb --test engine --test engine_adversarial --test engine_incremental \
   --test engine_storage_integrity --test engine_functions \
   --test gremlin_group_finalization --test gremlin_shared_side_effects \
   --test gremlin_upstream_regressions --test relational_execution
-cargo test --test jvm_ir -- --include-ignored --test-threads=1
+cargo test --features duckdb --test jvm_ir -- --include-ignored --test-threads=1
 cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 export CONFORMANCE_ORCHIDDB_BINARY="$(cd "$CARGO_TARGET_DIR" && pwd)/debug/upstream"
 python3 conformance/upstream/run.py --engine orchiddb --suite tinkerpop --output "$result_path"

@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 use orchiddb::ir::jvm::{JvmConfig, JvmExecution, JvmMode, JvmOperation};
 use orchiddb::ir::{
     GraphPlan, GraphPlanPolicy, IrExpr, Node, ProjectionItem, PropertyGraph, Value,

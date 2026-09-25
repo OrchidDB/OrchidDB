@@ -1,7 +1,7 @@
 //! Graph IR — logical operators, an in-memory property graph store, and
 //! an interpreter that runs the IR over Apache Arrow record batches.
 //!
-//! Reference: `docs/graph_ir_language_examples_v0_2_draft.md`.
+//! Reference: `docs/architecture.md`.
 
 pub mod analysis;
 pub mod bridge;

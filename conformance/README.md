@@ -152,7 +152,7 @@ are ignored. The static site renders these artifacts without starting engines.
 Typed graph transport, fixture property types or unavailable service fixtures
 can prevent an assertion from being evaluated faithfully. Those outcomes are
 recorded separately from semantic failures. The adapters do not rewrite upstream
-expectations to match a product. Archived bespoke probes live under `legacy/`
+expectations to match a product. Archived bespoke probes are available in [Git history](../docs/verification.md#historical-records)
 and contribute no primary-suite passes or failures.
 
 ## Evidence and timing

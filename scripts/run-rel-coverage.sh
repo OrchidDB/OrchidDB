@@ -32,7 +32,7 @@ mkdir -p "$report_root"
 
 cd "$repo_dir"
 if [[ "${GRAPH_REL_SKIP_BUILD:-0}" != "1" ]]; then
-  cargo test --release --test graph_rel_backend_cases --no-run
+  cargo test --features duckdb --release --test graph_rel_backend_cases --no-run
 fi
 test_binary="$({
   find "$repo_dir/target/release/deps" -type f -perm -111 \

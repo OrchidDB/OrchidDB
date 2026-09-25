@@ -8,7 +8,7 @@ Run a graph query from your shell, read query files, and inspect a plan with the
 orchiddb [OPTIONS]
 ```
 
-From a source checkout, use `cargo run --bin orchiddb -- [OPTIONS]`. The arguments after `--` are passed to the binary.
+From a source checkout, use `cargo run --features duckdb --bin orchiddb -- [OPTIONS]`. The arguments after `--` are passed to the binary.
 
 ## Options
 

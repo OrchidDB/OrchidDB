@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 //! "Bring your own schema" (BYOS) smoke tests.
 //!
 //! A user-owned relational schema — `customers`, `orders`, `follows`, plus a

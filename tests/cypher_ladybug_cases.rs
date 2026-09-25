@@ -380,7 +380,7 @@ fn is_ident_char(ch: char) -> bool {
 /// These are reported as `Skipped` (never as passing) so the conformance
 /// number stays honest. Removing an entry is the natural regression test for
 /// factorized/count-only evaluation when that lands — see the interpreter
-/// join-performance item in `docs/handoff_corpus.md`.
+/// join-performance item in `docs/roadmap.md`.
 const MEMORY_QUARANTINE: &[&str] = &[
     // `MATCH (a:person), (b:person) RETURN COUNT(*)` over 6k persons — 36M
     // intermediate rows for a one-row answer. CSV and parquet twins.

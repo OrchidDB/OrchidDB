@@ -1,12 +1,14 @@
 //! OrchidDB graph IR.
 //!
-//! Implements the IR described in `docs/graph_ir_language_examples_v0_2_draft.md`.
+//! Compile graph queries to SQL with [`compiler`]; callers own execution through
+//! their driver or the optional [`execution`] interface. See `docs/architecture.md`.
 //! The Gremlin frontend (`crate::language::gremlin`) lowers parsed
 //! traversals into Graph IR `Node` values; the interpreter under
 //! `crate::ir::interpreter` runs them against an Apache Arrow backed
 //! `PropertyGraph`.
 
 pub mod compiler;
+pub mod execution;
 pub mod grammar;
 pub mod ir;
 pub mod language;

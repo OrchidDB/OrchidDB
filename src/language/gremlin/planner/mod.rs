@@ -3,7 +3,7 @@
 //! This planner replaces the previous DataFusion / DuckDB SQL-island
 //! lowering. It walks a parsed `Traversal` and emits a `GraphPlan` whose
 //! operators are the Graph IR nodes defined in
-//! `docs/graph_ir_language_examples_v0_2_draft.md` (`GraphNodeScan`,
+//! `crate::ir::plan` (`GraphNodeScan`,
 //! `GraphExpand`, `GraphFilter`, `GraphProject`, `GraphCurrentProject`,
 //! `GraphAggregate`, `GraphSort`, `GraphSlice`, `GraphDistinct`,
 //! `GraphApply`, `GraphUnion`, `GraphCoalesce`, `GraphChoose`,
