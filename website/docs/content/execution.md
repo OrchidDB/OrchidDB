@@ -1,5 +1,8 @@
 # Execution and plans
 
+This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
+
+
 Inspect Graph IR and generated SQL, choose a read policy, and understand execution statistics.
 
 ## Managed read policies
@@ -19,10 +22,10 @@ SQL-only mode enforces the chosen execution contract. Mapped property-graph and 
 
 ## Inspect Graph IR
 
-The CLI's `--explain` flag parses and plans a query, then prints Graph IR:
+The legacy core CLI's `--explain` flag parses and plans a query, then prints Graph IR:
 
 ```sh
-orchiddb --explain --query \
+cargo run --features duckdb --bin orchiddb -- --explain --query \
   "MATCH (p:Person)-[:KNOWS]->(friend) RETURN p.name, friend.name"
 ```
 

@@ -1,84 +1,90 @@
 # Installation
 
-Choose the command-line client or a language library.
+Use the CLI for DuckDB and Iceberg, or embed a language client around your own engine. Source builds are available. Registry packages and binary releases are not published yet.
 
-## Command line installer
+## From source
+
+The standalone CLI lives in [OrchidDB-cli](https://github.com/OrchidDB/OrchidDB-cli):
+
+```sh
+git clone https://github.com/OrchidDB/OrchidDB-cli.git
+cd OrchidDB-cli
+cargo install --locked --path . --bin orchiddb
+orchiddb query examples/people.json --init examples/setup.sql --format table
+```
+
+Use Rust with edition 2024 support, Git, and a C/C++ build toolchain. The first build compiles bundled DuckDB. Add Cargo's executable directory (usually `$HOME/.cargo/bin`) to `PATH`.
+
+Queries load the official Iceberg extension by default. First use requires network access to install the extension. Your setup SQL configures catalogs, credentials, views, plugins, and UDFs. See the [quickstart](quickstart.md) and [CLI reference](cli.md).
+
+## Binary installer
+
+After the first published CLI release:
 
 ```sh
 curl -fsSL https://install.orchiddb.com | bash
 ```
 
-The installer downloads a native CLI archive from [published GitHub releases](https://github.com/OrchidDB/OrchidDB/releases), verifies its SHA-256 checksum, and installs into `~/.local/bin`. It never runs sudo or edits your shell configuration. Add that directory to your `PATH` if necessary.
+The installer downloads from [OrchidDB-cli releases](https://github.com/OrchidDB/OrchidDB-cli/releases), verifies SHA-256 checksums, and atomically installs into `~/.local/bin`. It never runs sudo or edits your shell configuration. With no published release it fails with source-build instructions and leaves an existing installation unchanged.
 
-**There are no published binary releases yet.** Until the first release is published, use the [source installation](#from-source). The installer explains this and leaves any existing installation unchanged.
-
-Supported installer platforms: macOS Apple Silicon, macOS Intel, and Linux x86_64 with glibc 2.35+. Windows x86_64 uses the ZIP asset on the release page; extract it and run `orchiddb.exe`. Linux ARM64 and musl builds are not packaged. macOS binaries are not signed or notarized.
-
-To select an exact release and directory:
+Release packaging targets macOS ARM64/Intel and Linux x86_64 (glibc 2.35+). Windows, Linux ARM64, and musl CLI binaries are not packaged. macOS binaries are not signed or notarized.
 
 ```sh
 curl -fsSL https://install.orchiddb.com | ORCHIDDB_VERSION=v0.1.0 ORCHIDDB_INSTALL_DIR="$HOME/.local/bin" bash
 ```
 
-Without a version, the installer selects the most recently created published release, including prereleases. Review the [installer source](https://install.orchiddb.com/) or download it before running it. Checksums detect corrupted downloads; they are provided by the same release publisher as the archive.
+Without a version, the installer selects the most recently created published release, including prereleases. [Review the installer](https://install.orchiddb.com/) before running it. Checksums come from the same release publisher as the archive.
 
 ## Language clients
 
-Rust is available as a Git or path dependency below. Python, JavaScript/TypeScript, and Java have **mock download assets** for the installation interface. These ZIPs contain metadata and documentation links only; they are not installable SDKs.
+| Client | Source | Result interface |
+| --- | --- | --- |
+| Rust | [OrchidDB-rust](https://github.com/OrchidDB/OrchidDB-rust) | Arrow `RecordBatchReader` |
+| Python | [OrchidDB-python](https://github.com/OrchidDB/OrchidDB-python) | PyArrow reader |
+| JavaScript / TypeScript | [OrchidDB-js](https://github.com/OrchidDB/OrchidDB-js) | Async Arrow batches |
+| Java | [OrchidDB-java](https://github.com/OrchidDB/OrchidDB-java) | Arrow vectors / `ArrowResult` |
+| Elixir | [OrchidDB-elixir](https://github.com/OrchidDB/OrchidDB-elixir) | ADBC Arrow C Stream callback |
+| C++ | [OrchidDB-cpp](https://github.com/OrchidDB/OrchidDB-cpp) | Arrow C stream with RAII ownership |
 
-- [Python placeholder](https://install.orchiddb.com/mock/orchiddb-python-placeholder.zip)
-- [JavaScript / TypeScript placeholder](https://install.orchiddb.com/mock/orchiddb-javascript-placeholder.zip)
-- [Java placeholder](https://install.orchiddb.com/mock/orchiddb-java-placeholder.zip)
+Start with [client setup and runnable examples](client-apis.md). These clients compile SQL without a DuckDB driver dependency. Your application supplies the engine. Rust uses a Git dependency; Java builds its JNI compiler; the other bindings use the shared native compiler below.
 
-The release workflow also includes these explicitly named placeholder assets in each release. See the [client API design](client-apis.md) for integration details.
+## Shared native compiler
 
-
-## Prerequisites
-
-Use a Rust toolchain with edition 2024 support, Cargo, Git, and a native C/C++ build toolchain. On macOS, install the Xcode command-line tools. On Linux, install your distribution's C/C++ compiler and development tools.
-
-DuckDB is bundled only when the optional `duckdb` feature is enabled for managed execution or the CLI. Allow time for its native compilation on the first build. The generated Cypher and Gremlin parsers are included in the repository.
-
-## From source
+Python, Node.js, Elixir, and C++ source builds need [OrchidDB-native](https://github.com/OrchidDB/OrchidDB-native). Check out the revision in your client's `NATIVE_REVISION`, then the compiler's matching core revision. Run this from the client repository root (requires new sibling checkout directories):
 
 ```sh
-git clone https://github.com/OrchidDB/OrchidDB.git orchiddb
-cd orchiddb
-cargo build --locked --release --features duckdb --bin orchiddb
-./target/release/orchiddb --help
+git clone https://github.com/OrchidDB/OrchidDB-native.git ../orchiddb-native
+git -C ../orchiddb-native checkout "$(cat NATIVE_REVISION)"
+git clone https://github.com/OrchidDB/OrchidDB.git ../orchiddb
+git -C ../orchiddb checkout "$(cat ../orchiddb-native/CORE_REVISION)"
+cargo build --locked --release --manifest-path ../orchiddb-native/Cargo.toml
 ```
 
-Install the binary into Cargo's executable directory:
+Set the path for the current shell, then run your client's example:
 
 ```sh
-cargo install --locked --path . --features duckdb --bin orchiddb
-orchiddb --query 'RETURN 1 AS value'
+# macOS; use liborchiddb_compiler.so on Linux
+export ORCHIDDB_NATIVE_LIBRARY="$(cd ../orchiddb-native/target/release && pwd)/liborchiddb_compiler.dylib"
 ```
 
-Ensure Cargo's executable directory, usually `$HOME/.cargo/bin`, is on your shell's `PATH`.
+The library compiles metadata and query text only; result data never crosses this boundary. Release workflows bundle it into Python wheels, npm packages, and C++ archives. Elixir loads it explicitly. No binding downloads a compiler implicitly at runtime.
 
-## SQL-only Rust library
+## Core compiler library
 
-The default library has no DuckDB driver dependency:
+For direct compiler development:
 
 ```toml
 [dependencies]
-orchiddb = { git = "https://github.com/OrchidDB/OrchidDB.git" }
+orchiddb = { git = "https://github.com/OrchidDB/OrchidDB.git", default-features = false }
 ```
 
-See [SQL compilation and caller-owned engines](sql-compiler.md) for the API and examples.
+See [SQL compilation](sql-compiler.md). For application integration, prefer the [Rust client](client-apis.md#rust).
 
 <a id="use-the-rust-library"></a>
 
-## Use the managed Rust library
+## Optional managed Rust runtime
 
-Create an application beside the repository:
-
-```sh
-cargo new graph-app
-```
-
-Add these dependencies to `graph-app/Cargo.toml`. Adjust the path to your checkout.
+The older managed engine APIs remain available in core. Their tutorials use an explicit `duckdb` feature and have different capabilities from compiler-only clients:
 
 ```toml
 [dependencies]
@@ -87,31 +93,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 arrow = "58.2.0"
 ```
 
-The package name is `orchiddb`; the Rust import is `orchiddb`. Use the [quickstart](quickstart.md) as `src/main.rs`.
-
-## Cargo features
-
-| Feature | Purpose |
-| --- | --- |
-| `duckdb` | Opt-in. Includes the bundled DuckDB executor, engine APIs, and CLI. |
-| `postgres` | Includes the PostgreSQL SQL executor for lower-level SQL integration. |
-
-To build the core library without default features:
-
-```sh
-cargo check --locked --no-default-features --lib
-```
-
-To include the PostgreSQL executor explicitly:
-
-```sh
-cargo build --locked --features postgres
-```
-
-## Run the repository example
+Run its separate example from the core checkout:
 
 ```sh
 cargo run --locked --features duckdb --example managed_graph
 ```
 
-This example opens an in-memory graph, creates a relationship with a typed parameter, commits it, and prints the query results. Continue to the [quickstart](quickstart.md) for a persistent CLI session and application example.
+| Core feature | Purpose |
+| --- | --- |
+| default (empty) | SQL compiler without database drivers |
+| `duckdb` | Managed engine APIs, bundled executor, and legacy managed CLI |
+| `postgres` | Lower-level PostgreSQL executor; not a federated client |
+
+The standalone CLI instructions above refer to `OrchidDB-cli`, not the legacy core binary.

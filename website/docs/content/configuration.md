@@ -1,5 +1,8 @@
 # Configuration
 
+This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
+
+
 Configure engine execution, Cargo features, and development checks for a reproducible integration.
 
 ## Engine settings

@@ -1,5 +1,8 @@
 # Map existing tables
 
+This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
+
+
 Expose existing DuckDB tables as a graph, then query them with Cypher and Gremlin.
 
 ## The relational dataset

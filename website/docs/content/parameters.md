@@ -1,5 +1,8 @@
 # Parameters and values
 
+This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
+
+
 Bind application input as typed Cypher values and reuse query text across calls.
 
 ## Bind a read parameter

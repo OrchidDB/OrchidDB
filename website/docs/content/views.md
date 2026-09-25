@@ -1,5 +1,8 @@
 # Views and SQL sources
 
+This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
+
+
 Use SQL views and query-backed labels to shape a graph over existing relational data.
 
 ## Map a physical view

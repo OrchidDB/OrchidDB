@@ -1,67 +1,69 @@
 # Quickstart
 
-Create a small graph, query a relationship, and run the same workflow from Rust.
+Query existing tables through a graph mapping. The standalone CLI bundles DuckDB and loads Iceberg by default; no graph store is created.
 
-## Create a persistent graph
-
-From the repository root, create two people and a relationship:
+## Build the CLI
 
 ```sh
-cargo run --locked --features duckdb --bin orchiddb -- --database social.duckdb --query \
-  "CREATE (:Person {name:'Alice'})-[:KNOWS]->(:Person {name:'Bob'})"
+git clone https://github.com/OrchidDB/OrchidDB-cli.git
+cd OrchidDB-cli
+cargo build --locked --release
 ```
 
-The database file stores the graph between invocations. Run this creation statement once for the example dataset.
+The checkout includes `examples/setup.sql`:
 
-## Query the relationship
-
-```sh
-cargo run --locked --features duckdb --bin orchiddb -- --database social.duckdb --query \
-  "MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.name, b.name"
+```sql
+CREATE TABLE people(id BIGINT, name VARCHAR);
+INSERT INTO people VALUES (1, 'Ada'), (2, 'Grace');
 ```
 
-The result contains Alice and Bob. The CLI prints column names and tab-separated values to stdout, with execution metadata on stderr.
+And `examples/people.json`, describing the table schema and its graph mapping:
 
-Use Gremlin against the same file:
-
-```sh
-cargo run --features duckdb --bin orchiddb -- --database social.duckdb --language gremlin \
-  --query "g.V().hasLabel('Person').has('name','Alice').out('KNOWS').values('name')"
-```
-
-This traversal returns Bob's name.
-
-## Embed the workflow
-
-After [setting up the library](installation.md#use-the-rust-library), place this in your application's `src/main.rs`:
-
-```rust
-use orchiddb::engine::GraphEngine;
-
-#[tokio::main]
-async fn main() -> Result<(), String> {
-    let mut graph = GraphEngine::in_memory()?;
-    graph.cypher(
-        "CREATE (:Person {name:'Alice'})-[:KNOWS]->(:Person {name:'Bob'})"
-    ).await?;
-
-    let result = graph.cypher(
-        "MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.name, b.name"
-    ).await?;
-
-    for row in 0..result.returned.batch.num_rows() {
-        let cells = result.returned.batch.columns().iter()
-            .map(|column| arrow::util::display::array_value_to_string(column, row)
-                .map_err(|error| error.to_string()))
-            .collect::<Result<Vec<_>, _>>()?;
-        println!("{}", cells.join(" | "));
-    }
-    Ok(())
+```json
+{
+  "version": 1,
+  "dialect": "duckdb",
+  "language": "cypher",
+  "query": "MATCH (p:Person) RETURN p.name AS name ORDER BY name",
+  "tables": [{"name": "people", "columns": [
+    {"name": "id", "data_type": "int64", "nullable": false},
+    {"name": "name", "data_type": "string", "nullable": true}
+  ]}],
+  "nodes": [{"label": "Person", "table": "people", "id": "id",
+    "properties": {"name": "name"}}]
 }
 ```
 
-Run `cargo run` in the application directory. It prints `Alice | Bob`.
+## Execute the query
 
-## Choose the next workflow
+```sh
+./target/release/orchiddb query examples/people.json --init examples/setup.sql --format table
+```
 
-Use [managed graphs](managed-graphs.md) when OrchidDB owns the graph data. Use [mapped graphs](mapped-graphs.md) to query existing relational tables with graph syntax. Both workflows return Arrow data, so the surrounding application can use the same result-processing tools.
+The result contains Ada and Grace. The first query needs network access to install Iceberg; append `--no-iceberg` to this table-only example to skip extension setup.
+
+## Inspect SQL or export Arrow
+
+```sh
+./target/release/orchiddb compile examples/people.json
+./target/release/orchiddb query examples/people.json --init examples/setup.sql > people.arrow
+```
+
+Compilation does not open a database. Query output defaults to an Arrow IPC stream, so use `--format table` for terminal output. Each invocation above uses a fresh in-memory database.
+
+## Use your data lake
+
+Replace the example setup with your own catalog configuration and a view over an Iceberg table:
+
+```sql
+CREATE VIEW people AS
+SELECT id, name FROM iceberg_scan('/path/to/table/metadata/v1.metadata.json');
+```
+
+Keep the graph mapping aligned with the view's real schema. The compiler sees the metadata; DuckDB accesses the source data.
+
+## Embed in your application
+
+Choose [Rust, Java, Python, JavaScript/TypeScript, Elixir, or C++](client-apis.md). These clients compile the same graph-language requests but leave engine configuration and execution to your application. Results use Arrow batches.
+
+For graph persistence and mutations owned by OrchidDB, see the separate [managed runtime](managed-graphs.md). Its capabilities and APIs differ from compiler-only clients.

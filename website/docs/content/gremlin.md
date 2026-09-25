@@ -8,7 +8,7 @@ OrchidDB passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gre
 
 ## Start a traversal
 
-OrchidDB accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
+OrchidDB accepts Gremlin traversal text through `gremlin(query).await`. In the standalone CLI request, set `"language": "gremlin"`. The optional managed core binary uses `--language gremlin`.
 
 JVM callbacks and TinkerPop vertex programs execute as operators in the same [SQL IR/DataFusion pipeline](https://github.com/OrchidDB/OrchidDB/blob/main/docs/runtime.md). Typed callbacks can be supplied through `gremlin_with_bindings`. The [compatibility matrix](conformance-report.html#language-tinkerpop) reports one OrchidDB outcome per scenario.
 

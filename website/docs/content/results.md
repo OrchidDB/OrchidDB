@@ -2,6 +2,18 @@
 
 Read Arrow batches, handle nulls, and inspect execution metadata from graph queries.
 
+## Client Arrow results
+
+Compiler-only clients return results from your engine, without passing data through the compiler. Rust uses `RecordBatchReader`, Python a PyArrow reader, Java `ArrowResult`, JavaScript an async batch iterator, and C++/Elixir the Arrow C Stream interface.
+
+Rust/PyArrow batches retain their buffers after reader closure. Java's reusable vectors are borrowed until the next batch or close. C++ batches have independent release callbacks; Elixir's stream pointer is valid only inside its callback. JavaScript follows the producer's lifetime contract. Always close results on early exit and keep the caller connection alive until result production finishes.
+
+Arrow removes per-cell row conversion from the result boundary, but does not promise zero-copy or streaming execution by the database. See [client examples](client-apis.md).
+
+## Optional managed runtime
+
+The following result containers belong to the core runtime, not the compiler-only clients.
+
 ## Result containers
 
 Managed engine methods return `QueryResult`. Its `returned` field holds a `ReturnedBatches` value with `fields` and `batch`. Mapped property-graph and RDF engine reads return `ReturnedBatches` directly.
