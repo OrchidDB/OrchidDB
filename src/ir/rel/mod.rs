@@ -49,6 +49,7 @@ mod gremlin;
 mod gremlin_state;
 pub mod mapping;
 pub mod rdf;
+pub(crate) mod rdf_service;
 mod repeat;
 mod sparql;
 pub mod sql;
@@ -255,7 +256,9 @@ impl RelBackend {
     }
 
     fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
-        validate_read_capabilities(plan, ReadCapabilities::LOCAL_DUCKDB)?;
+        let mut capabilities = ReadCapabilities::LOCAL_DUCKDB;
+        capabilities.external_reads = self.options.rdf_datasets.as_ref().is_some_and(|mapping| mapping.service_reads);
+        validate_read_capabilities(plan, capabilities)?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin
             && graph_stats.bidirectional_expands >= 2

@@ -127,13 +127,14 @@ impl RdfGraphEngine {
     pub async fn update(&mut self, source: &str, base: Option<&str>) -> Result<()> {
         let update =
             crate::language::sparql::parse_update(source, base).map_err(|e| e.to_string())?;
-        self.executor
+        self.executor()?
             .connection()
             .map_err(|e| e.to_string())?
             .execute_batch("BEGIN TRANSACTION")
             .map_err(|e| e.to_string())?;
         let outcome = self.apply_operations(update).await;
-        let connection = self.executor.connection().map_err(|e| e.to_string())?;
+        let mut executor = self.executor()?;
+        let connection = executor.connection().map_err(|e| e.to_string())?;
         match outcome {
             Ok(()) => connection
                 .execute_batch("COMMIT")
@@ -342,7 +343,7 @@ impl RdfGraphEngine {
                 }
             }
             for effect in effects {
-                effect.execute(&mut self.executor)?;
+                effect.execute(&mut *self.executor()?)?;
             }
         }
         Ok(())

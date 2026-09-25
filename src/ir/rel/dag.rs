@@ -43,10 +43,14 @@ pub(crate) struct DagSession {
     session: SessionContext,
     #[cfg(feature = "duckdb")]
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
+    external: std::collections::BTreeSet<String>,
+    optimize: bool,
 }
 impl DagSession {
     pub(crate) fn new(timeout: Option<std::time::Duration>) -> Self {
         Self {
+            external: Default::default(),
+            optimize: true,
             session: SessionContext::new_with_config(
                 SessionConfig::new().with_target_partitions(1),
             ),
@@ -58,6 +62,26 @@ impl DagSession {
             )),
         }
     }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn from_executor(executor: sql::DuckDbExecutor, external: std::collections::BTreeSet<String>) -> Self {
+        // Mapped RDF lowering supplies explicit term-identity projections.
+        // Keep these SQL column boundaries: generic projection elimination
+        // currently produces join aliases the SQL unparser does not emit.
+        // DuckDB still optimizes each generated region normally.
+        Self { session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor: Arc::new(Mutex::new(executor)), external, optimize: false }
+    }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn executor(&self) -> std::result::Result<std::sync::MutexGuard<'_,sql::DuckDbExecutor>,String> {
+        self.executor.lock().map_err(|_| "DuckDB executor poisoned".into())
+    }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn into_executor(self) -> sql::DuckDbExecutor {
+        drop(self.session);
+        Arc::try_unwrap(self.executor).expect("DAG execution has completed").into_inner().expect("DuckDB executor poisoned")
+    }
 }
 
 /// A planned DuckDB region has no DataFusion inputs: its native relational scans
@@ -68,6 +92,7 @@ struct DuckDbRegion {
     id: usize,
     schema: DFSchemaRef,
     prepared: Arc<sql::PreparedSql>,
+    sources: Vec<(String,LogicalPlan)>,
 }
 impl fmt::Debug for DuckDbRegion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -105,7 +130,7 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
         "DuckDbRegion"
     }
     fn inputs(&self) -> Vec<&LogicalPlan> {
-        vec![]
+        self.sources.iter().map(|(_,plan)|plan).collect()
     }
     fn schema(&self) -> &DFSchemaRef {
         &self.schema
@@ -121,10 +146,12 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
         expressions: Vec<Expr>,
         inputs: Vec<LogicalPlan>,
     ) -> Result<Self> {
-        if !expressions.is_empty() || !inputs.is_empty() {
-            return Err(DataFusionError::Plan("DuckDB region is a source".into()));
+        if !expressions.is_empty() || inputs.len() != self.sources.len() {
+            return Err(DataFusionError::Plan("DuckDB region dependency mismatch".into()));
         }
-        Ok(self.clone())
+        let mut rebuilt = self.clone();
+        rebuilt.sources = self.sources.iter().zip(inputs).map(|((name,_),plan)|(name.clone(),plan)).collect();
+        Ok(rebuilt)
     }
 }
 
@@ -154,7 +181,8 @@ impl SqlEligibility {
         for expr in plan.expressions() {
             let _ = expr.apply(|expr| {
                 if let Expr::ScalarFunction(function) = expr {
-                    let native = function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
+                    let native = super::sparql::is_duck_function(&function.func)
+                        || function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
                         || function.func.name() == crate::ir::functions::ENGINE_CAST_FUNCTION;
                     if !native && (function.func.signature().volatility == datafusion::logical_expr::Volatility::Volatile
                         || function.func.documentation().is_none()) {
@@ -176,10 +204,12 @@ impl SqlEligibility {
     }
 }
 
+#[cfg(feature = "duckdb")]
 fn partition<'a>(
     plan: &'a LogicalPlan,
     stats: &'a mut DagStats,
     eligibility: &'a mut SqlEligibility,
+    external: &'a std::collections::BTreeSet<String>,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
         let explain = std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some();
@@ -208,28 +238,30 @@ fn partition<'a>(
                 result_form: crate::ir::policy::ResultForm::RowSet,
                 islands: Default::default(),
             };
-            let prepared = sql::prepare(&candidate, sql::SqlDialect::DuckDb).await;
+            let prepared = sql::source_program::PreparedSourceProgram::prepare(&candidate, sql::SqlDialect::DuckDb,external).await;
             if explain && let Err(error) = &prepared {
                 eprintln!("DuckDB boundary: SQL preparation: {error}");
             }
             if let Ok(prepared) = prepared {
                 if std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some() {
-                    eprintln!("DuckDB candidate: {}", prepared.query);
+                    eprintln!("DuckDB candidate: {}", prepared.sql.query);
                 }
                 let id = stats.duckdb_regions;
                 stats.duckdb_regions += 1;
+                stats.datafusion_operators += prepared.sources.len();
                 return Ok(LogicalPlan::Extension(Extension {
                     node: Arc::new(DuckDbRegion {
                         id,
                         schema: plan.schema().clone(),
-                        prepared: Arc::new(prepared),
+                        prepared: Arc::new(prepared.sql),
+                        sources: prepared.sources,
                     }),
                 }));
             }
         }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
-            inputs.push(partition(input, stats, eligibility).await?);
+            inputs.push(partition(input, stats, eligibility,external).await?);
         }
         stats.datafusion_operators += 1;
         plan.with_new_exprs(plan.expressions(), inputs)
@@ -249,7 +281,7 @@ impl ExtensionPlanner for RegionPlanner {
         _planner: &dyn PhysicalPlanner,
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
-        _physical_inputs: &[Arc<dyn ExecutionPlan>],
+        physical_inputs: &[Arc<dyn ExecutionPlan>],
         _state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let Some(region) = node.as_any().downcast_ref::<DuckDbRegion>() else {
@@ -266,6 +298,7 @@ impl ExtensionPlanner for RegionPlanner {
             prepared: region.prepared.clone(),
             executor: self.executor.clone(),
             properties,
+            sources: region.sources.iter().map(|(name,_)|name.clone()).zip(physical_inputs.iter().cloned()).collect(),
         })))
     }
 }
@@ -276,6 +309,7 @@ struct DuckDbExec {
     prepared: Arc<sql::PreparedSql>,
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
     properties: Arc<PlanProperties>,
+    sources: Vec<(String,Arc<dyn ExecutionPlan>)>,
 }
 #[cfg(feature = "duckdb")]
 impl DisplayAs for DuckDbExec {
@@ -295,21 +329,22 @@ impl ExecutionPlan for DuckDbExec {
         &self.properties
     }
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        vec![]
+        self.sources.iter().map(|(_,plan)|plan).collect()
     }
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        if !children.is_empty() {
-            return Err(DataFusionError::Plan("DuckDbExec is a source".into()));
+        if children.len() != self.sources.len() {
+            return Err(DataFusionError::Plan("DuckDbExec dependency mismatch".into()));
         }
-        Ok(self)
+        Ok(Arc::new(Self { prepared:self.prepared.clone(),executor:self.executor.clone(),properties:self.properties.clone(),
+            sources:self.sources.iter().zip(children).map(|((name,_),plan)|(name.clone(),plan)).collect() }))
     }
     fn execute(
         &self,
         partition: usize,
-        _context: Arc<TaskContext>,
+        context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         if partition != 0 {
             return Err(DataFusionError::Execution(
@@ -320,12 +355,20 @@ impl ExecutionPlan for DuckDbExec {
         let prepared = self.prepared.clone();
         let schema = self.schema();
         let expected = schema.clone();
+        let sources = self.sources.clone();
         let work = async move {
+            let mut prepared = (*prepared).clone();
+            for (name,source) in sources {
+                let schema = source.schema();
+                let batches = datafusion::physical_plan::collect(source,context.clone()).await?;
+                prepared.tables.push(sql::TableData { name,schema,batches });
+            }
             tokio::task::spawn_blocking(move || {
                 let mut executor = executor
                     .lock()
                     .map_err(|_| DataFusionError::Execution("DuckDB executor poisoned".into()))?;
-                let returned = sql::execute_prepared(&mut *executor, &prepared)
+                let returned = stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
+                    || sql::execute_prepared(&mut *executor, &prepared))
                     .map_err(|e| DataFusionError::Execution(e.to_string()))?;
                 let arrays = returned.batch.columns().iter().zip(expected.fields())
                     .map(|(array, field)| {
@@ -372,12 +415,12 @@ pub(crate) async fn execute_with_extensions(
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let optimized = query_state.optimize(&lowered.plan)?;
+    let optimized = if resources.optimize { query_state.optimize(&lowered.plan)? } else { lowered.plan.clone() };
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
-        partition(&optimized, &mut stats, &mut eligibility).await?
+        partition(&optimized, &mut stats, &mut eligibility,&resources.external).await?
     };
     #[cfg(not(feature = "duckdb"))]
     let plan = {
