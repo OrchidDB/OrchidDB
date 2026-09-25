@@ -198,3 +198,11 @@ async fn with_changes_default_graph_without_hiding_explicit_named_graphs() {
     assert_eq!(engine.query("ASK { GRAPH <urn:h> { ?s ?p ?o } }").await.unwrap(),SparqlResults::Boolean(false));
     assert_eq!(engine.query("ASK { GRAPH <urn:g> { <urn:a> <urn:name> 'A' } }").await.unwrap(),SparqlResults::Boolean(true));
 }
+
+#[tokio::test]
+async fn update_where_exports_outer_and_subquery_bindings() {
+    let mut engine = engine();
+    engine.update("INSERT DATA { <urn:a> <urn:name> 'A'; <urn:age> 1 }",None).await.unwrap();
+    engine.update("DELETE { ?s <urn:age> ?age } WHERE { ?s <urn:name> 'A' { SELECT DISTINCT ?age WHERE { ?other <urn:age> ?age } } }",None).await.unwrap();
+    assert_eq!(engine.query("ASK { ?s <urn:age> ?age }").await.unwrap(),SparqlResults::Boolean(false));
+}
