@@ -4,12 +4,12 @@ use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 
-use new_graph::ir::PropertyGraph;
-use new_graph::ir::plan::Direction;
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
-use new_graph::ir::rel::{RelBackend, RelBackendOptions};
-use new_graph::language::sparql::{OntologyMapping, SparqlPlanner};
+use orchiddb::ir::PropertyGraph;
+use orchiddb::ir::plan::Direction;
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
+use orchiddb::ir::rel::{RelBackend, RelBackendOptions};
+use orchiddb::language::sparql::{OntologyMapping, SparqlPlanner};
 
 const EX: &str = "https://example.com/";
 

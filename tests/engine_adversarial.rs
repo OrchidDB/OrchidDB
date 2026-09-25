@@ -13,8 +13,8 @@
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
-use new_graph::engine::{GraphEngine, QueryResult, ReadMode};
-use new_graph::ir::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::engine::{GraphEngine, QueryResult, ReadMode};
+use orchiddb::ir::{PropertyGraph, edges_from_columns, nodes_from_columns};
 
 fn rows(result: QueryResult) -> Vec<String> {
     let batch = result.returned.batch;

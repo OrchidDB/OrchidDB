@@ -6,7 +6,7 @@ use arrow::{
     array::{Int64Array, RecordBatch},
     datatypes::{DataType, Field, Schema},
 };
-use new_graph::{
+use orchiddb::{
     ir::{
         catalog::{NodeTable, PropertyGraph},
         rel::{
@@ -121,7 +121,7 @@ fn native_aggregate_invalid_arity_is_rejected_during_binding() {
 fn interpreter_reports_native_aggregate_requirement_even_on_empty_input() {
     let parsed = parse_query("MATCH (p:P) WHERE p.x > 100 RETURN median(p.x)").unwrap();
     let plan = CypherPlanner::new().plan(&parsed).unwrap();
-    let error = new_graph::ir::interpreter::execute_rows(&plan, &graph()).unwrap_err();
+    let error = orchiddb::ir::interpreter::execute_rows(&plan, &graph()).unwrap_err();
     assert!(
         error.to_string().contains("require relational execution"),
         "{error}"
@@ -138,7 +138,7 @@ async fn zero_argument_native_aggregate_preserves_unwind_rows() {
 
 #[test]
 fn every_engine_expression_function_name_fits_existing_grammar() {
-    use new_graph::ir::functions::{DuckDbCatalog, FunctionKind};
+    use orchiddb::ir::functions::{DuckDbCatalog, FunctionKind};
     let catalog = DuckDbCatalog::new().unwrap();
     let mut checked = std::collections::BTreeSet::new();
     for overload in catalog.functions().filter(|f| {

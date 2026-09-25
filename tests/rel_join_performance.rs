@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::rel::{RelBackend, sql};
-use new_graph::language::cypher::{parser::parse_query, planner::CypherPlanner};
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::rel::{RelBackend, sql};
+use orchiddb::language::cypher::{parser::parse_query, planner::CypherPlanner};
 
 fn fixture() -> PropertyGraph {
     let mut graph = PropertyGraph::new();

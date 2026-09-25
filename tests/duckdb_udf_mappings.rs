@@ -7,7 +7,7 @@ use duckdb::{
     vscalar::{ScalarFunctionSignature, VScalar},
     vtab::arrow::WritableVector,
 };
-use new_graph::{
+use orchiddb::{
     ir::{
         catalog::PropertyGraph,
         functions::{
@@ -239,7 +239,7 @@ fn mapping_registration_preserves_language_semantics_and_rejects_wrong_types() {
 
 #[tokio::test]
 async fn mapped_engine_owns_function_scope_across_async_queries() {
-    use new_graph::{ir::rel::mapping::GraphMapping, mapped_engine::MappedGraphEngine};
+    use orchiddb::{ir::rel::mapping::GraphMapping, mapped_engine::MappedGraphEngine};
     let mut engine = MappedGraphEngine::new(DuckDbExecutor::new(), Arc::new(GraphMapping::new()));
     engine
         .execute_sql("CREATE MACRO engine_offset(x) AS x + 10")
@@ -282,7 +282,7 @@ async fn mapped_engine_owns_function_scope_across_async_queries() {
 #[tokio::test]
 async fn mapped_updates_use_registered_function_mappings() {
     use arrow::datatypes::{Field, Schema};
-    use new_graph::{
+    use orchiddb::{
         ir::rel::mapping::{GraphMapping, NodeMapping},
         mapped_engine::MappedGraphEngine,
     };

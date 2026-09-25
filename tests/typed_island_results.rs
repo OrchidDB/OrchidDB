@@ -1,8 +1,8 @@
 #![cfg(feature = "duckdb")]
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 use serde_json::Value;
 
-fn native(result: &new_graph::engine::QueryResult, language: &str) -> Value {
+fn native(result: &orchiddb::engine::QueryResult, language: &str) -> Value {
     let key = format!("crabgraph.{language}.typed_rows.v1");
     let schema = result.returned.batch.schema();
     serde_json::from_str(schema.metadata().get(&key).expect("typed result boundary")).unwrap()
@@ -66,11 +66,11 @@ async fn gremlin_maps_stay_native_across_sql_boundaries() {
 #[tokio::test]
 async fn sql_preserves_composed_null_predicate_precedence() {
     let query = "UNWIND [true,false,null] AS a UNWIND [true,false,null] AS b UNWIND [true,false,null] AS c RETURN (a OR (b AND c)) IS NULL = ((a OR b) AND (a OR c)) IS NULL AS result";
-    let graph = new_graph::ir::catalog::PropertyGraph::new();
-    let parsed = new_graph::language::cypher::parser::parse_query(query).unwrap();
-    let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&parsed).unwrap();
-    let lowered = new_graph::ir::rel::RelBackend::new().lower(&plan, &graph).unwrap();
-    let sql = new_graph::ir::rel::sql::unparse(&lowered, new_graph::ir::rel::sql::SqlDialect::DuckDb).unwrap();
+    let graph = orchiddb::ir::catalog::PropertyGraph::new();
+    let parsed = orchiddb::language::cypher::parser::parse_query(query).unwrap();
+    let plan = orchiddb::language::cypher::planner::CypherPlanner::new().plan(&parsed).unwrap();
+    let lowered = orchiddb::ir::rel::RelBackend::new().lower(&plan, &graph).unwrap();
+    let sql = orchiddb::ir::rel::sql::unparse(&lowered, orchiddb::ir::rel::sql::SqlDialect::DuckDb).unwrap();
     let mut engine = GraphEngine::in_memory().unwrap();
     let result = engine.cypher(query).await.unwrap();
     let rows = native(&result, "cypher");

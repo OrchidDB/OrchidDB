@@ -1,9 +1,9 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::ir::rel::sql::program::{
+use orchiddb::ir::rel::sql::program::{
     DuckDbProgram, ProgramStage, WorkColumn, WorkStage, WorkType,
 };
-use new_graph::ir::rel::sql::{DuckDbExecutor, SqlExecutor, SqlValue};
+use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlExecutor, SqlValue};
 use std::time::Duration;
 
 fn numbers_program() -> (DuckDbProgram, String) {

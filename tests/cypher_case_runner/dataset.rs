@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use new_graph::ir::catalog::PropertyGraph;
+use orchiddb::ir::catalog::PropertyGraph;
 
 use super::initializer;
 use super::loader;
@@ -190,7 +190,7 @@ fn push_unique(out: &mut Vec<String>, value: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use new_graph::ir::value::Value;
+    use orchiddb::ir::value::Value;
 
     #[test]
     fn csv_empty_builds_empty_graph() {

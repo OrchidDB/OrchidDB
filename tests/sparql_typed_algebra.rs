@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 
-use new_graph::ir::rel::mapping::schema_only_provider;
-use new_graph::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
+use orchiddb::ir::rel::mapping::schema_only_provider;
+use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
 
 const EX: &str = "http://example.org/";
 const XSD: &str = "http://www.w3.org/2001/XMLSchema#";
@@ -158,7 +158,7 @@ async fn parser_preserves_nested_filter_scope_and_boolean_tokens() {
     let direct = rows(&mut engine, r#"SELECT ?name ?age WHERE {
         ex:alice ex:name ?name OPTIONAL { ex:alice ex:age ?age FILTER(?name = "Alice") } }"#).await;
     assert_eq!(direct, vec![vec![string("Alice"), int("30")]]);
-    use new_graph::language::sparql::parse_query_with_base;
+    use orchiddb::language::sparql::parse_query_with_base;
     assert!(parse_query_with_base("SELECT * WHERE { FILTER (?x<?a&&?b>?y) }", EX).is_err());
     assert!(parse_query_with_base("SELECT * WHERE { FILTER (?x < ?a && ?b > ?y) }", EX).is_ok());
 }
@@ -681,8 +681,8 @@ async fn order_by_ranks_term_kinds_and_numbers() {
 
 #[test]
 fn typed_algebra_is_standard_ir_without_extensions() {
-    use new_graph::ir::df::{from_logical_plan, to_logical_plan};
-    use new_graph::language::sparql::SparqlPlanner;
+    use orchiddb::ir::df::{from_logical_plan, to_logical_plan};
+    use orchiddb::language::sparql::SparqlPlanner;
     for body in [
         "SELECT * WHERE { GRAPH ?g {} }",
         "SELECT ?s (COUNT(?o) AS ?c) (GROUP_CONCAT(?o) AS ?g) (SAMPLE(?o) AS ?x) WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(?o) > 1)",
@@ -692,7 +692,7 @@ fn typed_algebra_is_standard_ir_without_extensions() {
         let plan = SparqlPlanner::new("people")
             .plan_str(&format!("{PREFIX}{body}"))
             .unwrap();
-        let text = new_graph::ir::explain(&plan);
+        let text = orchiddb::ir::explain(&plan);
         assert!(!text.contains("GraphExtension"), "{text}");
         let logical = to_logical_plan(&plan).unwrap();
         assert_eq!(from_logical_plan(&logical).unwrap(), plan, "{body}");

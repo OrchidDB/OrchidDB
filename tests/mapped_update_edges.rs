@@ -1,9 +1,9 @@
 #![cfg(feature = "duckdb")]
 
 use arrow::datatypes::{DataType, Field, Schema};
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::mapped_engine::MappedGraphEngine;
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::mapped_engine::MappedGraphEngine;
 use std::sync::Arc;
 
 fn engine() -> MappedGraphEngine {

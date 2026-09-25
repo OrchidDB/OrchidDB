@@ -58,12 +58,12 @@ use std::time::{Duration, Instant};
 
 use num_bigint::BigInt;
 
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::{ReturnedBatches, execute};
-use new_graph::ir::plan::explain;
-use new_graph::ir::value::{STRUCT_ORDER_KEY, Value};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::{ReturnedBatches, execute};
+use orchiddb::ir::plan::explain;
+use orchiddb::ir::value::{STRUCT_ORDER_KEY, Value};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 #[path = "gremlin_case_runner/case_file.rs"]
 mod case_file;

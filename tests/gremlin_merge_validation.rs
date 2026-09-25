@@ -1,8 +1,8 @@
 //! MergeStep validation timing and onMatch traversal contracts from TinkerPop 3.7.4.
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn run(query: &str, graph: &PropertyGraph) -> Result<Vec<Value>, String> {
     let traversal = parse_traversal(query).map_err(|error| error.to_string())?;
@@ -156,7 +156,7 @@ fn merges_create_and_refind_public_ids_without_duplicate_elements() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn on_match_effects_commit_and_roll_back_with_the_traversal() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.gremlin("g.addV('person').as('a').addV('person').as('b').addE('knows').from('a').to('b').property('weight',1).none()").await.unwrap();
     let error = engine.gremlin("g.mergeE([(T.label):'knows']).option(Merge.onMatch,__.sideEffect(__.property('weight',0)).constant(['~illegal':1]))").await.unwrap_err().to_string();
     assert!(

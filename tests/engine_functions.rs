@@ -1,5 +1,5 @@
 #![cfg(feature = "duckdb")]
-use new_graph::ir::{
+use orchiddb::ir::{
     catalog::PropertyGraph,
     functions::{DuckDbCatalog, FunctionKind, OperatorTable},
     rel::{
@@ -7,7 +7,7 @@ use new_graph::ir::{
         sql::{self, DuckDbExecutor, SqlDialect},
     },
 };
-use new_graph::language::cypher::{parse_query, planner::CypherPlanner};
+use orchiddb::language::cypher::{parse_query, planner::CypherPlanner};
 
 async fn query(query: &str) -> Vec<Vec<String>> {
     let plan = CypherPlanner::new()

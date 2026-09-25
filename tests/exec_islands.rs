@@ -10,14 +10,14 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::exec::{
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::exec::{
     DataFusionTarget, ExecStats, IslandTarget, SqlTarget, execute_with_islands, plan_with_islands,
 };
-use new_graph::ir::interpreter::execute;
-use new_graph::ir::rel::RelBackend;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::interpreter::execute;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 /// Two people, one `knows` edge between them.
 fn fixture() -> PropertyGraph {
@@ -47,7 +47,7 @@ fn rows_of(graph: &PropertyGraph, query: &str) -> Vec<String> {
     render(execute(&plan, graph).expect("run"))
 }
 
-fn render(returned: new_graph::ir::interpreter::ReturnedBatches) -> Vec<String> {
+fn render(returned: orchiddb::ir::interpreter::ReturnedBatches) -> Vec<String> {
     let batch = returned.batch;
     (0..batch.num_rows())
         .map(|row| {

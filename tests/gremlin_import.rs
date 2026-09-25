@@ -1,5 +1,5 @@
 //! File imports use ordinary mutation plans, typed readers and transactions.
-use new_graph::{
+use orchiddb::{
     ir::{catalog::PropertyGraph, interpreter::execute_rows, value::Value},
     language::gremlin::{GremlinPlanner, parse_traversal},
 };
@@ -36,7 +36,7 @@ const GRAPH: &str = r#"
 {"id":{"@type":"g:Int32","@value":71},"label":"person","outE":{"knows":[{"id":{"@type":"g:Int64","@value":91},"inV":{"@type":"g:Int32","@value":72},"properties":{"weight":{"@type":"g:Float","@value":0.5}}}]},"properties":{"age":[{"id":{"@type":"g:Int64","@value":101},"value":{"@type":"g:Int64","@value":27}}],"names":[{"id":{"@type":"g:Int64","@value":102},"value":{"@type":"g:List","@value":["a","b"]}}]}}
 {"id":{"@type":"g:Int32","@value":72},"label":"person","properties":{"age":[{"id":{"@type":"g:Int64","@value":103},"value":{"@type":"g:Int32","@value":29}}]}}
 "#;
-fn plan(query: &str) -> new_graph::ir::plan::GraphPlan {
+fn plan(query: &str) -> orchiddb::ir::plan::GraphPlan {
     GremlinPlanner::new()
         .plan(&parse_traversal(query).unwrap())
         .unwrap()
@@ -58,7 +58,7 @@ fn graphson_reader_imports_typed_properties_and_edges() {
     ] {
         let graph = PropertyGraph::new();
         let p = plan(&file.query(option));
-        assert!(new_graph::ir::exec::contains_mutation(&p.root));
+        assert!(orchiddb::ir::exec::contains_mutation(&p.root));
         assert!(execute_rows(&p, &graph).unwrap().is_empty());
         assert_eq!(values(&graph, "g.V().count()"), vec![Value::Long(2)]);
         assert_eq!(values(&graph, "g.E().count()"), vec![Value::Long(1)]);
@@ -100,7 +100,7 @@ fn malformed_graphson_does_not_mutate_existing_graph() {
 mod durable {
     use super::*;
     use arrow::array::Int64Array;
-    use new_graph::engine::GraphEngine;
+    use orchiddb::engine::GraphEngine;
     async fn count(engine: &mut GraphEngine) -> i64 {
         let result = engine.gremlin("g.V().count()").await.unwrap();
         result

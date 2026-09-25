@@ -6,9 +6,9 @@
 
 The remaining work needs **an upstream Java provider test path, a general lambda execution contract, and a real GraphComputer execution profile**. Extending the current string-based Gremlin adapter alone will not cover all three.
 
-1. **Add a Java provider bridge over Crabgraph.** Implement the TinkerPop Graph/Vertex/Edge/VertexProperty/Property interfaces needed by the pinned upstream Java tests, with real native identity, property cardinality, mutation, transaction and feature contracts. Reuse the current native storage and transport. Keep execution modes explicit: Java reference traversal over Crabgraph storage tests provider/storage behavior; execution through Crabgraph's planner tests its traversal engine. A Java interpreter computing answers over a detached fixture does not establish Crabgraph engine conformance.
+1. **Add a Java provider bridge over OrchidDB.** Implement the TinkerPop Graph/Vertex/Edge/VertexProperty/Property interfaces needed by the pinned upstream Java tests, with real native identity, property cardinality, mutation, transaction and feature contracts. Reuse the current native storage and transport. Keep execution modes explicit: Java reference traversal over OrchidDB storage tests provider/storage behavior; execution through OrchidDB's planner tests its traversal engine. A Java interpreter computing answers over a detached fixture does not establish OrchidDB engine conformance.
 2. **Add a typed submission path.** Preserve native elements, properties, empty sets, arbitrary-precision numbers, callbacks and nested maps without round-tripping everything through a grammar string. Prefer the pinned upstream traversal/bytecode or provider interfaces where supported. Define a versioned typed boundary into native execution; retain the current grammar path as its own tested profile.
-3. **Support lambdas as a deliberate execution capability.** Supply real traverser context, callback types, property access, paths, labels, bulk and sack lifecycle. Choose either a JVM callback bridge invoked by native execution or an explicitly identified JVM traversal profile backed by Crabgraph. These establish different claims. The remote-lambda case additionally needs a working remote submission/runtime path.
+3. **Support lambdas as a deliberate execution capability.** Supply real traverser context, callback types, property access, paths, labels, bulk and sack lifecycle. Choose either a JVM callback bridge invoked by native execution or an explicitly identified JVM traversal profile backed by OrchidDB. These establish different claims. The remote-lambda case additionally needs a working remote submission/runtime path.
 4. **Implement GraphComputer semantics.** Add supersteps, message scopes, per-vertex compute state, memory/reducers, termination, traversal integration and result/persist behavior. A correct single-process implementation is a useful first target; distributed execution is not required merely to begin testing these cases. Algorithm wrappers must compute from arbitrary graph data.
 5. **Complete stream-consumption and state contracts.** Extend the existing evaluator's barriers, lazy consumption, seeded side effects, cyclic modulators and repeat scheduling. Use explicit effects and traversal requirements to decide when materialization, reordering or bulking is legal. A wholesale engine rewrite is not assumed; shared behavior must remain compatible with Cypher and SPARQL.
 
@@ -188,7 +188,7 @@ The current implementation has verified readers/import. Writer Gherkin entries a
 - Export from a consistent native graph snapshot with public IDs, labels, endpoints, typed values and each format's supported property/meta-property representation.
 - Reuse the Java codec bridge where appropriate. Keep format capability differences explicit; do not promise a lossless round trip for a feature the chosen format cannot represent.
 - Surface writer errors, close files reliably and avoid treating a created empty file as success. Handle destination replacement through a defined completion/atomicity contract.
-- Run applicable pinned Java WriteTest/IO tests, and load output using an independent compatible reader as well as Crabgraph's reader.
+- Run applicable pinned Java WriteTest/IO tests, and load output using an independent compatible reader as well as OrchidDB's reader.
 
 ### Acceptance
 
@@ -213,7 +213,7 @@ Review these with upstream source before implementing. Existing concrete example
 
 ## Harness and evidence design
 
-Use upstream tests as the authority. The new harness should orchestrate upstream suites and expose Crabgraph's implementation, rather than invent a parallel set of expected answers.
+Use upstream tests as the authority. The new harness should orchestrate upstream suites and expose OrchidDB's implementation, rather than invent a parallel set of expected answers.
 
 1. Pin the same TinkerPop revision first: `fa698ba2aba8967dcd17eb61cb13648b934fab5b` (3.7.4). Treat a version upgrade as separate work.
 2. Inventory Java test methods, feature annotations and execution requirements. Link each of the 15 Gherkin placeholders to actual Java test methods where available. If no executable upstream equivalent exists, label a supplemental test separately.

@@ -1,4 +1,4 @@
-// Abstract crab constellations: no image downloads, no dependencies.
+// Abstract orchid constellations: no image downloads, no dependencies.
 (() => {
   const canvas = document.querySelector('.hero-graph');
   const button = document.querySelector('.animation-toggle');
@@ -9,15 +9,26 @@
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   let width = 0, height = 0, frame = 0, time = 0, previous = 0;
   let visible = true, paused = false;
-  // Each crab is a small graph: shell, eyes, jointed legs and open claws.
-  const points = [[-42,-16],[0,-28],[42,-16],[53,20],[25,42],[-25,42],[-53,20],[0,9],[-24,-51],[24,-51],[-72,-40],[-82,-78],[-61,-104],[-88,-101],[-106,-73],[72,-40],[82,-78],[61,-104],[88,-101],[106,-73],[-83,9],[-114,42],[-87,38],[-111,78],[-61,58],[-72,102],[83,9],[114,42],[87,38],[111,78],[61,58],[72,102]];
-  const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0],[0,7],[2,7],[4,7],[5,7],[1,7],[0,8],[2,9],[0,10],[10,11],[11,12],[11,13],[13,14],[14,10],[2,15],[15,16],[16,17],[16,18],[18,19],[19,15],[6,20],[20,21],[6,22],[22,23],[5,24],[24,25],[3,26],[26,27],[3,28],[28,29],[4,30],[30,31]];
+  // Five orchid petals form small connected graphs around a shared center.
+  const points = [[0, 0], [-12, 16], [12, 16], [0, 34]];
+  const edges = [[0, 1], [0, 2], [1, 3], [2, 3]];
+  for (let petal = 0; petal < 5; petal++) {
+    const angle = -Math.PI / 2 + petal * Math.PI * 2 / 5;
+    const first = points.length;
+    for (const [radial, lateral] of [[35, -22], [80, -32], [112, 0], [80, 32], [35, 22]]) {
+      points.push([Math.cos(angle) * radial - Math.sin(angle) * lateral,
+                   Math.sin(angle) * radial + Math.cos(angle) * lateral]);
+    }
+    edges.push([0, first], [first, first+1], [first+1, first+2],
+               [first+2, first+3], [first+3, first+4], [first+4, 0],
+               [first, first+4], [first+1, first+3]);
+  }
   function line(a, b, opacity) {
-    ctx.strokeStyle = `rgba(116,180,213,${opacity})`;
+    ctx.strokeStyle = `rgba(177,151,213,${opacity})`;
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
   }
   function dot(p, radius, coral, alpha = .7) {
-    ctx.fillStyle = coral ? `rgba(238,159,123,${alpha})` : `rgba(145,204,232,${alpha})`;
+    ctx.fillStyle = coral ? `rgba(236,170,210,${alpha})` : `rgba(204,184,235,${alpha})`;
     ctx.beginPath(); ctx.arc(p[0], p[1], radius, 0, Math.PI * 2); ctx.fill();
   }
   function draw() {
@@ -35,7 +46,7 @@
           dot([moving[a][0]+(moving[b][0]-moving[a][0])*t,moving[a][1]+(moving[b][1]-moving[a][1])*t],1.7,true,.65);
         }
       });
-      moving.forEach((p,i) => dot(p,i===8||i===9?3.4:2.2,i%6===0));
+      moving.forEach((p,i) => dot(p,i===0?3.4:2.2,i%6===0));
     });
     const ambient = Array.from({length:22},(_,i) => [width*i/21+Math.sin(time*.13+i)*12,height*(.84+.08*Math.sin(i*1.8))+Math.sin(time*.24+i)*8]);
     ambient.forEach((p,i) => {
@@ -46,7 +57,7 @@
   }
   function running() { return !paused && !reduced.matches && visible && !document.hidden; }
   function tick(now) {
-    if (!running()) { frame=0; previous=0; return; }
+    if (!running()) { frame=0; previous=0; sync(); return; }
     if (!previous || now-previous>=32) {
       if(previous) time+=Math.min((now-previous)/1000,.1);
       previous=now; draw();

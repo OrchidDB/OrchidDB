@@ -9,7 +9,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / 'dist'
-BASE = 'https://docs.crabgraph.net'
+BASE = 'https://docs.orchiddb.com'
 PAGES = [(slug, title) for title, slug in re.findall(
     r'^- \[([^\]]+)\]\(([^)]+)\.md\)$',
     (ROOT / 'content/SUMMARY.md').read_text(), re.MULTILINE)]
@@ -34,15 +34,15 @@ def build():
     (OUT / 'conformance-report.html').write_text('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conformance report · Crabgraph</title>
+<title>Conformance report · OrchidDB</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/conformance.css">
 <link rel="stylesheet" href="assets/report.css">
 <script src="assets/conformance.js" defer></script></head>
 <body class="comparison-page"><a class="skip-link" href="#content">Skip to content</a>
 <header class="report-header"><a href="conformance.html">← Back to the book</a>
-<a href="https://crabgraph.net/">Crabgraph</a>
-<a href="https://github.com/henneberger/new-graph">GitHub</a></header>
+<a href="https://orchiddb.com/">OrchidDB</a>
+<a href="https://github.com/OrchidDB/OrchidDB">GitHub</a></header>
 <main id="content"><h1>Conformance report</h1>
 <p>Recorded upstream scenarios, individual outcomes, and reproducible evidence.</p>
 ''' + article + '\n</main></body></html>\n')
@@ -54,7 +54,7 @@ def build():
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         ''.join(f'<url><loc>{BASE}{escape(url)}</loc></url>' for url in urls) + '</urlset>\n')
-    (OUT / 'llms.txt').write_text('# Crabgraph documentation\n\n' + ''.join(
+    (OUT / 'llms.txt').write_text('# OrchidDB documentation\n\n' + ''.join(
         f'- [{title}]({BASE}/{slug}.html)\n' for slug, title in PAGES) +
         f'- [Full conformance report]({BASE}/conformance-report.html)\n')
     print(f'Built {len(PAGES)} mdBook chapters and the conformance report in {OUT}')

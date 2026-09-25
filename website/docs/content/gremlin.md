@@ -4,13 +4,13 @@ Traverse nodes and relationships step by step with Gremlin, then project the val
 
 ## Conformance
 
-Crabgraph passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gremlin suite. The complete run uses one Crabgraph instance. The [conformance comparison](conformance-report.html#language-tinkerpop) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
+OrchidDB passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gremlin suite. The complete run uses one OrchidDB instance. The [conformance comparison](conformance-report.html#language-tinkerpop) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
 
 ## Start a traversal
 
-Crabgraph accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
+OrchidDB accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
 
-JVM callbacks and TinkerPop vertex programs execute as operators in the same [SQL IR/DataFusion pipeline](https://github.com/henneberger/new-graph/blob/main/docs/sql-ir-datafusion-execution.md). Typed callbacks can be supplied through `gremlin_with_bindings`. The [compatibility matrix](conformance-report.html#language-tinkerpop) reports one Crabgraph outcome per scenario.
+JVM callbacks and TinkerPop vertex programs execute as operators in the same [SQL IR/DataFusion pipeline](https://github.com/OrchidDB/OrchidDB/blob/main/docs/sql-ir-datafusion-execution.md). Typed callbacks can be supplied through `gremlin_with_bindings`. The [compatibility matrix](conformance-report.html#language-tinkerpop) reports one OrchidDB outcome per scenario.
 
 ```gremlin
 g.V().hasLabel('Person').values('name')

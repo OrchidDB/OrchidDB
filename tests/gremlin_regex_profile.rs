@@ -1,4 +1,4 @@
-use new_graph::{
+use orchiddb::{
     ir::{catalog::PropertyGraph, interpreter::execute_rows, value::Value},
     language::gremlin::{GremlinPlanner, parse_traversal},
 };

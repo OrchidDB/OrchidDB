@@ -13,12 +13,12 @@ use std::sync::Arc;
 use arrow::array::{Array, ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::DataType;
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::plan::GraphPlan;
-use new_graph::ir::rel::RelBackend;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::plan::GraphPlan;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
 
 /// A directed `NEXT` chain of `edges` edges (`edges + 1` nodes `n0..n{edges}`).
 fn chain_graph(edges: usize) -> PropertyGraph {

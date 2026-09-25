@@ -13,8 +13,8 @@ For existing RDF quad tables, define an `RdfDatasetMapping` and use `RdfGraphEng
 This vocabulary describes the people and social relationships in the [mapped tutorial](mapped-graphs.md):
 
 ```rust
-use new_graph::ir::plan::Direction;
-use new_graph::language::sparql::OntologyMapping;
+use orchiddb::ir::plan::Direction;
+use orchiddb::language::sparql::OntologyMapping;
 
 let ontology = OntologyMapping::new()
     .class("https://example.com/Person", "Person")

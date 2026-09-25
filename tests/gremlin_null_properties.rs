@@ -1,8 +1,8 @@
-use new_graph::ir::catalog::{Cardinality, PropertyGraph};
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
-use new_graph::storage::{decode_graph, encode_graph};
+use orchiddb::ir::catalog::{Cardinality, PropertyGraph};
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::storage::{decode_graph, encode_graph};
 use std::collections::BTreeMap;
 
 fn values(graph: &PropertyGraph, query: &str) -> Vec<Value> {
@@ -96,7 +96,7 @@ fn merge_writes_and_repeat_presence_use_null_feature_contract() {
 #[test]
 fn null_overrides_shadow_arrow_columns_without_turning_other_rows_into_properties() {
     use arrow::array::{ArrayRef, Int64Array};
-    use new_graph::ir::{edges_from_columns, nodes_from_columns};
+    use orchiddb::ir::{edges_from_columns, nodes_from_columns};
     use std::sync::Arc;
     let mut graph = graph();
     graph.add_nodes(nodes_from_columns("item", vec![("x", Arc::new(Int64Array::from(vec![Some(7), None])) as ArrayRef)]));
@@ -132,7 +132,7 @@ fn merge_null_criteria_match_presence_and_repeat_checks_absence() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn durable_null_properties_survive_incremental_reopen_and_transaction_rollback() {
-    use new_graph::engine::GraphEngine;
+    use orchiddb::engine::GraphEngine;
     async fn assert_count(engine: &mut GraphEngine, query: &str, expected: i64) {
         let result = engine.gremlin(&format!("{query}.count()")).await.unwrap();
         let column = result.returned.batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();

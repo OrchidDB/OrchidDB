@@ -7,7 +7,7 @@
 
 ## Execution architecture
 
-Crabgraph now provides a production JVM traversal executor backed by its native
+OrchidDB now provides a production JVM traversal executor backed by its native
 `PropertyGraph` store. The JVM provider implements TinkerPop graph interfaces;
 the Rust store owns graph state, identity, mutations and persistence. Groovy and
 bytecode traversal submissions execute through this provider. GraphComputer
@@ -20,7 +20,7 @@ automatic mixed SQL/interpreter/JVM DAG or JVM-to-DuckDB re-entry.
 
 The optional `jvm-codecs` module handles GraphML/Gryo format conversion. Its
 TinkerGraph staging is a format codec; the production traversal executor uses
-Crabgraph native graph state.
+OrchidDB native graph state.
 
 ## Original gap inventory
 

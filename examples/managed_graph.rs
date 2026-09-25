@@ -2,8 +2,8 @@
 #[cfg(feature = "duckdb")]
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    use new_graph::engine::GraphEngine;
-    use new_graph::ir::Value;
+    use orchiddb::engine::GraphEngine;
+    use orchiddb::ir::Value;
     use std::collections::BTreeMap;
 
     let mut graph = GraphEngine::in_memory()?;

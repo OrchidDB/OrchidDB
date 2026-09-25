@@ -1,8 +1,8 @@
-use new_graph::ir::catalog::{Cardinality, PropertyGraph};
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
-use new_graph::storage::{decode_graph, encode_graph};
+use orchiddb::ir::catalog::{Cardinality, PropertyGraph};
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::storage::{decode_graph, encode_graph};
 use std::collections::BTreeMap;
 fn values(g: &PropertyGraph, q: &str) -> Vec<Value> {
     let plan = GremlinPlanner::new()
@@ -226,7 +226,7 @@ fn ordinary_property_equality_compares_key_and_value_across_owners() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn scalar_element_strings_keep_public_ids_across_sql_boundaries() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.gremlin("g.addV('x').property(T.id,'left').as('a').addV('y').property(T.id,'right').addE('route').from('a').property(T.id,'link')").await.unwrap();
     let vertices = engine.gremlin("g.V().asString()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
@@ -321,6 +321,6 @@ fn native_property_equality_and_dedup_use_the_same_typed_value_identity() {
     assert_eq!(properties[0], properties[1]);
     assert_eq!(properties[0].three_valued_eq(&properties[1]), Some(true));
     assert_eq!(values(&graph, "g.E().properties('reading').dedup().count()"), vec![Value::Long(1)]);
-    let native_set = new_graph::ir::value::gremlin_set(properties);
+    let native_set = orchiddb::ir::value::gremlin_set(properties);
     assert!(matches!(native_set, Value::Set(items) if items.len() == 1));
 }

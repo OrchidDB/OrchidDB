@@ -1,8 +1,8 @@
 //! AddVertexStep property parameters run against the incoming traverser.
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn values(query: &str, graph: &PropertyGraph) -> Vec<Value> {
     let plan = GremlinPlanner::new()

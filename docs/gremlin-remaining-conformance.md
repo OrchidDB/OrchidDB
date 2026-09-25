@@ -64,7 +64,7 @@ This plan covers **all 112 currently failing Gremlin cases: 108 failures and 4 t
 - Source revision recorded by runner: `21d83285628fbdec441c960ce8a7eb7f08f0dc1a`; published result commit: `4510350`.
 - The artifact records `working_tree_modified: true`; use its binary hash and exact artifact as the evidence identity, not an assertion that this was a clean checkout build.
 - Binary SHA-256: `ee6164534fc645d789953244e1a4ce2928f06f2261f2f62ea7274bfcd1d361d2`.
-- SQLg: 1,322 passes; PuppyGraph: 972. **68** cases are currently not passing in Crabgraph and pass in at least one of those peers. A total-score difference of 29 from SQLg does not imply only 29 missing behaviors.
+- SQLg: 1,322 passes; PuppyGraph: 972. **68** cases are currently not passing in OrchidDB and pass in at least one of those peers. A total-score difference of 29 from SQLg does not imply only 29 missing behaviors.
 
 The diagnoses below combine the committed run, exact catalog assertions, local engine code and pinned upstream source. “Confirmed” describes an observed implementation or type mismatch; other causes are explicitly hypotheses to verify. This document does not rerun tests or claim fixes have been made.
 
@@ -463,7 +463,7 @@ g.V().choose(__.out().count()).
 **Observed:**
 
 ```text
-java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: Crabgraph adapter deadline
+java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: OrchidDB adapter deadline
 ```
 
 **Failed at:** the result should be unordered
@@ -821,7 +821,7 @@ g.inject(0).V().both().coalesce(has('name','marko').both(),constant(0)).simplePa
 **Observed:**
 
 ```text
-java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: Crabgraph adapter deadline
+java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: OrchidDB adapter deadline
 ```
 
 **Failed at:** the result should be unordered
@@ -2015,7 +2015,7 @@ g.call("tinker.search", xx1).with("type", "Vertex").element()
 **Observed:**
 
 ```text
-java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: Crabgraph adapter deadline
+java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: OrchidDB adapter deadline
 ```
 
 **Failed at:** the result should be ordered
@@ -2042,7 +2042,7 @@ g.V().repeat(__.out()).times(8).count()
 **Observed:**
 
 ```text
-java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: Crabgraph adapter deadline
+java.lang.RuntimeException: java.lang.IllegalStateException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: org.apache.tinkerpop.gremlin.process.remote.RemoteConnectionException: adapter-timeout: OrchidDB adapter deadline
 ```
 
 **Failed at:** the result should be ordered

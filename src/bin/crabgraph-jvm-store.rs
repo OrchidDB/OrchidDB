@@ -1,5 +1,5 @@
 //! Persistent JSON-lines storage process used by the JVM CrabGraph provider.
-use new_graph::jvm_bridge::Store;
+use orchiddb::jvm_bridge::Store;
 use std::io::{self, BufRead, Write};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);

@@ -1,7 +1,7 @@
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute;
-use new_graph::language::cypher::parse_query;
-use new_graph::language::cypher::planner::lower_query;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute;
+use orchiddb::language::cypher::parse_query;
+use orchiddb::language::cypher::planner::lower_query;
 
 #[test]
 fn list_comprehension_preserves_filter_mapping_nulls_and_local_scope() {

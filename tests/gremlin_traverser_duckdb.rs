@@ -15,13 +15,13 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema};
 use gremlin_case_runner::{compare, dataset, format};
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute as interpret;
-use new_graph::ir::rel::RelBackend;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlExecutor, SqlValue, TableData};
-use new_graph::language::gremlin::planner::GremlinPlanner;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute as interpret;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlExecutor, SqlValue, TableData};
+use orchiddb::language::gremlin::planner::GremlinPlanner;
 
-fn plan(query: &str) -> new_graph::ir::plan::GraphPlan {
+fn plan(query: &str) -> orchiddb::ir::plan::GraphPlan {
     let traversal =
         gremlin_case_runner::parse::gremlin_with_case(query, "").expect("parse gremlin");
     GremlinPlanner::new()
@@ -82,7 +82,7 @@ async fn probe() {
         println!("duckdb: {:?}", duckdb_lines(query, &graph).await);
         if std::env::var("GREMLIN_G1_SHOW").is_ok_and(|v| v == "1") {
             let plan = plan(query);
-            println!("{}", new_graph::ir::plan::explain(&plan));
+            println!("{}", orchiddb::ir::plan::explain(&plan));
             if std::env::var("GREMLIN_G1_DEBUG").is_ok_and(|v| v == "1") {
                 println!("{:#?}", plan.root);
             }

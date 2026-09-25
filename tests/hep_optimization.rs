@@ -16,15 +16,15 @@ use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 use datafusion::error::Result as DFResult;
 use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNode};
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::df::{
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::df::{
     GraphFilter, GraphNodeScan, GraphReturn, downcast_graph_ir, from_logical_plan, to_logical_plan,
 };
-use new_graph::ir::expr::{BinaryOp, IrExpr};
-use new_graph::ir::interpreter::execute;
-use new_graph::language::gremlin::ast::{Step, Traversal};
-use new_graph::language::gremlin::planner::GremlinPlanner;
-use new_graph::language::gremlin::semantics::{GValue, Predicate};
+use orchiddb::ir::expr::{BinaryOp, IrExpr};
+use orchiddb::ir::interpreter::execute;
+use orchiddb::language::gremlin::ast::{Step, Traversal};
+use orchiddb::language::gremlin::planner::GremlinPlanner;
+use orchiddb::language::gremlin::semantics::{GValue, Predicate};
 
 fn fixture() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol", "dave"]));
@@ -44,7 +44,7 @@ fn fixture() -> PropertyGraph {
     graph
 }
 
-fn plan(steps: Vec<Step>) -> new_graph::ir::plan::GraphPlan {
+fn plan(steps: Vec<Step>) -> orchiddb::ir::plan::GraphPlan {
     GremlinPlanner::new().plan(&Traversal::new(steps)).unwrap()
 }
 
@@ -99,7 +99,7 @@ fn hep_rule_downcasts_and_rewrites_filter() {
         if let Some(filter) = downcast_graph_ir::<GraphFilter>(plan) {
             if matches!(
                 &filter.condition,
-                IrExpr::Lit(new_graph::ir::expr::Lit::Bool(true))
+                IrExpr::Lit(orchiddb::ir::expr::Lit::Bool(true))
             ) {
                 // Replace with the single child.
                 let child = filter.inputs[0].clone();
@@ -165,7 +165,7 @@ fn round_trip_preserves_plan_semantics() {
         Step::Has {
             key: "age".into(),
             predicate: Predicate::Compare {
-                op: new_graph::language::gremlin::semantics::CompareOp::Gte,
+                op: orchiddb::language::gremlin::semantics::CompareOp::Gte,
                 value: GValue::Int(30),
             },
         },

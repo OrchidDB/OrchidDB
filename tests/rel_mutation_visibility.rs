@@ -17,12 +17,12 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::interpreter::{ReturnedBatches, execute};
-use new_graph::ir::plan::GraphPlan;
-use new_graph::ir::rel::RelBackend;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::interpreter::{ReturnedBatches, execute};
+use orchiddb::ir::plan::GraphPlan;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 /// `Person(name, age)` with `KNOWS` edges alice->bob, alice->carol, bob->carol.
 fn fixture() -> PropertyGraph {
@@ -108,7 +108,7 @@ fn interpreter_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
 }
 
 async fn sql_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
-    use new_graph::ir::rel::sql::{self, DuckDbExecutor};
+    use orchiddb::ir::rel::sql::{self, DuckDbExecutor};
     let lowered = RelBackend::new()
         .lower(&plan(query), graph)
         .expect("rel lower");

@@ -9,7 +9,7 @@ await page.goto(base+'/conformance-report.html');
 assert.equal(await page.locator('.comparison-row').count(),6533);
 assert.equal(await page.locator('.feature-card').count(),361);
 assert.equal(await page.locator('.feature-card:visible').count(),361);
-const products={tinkerpop:['Crabgraph','SQLg','PuppyGraph','JanusGraph'],opencypher:['Crabgraph','Neo4j Community','PuppyGraph'],rdf:['Crabgraph','Apache Jena TDB2']};
+const products={tinkerpop:['OrchidDB','SQLg','PuppyGraph','JanusGraph'],opencypher:['OrchidDB','Neo4j Community','PuppyGraph'],rdf:['OrchidDB','Apache Jena TDB2']};
 // All features stay visible; each product has exactly one column.
 for(const [suite,names] of Object.entries(products)){
   const valid=await page.locator('.feature-card[data-suite="'+suite+'"]').evaluateAll((cards,names)=>cards.every(card=>{

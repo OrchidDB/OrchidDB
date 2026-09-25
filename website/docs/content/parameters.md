@@ -8,7 +8,7 @@ Parameters are passed in a `BTreeMap<String, Value>` and referenced by `$name` i
 
 ```rust
 use std::collections::BTreeMap;
-use new_graph::ir::Value;
+use orchiddb::ir::Value;
 
 let params = BTreeMap::from([
     ("name".into(), Value::String("Alice".into())),

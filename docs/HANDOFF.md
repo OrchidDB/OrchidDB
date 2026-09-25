@@ -1,10 +1,10 @@
-# Crabgraph handoff
+# OrchidDB handoff
 
 Date: 2026-08-31
 
 ## Product direction
 
-Crabgraph is a graph-language data layer built on DataFusion. It is not a
+OrchidDB is a graph-language data layer built on DataFusion. It is not a
 database. Cypher, Gremlin, and SPARQL frontends produce a shared Graph IR.
 Relational regions lower to SQL islands and execute in DuckDB today, with
 other SQL engines intended later.
@@ -37,7 +37,7 @@ graph queries against them.
 - Added a sharded, full-denominator DuckDB corpus runner with machine-readable
   metrics, blockers, per-case outcomes, outcome transitions, and regression
   reports.
-- Added the one-page Crabgraph website, language tabs with generated SQL,
+- Added the one-page OrchidDB website, language tabs with generated SQL,
   bring-your-own-schema messaging, coverage details, and project links.
 
 ## Last verified denominators
@@ -161,6 +161,6 @@ claims, and no em dashes. Keep DataFusion described as the foundation of the
 planner, not as a database. Keep the graph schema and ontology mapping layers
 separate in diagrams and examples.
 
-Repository links currently use the existing GitHub repository path
-`henneberger/new-graph`, while the product name is Crabgraph. Rename the
-repository link only after the GitHub repository itself is renamed.
+The repository moved to `OrchidDB/OrchidDB` on 2026-09-25. The project is now
+OrchidDB, with the `orchiddb` Rust package and CLI. Historical conformance
+evidence and JVM/storage identifiers retain their original names.

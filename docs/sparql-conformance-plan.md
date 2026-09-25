@@ -28,7 +28,7 @@ the same execution contract.
 
 - W3C SPARQL 1.0/1.1, pinned revision
   `369a90d1a60c021b746df2e411da0ff36258a758`: **1,125 scenarios**.
-- Fresh starting Crabgraph run on 2026-09-25: **732 pass, 90 fail,
+- Fresh starting OrchidDB run on 2026-09-25: **732 pass, 90 fail,
   149 unsupported, 80 skipped, 74 not applicable**.
 - Peer: **Apache Jena 6.2.0 / TDB2**, Apache 2.0 license. It executes the same
   source fixtures and expected artifacts. Query and update syntax outcomes are
@@ -100,7 +100,7 @@ regression suites for the end, as requested by the user.
    their actual interfaces when provided; keep embedded API scope explicit.
 10. **Final evidence.** Run complete suites locally on a committed build,
     preserving Cypher 3,897/3,897 and Gremlin 1,511/1,511. Publish measured JSON
-    through the existing static-site action, with one Crabgraph result per case.
+    through the existing static-site action, with one OrchidDB result per case.
 
 Batch implementation changes before full SPARQL sweeps. Focused SPARQL
 regressions validate new contracts; full SPARQL runs can proceed in the

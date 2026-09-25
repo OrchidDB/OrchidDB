@@ -1,6 +1,6 @@
 # Glossary
 
-A compact reference for the terms used throughout Crabgraph's documentation.
+A compact reference for the terms used throughout OrchidDB's documentation.
 
 ## Graph terms
 

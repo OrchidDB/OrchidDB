@@ -17,7 +17,7 @@ use arrow::array::{
 };
 use arrow::datatypes::DataType;
 
-use new_graph::ir::interpreter::ReturnedBatches;
+use orchiddb::ir::interpreter::ReturnedBatches;
 
 pub fn lines_from_batch(batches: &ReturnedBatches) -> Vec<String> {
     let batch = &batches.batch;

@@ -37,6 +37,6 @@ and easy to search. Its tables and downloads also work without JavaScript.
 
 ## Reproduce a run
 
-See the [conformance runner documentation](https://github.com/henneberger/new-graph/tree/main/conformance)
+See the [conformance runner documentation](https://github.com/OrchidDB/OrchidDB/tree/main/conformance)
 for the pinned sources, adapters, and local commands. Read the scope and method
 alongside each result; passing an imported corpus is not standards certification.

@@ -2473,7 +2473,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "new-graph"
+name = "orchiddb"
 version = "0.1.0"
 dependencies = [
  "antlr4rust",

@@ -13,11 +13,11 @@ use std::sync::Arc;
 use arrow::array::{Array, ArrayRef, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 
-use new_graph::ir::plan::Direction;
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::language::sparql::OntologyMapping;
-use new_graph::mapped_engine::MappedGraphEngine;
+use orchiddb::ir::plan::Direction;
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::language::sparql::OntologyMapping;
+use orchiddb::mapped_engine::MappedGraphEngine;
 
 /// The user's schema, as raw SQL applied via `execute_sql`.
 const DDL: &str = r#"

@@ -12,7 +12,7 @@ In a mapped graph, these concepts come from your schema. A node's identity can b
 
 | Model | Data ownership | Entry point |
 | --- | --- | --- |
-| Managed graph | Crabgraph persists graph records in DuckDB. | `GraphEngine` |
+| Managed graph | OrchidDB persists graph records in DuckDB. | `GraphEngine` |
 | Mapped property graph | Your tables or views provide nodes and relationships. | `MappedGraphEngine` |
 | Mapped RDF dataset | Your quad tables provide RDF statements. | `RdfGraphEngine` |
 

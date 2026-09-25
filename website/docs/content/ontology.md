@@ -52,7 +52,7 @@ The graph mapping resolves `name` and `age` to physical columns. This keeps the 
 Use `relationship_between` to make both endpoint labels explicit:
 
 ```rust
-use new_graph::ir::plan::Direction;
+use orchiddb::ir::plan::Direction;
 
 let ontology = OntologyMapping::new()
     .class("https://example.com/Person", "Person")

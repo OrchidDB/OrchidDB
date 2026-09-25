@@ -4,7 +4,7 @@ use arrow::{
     array::{ArrayRef, RecordBatch, StringArray},
     datatypes::{DataType, Field, Schema},
 };
-use new_graph::ir::{
+use orchiddb::ir::{
     catalog::{NodeTable, PropertyGraph},
     rel::{
         RelBackend,
@@ -12,7 +12,7 @@ use new_graph::ir::{
     },
     value::Value,
 };
-use new_graph::language::cypher::{parse_query, planner::CypherPlanner};
+use orchiddb::language::cypher::{parse_query, planner::CypherPlanner};
 use std::{collections::HashMap, sync::Arc};
 
 fn graph(values: Vec<Value>) -> PropertyGraph {
@@ -58,8 +58,8 @@ async fn rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
 async fn hybrid_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
     let parsed = parse_query(query).unwrap();
     let plan = CypherPlanner::new().plan(&parsed).unwrap();
-    let (returned, _) = new_graph::ir::exec::execute_with_islands(
-        &plan, graph, &RelBackend::new(), &new_graph::ir::exec::SqlTarget::duckdb(),
+    let (returned, _) = orchiddb::ir::exec::execute_with_islands(
+        &plan, graph, &RelBackend::new(), &orchiddb::ir::exec::SqlTarget::duckdb(),
     ).await.unwrap();
     let mut rows = (0..returned.batch.num_rows()).map(|row| {
         arrow::util::display::array_value_to_string(returned.batch.column(0).as_ref(), row).unwrap()

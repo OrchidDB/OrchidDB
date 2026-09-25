@@ -1,7 +1,7 @@
 //! Graph assembly and inline CREATE fixture setup.
 
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::value::Value;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::value::Value;
 use num_bigint::BigInt;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

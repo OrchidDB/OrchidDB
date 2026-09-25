@@ -16,17 +16,17 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema};
 
-use new_graph::ir::bridge::gremlin as gb;
-use new_graph::ir::catalog::{NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::expr::Lit;
-use new_graph::ir::plan::GraphPlan;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
-use new_graph::ir::rel::{RelBackend, RelBackendOptions, execute_lowered};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use new_graph::language::gremlin::parser::parse_traversal;
-use new_graph::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
-use new_graph::planner::GremlinPlanner;
+use orchiddb::ir::bridge::gremlin as gb;
+use orchiddb::ir::catalog::{NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::expr::Lit;
+use orchiddb::ir::plan::GraphPlan;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor};
+use orchiddb::ir::rel::{RelBackend, RelBackendOptions, execute_lowered};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use orchiddb::language::gremlin::parser::parse_traversal;
+use orchiddb::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
+use orchiddb::planner::GremlinPlanner;
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));

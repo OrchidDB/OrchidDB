@@ -3,12 +3,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use arrow::array::StringArray;
-use new_graph::ir::catalog::{Cardinality, PropertyGraph, nodes_from_columns};
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::parser::parse_traversal_with_bindings;
-use new_graph::language::gremlin::semantics::GValue;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::catalog::{Cardinality, PropertyGraph, nodes_from_columns};
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::parser::parse_traversal_with_bindings;
+use orchiddb::language::gremlin::semantics::GValue;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn values(query: &str, graph: &PropertyGraph) -> Vec<Value> {
     let plan = GremlinPlanner::new()

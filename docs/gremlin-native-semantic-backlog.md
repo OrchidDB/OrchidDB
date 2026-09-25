@@ -1,6 +1,6 @@
 # Native Gremlin semantic backlog evidence
 
-These changes execute in the Rust traversal interpreter over Crabgraph storage.
+These changes execute in the Rust traversal interpreter over OrchidDB storage.
 The supplemental tests do not alter the pinned Gherkin catalog or its expected
 answers. Reference probes used TinkerPop 3.7.4, revision
 `fa698ba2aba8967dcd17eb61cb13648b934fab5b`, to establish behavior; native execution

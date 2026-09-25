@@ -2,14 +2,14 @@
 
 Published report: https://docs.crabgraph.net/conformance.html
 
-Compare **Crabgraph, Neo4j Community, SQLg, PuppyGraph, JanusGraph and Apache Jena**, using free editions. The primary
+Compare **OrchidDB, Neo4j Community, SQLg, PuppyGraph, JanusGraph and Apache Jena**, using free editions. The primary
 corpus is the original upstream test data and assertions:
 
 | Suite | Pinned version | Scenarios | Compared interfaces |
 | --- | --- | ---: | --- |
-| openCypher TCK | 2024.3 | 3,897 | Crabgraph, Neo4j Community, PuppyGraph |
-| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | Crabgraph, SQLg, PuppyGraph, JanusGraph |
-| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | Crabgraph, Apache Jena TDB2 |
+| openCypher TCK | 2024.3 | 3,897 | OrchidDB, Neo4j Community, PuppyGraph |
+| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | OrchidDB, SQLg, PuppyGraph, JanusGraph |
+| W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | OrchidDB, Apache Jena TDB2 |
 
 The 6,533 scenarios are grouped by language, with outcomes for the compared interfaces.
 An absent language interface is not counted as a query failure. The report also
@@ -17,7 +17,10 @@ contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
 certification or a claim to cover every product feature.
 
-## One Crabgraph execution
+Historical result keys and runner engine selectors retain `crabgraph` so recorded
+evidence and reproduction commands remain valid after the rename.
+
+## One OrchidDB execution
 
 The production matrix and leaderboard read `upstream-results/crabgraph-tinkerpop.json`.
 Each scenario has one outcome from one suite invocation against one persistent
@@ -129,7 +132,7 @@ are ignored. The static site renders these artifacts without starting engines.
   their assertions. Fixtures come from `TinkerFactory`. The TinkerGraph
   reference run checks the same harness. Standard non-GraphComputer/non-null
   profiles and upstream skips are preserved. PuppyGraph fixture mappings retain
-  upstream integer widths; Crabgraph transports native graph objects, paths, numeric widths,
+  upstream integer widths; OrchidDB transports native graph objects, paths, numeric widths,
   typed map keys, sets and bulk sets. The JVM structure and
   GraphComputer test suites are outside this Gherkin comparison.
 - **Cypher:** the adapter executes original GIVEN/WHEN/THEN steps, result
@@ -157,7 +160,7 @@ and contribute no primary-suite passes or failures.
 Each result includes a stable upstream ID, case hash, outcome, elapsed time,
 and available actual output/diagnostic. The catalog preserves original steps,
 expectations and pinned source links. Runs record source revisions, runtime
-information and engine version or Crabgraph binary hash. The Crabgraph run is a
+information and engine version or OrchidDB binary hash. The OrchidDB run is a
 local working-tree build, not a release benchmark.
 
 Outcomes: `pass`, `fail`, `unsupported`, `skipped`, `not-applicable`,
@@ -167,7 +170,7 @@ or version mismatch. Unsupported transport is never silently counted as a pass.
 
 Times are one local execution per scenario, including fixture/adapter work.
 Gremlin step and Cypher query measurements are included where available.
-Gremlin scenario deadlines are 45 seconds (90 for grateful fixtures), Crabgraph
+Gremlin scenario deadlines are 45 seconds (90 for grateful fixtures), OrchidDB
 SQL regions have an 8-second bound, JVM execution has a 30-second query bound,
 and the native transport allows 40 seconds to return its result. PostgreSQL statements have a 10-second bound, and
 PuppyGraph queries 30 seconds. These are diagnostic timings, not controlled

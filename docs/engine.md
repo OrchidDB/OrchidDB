@@ -13,7 +13,7 @@ ephemeral graph. `cypher`, `cypher_with_params`, `gremlin`, and `sparql` return
 Arrow batches plus execution metadata. SPARQL takes an explicit ontology.
 
 ```rust,no_run
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 
 # async fn example() -> Result<(), String> {
 let mut graph = GraphEngine::open("social.duckdb")?;
@@ -87,7 +87,7 @@ are evaluated in SQL, without loading source tables into the graph runtime.
 For example, with a `Person` mapping exposing `age`:
 
 ```rust,no_run
-# async fn update(mapped: &mut new_graph::mapped_engine::MappedGraphEngine) -> Result<(), String> {
+# async fn update(mapped: &mut orchiddb::mapped_engine::MappedGraphEngine) -> Result<(), String> {
 let changed = mapped.cypher_update(
     "MATCH (p:Person) WHERE p.age >= 18 SET p.age = p.age + 1"
 ).await?;

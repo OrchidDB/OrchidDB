@@ -4,7 +4,7 @@ Express graph patterns, filter properties, and shape tabular results with Cypher
 
 ## Conformance
 
-Crabgraph passes all **3,897 scenarios** in the pinned openCypher 2024.3 Technology Compatibility Kit. The [conformance comparison](conformance-report.html#language-opencypher) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
+OrchidDB passes all **3,897 scenarios** in the pinned openCypher 2024.3 Technology Compatibility Kit. The [conformance comparison](conformance-report.html#language-opencypher) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
 
 ## Match a pattern
 

@@ -10,13 +10,13 @@
 mod gremlin_case_runner;
 
 use gremlin_case_runner::{compare, dataset, format};
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute as interpret;
-use new_graph::ir::rel::RelBackend;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor};
-use new_graph::language::gremlin::planner::GremlinPlanner;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute as interpret;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor};
+use orchiddb::language::gremlin::planner::GremlinPlanner;
 
-fn plan(query: &str) -> new_graph::ir::plan::GraphPlan {
+fn plan(query: &str) -> orchiddb::ir::plan::GraphPlan {
     let traversal =
         gremlin_case_runner::parse::gremlin_with_case(query, "").expect("parse gremlin");
     GremlinPlanner::new()
@@ -60,7 +60,7 @@ async fn assert_duckdb(query: &str, graph: &PropertyGraph, expected: &[&str]) {
 fn assert_declines(query: &str, graph: &PropertyGraph) {
     let result = RelBackend::new().lower(&plan(query), graph);
     assert!(
-        matches!(result, Err(new_graph::ir::rel::RelError::Unsupported(_))),
+        matches!(result, Err(orchiddb::ir::rel::RelError::Unsupported(_))),
         "{query}: expected an explicit unsupported lowering"
     );
 }
@@ -243,7 +243,7 @@ fn explain_probe() {
     for query in queries.split(';').map(str::trim).filter(|q| !q.is_empty()) {
         println!(
             "=== {query}\n{}",
-            new_graph::ir::plan::explain(&plan(query))
+            orchiddb::ir::plan::explain(&plan(query))
         );
     }
 }

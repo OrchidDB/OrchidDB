@@ -1,5 +1,5 @@
-use new_graph::language::cypher::ast::{Clause, Expr};
-use new_graph::language::cypher::parser::{parse_query, parse_syntax};
+use orchiddb::language::cypher::ast::{Clause, Expr};
+use orchiddb::language::cypher::parser::{parse_query, parse_syntax};
 
 #[test]
 fn upstream_forty_nested_lists_and_maps_parse_on_small_thread_stack() {
@@ -61,7 +61,7 @@ fn excessive_nesting_is_a_recoverable_error_and_quoted_brackets_are_ignored() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn upstream_forty_nested_literal_results_preserve_all_levels() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     for map in [false, true] {
         let mut literal = if map {
             "{}".to_string()

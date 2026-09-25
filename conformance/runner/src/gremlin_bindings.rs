@@ -1,5 +1,5 @@
 //! Transport decoding only; execution is always GraphEngine::gremlin_with_bindings.
-use new_graph::language::gremlin::{GremlinBinding, semantics::GValue};
+use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 

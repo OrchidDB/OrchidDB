@@ -1,12 +1,16 @@
 [package]
-name = "new-graph"
+name = "orchiddb"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
+description = "An embedded graph query engine written in Rust"
+repository = "https://github.com/OrchidDB/OrchidDB"
+homepage = "https://orchiddb.com"
+documentation = "https://docs.orchiddb.com"
 
 [[bin]]
-name = "crabgraph"
-path = "src/bin/crabgraph.rs"
+name = "orchiddb"
+path = "src/bin/orchiddb.rs"
 required-features = ["duckdb"]
 
 [[bin]]

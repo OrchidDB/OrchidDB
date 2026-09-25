@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use new_graph::ir::value::Value;
-use new_graph::language::cypher::ast::{Clause, Expr, Literal};
-use new_graph::language::cypher::parameters::bind_parameters;
-use new_graph::language::cypher::parser::parse_query;
+use orchiddb::ir::value::Value;
+use orchiddb::language::cypher::ast::{Clause, Expr, Literal};
+use orchiddb::language::cypher::parameters::bind_parameters;
+use orchiddb::language::cypher::parser::parse_query;
 
 fn params(entries: &[(&str, Value)]) -> BTreeMap<String, Value> {
     entries
@@ -16,7 +16,7 @@ fn string(value: &str) -> Value {
     Value::String(value.to_string())
 }
 
-fn first_return_expr(query: &new_graph::language::cypher::ast::Query) -> &Expr {
+fn first_return_expr(query: &orchiddb::language::cypher::ast::Query) -> &Expr {
     let Clause::Return(ret) = &query.clauses[0] else {
         panic!("expected RETURN clause");
     };
@@ -239,7 +239,7 @@ fn binds_set_mutation_parameter() {
     let Clause::Set(set) = &query.clauses[1] else {
         panic!("expected SET clause");
     };
-    let new_graph::language::cypher::ast::SetItem::Property { value, .. } = &set.items[0] else {
+    let orchiddb::language::cypher::ast::SetItem::Property { value, .. } = &set.items[0] else {
         panic!("expected property set item");
     };
     assert_eq!(*value, Expr::Literal(Literal::String("Bob".to_string())));

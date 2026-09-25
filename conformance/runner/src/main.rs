@@ -1,9 +1,9 @@
 use std::io::{self, BufRead, Write};
 use arrow::array::*;
 use arrow::datatypes::DataType;
-use new_graph::engine::{GraphEngine, ReadMode};
-use new_graph::language::sparql::OntologyMapping;
-use new_graph::ir::plan::Direction;
+use orchiddb::engine::{GraphEngine, ReadMode};
+use orchiddb::language::sparql::OntologyMapping;
+use orchiddb::ir::plan::Direction;
 use serde_json::{Value, json};
 
 fn cell(a: &dyn Array, i: usize) -> Value {

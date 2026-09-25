@@ -26,7 +26,7 @@ use datafusion::logical_expr::{LogicalPlanBuilder, col, lit};
 use datafusion::sql::unparser::Unparser;
 use datafusion::sql::unparser::dialect::DuckDBDialect;
 
-use new_graph::ir::rel::sql::{DuckDbExecutor, SqlExecutor, SqlValue};
+use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlExecutor, SqlValue};
 
 /// Counts 1..5, the smallest query with all three parts of a recursive CTE:
 /// a base case, a recursive step, and a termination condition.

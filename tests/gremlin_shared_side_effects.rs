@@ -1,5 +1,5 @@
 #![cfg(feature = "duckdb")]
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 use serde_json::{Value, json};
 
 async fn native(engine: &mut GraphEngine, query: &str) -> Value {
@@ -69,7 +69,7 @@ async fn eager_and_lazy_aggregate_have_distinct_slice_visibility() {
 
 #[tokio::test]
 async fn hybrid_uses_bulk_frontier_for_deep_repeat() {
-    use new_graph::ir::{catalog::PropertyGraph, value::Value as GValue};
+    use orchiddb::ir::{catalog::PropertyGraph, value::Value as GValue};
     use std::collections::BTreeMap;
     let graph = PropertyGraph::new();
     let node = graph.insert_node("item", BTreeMap::new());

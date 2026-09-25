@@ -5,7 +5,7 @@ Create an application-owned graph with persistence, mutations, and transactional
 ## Open a graph
 
 ```rust
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 
 let mut graph = GraphEngine::open("social.duckdb")?;
 ```

@@ -5,12 +5,12 @@ use arrow::array::{ArrayRef, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 
-use new_graph::ir::PropertyGraph;
-use new_graph::ir::df::{from_logical_plan, to_logical_plan};
-use new_graph::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping};
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
-use new_graph::ir::rel::{RelBackend, RelBackendOptions};
-use new_graph::language::sparql::SparqlPlanner;
+use orchiddb::ir::PropertyGraph;
+use orchiddb::ir::df::{from_logical_plan, to_logical_plan};
+use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping};
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+use orchiddb::ir::rel::{RelBackend, RelBackendOptions};
+use orchiddb::language::sparql::SparqlPlanner;
 
 const EX: &str = "https://example.com/";
 
@@ -153,7 +153,7 @@ async fn named_graph_variable_and_default_scope_are_distinct() {
 async fn from_merges_named_graphs_into_a_set_valued_default_graph() {
     let query = "PREFIX ex: <https://example.com/> SELECT ?o FROM ex:graph FROM ex:graph2 WHERE { ex:alice ex:knows ?o }";
     let plan = SparqlPlanner::default().plan_str(query).unwrap();
-    assert!(!new_graph::ir::explain(&plan).contains("SparqlDataset"));
+    assert!(!orchiddb::ir::explain(&plan).contains("SparqlDataset"));
     assert_eq!(duckdb_rows(query).await, vec![vec![format!("{EX}dana")]]);
 
     // Declaring a default graph alone makes no named graph visible to GRAPH.

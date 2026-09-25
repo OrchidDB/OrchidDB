@@ -8,8 +8,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use new_graph::ir::explain;
-use new_graph::language::sparql::{SparqlPlanner, parse_query_with_base};
+use orchiddb::ir::explain;
+use orchiddb::language::sparql::{SparqlPlanner, parse_query_with_base};
 
 fn main() {
     let roots: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();

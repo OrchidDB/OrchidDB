@@ -1,6 +1,6 @@
 # Native-provider JVM GraphComputer
 
-Crabgraph's single-process GraphComputer executes the pinned TinkerPop 3.7.4 vertex programs over `CrabGraph`, whose vertices, edges, properties, identity, and mutations belong to the native store. It is a separate execution profile from the native Rust traversal planner. It does not construct a TinkerGraph or substitute reference results.
+OrchidDB's single-process GraphComputer executes the pinned TinkerPop 3.7.4 vertex programs over `CrabGraph`, whose vertices, edges, properties, identity, and mutations belong to the native store. It is a separate execution profile from the native Rust traversal planner. It does not construct a TinkerGraph or substitute reference results.
 
 The public entry points are `graph.compute()` and `graph.traversal().withComputer()`. See [JVM executor setup](gremlin-jvm-executor.md) for the production module and native-store executable. The conformance adapter identifies this profile as `crabgraph-computer`; native Rust evidence remains separately reported as `crabgraph`.
 

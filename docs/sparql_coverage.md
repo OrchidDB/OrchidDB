@@ -4,7 +4,7 @@ This benchmark measures two independent boundaries over W3C SPARQL query
 files:
 
 1. Parser acceptance through the Oxigraph `spargebra` parser.
-2. Crabgraph Graph IR planner acceptance among parsed queries.
+2. OrchidDB Graph IR planner acceptance among parsed queries.
 
 It does not count a query as planned merely because the parser accepts it.
 It also does not claim W3C conformance because this benchmark does not load

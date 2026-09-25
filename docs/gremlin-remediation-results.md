@@ -15,14 +15,14 @@ The combined implementation completes the executable failures in the [original r
 
 **134 new passes, zero lost passes.** Transitions: 107 failures → pass, 4 timeouts → pass, 23 fixture skips → pass. One remote-lambda failure is now an explicit unsupported capability; it is **not** a pass gain. All 1,511 case IDs and hashes are unchanged. This final run needed no retries or result normalization.
 
-| Recorded comparison | Passes | Cases passing there but not in Crabgraph |
+| Recorded comparison | Passes | Cases passing there but not in OrchidDB |
 |---|---:|---:|
-| Crabgraph | **1,427** | — |
+| OrchidDB | **1,427** | — |
 | SQLg | 1,322 | **0** |
 | PuppyGraph | 972 | **0** |
 | Pinned reference runner | 1,427 | **0** |
 
-Crabgraph's passing case set exactly matches the recorded reference runner's passing set and contains every recorded SQLg/PuppyGraph pass. Peer results retain their existing versions, dates and artifacts; peers were not rerun in this round. This establishes parity on this pinned execution profile, not every possible Gremlin program or execution profile.
+OrchidDB's passing case set exactly matches the recorded reference runner's passing set and contains every recorded SQLg/PuppyGraph pass. Peer results retain their existing versions, dates and artifacts; peers were not rerun in this round. This establishes parity on this pinned execution profile, not every possible Gremlin program or execution profile.
 
 ## Architectural changes delivered
 

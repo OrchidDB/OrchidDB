@@ -7,11 +7,11 @@
 //! statement (CREATE ...), then plans + executes the query and prints
 //! the plan and returned rows.
 
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute;
-use new_graph::ir::plan::explain;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute;
+use orchiddb::ir::plan::explain;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -27,7 +27,7 @@ fn main() {
         // One node `A {name: 'x'}` with a T self-loop plus a second
         // node B and an edge A->B, for testing loop patterns.
         use arrow::array::{ArrayRef, StringArray};
-        use new_graph::ir::catalog::{edges_from_columns, nodes_from_columns};
+        use orchiddb::ir::catalog::{edges_from_columns, nodes_from_columns};
         use std::sync::Arc;
         let names: ArrayRef = Arc::new(StringArray::from(vec!["x"]));
         graph.add_nodes(nodes_from_columns("A", vec![("name", names)]));

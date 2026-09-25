@@ -27,7 +27,7 @@ try {
         const links=await page.locator('a[href]').evaluateAll(nodes => nodes.map(n => n.getAttribute('href')));
         for (const href of links) {
           const target=new URL(href,base+path);
-          const local = target.hostname === 'docs.crabgraph.net' ? docs+target.pathname+target.search : target.origin === base ? target.href : null;
+          const local = target.hostname === 'docs.orchiddb.com' ? docs+target.pathname+target.search : target.origin === base ? target.href : null;
           if (!local) continue;
           const response=await page.request.get(local);
           assert.equal(response.status(),200,href);
@@ -44,7 +44,7 @@ try {
   await page.locator('.menu-toggle').click();
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'),'false');
-  await page.route('https://docs.crabgraph.net/**',async route => route.fulfill({response:await route.fetch({url:route.request().url().replace('https://docs.crabgraph.net',docs)})}));
+  await page.route('https://docs.orchiddb.com/**',async route => route.fulfill({response:await route.fetch({url:route.request().url().replace('https://docs.orchiddb.com',docs)})}));
   await page.setViewportSize({width:1440,height:1000});
   await page.goto(base+'/');
   await page.locator('#site-search').fill('transactions');
@@ -54,8 +54,22 @@ try {
   for (const [width,name] of [[1440,'desktop'],[390,'mobile']]) {
     await page.setViewportSize({width,height:900});
     await page.goto(base+'/');
-    await page.screenshot({path:new URL(`crabgraph-${name}.png`,output).pathname,fullPage:true});
+    await page.screenshot({path:new URL(`orchiddb-${name}.png`,output).pathname,fullPage:true});
   }
+  await page.goto(base+'/');
+  const canvas = page.locator('.hero-graph');
+  await page.getByRole('button', {name:'Pause animation'}).click();
+  const paused = await canvas.evaluate(c => c.toDataURL());
+  await page.waitForTimeout(150);
+  assert.equal(await canvas.evaluate(c => c.toDataURL()), paused);
+  await page.getByRole('button', {name:'Play animation'}).click();
+  await page.waitForTimeout(150);
+  assert.notEqual(await canvas.evaluate(c => c.toDataURL()), paused);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.locator('.animation-toggle').waitFor({state:'hidden'});
+  const reduced = await canvas.evaluate(c => c.toDataURL());
+  await page.waitForTimeout(150);
+  assert.equal(await canvas.evaluate(c => c.toDataURL()), reduced);
   assert.deepEqual(errors,[]);
   const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
   const plain=await nojs.newPage();
