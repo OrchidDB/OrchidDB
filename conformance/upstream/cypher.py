@@ -156,7 +156,8 @@ class Cypher:
   return result
  def run(self,case):
   steps=case['steps'];setup=[];params={};original=next(s['doc'] for s in steps if s['text']=='executing query:')
-  if any(s['text'].startswith('there exists a procedure') for s in steps):return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
+  procedures=[s for s in steps if s['text'].startswith('there exists a procedure')]
+  if procedures and self.engine!='crabgraph':return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
   for s in steps:
    if s['text']=='having executed:':setup.append(s['doc'])
    if s['text']=='parameters are:':params={r[0]:value(r[1]) for r in s['table']}
@@ -165,6 +166,20 @@ class Cypher:
   if self.engine=='crabgraph':
    if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(crabgraph_binary())],ROOT/'upstream-crabgraph-cypher.log')
    self.rust.send({'op':'reset'})
+   for procedure in procedures:
+    signature=re.fullmatch(r'there exists a procedure\s+([^()]+)\((.*?)\)\s*::\s*\((.*?)\)\s*:',procedure['text'])
+    if not signature:raise ValueError('Unsupported procedure signature: '+procedure['text'])
+    def fields(text):
+     result=[]
+     for declaration in text.split(','):
+      if not declaration.strip():continue
+      name,kind=map(str.strip,declaration.split('::',1));result.append({'name':name,'type':kind.rstrip('?'),'nullable':kind.endswith('?')})
+     return result
+    inputs,outputs=fields(signature[2]),fields(signature[3]);table=procedure.get('table',[])
+    names=[field['name'] for field in inputs+outputs]
+    rows=[[value(row[table[0].index(name)]) for name in names] for row in table[1:]] if table and names else []
+    registered=self.rust.send({'op':'register-procedure','name':signature[1].strip(),'inputs':inputs,'outputs':outputs,'rows':rows})
+    if 'error' in registered:raise ValueError('Procedure registration failed: '+str(registered))
    for q in setup:
     result=self.query(q,params)
     if 'error' in result:return {'status':'fail','stage':'fixture-query','query':q,'actual':result,'reason':'Engine rejected an upstream GIVEN query'}
@@ -183,6 +198,7 @@ class Cypher:
   try:
    for s in steps:
     text=s['text']
+    if text.startswith('there exists a procedure'):continue
     if text in ['any graph','an empty graph','having executed:','parameters are:'] or re.fullmatch(r'the binary-tree-[12] graph',text):continue
     if text in ['executing query:','executing control query:']:
      if text=='executing query:':before=self.snapshot()

@@ -18,6 +18,8 @@ pub(crate) fn lower_query(ctx: &OC_QueryContext<'_>) -> Result<Query> {
     if let Some(call) = ctx.oC_StandaloneCall() {
         let call = procedures::lower_standalone_call(call.as_ref())?;
         return Ok(Query::new(vec![Clause::Call(ProcedureCallClause {
+            implicit_arguments: call.implicit_arguments,
+            signature: None,
             name: call.name,
             args: call.args,
             yields: call.yields,

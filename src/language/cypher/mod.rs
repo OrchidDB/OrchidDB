@@ -5,6 +5,7 @@
 
 pub mod ast;
 pub mod parameters;
+pub mod procedures;
 pub mod parser;
 pub mod planner;
 pub mod semantics;

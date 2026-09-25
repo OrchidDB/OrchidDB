@@ -20,11 +20,19 @@ pub type CypherPlanResult<T> = std::result::Result<T, CypherPlanError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CypherSemanticError {
     InvalidPropertyAccess,
+    NoVariablesInScope,
+    InvalidClauseComposition,
     IntegerOverflow,
+    FloatingPointOverflow,
     NoSingleRelationshipType,
     RequiresDirectedRelationship,
     CreatingVarLength,
     InvalidDelete,
+    ProcedureNotFound,
+    InvalidNumberOfArguments,
+    InvalidArgumentPassingMode,
+    UnexpectedSyntax,
+    InvalidParameterUse,
     RelationshipUniquenessViolation,
     ColumnNameConflict,
     DifferentColumnsInUnion,
@@ -36,6 +44,8 @@ pub enum CypherSemanticError {
     VariableAlreadyBound,
     VariableTypeConflict,
     InvalidAggregation,
+    UnknownFunction,
+    AmbiguousAggregationExpression,
     NestedAggregation,
 }
 
@@ -54,8 +64,16 @@ impl CypherPlanError {
             return None;
         };
         let detail = match code {
+            CypherSemanticError::NoVariablesInScope => "NoVariablesInScope",
+            CypherSemanticError::InvalidClauseComposition => "InvalidClauseComposition",
+            CypherSemanticError::ProcedureNotFound => return Some(("ProcedureError","ProcedureNotFound")),
+            CypherSemanticError::InvalidNumberOfArguments => "InvalidNumberOfArguments",
+            CypherSemanticError::InvalidArgumentPassingMode => "InvalidArgumentPassingMode",
+            CypherSemanticError::UnexpectedSyntax => "UnexpectedSyntax",
+            CypherSemanticError::InvalidParameterUse => "InvalidParameterUse",
             CypherSemanticError::InvalidPropertyAccess => return Some(("TypeError","InvalidArgumentType")),
             CypherSemanticError::IntegerOverflow => "IntegerOverflow",
+            CypherSemanticError::FloatingPointOverflow => "FloatingPointOverflow",
             CypherSemanticError::NoSingleRelationshipType => "NoSingleRelationshipType",
             CypherSemanticError::RequiresDirectedRelationship => "RequiresDirectedRelationship",
             CypherSemanticError::CreatingVarLength => "CreatingVarLength",
@@ -71,6 +89,8 @@ impl CypherPlanError {
             CypherSemanticError::VariableAlreadyBound => "VariableAlreadyBound",
             CypherSemanticError::VariableTypeConflict => "VariableTypeConflict",
             CypherSemanticError::InvalidAggregation => "InvalidAggregation",
+            CypherSemanticError::UnknownFunction => "UnknownFunction",
+            CypherSemanticError::AmbiguousAggregationExpression => "AmbiguousAggregationExpression",
             CypherSemanticError::NestedAggregation => "NestedAggregation",
         };
         Some(("SyntaxError", detail))

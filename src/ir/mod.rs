@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod catalog;
 pub mod df;
 pub mod diagnostics;
+pub mod procedures;
 pub mod exec;
 pub mod expr;
 pub mod functions;

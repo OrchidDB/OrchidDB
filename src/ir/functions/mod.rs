@@ -123,3 +123,7 @@ pub fn is_native_aggregate(name: &str) -> bool {
     }
     false
 }
+
+pub(crate) fn is_registered_function(name: &str) -> bool {
+    selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
+}

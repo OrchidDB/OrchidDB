@@ -22,6 +22,9 @@ pub(super) fn procedure_mode(name: &str) -> ProcedureMode {
 pub(super) fn procedure_yields(
     clause: &crate::language::cypher::ast::ProcedureCallClause,
 ) -> (Vec<String>, Vec<String>) {
+    if clause.signature.as_ref().is_some_and(|signature|signature.outputs.is_empty()) {
+        return (Vec::new(),Vec::new());
+    }
     if !clause.yields.is_empty() {
         return (
             clause

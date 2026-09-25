@@ -5,6 +5,15 @@ use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, Cyphe
 fn exact_semantic_validators_publish_structured_categories() {
     for (query, detail) in [
         ("RETURN missing", "UndefinedVariable"),
+        ("MATCH (n) RETURN foo(n)", "UnknownFunction"),
+        ("MATCH (n) RETURN n.x + count(*)", "AmbiguousAggregationExpression"),
+        ("MATCH (n) WITH n.x + n.y, count(*) AS c ORDER BY n.x + n.y + count(*) RETURN c", "AmbiguousAggregationExpression"),
+        ("MATCH (n) WITH n.x AS x ORDER BY n, count(*) RETURN x", "InvalidAggregation"),
+        ("RETURN 1.34E999", "FloatingPointOverflow"),
+        ("MATCH () RETURN *", "NoVariablesInScope"),
+        ("MATCH (n) RETURN length(n)", "InvalidArgumentType"),
+        ("RETURN properties([true,false])", "InvalidArgumentType"),
+        ("MATCH (n) RETURN size((n)--())", "UnexpectedSyntax"),
         ("RETURN 9223372036854775808", "IntegerOverflow"),
         ("RETURN -9223372036854775809", "IntegerOverflow"),
         ("RETURN 0x8000000000000000", "IntegerOverflow"),

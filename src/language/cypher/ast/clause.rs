@@ -28,6 +28,8 @@ pub struct UnwindClause {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcedureCallClause {
+    pub implicit_arguments: bool,
+    pub signature: Option<crate::ir::procedures::ProcedureSignature>,
     pub name: String,
     pub args: Vec<Expr>,
     pub yields: Vec<ProcedureYieldItem>,

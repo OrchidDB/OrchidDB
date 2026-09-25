@@ -715,6 +715,29 @@ pub(crate) fn procedure_call_op(
     upstream: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if let Some(procedure) = graph.procedures.get(name) {
+        let mut output=Vec::new();
+        for row in upstream {
+            let values=args.iter().map(|arg|eval(&arg.value,&row,graph)).collect::<IrResult<Vec<_>>>()?;
+            if values.len()!=procedure.signature.inputs.len() || values.iter().zip(&procedure.signature.inputs).any(|(value,field)|!field.accepts(value)) {
+                return Err(InterpretError::Diagnosed {code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+                    message:format!("Invalid arguments to procedure {name}")});
+            }
+            if procedure.signature.outputs.is_empty() {output.push(row);continue;}
+            for candidate in &procedure.rows {
+                if !values.iter().zip(candidate).all(|(a,b)|
+                    (matches!(a,Value::Null) && matches!(b,Value::Null)) || a.three_valued_eq(b)==Some(true)) {continue;}
+                let mut result=row.clone();
+                for field in yields {
+                    let index=procedure.signature.outputs.iter().position(|output|output.name==*field)
+                        .ok_or_else(||InterpretError::Type(format!("Unknown procedure output {field}")))?;
+                    result.bindings.insert(field.clone(),candidate[values.len()+index].clone());
+                }
+                output.push(result);
+            }
+        }
+        return Ok(output);
+    }
     if matches!(name, "gremlin.io.read" | "gremlin.io.write") {
         for row in upstream {
             let values = args.iter().map(|arg| eval(&arg.value, &row, graph)).collect::<IrResult<Vec<_>>>()?;

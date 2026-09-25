@@ -1,6 +1,53 @@
 //! Aggregate detection across expressions and query clauses.
 
 use super::{CypherPlanError, CypherPlanResult, CypherSemanticError, Clause, Expr, ProjectionBody, Query, merge_pattern_properties, merge_set_item_exprs};
+
+/// Within an aggregate expression, row-dependent leaves must be explicit
+/// grouping keys. A projected composite expression does not implicitly group
+/// each of its operands.
+pub(super) fn validate_grouping(body: &ProjectionBody) -> CypherPlanResult<()> {
+    let keys = body.items.iter().filter(|item| !contains_aggregate(&item.expr))
+        .filter_map(|item| matches!(item.expr, Expr::Variable(_) | Expr::Property { .. }).then_some(&item.expr))
+        .collect::<Vec<_>>();
+    let aliases = body.items.iter().filter_map(|item| item.alias.as_ref()).collect::<Vec<_>>();
+    fn visit(expr: &Expr, keys: &[&Expr], aliases: &[&String]) -> bool {
+        match expr {
+            Expr::CountStar => true,
+            Expr::Function { name, args, distinct } => {
+                let root = Expr::Function { name: name.clone(), args: vec![], distinct: *distinct };
+                contains_aggregate(&root) || args.iter().all(|arg| visit(arg, keys, aliases))
+            }
+            Expr::Variable(name) => keys.contains(&expr) || aliases.contains(&name),
+            Expr::Property { .. } => keys.contains(&expr),
+            Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => visit(expr, keys, aliases),
+            Expr::Binary { lhs, rhs, .. } | Expr::StringPredicate { target: lhs, pattern: rhs, .. } =>
+                visit(lhs, keys, aliases) && visit(rhs, keys, aliases),
+            Expr::List(items) => items.iter().all(|item| visit(item, keys, aliases)),
+            Expr::Map(items) => items.iter().all(|(_,item)| visit(item, keys, aliases)),
+            Expr::Case { case, arms, otherwise } => case.as_deref().is_none_or(|expr| visit(expr, keys, aliases))
+                && arms.iter().all(|(a,b)| visit(a, keys, aliases) && visit(b, keys, aliases))
+                && otherwise.as_deref().is_none_or(|expr| visit(expr, keys, aliases)),
+            _ => true,
+        }
+    }
+    for item in &body.items {
+        if contains_aggregate(&item.expr) && !visit(&item.expr, &keys, &[]) {
+            return Err(ambiguous_grouping());
+        }
+    }
+    for item in &body.order_by {
+        if contains_aggregate(&item.expr) && !visit(&item.expr, &keys, &aliases) {
+            return Err(ambiguous_grouping());
+        }
+    }
+    Ok(())
+}
+
+fn ambiguous_grouping() -> CypherPlanError {
+    CypherPlanError::Invalid("Aggregate expression contains an implicit grouping key".into())
+        .classified(CypherSemanticError::AmbiguousAggregationExpression)
+}
+
 pub(super) fn contains_aggregate(expr: &Expr) -> bool {
     match expr {
         Expr::CountStar => true,
@@ -18,7 +65,8 @@ pub(super) fn contains_aggregate(expr: &Expr) -> bool {
                     | "stdevp"
                     | "percentilecont"
                     | "percentiledisc"
-            ) || crate::ir::functions::is_native_aggregate(name)
+            ) || (!matches!(name.to_ascii_lowercase().as_str(),"last"|"head"|"tail")
+                && crate::ir::functions::is_native_aggregate(name))
                 || args.iter().any(contains_aggregate)
         }
         Expr::Unary { expr, .. } | Expr::IsNull(expr) | Expr::IsNotNull(expr) => {

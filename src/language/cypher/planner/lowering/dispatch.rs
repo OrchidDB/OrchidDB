@@ -237,7 +237,7 @@ fn lower_create(
                         state.edge_outputs.push(bind.clone());
                     }
                     let properties =
-                        lower_create_properties(lowerer, &mut input, rel.properties.as_ref())?;
+                        lower_create_properties(lowerer, &state, &mut input, rel.properties.as_ref())?;
                     let edge_binding = rel.variable.clone().unwrap_or_else(|| lowerer.synthetic("create_edge"));
                     path_items.push(IrExpr::Binding(edge_binding.clone()));
                     path_items.push(IrExpr::Binding(right.clone()));
@@ -310,17 +310,26 @@ struct CreateState {
 
 fn lower_create_properties(
     lowerer: &mut Lowerer,
+    state: &CreateState,
     input: &mut Node,
     properties: Option<&Expr>,
 ) -> CypherPlanResult<Option<IrExpr>> {
     let Some(properties) = properties else {
         return Ok(None);
     };
-    project::validate_expression_scope(lowerer, properties, "CREATE properties")?;
-    let owned = std::mem::replace(input, Node::GraphEmpty);
-    let (next, lowered) = project::lower_expr_with_input(lowerer, owned, properties)?;
-    *input = next;
-    Ok(Some(lowered))
+    lowerer.with_preserved_scope(|lowerer| {
+        for binding in &state.node_outputs {
+            lowerer.add_visible_kind(binding.clone(), BindingKind::Node);
+        }
+        for binding in &state.edge_outputs {
+            lowerer.add_visible_kind(binding.clone(), BindingKind::Relationship);
+        }
+        project::validate_expression_scope(lowerer, properties, "CREATE properties")?;
+        let owned = std::mem::replace(input, Node::GraphEmpty);
+        let (next, lowered) = project::lower_expr_with_input(lowerer, owned, properties)?;
+        *input = next;
+        Ok(Some(lowered))
+    })
 }
 
 /// Resolve one node pattern inside CREATE to the binding its edges use,
@@ -344,7 +353,7 @@ fn create_endpoint(
             return Ok(bind.clone());
         }
     }
-    let properties = lower_create_properties(lowerer, input, pattern.properties.as_ref())?;
+    let properties = lower_create_properties(lowerer, state, input, pattern.properties.as_ref())?;
     let bind = match &pattern.variable {
         Some(bind) => {
             state.bound.insert(bind.clone());
@@ -501,7 +510,7 @@ fn lower_set_items(
                         target,
                         key: String::new(),
                         mode,
-                        value,
+                        value: IrExpr::Call { name: "properties".into(), args: vec![value] },
                     });
                 }
                 SetItem::Labels { variable, labels, remove } => {
@@ -595,7 +604,7 @@ fn lower_call(
                 name: clause.name.clone(),
                 args,
                 yields: source_yields.clone(),
-                mode: procedure_mode(&clause.name),
+                mode: if clause.signature.is_some() {ProcedureMode::Read} else {procedure_mode(&clause.name)},
                 input: if clause.standalone && clause.args.is_empty() {
                     None
                 } else {
@@ -674,6 +683,9 @@ fn validate_unique_yields(yields: &[String]) -> CypherPlanResult<()> {
 }
 
 fn procedure_yields(clause: &ProcedureCallClause) -> (Vec<String>, Vec<String>) {
+    if clause.signature.as_ref().is_some_and(|signature|signature.outputs.is_empty()) {
+        return (Vec::new(),Vec::new());
+    }
     if !clause.yields.is_empty() {
         return (
             clause

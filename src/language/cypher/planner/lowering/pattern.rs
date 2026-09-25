@@ -456,6 +456,14 @@ fn lower_expand(
     history: Option<String>,
     repeatable_elements: bool,
 ) -> Node {
+    if rel.range.max.is_some_and(|max| rel.range.min > max) {
+        // An empty Cypher length interval matches no paths. Keep the input
+        // in the plan so preceding writes still execute.
+        return Node::GraphFilter {
+            condition: IrExpr::Lit(Lit::Bool(false)),
+            input: input.boxed(),
+        };
+    }
     let variable_length = is_variable_length(&rel.range);
     Node::GraphExpand {
         graph: DEFAULT_GRAPH.to_string(),

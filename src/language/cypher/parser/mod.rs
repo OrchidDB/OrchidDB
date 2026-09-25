@@ -24,11 +24,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub mod lowering;
+mod token_validation;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq, Clone)]
 pub enum CypherParseError {
     #[error("parse: invalid number literal {0}")]
     InvalidNumberLiteral(String),
+    #[error("parse: implicit procedure arguments require a standalone call")]
+    InvalidArgumentPassingMode,
+    #[error("parse: invalid relationship range")]
+    InvalidRelationshipPattern,
     #[error("parse: {0}")]
     Parse(String),
     #[error("unsupported cypher construct: {0}")]
@@ -40,6 +45,8 @@ impl CypherParseError {
         match self {
             Self::Parse(_) => Some(("SyntaxError","UnexpectedSyntax")),
             Self::InvalidNumberLiteral(_) => Some(("SyntaxError","InvalidNumberLiteral")),
+            Self::InvalidArgumentPassingMode => Some(("SyntaxError","InvalidArgumentPassingMode")),
+            Self::InvalidRelationshipPattern => Some(("SyntaxError","InvalidRelationshipPattern")),
             Self::Unsupported(_) => None,
         }
     }
@@ -102,6 +109,7 @@ fn parse_root(input: &str) -> Result<(Rc<OC_CypherContextAll<'_>>, CypherSyntax)
     // Check actual lexer tokens so brackets inside strings/comments do not
     // count. Reject resource-exhausting nesting before recursive descent.
     let tokens = tokenize(input)?;
+    token_validation::validate(&tokens)?;
     // Reject a numeric token immediately followed by identifier characters.
     // This catches malformed decimal/hex/octal literals without inspecting
     // strings, comments, or the parser's human-readable error wording.

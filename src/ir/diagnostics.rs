@@ -10,6 +10,8 @@ pub enum RuntimeDiagnosis {
     InvalidValue,
     DeleteConnectedNode,
     MergeReadOwnWrites,
+    NegativeIntegerArgument,
+    InvalidSliceArgument,
 }
 
 impl RuntimeDiagnosis {
@@ -20,6 +22,8 @@ impl RuntimeDiagnosis {
             Self::InvalidValue => return ("TypeError", "InvalidArgumentValue", "runtime"),
             Self::DeleteConnectedNode => return ("ConstraintVerificationFailed", "DeleteConnectedNode", "runtime"),
             Self::MergeReadOwnWrites => return ("SemanticError", "MergeReadOwnWrites", "runtime"),
+            Self::NegativeIntegerArgument => return ("SyntaxError", "NegativeIntegerArgument", "runtime"),
+            Self::InvalidSliceArgument => return ("SyntaxError", "InvalidArgumentType", "runtime"),
             _ => {}
         }
         let detail = match self {

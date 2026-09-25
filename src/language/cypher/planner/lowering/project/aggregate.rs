@@ -1102,6 +1102,7 @@ pub(super) fn ensure_group_key(
 
 pub(super) fn aggregate_kind(name: &str) -> Option<AggKind> {
     match name.to_ascii_lowercase().as_str() {
+        "last" | "head" | "tail" => None,
         "count" => Some(AggKind::CountRows),
         "count_if" => Some(AggKind::CountIf),
         "sum" => Some(AggKind::SumOrZero),
