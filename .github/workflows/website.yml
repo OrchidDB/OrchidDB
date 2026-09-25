@@ -45,4 +45,4 @@ jobs:
         run: bash website/scripts/deploy.sh
       - name: Record published sites
         run: |
-          echo 'Published https://orchiddb.com/ and https://docs.orchiddb.com/' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Published https://orchiddb.com/, https://docs.orchiddb.com/, and https://install.orchiddb.com/' >> "$GITHUB_STEP_SUMMARY"

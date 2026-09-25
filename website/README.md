@@ -84,6 +84,7 @@ syncing the whole `website/` directory, which includes build sources.
 | --- | --- | --- |
 | Project website | `orchiddb-landing-846199521923` root | `E2LDPO5UT3NIDR` |
 | Docs | Same bucket, `documentation/` prefix | `EV4E7ROH7WATO` |
+| Installer | Same bucket, `install/` prefix | `E3GDX6Z9PSNNXK` |
 
 [STYLE.md](STYLE.md) describes the visual and editorial approach.
 
@@ -92,6 +93,7 @@ syncing the whole `website/` directory, which includes build sources.
 - `https://orchiddb.com/` is the canonical project website.
 - `https://www.orchiddb.com/` redirects to the canonical website.
 - `https://docs.orchiddb.com/` serves the mdBook documentation.
+- `https://install.orchiddb.com/` serves the CLI installer; `/mock/` contains explicitly labeled client placeholder downloads.
 - The public Route 53 zone is `Z094613320U7C0GG8MQQH`.
 - ACM certificate `fe939ba9-7545-4cdc-8305-fa315ac0b813` in `us-east-1`
   covers OrchidDB and the redirect domains.
@@ -100,7 +102,7 @@ The deployment uses the OrchidDB S3 bucket and `ORCHIDDB_AWS_*` Actions
 secrets in `OrchidDB/OrchidDB`.
 
 `cloudfront/canonical-host.js` is published as the CloudFront function
-`OrchidDBCanonicalHost` and attached to both distributions at viewer request.
+`OrchidDBCanonicalHost` and attached to the website and docs distributions at viewer request.
 It redirects the legacy root, www, and docs domains to their OrchidDB equivalents,
 preserving paths and query parameters. The ordinary deploy script publishes
 static files; function or distribution changes must be applied separately.

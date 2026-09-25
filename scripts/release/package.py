@@ -13,6 +13,7 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+MOCK_ASSETS = {f'orchiddb-{language}-placeholder.zip' for language in ('python', 'javascript', 'java')}
 TARGETS = {
     'x86_64-unknown-linux-gnu',
     'x86_64-apple-darwin',
@@ -120,8 +121,9 @@ def verify(args):
     archives = sorted(list(args.directory.glob('*.tar.gz')) + list(args.directory.glob('*.zip')))
     expected = {f'orchiddb-{args.tag}-{target}' + ('.zip' if target.endswith('windows-msvc') else '.tar.gz')
                 for target in TARGETS}
+    expected |= MOCK_ASSETS
     if {p.name for p in archives} != expected:
-        raise ValueError('Release must contain exactly one archive for each of the four targets')
+        raise ValueError('Release must contain the four targets and three explicitly labeled client placeholders')
     lines = []
     for path in archives:
         line = f'{digest(path)}  {path.name}\n'

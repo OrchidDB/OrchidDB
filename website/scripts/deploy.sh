@@ -21,3 +21,12 @@ aws cloudfront create-invalidation --distribution-id E2LDPO5UT3NIDR \
   --paths '/*' --query 'Invalidation.Id' --output text
 aws cloudfront create-invalidation --distribution-id EV4E7ROH7WATO \
   --paths '/*' --query 'Invalidation.Id' --output text
+
+# The installer has its own hostname and serves a shell script at /.
+aws s3 cp website/install/install.sh "s3://$bucket/install/install.sh" \
+  --content-type 'text/plain; charset=utf-8' --cache-control 'public,max-age=300' --only-show-errors
+aws s3 sync website/install/mock/ "s3://$bucket/install/mock/" \
+  --exclude '*' --include '*.zip' --include '*.sha256' \
+  --cache-control 'public,max-age=300' --only-show-errors
+aws cloudfront create-invalidation --distribution-id E3GDX6Z9PSNNXK \
+  --paths '/*' --query 'Invalidation.Id' --output text

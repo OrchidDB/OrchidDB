@@ -62,6 +62,17 @@
   <p>OrchidDB is a prototype. Read the documentation and recorded conformance results for the current behavior and limitations.</p>
   <div class="actions"><a class="button" href="https://docs.orchiddb.com/rust-api.html">Read the Rust API <span aria-hidden="true">↗</span></a><a class="button" href="https://docs.orchiddb.com/execution.html">Read the architecture <span aria-hidden="true">↗</span></a></div>
 </section>
+<section class="home-section conformance-section" id="conformance" aria-labelledby="conformance-title">
+  <h2 id="conformance-title">Three languages. Tested against their upstream suites.</h2>
+  <p>100% passing in the tested scope, with recorded results you can inspect.</p>
+  <div class="conformance-scores">
+    <a href="https://docs.orchiddb.com/conformance-report.html#language-opencypher"><strong>100%</strong><span>Cypher</span><small>3,897 / 3,897 tests<br>openCypher TCK 2024.3</small></a>
+    <a href="https://docs.orchiddb.com/conformance-report.html#language-tinkerpop"><strong>100%</strong><span>Gremlin</span><small>1,511 / 1,511 tests<br>TinkerPop 3.7.4 Gherkin · OLTP</small></a>
+    <a href="https://docs.orchiddb.com/conformance-report.html#language-rdf" aria-describedby="sparql-scope"><strong>100%</strong><span>SPARQL</span><small>974 / 974 in-scope tests<br>W3C SPARQL 1.0 / 1.1</small></a>
+  </div>
+  <p class="conformance-scope" id="sparql-scope"><strong>SPARQL scope:</strong> 974 of 1,125 catalogued tests. Excludes 74 HTTP protocol and wire-format tests, 70 entailment tests requiring a separately configured reasoning dataset, and 7 federated <code>SERVICE</code> tests requiring external endpoints. Excluded tests are not counted as passes.</p>
+  <a href="https://docs.orchiddb.com/conformance.html">Explore the conformance results and methodology →</a>
+</section>
 <section class="home-section usage-section" id="usage" aria-labelledby="usage-title">
   <h2 id="usage-title">How to Use OrchidDB</h2>
   <p>Define a graph over the data you already own, then use it in your application.</p>
@@ -143,17 +154,21 @@ RETURN a.name, b.name</code></pre>
 </section>
 <section class="home-section install-section" id="install" aria-labelledby="install-title">
   <h2 id="install-title">Install OrchidDB</h2>
-  <p>Run graph queries from your terminal or embed the Rust library in your application.</p>
+  <p>Choose your client and get started with OrchidDB.</p>
   <div class="install-options" aria-label="Choose an installation method" hidden>
     <button type="button" data-install="cli" aria-pressed="true" aria-controls="install-cli">Command line</button>
+    <button type="button" data-install="python" aria-pressed="false" aria-controls="install-python">Python</button>
+    <button type="button" data-install="javascript" aria-pressed="false" aria-controls="install-javascript">JavaScript / TypeScript</button>
+    <button type="button" data-install="java" aria-pressed="false" aria-controls="install-java">Java</button>
     <button type="button" data-install="rust" aria-pressed="false" aria-controls="install-rust">Rust</button>
   </div>
   <div class="install-panel" id="install-cli">
     <h3>Command line</h3>
-    <p>Build and install from GitHub with Cargo.</p>
-    <pre><code>cargo install --locked --git https://github.com/OrchidDB/OrchidDB --bin orchiddb</code></pre>
+    <p>Download the native CLI from GitHub Releases.</p>
+    <pre><code>curl -fsSL https://install.orchiddb.com | bash</code></pre>
     <button type="button" class="copy-install" data-copy="install-cli" hidden>Copy command</button>
-    <p class="install-note">Linux · macOS · Windows. Requires Rust and a C/C++ build toolchain. DuckDB is bundled during the build.</p>
+    <p class="install-note">macOS (Apple Silicon / Intel) · Linux (x86_64, glibc 2.35+). Installs into ~/.local/bin; verifies SHA-256 checksums. Windows: use the ZIP download from GitHub Releases.</p>
+    <p class="install-note">Binary downloads activate with the first published release. Until then, <a href="https://docs.orchiddb.com/installation.html#from-source">install from source</a>. <a href="https://github.com/OrchidDB/OrchidDB/releases">All releases and direct downloads →</a></p>
     <p>Then run your first query:</p>
     <pre><code>orchiddb --query 'RETURN 1 AS value'</code></pre>
   </div>
@@ -164,6 +179,27 @@ RETURN a.name, b.name</code></pre>
     <button type="button" class="copy-install" data-copy="install-rust" hidden>Copy command</button>
     <p class="install-note">The default build includes DuckDB. See the Rust guide for runtime and Arrow dependencies.</p>
     <a href="https://docs.orchiddb.com/rust-api.html">Rust API guide →</a>
+  </div>
+  <div class="install-panel" id="install-python">
+    <h3>Python</h3>
+    <p>Download the client package for your application.</p>
+    <a class="button" href="https://install.orchiddb.com/mock/orchiddb-python-placeholder.zip">Download Python placeholder ↓</a>
+    <p class="install-note">Mock download: this ZIP contains an API-design link and package metadata, not an installable library.</p>
+    <a href="https://docs.orchiddb.com/client-apis.html">Client API design →</a>
+  </div>
+  <div class="install-panel" id="install-javascript">
+    <h3>JavaScript / TypeScript</h3>
+    <p>Download the client package for your application.</p>
+    <a class="button" href="https://install.orchiddb.com/mock/orchiddb-javascript-placeholder.zip">Download JavaScript / TypeScript placeholder ↓</a>
+    <p class="install-note">Mock download: this ZIP contains an API-design link and package metadata, not an installable library.</p>
+    <a href="https://docs.orchiddb.com/client-apis.html">Client API design →</a>
+  </div>
+  <div class="install-panel" id="install-java">
+    <h3>Java</h3>
+    <p>Download the client package for your application.</p>
+    <a class="button" href="https://install.orchiddb.com/mock/orchiddb-java-placeholder.zip">Download Java placeholder ↓</a>
+    <p class="install-note">Mock download: this ZIP contains an API-design link and package metadata, not an installable library.</p>
+    <a href="https://docs.orchiddb.com/client-apis.html">Client API design →</a>
   </div>
   <p class="copy-status" role="status" aria-live="polite"></p>
   <a href="https://docs.orchiddb.com/installation.html">Full installation guide →</a>
