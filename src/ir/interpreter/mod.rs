@@ -44,6 +44,8 @@ pub use crate::ir::interpreter::expr::eval;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InterpretError {
+    #[error("{message}")]
+    Diagnosed { code: crate::ir::diagnostics::RuntimeDiagnosis, message: String },
     #[error("catalog: {0}")]
     Catalog(#[from] CatalogError),
     #[error("type error: {0}")]

@@ -1,6 +1,7 @@
 //! Relational extension kernels executed by DataFusion. Graph IR is consumed
 //! during compilation only; physical operators contain scalar metadata and
 //! Arrow inputs, never an executable Graph IR subtree.
+use crate::ir::diagnostics::QueryExecutionError;
 use super::{LoweredPlan, RelBackend};
 use crate::ir::{
     catalog::{
@@ -351,7 +352,8 @@ impl ExecutionPlan for KernelExec {
                 let mut state = state.lock().map_err(|_| failure("Query state poisoned"))?;
                 state.context.jvm.check().map_err(failure)?;
                 state.context.charge(1).map_err(failure)?;
-                let rows = (kernel.kernel)(input_rows, &mut state).map_err(failure)?;
+                let rows = (kernel.kernel)(input_rows, &mut state)
+                    .map_err(|error| DataFusionError::External(Box::new(error)))?;
                 encode_rows(rows)
             })
             .await
@@ -457,7 +459,7 @@ pub async fn execute_rows_with_jvm(
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local=graph.clone();
-    let result=execute_rows_inner(plan, &local, jvm, None, None, false).await?;
+    let result=execute_rows_inner(plan, &local, jvm, None, None, false).await.map_err(|e|e.to_string())?;
     if !crate::ir::jvm::contains_computer(&plan.root) {graph.restore_execution_overlay(&local);}
     Ok(result)
 }
@@ -468,7 +470,7 @@ async fn execute_rows_inner(
     timeout: Option<std::time::Duration>,
     resources: Option<&super::dag::DagSession>,
     prune_return: bool,
-) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
+) -> std::result::Result<(Vec<Row>, super::dag::DagStats), QueryExecutionError> {
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),
@@ -478,7 +480,7 @@ async fn execute_rows_inner(
     let needed = if prune_return { match plan.root.as_ref() {
         Node::GraphReturn {fields,..} => Some(fields.iter().cloned().collect()), _=>None
     }} else {None};
-    let logical = optimize::optimize(compiler.lower(&plan.root).map_err(|e| e.to_string())?, needed.as_ref()).map_err(|e|e.to_string())?;
+    let logical = optimize::optimize(compiler.lower(&plan.root).map_err(QueryExecutionError::from_error)?, needed.as_ref()).map_err(QueryExecutionError::from_error)?;
     // Lowering memo entries may include abandoned candidate sources. The
     // executable DAG owns the sources it uses; release the compiler before I/O.
     drop(compiler);
@@ -506,10 +508,10 @@ async fn execute_rows_inner(
         resources,
     )
     .await
-    .map_err(|e| e.to_string())?;
-    let rows = decode_rows(&returned.batch).map_err(|e| e.to_string())?;
+    .map_err(QueryExecutionError::from_error)?;
+    let rows = decode_rows(&returned.batch).map_err(QueryExecutionError::from_error)?;
     let state = state.lock().map_err(|_| "Query state poisoned")?;
-    state.context.jvm.check().map_err(|e| e.to_string())?;
+    state.context.jvm.check().map_err(QueryExecutionError::from_error)?;
     graph.restore_execution_overlay(&state.graph);
     Ok((rows, stats))
 }
@@ -1401,7 +1403,7 @@ pub async fn execute(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
-    execute_with_session(plan, graph, timeout, None).await
+    execute_with_session(plan, graph, timeout, None).await.map_err(|e|e.to_string())
 }
 
 pub(crate) async fn execute_with_session(
@@ -1409,7 +1411,7 @@ pub(crate) async fn execute_with_session(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
     resources: Option<&super::dag::DagSession>,
-) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
+) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), QueryExecutionError> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
     let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources, true).await?;
@@ -1431,7 +1433,7 @@ pub(crate) async fn execute_with_session(
     };
     let returned =
         crate::ir::interpreter::output::finalize_return(&fields, form, rows, &local, &plan.policy)
-            .map_err(|e| e.to_string())?;
+            .map_err(QueryExecutionError::from_error)?;
     if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
     Ok((returned, stats))
 }

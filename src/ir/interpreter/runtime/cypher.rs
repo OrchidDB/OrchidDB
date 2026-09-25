@@ -75,6 +75,21 @@ pub(super) fn cypher_call(
     let canonical = registry::canonical_name(name);
     match (canonical.as_ref(), args) {
         // ----- planner-internal helpers -----
+        ("cypher_percentile_fraction", [value]) => {
+            use crate::ir::diagnostics::RuntimeDiagnosis;
+            let fraction = value_as_f64(value).ok_or_else(|| InterpretError::Diagnosed {
+                code: RuntimeDiagnosis::ArgumentType,
+                message: "Percentile fraction must be numeric".into(),
+            })?;
+            if !fraction.is_finite() || !(0.0..=1.0).contains(&fraction) {
+                return Err(InterpretError::Diagnosed {
+                    code: RuntimeDiagnosis::NumberOutOfRange,
+                    message: "Percentile fraction must be between zero and one".into(),
+                });
+            }
+            Ok(Some(Value::Float(fraction)))
+        }
+
         ("cypher_star", items) => Ok(Some(Value::List(items.to_vec()))),
         ("cypher_properties_match", [target, Value::Map(spec)]) => {
             for (key, expected) in spec {

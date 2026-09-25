@@ -196,7 +196,10 @@ pub(super) fn rewrite_aggregate_projection_expr(
                     }
                     Some(IrExpr::List(vec![
                         lower_expr(lowerer, &args[0])?,
-                        lower_expr(lowerer, &args[1])?,
+                        IrExpr::Call {
+                            name: "cypher_percentile_fraction".into(),
+                            args: vec![lower_expr(lowerer, &args[1])?],
+                        },
                     ]))
                 }
                 _ => {
@@ -920,7 +923,10 @@ pub(super) fn rewrite_aggregate_projection(
                     }
                     Some(IrExpr::List(vec![
                         lower_expr(lowerer, &args[0])?,
-                        lower_expr(lowerer, &args[1])?,
+                        IrExpr::Call {
+                            name: "cypher_percentile_fraction".into(),
+                            args: vec![lower_expr(lowerer, &args[1])?],
+                        },
                     ]))
                 }
                 _ => {

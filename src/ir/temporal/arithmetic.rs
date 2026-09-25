@@ -26,7 +26,11 @@ fn shift(
         .and_then(|s| s.checked_add(&Duration::nanoseconds(nanos as i64)))
         .ok_or("Elapsed duration out of range")?;
     Ok(match value {
-        TemporalValue::Date(d) => TemporalValue::Date(calendar(*d)?),
+        TemporalValue::Date(d) => TemporalValue::Date(
+            calendar(*d)?
+                .checked_add_signed(Duration::days(seconds / 86400))
+                .ok_or("Date shift out of range")?,
+        ),
         TemporalValue::LocalTime(t) => {
             TemporalValue::LocalTime(t.overflowing_add_signed(elapsed).0)
         }
@@ -214,10 +218,20 @@ pub fn between(unit: &str, left: &Value, right: &Value) -> Result<Value> {
         TemporalValue::DateTime(d, _) => Some(d.offset().local_minus_utc()),
         _ => None,
     };
-    let offset_delta = match (offset(left), offset(right)) {
-        (Some(a), Some(b)) => (a as i64 - b as i64) * 1_000_000_000,
-        _ => 0,
+    // Missing zones inherit the other operand's zone at their own local date,
+    // including the offset on the far side of a DST transition.
+    let inherited_offset = |value: &TemporalValue, other: &TemporalValue, local| -> Result<i32> {
+        if let Some(offset) = offset(value) {
+            return Ok(offset);
+        }
+        if let TemporalValue::DateTime(_, Some(zone)) = other {
+            return resolve_zone(local, zone).map(|(d, _)| d.offset().local_minus_utc());
+        }
+        Ok(offset(other).unwrap_or(0))
     };
+    let left_offset = inherited_offset(left, right, ld.and_time(lt))?;
+    let right_offset = inherited_offset(right, left, rd.and_time(rt))?;
+    let offset_delta = (left_offset as i128 - right_offset as i128) * 1_000_000_000;
     let delta_nanos = |a: NaiveDateTime, b: NaiveDateTime| {
         let d = b - a;
         d.num_seconds() as i128 * 1_000_000_000 + d.subsec_nanos() as i128
@@ -230,9 +244,24 @@ pub fn between(unit: &str, left: &Value, right: &Value) -> Result<Value> {
         )
         .map(Value::Temporal);
     }
+    let remainder_at = |date: NaiveDate| -> Result<i128> {
+        let shifted_offset = match left {
+            TemporalValue::DateTime(_, Some(zone)) => resolve_zone(date.and_time(lt), zone)?
+                .0
+                .offset()
+                .local_minus_utc(),
+            _ => left_offset,
+        };
+        Ok(delta_nanos(date.and_time(lt), rd.and_time(rt))
+            + (shifted_offset as i128 - right_offset as i128) * 1_000_000_000)
+    };
     if unit == "indays" {
-        return normalized_duration(0, if both_dates { (rd - ld).num_days() } else { 0 }, 0)
-            .map(Value::Temporal);
+        let mut days = if both_dates { (rd - ld).num_days() } else { 0 };
+        let remaining = remainder_at(rd)?;
+        if (days > 0 && remaining < 0) || (days < 0 && remaining > 0) {
+            days -= days.signum();
+        }
+        return normalized_duration(0, days, 0).map(Value::Temporal);
     }
     let mut months = if both_dates {
         (rd.year() as i64 - ld.year() as i64) * 12 + rd.month() as i64 - ld.month() as i64
@@ -245,7 +274,8 @@ pub fn between(unit: &str, left: &Value, right: &Value) -> Result<Value> {
             .ok_or("Date required".into())
     };
     let mut cursor = shifted_date(months)?;
-    if (months > 0 && cursor > rd) || (months < 0 && cursor < rd) {
+    let remaining = remainder_at(cursor)?;
+    if (months > 0 && remaining < 0) || (months < 0 && remaining > 0) {
         months -= months.signum();
         cursor = shifted_date(months)?;
     }
@@ -255,33 +285,18 @@ pub fn between(unit: &str, left: &Value, right: &Value) -> Result<Value> {
     if unit != "between" {
         return Err("Unknown duration difference unit".into());
     }
-    // Whole calendar days/months must not overshoot the end's clock time.
-    if (months > 0 && cursor.and_time(lt) > rd.and_time(rt))
-        || (months < 0 && cursor.and_time(lt) < rd.and_time(rt))
-    {
-        months -= months.signum();
-        cursor = shifted_date(months)?;
-    }
     let mut days = if both_dates {
         (rd - cursor).num_days()
     } else {
         0
     };
-    let time_nanos = delta_nanos(cursor.and_time(lt), cursor.and_time(rt));
+    let time_nanos = remainder_at(rd)?;
     if (days > 0 && time_nanos < 0) || (days < 0 && time_nanos > 0) {
         days -= days.signum();
     }
     let after_days = cursor
         .checked_add_signed(Duration::try_days(days).ok_or("Duration overflow")?)
         .ok_or("Date overflow")?;
-    let mut remaining =
-        delta_nanos(after_days.and_time(lt), rd.and_time(rt)) + offset_delta as i128;
-    // Recompute the source offset after calendar shifts in a named zone.
-    if let (TemporalValue::DateTime(original, Some(zone)), Some(_)) = (left, offset(right)) {
-        let (shifted, _) = resolve_zone(after_days.and_time(lt), zone)?;
-        remaining += (shifted.offset().local_minus_utc() as i128
-            - original.offset().local_minus_utc() as i128)
-            * 1_000_000_000;
-    }
+    let remaining = remainder_at(after_days)?;
     normalized_duration(months, days, remaining).map(Value::Temporal)
 }

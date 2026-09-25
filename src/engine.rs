@@ -11,6 +11,7 @@ use std::time::Duration;
 use duckdb::{Connection, params};
 
 use crate::ir::catalog::PropertyGraph;
+use crate::ir::diagnostics::QueryExecutionError;
 use crate::ir::catalog::incremental::IncrementalRecord;
 use crate::ir::exec::{ExecStats, contains_mutation};
 use crate::ir::interpreter::ReturnedBatches;
@@ -460,7 +461,7 @@ impl GraphEngine {
         self.execute_plan(&plan).await
     }
 
-    async fn execute_dag(&mut self, plan: &GraphPlan) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+    async fn execute_dag(&mut self, plan: &GraphPlan) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
         let result = crate::ir::rel::runtime::execute_with_session(plan, &self.graph, self.sql_timeout, Some(&self.dag_session)).await;
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
@@ -470,6 +471,11 @@ impl GraphEngine {
     }
 
     pub async fn execute_plan(&mut self, plan: &GraphPlan) -> EngineResult<QueryResult> {
+        self.execute_plan_with_diagnostics(plan).await.map_err(|error|error.to_string())
+    }
+
+    /// Execute through the same SQL IR DAG, retaining structured runtime errors.
+    pub async fn execute_plan_with_diagnostics(&mut self, plan: &GraphPlan) -> Result<QueryResult, QueryExecutionError> {
         if self.failed_transaction {
             return Err("transaction failed; roll it back".into());
         }
@@ -488,7 +494,7 @@ impl GraphEngine {
                         if automatic {
                             let _ = self.rollback();
                         }
-                        return Err(error.to_string());
+                        return Err(error);
                     }
                 };
             if let Err(error) = self.persist() {
@@ -496,7 +502,7 @@ impl GraphEngine {
                 if automatic {
                     let _ = self.rollback();
                 }
-                return Err(error);
+                return Err(error.into());
             }
             if automatic {
                 self.finish_automatic()?;

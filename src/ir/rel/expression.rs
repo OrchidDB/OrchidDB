@@ -710,7 +710,7 @@ impl<'a> LoweringContext<'a> {
                     return Err(RelError::Unsupported("Cypher compound comparison requires three-valued element semantics".into()));
                 }
                 let comparison = self.lower_comparison_or_binary(plan, &args[0], op, &args[1])?;
-                if !matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+                if !matches!(op, BinaryOp::Eq | BinaryOp::Neq) && lt.is_numeric() && rt.is_numeric() {
                     let mut nan = lit(false);
                     if matches!(lt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(lhs)); }
                     if matches!(rt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(rhs)); }
