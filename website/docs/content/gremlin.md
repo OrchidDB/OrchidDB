@@ -1,5 +1,9 @@
 Traverse nodes and relationships step by step with Gremlin, then project the values your application needs.
 
+## Conformance
+
+Crabgraph passes all **1,511 scenarios** in the pinned Apache TinkerPop 3.7.4 Gremlin suite. The complete run uses one Crabgraph instance. The [conformance comparison](/conformance.html#language-tinkerpop) includes individual outcomes, upstream assertions, execution timings, and downloadable evidence.
+
 ## Start a traversal
 
 Crabgraph accepts Gremlin traversal text through `gremlin(query).await`. In the CLI, select it with `--language gremlin`.
