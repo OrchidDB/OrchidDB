@@ -11,6 +11,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$repo_root/target}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 export CONFORMANCE_JAVA="${CONFORMANCE_JAVA:-${JAVA_HOME:+$JAVA_HOME/bin/}java}"
 export CRABGRAPH_JAVA="$CONFORMANCE_JAVA"
+export CONFORMANCE_TINKERPOP_SOURCE="${CONFORMANCE_TINKERPOP_SOURCE:-${CONFORMANCE_UPSTREAM_CACHE:-$repo_root/conformance/upstream/cache}/tinkerpop}"
 result_path="${1:-$repo_root/target/conformance-datafusion/crabgraph-tinkerpop.json}"
 
 cargo build --bin crabgraph-jvm-store
