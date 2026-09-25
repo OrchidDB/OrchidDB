@@ -44,6 +44,7 @@ postgres = { version = "0.19", optional = true }
 regex = "1"
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls", "json"] }
 sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 spargebra = { version = "0.4.7", path = "vendor/spargebra" }
 thiserror = "2"

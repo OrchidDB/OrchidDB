@@ -2473,39 +2473,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchiddb"
-version = "0.1.0"
-dependencies = [
- "antlr4rust",
- "arrow",
- "arrow-select",
- "async-trait",
- "bigdecimal",
- "chrono",
- "chrono-tz",
- "datafusion",
- "datafusion-sql",
- "duckdb",
- "futures",
- "md-5 0.10.6",
- "num-bigint",
- "num-traits",
- "oxiri",
- "oxsdatatypes",
- "parquet",
- "postgres",
- "regex",
- "reqwest",
- "serde_json",
- "sha2 0.10.9",
- "spargebra",
- "stacker",
- "thiserror",
- "tokio",
- "unicode-segmentation",
-]
-
-[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2636,6 +2603,40 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "orchiddb"
+version = "0.1.0"
+dependencies = [
+ "antlr4rust",
+ "arrow",
+ "arrow-select",
+ "async-trait",
+ "bigdecimal",
+ "chrono",
+ "chrono-tz",
+ "datafusion",
+ "datafusion-sql",
+ "duckdb",
+ "futures",
+ "md-5 0.10.6",
+ "num-bigint",
+ "num-traits",
+ "oxiri",
+ "oxsdatatypes",
+ "parquet",
+ "postgres",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "spargebra",
+ "stacker",
+ "thiserror",
+ "tokio",
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "ordered-float"

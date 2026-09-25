@@ -733,6 +733,30 @@ impl<'a> LoweringContext<'a> {
             IrExpr::Call { name, args } if name == "cypher_subscript" && args.len() == 2 => {
                 self.lower_cypher_subscript(plan, &args[0], &args[1])
             }
+            IrExpr::Call { name, args } if name == "cypher_in" && args.len() == 2 => {
+                match &args[1] {
+                    IrExpr::Lit(Lit::Null) => Ok(lit(ScalarValue::Boolean(None))),
+                    IrExpr::List(items) => {
+                        if !matches!(&args[0], IrExpr::Lit(_) | IrExpr::Binding(_) | IrExpr::Property { .. } | IrExpr::Id(_))
+                            || items.iter().any(|item| !matches!(item, IrExpr::Lit(_))) {
+                            return Err(RelError::Unsupported("Cypher IN with computed operands requires single-evaluation runtime semantics".into()));
+                        }
+                        // Only repeat stable scalar reads, never a UDF/volatile
+                        // call. Existing equality preserves type/NaN checks,
+                        // three-valued OR and empty=false.
+                        let mut result = lit(false);
+                        for item in items {
+                            let equality = IrExpr::Call {
+                                name: "cypher_eq".into(),
+                                args: vec![args[0].clone(), item.clone()],
+                            };
+                            result = result.or(self.lower_expr(plan, &equality)?);
+                        }
+                        Ok(result)
+                    }
+                    _ => Err(RelError::Unsupported("Cypher IN over a dynamic collection requires runtime values".into())),
+                }
+            }
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {
                 let op = match name.as_str() {
                     "cypher_eq" => BinaryOp::Eq,
