@@ -1,5 +1,7 @@
 //! Static expression validation and binding-kind inference.
 
+use crate::language::cypher::planner::CypherSemanticError;
+
 use super::{
     BinaryOp, BindingKind, Clause, CypherPlanError, CypherPlanResult, Expr, Literal,
     ProjectionBody, SemanticScope, UnaryOp, merge_pattern_properties, merge_set_item_exprs,
@@ -356,13 +358,22 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
             predicate,
             ..
         }
-        | Expr::Quantifier {
-            collection,
-            predicate,
-            ..
-        } => {
+        => {
             validate_expr_kinds(collection, scope)?;
             validate_expr_kinds(predicate, scope)
+        }
+        Expr::Quantifier { variable, collection, predicate, .. } => {
+            validate_expr_kinds(collection, scope)?;
+            validate_list_source(collection, scope)?;
+            let kinds = if let Expr::List(items) = collection.as_ref() {
+                items.iter().map(|item| projected_expr_kind(item, scope)).collect::<Vec<_>>()
+            } else { vec![unwind_element_kind(collection, scope)] };
+            for kind in kinds {
+                let mut local = scope.clone();
+                local.insert(variable.clone(), kind);
+                validate_expr_kinds(predicate, &local)?;
+            }
+            Ok(())
         }
         Expr::PatternComprehension { predicate, map, .. } => {
             if let Some(predicate) = predicate {
@@ -419,7 +430,7 @@ pub(super) fn validate_binary_expr_kind(
         "Binder exception: Cannot match a built-in function for given function {op_name}({},{}).",
         lhs_kind.cypher_type_name(),
         rhs_kind.cypher_type_name()
-    )))
+    )).classified(CypherSemanticError::InvalidArgumentType))
 }
 
 pub(super) fn arithmetic_kinds_compatible(
@@ -497,6 +508,12 @@ pub(super) fn validate_function_expr_kind(
     scope: &SemanticScope,
 ) -> CypherPlanResult<()> {
     let lower = name.to_ascii_lowercase();
+    if lower == "mod" && args.iter().any(|arg| !matches!(projected_expr_kind(arg, scope),
+        BindingKind::Unknown | BindingKind::Value | BindingKind::Int | BindingKind::Float)) {
+        return Err(CypherPlanError::Invalid("Modulo requires numeric operands".into())
+            .classified(CypherSemanticError::InvalidArgumentType));
+    }
+
     if lower == "date"
         && args
             .first()
@@ -570,7 +587,7 @@ pub(super) fn validate_bool_operand(expr: &Expr) -> CypherPlanResult<()> {
         Some(type_name) if type_name != "BOOL" => Err(CypherPlanError::Invalid(format!(
             "Binder exception: Expression {} has data type {type_name} but expected BOOL. Implicit cast is not supported.",
             display_literal_expr(expr)
-        ))),
+        )).classified(CypherSemanticError::InvalidArgumentType)),
         _ => Ok(()),
     }
 }

@@ -103,7 +103,7 @@ pub(crate) fn expand_op(
             initial_history,
             initial_path,
         )];
-        if length.min == 0 && label_matches(&source_node.0, target_labels) {
+        if length.min == 0 && graph.node_matches_labels(&source_node.0, source_node.1, target_labels) {
             let emit = match target_mode {
                 TargetMode::Existing => match row.bindings.get(target) {
                     Some(Value::Node { label, id }) => {
@@ -169,6 +169,11 @@ pub(crate) fn expand_op(
                     }
                 };
                 for (edge_dir, (rel_type, edge_row, other_label, other_id)) in edges {
+                    // An undirected Cypher trail has one orientation for a self-loop.
+                    // Gremlin's provider-defined both() retains its two incidences.
+                    if dir == Direction::Both && edge_dir == Direction::In
+                        && match_mode == MatchMode::DifferentRelationships
+                        && cur_label == other_label && cur_id == other_id { continue; }
                     ctx.charge(1)?;
                     let mut history = history_so_far.clone();
                     let mut path = path_so_far.clone();
@@ -220,7 +225,7 @@ pub(crate) fn expand_op(
                     }
                     if hop >= length.min {
                         // Target label filter.
-                        if !label_matches(&other_label, target_labels) {
+                        if !graph.node_matches_labels(&other_label, other_id, target_labels) {
                             // Still extend frontier; just don't emit.
                         } else {
                             // For `Existing` mode, the row must already

@@ -441,10 +441,7 @@ fn lower_node_start(
     if outer_visible.contains(binding) {
         for label in &node.labels {
             source = Node::GraphFilter {
-                condition: IrExpr::HasLabel {
-                    binding: binding.to_string(),
-                    label: label.clone(),
-                },
+                condition: IrExpr::Call { name: "cypher_has_label".into(), args: vec![IrExpr::Binding(binding.to_string()), IrExpr::Lit(Lit::String(label.clone()))] },
                 input: source.boxed(),
             };
         }

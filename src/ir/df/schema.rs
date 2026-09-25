@@ -558,6 +558,7 @@ fn infer_agg_type(kind: &crate::ir::expr::AggKind) -> DataType {
         | crate::ir::expr::AggKind::MinOrNull
         | crate::ir::expr::AggKind::Max
         | crate::ir::expr::AggKind::MaxOrNull
+        | crate::ir::expr::AggKind::CollectNonNull
         | crate::ir::expr::AggKind::CollectRows
         | crate::ir::expr::AggKind::CollectTraversers
         | crate::ir::expr::AggKind::EngineFunction => DataType::Utf8,

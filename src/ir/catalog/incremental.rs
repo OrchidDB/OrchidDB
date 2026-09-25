@@ -61,7 +61,8 @@ const T_OVERRIDE_KEYS: i64 = 3;
 
 const T_NATIVE: i64 = 7;
 const T_NULL_VALUES: i64 = 9;
-const ENTITY_TAGS: [i64; 6] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE,T_NULL_VALUES];
+const T_LABELS: i64 = 10;
+const ENTITY_TAGS: [i64; 7] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE,T_NULL_VALUES,T_LABELS];
 const T_NULL_PROPERTIES: i64 = 8;
 const EDGE_TAGS: [i64; 9] = [
     T_NULL_VALUES,
@@ -387,6 +388,9 @@ impl PropertyGraph {
 
 fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     let mut fields = vec![field(T_NATIVE, ov.native_node_state(key)), field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values))];
+    if let Some(labels) = ov.node_label_sets.get(key) {
+        fields.push(field(T_LABELS, Value::List(labels.iter().cloned().map(Value::String).collect())));
+    }
     if let Some(props) = ov.inserted_nodes.get(key) {
         fields.push(field(T_INSERTED, Value::Map(props.clone())));
     }
@@ -534,6 +538,14 @@ fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     }
 
     if let Some(state) = fields.get(&T_NATIVE) {ov.restore_native_node_state(key.clone(),state)?;}
+    ov.node_label_sets.remove(&key);
+    if let Some(value) = fields.get(&T_LABELS) {
+        let Value::List(labels) = value else { return Err("Invalid node label set".into()); };
+        let labels = labels.iter().map(|v| match v {
+            Value::String(s) => Ok(s.clone()), _ => Err("Invalid node label".to_string())
+        }).collect::<Result<_, _>>()?;
+        ov.node_label_sets.insert(key.clone(), labels);
+    }
     ov.inserted_nodes.remove(&key);
     ov.node_property_overrides.remove(&key);
     ov.deleted_nodes.remove(&key);

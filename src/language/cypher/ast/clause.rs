@@ -77,6 +77,7 @@ pub enum SetItem {
         value: Expr,
     },
     Labels {
+        remove: bool,
         variable: String,
         labels: Vec<String>,
     },

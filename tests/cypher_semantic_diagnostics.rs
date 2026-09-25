@@ -5,6 +5,9 @@ use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, Cyphe
 fn exact_semantic_validators_publish_structured_categories() {
     for (query, detail) in [
         ("RETURN missing", "UndefinedVariable"),
+        ("RETURN true AND 12", "InvalidArgumentType"),
+        ("RETURN none(x IN ['Clara'] WHERE x % 2 = 0)", "InvalidArgumentType"),
+        ("RETURN any(x IN [true, false] WHERE x % 2 = 0)", "InvalidArgumentType"),
         ("MATCH (n)-[n:R]->() RETURN n", "VariableTypeConflict"),
         (
             "MATCH p = (a)-->(b) WITH p MATCH p = ()-->() RETURN p",

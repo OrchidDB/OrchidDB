@@ -12,7 +12,6 @@ use crate::ir::plan::{Direction, LabelExpr, Length, PathPart, PathSelector, Path
 use crate::ir::value::Value;
 
 use super::super::{InterpretError, IrResult, Row};
-use super::expand::label_matches;
 use super::source::matching_labels;
 
 #[allow(clippy::too_many_arguments)]
@@ -84,18 +83,16 @@ fn ground_first_node(
     graph: &PropertyGraph,
 ) -> Vec<(String, i64)> {
     if let Some(Value::Node { label, id }) = row.bindings.get(bind) {
-        if label_matches(label, labels) {
+        if graph.node_matches_labels(label, *id, labels) {
             return vec![(label.clone(), *id)];
         }
         return Vec::new();
     }
     let mut starts = Vec::new();
     for label in matching_labels(labels, graph) {
-        let Ok(table) = graph.node_table(&label) else {
-            continue;
-        };
-        for row_id in 0..table.batch.num_rows() {
-            starts.push((label.clone(), row_id as i64));
+        let Ok(ids) = graph.node_ids(&label) else { continue; };
+        for id in ids {
+            if graph.node_matches_labels(&label, id, labels) { starts.push((label.clone(), id)); }
         }
     }
     starts
@@ -203,7 +200,7 @@ fn expand_one_step(
                     label: other_label.clone(),
                     id: other_id,
                 });
-                if hop >= min && label_matches(&other_label, &next_node.1) {
+                if hop >= min && graph.node_matches_labels(&other_label, other_id, &next_node.1) {
                     let mut new_row = row.clone();
                     new_row.bindings.insert(
                         next_node.0.clone(),

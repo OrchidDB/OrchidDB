@@ -3,6 +3,39 @@
 use super::*;
 
 impl PropertyGraph {
+    /// Logical Cypher labels do not participate in the physical element address.
+    pub fn node_labels(&self, storage: &str, id: i64) -> Vec<String> {
+        self.overlay.borrow().node_label_sets.get(&(storage.to_string(), id))
+            .map(|labels| labels.iter().cloned().collect())
+            .unwrap_or_else(|| vec![storage.to_string()])
+    }
+
+    pub fn set_node_labels(&self, node: &Value, labels: impl IntoIterator<Item = String>) -> CatalogResult<()> {
+        let Value::Node { label, id } = node else {
+            return Err(CatalogError::Schema("Labels require a node".into()));
+        };
+        if !self.node_is_live(label, *id) {
+            return Err(CatalogError::Schema("Cannot label a deleted node".into()));
+        }
+        self.overlay.borrow_mut().node_label_sets.insert((label.clone(), *id), labels.into_iter().collect());
+        self.pending.borrow_mut().nodes.insert((label.clone(), *id));
+        Ok(())
+    }
+
+    pub fn node_matches_labels(&self, storage: &str, id: i64, expr: &crate::ir::plan::LabelExpr) -> bool {
+        use crate::ir::plan::LabelExpr;
+        match expr {
+            LabelExpr::Any => true,
+            // Provider label matching remains single-valued (Gremlin).
+            LabelExpr::AnyOf(names) => names.iter().any(|name| name == storage),
+            LabelExpr::AllOf(names) => {
+                let labels = self.node_labels(storage, id);
+                names.iter().all(|name| labels.contains(name))
+            }
+            LabelExpr::Not(inner) => !self.node_matches_labels(storage, id, inner),
+        }
+    }
+
     /// Append an edge between two node values. Returns the new edge value.
     pub fn insert_edge(
         &self,

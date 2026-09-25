@@ -308,6 +308,8 @@ impl LoweringContext<'_> {
                                     df_max(arg)
                                 }
                             }
+                            AggKind::CollectNonNull => return Err(RelError::Unsupported(
+                                "Non-null collection uses the typed DataFusion aggregate kernel".into())),
                             AggKind::CollectRows | AggKind::CollectTraversers => {
                                 let arg = self.lower_required_agg_arg(&input.plan, &agg.arg)?;
                                 // Kuzu's COLLECT ignores null inputs and

@@ -257,8 +257,8 @@ impl<'a> LoweringContext<'a> {
                 let null_bound = Expr::or(start.clone().is_null(), end.clone().is_null());
                 let sliced = datafusion::functions_nested::expr_fn::array_slice(
                     array,
-                    binary(bound(start), BinaryOp::Add, lit(1_i64)),
-                    bound(end),
+                    Expr::Cast(Cast::new(Box::new(binary(bound(start), BinaryOp::Add, lit(1_i64))), DataType::Int64)),
+                    Expr::Cast(Cast::new(Box::new(bound(end)), DataType::Int64)),
                     None,
                 );
                 Ok(Expr::Case(Case::new(

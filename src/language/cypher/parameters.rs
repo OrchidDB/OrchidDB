@@ -141,7 +141,7 @@ fn bind_set_item(item: SetItem, parameters: &BTreeMap<String, Value>) -> Result<
             variable,
             value: bind_expr(value, parameters)?,
         },
-        SetItem::Labels { variable, labels } => SetItem::Labels { variable, labels },
+        SetItem::Labels { variable, labels, remove } => SetItem::Labels { variable, labels, remove },
     })
 }
 

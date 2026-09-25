@@ -194,8 +194,12 @@ pub(super) fn cypher_call(
             Value::Edge { rel_type, .. } => Value::String(rel_type.clone()),
             _ => Value::Null,
         })),
+        ("cypher_has_label", [Value::Node { label, id }, Value::String(wanted)]) =>
+            Ok(Some(Value::Bool(graph.node_labels(label, *id).contains(wanted)))),
+        ("cypher_has_label", [Value::Null, _]) => Ok(Some(Value::Null)),
+        ("cypher_has_label", _) => Err(InterpretError::Type("Label predicate requires a node".into())),
         ("labels", [value]) => Ok(Some(match value {
-            Value::Node { label, .. } => Value::List(vec![Value::String(label.clone())]),
+            Value::Node { label, id } => Value::List(graph.node_labels(label, *id).into_iter().map(Value::String).collect()),
             _ => Value::Null,
         })),
         ("type", [value]) => Ok(Some(match value {

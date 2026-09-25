@@ -54,7 +54,7 @@ const OV_INSERTED_EDGE_KEYS: u8 = 0x1E;
 const OV_OVERRIDE_EDGE_KEYS: u8 = 0x1F;
 
 fn is_overlay_tag(tag: u8) -> bool {
-    (0x10..=0x22).contains(&tag)
+    (0x10..=0x23).contains(&tag)
 }
 
 impl PropertyGraph {

@@ -215,6 +215,8 @@ pub enum AggKind {
     PercentileDisc,
     /// `collectRows(x)` — gather row values into a list.
     CollectRows,
+    /// Collect non-null row values; empty/all-null inputs produce an empty list.
+    CollectNonNull,
     /// `collectTraversers(current)` — Gremlin fold semantics.
     CollectTraversers,
 }

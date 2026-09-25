@@ -44,8 +44,7 @@ pub(crate) fn node_scan(
     let mut out = Vec::new();
     for label in matching_labels(labels, graph) {
         for row_id in graph.node_ids(&label)? {
-            // Multi-label `AllOf` filter — stored as a single label in this
-            // simple model, so we accept exact label matches for now.
+            if !graph.node_matches_labels(&label, row_id, labels) { continue; }
             let mut row = Row::new();
             row.bindings.insert(
                 binding.to_string(),
@@ -99,16 +98,7 @@ pub(crate) fn matching_labels(labels: &LabelExpr, graph: &PropertyGraph) -> Vec<
             .into_iter()
             .filter(|label| names.iter().any(|n| n == label))
             .collect(),
-        LabelExpr::AllOf(names) => {
-            // In this simple store every node has a single label, so AllOf
-            // with >1 label produces no matches. AllOf with one label is
-            // equivalent to AnyOf.
-            if names.len() == 1 {
-                all.into_iter().filter(|l| l == &names[0]).collect()
-            } else {
-                Vec::new()
-            }
-        }
+        LabelExpr::AllOf(_) => all,
         LabelExpr::Not(inner) => {
             let blocked = matching_labels(inner, graph);
             all.into_iter().filter(|l| !blocked.contains(l)).collect()

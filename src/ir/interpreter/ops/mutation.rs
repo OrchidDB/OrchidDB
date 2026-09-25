@@ -27,6 +27,9 @@ pub(crate) fn create_op(
                 None => BTreeMap::new(),
             };
             let value = graph.insert_node(node.label.clone(), properties);
+            if let Some(labels) = &node.labels {
+                graph.set_node_labels(&value, labels.clone())?;
+            }
             if let Some(bind) = &node.bind {
                 row.bindings.insert(bind.clone(), value);
             }
@@ -100,6 +103,21 @@ pub(crate) fn set_property_op(
             let target = eval(&item.target, row, graph)?;
             let value = eval(&item.value, row, graph)?;
             match item.mode {
+                SetMode::AddLabels | SetMode::RemoveLabels => {
+                    if target == Value::Null { continue; }
+                    let Value::Node { label, id } = &target else {
+                        return Err(InterpretError::Type("Label update requires a node".into()));
+                    };
+                    let Value::List(names) = value else {
+                        return Err(InterpretError::Type("Label update requires a list".into()));
+                    };
+                    let mut labels = graph.node_labels(label, *id).into_iter().collect::<std::collections::BTreeSet<_>>();
+                    for name in names {
+                        let Value::String(name) = name else { return Err(InterpretError::Type("Label must be a string".into())); };
+                        if item.mode == SetMode::AddLabels { labels.insert(name); } else { labels.remove(&name); }
+                    }
+                    graph.set_node_labels(&target, labels)?;
+                }
                 SetMode::Property => {
                     graph.set_property(&target, item.key.clone(), value)?;
                 }

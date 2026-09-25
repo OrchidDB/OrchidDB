@@ -529,6 +529,8 @@ pub struct ConstructTriple {
 /// One node element created by `GraphCreate`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateNode {
+    /// Cypher labels, independent of the stable storage label. None uses the provider label.
+    pub labels: Option<Vec<String>>,
     pub bind: Option<BindingId>,
     pub label: String,
     pub properties: Option<IrExpr>,
@@ -560,6 +562,9 @@ pub struct SetPropertyItem {
 /// `n.k = v`, `n = {…}` and `n += {…}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetMode {
+    /// Mutate Cypher label membership without changing storage identity.
+    AddLabels,
+    RemoveLabels,
     /// Assign one property named by `key`.
     Property,
     /// Replace the whole property bag with the map `value`.

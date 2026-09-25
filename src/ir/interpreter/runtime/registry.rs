@@ -287,6 +287,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "cypher_gte",
     "cypher_in",
     "cypher_label",
+    "cypher_has_label",
     "cypher_lt",
     "cypher_lte",
     "cypher_neq",

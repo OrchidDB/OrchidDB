@@ -177,7 +177,7 @@ pub(super) fn rewrite_aggregate_projection_expr(
                 "stdevp" => AggKind::StDevP,
                 "percentilecont" => AggKind::PercentileCont,
                 "percentiledisc" => AggKind::PercentileDisc,
-                "collect" => AggKind::CollectRows,
+                "collect" => AggKind::CollectNonNull,
                 _ => AggKind::EngineFunction,
             };
             let arg = match kind {
@@ -901,7 +901,7 @@ pub(super) fn rewrite_aggregate_projection(
                 "stdevp" => AggKind::StDevP,
                 "percentilecont" => AggKind::PercentileCont,
                 "percentiledisc" => AggKind::PercentileDisc,
-                "collect" => AggKind::CollectRows,
+                "collect" => AggKind::CollectNonNull,
                 _ => AggKind::EngineFunction,
             };
             let arg = match kind {
@@ -1098,7 +1098,7 @@ pub(super) fn aggregate_kind(name: &str) -> Option<AggKind> {
         "stdevp" => Some(AggKind::StDevP),
         "percentilecont" => Some(AggKind::PercentileCont),
         "percentiledisc" => Some(AggKind::PercentileDisc),
-        "collect" => Some(AggKind::CollectRows),
+        "collect" => Some(AggKind::CollectNonNull),
         _ if crate::ir::functions::is_native_aggregate(name) => Some(AggKind::EngineFunction),
         _ => None,
     }

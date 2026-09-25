@@ -79,10 +79,7 @@ pub(super) fn lower_label_predicate_expr(target: IrExpr, labels: &[String]) -> I
     let parts = labels
         .iter()
         .map(|label| match &target {
-            IrExpr::Binding(binding) => IrExpr::HasLabel {
-                binding: binding.clone(),
-                label: label.clone(),
-            },
+            IrExpr::Binding(binding) => IrExpr::Call { name: "cypher_has_label".into(), args: vec![IrExpr::Binding(binding.clone()), IrExpr::Lit(Lit::String(label.clone()))] },
             _ => IrExpr::Call {
                 name: "in".to_string(),
                 args: vec![
@@ -146,10 +143,7 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             Expr::Variable(binding) => IrExpr::and(
                 labels
                     .iter()
-                    .map(|label| IrExpr::HasLabel {
-                        binding: binding.clone(),
-                        label: label.clone(),
-                    })
+                    .map(|label| IrExpr::Call { name: "cypher_has_label".into(), args: vec![IrExpr::Binding(binding.clone()), IrExpr::Lit(Lit::String(label.clone()))] })
                     .collect(),
             ),
             other => lower_label_predicate_expr(lower_expr(lowerer, other)?, labels),
@@ -259,9 +253,8 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                     return Ok(IrExpr::Lit(Lit::String(type_name)));
                 }
             }
-            // Kuzu `label()`/`labels()` return the label as a STRING for
-            // both nodes and relationships (not a list).
-            if (name.eq_ignore_ascii_case("label") || name.eq_ignore_ascii_case("labels"))
+            // Retain the Kuzu label() extension; openCypher labels() is a list.
+            if name.eq_ignore_ascii_case("label")
                 && args.len() == 1
             {
                 return Ok(IrExpr::Call {
