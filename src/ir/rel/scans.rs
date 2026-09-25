@@ -1063,6 +1063,9 @@ pub(super) fn value_to_scalar(
     data_type: &DataType,
     language: Language,
 ) -> RelResult<ScalarValue> {
+    if crate::ir::temporal::contains_temporal(value) {
+        return Err(RelError::Unsupported("Typed temporal properties require a residual kernel".into()));
+    }
     let mismatch = || {
         RelError::Unsupported(format!(
             "property value `{}` cannot be stored in column type `{data_type:?}`",
@@ -1335,6 +1338,9 @@ pub(super) fn values_batch(
 }
 
 pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
+    if values.iter().any(|v|crate::ir::temporal::contains_temporal(v)) {
+        return Err(RelError::Unsupported("Typed temporal values require a residual kernel".into()));
+    }
     if let Some(kind) = homogeneous_scalar_type(values.iter().copied()) {
         return Ok(kind);
     }
@@ -1387,6 +1393,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
     let mut data_type = DataType::Utf8;
     for value in values.iter().copied() {
         match value {
+            Value::Temporal(_) => return Err(RelError::Unsupported("typed Cypher temporal materialization requires a residual kernel".into())),
             Value::Null => {}
             Value::Bool(_) => data_type = promote_type(data_type, DataType::Boolean)?,
             Value::Byte(_)

@@ -127,6 +127,7 @@ pub(super) fn cypher_list_type_name(value: &Value) -> String {
         Value::BigInt(_) => "INT128".to_string(),
         Value::UInt128(_) => "UINT128".to_string(),
         Value::BigDecimal(_) => "DECIMAL".to_string(),
+        Value::Temporal(t) => t.kind().to_ascii_uppercase(),
         Value::DateTime(_) => "DATE".to_string(),
         Value::InternalId { .. } => "INTERNAL_ID".to_string(),
         Value::String(_) => "STRING".to_string(),
@@ -379,6 +380,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
         Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(n) => n.to_string(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) | Value::String(s) => normalize_list_to_string_text(s),
         Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
             let parts = items
@@ -575,6 +577,7 @@ pub(super) fn cypher_subscript(
         };
     }
     match (target, index) {
+        (Value::Temporal(value), Value::String(key)) => Ok(value.component(key)),
         (Value::String(text), index) => match index.as_i64() {
             Some(index) => Ok(string_index(text, index)),
             None if matches!(index, Value::Null) => Ok(Value::Null),

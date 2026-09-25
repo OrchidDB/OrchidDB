@@ -35,7 +35,8 @@ impl PropertyGraph {
         }
         let a = self.overlay.borrow();
         let b = other.overlay.borrow();
-        a.node_label_sets == b.node_label_sets
+        a.cypher_ids == b.cypher_ids
+            && a.node_label_sets == b.node_label_sets
             && a.allow_null_property_values == b.allow_null_property_values
             && a.edge_null_properties == b.edge_null_properties
             && a.vertex_properties == b.vertex_properties

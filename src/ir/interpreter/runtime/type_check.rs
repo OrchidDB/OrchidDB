@@ -41,6 +41,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         Value::BigInt(_) => matches!(normalised.as_str(), "bigint" | "biginteger"),
         Value::UInt128(_) => normalised == "uint128",
         Value::BigDecimal(_) => matches!(normalised.as_str(), "bigdecimal" | "decimal"),
+        Value::Temporal(t) => normalised == t.kind(),
         Value::DateTime(_) => matches!(normalised.as_str(), "datetime" | "date"),
         Value::InternalId { .. } => matches!(normalised.as_str(), "internal_id" | "internalid"),
         Value::String(value) => match normalised.as_str() {

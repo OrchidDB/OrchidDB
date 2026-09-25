@@ -26,6 +26,7 @@ fn orderability_tag(v: &Value) -> u8 {
         | Value::BigInt(_)
         | Value::UInt128(_)
         | Value::BigDecimal(_) => 2,
+        Value::Temporal(_) => 12,
         Value::DateTime(_) => 3,
         Value::InternalId { .. } => 4,
         Value::String(_) => 5,
@@ -62,6 +63,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         return compare_numeric_values(a, b);
     }
     match (a, b) {
+        (Value::Temporal(x), Value::Temporal(y)) => x.compare(y).unwrap_or_else(|| x.kind().cmp(y.kind()).then_with(|| x.encode().cmp(&y.encode()))),
         (Value::String(x), Value::String(y)) => {
             blob_string_ordering(x, y).unwrap_or_else(|| x.cmp(y))
         }

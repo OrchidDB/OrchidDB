@@ -455,3 +455,80 @@ async fn cypher_collect_null_contract_and_undirected_loop_contract() {
     let result = engine.gremlin("g.V().both().count()").await.unwrap();
     assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), "2");
 }
+
+
+#[tokio::test]
+async fn cypher_identity_is_unique_across_storage_groups_and_stable_after_writes() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    let result = engine.cypher("CREATE (a:B:A:D), (b:B:C), (c:D:E:B)").await.unwrap();
+    assert_eq!(result.returned.batch.num_rows(), 0);
+    assert_eq!(rows(&mut engine, "MATCH (n) RETURN count(DISTINCT id(n))").await, vec![vec!["3"]]);
+    let before = rows(&mut engine, "MATCH (n:D:E) RETURN id(n)").await;
+    engine.cypher("CREATE (:A), (:Z)").await.unwrap();
+    engine.cypher("MATCH (n:E) SET n:Other REMOVE n:D").await.unwrap();
+    assert_eq!(rows(&mut engine, "MATCH (n:Other) RETURN id(n)").await, before);
+    engine.checkpoint().unwrap();
+    assert_eq!(rows(&mut engine, "MATCH (n:Other) RETURN id(n)").await, before);
+}
+
+
+#[tokio::test]
+async fn cypher_bound_optional_relationship_and_constant_sort() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.cypher("CREATE (:A)-[:T]->(:B)").await.unwrap();
+    assert_eq!(rows(&mut engine, "MATCH (a1)-[r]->() WITH r, a1 LIMIT 1 OPTIONAL MATCH (a1)<-[r]-(b2) RETURN b2 IS NULL").await, vec![vec!["true"]]);
+    assert_eq!(rows(&mut engine, "MATCH (a)-->(b) RETURN DISTINCT b ORDER BY b.name").await.len(), 1);
+}
+
+
+#[tokio::test]
+async fn cypher_compound_comparison_and_overloaded_addition() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for (query, expected) in [
+        ("RETURN [1, 2] >= [1, null]", ""),
+        ("RETURN 0.0 / 0.0 < 1", "false"),
+        ("WITH 'a' AS a, 'b' AS b RETURN a + b", "ab"),
+        ("WITH [1, 2] AS a RETURN a + [3]", "[1,2,3]"),
+    ] { assert_eq!(rows(&mut engine, query).await, vec![vec![expected]], "{query}"); }
+}
+
+#[tokio::test]
+async fn cypher_temporal_values_survive_query_parts_and_properties() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    rows(&mut engine, "CREATE (:Event {date: date('201507'), times: [localtime('12:31:14.645876123')]})").await;
+    assert_eq!(rows(&mut engine, "MATCH (e:Event) WITH e.date AS d, e.times[0] AS t RETURN d.year, d.month, t.nanosecond, d = date('2015-07-01')").await,
+        vec![vec!["2015", "7", "645876123", "true"]]);
+    assert_eq!(rows(&mut engine, "WITH datetime('1984-10-11T12:31:14.645876123+01:00') AS d RETURN datetime(toString(d)) = d, d.offsetSeconds").await,
+        vec![vec!["true", "3600"]]);
+}
+
+#[tokio::test]
+async fn cypher_temporal_calendar_arithmetic_and_duration_precision() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for (query, expected) in [
+        ("RETURN toString(date('2024-01-31') + duration('P1M'))", "2024-02-29"),
+        ("RETURN toString(datetime('2024-03-30T12:00+01:00[Europe/Stockholm]') + duration('P1D'))", "2024-03-31T12:00+02:00[Europe/Stockholm]"),
+        ("RETURN toString(duration({seconds: 9007199254740993, nanoseconds: 1}))", "PT2501999792983H36M33.000000001S"),
+        ("RETURN toString(duration({years: 12, months: 5, days: 14, hours: 16, minutes: 12, seconds: 70, nanoseconds: 1}) / 2)", "P6Y2M22DT13H21M8S"),
+    ] {
+        assert_eq!(rows(&mut engine,query).await,vec![vec![expected]],"{query}");
+    }
+}
+
+#[tokio::test]
+async fn cypher_temporal_duration_difference_and_truncation() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine, "WITH duration.between(localdatetime('2018-01-02T10:00:00.1'), localdatetime('2018-01-01T10:00:00.2')) AS d RETURN toString(d), d.seconds, d.nanosecondsOfSecond").await,
+        vec![vec!["PT-23H-59M-59.9S", "-86400", "100000000"]]);
+    assert_eq!(rows(&mut engine, "RETURN toString(duration.between(date('1984-10-11'), date('2015-06-24'))), toString(date.truncate('month', date('2024-02-17')))").await,
+        vec![vec!["P30Y8M13D", "2024-02-01"]]);
+}
+
+#[tokio::test]
+async fn cypher_temporal_projection_preserves_instant_and_overlap_offset() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine, "WITH time('12:31:14.645876+01:00') AS t RETURN toString(time({time:t, timezone:'+05:00', second:42}))").await,
+        vec![vec!["16:31:42.645876+05:00"]]);
+    assert_eq!(rows(&mut engine, "WITH datetime('2017-10-29T02:30+01:00[Europe/Stockholm]') AS d RETURN datetime(toString(d)) = d, d.offsetSeconds").await,
+        vec![vec!["true", "3600"]]);
+}

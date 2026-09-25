@@ -149,6 +149,7 @@ struct InsertedEdge {
 struct GraphOverlay {
     allow_null_property_values: bool,
     node_label_sets: BTreeMap<(String, i64), BTreeSet<String>>,
+    cypher_ids: BTreeMap<(bool, String, i64), i64>,
     // Gremlin edge properties may contain null; scalar null overrides remain tombstones.
     edge_null_properties: BTreeMap<(String, i64), BTreeSet<String>>,
     vertex_properties: BTreeMap<(String, i64), BTreeMap<String, Vec<properties::VertexPropertyRecord>>>,

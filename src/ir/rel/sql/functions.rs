@@ -22,6 +22,29 @@ pub(crate) fn expression_sql(expr: &Expr, _schema: &DFSchema) -> SqlResult<Strin
 }
 
 pub(super) fn prepare_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDialect) -> SqlResult<()> {
+    struct UnitProjection;
+    impl ast::VisitorMut for UnitProjection {
+        type Break = SqlError;
+        fn post_visit_query(&mut self, query: &mut ast::Query) -> ControlFlow<Self::Break> {
+            if let ast::SetExpr::Select(select) = query.body.as_mut() {
+                if select.projection.is_empty() {
+                    // DataFusion can omit the projection around a limited join.
+                    // Retain its input columns; only a FROM-less empty tuple
+                    // needs a unit column to preserve cardinality.
+                    if select.from.is_empty() {
+                        select.projection.push(ast::SelectItem::ExprWithAlias {
+                            expr: ast::Expr::Value(ast::Value::Number("1".into(), false).into()),
+                            alias: ast::Ident::new("__crabgraph_unit"),
+                        });
+                    } else {
+                        select.projection.push(ast::SelectItem::Wildcard(Default::default()));
+                    }
+                }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    if let ControlFlow::Break(error) = tree.visit(&mut UnitProjection) { return Err(error); }
     match ast::visit_expressions_mut(tree, |expr| match adapt_expression(expr, dialect) {
         Ok(()) => ControlFlow::Continue(()),
         Err(error) => ControlFlow::Break(error),

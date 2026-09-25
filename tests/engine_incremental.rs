@@ -444,7 +444,7 @@ async fn checkpoint_preserves_id_allocation_and_deleted_gaps() {
         ids.sort();
         assert_eq!(
             ids,
-            ["0:0", "0:2", "0:3"],
+            ["0", "2", "3"],
             "reopened allocation must skip the deleted id"
         );
         engine.rollback().unwrap();
@@ -459,7 +459,7 @@ async fn checkpoint_preserves_id_allocation_and_deleted_gaps() {
         nodes.sort();
         assert_eq!(
             nodes,
-            ["0:0|1", "0:2|3", "0:3|5"],
+            ["0|1", "2|3", "3|5"],
             "rollback must restore the allocation counter"
         );
         drop(engine);
@@ -494,6 +494,22 @@ async fn rolling_back_checkpoint_restores_records_and_checkpoint_bytes() {
         let connection = Connection::open(&path).unwrap();
         assert_eq!(read_state(&connection), before_state);
         assert_eq!(read_records(&connection), before_records);
+    }
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn cypher_temporal_properties_survive_incremental_and_checkpoint_reopen() {
+    let path = path("temporal");
+    {
+        let mut engine = GraphEngine::open(&path).unwrap();
+        engine.cypher("CREATE (:Event {at: datetime('2024-03-31T12:00+02:00[Europe/Stockholm]'), dates: [date('2024-02-29')], span: duration({seconds: 9007199254740993, nanoseconds: 1})})").await.unwrap();
+    }
+    for checkpoint in [false, true] {
+        let mut engine = GraphEngine::open(&path).unwrap();
+        assert_eq!(rows(engine.cypher("MATCH (e:Event) RETURN e.at.timezone, e.dates[0].day, e.span.seconds, e.span.nanosecondsOfSecond").await.unwrap()),
+            ["Europe/Stockholm|29|9007199254740993|1"]);
+        if !checkpoint {engine.checkpoint().unwrap();}
     }
     cleanup(&path);
 }

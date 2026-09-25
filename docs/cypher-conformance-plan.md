@@ -150,3 +150,11 @@ Add a procedure registry with signatures, argument checks, output columns, yield
 5. Run locally through one normal Crabgraph configuration and execution pipeline. Include upstream setup, results, errors and effects. GitHub Actions only publishes the existing production comparison after results are committed; no tests run there and no alternate Crabgraph leaderboard entry is added.
 
 These ten work packages address the observed families. They do not promise every currently hidden assertion will pass immediately after its first blocker is removed. Re-group the remaining failures after each integrated batch, keeping the original denominator and assertions.
+
+## Implementation progress
+
+The first implementation batch (`6bb0efe`) added logical label sets independent of storage identity, label mutation, Cypher-specific null collection semantics, diagnostics, and slice/undirected-loop fixes. Its local full openCypher run passed **2,370 / 3,897** scenarios: 1,305 failures, 171 adapter errors, 50 skips, and one timeout. This is 462 more passes than the recorded baseline above. The paired Gremlin run passed 1,510 scenarios; the remaining weighted shortest-path case hit its execution deadline. That timeout is not counted as a pass.
+
+The next batch extends numeric Cypher identity, write-only result shape, compound comparisons and arithmetic, limited-join SQL emission, and typed temporal values. Dates, local/offset times, local/zoned datetimes, and calendar durations travel through SQL IR residual kernels with type identity intact. Constructors, accessors, projection, truncation, calendar arithmetic, and duration differences share that representation; snapshots and incremental records persist it. Gremlin retains its existing datetime representation.
+
+These implementation notes are separate from the production comparison's measured results. The next full run must establish the new totals before publication.

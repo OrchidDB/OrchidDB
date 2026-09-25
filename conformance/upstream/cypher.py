@@ -86,6 +86,7 @@ def classified_error_matches(assertion,classification):
  return classification['type']==kind and (phase=='any time' or classification['phase']==phase) and (detail=='*' or classification['detail']==detail)
 def native_value(v):
  kind=v['type'];x=v.get('value')
+ if kind=='cypher_temporal':return x['text']
  if kind=='null':return None
  if kind=='internal_id':return {'$internal_id':{'table':x['table'],'offset':x['offset']}}
  if kind in ('boolean','string'):return x

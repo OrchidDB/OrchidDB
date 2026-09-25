@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: &str) -> Value {
     match (value, key) {
+        (Value::Temporal(value), key) => value.component(key),
         (Value::VertexProperty {key,..}|Value::Property {key,..}, "key") => Value::String(key.clone()),
         (Value::VertexProperty {value,..}|Value::Property {value,..}, "value") => value.as_ref().clone(),
         (Value::VertexProperty {..}, _) => graph.properties(value,&[key.into()]).first().and_then(|p|if let Value::Property{value,..}=p {Some(value.as_ref().clone())}else{None}).unwrap_or(Value::Null),
@@ -127,6 +128,7 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         | Value::BigInt(_)
         | Value::UInt128(_)
         | Value::BigDecimal(_) => (2, value.clone()),
+        Value::Temporal(_) => (12, value.clone()),
         Value::DateTime(_) => (3, value.clone()),
         Value::String(s) => {
             if s.starts_with("uuid[") && s.ends_with(']') {

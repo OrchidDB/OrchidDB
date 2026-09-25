@@ -248,6 +248,14 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             distinct,
             args,
         } => {
+            if matches!(name.to_ascii_lowercase().as_str(), "date" | "localtime" | "time" | "localdatetime" | "datetime" | "duration")
+                || ["date.", "localtime.", "time.", "localdatetime.", "datetime.", "duration."].iter().any(|prefix| name.to_ascii_lowercase().starts_with(prefix)) {
+                return Ok(IrExpr::Call { name: format!("cypher_temporal.{}", name.to_ascii_lowercase()),
+                    args: args.iter().map(|arg| lower_expr(lowerer, arg)).collect::<CypherPlanResult<_>>()? });
+            }
+            if name.eq_ignore_ascii_case("id") && args.len() == 1 {
+                return Ok(IrExpr::Call { name: "cypher_id".into(), args: vec![lower_expr(lowerer, &args[0])?] });
+            }
             if name.eq_ignore_ascii_case("typeof") && args.len() == 1 {
                 if let Some(type_name) = static_typeof_expr(&args[0]) {
                     return Ok(IrExpr::Lit(Lit::String(type_name)));

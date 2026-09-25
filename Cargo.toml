@@ -19,6 +19,8 @@ duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 
 [dependencies]
+chrono = "0.4.44"
+chrono-tz = "0.10.4"
 async-trait = "0.1"
 futures = "0.3"
 antlr4rust = "0.5.2"

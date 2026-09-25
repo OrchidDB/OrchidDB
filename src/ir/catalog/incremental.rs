@@ -62,9 +62,11 @@ const T_OVERRIDE_KEYS: i64 = 3;
 const T_NATIVE: i64 = 7;
 const T_NULL_VALUES: i64 = 9;
 const T_LABELS: i64 = 10;
-const ENTITY_TAGS: [i64; 7] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE,T_NULL_VALUES,T_LABELS];
+const T_CYPHER_ID: i64 = 11;
+const ENTITY_TAGS: [i64; 8] = [T_INSERTED, T_OVERRIDES, T_DELETED, T_REPLACED,T_NATIVE,T_NULL_VALUES,T_LABELS,T_CYPHER_ID];
 const T_NULL_PROPERTIES: i64 = 8;
-const EDGE_TAGS: [i64; 9] = [
+const EDGE_TAGS: [i64; 10] = [
+    T_CYPHER_ID,
     T_NULL_VALUES,
     T_NULL_PROPERTIES,
     T_NATIVE,
@@ -388,6 +390,7 @@ impl PropertyGraph {
 
 fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     let mut fields = vec![field(T_NATIVE, ov.native_node_state(key)), field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values))];
+    if let Some(id) = ov.cypher_ids.get(&(false, key.0.clone(), key.1)) { fields.push(field(T_CYPHER_ID, Value::Long(*id))); }
     if let Some(labels) = ov.node_label_sets.get(key) {
         fields.push(field(T_LABELS, Value::List(labels.iter().cloned().map(Value::String).collect())));
     }
@@ -408,6 +411,7 @@ fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
 
 fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     let mut fields = vec![field(T_NATIVE, ov.public_ids.get(&(true,key.0.clone(),key.1)).cloned().unwrap_or(Value::Null))];
+    if let Some(id) = ov.cypher_ids.get(&(true, key.0.clone(), key.1)) { fields.push(field(T_CYPHER_ID, Value::Long(*id))); }
     fields.push(field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values)));
     if let Some(keys) = ov.edge_null_properties.get(key) {
         fields.push(field(T_NULL_PROPERTIES, Value::List(keys.iter().cloned().map(Value::String).collect())));
@@ -533,6 +537,10 @@ fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &ENTITY_TAGS)?;
     let key = (record.name.clone(), record.id);
+    if let Some(value) = fields.get(&T_CYPHER_ID) {
+        let Value::Long(id) = value else { return Err("Invalid Cypher identity".into()); };
+        ov.cypher_ids.insert((false, key.0.clone(), key.1), *id);
+    }
     if let Some(value) = fields.get(&T_NULL_VALUES) {
         ov.allow_null_property_values = decode_flag(value)?;
     }
@@ -575,6 +583,10 @@ fn apply_edge(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &EDGE_TAGS)?;
     let key = (record.name.clone(), record.id);
+    if let Some(value) = fields.get(&T_CYPHER_ID) {
+        let Value::Long(id) = value else { return Err("Invalid Cypher identity".into()); };
+        ov.cypher_ids.insert((true, key.0.clone(), key.1), *id);
+    }
     if let Some(value) = fields.get(&T_NULL_VALUES) {
         ov.allow_null_property_values = decode_flag(value)?;
     }

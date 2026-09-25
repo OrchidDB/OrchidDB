@@ -5,7 +5,8 @@ use super::*;
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let plan = strip_identity_projections(lowered.plan.clone())?;
+    let plan = strip_constant_sorts(lowered.plan.clone())?;
+    let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = strip_column_qualifiers(plan)
         .map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?;
@@ -343,4 +344,22 @@ pub(super) fn is_identity_projection(projection: &datafusion::logical_expr::Proj
                 out_qualifier == in_qualifier && out_field.name() == in_field.name()
             },
         )
+}
+
+
+/// A literal sort key has no ordering effect. DuckDB rejects ORDER BY NULL;
+/// retain a pushed-down fetch as a limit when every key is constant.
+fn strip_constant_sorts(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Sort(mut sort) = node else { return Ok(Transformed::no(node)); };
+        let count = sort.expr.len();
+        sort.expr.retain(|key| !matches!(key.expr, Expr::Literal(_, _)));
+        if sort.expr.len() == count { return Ok(Transformed::no(LogicalPlan::Sort(sort))); }
+        if !sort.expr.is_empty() { return Ok(Transformed::yes(LogicalPlan::Sort(sort))); }
+        let input = sort.input.as_ref().clone();
+        let result = if sort.fetch.is_some() {
+            datafusion::logical_expr::LogicalPlanBuilder::from(input).limit(0, sort.fetch)?.build()?
+        } else { input };
+        Ok(Transformed::yes(result))
+    })?.data)
 }

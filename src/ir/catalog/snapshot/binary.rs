@@ -169,6 +169,7 @@ pub(crate) fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_u8(out, V_BIGDECIMAL);
             put_str(out, &v.to_string());
         }
+        Value::Temporal(v) => { put_u8(out, 30); put_str(out, &v.encode()); }
         Value::DateTime(v) => {
             put_u8(out, V_DATETIME);
             put_str(out, v);
@@ -275,6 +276,7 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
             BigDecimal::from_str(&r.str()?).map_err(|e| format!("invalid BigDecimal: {e}"))?,
         ),
         V_DATETIME => Value::DateTime(r.str()?),
+        30 => Value::Temporal(crate::ir::temporal::TemporalValue::decode(&r.str()?)?),
         V_INTERNAL_ID => Value::InternalId {
             table: r.i64()?,
             offset: r.i64()?,
