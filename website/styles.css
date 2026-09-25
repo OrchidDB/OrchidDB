@@ -136,11 +136,18 @@ h2 { margin: 0; font-size: clamp(32px, 3.4vw, 48px); line-height: 1.14; letter-s
 .lakehouse-source svg { flex: 0 0 64px; width: 64px; color: var(--blue); }
 .lakehouse-source strong, .lakehouse-engine strong { display: block; font-size: 22px; }
 .lakehouse-source span, .lakehouse-engine span { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.lakehouse-connector { padding: 12px; text-align: center; color: var(--blue); font-size: 24px; }
+.lakehouse-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+.lakehouse-tables > div { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 8px; border: 1px solid #b7d0d3; background: var(--white); font-size: 12px; }
+.table-symbol { width: 22px; height: 19px; border: 1px solid var(--blue); background: linear-gradient(var(--blue),var(--blue)) 0 5px/100% 1px no-repeat, linear-gradient(var(--blue),var(--blue)) 0 11px/100% 1px no-repeat, linear-gradient(var(--blue),var(--blue)) 8px 0/1px 100% no-repeat; }
+.lakehouse-connector { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 0; color: var(--blue); font-size: 24px; }
+.lakehouse-connector small { font: 12px/1.5 var(--sans); }
 .lakehouse-engine { padding: 18px; border: 1px solid #d6b0a0; background: var(--shell); text-align: center; }
 .lakehouse-engine strong { color: var(--red-dark); }
-.lakehouse-languages { margin: 20px 0 0; text-align: center; font: 500 12px/1.6 var(--mono); }
-.lakehouse-languages span { padding: 0 6px; color: var(--blue); }
+.lakehouse-graph { display: block; width: 100px; height: 44px; margin: 0 auto 10px; color: var(--red-dark); }
+.lakehouse-query-branches { display: grid; grid-template-columns: repeat(3, 1fr); height: 24px; }
+.lakehouse-query-branches span { justify-self: center; width: 1px; background: #92b6bd; }
+.lakehouse-languages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; font: 500 12px/1.6 var(--mono); }
+.lakehouse-languages span { padding: 9px 4px; border: 1px solid #b7d0d3; background: var(--white); color: var(--blue); }
 .existing-copy p:not(.section-number) { max-width: 590px; color: var(--muted); font-size: 17px; line-height: 1.7; }
 .source-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
 .source-chips span { padding: 7px 9px; border: 1px solid var(--line); background: var(--paper); color: var(--blue); font: 600 9px var(--mono); text-transform: uppercase; letter-spacing: .05em; }
