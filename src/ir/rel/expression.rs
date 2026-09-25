@@ -1079,6 +1079,18 @@ impl<'a> LoweringContext<'a> {
         target: &IrExpr,
         index: &IrExpr,
     ) -> RelResult<Expr> {
+        // Aggregate rewrites can retain the physical graph binding while its
+        // frontend kind becomes generic. A static string key still denotes an
+        // entity property; resolve it before rendering the entity as a value.
+        if let (IrExpr::Binding(binding), IrExpr::Lit(Lit::String(key))) = (target, index) {
+            if has_binding_shape(plan, binding).is_some() {
+                return self.lower_expr(plan, &IrExpr::Property {
+                    binding: binding.clone(),
+                    name: key.clone(),
+                    policy: crate::ir::policy::PropertyMissing::NullOnMissing,
+                });
+            }
+        }
         let target_expr = if matches!(target, IrExpr::List(_)) {
             self.lower_native_list(plan, target)?
         } else {
