@@ -65,7 +65,7 @@ pub(super) fn validate_unique(fields: &[String], message: &str) -> CypherPlanRes
         Err(CypherPlanError::Invalid(format!(
             "{message}: {}",
             duplicates.join(", ")
-        )))
+        )).classified(CypherSemanticError::ColumnNameConflict))
     }
 }
 
@@ -73,11 +73,10 @@ pub(super) fn validate_union_outputs(
     left: &[SemanticOutput],
     right: &[SemanticOutput],
 ) -> CypherPlanResult<()> {
-    if left.len() != right.len() {
+    if left.len() != right.len() || left.iter().zip(right).any(|(a,b)|a.name!=b.name) {
         return Err(CypherPlanError::Invalid(
-            "Binder exception: The number of columns to union/union all must be the same."
-                .to_string(),
-        ));
+            "UNION branches must return the same column names in the same order.".to_string(),
+        ).classified(CypherSemanticError::DifferentColumnsInUnion));
     }
     for (expected, actual) in left.iter().zip(right.iter()) {
         if union_output_kinds_compatible(expected.kind, actual.kind) {
@@ -153,7 +152,7 @@ pub(super) fn validate_with_projection_aliases(body: &ProjectionBody) -> CypherP
     } else {
         Err(CypherPlanError::Invalid(
             "Binder exception: Expression in WITH must be aliased (use AS).".to_string(),
-        ))
+        ).classified(CypherSemanticError::NoExpressionAlias))
     }
 }
 

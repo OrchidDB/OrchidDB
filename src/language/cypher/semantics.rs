@@ -16,7 +16,7 @@ use validation::{
 mod references;
 use references::{collect_free_variables, remove_local_exists_bindings, scope_from_candidates};
 mod aggregates;
-use aggregates::contains_aggregate;
+use aggregates::{contains_aggregate, validate_iteration_aggregate};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -652,8 +652,10 @@ impl SemanticAnalyzer {
                 let mut locals = candidates.clone();
                 locals.insert(variable.clone());
                 if let Some(predicate) = predicate {
+                    validate_iteration_aggregate(predicate)?;
                     self.validate_expr_refs(predicate, &locals, "list comprehension predicate")?;
                 }
+                validate_iteration_aggregate(map)?;
                 self.validate_expr_refs(map, &locals, "list comprehension projection")
             }
             Expr::ListReduce {
@@ -666,6 +668,7 @@ impl SemanticAnalyzer {
                 let mut locals = candidates.clone();
                 locals.insert(accumulator.clone());
                 locals.insert(variable.clone());
+                validate_iteration_aggregate(map)?;
                 self.validate_expr_refs(map, &locals, "list reduce projection")
             }
             Expr::ListTransform {
@@ -676,6 +679,7 @@ impl SemanticAnalyzer {
                 self.validate_expr_refs(collection, candidates, "list transform collection")?;
                 let mut locals = candidates.clone();
                 locals.insert(variable.clone());
+                validate_iteration_aggregate(map)?;
                 self.validate_expr_refs(map, &locals, "list transform projection")
             }
             Expr::ListFilter {
@@ -686,6 +690,7 @@ impl SemanticAnalyzer {
                 self.validate_expr_refs(collection, candidates, "list filter collection")?;
                 let mut locals = candidates.clone();
                 locals.insert(variable.clone());
+                validate_iteration_aggregate(predicate)?;
                 self.validate_expr_refs(predicate, &locals, "list filter predicate")
             }
             Expr::Quantifier {
@@ -697,6 +702,7 @@ impl SemanticAnalyzer {
                 self.validate_expr_refs(collection, candidates, "quantifier collection")?;
                 let mut locals = candidates.clone();
                 locals.insert(variable.clone());
+                validate_iteration_aggregate(predicate)?;
                 self.validate_expr_refs(predicate, &locals, "quantifier predicate")
             }
             Expr::Function { name, args, .. }

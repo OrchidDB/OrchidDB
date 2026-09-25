@@ -131,8 +131,8 @@ impl<'a> LoweringContext<'a> {
         bindings: &[String],
         rows: &[Vec<Value>],
     ) -> RelResult<LoweredNode> {
-        if self.language == Language::Gremlin {
-            // Arrow columns have a single physical type. Mixed traversal values,
+        if matches!(self.language, Language::Gremlin | Language::Cypher) {
+            // Arrow columns have a single physical type. Mixed graph-language values,
             // nested collections and arbitrary-precision numbers must remain native;
             // rendering them as text loses identity, ordering and numeric equality.
             for index in 0..bindings.len() {
@@ -143,7 +143,7 @@ impl<'a> LoweringContext<'a> {
                 if homogeneous_scalar_type(values.iter().copied()).is_none()
                     && !(self.options.mapping.is_some() && values.iter().all(|v|matches!(v,Value::Null))) {
                     return Err(RelError::Unsupported(
-                        "Gremlin heterogeneous values require native runtime types".into(),
+                        "Heterogeneous graph-language values require native runtime types".into(),
                     ));
                 }
             }
