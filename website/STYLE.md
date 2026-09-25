@@ -6,7 +6,17 @@ This guide adapts the technical clarity and source discipline of the Chicago Man
 
 Write for database engineers, graph practitioners, and infrastructure teams evaluating an early project. Help readers understand the architecture, its current proof points, and its unfinished edges without marketing fog.
 
-## Voice
+## Visual design
+
+- Use crab-shell red for the logo, primary actions, selected tabs, and conformance figures.
+- Keep warm sand as the main background, shell pink for conformance, and pale sea-glass blue for technical examples. Keep dark colors for text.
+- Keep the entire hero headline one color. Do not restore a tagline above it or section numbering.
+- Preserve the subtle paper texture. Avoid large dark panels, stark white backgrounds, and heavy offset shadows.
+- Use Manrope for headings and prose, and IBM Plex Mono for code and labels. Keep heading line heights comfortable and limit body text width.
+- Check desktop and mobile rendering before publishing design changes.
+- References: [Webflow color and typography](https://webflow.com/blog/color-and-typography-pairings) and [NN/g visual design](https://www.nngroup.com/articles/good-visual-design/).
+
+## Editorial voice
 
 - Precise, calm, and technical.
 - Direct about what works and what remains in development.
