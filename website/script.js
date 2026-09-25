@@ -3,21 +3,21 @@
     cypher: {
       label: "CYPHER INPUT",
       query: `<span class="kw">MATCH</span> (p:Person)-[:KNOWS]-&gt;(f)\n<span class="kw">WHERE</span> f.city = <span class="str">'Chicago'</span>\n<span class="kw">RETURN</span> p.name, <span class="fn">count</span>(f)`,
-      ir: [["GraphNodeScan", ":Person", 0], ["GraphExpand", ":KNOWS · both", 1], ["GraphFilter", "city = Chicago", 2], ["GraphAggregate", "SQL island 01", 3]],
+      ir: [["GraphNodeScan", ":Person", 0], ["GraphExpand", ":KNOWS · out", 1], ["GraphFilter", "city = Chicago", 2], ["GraphAggregate", "SQL region", 3]],
       outputLabel: "DUCKDB SQL",
       sql: `<span class="kw">SELECT</span> p.name, <span class="fn">count</span>(f.id) …\n<span class="kw">FROM</span> person p <span class="kw">JOIN</span> knows e …`
     },
     gremlin: {
       label: "GREMLIN INPUT",
       query: `g.V().<span class="fn">hasLabel</span>(<span class="str">'person'</span>)\n .<span class="fn">out</span>(<span class="str">'knows'</span>).<span class="fn">has</span>(<span class="str">'city'</span>, <span class="str">'Chicago'</span>)\n .<span class="fn">groupCount</span>().<span class="fn">by</span>(<span class="str">'name'</span>)`,
-      ir: [["GraphNodeScan", ":person", 0], ["GraphExpand", ":knows · out", 1], ["GraphFilter", "city = Chicago", 2], ["GraphGroupMap", "SQL island 02", 3]],
+      ir: [["GraphNodeScan", ":person", 0], ["GraphExpand", ":knows · out", 1], ["GraphFilter", "city = Chicago", 2], ["GraphGroupMap", "SQL region", 3]],
       outputLabel: "DUCKDB SQL",
       sql: `<span class="kw">SELECT</span> f.name, <span class="fn">count</span>(*) …\n<span class="kw">FROM</span> person p <span class="kw">JOIN</span> knows e …`
     },
     sparql: {
       label: "SPARQL INPUT",
       query: `<span class="kw">PREFIX</span> ex: &lt;https://example.com/&gt;\n<span class="kw">SELECT</span> ?person ?name <span class="kw">WHERE</span> {\n  ?person a ex:Person ; ex:name ?name .\n}`,
-      ir: [["OntologyResolve", "ex:Person → :Person", 0], ["GraphNodeScan", ":Person", 1], ["GraphProject", "ex:name → name", 2], ["GraphReturn", "SQL island 03", 3]],
+      ir: [["OntologyResolve", "ex:Person → :Person", 0], ["GraphNodeScan", ":Person", 1], ["GraphProject", "ex:name → name", 2], ["GraphReturn", "SQL region", 3]],
       outputLabel: "DUCKDB SQL",
       sql: `<span class="kw">SELECT</span> p.person_id, p.full_name\n<span class="kw">FROM</span> people_view p`
     },
@@ -56,7 +56,7 @@
     });
     label.textContent = example.label;
     query.innerHTML = example.query;
-    ir.innerHTML = `<p class="stage-label"><span>02</span> GRAPH IR</p>` + example.ir.map(([op, note, depth], index) =>
+    ir.innerHTML = `<p class="stage-label">GRAPH IR</p>` + example.ir.map(([op, note, depth], index) =>
       `<div class="ir-row ${depth ? `indent${depth > 1 ? `-${depth}` : ""}` : ""} ${index === example.ir.length - 1 ? "hot" : ""}"><i></i><code>${op}</code><small>${note}</small></div>`
     ).join("");
     outputLabel.textContent = example.outputLabel;
@@ -84,16 +84,16 @@
     window.clearTimeout(transitionTimer);
     if (immediate || reduceMotion.matches) {
       selectExample(tab);
-      planStatus.textContent = interactionPaused ? "plan selected" : "cycling live plans";
+      planStatus.textContent = interactionPaused ? "example selected" : "query examples";
       scheduleCycle();
       return;
     }
     demo.classList.add("is-switching");
-    planStatus.textContent = `planning ${tab.dataset.example}…`;
+    planStatus.textContent = `showing ${tab.dataset.example}…`;
     transitionTimer = window.setTimeout(() => {
       selectExample(tab);
       demo.classList.remove("is-switching");
-      planStatus.textContent = "cycling live plans";
+      planStatus.textContent = "query examples";
       scheduleCycle();
     }, transitionDuration);
   }
@@ -101,14 +101,14 @@
   function pauseForInteraction() {
     interactionPaused = true;
     demo.classList.add("is-paused");
-    planStatus.textContent = "plan selected";
+    planStatus.textContent = "example selected";
     stopCycle();
   }
 
   function resumeCycle() {
     interactionPaused = false;
     demo.classList.remove("is-paused");
-    planStatus.textContent = "cycling live plans";
+    planStatus.textContent = "query examples";
     scheduleCycle();
   }
 

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crabgraph | Graph languages, planned as SQL islands</title>
-  <meta name="description" content="Bring Cypher, Gremlin, and SPARQL queries to the data and relational schemas you already have. Crabgraph preserves graph semantics and plans relational work as SQL islands.">
+  <title>Crabgraph | Graph queries over your tables</title>
+  <meta name="description" content="Query your tables with Cypher, Gremlin, and SPARQL. Map nodes, relationships, and RDF terms to your schema. Execute with DuckDB and DataFusion.">
   <meta name="theme-color" content="#f2efe6">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Crabgraph | Graph languages, planned as SQL islands">
-  <meta property="og:description" content="Bring graph queries to Iceberg and relational data without moving it into a graph database.">
+  <meta property="og:title" content="Crabgraph | Graph queries over your tables">
+  <meta property="og:description" content="Query your tables with Cypher, Gremlin, and SPARQL. Map your schema and execute with DuckDB and DataFusion.">
   <meta property="og:url" content="https://crabgraph.net/">
   <meta property="og:image" content="https://crabgraph.net/og.png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -41,18 +41,18 @@
     <section class="hero" id="top">
       <div class="hero-copy">
         <p class="kicker"><span></span>Graph query planning for relational data</p>
-        <h1>Keep the tables.<br><strong>Ask graph questions.</strong></h1>
-        <p class="lede">Crabgraph is a data fusion layer that turns Cypher, Gremlin, and SPARQL into a shared graph plan, then transpiles relational regions into SQL islands. Query the Iceberg tables, warehouse data, and schemas you already have.</p>
+        <h1>Graph queries.<br><strong>On your tables.</strong></h1>
+        <p class="lede">Use Cypher, Gremlin, and SPARQL to query relationships in your data. Map your tables and columns to a graph, then query it with DuckDB and DataFusion.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="https://docs.crabgraph.net/quickstart.html">Read the docs <span aria-hidden="true">↗</span></a>
-          <a class="button button-secondary" href="#coverage">See measured coverage</a>
+          <a class="button button-secondary" href="https://docs.crabgraph.net/conformance.html">Compare conformance</a>
         </div>
         <p class="hero-note">Rust · Apache Arrow · built on DataFusion · DuckDB by default</p>
       </div>
 
-      <div class="compiler-card" aria-label="Graph queries become graph IR and SQL islands" data-query-demo>
+      <div class="compiler-card" aria-label="Examples of graph queries and SQL" data-query-demo>
         <div class="card-bar">
-          <div class="card-top"><span>query.plan</span><span class="status-light" id="plan-status">cycling live plans</span></div>
+          <div class="card-top"><span>query.plan</span><span class="status-light" id="plan-status">query examples</span></div>
           <div class="example-tabs" role="tablist" aria-label="Query examples">
             <button id="example-tab-cypher" type="button" role="tab" aria-controls="query-example-panel" aria-selected="true" tabindex="0" data-example="cypher"><span>Cypher</span><i aria-hidden="true"></i></button>
             <button id="example-tab-gremlin" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="gremlin"><span>Gremlin</span><i aria-hidden="true"></i></button>
@@ -62,21 +62,21 @@
         </div>
         <div class="plan-content" id="query-example-panel" role="tabpanel" aria-labelledby="example-tab-cypher" aria-live="polite" aria-atomic="true">
         <div class="code-stage">
-          <p class="stage-label"><span>01</span> <b id="input-label">CYPHER INPUT</b></p>
+          <p class="stage-label"><b id="input-label">CYPHER INPUT</b></p>
           <pre><code id="query-code"><span class="kw">MATCH</span> (p:Person)-[:KNOWS]-&gt;(f)
 <span class="kw">WHERE</span> f.city = <span class="str">'Chicago'</span>
 <span class="kw">RETURN</span> p.name, <span class="fn">count</span>(f)</code></pre>
         </div>
-        <div class="compile-line" aria-hidden="true"><span></span><b>semantic boundary</b><span></span></div>
+        <div class="compile-line" aria-hidden="true"><span></span><b>graph plan</b><span></span></div>
         <div class="ir-stage" id="ir-rows">
-          <p class="stage-label"><span>02</span> GRAPH IR</p>
+          <p class="stage-label">GRAPH IR</p>
           <div class="ir-row"><i></i><code>GraphNodeScan</code><small>:Person</small></div>
-          <div class="ir-row indent"><i></i><code>GraphExpand</code><small>:KNOWS · both</small></div>
+          <div class="ir-row indent"><i></i><code>GraphExpand</code><small>:KNOWS · out</small></div>
           <div class="ir-row indent-2"><i></i><code>GraphFilter</code><small>city = Chicago</small></div>
-          <div class="ir-row indent-3 hot"><i></i><code>GraphAggregate</code><small>SQL island 01</small></div>
+          <div class="ir-row indent-3 hot"><i></i><code>GraphAggregate</code><small>SQL region</small></div>
         </div>
         <div class="sql-stage">
-          <p class="stage-label"><span>03</span> <b id="output-label">DUCKDB SQL</b></p>
+          <p class="stage-label"><b id="output-label">DUCKDB SQL</b></p>
           <pre><code id="sql-code"><span class="kw">SELECT</span> p.name, <span class="fn">count</span>(f.id) …
 <span class="kw">FROM</span> person p <span class="kw">JOIN</span> knows e …</code></pre>
         </div>
@@ -86,21 +86,21 @@
 
     <section class="premise section-rule">
       <div>
-        <p class="section-number">01 / PREMISE</p>
-        <h2>A graph layer should not dictate a storage layer.</h2>
+        <p class="section-number">Mapped graphs</p>
+        <h2>Define a graph over your schema.</h2>
       </div>
       <div class="prose">
-        <p>Graph languages express paths, relationships, and traverser behavior well. Relational engines store and scan the data well. Crabgraph keeps those concerns separate.</p>
-        <p>Instead of flattening a graph query into one large SQL string, the planner preserves graph semantics in Graph IR. It lowers only the regions that have a correct relational equivalent. The rest stays explicit.</p>
+        <p>A node label maps to a table or view. Columns supply identifiers and properties. Edge mappings specify the source and destination of each relationship.</p>
+        <p>For writable mappings, inserts, updates, and deletes target the tables and columns you specify. Your schema defines where the data belongs.</p>
       </div>
     </section>
 
     <section class="existing-data section-rule" id="existing-data">
       <div class="existing-copy">
-        <p class="section-number">02 / BRING YOUR OWN SCHEMA</p>
-        <h2>Your graph is a view over the data you have.</h2>
-        <p>Keep data in Iceberg, your warehouse, or ordinary relational tables. DuckDB connects to a Polaris catalog, the Iceberg extension reads its tables, and <code>cache_httpfs</code> caches remote object reads. SQL views define the graph shape.</p>
-        <p>Cypher and Gremlin use node and edge mappings. SPARQL adds an ontology mapping that resolves classes and predicates to those same graph concepts. Every language reaches the same views, with no graph copy and no second source of truth.</p>
+        <p class="section-number">Data sources</p>
+        <h2>Query tables, views, and Iceberg.</h2>
+        <p>Use DuckDB views to select the data your graph exposes. For Iceberg, DuckDB connects to your catalog and reads the tables through its Iceberg extension. The optional <code>cache_httpfs</code> extension caches remote reads.</p>
+        <p>Cypher and Gremlin use node and edge mappings. SPARQL can map classes and predicates to those graph concepts or use RDF dataset mappings. The example below maps accounts and transfers, then queries them as a graph.</p>
         <div class="source-chips" aria-label="Example data sources">
           <span>cache_httpfs</span><span>Apache Iceberg</span><span>Apache Polaris</span><span>DuckDB views</span>
         </div>
@@ -108,7 +108,7 @@
 
       <div class="byos-card" aria-label="Iceberg data mapped into a graph query">
         <div class="byos-step">
-          <p><span>01</span> EXPOSE EXISTING DATA</p>
+          <p>EXPOSE EXISTING DATA</p>
           <pre><code><span class="kw">INSTALL</span> cache_httpfs <span class="kw">FROM</span> community;
 <span class="kw">LOAD</span> cache_httpfs;
 <span class="kw">INSTALL</span> iceberg;  <span class="kw">LOAD</span> iceberg;
@@ -126,7 +126,7 @@
   <span class="kw">FROM</span> lake.prod.transfers;</code></pre>
         </div>
         <div class="byos-step mapping-step">
-          <p><span>02</span> MAP THE GRAPH SHAPE</p>
+          <p>MAP THE GRAPH SHAPE</p>
           <pre><code>[node.Account]
 table = <span class="str">"graph_accounts"</span>
 id = <span class="str">"account_id"</span>
@@ -145,7 +145,7 @@ ex:Account  →  Account(resource_id)
 ex:owner    →  Account.owner</code></pre>
         </div>
         <div class="byos-step query-step">
-          <p><span>03</span> QUERY IT AS A GRAPH</p>
+          <p>QUERY IT AS A GRAPH</p>
           <div class="byos-tabs" role="tablist" aria-label="Bring your own schema query languages">
             <button type="button" role="tab" aria-selected="true" tabindex="0" data-byos-language="cypher">Cypher</button>
             <button type="button" role="tab" aria-selected="false" tabindex="-1" data-byos-language="gremlin">Gremlin</button>
@@ -160,19 +160,19 @@ ex:owner    →  Account.owner</code></pre>
 <span class="kw">JOIN</span> graph_transfers t <span class="kw">ON</span> t.from_id = a.account_id
 <span class="kw">JOIN</span> graph_accounts b <span class="kw">ON</span> b.account_id = t.to_id</code></pre>
           </div>
-          <div class="lowering-note"><span>↓</span> one schema, three graph languages, relational SQL underneath</div>
+          <div class="lowering-note"><span>↓</span> Queries read the mapped account and transfer views.</div>
         </div>
       </div>
     </section>
 
     <section class="architecture section-rule" id="architecture">
       <div class="section-head">
-        <p class="section-number">03 / ARCHITECTURE</p>
-        <h2>One graph plan. SQL where it fits.</h2>
-        <p>Frontends and engines meet at a semantic contract, not at a storage format.</p>
+        <p class="section-number">Architecture</p>
+        <h2>From graph query to execution plan.</h2>
+        <p>Each language produces Graph IR, which lowers to a SQL IR DAG. DuckDB executes SQL regions; DataFusion executes the remaining stages and passes results between them.</p>
       </div>
 
-      <div class="pipeline" role="img" aria-label="Cypher, Gremlin, and SPARQL feed Graph IR built on DataFusion, which forms SQL islands for DuckDB and future SQL engines">
+      <div class="pipeline" role="img" aria-label="Cypher, Gremlin, and SPARQL produce Graph IR, then a SQL IR DAG executed by DuckDB and DataFusion">
         <div class="pipe-column sources">
           <p class="pipe-label">LANGUAGES</p>
           <div class="pipe-node"><b>Cypher</b><small>parser + planner</small></div>
@@ -181,131 +181,59 @@ ex:owner    →  Account.owner</code></pre>
         </div>
         <div class="pipe-arrow" aria-hidden="true"><span>normalize</span>→</div>
         <div class="pipe-column core">
-          <p class="pipe-label">SEMANTIC CORE</p>
+          <p class="pipe-label">PLANNING</p>
           <div class="pipe-node core-node"><b>Graph IR</b><small>paths · multiplicity · missing values · traversers</small></div>
-          <div class="foundation-line">Built on DataFusion logical plans</div>
-          <div class="island-strip"><span>rewrite</span><span>partition</span><span>lower</span></div>
+          <div class="foundation-line">Lower to SQL IR DAG</div>
+          <div class="island-strip"><span>optimize</span><span>partition</span><span>execute</span></div>
         </div>
-        <div class="pipe-arrow" aria-hidden="true"><span>transpile</span>→</div>
+        <div class="pipe-arrow" aria-hidden="true"><span>schedule</span>→</div>
         <div class="pipe-column targets">
           <p class="pipe-label">EXECUTION</p>
-          <div class="pipe-node target-best"><b>DuckDB</b><small>best-developed target</small></div>
-          <div class="pipe-node"><b>Postgres</b><small>feature-gated</small></div>
-          <div class="pipe-node muted"><b>Other SQL</b><small>executor boundary</small></div>
+          <div class="pipe-node target-best"><b>DuckDB</b><small>SQL regions</small></div>
+          <div class="pipe-node"><b>DataFusion</b><small>remaining execution stages</small></div>
         </div>
       </div>
 
       <div class="principles-grid">
         <article>
-          <span>01</span>
-          <h3>Preserve meaning first</h3>
-          <p>Path mode, row multiplicity, optional matches, missing properties, and traverser state survive the frontend.</p>
+          <h3>Language semantics</h3>
+          <p>Graph IR records path rules, duplicate rows, optional matches, missing properties, and traverser state.</p>
         </article>
         <article>
-          <span>02</span>
-          <h3>Lower safe regions</h3>
-          <p>Scans, filters, expands, joins, projections, aggregates, and other relational regions become SQL islands.</p>
+          <h3>SQL execution</h3>
+          <p>The planner groups scans, filters, joins, and aggregates into SQL regions that DuckDB can optimize together.</p>
         </article>
         <article>
-          <span>03</span>
-          <h3>Bring your own schema</h3>
-          <p>Map node labels and edge types onto relational tables. The graph view does not require a new data store.</p>
+          <h3>Table mappings</h3>
+          <p>Mappings connect graph labels, relationships, and properties to your tables, views, and columns.</p>
         </article>
         <article>
-          <span>04</span>
-          <h3>Decline, never guess</h3>
-          <p>If the SQL path cannot preserve a value or operation, it falls back instead of returning an approximate answer.</p>
+          <h3>Shared execution</h3>
+          <p>DataFusion schedules the DAG, including operations outside SQL regions. Dependent stages consume their results.</p>
         </article>
       </div>
     </section>
 
-    <section class="coverage section-rule" id="coverage">
-      <div class="section-head coverage-head">
-        <div>
-          <p class="section-number">04 / MEASURED COVERAGE</p>
-          <h2>Coverage, with denominators.</h2>
-        </div>
-        <p>These are development benchmarks from the checked-in corpus notes. They are not standards certifications.</p>
-      </div>
-
-      <div class="metrics">
-        <article class="metric featured">
-          <p class="metric-name">Cypher DuckDB accuracy</p>
-          <p class="metric-value">62.3<small>%</small></p>
-          <p class="metric-detail"><b>3,392 / 5,446</b> runnable cases executed through the relational path and matched expected output.</p>
-          <p class="metric-source">Ladybug corpus · full denominator · DuckDB · August 2026 snapshot</p>
-        </article>
-        <article class="metric">
-          <p class="metric-name">Cypher relational lowering</p>
-          <p class="metric-value">88.4<small>%</small></p>
-          <p class="metric-detail"><b>4,816 / 5,446</b> runnable cases lowered into relational work for SQL generation.</p>
-          <p class="metric-source">Ladybug corpus · full denominator · August 2026 snapshot</p>
-        </article>
-        <article class="metric">
-          <p class="metric-name">Gremlin accuracy</p>
-          <p class="metric-value">95.0<small>%</small></p>
-          <p class="metric-detail"><b>1,584 / 1,667</b> runnable interpreter cases matched expected output. The separate DuckDB path matches <b>578 / 1,667</b>.</p>
-          <p class="metric-source">TinkerPop corpus · interpreter · August 2026 snapshot</p>
-        </article>
-        <article class="metric">
-          <p class="metric-name">SPARQL Graph IR planning</p>
-          <p class="metric-value">96.0<small>%</small></p>
-          <p class="metric-detail"><b>408 / 425</b> selected W3C query files reached Graph IR. A mapped <b>6 / 6</b> integration matrix also matched expected rows in DuckDB.</p>
-          <p class="metric-source">W3C RDF tests · query collections · August 2026 snapshot</p>
-        </article>
-      </div>
-
-      <details class="benchmark-note">
-        <summary>Why different measures?</summary>
-        <p><b>Accuracy</b> compares an execution result with imported corpus output. <b>Relational lowering</b> counts plans that reach relational work for SQL generation. <b>SPARQL planning</b> counts W3C query files that reach Graph IR after parsing. The mapped SPARQL matrix separately checks expected DuckDB rows. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/language_coverage_review.md">language review</a> records the current Cypher and Gremlin denominators and reproduction commands. The <a href="https://github.com/henneberger/new-graph/blob/main/docs/sparql_coverage.md">SPARQL benchmark note</a> pins its corpus commit and execution matrix.</p>
-      </details>
-
-      <div class="matrix-wrap" tabindex="0" aria-label="Scrollable implementation coverage table">
-        <table class="matrix">
-          <caption>Implementation coverage as of the repository's August 2026 benchmark notes</caption>
-          <thead>
-            <tr><th scope="col">Layer</th><th scope="col">Capability</th><th scope="col">Status</th><th scope="col">Boundary</th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">Frontend</th><td>Cypher parser and planner</td><td><span class="tag available">Available</span></td><td>Broad read coverage; full conformance remains in progress.</td></tr>
-            <tr><th scope="row">Frontend</th><td>Gremlin parser and planner</td><td><span class="tag available">Available</span></td><td>Repeat internals, graph algorithms, sack semantics, and meta-properties have known gaps.</td></tr>
-            <tr><th scope="row">Frontend</th><td>SPARQL parser and planner</td><td><span class="tag partial">Partial</span></td><td>Parsed query algebra reaches Graph IR. Ontology mappings resolve SPARQL vocabulary to node labels, relationships, and properties before SQL lowering.</td></tr>
-            <tr><th scope="row">Semantic core</th><td>Shared Graph IR</td><td><span class="tag available">Available</span></td><td>Models scans, expands, paths, joins, aggregation, branching, repetition, and mutations.</td></tr>
-            <tr><th scope="row">Foundation</th><td>DataFusion logical planning</td><td><span class="tag available">Available</span></td><td>Crabgraph is built on DataFusion logical plans, extension nodes, and relational optimization.</td></tr>
-            <tr><th scope="row">SQL islands</th><td>Read-plan partitioning and fallback</td><td><span class="tag available">Available</span></td><td>Unsupported regions stay in Graph IR. Hybrid execution remains a migration path.</td></tr>
-            <tr><th scope="row">SQL islands</th><td>Recursive variable-length paths</td><td><span class="tag partial">Partial</span></td><td>Recursive SQL exists; path rendering and remaining correlation shapes still have release gates.</td></tr>
-            <tr><th scope="row">Data</th><td>Bring your own relational schema</td><td><span class="tag available">Available</span></td><td>Map nodes and edges onto existing tables, DuckDB views, SQL queries, and Iceberg-backed views.</td></tr>
-            <tr><th scope="row">Engine</th><td>DuckDB</td><td><span class="tag available">Available</span></td><td>Default feature and best-tested SQL target.</td></tr>
-            <tr><th scope="row">Engine</th><td>Postgres</td><td><span class="tag partial">Partial</span></td><td>Executor is feature-gated; compatibility and corpus gates are unfinished.</td></tr>
-            <tr><th scope="row">Writes</th><td>SQL mutations and transactions</td><td><span class="tag planned">Planned</span></td><td>Create, merge, set, delete, sequence, and transaction lowering remain outside SQL islands.</td></tr>
-            <tr><th scope="row">Language</th><td>Broader SPARQL algebra</td><td><span class="tag partial">Partial</span></td><td>Filters, optional patterns, named graphs, values, paths, datasets, services, and all query forms plan. Aggregate and reduced algebra still use explicit extension nodes.</td></tr>
-            <tr><th scope="row">Language</th><td>GQL and additional graph languages</td><td><span class="tag planned">Planned</span></td><td>Graph IR is designed to admit more frontends behind the same semantic boundary.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
 
     <section class="duckdb section-rule">
       <div class="duck-copy">
-        <p class="section-number">05 / ENGINE POSTURE</p>
-        <h2>DuckDB executes. DataFusion plans.</h2>
-        <p>Crabgraph is built on DataFusion for logical plans, extension nodes, and relational optimization. DuckDB is the best-developed SQL execution target today. The executor boundary can admit other databases as their dialect and behavior gates mature.</p>
-        <p>This is not a promise that every SQL engine behaves the same. It is a boundary that keeps engine choice separate from graph-language semantics.</p>
+        <p class="section-number">Execution</p>
+        <h2>Built with DuckDB, DataFusion, and Arrow.</h2>
+        <p>DuckDB runs the generated SQL against your mapped data. DataFusion provides logical plans and the execution stages around that SQL. Apache Arrow carries tabular results between stages.</p>
+        <p>See the <a href="https://docs.crabgraph.net/execution.html">execution guide</a> for planning details and the <a href="https://docs.crabgraph.net/conformance.html">conformance comparison</a> for results from the upstream language suites.</p>
       </div>
       <div class="dialect-card">
-        <p class="stage-label"><span>PLANNING FOUNDATION</span> CRABGRAPH IS BUILT ON</p>
-        <div class="foundation-card-row"><b>DataFusion</b><p>Logical plans<br>Extension nodes<br>Relational optimization</p></div>
-        <p class="stage-label target-label"><span>SQL EXECUTION</span> DATABASE TARGETS</p>
-        <div><b>DuckDB</b><span class="engine-status ready">Default</span><small>best-developed / measured</small></div>
-        <div><b>Postgres</b><span class="engine-status partial">Partial</span><small>feature-gated</small></div>
-        <div><b>Other SQL</b><span class="engine-status planned">Planned</span><small>executor boundary</small></div>
+        <p class="stage-label">Execution components</p>
+        <div class="foundation-card-row"><b>DataFusion</b><p>Logical plans<br>DAG execution<br>Custom operators</p></div>
+        <div><b>DuckDB</b><small>SQL execution</small></div>
+        <div><b>Apache Arrow</b><small>Tabular results</small></div>
       </div>
     </section>
 
     <section class="cta section-rule">
-      <p class="section-number">06 / SOURCE</p>
-      <h2>Build the graph layer above the data you have.</h2>
-      <p>Read the planner, map your schema, run the corpus harnesses, or help define the next SQL target.</p>
+      <p class="section-number">Get started</p>
+      <h2>Map your first graph.</h2>
+      <p>The <a href="https://docs.crabgraph.net/quickstart.html">quickstart</a> walks through creating a graph and running a query. Use the <a href="https://docs.crabgraph.net/mapped-graphs.html">mapping guide</a> to connect your own tables.</p>
       <div class="hero-actions centered">
         <a class="button button-primary" href="https://github.com/henneberger/new-graph">Open Crabgraph on GitHub <span aria-hidden="true">↗</span></a>
         <button class="button button-secondary copy-button" type="button" data-copy="git clone https://github.com/henneberger/new-graph.git">Copy clone command</button>
@@ -319,7 +247,7 @@ ex:owner    →  Account.owner</code></pre>
       <svg viewBox="0 0 40 32" aria-hidden="true"><path d="M8 13 3 9M32 13l5-4M7 20l-5 3M33 20l5 3M12 9 9 3M28 9l3-6"/><path d="M9 12h22v10c0 5-4 8-11 8S9 27 9 22V12Z"/></svg>
       <span>crabgraph</span>
     </a>
-    <p>Graph semantics in. SQL islands out.</p>
+    <p>Cypher, Gremlin, and SPARQL over your tables.</p>
     <div><a href="https://docs.crabgraph.net/">Documentation</a><a href="https://github.com/henneberger/new-graph">GitHub</a><a href="https://github.com/henneberger/new-graph/blob/main/README.md">README</a><a href="https://github.com/henneberger/new-graph/blob/main/LICENSE.md">License</a></div>
   </footer>
 </body>
