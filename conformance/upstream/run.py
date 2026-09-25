@@ -91,7 +91,7 @@ class Gremlin:
  def close(self):
   if self.process:self.process.close()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','janusgraph','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['crabgraph','crabgraph-jvm','crabgraph-computer','sqlg','puppygraph','janusgraph','neo4j','jena','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
  if args.resume and args.engine=='crabgraph' and args.suite=='tinkerpop':p.error('Crabgraph Gremlin conformance requires one uninterrupted instance; resume is not permitted')
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
@@ -106,13 +106,13 @@ def main():
    except json.JSONDecodeError:break
  else:journal.write_text('')
  done={r['id'] for r in results};started=datetime.datetime.now(datetime.timezone.utc).isoformat()
- applicable=args.suite=='tinkerpop' or args.suite=='opencypher' and args.engine in ['crabgraph','puppygraph'] or args.suite=='rdf' and args.engine=='crabgraph'
+ applicable=(args.suite=='tinkerpop' and args.engine not in ('neo4j','jena')) or (args.suite=='opencypher' and args.engine in ('crabgraph','puppygraph','neo4j')) or (args.suite=='rdf' and args.engine in ('crabgraph','jena'))
  adapter=None
  if applicable:
   if args.suite=='tinkerpop':adapter=Gremlin(args.engine)
   elif args.suite=='rdf':
    from sparql import Sparql
-   adapter=Sparql()
+   adapter=Sparql(args.engine)
   else:
    from cypher import Cypher
    adapter=Cypher(args.engine)
@@ -122,7 +122,20 @@ def main():
   build=jvm_build(adapter.classpath)
  elif args.engine=='crabgraph':
   binary=crabgraph_binary();build={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
- else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','janusgraph':'1.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','reference':'3.7.4'}[args.engine]}
+ else:build={'version':{'crabgraph-jvm':'0.1.0','crabgraph-computer':'0.1.0','janusgraph':'1.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','neo4j':'2026.09.0 Community / Cypher 5','jena':'6.2.0 / TDB2','reference':'3.7.4'}[args.engine]}
+ if args.engine in ('neo4j','jena'):
+  build['adapter_revision']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
+  build['adapter_working_tree_modified']=bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())
+  build['adapter_source']=file_identity(ROOT/'upstream'/('cypher.py' if args.engine=='neo4j' else 'sparql.py'))
+  build['adapter_support']=file_identity(ROOT/'upstream'/('cypher_driver.py' if args.engine=='neo4j' else 'sparql_updates.py'))
+  if args.engine=='neo4j':
+   build['image']='neo4j:2026.09.0-community@sha256:29efb5ebfb51ec75545a945bc3ac0bdfbeb6bc2686a8ae5053fe0f4dcc926441'
+   with adapter.driver.session() as session:
+    build['server_components']=[dict(row) for row in session.run('CALL dbms.components() YIELD name, versions, edition RETURN name, versions, edition')]
+  else:
+   root=ROOT/'adapters/jena'
+   build['adapter_class']=file_identity(root/'target/classes/JenaAdapter.class')
+   build['dependencies']=[file_identity(path) for path in (root/'target/classpath.txt').read_text().strip().split(os.pathsep)]
  if args.engine=='crabgraph' and args.suite=='tinkerpop':
   def classpath_identity(classpath):
    artifacts=[]

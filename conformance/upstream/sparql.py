@@ -1,5 +1,5 @@
 """W3C manifest adapter. Uses original data/query/result files, preserving RDF terms."""
-import io,json,re,time
+import io,json,re,time,os
 from pathlib import Path
 from urllib.parse import urlsplit,unquote
 import rdflib
@@ -71,21 +71,33 @@ def expected(path):
   return {'variables':variables,'rows':rows}
  return {'graph':[[term(s),term(p),term(o)] for s,p,o in graph]}
 class Sparql:
- def __init__(self):self.process=None
+ def __init__(self,engine='crabgraph'):self.process=None;self.engine=engine
+ def send(self,request,timeout=25):
+  if self.process is None or self.process.p.poll() is not None:
+   if self.engine=='jena':
+    root=ROOT/'adapters/jena'
+    classpath=str(root/'target/classes')+os.pathsep+(root/'target/classpath.txt').read_text().strip()
+    command=[os.environ.get('CONFORMANCE_JAVA','java'),'-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'JenaAdapter']
+   else:command=[str(crabgraph_binary())]
+   self.process=Process(command,ROOT/f'upstream-{self.engine}-rdf.log')
+  return self.process.send(request,timeout=timeout)
  def run(self,case):
   types=case['types'];base=CACHE/'rdf'
-  if any('Update' in t for t in types):return {'status':'unsupported','reason':'Crabgraph RDF adapter exposes read queries; SPARQL Update interface unavailable'}
+  if any('Update' in t for t in types):
+   if not any('Syntax' in t for t in types):
+    if self.engine=='crabgraph':return {'status':'unsupported','reason':'Crabgraph RDF adapter exposes read queries; SPARQL Update interface unavailable'}
+    from sparql_updates import run_update
+    return run_update(self,case)
   if any('Protocol' in t or 'ServiceDescription' in t or 'CSV' in t for t in types):return {'status':'not-applicable','reason':'This case tests an HTTP protocol or wire serializer; the compared Crabgraph API is embedded'}
   if '/entailment/' in case['path']:return {'status':'skipped','reason':'Upstream entailment profile requires a separately configured reasoning dataset'}
   if case.get('result_file','') and case['result_file'].endswith(('.tsv','.csv')):return {'status':'not-applicable','reason':'Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms'}
   path=base/case['query_file'];query=path.read_text()
   if re.search(r'\bSERVICE\b',query,re.I):return {'status':'skipped','reason':'Upstream federated SERVICE fixture endpoint is not installed locally','query':query}
-  if self.process is None or self.process.p.poll() is not None:self.process=Process([str(crabgraph_binary())],ROOT/'upstream-crabgraph-rdf.log')
   negative=any('Negative' in t for t in types);syntax=any('Syntax' in t for t in types)
   if syntax:
-   before=time.monotonic();actual=self.process.send({'op':'sparql-syntax','query':query,'base':path.resolve().as_uri()})
+   before=time.monotonic();actual=self.send({'op':'sparql-syntax','query':query,'base':path.absolute().as_uri(),'update':any('Update' in t for t in types)})
    passed=('error' in actual)==negative
-   return {'status':'pass' if passed else 'fail','query':query,'expected':{'parses':not negative},'actual':actual,'query_ms':round((time.monotonic()-before)*1000,3),'assertion':'W3C positive/negative query syntax; no query evaluation'}
+   return {'status':'pass' if passed else 'fail','query':query,'expected':{'parses':not negative},'actual':actual,'query_ms':round((time.monotonic()-before)*1000,3),'assertion':'W3C positive/negative syntax; no query or update evaluation'}
   quads=[]
   for filename,name in [(f,None) for f in case['data']]+[(r['file'],r['name']) for r in case['named']]:
    if not filename:return {'status':'adapter-error','reason':'Manifest graph fixture has no file'}
@@ -98,8 +110,8 @@ class Sparql:
     quads.append(row)
   if not case['result_file']:return {'status':'adapter-error','reason':'No supported result artifact in manifest'}
   want=expected(base/case['result_file'])
-  effective='BASE <'+path.resolve().as_uri()+'>\n'+query
-  before=time.monotonic();actual=self.process.send({'op':'rdf','query':effective,'quads':quads},timeout=25);duration=round((time.monotonic()-before)*1000,3)
+  effective='BASE <'+path.absolute().as_uri()+'>\n'+query
+  before=time.monotonic();actual=self.send({'op':'rdf','query':effective,'quads':quads},timeout=25);duration=round((time.monotonic()-before)*1000,3)
   if 'error' in actual:passed=False
   elif 'boolean' in want:passed=actual.get('boolean')==want['boolean']
   elif 'graph' in want:
@@ -114,6 +126,12 @@ class Sparql:
    else:
     rows=[[r[actual['variables'].index(v)] for v in want['variables']] for r in actual['rows']]
     passed=rows_equal(rows,want['rows'],bool(re.search(r'\bORDER\s+BY\b',query,re.I)))
-  return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.resolve().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; RDF term identity and global blank-node bijection / graph isomorphism'}
+  return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.absolute().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; RDF term identity and global blank-node bijection / graph isomorphism'}
  def close(self):
-  if self.process:self.process.close()
+  if self.process:
+   if self.engine=='jena' and self.process.p.poll() is None:
+    import subprocess
+    self.process.p.stdin.close()
+    try:self.process.p.wait(timeout=5)
+    except subprocess.TimeoutExpired:pass
+   self.process.close()

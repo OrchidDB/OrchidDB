@@ -1,9 +1,9 @@
 """Execute original TCK steps, with independent parsing of upstream value notation."""
-import ast,json,math,re,time,logging
+import ast,json,math,re,time,logging,os
 logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 from collections import Counter
 from lark import Lark,Transformer
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase,Query
 from neo4j.graph import Node,Relationship,Path
 from fetch import CACHE
 from bridge import PuppyFixture
@@ -68,6 +68,10 @@ class Values(Transformer):
 PARSE=Lark(GRAMMAR,parser='lalr',transformer=Values(),maybe_placeholders=False)
 def value(text):return PARSE.parse(text)
 def normalize(v):
+ from neo4j.time import Date,Time,DateTime,Duration
+ if isinstance(v,(Date,Time,DateTime,Duration)):
+  from cypher_driver import temporal
+  return temporal(v)
  if isinstance(v,Node):return {'$node':{'labels':sorted(v.labels),'properties':{k:normalize(x) for k,x in dict(v).items() if x is not None}}}
  if isinstance(v,Relationship):return {'$relationship':{'type':v.type,'properties':{k:normalize(x) for k,x in dict(v).items() if x is not None}}}
  if isinstance(v,Path):
@@ -125,6 +129,8 @@ def rows_equal(actual,expected,ordered,unordered_lists=False):
 class Cypher:
  def __init__(self,engine):
   self.engine=engine;self.rust=None;self.driver=None;self.fixture=None;self.seed=None
+  if engine=='neo4j':
+   self.driver=GraphDatabase.driver(os.environ.get('CONFORMANCE_NEO4J_URI','bolt://127.0.0.1:17687'),auth=('neo4j',os.environ.get('CONFORMANCE_NEO4J_PASSWORD','conformance-local-only')))
   if engine=='puppygraph':
    self.driver=GraphDatabase.driver('bolt://127.0.0.1:17688',auth=('puppygraph','conformance-local-only'))
    # Neo4j materializes upstream GIVEN fixtures only. Expected results always come from TCK.
@@ -140,7 +146,8 @@ class Cypher:
   from neo4j.exceptions import ServiceUnavailable,SessionExpired
   try:
    with self.driver.session() as s:
-    r=s.run(q,params or {});columns=list(r.keys());rows=[[normalize(v) for v in row] for row in r.values()]
+    statement=Query('CYPHER 5 '+q,timeout=20) if self.engine=='neo4j' else q
+    r=s.run(statement,params or {});columns=list(r.keys());rows=[[normalize(v) for v in row] for row in r.values()]
     return {'columns':columns,'rows':rows}
   except (ServiceUnavailable,SessionExpired,OSError,TimeoutError):raise
   except ValueError as e:return {'adapter_error':str(e)}
@@ -180,6 +187,12 @@ class Cypher:
     rows=[[value(row[table[0].index(name)]) for name in names] for row in table[1:]] if table and names else []
     registered=self.rust.send({'op':'register-procedure','name':signature[1].strip(),'inputs':inputs,'outputs':outputs,'rows':rows})
     if 'error' in registered:raise ValueError('Procedure registration failed: '+str(registered))
+   for q in setup:
+    result=self.query(q,params)
+    if 'error' in result:return {'status':'fail','stage':'fixture-query','query':q,'actual':result,'reason':'Engine rejected an upstream GIVEN query'}
+  elif self.engine=='neo4j':
+   reset=self.query('MATCH (n) DETACH DELETE n')
+   if 'error' in reset:raise RuntimeError('Cannot reset local Neo4j fixture: '+str(reset))
    for q in setup:
     result=self.query(q,params)
     if 'error' in result:return {'status':'fail','stage':'fixture-query','query':q,'actual':result,'reason':'Engine rejected an upstream GIVEN query'}

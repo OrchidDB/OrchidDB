@@ -1,6 +1,7 @@
 __pycache__/
 runner/target/
 adapters/sqlg/target/
+adapters/jena/target/
 adapters/sqlg/classpath.txt
 *.log
 

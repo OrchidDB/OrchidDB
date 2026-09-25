@@ -18,7 +18,7 @@ def main():
     assert catalog['sources'] == sources, 'Catalog source pins changed'
     cases = {case['id']: case for case in catalog['cases']}
     assert len(cases) == len(catalog['cases']), 'Duplicate catalog IDs'
-    for engine in ('crabgraph', 'sqlg', 'puppygraph', 'reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph'):
+    for engine in ('crabgraph', 'sqlg', 'puppygraph', 'reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph', 'neo4j', 'jena'):
         for suite in sources:
             if engine in ('reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph') and suite != 'tinkerpop':
                 continue
