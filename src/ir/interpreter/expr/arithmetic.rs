@@ -11,6 +11,9 @@ use super::super::{InterpretError, IrResult};
 pub(crate) fn arithmetic(op: BinaryOp, lhs: &Value, rhs: &Value) -> IrResult<Value> {
     use bigdecimal::BigDecimal;
     use num_bigint::BigInt;
+    if matches!(lhs, Value::Temporal(_)) || matches!(rhs, Value::Temporal(_)) {
+        return crate::ir::temporal::arithmetic(op, lhs, rhs).map_err(InterpretError::Type);
+    }
     if let (Some(left), Some(right)) = (integer_operand(lhs), integer_operand(rhs)) {
         return integer_arith(op, left, right);
     }

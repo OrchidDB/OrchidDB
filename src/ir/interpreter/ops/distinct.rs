@@ -66,6 +66,7 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(3);
             buf.extend_from_slice(&f.to_be_bytes());
         }
+        Value::Temporal(t) => { buf.push(30); buf.extend_from_slice(t.encode().as_bytes()); }
         Value::DateTime(s) => {
             buf.push(16);
             buf.extend_from_slice(s.as_bytes());

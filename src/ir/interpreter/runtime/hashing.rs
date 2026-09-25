@@ -57,6 +57,7 @@ fn hash_value_u64(value: &Value) -> u64 {
             }
         }
         Value::BigDecimal(value) => hash_string_u64(&value.to_string()),
+        Value::Temporal(t) => hash_string_u64(&t.encode()),
         Value::DateTime(value) => hash_string_u64(value),
         Value::InternalId { table, offset } => {
             murmurhash64(*offset as u64) ^ murmurhash64(*table as u64)

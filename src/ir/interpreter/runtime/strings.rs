@@ -73,6 +73,7 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         Value::BigInt(n) => format!("d[{n}].n"),
         Value::UInt128(n) => format!("d[{n}].u128"),
         Value::BigDecimal(d) => format!("d[{d}].m"),
+        Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) => format!("dt[{s}]"),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Null => "null".to_string(),
@@ -187,6 +188,7 @@ pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
         Value::BigInt(n) => n.to_string(),
         Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(n) => n.to_string(),
+        Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
@@ -290,6 +292,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
         Value::BigInt(n) => format!("d[{n}].n"),
         Value::UInt128(n) => format!("d[{n}].u128"),
         Value::BigDecimal(d) => format!("d[{d}].m"),
+        Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) => format!("dt[{s}]"),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Null => "null".to_string(),
@@ -325,6 +328,7 @@ pub(crate) fn display_for_group_key(v: &Value) -> String {
         Value::Float32(f) => format!("d[{}].f", format_f32_tag(*f)),
         Value::BigInt(n) => format!("d[{n}].n"),
         Value::UInt128(n) => format!("d[{n}].u128"),
+        Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) => format!("dt[{s}]"),
         other => display_for_tagged_container(other),
     }

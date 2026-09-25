@@ -149,6 +149,10 @@ impl Lowerer {
                 self.result_fields
                     .clone()
                     .unwrap_or_else(|| self.visible_fields())
+            } else if query.clauses.iter().any(|clause| matches!(clause,
+                crate::language::cypher::ast::Clause::Create(_) | crate::language::cypher::ast::Clause::Set(_)
+                | crate::language::cypher::ast::Clause::Delete(_) | crate::language::cypher::ast::Clause::Merge(_))) {
+                Vec::new()
             } else {
                 self.visible_fields()
             };

@@ -471,6 +471,7 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
         Value::BigInt(v) => tagged("bigint", json!(v.to_string())),
         Value::UInt128(v) => tagged("uint128", json!(v.to_string())),
         Value::BigDecimal(v) => tagged("bigdecimal", json!(v.to_string())),
+        Value::Temporal(v) => tagged("cypher_temporal", json!({"kind":v.kind(),"text":v.to_string()})),
         Value::DateTime(v) => tagged("datetime", json!(v)),
         Value::String(v) => tagged("string", json!(v)),
         Value::InternalId { table, offset } => {
@@ -719,6 +720,7 @@ fn format_property_value(value: &Value) -> String {
         Value::BigInt(n) => n.to_string(),
         Value::UInt128(n) => n.to_string(),
         Value::BigDecimal(d) => d.to_string(),
+        Value::Temporal(v) => v.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::List(items) | Value::BulkSet(items) | Value::Set(items) => {

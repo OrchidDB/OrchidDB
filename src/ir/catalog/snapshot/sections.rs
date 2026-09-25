@@ -230,6 +230,9 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         write_section(&mut out, tag, &b);
     }
 
+    let ids = Value::List(ov.cypher_ids.iter().map(|((edge, name, row), id)|
+        Value::List(vec![Value::Bool(*edge), Value::String(name.clone()), Value::Long(*row), Value::Long(*id)])).collect());
+    write_section(&mut out, 0x24, &binary::encode_value_bytes(&ids));
     let mut labels = Vec::new();
     put_u64(&mut labels, ov.node_label_sets.len() as u64);
     for ((storage, id), names) in &ov.node_label_sets {
@@ -328,6 +331,17 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
         let sub = r.blob()?;
         let mut sr = Reader::new(sub);
         match tag {
+            0x24 => {
+                let Value::List(records) = binary::decode_value_bytes(sub)? else { return Err("Invalid Cypher identities".into()); };
+                for record in records {
+                    let Value::List(fields) = record else { return Err("Invalid Cypher identity".into()); };
+                    let [Value::Bool(edge), Value::String(name), Value::Long(row), Value::Long(id)] = fields.as_slice() else {
+                        return Err("Invalid Cypher identity fields".into());
+                    };
+                    ov.cypher_ids.insert((*edge, name.clone(), *row), *id);
+                }
+                continue;
+            }
             0x23 => {
                 let count = sr.count()?;
                 for _ in 0..count {

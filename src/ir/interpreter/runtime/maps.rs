@@ -184,25 +184,21 @@ pub(super) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Val
             .map(|value| Value::Bool(!value))
             .unwrap_or(Value::Null),
         _ => {
-            // Kuzu float semantics: NaN orders below every numeric value
-            // (including another NaN).
-            fn nan_side(value: &Value) -> Option<bool> {
-                match value {
-                    Value::Float(n) => Some(n.is_nan()),
-                    Value::Float32(n) => Some(n.is_nan()),
-                    Value::Byte(_) | Value::Short(_) | Value::Int(_) | Value::Long(_) => {
-                        Some(false)
-                    }
-                    _ => None,
-                }
+            if matches!(left, Value::Float(v) if v.is_nan()) || matches!(left, Value::Float32(v) if v.is_nan())
+                || matches!(right, Value::Float(v) if v.is_nan()) || matches!(right, Value::Float32(v) if v.is_nan()) {
+                return Value::Bool(false);
             }
-            let nan_ord = match (nan_side(left), nan_side(right)) {
-                (Some(true), Some(_)) => Some(std::cmp::Ordering::Less),
-                (Some(false), Some(true)) => Some(std::cmp::Ordering::Greater),
-                _ => None,
-            };
-            nan_ord
-                .or_else(|| left.three_valued_cmp(right))
+            fn compare(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
+                if let (Value::List(left), Value::List(right)) = (left, right) {
+                    for (a, b) in left.iter().zip(right) {
+                        if cypher_equal(a, b) == Some(true) { continue; }
+                        return compare(a, b);
+                    }
+                    return Some(left.len().cmp(&right.len()));
+                }
+                left.three_valued_cmp(right)
+            }
+            compare(left, right)
                 .map(|ord| {
                     Value::Bool(match op {
                         "lt" => ord == std::cmp::Ordering::Less,

@@ -75,6 +75,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                             .unwrap_or(Value::Null)
                     }
                 },
+                Value::Temporal(value) => value.component(name),
                 Value::Null => Value::Null,
                 // Non-element values (Int/Bool/String/...) under a
                 // `property(...)` access — return null. This shows up

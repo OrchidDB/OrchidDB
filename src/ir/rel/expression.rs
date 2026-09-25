@@ -205,6 +205,11 @@ impl<'a> LoweringContext<'a> {
                 };
                 self.lower_expr(plan, fallback)
             }
+            IrExpr::Call { name, args } if name == "cypher_id" && self.options.mapping.is_some() => {
+                if let [IrExpr::Binding(binding)] = args.as_slice() {
+                    self.lower_expr(plan, &IrExpr::Id(binding.clone()))
+                } else { Err(RelError::Unsupported("Mapped identity requires an element binding".into())) }
+            }
             IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
                 let values = constant_range_values(args)?;
                 Ok(lit(rel_display_value(
@@ -696,7 +701,23 @@ impl<'a> LoweringContext<'a> {
                         )));
                     }
                 };
-                self.lower_comparison_or_binary(plan, &args[0], op, &args[1])
+                let lhs = self.lower_expr(plan, &args[0])?;
+                let rhs = self.lower_expr(plan, &args[1])?;
+                let lt = lhs.get_type(plan.schema())?;
+                let rt = rhs.get_type(plan.schema())?;
+                if matches!(lt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_))
+                    || matches!(rt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_)) {
+                    return Err(RelError::Unsupported("Cypher compound comparison requires three-valued element semantics".into()));
+                }
+                let comparison = self.lower_comparison_or_binary(plan, &args[0], op, &args[1])?;
+                if !matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+                    let mut nan = lit(false);
+                    if matches!(lt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(lhs)); }
+                    if matches!(rt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(rhs)); }
+                    return Ok(Expr::Case(Case::new(None,
+                        vec![(Box::new(nan), Box::new(lit(false)))], Some(Box::new(comparison)))));
+                }
+                Ok(comparison)
             }
             IrExpr::Call { name, args } if name == "gremlin_compare" && args.len() == 3 => {
                 let IrExpr::Lit(Lit::String(op)) = &args[0] else {
@@ -871,6 +892,7 @@ impl<'a> LoweringContext<'a> {
                     "Gremlin constant requires native values".into(),
                 ))
             }
+            Ok(Value::Temporal(_)) => Err(RelError::Unsupported("Typed Cypher temporal value requires native value transport".into())),
             Ok(value) => Ok(Some(constant_fold_result_expr(&value, self.language))),
             Err(err) => {
                 let message = err.to_string();
@@ -1851,6 +1873,14 @@ impl LoweringContext<'_> {
     ) -> RelResult<Expr> {
         let lhs = self.lower_expr(plan, left)?;
         let rhs = self.lower_expr(plan, right)?;
+        if self.language == Language::Cypher && matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div) {
+            let lt = lhs.get_type(plan.schema())?;
+            let rt = rhs.get_type(plan.schema())?;
+            if matches!(lt, DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 | DataType::List(_) | DataType::LargeList(_))
+                || matches!(rt, DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 | DataType::List(_) | DataType::LargeList(_)) {
+                return Err(RelError::Unsupported("Cypher overloaded arithmetic requires typed value computation".into()));
+            }
+        }
         if matches!(
             op,
             BinaryOp::Eq

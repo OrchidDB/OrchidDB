@@ -327,8 +327,13 @@ impl ExecutionPlan for DuckDbExec {
                     .map_err(|_| DataFusionError::Execution("DuckDB executor poisoned".into()))?;
                 let returned = sql::execute_prepared(&mut *executor, &prepared)
                     .map_err(|e| DataFusionError::Execution(e.to_string()))?;
-                RecordBatch::try_new(expected, returned.batch.columns().to_vec())
-                    .map_err(DataFusionError::from)
+                let arrays = returned.batch.columns().iter().zip(expected.fields())
+                    .map(|(array, field)| {
+                        if array.data_type() == field.data_type() { Ok(array.clone()) }
+                        else { arrow::compute::cast(array, field.data_type()) }
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                RecordBatch::try_new(expected, arrays).map_err(DataFusionError::from)
             })
             .await
             .map_err(|e| DataFusionError::Execution(e.to_string()))?

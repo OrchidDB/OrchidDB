@@ -50,6 +50,28 @@ pub(super) fn cypher_call(
 ) -> IrResult<Option<Value>> {
     // Resolve aliases (`tofloat` / `to_float` / `float`, etc.) to a
     // single canonical spelling so every arm below sees one name.
+    if let Some(kind) = name.strip_prefix("cypher_temporal.") {
+        let value = match (kind, args) {
+            (name, [left, right]) if name.starts_with("duration.") =>
+                crate::ir::temporal::between(name.trim_start_matches("duration."), left, right),
+            (name, [Value::String(unit), value, overrides]) if name.ends_with(".truncate") =>
+                crate::ir::temporal::truncate(name.trim_end_matches(".truncate"), unit, value, overrides),
+            (name, [Value::String(unit), value]) if name.ends_with(".truncate") =>
+                crate::ir::temporal::truncate(name.trim_end_matches(".truncate"), unit, value, &Value::Map(Default::default())),
+            ("datetime.fromepoch", [seconds, nanos]) => crate::ir::temporal::construct("datetime", &Value::Map(std::collections::BTreeMap::from([("epochSeconds".into(),seconds.clone()),("nanosecond".into(),nanos.clone())]))),
+            ("datetime.fromepochmillis", [millis]) => crate::ir::temporal::construct("datetime", &Value::Map(std::collections::BTreeMap::from([("epochMillis".into(),millis.clone())]))),
+            (kind, [value]) => crate::ir::temporal::construct(kind, value),
+            (kind, []) => {
+                let now = chrono::Utc::now();
+                let text = match kind { "date" => now.date_naive().to_string(), "localtime" => now.time().to_string(),
+                    "localdatetime" => now.naive_utc().to_string().replace(' ', "T"),
+                    "time" => format!("{}Z", now.time()), _ => now.to_rfc3339() };
+                crate::ir::temporal::parse(kind, &text).map(Value::Temporal)
+            }
+            _ => Err("Invalid temporal constructor arity".into()),
+        };
+        return value.map(Some).map_err(InterpretError::Type);
+    }
     let canonical = registry::canonical_name(name);
     match (canonical.as_ref(), args) {
         // ----- planner-internal helpers -----
@@ -183,6 +205,7 @@ pub(super) fn cypher_call(
         ("cypher_property_star", [Value::Map(map)]) => Ok(Some(Value::Map(map.clone()))),
         ("cypher_property_star", [Value::Null]) => Ok(Some(Value::Null)),
         // ----- graph-element built-ins -----
+        ("cypher_id", [value]) => Ok(Some(graph.cypher_id(value).map(Value::Int).unwrap_or(Value::Null))),
         ("id", [value]) => Ok(Some(match value {
             Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
                 element_internal_id(graph, value).unwrap_or(Value::Null)

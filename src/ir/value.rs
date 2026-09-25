@@ -87,6 +87,7 @@ pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
         }
         Value::String(v) => scalar(4, v.as_bytes().to_vec()),
         Value::DateTime(v) => scalar(16, v.as_bytes().to_vec()),
+        Value::Temporal(v) => scalar(30, v.encode().into_bytes()),
         Value::Token(v) => scalar(24, v.as_bytes().to_vec()),
         Value::Direction(v) => scalar(25, v.as_bytes().to_vec()),
         Value::InternalId { table, offset } => framed(17, [table.to_be_bytes().to_vec(), offset.to_be_bytes().to_vec()]),
@@ -194,6 +195,7 @@ pub enum Value {
     /// `d[N].m` rendering kicks in.
     BigDecimal(BigDecimal),
     DateTime(String),
+    Temporal(crate::ir::temporal::TemporalValue),
     /// Kuzu/Cypher internal id: `table_id:offset`.
     InternalId {
         table: i64,
@@ -249,6 +251,7 @@ impl PartialEq for Value {
         match (self, other) {
             (Self::Null, Self::Null) => true,
             (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Temporal(a), Self::Temporal(b)) => a == b,
             (Self::Byte(a), Self::Byte(b)) => a == b,
             (Self::UInt8(a), Self::UInt8(b)) => a == b,
             (Self::Short(a), Self::Short(b)) => a == b,
@@ -335,6 +338,7 @@ impl Value {
             Self::UInt128(_) => "uint128",
             Self::BigDecimal(_) => "bigdecimal",
             Self::DateTime(_) => "datetime",
+            Self::Temporal(v) => v.kind(),
             Self::InternalId { .. } => "internal_id",
             Self::String(_) => "string",
             Self::Node { .. } => "node",
@@ -417,6 +421,7 @@ impl Value {
             _ => {}
         }
         Some(match (self, other) {
+            (Self::Temporal(a), Self::Temporal(b)) => a == b,
             (Self::VertexProperty{id:a,..},Self::VertexProperty{id:b,..})=>a==b,
             (Self::Property{key:a,value:x,..},Self::Property{key:b,value:y,..})=>a==b && set_member_key(x)==set_member_key(y),
 
@@ -546,6 +551,7 @@ impl Value {
     }
 
     pub fn three_valued_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if let (Self::Temporal(a), Self::Temporal(b)) = (self, other) { return a.compare(b); }
         fn numeric_decimal(value: &Value) -> Option<BigDecimal> {
             use bigdecimal::FromPrimitive;
             match value {

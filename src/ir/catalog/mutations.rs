@@ -3,6 +3,55 @@
 use super::*;
 
 impl PropertyGraph {
+    /// Cypher numeric identity is independent of labels and Gremlin public IDs.
+    pub fn cypher_id(&self, value: &Value) -> Option<i64> {
+        let (edge, name, id) = match value {
+            Value::Node { label, id } => (false, label, *id),
+            Value::Edge { rel_type, id, .. } => (true, rel_type, *id),
+            _ => return None,
+        };
+        if let Some(id) = self.overlay.borrow().cypher_ids.get(&(edge, name.clone(), id)) { return Some(*id); }
+        // Older checkpoints predate numeric Cypher IDs. Fill their insertion
+        // slots deterministically, retaining any IDs already persisted by newer writes.
+        {
+            let mut overlay = self.overlay.borrow_mut();
+            let counts = if edge { &overlay.inserted_edge_counts } else { &overlay.inserted_node_counts };
+            let mut sources = counts.iter().map(|(name, count)| (name.clone(), *count)).collect::<Vec<_>>();
+            sources.sort();
+            let base_count = if edge { self.edge_row_counts.values().sum::<i64>() }
+                else { self.nodes.values().map(|table| table.batch.num_rows() as i64).sum::<i64>() };
+            let used = overlay.cypher_ids.iter().filter(|((is_edge, _, _), _)| *is_edge == edge)
+                .map(|(_, id)| *id).collect::<std::collections::BTreeSet<_>>();
+            let mut next = base_count;
+            for (source, count) in sources {
+                let base = if edge { self.edge_row_counts.get(&source).copied().unwrap_or(0) }
+                    else { self.nodes.get(&source).map(|table| table.batch.num_rows() as i64).unwrap_or(0) };
+                for row in base..base + count {
+                    let key = (edge, source.clone(), row);
+                    if !overlay.cypher_ids.contains_key(&key) {
+                        while used.contains(&next) { next += 1; }
+                        overlay.cypher_ids.insert(key, next);
+                        next += 1;
+                    }
+                }
+            }
+            if let Some(id) = overlay.cypher_ids.get(&(edge, name.clone(), id)) { return Some(*id); }
+        }
+        let mut offset = 0;
+        if edge {
+            for candidate in &self.edge_order {
+                if candidate == name { return Some(offset + id); }
+                offset += self.edge_row_counts.get(candidate).copied().unwrap_or(0);
+            }
+        } else {
+            for candidate in &self.node_order {
+                if candidate == name { return Some(offset + id); }
+                offset += self.nodes[candidate].batch.num_rows() as i64;
+            }
+        }
+        None
+    }
+
     /// Logical Cypher labels do not participate in the physical element address.
     pub fn node_labels(&self, storage: &str, id: i64) -> Vec<String> {
         self.overlay.borrow().node_label_sets.get(&(storage.to_string(), id))
@@ -82,12 +131,15 @@ impl PropertyGraph {
                     .unwrap_or(0)
             });
         let mut overlay = self.overlay.borrow_mut();
+        let cypher_id = self.edge_row_counts.values().sum::<i64>()
+            + overlay.inserted_edge_counts.values().sum::<i64>();
         let counter = overlay
             .inserted_edge_counts
             .entry(rel_type.clone())
             .or_insert(0);
         let id = base + *counter;
         *counter += 1;
+        overlay.cypher_ids.insert((true, rel_type.clone(), id), cypher_id);
         overlay.unassigned_public_ids.insert((true,rel_type.clone(),id));
         overlay
             .inserted_out_adj
@@ -137,12 +189,15 @@ impl PropertyGraph {
             .map(|table| table.batch.num_rows() as i64)
             .unwrap_or(0);
         let mut overlay = self.overlay.borrow_mut();
+        let cypher_id = self.nodes.values().map(|table| table.batch.num_rows() as i64).sum::<i64>()
+            + overlay.inserted_node_counts.values().sum::<i64>();
         let counter = overlay
             .inserted_node_counts
             .entry(label.clone())
             .or_insert(0);
         let id = base_rows + *counter;
         *counter += 1;
+        overlay.cypher_ids.insert((false, label.clone(), id), cypher_id);
         overlay.unassigned_public_ids.insert((false,label.clone(),id));
         note_keys(&mut overlay.inserted_node_keys, &label, &properties);
         overlay

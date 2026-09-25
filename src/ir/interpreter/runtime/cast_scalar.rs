@@ -29,6 +29,7 @@ pub(super) fn value_type_name(value: &Value) -> &'static str {
         Value::BigInt(_) => "INT128",
         Value::UInt128(_) => "UINT128",
         Value::BigDecimal(_) => "DECIMAL",
+        Value::Temporal(t) => t.kind(),
         Value::DateTime(_) => "TIMESTAMP",
         Value::InternalId { .. } => "INTERNAL_ID",
         Value::Node { .. } => "NODE",
