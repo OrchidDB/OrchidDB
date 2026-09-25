@@ -97,6 +97,7 @@ The initial implementation uses named semantic rules in `src/ir/rel/rules.rs`:
 - Remove redundant full-row DISTINCT on the membership side of semi/anti SQL IR joins. Existence-only lowering also avoids building graph dedup windows when the representative is unobservable.
 - Fold scalar singleton unwind into a projection, preserving duplicate parents and retaining the existing behavior for shadowing and tagged values. Reuse DataFusion's existing unnest filter-pushdown rule.
 - Remove scalar cardinality guards only with a uniqueness proof; nullable unique columns do not suffice. Native correlated scalar SQL emission remains a follow-on alternative.
-- Analyze SQL eligibility once per logical node, and report lowering, capability, and SQL-preparation boundary reasons with `CRABGRAPH_EXPLAIN_DAG=1`.
+- Analyze SQL eligibility lazily, caching each visited logical node and stopping at known boundaries. Report lowering, capability, and SQL-preparation boundary reasons with `CRABGRAPH_EXPLAIN_DAG=1`.
+- Dispatch the membership rule when a semi/anti join is constructed; queries without membership joins do not pay for an extra whole-plan rewrite traversal.
 
 The rules run before SQL region placement; the language → Graph IR → SQL IR DAG → DuckDB/DataFusion contract is unchanged. Broader user-declared mapping constraints, timestamps, shared windows, and cost-based materialization remain follow-on work. This batch must pass the focused rule/mapped-write checks and a complete local run before replacing published results.

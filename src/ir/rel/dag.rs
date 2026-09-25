@@ -147,6 +147,10 @@ impl SqlEligibility {
             _ if plan.schema().fields().is_empty() => Some("zero-column relation"),
             _ => None,
         };
+        if reason.is_some() {
+            self.reasons.insert(key, reason);
+            return reason;
+        }
         for expr in plan.expressions() {
             let _ = expr.apply(|expr| {
                 if let Expr::ScalarFunction(function) = expr {
@@ -161,26 +165,25 @@ impl SqlEligibility {
                 Ok(TreeNodeRecursion::Continue)
             });
         }
-        for input in plan.inputs() {
-            let child = self.visit(input);
-            reason = reason.or(child);
+        if reason.is_none() {
+            for input in plan.inputs() {
+                reason = self.visit(input);
+                if reason.is_some() { break; }
+            }
         }
         self.reasons.insert(key, reason);
         reason
-    }
-    fn reason(&self, plan: &LogicalPlan) -> Option<&'static str> {
-        self.reasons[&(plan as *const LogicalPlan as usize)]
     }
 }
 
 fn partition<'a>(
     plan: &'a LogicalPlan,
     stats: &'a mut DagStats,
-    eligibility: &'a SqlEligibility,
+    eligibility: &'a mut SqlEligibility,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
         let explain = std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some();
-        let reason = eligibility.reason(plan);
+        let reason = eligibility.visit(plan);
         if explain && let Some(reason) = reason {
             eprintln!("DuckDB boundary: {reason}");
         }
@@ -364,14 +367,12 @@ pub(crate) async fn execute_with_extensions(
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let simplified = super::rules::simplify_existence(lowered.plan.clone())?;
-    let optimized = query_state.optimize(&simplified)?;
+    let optimized = query_state.optimize(&lowered.plan)?;
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
-        eligibility.visit(&optimized);
-        partition(&optimized, &mut stats, &eligibility).await?
+        partition(&optimized, &mut stats, &mut eligibility).await?
     };
     #[cfg(not(feature = "duckdb"))]
     let plan = {
