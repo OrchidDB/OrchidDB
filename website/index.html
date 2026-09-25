@@ -12,7 +12,7 @@
   <meta property="og:url" content="https://crabgraph.net/">
   <meta property="og:image" content="https://crabgraph.net/og.png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=crab-1">
+  <link rel="stylesheet" href="/styles.css?v=crab-iceberg">
   <script src="/script.js?v=compact-sources" defer></script>
 </head>
 <body>
@@ -127,17 +127,18 @@
     <section class="existing-data section-rule" id="existing-data">
       <div class="existing-copy">
         <p class="section-number">Data sources</p>
-        <h2>Tables, views, and Iceberg.</h2>
-        <p>Map your existing tables to nodes and relationships. Query them with Cypher, Gremlin, or SPARQL.</p>
-        <p><a href="https://docs.crabgraph.net/mapped-graphs.html">Connect your data →</a></p>
+        <h2>Graph queries on Apache Iceberg.</h2>
+        <p>Run Cypher, Gremlin, and SPARQL over the Iceberg tables in your data lake. Your data stays in Iceberg, with no separate graph database to load or keep in sync.</p>
+        <p><a href="https://docs.crabgraph.net/mapped-graphs.html">Connect your tables →</a></p>
       </div>
-      <div class="source-mapping" aria-label="Example table mappings">
-        <p class="stage-label">Example mapping</p>
-        <dl>
-          <div><dt><code>accounts</code> table</dt><dd>Account nodes</dd></div>
-          <div><dt><code>transfers</code> table</dt><dd>TRANSFERRED_TO relationships</dd></div>
-        </dl>
-        <p>Columns provide IDs, properties, and relationship endpoints.</p>
+      <div class="lakehouse-flow" aria-label="Crabgraph queries your Apache Iceberg tables using Cypher, Gremlin, and SPARQL">
+        <div class="lakehouse-source">
+          <svg viewBox="0 0 72 64" aria-hidden="true"><path d="m10 34 18-25 10 12 8-5 16 18Z" fill="#b8dce2" stroke="currentColor" stroke-width="1.5"/><path d="m10 34 22 23 17-6 13-17M28 9l4 25 6-13M32 34v23" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 34h64" stroke="currentColor" stroke-width="2"/></svg>
+          <div><strong>Apache Iceberg</strong><span>Your existing lakehouse tables</span></div>
+        </div>
+        <div class="lakehouse-connector" aria-hidden="true">↓</div>
+        <div class="lakehouse-engine"><strong>Crabgraph</strong><span>Embedded graph engine</span></div>
+        <p class="lakehouse-languages">Cypher <span>·</span> Gremlin <span>·</span> SPARQL</p>
       </div>
     </section>
 

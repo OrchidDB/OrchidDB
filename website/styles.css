@@ -109,11 +109,16 @@ h2 { margin: 0; font-size: clamp(32px, 3.4vw, 48px); line-height: 1.14; letter-s
 
 .existing-data { display: grid; grid-template-columns: .88fr 1.12fr; gap: 7vw; padding: 96px clamp(32px, 7vw, 100px); background: var(--white); }
 .existing-copy { align-self: center; }
-.source-mapping { align-self: center; padding: 28px; border: 1px solid #b7d0d3; border-top: 4px solid var(--blue); background: var(--sea); }
-.source-mapping dl { margin: 0; }
-.source-mapping dl > div { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 18px 0; border-bottom: 1px solid var(--line); }
-.source-mapping dt, .source-mapping dd { margin: 0; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
-.source-mapping > p:last-child { margin: 20px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.lakehouse-flow { align-self: center; width: 100%; max-width: 520px; padding: 28px; border: 1px solid #b7d0d3; background: var(--sea); }
+.lakehouse-source { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.lakehouse-source svg { flex: 0 0 64px; width: 64px; color: var(--blue); }
+.lakehouse-source strong, .lakehouse-engine strong { display: block; font-size: 22px; }
+.lakehouse-source span, .lakehouse-engine span { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.lakehouse-connector { padding: 12px; text-align: center; color: var(--blue); font-size: 24px; }
+.lakehouse-engine { padding: 18px; border: 1px solid #d6b0a0; background: var(--shell); text-align: center; }
+.lakehouse-engine strong { color: var(--red-dark); }
+.lakehouse-languages { margin: 20px 0 0; text-align: center; font: 500 12px/1.6 var(--mono); }
+.lakehouse-languages span { padding: 0 6px; color: var(--blue); }
 .existing-copy p:not(.section-number) { max-width: 590px; color: var(--muted); font-size: 17px; line-height: 1.7; }
 .source-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
 .source-chips span { padding: 7px 9px; border: 1px solid var(--line); background: var(--paper); color: var(--blue); font: 600 9px var(--mono); text-transform: uppercase; letter-spacing: .05em; }
