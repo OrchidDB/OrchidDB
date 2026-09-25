@@ -16,6 +16,8 @@ class ResultFileTests(unittest.TestCase):
         self.assertFalse(matchterm(literal('01','string'),literal('1','string'),{}))
         self.assertFalse(matchterm(literal('invalid'),literal('0'),{}))
         self.assertFalse(rows_equal([[literal('1')]],[[literal('1')],[literal('1')]],False))
+        self.assertTrue(rows_equal([[literal('1')]],[[literal('1')],[literal('1')]],False,lax=True))
+        self.assertFalse(rows_equal([[literal('2')]],[[literal('1')],[literal('1')]],False,lax=True))
 
     def test_turtle_numeric_tokens_are_not_converted_to_python_numbers(self):
         from rdf_fixtures import graph_file

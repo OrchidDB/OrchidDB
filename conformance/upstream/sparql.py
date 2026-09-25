@@ -44,7 +44,19 @@ def matchterm(a,b,mapping):
   if right in mapping.values():return False
   mapping[left]=right;return True
  return a==b or same_numeric_value(a,b)
-def rows_equal(actual,expected,ordered):
+def rows_equal(actual,expected,ordered,lax=False):
+ if lax:
+  # mf:LaxCardinality explicitly permits REDUCED duplicate elimination.
+  # Keep blank-node labels here: distinct blank bindings must not collapse.
+  from rdf_result_terms import NUMERIC,numeric_value
+  def unique(rows):
+   seen=set();result=[]
+   for row in rows:
+    normalized=[dict(value,value=numeric_value(value['value'],value['datatype'])) if value and value.get('datatype') in NUMERIC else value for value in row]
+    key=json.dumps(normalized,sort_keys=True)
+    if key not in seen:seen.add(key);result.append(row)
+   return result
+  actual,expected=unique(actual),unique(expected)
  if len(actual)!=len(expected):return False
  def visit(index,remaining,mapping):
   if index==len(expected):return True
@@ -127,7 +139,9 @@ class Sparql:
    if set(actual.get('variables',[]))!=set(want['variables']):passed=False
    else:
     rows=[[r[actual['variables'].index(v)] for v in want['variables']] for r in actual['rows']]
-    passed=rows_equal(rows,want['rows'],want.get('ordered',False))
+    from sparql_updates import manifest,MF
+    lax=manifest(str(base/case['path'])).value(URIRef(case['manifest_test']),MF.resultCardinality)==MF.LaxCardinality
+    passed=rows_equal(rows,want['rows'],want.get('ordered',False),lax=lax)
   return {'status':'pass' if passed else 'fail','query':query,'effective_base':path.absolute().as_uri(),'fixture_quads':len(quads),'expected':want,'actual':actual,'query_ms':duration,'assertion':'W3C expected result; datatype-preserving numeric normalization (Oxigraph 0.5.11), result-artifact ordering, global blank-node bijection / graph isomorphism'}
  def close(self):
   if self.process:
