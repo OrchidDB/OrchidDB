@@ -1,5 +1,9 @@
 # Cypher Remaining Work
 
+For the current openCypher TCK assessment and implementation priorities, see
+[Cypher conformance plan](cypher-conformance-plan.md). The historical Ladybug/Kuzu
+corpus measurements below use a different denominator and compatibility target.
+
 This document captures the remaining work after the May 2026 Cypher implementation pass. It is written for the next engineer or agent picking up the Ladybug corpus work.
 
 ## Current State
