@@ -86,6 +86,23 @@ fn string(value: &str) -> Option<RdfTermValue> {
     Some(RdfTermValue::string(value))
 }
 
+#[tokio::test]
+async fn sparql_scalar_contracts_execute_over_mapped_rows() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, r#"SELECT (ENCODE_FOR_URI(?name) AS ?uri)
+        (REGEX(?name, "a l i c e", "ix") AS ?matches)
+        (REPLACE(?name, "(Ali)", "[$1]") AS ?replacement)
+        WHERE { ex:alice ex:name ?name }"#).await,
+        vec![vec![string("Alice"), typed("true", "boolean"), string("[Ali]ce")]]);
+    assert_eq!(rows(&mut engine, r#"SELECT
+        (TIMEZONE("2020-01-01T00:00:00-05:30"^^xsd:dateTime) AS ?zone)
+        (STRLEN(SHA384("abc")) AS ?sha384) (STRLEN(SHA512("abc")) AS ?sha512)
+        (NOW() = NOW() AS ?stable) (ENCODE_FOR_URI("a /é") AS ?encoded) WHERE {}"#).await,
+        vec![vec![typed("-PT5H30M", "dayTimeDuration"), int("96"), int("128"), typed("true", "boolean"), string("a%20%2F%C3%A9")]]);
+    assert_eq!(rows(&mut engine, r#"SELECT (REGEX("x", "[") AS ?invalid) WHERE {}"#).await,
+        vec![vec![None]]);
+}
+
 async fn rows(engine: &mut RdfGraphEngine, body: &str) -> Vec<Vec<Option<RdfTermValue>>> {
     let query = format!("{PREFIX}{body}");
     if std::env::var_os("SPARQL_TEST_SQL").is_some() {

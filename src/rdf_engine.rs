@@ -19,12 +19,15 @@ use crate::ir::rel::sql::{
 use crate::ir::rel::{RelBackend, RelBackendOptions};
 use crate::language::sparql::SparqlPlanner;
 
+mod scalar;
+
 /// Runs SPARQL read queries against user-owned RDF quad tables in DuckDB.
 /// The dataset name selects sources registered in `RdfDatasetMapping`.
 pub struct RdfGraphEngine {
     executor: DuckDbExecutor,
     mapping: Arc<RdfDatasetMapping>,
     dataset: String,
+    scalar_registered: bool,
 }
 
 impl RdfGraphEngine {
@@ -37,6 +40,7 @@ impl RdfGraphEngine {
             executor,
             mapping,
             dataset: dataset.into(),
+            scalar_registered: false,
         }
     }
 
@@ -66,8 +70,15 @@ impl RdfGraphEngine {
     /// datatype, and language columns of each field (see
     /// `binding_identity_columns`); [`RdfGraphEngine::query`] decodes them.
     pub async fn sparql(&mut self, query: &str) -> Result<ReturnedBatches, String> {
+        if !self.scalar_registered {
+            self.executor.connection().map_err(|error| error.to_string())?
+                .register_scalar_function::<scalar::SparqlScalar>("__crabgraph_sparql_scalar")
+                .map_err(|error| error.to_string())?;
+            self.scalar_registered = true;
+        }
         let prepared = self.prepare(query).await?;
-        execute_prepared(&mut self.executor, &prepared).map_err(|error| error.to_string())
+        stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
+            || execute_prepared(&mut self.executor, &prepared)).map_err(|error| error.to_string())
     }
 
     /// The DuckDB SQL that [`RdfGraphEngine::sparql`] would execute.
@@ -76,6 +87,15 @@ impl RdfGraphEngine {
     }
 
     async fn prepare(&self, query: &str) -> Result<PreparedSql, String> {
+        // Typed RDF expressions expand into several correlated SQL columns.
+        // Preserve the same session and async execution while allowing the
+        // logical planner's synchronous recursion to use a larger stack.
+        let mut preparation = Box::pin(self.prepare_inner(query));
+        futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
+            || std::future::Future::poll(preparation.as_mut(), cx))).await
+    }
+
+    async fn prepare_inner(&self, query: &str) -> Result<PreparedSql, String> {
         let plan = SparqlPlanner::new(&self.dataset)
             .plan_str(query)
             .map_err(|error| error.to_string())?;

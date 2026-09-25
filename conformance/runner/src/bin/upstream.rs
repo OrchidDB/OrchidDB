@@ -136,7 +136,9 @@ async fn main(){
    rows:req["rows"].as_array().into_iter().flatten().map(|row|row.as_array().into_iter().flatten().map(param).collect()).collect()};
   engine.register_table_procedure(req["name"].as_str().unwrap_or("").into(),procedure).map(|_|json!({"ok":true}))
  },
- "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())},
+ "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();
+  if req["update"].as_bool().unwrap_or(false){new_graph::language::sparql::parse_update(q,base).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}
+  else {let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}},
  _=>{
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");
