@@ -469,7 +469,6 @@ async fn execute_rows_inner(
     resources: Option<&super::dag::DagSession>,
     prune_return: bool,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
-    let lowering_phase = super::profile::Phase::new("lowering");
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),
@@ -498,7 +497,6 @@ async fn execute_rows_inner(
         result_form: crate::ir::policy::ResultForm::RowSet,
         islands: Default::default(),
     };
-    drop(lowering_phase);
     let (returned, stats) = super::dag::execute_with_extensions(
         lowered,
         vec![Arc::new(KernelPlanner {
@@ -509,7 +507,6 @@ async fn execute_rows_inner(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let _return_phase = super::profile::Phase::new("return_decode");
     let rows = decode_rows(&returned.batch).map_err(|e| e.to_string())?;
     let state = state.lock().map_err(|_| "Query state poisoned")?;
     state.context.jvm.check().map_err(|e| e.to_string())?;

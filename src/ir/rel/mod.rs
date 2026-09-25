@@ -9,7 +9,6 @@
 
 pub mod dag;
 pub mod runtime;
-pub(crate) mod profile;
 mod island_planner;
 mod rules;
 mod scans;

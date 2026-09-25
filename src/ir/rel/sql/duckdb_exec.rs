@@ -622,12 +622,9 @@ fn detect_transaction(conn: &Connection) -> Option<bool> {
 }
 
 fn execute_query(conn: &Connection, query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
-    let prepare_phase = super::super::profile::Phase::new("duckdb_prepare");
     let mut statement = conn
         .prepare(query)
         .map_err(|err| SqlError::Execution(format!("duckdb prepare: {err}")))?;
-    drop(prepare_phase);
-    let _execute_phase = super::super::profile::Phase::new("duckdb_execute");
     let mut rows = statement
         .query([])
         .map_err(|err| SqlError::Execution(format!("duckdb query: {err}")))?;
