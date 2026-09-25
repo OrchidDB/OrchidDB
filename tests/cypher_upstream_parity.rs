@@ -35,6 +35,7 @@ async fn deleted_entity_reads_and_invalid_properties_keep_runtime_diagnoses() {
     let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
     assert_eq!(engine.execute_plan_with_diagnostics(&plan).await.unwrap_err().diagnosis,
         Some(new_graph::ir::diagnostics::RuntimeDiagnosis::InvalidPropertyType));
+    assert_eq!(rows(&mut engine, "MATCH ()-[r]->() DELETE r RETURN type(r)").await, vec![vec!["R"]]);
 }
 
 #[tokio::test]

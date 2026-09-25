@@ -285,6 +285,39 @@ impl<'a> LoweringContext<'a> {
                     Some(Box::new(sliced)),
                 )))
             }
+            IrExpr::Call { name, .. } if name == "cypher_live_property" && plan.max_rows() == Some(0) => {
+                // An empty mutation boundary cannot evaluate a property read
+                // or raise deleted-entity access. Keep nonempty reads guarded.
+                Ok(lit(ScalarValue::Null))
+            }
+            IrExpr::Call { name, args } if name == "cypher_property_value" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let kind = value.get_type(plan.schema())?;
+                let valid = match &kind {
+                    DataType::List(field) | DataType::LargeList(field) | DataType::FixedSizeList(field, _) =>
+                        !field.data_type().is_nested(),
+                    other => !other.is_nested(),
+                };
+                if !valid {
+                    return Err(RelError::Unsupported("Cypher property type requires runtime validation".into()));
+                }
+                // A statically scalar SQL column (or list of scalars) already
+                // proves the property-domain guard, including mapped writes.
+                Ok(value)
+            }
+            IrExpr::Call { name, args } if name == "cypher_order_key" && args.len() == 1 && self.options.mapping.is_some() => {
+                if matches!(&args[0], IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some()) {
+                    return Err(RelError::Unsupported("Graph identity ordering requires native values".into()));
+                }
+                let value = self.lower_expr(plan, &args[0])?;
+                if value.get_type(plan.schema())?.is_nested() {
+                    return Err(RelError::Unsupported("Nested Cypher ordering requires native values".into()));
+                }
+                // A mapped scalar column has one declared type, so SQL's
+                // scalar ordering implements the Cypher key without coercing
+                // graph identities or heterogeneous runtime values.
+                Ok(value)
+            }
             IrExpr::Call { name, args } if name == "list_slice" && args.len() == 3 => {
                 let array = self.lower_list_operand(plan, &args[0])?;
                 let start = self.lower_expr(plan, &args[1])?;

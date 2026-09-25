@@ -159,6 +159,16 @@ fn replace(node: &mut Node, target: &Node, replacement: &Node) -> Result<()> {
 fn map_entries(expr: Option<&IrExpr>) -> Result<Vec<(String, IrExpr)>> {
     match expr {
         None | Some(IrExpr::Lit(Lit::Null)) => Ok(vec![]),
+        Some(IrExpr::Call { name, args }) if name == "cypher_property_map" && args.len() == 1 => {
+            // Preserve the Cypher property-domain contract while resolving
+            // every key to its declared destination column.
+            Ok(map_entries(Some(&args[0]))?.into_iter().map(|(key, value)| (key, IrExpr::Call {
+                name: "cypher_property_value".into(), args: vec![value],
+            })).collect())
+        }
+        Some(IrExpr::Call { name, args }) if name == "properties" && args.len() == 1 => {
+            map_entries(Some(&args[0]))
+        }
         Some(IrExpr::Call { name, args }) if name == "map" => args
             .chunks_exact(2)
             .map(|pair| {
@@ -527,6 +537,10 @@ impl MappedGraphEngine {
                 }
             }
         }
+        let input = Node::GraphSlice {
+            slice: crate::ir::plan::Slice { offset: 0, fetch: Some(0), tail: None },
+            input: Box::new(input),
+        };
         Ok(if fields.is_empty() {
             input
         } else {
