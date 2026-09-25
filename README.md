@@ -1,5 +1,7 @@
 # new-graph
 
+[Website](https://crabgraph.net/) · [Documentation](https://docs.crabgraph.net/) · [Conformance](https://docs.crabgraph.net/conformance.html)
+
 `new-graph` (Crabgraph) is an embedded graph engine in Rust built on DuckDB and
 DataFusion. Cypher, Gremlin, and SPARQL frontends produce a shared Graph IR.
 Relational query regions execute in DuckDB, with a graph runtime for operations
