@@ -45,7 +45,7 @@ For a `MappedGraphEngine` (including mappings over DuckDB/Iceberg views):
 
 ```rust,ignore
 use std::sync::Arc;
-use new_graph::ir::functions::{DuckDbCatalog, FunctionKind, FunctionRegistry};
+use orchiddb::ir::functions::{DuckDbCatalog, FunctionKind, FunctionRegistry};
 
 // Real code UDFs use this same connection:
 // engine.executor_mut().connection()?.register_scalar_function::<MyUdf>("score_impl")?;

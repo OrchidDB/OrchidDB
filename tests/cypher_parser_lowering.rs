@@ -1,5 +1,5 @@
-use new_graph::language::cypher::ast::{Clause, Expr, Literal, SetItem, UnaryOp};
-use new_graph::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::ast::{Clause, Expr, Literal, SetItem, UnaryOp};
+use orchiddb::language::cypher::parser::parse_query;
 
 #[test]
 fn parses_node_label_disjunction() {

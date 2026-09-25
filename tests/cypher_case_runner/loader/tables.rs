@@ -2,7 +2,7 @@
 
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
-use new_graph::ir::catalog::{EdgeTable, NodeTable};
+use orchiddb::ir::catalog::{EdgeTable, NodeTable};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

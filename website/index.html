@@ -3,12 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Graph queries in Rust | Crabgraph</title>
-  <meta name="description" content="Crabgraph is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
+  <title>Graph queries in Rust | OrchidDB</title>
+  <meta name="description" content="OrchidDB is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
   <meta name="theme-color" content="#ffffff">
-  <meta property="og:title" content="Graph queries in Rust | Crabgraph">
-  <meta property="og:description" content="Crabgraph is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
+  <meta property="og:title" content="Graph queries in Rust | OrchidDB">
+  <meta property="og:description" content="OrchidDB is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://orchiddb.com/">
+  <meta property="og:image" content="https://orchiddb.com/og.png">
+  <meta property="og:image:alt" content="OrchidDB: An embedded graph query engine written in Rust">
+  <link rel="canonical" href="https://orchiddb.com/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css?v=project-site">
   <script src="/script.js?v=project-site" defer></script>
@@ -17,12 +21,12 @@
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header">
-  <a class="brand" href="/" aria-label="Crabgraph home"><span aria-hidden="true">🦀</span></a>
+  <a class="brand" href="/" aria-label="OrchidDB home"><span aria-hidden="true">🌸</span></a>
   <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation" hidden>Menu</button>
   <div class="site-navigation" id="site-navigation">
-    <nav class="primary-nav" aria-label="Main"><a href="https://docs.crabgraph.net/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.crabgraph.net/">Docs</a></nav>
-    <nav class="project-nav" aria-label="Project"><a href="/community.html#slack">Slack</a><a href="https://github.com/henneberger/new-graph">GitHub</a></nav>
-    <form class="site-search" action="https://docs.crabgraph.net/" method="get" role="search"><label class="sr-only" for="site-search">Search documentation</label><input id="site-search" type="search" name="search" placeholder="Search docs" aria-label="Search documentation"></form>
+    <nav class="primary-nav" aria-label="Main"><a href="https://docs.orchiddb.com/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.orchiddb.com/">Docs</a></nav>
+    <nav class="project-nav" aria-label="Project"><a href="/community.html#slack">Slack</a><a href="https://github.com/OrchidDB/OrchidDB">GitHub</a></nav>
+    <form class="site-search" action="https://docs.orchiddb.com/" method="get" role="search"><label class="sr-only" for="site-search">Search documentation</label><input id="site-search" type="search" name="search" placeholder="Search docs" aria-label="Search documentation"></form>
   </div>
 </header>
 <main id="main" class="home">
@@ -30,15 +34,15 @@
   <canvas class="hero-graph" aria-hidden="true"></canvas>
   <button class="animation-toggle" type="button" aria-pressed="false" hidden>Pause animation</button>
   <div class="hero-content">
-    <h1 id="project-title">Crabgraph</h1>
+    <h1 id="project-title">OrchidDB</h1>
     <p class="tagline">An embedded graph query engine written in Rust</p>
-    <p>Query connected data with Cypher, Gremlin, and SPARQL. Crabgraph maps nodes and relationships to your tables and runs graph queries using DuckDB and DataFusion.</p>
-    <div class="actions"><a class="button" href="https://docs.crabgraph.net/quickstart.html">Quickstart <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/henneberger/new-graph">GitHub <span aria-hidden="true">↗</span></a></div>
+    <p>Query connected data with Cypher, Gremlin, and SPARQL. OrchidDB maps nodes and relationships to your tables and runs graph queries using DuckDB and DataFusion.</p>
+    <div class="actions"><a class="button" href="https://docs.orchiddb.com/quickstart.html">Quickstart <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a></div>
   </div>
 </section>
 <section class="home-section" id="about" aria-labelledby="about-title">
   <h2 id="about-title">About the Project</h2>
-  <p>Crabgraph is an embedded graph engine. Use it from a Rust application or the command line to explore relationships in your data. You can create a graph managed by Crabgraph or map a graph onto existing relational tables and views.</p>
+  <p>OrchidDB is an embedded graph engine. Use it from a Rust application or the command line to explore relationships in your data. You can create a graph managed by OrchidDB or map a graph onto existing relational tables and views.</p>
   <div class="technology-logos" aria-label="Built with Rust, DuckDB, Apache DataFusion, and Apache Arrow">
     <a href="https://rust-lang.org/" class="rust-logo"><img src="/assets/logos/rust.svg" alt="" width="48" height="48"><span>Rust</span></a>
     <a href="https://duckdb.org/"><img src="/assets/logos/duckdb.svg" alt="DuckDB" width="138" height="40"></a>
@@ -55,11 +59,11 @@
     <div class="flow-box result-box">Apache Arrow results</div>
   </figure>
   <p>The three query languages share a planning pipeline. Relational parts of a query become SQL; DataFusion executes the remaining stages. Results are returned as Arrow record batches.</p>
-  <p>Crabgraph is a prototype. Read the documentation and recorded conformance results for the current behavior and limitations.</p>
-  <div class="actions"><a class="button" href="https://docs.crabgraph.net/rust-api.html">Read the Rust API <span aria-hidden="true">↗</span></a><a class="button" href="https://docs.crabgraph.net/execution.html">Read the architecture <span aria-hidden="true">↗</span></a></div>
+  <p>OrchidDB is a prototype. Read the documentation and recorded conformance results for the current behavior and limitations.</p>
+  <div class="actions"><a class="button" href="https://docs.orchiddb.com/rust-api.html">Read the Rust API <span aria-hidden="true">↗</span></a><a class="button" href="https://docs.orchiddb.com/execution.html">Read the architecture <span aria-hidden="true">↗</span></a></div>
 </section>
 <section class="home-section usage-section" id="usage" aria-labelledby="usage-title">
-  <h2 id="usage-title">How to Use Crabgraph</h2>
+  <h2 id="usage-title">How to Use OrchidDB</h2>
   <p>Define a graph over the data you already own, then use it in your application.</p>
   <div class="usage-example" id="create-a-graph">
     <h3>Create a graph</h3>
@@ -85,7 +89,7 @@
         </div>
         <div class="diagram-arrow" aria-hidden="true">→</div>
         <div class="diagram-step mapping-step">
-          <h4><span aria-hidden="true">🦀</span> Graph mapping</h4>
+          <h4><span aria-hidden="true">🌸</span> Graph mapping</h4>
           <dl class="mapping-key">
             <div><dt><code>accounts</code></dt><dd>Account nodes</dd></div>
             <div><dt><code>transfers</code></dt><dd>TRANSFERRED_TO relationships</dd></div>
@@ -115,20 +119,20 @@ RETURN a.name, b.name</code></pre>
           <small>Explore the connections in your data.</small>
         </div>
       </div>
-      <figcaption id="data-diagram-caption">Your data stays in its source. Crabgraph maps the graph and executes queries over it.<br>External sources use the relevant DuckDB extensions and connection setup.</figcaption>
+      <figcaption id="data-diagram-caption">Your data stays in its source. OrchidDB maps the graph and executes queries over it.<br>External sources use the relevant DuckDB extensions and connection setup.</figcaption>
     </figure>
-    <a href="https://docs.crabgraph.net/mapped-graphs.html">Define your first mapping →</a>
+    <a href="https://docs.orchiddb.com/mapped-graphs.html">Define your first mapping →</a>
   </div>
   <div class="usage-example" id="in-your-application">
     <h3>A graph engine inside your application</h3>
-    <p>Use Crabgraph in a service, an analysis tool, or a command-line workflow. Your code asks a graph question; Crabgraph plans and executes it, then returns Arrow results.</p>
+    <p>Use OrchidDB in a service, an analysis tool, or a command-line workflow. Your code asks a graph question; OrchidDB plans and executes it, then returns Arrow results.</p>
     <figure class="application-diagram" aria-labelledby="application-diagram-caption">
       <div class="application-boundary">
         <div class="application-label"><img src="/assets/logos/rust.svg" alt="" width="30" height="30" loading="lazy"><span>Your Rust application <small>Service · analysis tool · CLI</small></span></div>
         <div class="application-flow">
           <div class="application-input"><span class="code-symbol" aria-hidden="true">&lt;/&gt;</span><strong>Your code</strong><small>Cypher · Gremlin · SPARQL</small></div>
           <div class="diagram-arrow" aria-hidden="true">→</div>
-          <div class="embedded-engine"><span class="engine-crab" aria-hidden="true">🦀</span><strong>Crabgraph</strong><small>Mapping · planning · execution</small></div>
+          <div class="embedded-engine"><span class="engine-orchid" aria-hidden="true">🌸</span><strong>OrchidDB</strong><small>Mapping · planning · execution</small></div>
           <div class="diagram-arrow" aria-hidden="true">→</div>
           <div class="application-output"><img src="/assets/logos/arrow.png" alt="Apache Arrow" width="144" height="75" loading="lazy"><strong>Results for your code</strong><small>Rows, columns, and record batches</small></div>
         </div>
@@ -137,22 +141,22 @@ RETURN a.name, b.name</code></pre>
           <div><img src="/assets/logos/datafusion.svg" alt="Apache DataFusion" width="162" height="34" loading="lazy"><small>Executes remaining stages</small></div>
         </div>
       </div>
-      <figcaption id="application-diagram-caption">Crabgraph is the graph query layer between your application and your data.<br>Embed the library in your process, or use the CLI to explore a graph.</figcaption>
+      <figcaption id="application-diagram-caption">OrchidDB is the graph query layer between your application and your data.<br>Embed the library in your process, or use the CLI to explore a graph.</figcaption>
     </figure>
-    <a href="https://docs.crabgraph.net/rust-api.html">Embed Crabgraph in Rust →</a>
+    <a href="https://docs.orchiddb.com/rust-api.html">Embed OrchidDB in Rust →</a>
   </div>
 </section>
 <section class="home-section participate" id="participate" aria-labelledby="participate-title">
   <h2 id="participate-title">How to Participate</h2>
   <p>Explore the code, try a query, and share what you find. GitHub is the place to report problems, discuss ideas, and propose changes. The community page explains how to get involved and lists the channels planned for the project.</p>
-  <div class="actions"><a class="button" href="https://github.com/henneberger/new-graph">GitHub <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#meetings">TSC Meetings <span aria-hidden="true">↗</span></a></div>
+  <div class="actions"><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#meetings">TSC Meetings <span aria-hidden="true">↗</span></a></div>
 </section>
 </main>
 <footer class="site-footer">
-  <a class="brand" href="/" aria-label="Crabgraph home"><span aria-hidden="true">🦀</span></a>
-  <nav aria-label="Footer"><a href="https://docs.crabgraph.net/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.crabgraph.net/">Docs</a></nav>
-  <nav aria-label="Social and source"><a href="/community.html#mastodon">Mastodon</a><a href="/community.html#twitter">Twitter</a><a href="/community.html#linkedin">LinkedIn</a><a href="/community.html#slack">Slack</a><a href="https://github.com/henneberger/new-graph">GitHub</a></nav>
-  <p>Copyright © 2026 Daniel Henneberger. <a href="https://github.com/henneberger/new-graph/blob/main/LICENSE.md">License</a></p>
+  <a class="brand" href="/" aria-label="OrchidDB home"><span aria-hidden="true">🌸</span></a>
+  <nav aria-label="Footer"><a href="https://docs.orchiddb.com/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.orchiddb.com/">Docs</a></nav>
+  <nav aria-label="Social and source"><a href="/community.html#mastodon">Mastodon</a><a href="/community.html#twitter">Twitter</a><a href="/community.html#linkedin">LinkedIn</a><a href="/community.html#slack">Slack</a><a href="https://github.com/OrchidDB/OrchidDB">GitHub</a></nav>
+  <p>Copyright © 2026 Daniel Henneberger. <a href="https://github.com/OrchidDB/OrchidDB/blob/main/LICENSE.md">License</a></p>
 </footer>
 </body>
 </html>

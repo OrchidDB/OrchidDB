@@ -23,7 +23,7 @@ class ReleasePackaging(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'Cargo.toml').write_text('[package]\nname="test-crate"\nversion="0.1.0"\n')
         (self.root / 'LICENSE.md').write_text('fixture license\n')
-        self.binary = self.root / 'crabgraph'
+        self.binary = self.root / 'orchiddb'
         self.binary.write_bytes(b'release binary fixture\x00\x01')
         self.out = self.root / 'packages'
         for mocked in [patch.object(package, 'ROOT', self.root),
@@ -38,14 +38,14 @@ class ReleasePackaging(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             package.archive(args)
         suffix = '.zip' if target.endswith('windows-msvc') else '.tar.gz'
-        return self.out / f'crabgraph-v0.1.0-{target}{suffix}'
+        return self.out / f'orchiddb-v0.1.0-{target}{suffix}'
 
     def test_tar_contains_executable_license_and_accurate_provenance(self):
         archive = self.make_archive('aarch64-apple-darwin')
         with tarfile.open(archive) as stream:
             members = {Path(m.name).name: m for m in stream if m.isfile()}
-            self.assertEqual(set(members), {'crabgraph', 'LICENSE.md', 'README.txt', 'BUILD.json'})
-            self.assertTrue(members['crabgraph'].mode & 0o111)
+            self.assertEqual(set(members), {'orchiddb', 'LICENSE.md', 'README.txt', 'BUILD.json'})
+            self.assertTrue(members['orchiddb'].mode & 0o111)
             info = json.load(stream.extractfile(members['BUILD.json']))
             self.assertEqual(info['binary_sha256'], package.digest(self.binary))
             self.assertEqual(info['cargo_package'], 'test-crate')
@@ -55,7 +55,7 @@ class ReleasePackaging(unittest.TestCase):
         archive = self.make_archive('x86_64-pc-windows-msvc')
         with zipfile.ZipFile(archive) as stream:
             names = stream.namelist()
-            executable = next(n for n in names if n.endswith('/crabgraph.exe'))
+            executable = next(n for n in names if n.endswith('/orchiddb.exe'))
             self.assertEqual(stream.read(executable), self.binary.read_bytes())
             self.assertTrue(all('..' not in Path(n).parts and not Path(n).is_absolute() for n in names))
 

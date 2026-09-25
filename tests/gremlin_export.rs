@@ -1,5 +1,5 @@
 //! Supplemental native writer evidence; upstream Gherkin Write placeholders remain unchanged.
-use new_graph::{
+use orchiddb::{
     ir::{
         catalog::{Cardinality, PropertyGraph},
         interpreter::execute_rows,
@@ -247,7 +247,7 @@ fn empty_graph_export_is_valid_and_read_only_strategy_allows_export() {
     let plan = GremlinPlanner::new()
         .plan(&parse_traversal(&text).unwrap())
         .unwrap();
-    assert!(!new_graph::ir::exec::contains_mutation(&plan.root));
+    assert!(!orchiddb::ir::exec::contains_mutation(&plan.root));
     execute_rows(&plan, &graph).unwrap();
 }
 #[test]

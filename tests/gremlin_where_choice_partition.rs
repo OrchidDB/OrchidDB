@@ -1,8 +1,8 @@
 mod gremlin_case_runner;
 
 use gremlin_case_runner::{compare, dataset, format, parse};
-use new_graph::ir::{catalog::PropertyGraph, interpreter::execute};
-use new_graph::language::gremlin::planner::GremlinPlanner;
+use orchiddb::ir::{catalog::PropertyGraph, interpreter::execute};
+use orchiddb::language::gremlin::planner::GremlinPlanner;
 
 fn assert_rows(graph: &PropertyGraph, query: &str, expected: &[&str]) {
     let traversal = parse::gremlin_with_case(query, "").unwrap();
@@ -103,7 +103,7 @@ fn partition_edges_do_not_require_visible_opposite_vertex() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn mixed_choice_preserves_native_integer_and_string_types() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(dataset::modern_graph()).unwrap();
     let result = engine.gremlin("g.V().choose(__.out().count()).option(2L,__.values('name')).option(3L,__.values('age'))").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
@@ -130,7 +130,7 @@ async fn mixed_choice_preserves_native_integer_and_string_types() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn side_effect_executes_all_child_mutations_and_preserves_empty_parent() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(dataset::modern_graph()).unwrap();
     let result = engine.gremlin("g.V().has('name','marko').sideEffect(__.out('knows').property('seen',true)).values('name')").await.unwrap();
     assert_eq!(format::lines_from_batch(&result.returned), vec!["marko"]);
@@ -161,7 +161,7 @@ async fn side_effect_executes_all_child_mutations_and_preserves_empty_parent() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn unmatched_choice_emits_no_placeholder_row() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     let result = engine
         .gremlin("g.inject(0,1,2).choose(__.identity()).option(1L,__.constant('one'))")
         .await
@@ -298,7 +298,7 @@ async fn branch_mutation_source_runs_once_and_empty_reducer_arm_stays_empty() {
         "choose(__.identity(),__.identity(),__.identity())",
         "branch(__.constant(1)).option(1,__.fold()).option(Pick.any,__.identity())",
     ] {
-        let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+        let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
         engine
             .gremlin(&format!("g.addV('audit').{branch}.count()"))
             .await
@@ -310,7 +310,7 @@ async fn branch_mutation_source_runs_once_and_empty_reducer_arm_stays_empty() {
             "{branch}"
         );
     }
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     let result = engine
         .gremlin("g.inject(1).branch(__.identity()).option(0,__.fold()).count()")
         .await

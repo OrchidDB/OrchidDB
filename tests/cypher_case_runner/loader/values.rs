@@ -1,6 +1,6 @@
 //! Typed fixture values and collection literal decoding.
 
-use new_graph::ir::value::{STRUCT_ORDER_KEY, Value};
+use orchiddb::ir::value::{STRUCT_ORDER_KEY, Value};
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::str::FromStr;

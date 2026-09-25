@@ -1,8 +1,8 @@
 //! Engine regressions identified by the upstream TinkerPop scenarios.
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn values(query: &str) -> Vec<Value> {
     let traversal = parse_traversal(query).unwrap();
@@ -208,7 +208,7 @@ fn numeric_literal_boundaries_are_lossless() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn numeric_types_survive_engine_execution() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     for (literal, expected) in [
         ("2B", "byte"),
         ("2S", "short"),
@@ -230,7 +230,7 @@ async fn numeric_types_survive_engine_execution() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn compound_constants_survive_engine_execution() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     for (literal, expected) in [
         ("[1I,'1',2L]", "list"),
         ("['a':2I]", "map"),
@@ -254,7 +254,7 @@ async fn compound_constants_survive_engine_execution() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn property_integer_types_survive_sql_scan() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     let graph = PropertyGraph::new();
     graph.insert_node(
         "person",
@@ -322,7 +322,7 @@ fn legacy_none_discards_results_after_real_writes() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn vertex_mutations_commit_through_engine() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV('person').property('name','marko').none()")
         .await
@@ -430,7 +430,7 @@ fn qualified_java_enum_names_are_lexical_aliases() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn merge_vertex_commits_and_matches_without_duplicate_creation() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.gremlin("g.mergeV([(T.label):'person','name':'marko']).option(Merge.onCreate,['age':29]).none()").await.unwrap();
     engine
         .gremlin("g.mergeV(['name':'marko']).option(Merge.onMatch,['age':30]).none()")
@@ -447,7 +447,7 @@ async fn merge_vertex_commits_and_matches_without_duplicate_creation() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn both_edge_and_vertex_steps_count_self_loops_in_both_directions() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV('person').as('a').addE('loop').to('a').none()")
         .await
@@ -551,7 +551,7 @@ fn traversal_valued_properties_preserve_target_and_outer_labels() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn drop_vertices_and_edges_performs_real_deletions() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV().as('a').addV().addE('link').to('a').none()")
         .await
@@ -614,7 +614,7 @@ fn merge_edges_match_create_update_with_real_endpoint_ids() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn merge_edge_commits_real_graph_writes() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV('p').addV('p').none()")
         .await
@@ -773,7 +773,7 @@ fn dynamic_merge_maps_and_options_preserve_typed_keys() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn dynamic_mutation_procedures_commit_once_and_roll_back_errors() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV(__.constant('p')).none()")
         .await

@@ -1,6 +1,6 @@
 #![cfg(feature = "duckdb")]
 use arrow::datatypes::{DataType, Field, Schema};
-use new_graph::{
+use orchiddb::{
     ir::rel::{
         mapping::{EdgeMapping, GraphMapping, NodeMapping},
         sql::DuckDbExecutor,
@@ -247,7 +247,7 @@ async fn detach_deletes_incident_rows_without_requiring_an_edge_id() {
 }
 #[tokio::test]
 async fn mapped_insert_parameters_are_data_and_failed_transaction_is_rolled_back() {
-    use new_graph::ir::Value;
+    use orchiddb::ir::Value;
     use std::collections::BTreeMap;
     let mut e = engine();
     let name = "x'); DROP TABLE people; --\0suffix";

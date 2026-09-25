@@ -1,13 +1,13 @@
 //! Semantic and physical-shape checks for the advanced SQL rule batch.
 #![cfg(feature = "duckdb")]
-use new_graph::ir::plan::{DistinctBulk, DistinctMode, LabelExpr, Node};
-use new_graph::ir::policy::GraphPlanPolicy;
-use new_graph::ir::rel::{
+use orchiddb::ir::plan::{DistinctBulk, DistinctMode, LabelExpr, Node};
+use orchiddb::ir::policy::GraphPlanPolicy;
+use orchiddb::ir::rel::{
     RelBackend,
     sql::{DuckDbExecutor, execute_lowered_sql},
 };
-use new_graph::ir::{GraphPlan, PropertyGraph};
-use new_graph::language::cypher::{parser::parse_query, planner::CypherPlanner};
+use orchiddb::ir::{GraphPlan, PropertyGraph};
+use orchiddb::language::cypher::{parser::parse_query, planner::CypherPlanner};
 use std::collections::BTreeMap;
 
 fn graph() -> PropertyGraph {
@@ -99,7 +99,7 @@ async fn catalog_identity_eliminates_dedup_but_expansion_multiplicity_does_not()
 
 #[tokio::test]
 async fn production_gremlin_distinct_and_existence_keep_bulk_and_duplicates() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(graph()).unwrap();
     for (query, expected) in [
         ("g.inject(1,1,2).dedup().count()", 2),

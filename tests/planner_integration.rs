@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 
-use new_graph::ir::bridge::cypher as cb;
-use new_graph::ir::bridge::gremlin as gb;
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::expr::{BinaryOp, Lit};
-use new_graph::ir::interpreter::execute;
-use new_graph::ir::plan::{Direction, Length, SortDir};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use new_graph::planner::{CypherPlanner, GremlinPlanner};
+use orchiddb::ir::bridge::cypher as cb;
+use orchiddb::ir::bridge::gremlin as gb;
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::expr::{BinaryOp, Lit};
+use orchiddb::ir::interpreter::execute;
+use orchiddb::ir::plan::{Direction, Length, SortDir};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use orchiddb::planner::{CypherPlanner, GremlinPlanner};
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));
@@ -168,7 +168,7 @@ fn cypher_create_set_and_delete_use_graph_ir_mutations() {
         parse_query("CREATE (n:Person {name: 'dave'}) SET n.age = 42 RETURN n.name, n.age")
             .expect("parse");
     let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
-    let plan_text = new_graph::ir::plan::explain(&plan);
+    let plan_text = orchiddb::ir::plan::explain(&plan);
     assert!(plan_text.contains("GraphCreate"));
     assert!(plan_text.contains("GraphSetProperty"));
 
@@ -209,7 +209,7 @@ fn cypher_union_aligns_branch_outputs_by_position() {
         parse_query("MATCH (p:Person) RETURN p.age UNION ALL MATCH (q:Person) RETURN q.age")
             .expect("parse");
     let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
-    let plan_text = new_graph::ir::plan::explain(&plan);
+    let plan_text = orchiddb::ir::plan::explain(&plan);
     assert!(plan_text.contains("GraphUnion(all=[true], align=[ByPosition])"));
 
     let result = execute(&plan, &fixture_graph()).expect("execute");

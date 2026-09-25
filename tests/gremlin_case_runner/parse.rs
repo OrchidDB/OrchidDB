@@ -1,4 +1,4 @@
-//! Thin entry point — delegates to `new_graph::language::gremlin::parser`.
+//! Thin entry point — delegates to `orchiddb::language::gremlin::parser`.
 //!
 //! TinkerPop conformance cases reference vertices/edges by binding names
 //! like `vid1` / `eid7`. The harness's modern dataset lays vertices out so
@@ -9,9 +9,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use new_graph::language::gremlin::Traversal;
-use new_graph::language::gremlin::parser::parse_traversal_with_bindings;
-use new_graph::language::gremlin::semantics::GValue;
+use orchiddb::language::gremlin::Traversal;
+use orchiddb::language::gremlin::parser::parse_traversal_with_bindings;
+use orchiddb::language::gremlin::semantics::GValue;
 
 pub fn gremlin_with_case(source: &str, source_case: &str) -> Result<Traversal, String> {
     let source = normalize_imported_source(source);

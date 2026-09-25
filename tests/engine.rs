@@ -1,7 +1,7 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::engine::{GraphEngine, QueryResult, ReadMode};
-use new_graph::ir::Value;
+use orchiddb::engine::{GraphEngine, QueryResult, ReadMode};
+use orchiddb::ir::Value;
 use std::collections::BTreeMap;
 
 fn rows(result: QueryResult) -> Vec<String> {
@@ -188,7 +188,7 @@ async fn sql_only_reads_report_duckdb_execution() {
     let mut engine = GraphEngine::in_memory().unwrap();
     engine.set_read_mode(ReadMode::SqlOnly);
     let result = engine.cypher("RETURN 1 + 2 AS answer").await.unwrap();
-    assert_eq!(result.backend, new_graph::engine::ExecutionBackend::DuckDb);
+    assert_eq!(result.backend, orchiddb::engine::ExecutionBackend::DuckDb);
     assert_eq!(rows(result), ["3"]);
 }
 

@@ -67,7 +67,7 @@ The engine compiles the match and assigned value into a native DuckDB update. It
 
 ```rust
 use std::collections::BTreeMap;
-use new_graph::ir::Value;
+use orchiddb::ir::Value;
 
 let params = BTreeMap::from([
     ("name".into(), Value::String("alice".into())),

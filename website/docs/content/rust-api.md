@@ -4,7 +4,7 @@ Find the public engine methods, result types, mapping builders, and planner entr
 
 ## GraphEngine
 
-Import from `new_graph::engine`. Query methods are asynchronous and return `Result<QueryResult, String>`; lifecycle methods are synchronous.
+Import from `orchiddb::engine`. Query methods are asynchronous and return `Result<QueryResult, String>`; lifecycle methods are synchronous.
 
 | Method | Purpose |
 | --- | --- |
@@ -26,7 +26,7 @@ Import from `new_graph::engine`. Query methods are asynchronous and return `Resu
 
 ## MappedGraphEngine
 
-Import from `new_graph::mapped_engine`. Construct with `MappedGraphEngine::new(executor, Arc::new(mapping))`.
+Import from `orchiddb::mapped_engine`. Construct with `MappedGraphEngine::new(executor, Arc::new(mapping))`.
 
 | Method | Purpose |
 | --- | --- |
@@ -45,7 +45,7 @@ Read methods return `Result<ReturnedBatches, String>`. The [mapped tutorial](map
 
 ## RdfGraphEngine
 
-Import from `new_graph::rdf_engine`. Construct with `RdfGraphEngine::new(executor, Arc::new(mapping), dataset_name)`.
+Import from `orchiddb::rdf_engine`. Construct with `RdfGraphEngine::new(executor, Arc::new(mapping), dataset_name)`.
 
 | Method | Purpose |
 | --- | --- |
@@ -87,7 +87,7 @@ Build the crate's Rust documentation locally to browse complete signatures and t
 cargo doc --locked --no-deps
 ```
 
-Open `target/doc/new_graph/index.html` in a browser. Enable optional features in the Cargo command when documenting their types.
+Open `target/doc/orchiddb/index.html` in a browser. Enable optional features in the Cargo command when documenting their types.
 
 ## Error handling
 

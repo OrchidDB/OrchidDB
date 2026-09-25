@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Float64Array, Int64Array, StringArray};
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::ast::{OptionKey, Step, Traversal, TraversalOption};
-use new_graph::language::gremlin::planner::GremlinPlanner;
-use new_graph::language::gremlin::semantics::{Direction, GValue, Predicate};
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::ast::{OptionKey, Step, Traversal, TraversalOption};
+use orchiddb::language::gremlin::planner::GremlinPlanner;
+use orchiddb::language::gremlin::semantics::{Direction, GValue, Predicate};
 
 // ---------------- fixture ----------------
 
@@ -61,11 +61,11 @@ fn t(steps: Vec<Step>) -> Traversal {
     Traversal::new(steps)
 }
 
-fn plan(steps: Vec<Step>) -> new_graph::ir::plan::GraphPlan {
+fn plan(steps: Vec<Step>) -> orchiddb::ir::plan::GraphPlan {
     GremlinPlanner::new().plan(&t(steps)).expect("plan ok")
 }
 
-fn current_strings(rows: &[new_graph::ir::interpreter::Row]) -> Vec<String> {
+fn current_strings(rows: &[orchiddb::ir::interpreter::Row]) -> Vec<String> {
     rows.iter()
         .map(
             |row| match row.bindings.get("current").expect("current binding") {

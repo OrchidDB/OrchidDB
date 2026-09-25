@@ -21,16 +21,16 @@ use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 use datafusion::prelude::SessionContext;
 
-use new_graph::ir::bridge::gremlin as gb;
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::expr::Lit;
-use new_graph::ir::plan::GraphPlan;
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, MappedSource, NodeMapping};
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
-use new_graph::ir::rel::{LoweredPlan, RelBackend, RelBackendOptions, execute_lowered};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use new_graph::planner::GremlinPlanner;
+use orchiddb::ir::bridge::gremlin as gb;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::expr::Lit;
+use orchiddb::ir::plan::GraphPlan;
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, MappedSource, NodeMapping};
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+use orchiddb::ir::rel::{LoweredPlan, RelBackend, RelBackendOptions, execute_lowered};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use orchiddb::planner::GremlinPlanner;
 
 const HIGH_VALUE_VIEW_SQL: &str = "SELECT c.cust_id, c.full_name \
      FROM customers c JOIN orders o ON o.cust_id = c.cust_id \

@@ -25,7 +25,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use new_graph::ir::catalog::PropertyGraph;
+use orchiddb::ir::catalog::PropertyGraph;
 use super::dataset::DatasetError;
 
 mod assembly;

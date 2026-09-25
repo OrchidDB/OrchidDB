@@ -1,5 +1,5 @@
-use new_graph::ir::jvm::{JvmConfig, JvmExecution, JvmMode, JvmOperation};
-use new_graph::ir::{
+use orchiddb::ir::jvm::{JvmConfig, JvmExecution, JvmMode, JvmOperation};
+use orchiddb::ir::{
     GraphPlan, GraphPlanPolicy, IrExpr, Node, ProjectionItem, PropertyGraph, Value,
 };
 use std::collections::BTreeMap;
@@ -12,10 +12,10 @@ fn execute_rows_with_jvm(
     plan: &GraphPlan,
     graph: &PropertyGraph,
     jvm: JvmExecution,
-) -> Result<Vec<new_graph::ir::interpreter::Row>, String> {
+) -> Result<Vec<orchiddb::ir::interpreter::Row>, String> {
     tokio::runtime::Runtime::new()
         .unwrap()
-        .block_on(new_graph::ir::rel::runtime::execute_rows_with_jvm(
+        .block_on(orchiddb::ir::rel::runtime::execute_rows_with_jvm(
             plan, graph, jvm,
         ))
         .map(|(rows, _)| rows)
@@ -59,25 +59,25 @@ fn execution() -> JvmExecution {
 #[test]
 fn jvm_nodes_round_trip_through_optimizer_and_are_effect_fences() {
     let plan = plan(jvm(input(vec![Value::Int(1)]), "current + 1", JvmMode::Map));
-    let logical = new_graph::ir::df::to_logical_plan(&plan).unwrap();
+    let logical = orchiddb::ir::df::to_logical_plan(&plan).unwrap();
     let rebuilt =
-        new_graph::ir::df::from_logical_plan_with_policy(plan.policy.clone(), &logical).unwrap();
+        orchiddb::ir::df::from_logical_plan_with_policy(plan.policy.clone(), &logical).unwrap();
     assert_eq!(plan, rebuilt);
-    assert!(new_graph::ir::exec::contains_mutation(&plan.root));
-    assert!(new_graph::ir::analysis::validate_read_only(&plan).is_err());
-    assert!(new_graph::ir::explain(&plan).contains("GraphJvm"));
+    assert!(orchiddb::ir::exec::contains_mutation(&plan.root));
+    assert!(orchiddb::ir::analysis::validate_read_only(&plan).is_err());
+    assert!(orchiddb::ir::explain(&plan).contains("GraphJvm"));
 }
 
 #[test]
 fn gremlin_call_lowers_to_jvm_ir() {
-    let parsed = new_graph::language::gremlin::parser::parse_traversal(
+    let parsed = orchiddb::language::gremlin::parser::parse_traversal(
         "g.inject(2).call('crabgraph.jvm',['script':'current + 3'])",
     )
     .unwrap();
-    let plan = new_graph::language::gremlin::planner::GremlinPlanner::new()
+    let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
         .plan(&parsed)
         .unwrap();
-    assert!(new_graph::ir::jvm::contains_jvm(&plan.root));
+    assert!(orchiddb::ir::jvm::contains_jvm(&plan.root));
 }
 
 #[test]
@@ -223,11 +223,11 @@ fn transactions_cannot_commit_inside_a_node_and_null_policy_is_preserved() {
 #[test]
 #[ignore = "requires the production JVM classpath"]
 fn repeat_body_uses_the_correlated_frontier() {
-    let parsed = new_graph::language::gremlin::parser::parse_traversal(
+    let parsed = orchiddb::language::gremlin::parser::parse_traversal(
         "g.inject(2).repeat(__.call('crabgraph.jvm',['script':'current + 1'])).times(2)",
     )
     .unwrap();
-    let plan = new_graph::language::gremlin::planner::GremlinPlanner::new()
+    let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
         .plan(&parsed)
         .unwrap();
     let rows = execute_rows_with_jvm(&plan, &PropertyGraph::new(), execution()).unwrap();
@@ -239,8 +239,8 @@ fn repeat_body_uses_the_correlated_frontier() {
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn sql_prefix_then_datafusion_jvm_and_datafusion_suffix() {
-    use new_graph::ir::plan::ProjectErrorPolicy;
-    use new_graph::ir::{BinaryOp, ProjectMode, ResultForm};
+    use orchiddb::ir::plan::ProjectErrorPolicy;
+    use orchiddb::ir::{BinaryOp, ProjectMode, ResultForm};
     fn add(input: Node, n: i64) -> Node {
         Node::GraphProject {
             mode: ProjectMode::PreserveVisible,
@@ -269,7 +269,7 @@ async fn sql_prefix_then_datafusion_jvm_and_datafusion_suffix() {
         result_form: ResultForm::RowSet,
         input: suffix.boxed(),
     });
-    let (result, stats) = new_graph::ir::rel::runtime::execute(&query, &graph, None)
+    let (result, stats) = orchiddb::ir::rel::runtime::execute(&query, &graph, None)
         .await
         .unwrap();
     assert_eq!(
@@ -301,8 +301,8 @@ async fn sql_prefix_then_datafusion_jvm_and_datafusion_suffix() {
 #[test]
 #[ignore = "requires the production JVM classpath"]
 fn datafusion_failure_after_jvm_restores_caller_state() {
-    use new_graph::ir::ProjectMode;
-    use new_graph::ir::plan::ProjectErrorPolicy;
+    use orchiddb::ir::ProjectMode;
+    use orchiddb::ir::plan::ProjectErrorPolicy;
     let graph = PropertyGraph::new();
     let vertex = graph.insert_node(
         "person",
@@ -376,7 +376,7 @@ fn graphcomputer_fragment_uses_private_native_result_graph() {
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn public_engine_executes_ir_and_respects_outer_rollback() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .gremlin("g.addV('person').property('name','caller')")
         .await
@@ -394,8 +394,8 @@ async fn public_engine_executes_ir_and_respects_outer_rollback() {
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor() {
-    use new_graph::engine::{ExecutionBackend, GraphEngine};
-    use new_graph::language::gremlin::GremlinBinding;
+    use orchiddb::engine::{ExecutionBackend, GraphEngine};
+    use orchiddb::language::gremlin::GremlinBinding;
     use std::collections::HashMap;
     let mut engine = GraphEngine::in_memory().unwrap();
     engine
@@ -475,8 +475,8 @@ async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor(
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn production_comparator_preserves_rows_and_graph_computer_uses_query_local_view() {
-    use new_graph::engine::GraphEngine;
-    use new_graph::language::gremlin::GremlinBinding;
+    use orchiddb::engine::GraphEngine;
+    use orchiddb::language::gremlin::GremlinBinding;
     use std::collections::HashMap;
     let mut engine = GraphEngine::in_memory().unwrap();
     let bindings = HashMap::from([
@@ -529,9 +529,9 @@ async fn production_comparator_preserves_rows_and_graph_computer_uses_query_loca
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
-    use new_graph::language::gremlin::{GremlinBinding, semantics::GValue};
+    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
     use std::collections::HashMap;
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     let bindings = HashMap::from([
         ("seed".into(), GremlinBinding::Value(GValue::Long(1))),
         (
@@ -557,8 +557,8 @@ async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
 #[tokio::test]
 #[ignore = "requires the production JVM classpath"]
 async fn sack_supplier_split_and_update_are_relational_jvm_operators() {
-    use new_graph::engine::{ExecutionBackend, GraphEngine};
-    use new_graph::language::gremlin::{GremlinBinding, semantics::GValue};
+    use orchiddb::engine::{ExecutionBackend, GraphEngine};
+    use orchiddb::language::gremlin::{GremlinBinding, semantics::GValue};
     use std::collections::HashMap;
     let mut engine=GraphEngine::in_memory().unwrap();
     engine.gremlin("g.addV('a').as('a').addV('b').as('b').addE('link').from('a').to('b')").await.unwrap();

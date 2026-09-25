@@ -54,8 +54,8 @@ def smoke(binary):
     binary = str(binary.resolve())
     help_result = subprocess.run([binary, '--help'], check=True, text=True,
                                  capture_output=True, timeout=60)
-    if 'crabgraph' not in help_result.stdout.lower():
-        raise ValueError('The supplied executable is not the Crabgraph CLI')
+    if 'orchiddb' not in help_result.stdout.lower():
+        raise ValueError('The supplied executable is not the OrchidDB CLI')
     result = subprocess.run([binary, '--query', 'RETURN 1 AS value'], check=True,
                             text=True, capture_output=True, timeout=120)
     if result.stdout.strip().splitlines() != ['value', '1']:
@@ -76,18 +76,18 @@ def archive(args):
         raise ValueError(f'Missing release binary: {binary}')
     smoke(binary)
     args.output.mkdir(parents=True, exist_ok=True)
-    stem = f'crabgraph-{args.tag}-{args.target}'
+    stem = f'orchiddb-{args.tag}-{args.target}'
     windows = args.target.endswith('windows-msvc')
-    executable = 'crabgraph.exe' if windows else 'crabgraph'
+    executable = 'orchiddb.exe' if windows else 'orchiddb'
     destination = args.output / (stem + ('.zip' if windows else '.tar.gz'))
-    with tempfile.TemporaryDirectory(prefix='crabgraph-release-') as temp:
+    with tempfile.TemporaryDirectory(prefix='orchiddb-release-') as temp:
         folder = Path(temp) / stem
         folder.mkdir()
         shutil.copy2(binary, folder / executable)
         (folder / executable).chmod(0o755)
         shutil.copy2(ROOT / 'LICENSE.md', folder / 'LICENSE.md')
         (folder / 'README.txt').write_text(
-            f'Crabgraph {args.tag}\nTarget: {args.target}\n\n'
+            f'OrchidDB {args.tag}\nTarget: {args.target}\n\n'
             'An embedded graph query engine written in Rust.\n\n'
             f'Extract this archive and run ./{executable} --help\n'
             f'First query: ./{executable} --query "RETURN 1 AS value"\n\n'
@@ -95,11 +95,11 @@ def archive(args):
             'DuckDB is bundled into this build; system runtime libraries are still required.\n'
             'The JVM bridge and Java dependencies are not included in this CLI archive.\n'
             'macOS builds are not Developer ID signed or notarized.\n\n'
-            'Documentation: https://docs.crabgraph.net/\n'
-            'Source: https://github.com/henneberger/new-graph\n'
+            'Documentation: https://docs.orchiddb.com/\n'
+            'Source: https://github.com/OrchidDB/OrchidDB\n'
             'License terms: see LICENSE.md included in this archive.\n', encoding='utf-8')
         rust = subprocess.check_output(['rustc', '--version'], text=True).strip()
-        info = {'project': 'Crabgraph', 'cargo_package': manifest['name'],
+        info = {'project': 'OrchidDB', 'cargo_package': manifest['name'],
                 'version': manifest['version'], 'tag': args.tag, 'target': args.target,
                 'commit': revision(), 'rust': rust,
                 'features': ['duckdb'], 'binary_sha256': digest(binary)}
@@ -118,7 +118,7 @@ def archive(args):
 
 def verify(args):
     archives = sorted(list(args.directory.glob('*.tar.gz')) + list(args.directory.glob('*.zip')))
-    expected = {f'crabgraph-{args.tag}-{target}' + ('.zip' if target.endswith('windows-msvc') else '.tar.gz')
+    expected = {f'orchiddb-{args.tag}-{target}' + ('.zip' if target.endswith('windows-msvc') else '.tar.gz')
                 for target in TARGETS}
     if {p.name for p in archives} != expected:
         raise ValueError('Release must contain exactly one archive for each of the four targets')

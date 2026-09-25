@@ -1,10 +1,10 @@
 # Introduction
 
-Bring graph queries to your data. Learn to map relational tables, query with three graph languages, and embed Crabgraph in a Rust application.
+Bring graph queries to your data. Learn to map relational tables, query with three graph languages, and embed OrchidDB in a Rust application.
 
 ## Start with your data
 
-Crabgraph is a graph query layer built in Rust, with DuckDB execution, DataFusion planning, and Apache Arrow results. Describe nodes, relationships, and properties over your existing tables, then ask graph questions in Cypher, Gremlin, or SPARQL.
+OrchidDB is a graph query layer built in Rust, with DuckDB execution, DataFusion planning, and Apache Arrow results. Describe nodes, relationships, and properties over your existing tables, then ask graph questions in Cypher, Gremlin, or SPARQL.
 
 A graph mapping connects your application vocabulary to physical columns. A customer can become a `Person`, an order row can define an `ORDERED` relationship, and a SQL view can expose a selected group of accounts. Your database remains the source of those rows.
 
@@ -58,4 +58,4 @@ For application integration, continue with [typed parameters](parameters.md), [A
 
 ## Project links
 
-[Website](https://crabgraph.net/) · [GitHub](https://github.com/henneberger/new-graph) · [Community](https://crabgraph.net/community.html)
+[Website](https://orchiddb.com/) · [GitHub](https://github.com/OrchidDB/OrchidDB) · [Community](https://orchiddb.com/community.html)

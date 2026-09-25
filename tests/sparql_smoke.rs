@@ -4,13 +4,13 @@ use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 
-use new_graph::ir::PropertyGraph;
-use new_graph::ir::df::{from_logical_plan, to_logical_plan};
-use new_graph::ir::plan::Direction;
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
-use new_graph::ir::rel::{RelBackend, RelBackendOptions};
-use new_graph::language::sparql::{OntologyMapping, SparqlPlanner};
+use orchiddb::ir::PropertyGraph;
+use orchiddb::ir::df::{from_logical_plan, to_logical_plan};
+use orchiddb::ir::plan::Direction;
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
+use orchiddb::ir::rel::{RelBackend, RelBackendOptions};
+use orchiddb::language::sparql::{OntologyMapping, SparqlPlanner};
 
 const EX: &str = "https://example.com/";
 
@@ -36,7 +36,7 @@ fn ontology_resolves_sparql_to_property_graph_ir() {
         .with_ontology(ontology())
         .plan_str(query())
         .expect("plan mapped SPARQL");
-    let explained = new_graph::ir::explain(&plan);
+    let explained = orchiddb::ir::explain(&plan);
     assert!(explained.contains("GraphNodeScan"));
     assert!(explained.contains("GraphProject"));
     assert!(!explained.contains("GraphSparqlTriplePattern"));

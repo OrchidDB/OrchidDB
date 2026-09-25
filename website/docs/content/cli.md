@@ -1,14 +1,14 @@
 # CLI reference
 
-Run a graph query from your shell, read query files, and inspect a plan with the crabgraph binary.
+Run a graph query from your shell, read query files, and inspect a plan with the orchiddb binary.
 
 ## Invocation
 
 ```sh
-crabgraph [OPTIONS]
+orchiddb [OPTIONS]
 ```
 
-From a source checkout, use `cargo run --bin crabgraph -- [OPTIONS]`. The arguments after `--` are passed to the binary.
+From a source checkout, use `cargo run --bin orchiddb -- [OPTIONS]`. The arguments after `--` are passed to the binary.
 
 ## Options
 
@@ -27,14 +27,14 @@ Value options also accept `--name=value` syntax. Query input precedence is `--qu
 ## Query a database
 
 ```sh
-crabgraph --database social.duckdb \
+orchiddb --database social.duckdb \
   --query "MATCH (p:Person) RETURN p.name ORDER BY p.name"
 ```
 
 To start a fresh ephemeral session:
 
 ```sh
-crabgraph --query 'RETURN 1 AS value'
+orchiddb --query 'RETURN 1 AS value'
 ```
 
 ## Read a file
@@ -50,26 +50,26 @@ ORDER BY p.name
 Run it with:
 
 ```sh
-crabgraph --database social.duckdb --file people.cypher
+orchiddb --database social.duckdb --file people.cypher
 ```
 
 Or send it through stdin:
 
 ```sh
-cat people.cypher | crabgraph --database social.duckdb
+cat people.cypher | orchiddb --database social.duckdb
 ```
 
 ## Select Gremlin
 
 ```sh
-crabgraph --database social.duckdb --language gremlin \
+orchiddb --database social.duckdb --language gremlin \
   --query "g.V().hasLabel('Person').values('name').order()"
 ```
 
 ## Explain a query
 
 ```sh
-crabgraph --explain --query \
+orchiddb --explain --query \
   "MATCH (p:Person)-[:KNOWS]->(friend) RETURN friend.name"
 ```
 
@@ -80,7 +80,7 @@ The output is the graph plan. For generated SQL over mapped tables, use the Rust
 The CLI writes tab-separated column headers and rows to stdout. Backend diagnostics and errors go to stderr. A failed command exits with a nonzero status.
 
 ```sh
-crabgraph --database social.duckdb \
+orchiddb --database social.duckdb \
   --query "MATCH (p:Person) RETURN p.name" \
   > people.tsv 2> query.log
 ```

@@ -47,19 +47,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use new_graph::ir::analysis::{ReadValidationError, validate_read_only};
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::exec::{ExecStats, default_target, plan_with_islands};
-use new_graph::ir::interpreter::{ReturnedBatches, execute as interpret};
-use new_graph::ir::plan::{GraphPlan, Node, ProcedureMode, explain};
-use new_graph::ir::policy::GraphPlanPolicy;
-use new_graph::ir::rel::RelBackend;
+use orchiddb::ir::analysis::{ReadValidationError, validate_read_only};
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::exec::{ExecStats, default_target, plan_with_islands};
+use orchiddb::ir::interpreter::{ReturnedBatches, execute as interpret};
+use orchiddb::ir::plan::{GraphPlan, Node, ProcedureMode, explain};
+use orchiddb::ir::policy::GraphPlanPolicy;
+use orchiddb::ir::rel::RelBackend;
 #[cfg(feature = "duckdb")]
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
-use new_graph::language::cypher::ast::{Clause, Query};
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
-use new_graph::language::gremlin::planner::GremlinPlanner;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+use orchiddb::language::cypher::ast::{Clause, Query};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
+use orchiddb::language::gremlin::planner::GremlinPlanner;
 
 mod cypher_case_runner;
 mod gremlin_case_runner;

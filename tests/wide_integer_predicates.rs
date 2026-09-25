@@ -15,10 +15,10 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Float64Array};
 
-use new_graph::ir::catalog::{PropertyGraph, nodes_from_columns};
-use new_graph::ir::interpreter::execute;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::catalog::{PropertyGraph, nodes_from_columns};
+use orchiddb::ir::interpreter::execute;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 const I128_MAX: &str = "170141183460469231731687303715884105727";
 const I128_MAX_PLUS_ONE: &str = "170141183460469231731687303715884105728";
@@ -93,8 +93,8 @@ fn interpreter_exact_boundary_values_still_match() {
 
 #[cfg(feature = "duckdb")]
 async fn duckdb_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
-    use new_graph::ir::rel::RelBackend;
-    use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
+    use orchiddb::ir::rel::RelBackend;
+    use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect};
 
     let parsed = parse_query(query).expect("parse");
     let plan = CypherPlanner::new().plan(&parsed).expect("plan");

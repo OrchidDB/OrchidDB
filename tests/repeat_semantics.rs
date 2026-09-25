@@ -1,6 +1,6 @@
 use arrow::array::{ArrayRef, Int64Array};
-use new_graph::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 use std::sync::Arc;
 
 #[test]
@@ -40,7 +40,7 @@ fn nonterminating_repeat_fails_instead_of_returning_a_partial_answer() {
     let plan = GremlinPlanner::new().plan(&query).unwrap();
     let error = execute(&plan, &PropertyGraph::new()).unwrap_err();
     assert!(
-        matches!(error, new_graph::ir::InterpretError::ExecutionLimit(_)),
+        matches!(error, orchiddb::ir::InterpretError::ExecutionLimit(_)),
         "{error}"
     );
 }
@@ -59,7 +59,7 @@ fn repeat_dedup_keeps_seen_state_across_rounds() {
         arrow::util::display::array_value_to_string(result.batch.column(0), 0).unwrap(),
         "0"
     );
-    let error = new_graph::ir::rel::RelBackend::new()
+    let error = orchiddb::ir::rel::RelBackend::new()
         .lower(&plan, &graph)
         .unwrap_err();
     assert!(

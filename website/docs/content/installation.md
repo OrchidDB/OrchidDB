@@ -11,17 +11,17 @@ DuckDB is bundled with the default build. Allow time for its native compilation 
 ## Build from source
 
 ```sh
-git clone https://github.com/henneberger/new-graph.git
-cd new-graph
-cargo build --locked --release --bin crabgraph
-./target/release/crabgraph --help
+git clone https://github.com/OrchidDB/OrchidDB.git orchiddb
+cd orchiddb
+cargo build --locked --release --bin orchiddb
+./target/release/orchiddb --help
 ```
 
 Install the binary into Cargo's executable directory:
 
 ```sh
-cargo install --locked --path . --bin crabgraph
-crabgraph --query 'RETURN 1 AS value'
+cargo install --locked --path . --bin orchiddb
+orchiddb --query 'RETURN 1 AS value'
 ```
 
 Ensure Cargo's executable directory, usually `$HOME/.cargo/bin`, is on your shell's `PATH`.
@@ -38,12 +38,12 @@ Add these dependencies to `graph-app/Cargo.toml`. Adjust the path to your checko
 
 ```toml
 [dependencies]
-new-graph = { path = "../new-graph" }
+orchiddb = { path = "../orchiddb" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 arrow = "58.2.0"
 ```
 
-The package name is `new-graph`; the Rust import is `new_graph`. Use the [quickstart](quickstart.md) as `src/main.rs`.
+The package name is `orchiddb`; the Rust import is `orchiddb`. Use the [quickstart](quickstart.md) as `src/main.rs`.
 
 ## Cargo features
 

@@ -1,6 +1,6 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 use serde_json::{Value, json};
 
 async fn native(engine: &mut GraphEngine, query: &str) -> Value {
@@ -250,7 +250,7 @@ async fn select_by_map_get_preserves_missing_null_and_typed_keys() {
 
 #[tokio::test]
 async fn select_by_element_property_preserves_present_null_and_drops_absence() {
-    use new_graph::ir::{catalog::PropertyGraph, value::Value as GValue};
+    use orchiddb::ir::{catalog::PropertyGraph, value::Value as GValue};
     use std::collections::BTreeMap;
     let graph = PropertyGraph::new();
     graph.enable_null_property_values(true);

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use new_graph::ir::rel::sql::{DuckDbExecutor, SqlError, SqlExecutor, SqlValue};
+use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlError, SqlExecutor, SqlValue};
 
 fn temp_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(

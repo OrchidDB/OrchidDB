@@ -36,9 +36,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use new_graph::ir::interpreter::{ReturnedBatches, execute};
-use new_graph::ir::plan::explain;
-use new_graph::language::gremlin::planner::GremlinPlanner;
+use orchiddb::ir::interpreter::{ReturnedBatches, execute};
+use orchiddb::ir::plan::explain;
+use orchiddb::language::gremlin::planner::GremlinPlanner;
 
 mod gremlin_case_runner;
 use gremlin_case_runner::{case_file, compare, dataset, format, parse};

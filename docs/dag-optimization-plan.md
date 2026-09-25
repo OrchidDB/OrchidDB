@@ -2,13 +2,13 @@
 
 ## Contract
 
-Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG → DuckDB regions and DataFusion residual operators. Preserve exact values, ordering, bulk, mutation visibility, transaction rollback, callback invocation counts, and error behavior. Run tests locally; GitHub Actions publishes only static documentation and recorded evidence.
+Keep one OrchidDB execution path: language frontend → Graph IR → SQL IR DAG → DuckDB regions and DataFusion residual operators. Preserve exact values, ordering, bulk, mutation visibility, transaction rollback, callback invocation counts, and error behavior. Run tests locally; GitHub Actions publishes only static documentation and recorded evidence.
 
 ## Measurement and acceptance
 
 1. Capture a reproducible baseline from the current commit. Repeated workloads use the same fixtures, query sequence, build profile, and warmup. Record total time and per-query medians, and verify results on every repetition.
 2. Instrument lowering, SQL-region preparation, physical planning, and execution separately. Include region/kernel counts. Do not infer engine performance from adapter timing alone.
-3. Require all 1,511 pinned upstream Gremlin scenarios to pass on one uninterrupted Crabgraph instance. Run mapped-write regression tests for table destinations, identity, and transaction semantics.
+3. Require all 1,511 pinned upstream Gremlin scenarios to pass on one uninterrupted OrchidDB instance. Run mapped-write regression tests for table destinations, identity, and transaction semantics.
 4. The primary performance target is total full-suite runtime with all 1,511 scenarios passing. Track mean and median scenario time as well as the total, so improvements benefit common queries rather than only outliers. Prioritize shared planning, source preparation, transport, and execution overhead. Small benchmarks are diagnostic only. Batch related improvements before running the whole suite; use focused checks during implementation. Retain changes only when full-suite time improves without losing conformance. Record build profile and before/after revisions; do not compare different build profiles as an optimization gain.
 
 ## Implementation sequence
@@ -21,7 +21,7 @@ Keep one Crabgraph execution path: language frontend → Graph IR → SQL IR DAG
 
 ## Existing leaderboard
 
-For Crabgraph only, add **Passed runtime**, the sum of `elapsed_ms` for records whose status is exactly `pass`. Exclude failed, skipped, unsupported, timeout, and adapter-error cases. Label this as recorded scenario time, including setup/assertion overhead, not pure database execution or suite wall-clock time. Show missing timing explicitly; never treat missing timing as zero. Keep ranking by passed scenarios and retain one Crabgraph result. Other engines do not receive a runtime value.
+For OrchidDB only, add **Passed runtime**, the sum of `elapsed_ms` for records whose status is exactly `pass`. Exclude failed, skipped, unsupported, timeout, and adapter-error cases. Label this as recorded scenario time, including setup/assertion overhead, not pure database execution or suite wall-clock time. Show missing timing explicitly; never treat missing timing as zero. Keep ranking by passed scenarios and retain one OrchidDB result. Other engines do not receive a runtime value.
 
 ## Broad per-query overhead batch
 

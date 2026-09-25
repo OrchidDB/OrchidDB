@@ -1,6 +1,6 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 
 #[tokio::test]
 async fn wide_calendar_differences_and_values_roundtrip() {
@@ -15,8 +15,8 @@ async fn wide_calendar_differences_and_values_roundtrip() {
         assert_eq!(rows(&mut engine, query).await, vec![vec![expected]], "{query}");
     }
     for text in ["-999999999-01-01", "+999999999-12-31", "+1000000-02-29"] {
-        let value = new_graph::ir::temporal::parse("date", text).unwrap();
-        assert_eq!(new_graph::ir::temporal::TemporalValue::decode(&value.encode()).unwrap(), value);
+        let value = orchiddb::ir::temporal::parse("date", text).unwrap();
+        assert_eq!(orchiddb::ir::temporal::TemporalValue::decode(&value.encode()).unwrap(), value);
     }
 }
 
@@ -26,15 +26,15 @@ async fn deleted_entity_reads_and_invalid_properties_keep_runtime_diagnoses() {
     engine.cypher("CREATE (:A {num: 7})-[:R {num: 8}]->(:B)").await.unwrap();
     for query in ["MATCH (n:A) DETACH DELETE n RETURN n.num", "MATCH (n:A) DETACH DELETE n RETURN labels(n)",
         "MATCH ()-[r]->() DELETE r RETURN r.num"] {
-        let ast = new_graph::language::cypher::parser::parse_query(query).unwrap();
-        let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
+        let ast = orchiddb::language::cypher::parser::parse_query(query).unwrap();
+        let plan = orchiddb::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
         let error = engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
-        assert_eq!(error.diagnosis, Some(new_graph::ir::diagnostics::RuntimeDiagnosis::DeletedEntityAccess), "{query}: {error}");
+        assert_eq!(error.diagnosis, Some(orchiddb::ir::diagnostics::RuntimeDiagnosis::DeletedEntityAccess), "{query}: {error}");
     }
-    let ast = new_graph::language::cypher::parser::parse_query("CREATE (a) SET a.x = [{num:1}]").unwrap();
-    let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
+    let ast = orchiddb::language::cypher::parser::parse_query("CREATE (a) SET a.x = [{num:1}]").unwrap();
+    let plan = orchiddb::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
     assert_eq!(engine.execute_plan_with_diagnostics(&plan).await.unwrap_err().diagnosis,
-        Some(new_graph::ir::diagnostics::RuntimeDiagnosis::InvalidPropertyType));
+        Some(orchiddb::ir::diagnostics::RuntimeDiagnosis::InvalidPropertyType));
     assert_eq!(rows(&mut engine, "MATCH ()-[r]->() DELETE r RETURN type(r)").await, vec![vec!["R"]]);
 }
 
@@ -609,8 +609,8 @@ async fn cypher_temporal_projection_and_truncation_overrides() {
 
 #[tokio::test]
 async fn cypher_percentile_errors_retain_runtime_diagnosis() {
-    use new_graph::language::cypher::{parser::parse_query, planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query, planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine = GraphEngine::in_memory().unwrap();
     rows(&mut engine,"CREATE (:Price {v:10})").await;
     for function in ["percentileCont","percentileDisc"] {
@@ -644,8 +644,8 @@ async fn cypher_duration_differences_respect_clock_and_inherited_zone() {
 
 #[tokio::test]
 async fn diagnosed_runtime_failure_rolls_back_writes() {
-    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine=GraphEngine::in_memory().unwrap();
     let query=parse_query("CREATE (n:Price {v:10}) RETURN percentileCont(n.v,2)").unwrap();
     let plan=CypherPlanner::new().plan(&query).unwrap();
@@ -675,8 +675,8 @@ async fn cypher_coalesce_preserves_selected_type_and_short_circuits() {
 
 #[tokio::test]
 async fn cypher_subscript_rejects_coercions_and_preserves_nulls() {
-    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine=GraphEngine::in_memory().unwrap();
     for (query,diagnosis) in [
         ("RETURN [1,2][true]",RuntimeDiagnosis::InvalidType),
@@ -695,8 +695,8 @@ async fn cypher_subscript_rejects_coercions_and_preserves_nulls() {
 
 #[tokio::test]
 async fn cypher_range_validates_types_and_includes_integer_endpoints() {
-    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine=GraphEngine::in_memory().unwrap();
     for (query,diagnosis) in [
         ("RETURN range(1,3,0)",RuntimeDiagnosis::NumberOutOfRange),
@@ -714,8 +714,8 @@ async fn cypher_range_validates_types_and_includes_integer_endpoints() {
 
 #[tokio::test]
 async fn cypher_conversions_distinguish_invalid_types_from_invalid_text() {
-    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine=GraphEngine::in_memory().unwrap();
     for expression in ["toBoolean([])","toBoolean(1.5)","toInteger({})", "toFloat(true)","toString([1])"] {
         let query=format!("RETURN {expression}");
@@ -738,8 +738,8 @@ async fn cypher_materialized_results_are_aggregate_group_keys() {
 
 #[tokio::test]
 async fn cypher_null_slices_and_graph_function_input_domains() {
-    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
-    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    use orchiddb::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use orchiddb::ir::diagnostics::RuntimeDiagnosis;
     let mut engine=GraphEngine::in_memory().unwrap();
     assert_eq!(rows(&mut engine,"WITH [1,2,3] AS xs RETURN xs[null..null] IS NULL, xs[0..0] = [], xs[..2] = [1,2], xs[1..] = [2,3]").await,
         vec![vec!["true","true","true","true"]]);

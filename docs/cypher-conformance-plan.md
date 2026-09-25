@@ -157,7 +157,7 @@ Add a procedure registry with signatures, argument checks, output columns, yield
 2. Batch coherent work: labels + writes; temporal constructors + truncation + arithmetic; scalar/collection + query-part + path semantics; procedure support. Use focused upstream scenarios and boundary tests during each batch, then full local suites at integration points.
 3. Add paired Cypher/Gremlin checks where semantics differ: labels, missing/null properties, comparison, collections, temporal round-trips, aggregate nulls, path history and mutation effects. Check DuckDB versus DataFusion execution of the same IR contract where both are eligible.
 4. Acceptance is **3,897/3,897 unchanged pinned openCypher scenarios passing**, with no skipped/unclassified assertions, plus preservation of the full **1,511/1,511 Gremlin** result. A new clean-build run must establish both; the historical Cypher file is only triage evidence.
-5. Run locally through one normal Crabgraph configuration and execution pipeline. Include upstream setup, results, errors and effects. GitHub Actions only publishes the existing production comparison after results are committed; no tests run there and no alternate Crabgraph leaderboard entry is added.
+5. Run locally through one normal OrchidDB configuration and execution pipeline. Include upstream setup, results, errors and effects. GitHub Actions only publishes the existing production comparison after results are committed; no tests run there and no alternate OrchidDB leaderboard entry is added.
 
 These ten work packages address the observed families. They do not promise every currently hidden assertion will pass immediately after its first blocker is removed. Re-group the remaining failures after each integrated batch, keeping the original denominator and assertions.
 
@@ -188,7 +188,7 @@ Temporal scenarios passed **998 / 1,004**. The six remaining failures require wi
 
 The subsequent scalar batch adds signed integer literal bounds, malformed-number diagnostics, relationship creation type validation, dynamic property typing, heterogeneous lazy `coalesce`, strict Cypher list/map indexing, range argument diagnoses and inclusive integer endpoints, and Cypher conversion input domains. These are language-specific IR operations or semantic checks; shared Gremlin casts retain their behavior. Their targeted tests are separate from the full-suite totals above.
 
-The next failure families remain list/quantifier semantics, matching and mutation validation, ordering/query-part scope, procedure registration, and the remaining temporal execution contracts. Continue using unchanged upstream assertions and the single production Crabgraph execution configuration.
+The next failure families remain list/quantifier semantics, matching and mutation validation, ordering/query-part scope, procedure registration, and the remaining temporal execution contracts. Continue using unchanged upstream assertions and the single production OrchidDB execution configuration.
 
 ### Subsequent implementation batch: grouping and collection contracts
 

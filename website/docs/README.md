@@ -1,6 +1,6 @@
-# Crabgraph documentation
+# OrchidDB documentation
 
-The guides at https://docs.crabgraph.net/ use **mdBook 0.5.4 with the stock
+The guides at https://docs.orchiddb.com/ use **mdBook 0.5.4 with the stock
 theme**. No custom guide templates, stylesheets, or JavaScript are loaded.
 mdBook supplies the sidebar, search, themes, code copying, and print view.
 
@@ -83,8 +83,8 @@ of all chapters in the mdBook search index.
 - Private S3 prefix: `s3://crabgraph-landing-846199521923/documentation/`.
 - CloudFront distribution: `EV4E7ROH7WATO`.
 - CloudFront hostname: `d1lmeetba2mo8q.cloudfront.net`.
-- DNS: Route 53 A and AAAA aliases for `docs.crabgraph.net`.
-- TLS: the existing `crabgraph.net` wildcard ACM certificate.
+- DNS: Route 53 A and AAAA aliases for `docs.orchiddb.com`.
+- TLS: the `orchiddb.com` wildcard ACM certificate, also covering legacy domains.
 
 The site uses `.html` URLs and needs no application server or routing function.
 GitHub Actions installs pinned mdBook, then uses

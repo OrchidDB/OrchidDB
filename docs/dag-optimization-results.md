@@ -12,13 +12,13 @@ All five changes were implemented before running the full suite: required-bindin
 | Mean scenario time | 124.26 ms | 117.40 ms |
 | Median scenario time | 28.69 ms | 25.92 ms |
 
-**931 scenarios were faster.** Mean scenario time fell 5.5%, median 9.6%, and suite wall time 5.7%. The leaderboard displays the latest passed total for Crabgraph only. [Per-scenario measurements](performance/gremlin-logical-before-after.json) retain both revisions and binary identities.
+**931 scenarios were faster.** Mean scenario time fell 5.5%, median 9.6%, and suite wall time 5.7%. The leaderboard displays the latest passed total for OrchidDB only. [Per-scenario measurements](performance/gremlin-logical-before-after.json) retain both revisions and binary identities.
 
 The full run used one engine instance (54459), a clean committed build, unchanged upstream assertions and deadlines, and the same dev profile (`debug=0`). There was no concurrent compilation. Focused verification passed 44 checks covering mapped writes/rollback, binding dependencies, projection shadowing, errors, SQL-lowering cache lifetime, correlated duplicates, fan-out, optional/semi/anti/scalar semantics, and bulk.
 
 ## First optimization batch
 
-Both revisions passed **1,511 / 1,511** pinned Apache TinkerPop scenarios, each through one uninterrupted Crabgraph instance with unchanged upstream assertions. The same dev profile (`debug=0`) was used, without concurrent compilation. These are recorded local suite measurements, including fixture setup and assertions.
+Both revisions passed **1,511 / 1,511** pinned Apache TinkerPop scenarios, each through one uninterrupted OrchidDB instance with unchanged upstream assertions. The same dev profile (`debug=0`) was used, without concurrent compilation. These are recorded local suite measurements, including fixture setup and assertions.
 
 | Metric | Baseline (7729f95) | Optimized (bcfad49) |
 | --- | ---: | ---: |
@@ -41,7 +41,7 @@ Intermediate runs exposed an invalid generated window frame and a deadline-sensi
 - Reuse one query-scoped DataFusion state during logical and physical planning.
 - Avoid copying single-batch results and allocating debug strings during scan-cache hashing.
 - Add opt-in `CRABGRAPH_PROFILE_DAG=1` diagnostics for preparation, physical planning, and execution time.
-- Show summed passed-scenario runtime for Crabgraph only on the existing leaderboard. Other statuses do not contribute.
+- Show summed passed-scenario runtime for OrchidDB only on the existing leaderboard. Other statuses do not contribute.
 
 ## Earlier diagnostic benchmark
 

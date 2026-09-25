@@ -1,4 +1,4 @@
-//! `new-graph` graph IR.
+//! OrchidDB graph IR.
 //!
 //! Implements the IR described in `docs/graph_ir_language_examples_v0_2_draft.md`.
 //! The Gremlin frontend (`crate::language::gremlin`) lowers parsed

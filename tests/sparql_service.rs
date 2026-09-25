@@ -1,7 +1,7 @@
 #![cfg(feature = "duckdb")]
-use new_graph::ir::rel::rdf::RdfDatasetMapping;
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
+use orchiddb::ir::rel::rdf::RdfDatasetMapping;
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -91,7 +91,7 @@ async fn external_arrow_bindings_join_local_sql_values() {
     let query = request.recv().unwrap();
     assert!(query.contains("<urn:p>"));
     assert!(!query.contains("VALUES"));
-    new_graph::language::sparql::parse_query(&query).unwrap();
+    orchiddb::language::sparql::parse_query(&query).unwrap();
     server.join().unwrap();
 }
 

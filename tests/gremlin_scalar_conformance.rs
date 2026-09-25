@@ -1,5 +1,5 @@
 #![cfg(feature = "duckdb")]
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 use serde_json::{Value, json};
 
 async fn native(engine: &mut GraphEngine, query: &str) -> Value {

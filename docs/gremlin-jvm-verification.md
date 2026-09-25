@@ -7,7 +7,7 @@ the original Apache `gremlin-test` 3.7.4 assertions, revision
 were unchanged.
 
 This result measures upstream JVM traversal execution through the production
-CrabGraph provider and native Crabgraph store. It does not establish Rust planner
+CrabGraph provider and native OrchidDB store. It does not establish Rust planner
 conformance or GraphComputer coverage. The 50 exclusions comprise 31
 GraphComputer-only scenarios, 15 original Gherkin placeholders and four scenarios
 requiring the opposite null-property policy. The Java provider and GraphComputer
@@ -16,7 +16,7 @@ profiles report their original tests separately.
 All 28 callback scenarios, three Edge parameter scenarios and two empty-Set
 parameter scenarios passed. The remote lambda scenario uses embedded
 `RemoteConnection` bytecode submission. Native graph mutations, property identity,
-typed values and transaction state remain owned by Crabgraph.
+typed values and transaction state remain owned by OrchidDB.
 
 The same final source passed 63 supplemental JVM integration tests with zero
 failures or skips. Coverage includes native transactions, competing writers, committed readers,

@@ -3,7 +3,7 @@ mod gremlin_bindings;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
-use new_graph::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value as GValue,
+use orchiddb::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value as GValue,
  ir::rel::{rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},sql::DuckDbExecutor},
  rdf_engine::{RdfGraphEngine,RdfTermValue,SparqlResults}};
 use serde_json::{Value,json};
@@ -59,7 +59,7 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
     let value=fixture_property(&record["value"],record["type"].as_str())?;
     let mut meta=BTreeMap::new();
     if let Some(entries)=record["meta"].as_object(){for (key,value) in entries{meta.insert(key.clone(),fixture_property(value,record["meta_types"][key].as_str())?);}}
-    let property=graph.set_vertex_property(&v,key,value,new_graph::ir::catalog::Cardinality::List,meta).map_err(|e|e.to_string())?;
+    let property=graph.set_vertex_property(&v,key,value,orchiddb::ir::catalog::Cardinality::List,meta).map_err(|e|e.to_string())?;
     if !record["id"].is_null(){graph.set_vertex_property_public_id(&property,fixture_property(&record["id"],record["id_type"].as_str())?).map_err(|e|e.to_string())?;}
   }}
   nodes.insert(n["id"].to_string(),v);
@@ -75,8 +75,8 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
 }
 // Use the same parser, parameter binder, planner and executor as GraphEngine::cypher_with_params.
 // Capture typed planner diagnostics before its public String error boundary.
-fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&new_graph::ir::procedures::ProcedureCatalog)->Result<new_graph::ir::plan::GraphPlan,(String,Option<Value>)>{
- use new_graph::language::cypher;
+fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>,catalog:&orchiddb::ir::procedures::ProcedureCatalog)->Result<orchiddb::ir::plan::GraphPlan,(String,Option<Value>)>{
+ use orchiddb::language::cypher;
  let mut parsed=cypher::parser::parse_query(query).map_err(|e|{
   let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
   (e.to_string(),classification)
@@ -142,7 +142,7 @@ async fn main(){
  "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
  "rdf"=>rdf(&req).await,
  "register-procedure"=>{
-  use new_graph::ir::procedures::{ProcedureField,ProcedureSignature,TableProcedure};
+  use orchiddb::ir::procedures::{ProcedureField,ProcedureSignature,TableProcedure};
   let fields=|key:&str|req[key].as_array().into_iter().flatten().map(|field|ProcedureField {
    name:field["name"].as_str().unwrap_or("").into(),type_name:field["type"].as_str().unwrap_or("ANY").into(),nullable:field["nullable"].as_bool().unwrap_or(true)
   }).collect();
@@ -151,8 +151,8 @@ async fn main(){
   engine.register_table_procedure(req["name"].as_str().unwrap_or("").into(),procedure).map(|_|json!({"ok":true}))
  },
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();
-  if req["update"].as_bool().unwrap_or(false){new_graph::language::sparql::parse_update(q,base).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}
-  else {match base {Some(b)=>new_graph::language::sparql::parse_query_with_base(q,b),None=>new_graph::language::sparql::parse_query(q)}.map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}},
+  if req["update"].as_bool().unwrap_or(false){orchiddb::language::sparql::parse_update(q,base).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}
+  else {match base {Some(b)=>orchiddb::language::sparql::parse_query_with_base(q,b),None=>orchiddb::language::sparql::parse_query(q)}.map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}},
  _=>{
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");

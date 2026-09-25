@@ -1,8 +1,8 @@
 //! Index map keys and PropertyMapStep option / traversal-ring semantics.
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::value::{STRUCT_ORDER_KEY, Value};
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::value::{STRUCT_ORDER_KEY, Value};
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn evaluate(query: &str, graph: &PropertyGraph) -> Vec<Value> {
     let plan = GremlinPlanner::new()
@@ -172,7 +172,7 @@ fn value_map_ring_includes_tokens_and_preserves_first_productive_scalar() {
     let vertex = graph.insert_node("person", Default::default());
     for name in ["first", "second"] {
         graph.set_vertex_property(&vertex, "names", Value::String(name.into()),
-            new_graph::ir::catalog::Cardinality::List, Default::default()).unwrap();
+            orchiddb::ir::catalog::Cardinality::List, Default::default()).unwrap();
     }
     let result = evaluate("g.V().valueMap('names').by(__.unfold())", &graph);
     assert_eq!(
@@ -230,7 +230,7 @@ fn multi_key_values_evaluate_the_input_once() {
 #[cfg(feature = "duckdb")]
 #[tokio::test]
 async fn multi_key_values_preserve_native_types_through_graph_engine() {
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine
         .cypher("CREATE (:person {name:'ana',age:29}), (:software {name:'graph'})")
         .await
@@ -269,7 +269,7 @@ fn value_map_keeps_productive_null_modulator_results() {
 
 #[test]
 fn native_multi_properties_keep_requested_modulator_order() {
-    use new_graph::ir::catalog::Cardinality;
+    use orchiddb::ir::catalog::Cardinality;
     let g = PropertyGraph::new();
     let vertex = g.insert_node("person", Default::default());
     g.set_vertex_property(&vertex, "name", Value::String("marko".into()), Cardinality::Single, Default::default()).unwrap();

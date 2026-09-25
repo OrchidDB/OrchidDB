@@ -4,10 +4,10 @@ use arrow::array::{ArrayRef, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 
-use new_graph::ir::PropertyGraph;
-use new_graph::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
-use new_graph::ir::rel::{RelBackend, RelBackendOptions};
-use new_graph::language::sparql::SparqlPlanner;
+use orchiddb::ir::PropertyGraph;
+use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
+use orchiddb::ir::rel::{RelBackend, RelBackendOptions};
+use orchiddb::language::sparql::SparqlPlanner;
 
 fn typed_backend() -> RelBackend {
     let schema = Arc::new(Schema::new(

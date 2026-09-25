@@ -1,4 +1,4 @@
-//! Command-line interface for the crabgraph graph engine.
+//! Command-line interface for the orchiddb graph engine.
 //!
 //! Executes a single Cypher or Gremlin query against a durable,
 //! DuckDB-backed [`GraphEngine`], printing the Arrow result as
@@ -8,9 +8,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use new_graph::engine::{GraphEngine, QueryResult, ReadMode};
-use new_graph::ir;
-use new_graph::language::{cypher, gremlin};
+use orchiddb::engine::{GraphEngine, QueryResult, ReadMode};
+use orchiddb::ir;
+use orchiddb::language::{cypher, gremlin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Language {
@@ -204,10 +204,10 @@ fn resolve_query(config: &Config) -> Result<String, String> {
 
 fn print_help() {
     println!(
-        "crabgraph — durable graph query CLI
+        "orchiddb — durable graph query CLI
 
 USAGE:
-    crabgraph [OPTIONS]
+    orchiddb [OPTIONS]
 
 OPTIONS:
     --database PATH     DuckDB storage file (default: in-memory)

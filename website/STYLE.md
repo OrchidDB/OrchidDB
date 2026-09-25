@@ -1,6 +1,6 @@
-# Crabgraph editorial style
+# OrchidDB editorial style
 
-This guide adapts the technical clarity and source discipline of the Chicago Manual of Style for Crabgraph. When this guide is silent, prefer Chicago style, then the conventions of the language or API being discussed.
+This guide adapts the technical clarity and source discipline of the Chicago Manual of Style for OrchidDB. When this guide is silent, prefer Chicago style, then the conventions of the language or API being discussed.
 
 ## Purpose
 
@@ -14,10 +14,10 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
   followed by social and source links.
 - Use a centered introduction, About section, usage examples, and participation
   section. Prefer short paragraphs and ordinary links to feature cards or sales claims.
-- Use a white background, muted blue headings and links, and a solid dark-blue
-  introduction. Use only the 🦀 emoji as the header and footer logo, with an accessible Crabgraph home label. Use system fonts with a monospace font for code.
+- Use a white background, muted headings and orchid-purple links, and a solid dark-purple
+  introduction. Use only the 🌸 emoji as the header and footer logo, with an accessible OrchidDB home label. Use system fonts with a monospace font for code.
 - Avoid textures, custom fonts, heavy shadows, and dashboards on the homepage.
-  The header may use the abstract crab graph animation, with pause and reduced-motion
+  The header may use the abstract orchid graph animation, with pause and reduced-motion
   support. Simple diagrams should explain actual behavior.
 - Preserve the architecture/IR diagram when changing surrounding artwork or logos.
 - Documentation uses the stock mdBook theme without added guide styles or scripts.
@@ -51,7 +51,7 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
 
 ## Project language
 
-- Describe Crabgraph as an embedded graph query engine written in Rust, built with DataFusion, Apache Arrow, and DuckDB.
+- Describe OrchidDB as an embedded graph query engine written in Rust, built with DataFusion, Apache Arrow, and DuckDB.
 - Say that it transpiles graph-language plans into SQL islands. Do not imply that every query becomes one SQL statement.
 - Say that the data layer is unopinionated. Users map graph concepts onto relational tables they already own.
 - Lead with the bring-your-own-schema contract. Existing Iceberg tables, warehouse data, relational tables, SQL queries, and views can provide the graph shape without a graph-data copy.

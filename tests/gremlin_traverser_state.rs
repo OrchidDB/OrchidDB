@@ -1,5 +1,5 @@
 #![cfg(feature = "duckdb")]
-use new_graph::{
+use orchiddb::{
     engine::GraphEngine,
     ir::{catalog::PropertyGraph, value::Value as GValue},
 };

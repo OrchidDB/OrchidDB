@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray};
 
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
 
 use super::dataset::DatasetError;
 
@@ -164,7 +164,7 @@ fn build_node_table(
     label: &str,
     rows: &[usize],
     nodes: &[NodeDecl],
-) -> Result<new_graph::ir::catalog::NodeTable, DatasetError> {
+) -> Result<orchiddb::ir::catalog::NodeTable, DatasetError> {
     let kinds = collect_property_kinds(rows.iter().map(|i| &nodes[*i].properties))?;
     if kinds.is_empty() {
         // Property-less nodes: Arrow cannot carry rows without columns,
@@ -197,7 +197,7 @@ fn build_edge_table(
     dst_label: &str,
     rows: &[&EdgeDecl],
     alias_row: &BTreeMap<String, (String, i64)>,
-) -> Result<new_graph::ir::catalog::EdgeTable, DatasetError> {
+) -> Result<orchiddb::ir::catalog::EdgeTable, DatasetError> {
     let src: Vec<i64> = rows
         .iter()
         .map(|e| alias_row.get(&e.from_alias).unwrap().1)

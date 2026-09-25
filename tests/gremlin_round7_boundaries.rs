@@ -1,7 +1,7 @@
 #![cfg(feature = "duckdb")]
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 use serde_json::Value;
-fn native(result: &new_graph::engine::QueryResult) -> Value {
+fn native(result: &orchiddb::engine::QueryResult) -> Value {
     serde_json::from_str(result.returned.batch.schema().metadata().get("crabgraph.gremlin.typed_rows.v1").unwrap()).unwrap()
 }
 #[tokio::test]

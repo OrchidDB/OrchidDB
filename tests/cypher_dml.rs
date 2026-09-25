@@ -5,10 +5,10 @@
 //! immutable Arrow fixtures, so these tests double as overlay regression
 //! tests (id allocation, adjacency, property replacement).
 
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::interpreter::execute;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner;
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::interpreter::execute;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner;
 
 /// Run `statements` in order against a fresh graph, then return the rows of
 /// the final `query` rendered as `|`-joined strings.

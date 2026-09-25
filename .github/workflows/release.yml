@@ -1,4 +1,4 @@
-name: Package Crabgraph release
+name: Package OrchidDB release
 
 on:
   push:
@@ -57,16 +57,16 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            executable: crabgraph
+            executable: orchiddb
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            executable: crabgraph
+            executable: orchiddb
           - os: macos-14
             target: aarch64-apple-darwin
-            executable: crabgraph
+            executable: orchiddb
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-            executable: crabgraph.exe
+            executable: orchiddb.exe
     defaults:
       run:
         shell: bash
@@ -87,7 +87,7 @@ jobs:
           rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
           rustup default "$RUST_VERSION"
       - name: Build the CLI with bundled DuckDB
-        run: cargo build --locked --release --bin crabgraph --target "$RELEASE_TARGET"
+        run: cargo build --locked --release --bin orchiddb --target "$RELEASE_TARGET"
       - name: Smoke check and package the native binary
         run: |
           python scripts/release/package.py archive \
@@ -143,7 +143,7 @@ jobs:
             if [[ "$RELEASE_PRERELEASE" == true ]]; then flags+=(--prerelease); fi
             gh release create "$RELEASE_TAG" "${assets[@]}" \
               --verify-tag --draft "${flags[@]}" \
-              --title "Crabgraph $RELEASE_TAG" \
+              --title "OrchidDB $RELEASE_TAG" \
               --notes-file scripts/release/NOTES.md
           fi
           gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,7 @@
 use arrow::array::{ArrayRef, Int64Array};
-use new_graph::ir::value::{Value, gremlin_set};
-use new_graph::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::value::{Value, gremlin_set};
+use orchiddb::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 use std::sync::Arc;
 
 #[path = "gremlin_case_runner/dataset.rs"]
@@ -30,7 +30,7 @@ fn coalesce_constant_retains_scalar_history() {
     );
     let traversal = parse_traversal(&format!("{prefix}.simplePath().path()")).unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    let mut paths = new_graph::ir::interpreter::execute_rows(&plan, &graph)
+    let mut paths = orchiddb::ir::interpreter::execute_rows(&plan, &graph)
         .unwrap()
         .iter()
         .map(|row| {
@@ -79,7 +79,7 @@ fn path_labels_attach_to_positions_including_multiple_labels() {
     let traversal =
         parse_traversal("g.V().as('a','b').out().as('c').path().select(Column.keys)").unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    let rows = new_graph::ir::interpreter::execute_rows(&plan, &graph).unwrap();
+    let rows = orchiddb::ir::interpreter::execute_rows(&plan, &graph).unwrap();
     let expected = Value::List(vec![
         gremlin_set(vec![Value::String("a".into()), Value::String("b".into())]),
         gremlin_set(vec![Value::String("c".into())]),
@@ -269,7 +269,7 @@ fn prefix_until_does_not_replay_its_input_writer() {
 fn native_values(query: &str) -> Vec<Value> {
     let traversal = parse_traversal(query).unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    new_graph::ir::interpreter::execute_rows(&plan, &PropertyGraph::new())
+    orchiddb::ir::interpreter::execute_rows(&plan, &PropertyGraph::new())
         .unwrap().into_iter().map(|row| row.bindings["current"].clone()).collect()
 }
 

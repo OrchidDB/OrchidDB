@@ -1,8 +1,8 @@
-# Crabgraph project website
+# OrchidDB project website
 
-The project website at https://crabgraph.net/ uses plain HTML and CSS, a small
+The project website at https://orchiddb.com/ uses plain HTML and CSS, a small
 mobile-navigation script, and a canvas graph animation. Documentation at
-https://docs.crabgraph.net/ uses mdBook's standard theme. Both sites are static.
+https://docs.orchiddb.com/ uses mdBook's standard theme. Both sites are static.
 
 ## Preview
 
@@ -86,3 +86,21 @@ syncing the whole `website/` directory, which includes build sources.
 | Docs | Same bucket, `documentation/` prefix | `EV4E7ROH7WATO` |
 
 [STYLE.md](STYLE.md) describes the visual and editorial approach.
+
+### OrchidDB domains
+
+- `https://orchiddb.com/` is the canonical project website.
+- `https://www.orchiddb.com/` redirects to the canonical website.
+- `https://docs.orchiddb.com/` serves the mdBook documentation.
+- The public Route 53 zone is `Z094613320U7C0GG8MQQH`.
+- ACM certificate `fe939ba9-7545-4cdc-8305-fa315ac0b813` in `us-east-1`
+  covers OrchidDB and the legacy Crabgraph domains.
+
+Existing S3 resource names and Actions secret names are retained. The repository
+is now `OrchidDB/OrchidDB`; its transferred Actions secrets continue to work.
+
+`cloudfront/canonical-host.js` is published as the CloudFront function
+`OrchidDBCanonicalHost` and attached to both distributions at viewer request.
+It redirects the legacy root, www, and docs domains to their OrchidDB equivalents,
+preserving paths and query parameters. The ordinary deploy script publishes
+static files; function or distribution changes must be applied separately.

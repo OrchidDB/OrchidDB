@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 
-use new_graph::ir::rel::mapping::schema_only_provider;
-use new_graph::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
+use orchiddb::ir::rel::mapping::schema_only_provider;
+use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping, RdfTermColumns};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::rdf_engine::{RdfGraphEngine, RdfTermValue, SparqlResults};
 
 const EX: &str = "http://example.org/";
 const XSD: &str = "http://www.w3.org/2001/XMLSchema#";

@@ -18,10 +18,10 @@ use std::sync::Arc;
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType, Field, Schema};
 
-use new_graph::ir::rel::mapping::{GraphMapping, NodeMapping};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::ir::value::Value;
-use new_graph::mapped_engine::MappedGraphEngine;
+use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::ir::value::Value;
+use orchiddb::mapped_engine::MappedGraphEngine;
 
 /// A plain user table with no default id generation.
 const DDL: &str = r#"

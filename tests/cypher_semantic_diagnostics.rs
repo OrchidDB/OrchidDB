@@ -1,5 +1,5 @@
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, CypherSemanticError};
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::{CypherPlanError, CypherPlanner, CypherSemanticError};
 
 #[test]
 fn exact_semantic_validators_publish_structured_categories() {

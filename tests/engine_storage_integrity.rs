@@ -1,6 +1,6 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::engine::GraphEngine;
+use orchiddb::engine::GraphEngine;
 
 struct Database(std::path::PathBuf);
 impl Database {
@@ -124,7 +124,7 @@ async fn managed_and_sql_sessions_share_one_database_instance() {
     let database = Database::new();
     let mut engine = GraphEngine::open(&database.0).unwrap();
     engine.cypher("CREATE (:P {name:'first'})").await.unwrap();
-    let mut sql = new_graph::ir::rel::sql::DuckDbExecutor::open(&database.0).unwrap();
+    let mut sql = orchiddb::ir::rel::sql::DuckDbExecutor::open(&database.0).unwrap();
     engine.cypher("CREATE (:P {name:'second'})").await.unwrap();
     let count: i64 = sql
         .connection()

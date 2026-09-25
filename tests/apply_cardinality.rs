@@ -1,14 +1,14 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::ir::catalog::PropertyGraph;
-use new_graph::ir::expr::{BinaryOp, IrExpr, Lit};
-use new_graph::ir::plan::{
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::ir::expr::{BinaryOp, IrExpr, Lit};
+use orchiddb::ir::plan::{
     ApplyKind, CoalesceSuccess, GraphPlan, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem,
 };
-use new_graph::ir::policy::{GraphPlanPolicy, OptionalMissing, ResultForm};
-use new_graph::ir::rel::RelBackend;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
-use new_graph::ir::value::Value;
+use orchiddb::ir::policy::{GraphPlanPolicy, OptionalMissing, ResultForm};
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
+use orchiddb::ir::value::Value;
 
 fn plan(kind: ApplyKind, left_values: &[i64], inner_values: &[i64]) -> GraphPlan {
     let right = Node::GraphProject {

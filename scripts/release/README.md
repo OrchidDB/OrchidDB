@@ -1,6 +1,6 @@
 # GitHub release packaging
 
-`release.yml` builds the Crabgraph CLI on native runners and attaches four
+`release.yml` builds the OrchidDB CLI on native runners and attaches four
 archives plus `SHA256SUMS` to a **draft GitHub release**. It runs on version-tag
 pushes, or manually for an existing tag. It does not publish a crate to crates.io.
 
@@ -25,7 +25,7 @@ macOS binaries are not Developer ID signed or notarized.
 5. Tag that commit with the matching version and push the tag:
 
    ```sh
-   git tag -a v0.1.0 -m 'Crabgraph v0.1.0'
+   git tag -a v0.1.0 -m 'OrchidDB v0.1.0'
    git push origin v0.1.0
    ```
 
@@ -41,7 +41,7 @@ replace assets on a draft; they refuse to alter an already published release.
 To rerun an existing tag after the workflow is on the default branch:
 
 ```sh
-gh workflow run release.yml --repo henneberger/new-graph -f tag=v0.1.0
+gh workflow run release.yml --repo OrchidDB/OrchidDB -f tag=v0.1.0
 ```
 
 GitHub's regular source archives contain the repository and its vendored parser.
@@ -52,10 +52,10 @@ This workflow does not call `cargo package` or `cargo publish`.
 Python 3.11+ and a native Rust release build are required:
 
 ```sh
-cargo build --locked --release --bin crabgraph
+cargo build --locked --release --bin orchiddb
 python3 scripts/release/package.py archive \
   --tag v0.1.0 --target aarch64-apple-darwin \
-  --binary target/release/crabgraph
+  --binary target/release/orchiddb
 ```
 
 Choose the target matching your machine. The output is in
@@ -64,24 +64,15 @@ does not create a tag, push commits, or create a release.
 
 ## Cargo package name
 
-Recommended registry name: **`crabgraph-engine`** (Rust import convention:
-`crabgraph_engine`). On 2026-09-25, the crates.io API returned 404 for both
-`crabgraph-engine` and its underscore spelling. `crabgraph` is already used by
-an unrelated cryptography library. `crabgraph-db` was also unregistered.
+The package, Rust import, and CLI are named `orchiddb`. Use a path or Git
+dependency until a crate is published; no crates.io publication or name
+reservation is part of this workflow. On 2026-09-25, the
+[crates.io sparse index entry](https://index.crates.io/or/ch/orchiddb) returned
+404, so no published crate was listed under this name. This is not a reservation.
 
-This is an availability check, not a reservation. The repository's existing
-package remains `new-graph`, with Rust imports under `new_graph`; the binary
-remains `crabgraph`. This workflow reads the real package name into `BUILD.json`
-and works independently of a later package rename.
+Before publishing, resolve the local `vendor/spargebra` dependency: Cargo
+replaces versioned path dependencies with registry dependencies when packaging,
+so publishing this manifest unchanged would not ship the local parser changes.
 
-Before publishing to crates.io, adopt the chosen name and update its consumers.
-Also resolve the local `vendor/spargebra` dependency: Cargo replaces versioned
-path dependencies with registry dependencies when packaging, so publishing this
-manifest unchanged would not ship the local parser changes. Keep the name
-change and registry publication separate from these binary releases.
-
-Sources:
-- https://crates.io/api/v1/crates/crabgraph-engine
-- https://crates.io/api/v1/crates/crabgraph
-- https://doc.rust-lang.org/cargo/reference/publishing.html
-- https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+The internal JVM bridge and historical conformance evidence retain their
+existing identifiers so the recorded results remain reproducible.

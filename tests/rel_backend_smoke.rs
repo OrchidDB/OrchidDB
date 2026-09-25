@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 
-use new_graph::ir::bridge::gremlin as gb;
-use new_graph::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use new_graph::ir::expr::Lit;
-use new_graph::ir::rel::RelBackend;
-use new_graph::language::cypher::parser::parse_query;
-use new_graph::language::cypher::planner::CypherPlanner as AstCypherPlanner;
-use new_graph::planner::GremlinPlanner;
+use orchiddb::ir::bridge::gremlin as gb;
+use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
+use orchiddb::ir::expr::Lit;
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::language::cypher::parser::parse_query;
+use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;
+use orchiddb::planner::GremlinPlanner;
 
 fn fixture_graph() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob", "carol"]));

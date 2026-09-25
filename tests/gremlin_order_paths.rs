@@ -1,5 +1,5 @@
-use new_graph::ir::{PropertyGraph, Value, execute_rows};
-use new_graph::language::gremlin::{GremlinPlanner, parse_traversal};
+use orchiddb::ir::{PropertyGraph, Value, execute_rows};
+use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 
 fn graph() -> PropertyGraph {
     let g = PropertyGraph::new();
@@ -18,7 +18,7 @@ async fn path_order_keeps_element_prefix_before_projected_values() {
     let plan = GremlinPlanner::new().plan(&parse_traversal(query).unwrap()).unwrap();
     let direct = execute_rows(&plan,&g).unwrap().into_iter().map(|r|r.bindings["current"].clone()).collect::<Vec<_>>();
     assert_eq!(direct, vec![Value::String("java".into()),Value::String("zulu".into()),Value::String("alpha".into()),Value::String("java".into())]);
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(g).unwrap();
     let result = engine.gremlin(query).await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
@@ -27,7 +27,7 @@ async fn path_order_keeps_element_prefix_before_projected_values() {
 
 #[tokio::test]
 async fn property_paths_order_by_public_ids_in_both_directions() {
-    use new_graph::ir::catalog::Cardinality;
+    use orchiddb::ir::catalog::Cardinality;
     let g = PropertyGraph::new();
     let root = g.insert_node("root", Default::default());
     let high = g.insert_node("leaf", Default::default());
@@ -42,7 +42,7 @@ async fn property_paths_order_by_public_ids_in_both_directions() {
     let early = g.set_vertex_property(&root, "tag", Value::String("early".into()), Cardinality::List, Default::default()).unwrap();
     g.set_vertex_property_public_id(&late, Value::Long(300)).unwrap();
     g.set_vertex_property_public_id(&early, Value::Long(100)).unwrap();
-    let mut engine = new_graph::engine::GraphEngine::in_memory().unwrap();
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(g.clone()).unwrap();
     for (source, asc) in [
         ("g.V().hasLabel('root').out().properties('name').as('head').path()", vec!["second", "first"]),
@@ -65,7 +65,7 @@ async fn property_paths_order_by_public_ids_in_both_directions() {
 
 #[test]
 fn native_property_set_and_ordinary_property_shaped_map_keep_distinct_order_classes() {
-    use new_graph::ir::catalog::Cardinality;
+    use orchiddb::ir::catalog::Cardinality;
     let g = PropertyGraph::new();
     let vertex = g.insert_node("person", Default::default());
     g.set_vertex_property(&vertex, "tag", Value::Int(1), Cardinality::Single,

@@ -24,10 +24,10 @@ Add `duckdb = { version = "1.10502.0", features = ["bundled"] }` to the applicat
 ```rust
 use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
-use new_graph::ir::rel::mapping::schema_only_provider;
-use new_graph::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping};
-use new_graph::ir::rel::sql::DuckDbExecutor;
-use new_graph::rdf_engine::RdfGraphEngine;
+use orchiddb::ir::rel::mapping::schema_only_provider;
+use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping};
+use orchiddb::ir::rel::sql::DuckDbExecutor;
+use orchiddb::rdf_engine::RdfGraphEngine;
 
 let connection = duckdb::Connection::open("rdf.duckdb")
     .map_err(|error| error.to_string())?;

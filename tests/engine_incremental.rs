@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 
 use duckdb::{Connection, params};
 
-use new_graph::engine::{GraphEngine, QueryResult};
-use new_graph::ir::{PropertyGraph, Value};
-use new_graph::storage::{decode_graph, encode_graph};
+use orchiddb::engine::{GraphEngine, QueryResult};
+use orchiddb::ir::{PropertyGraph, Value};
+use orchiddb::storage::{decode_graph, encode_graph};
 
 /// Format every column of every returned row into `col1|col2|...` strings.
 fn rows(result: QueryResult) -> Vec<String> {

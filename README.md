@@ -1,8 +1,8 @@
-# new-graph
+# OrchidDB
 
-[Website](https://crabgraph.net/) · [Documentation](https://docs.crabgraph.net/) · [Conformance](https://docs.crabgraph.net/conformance.html)
+[Website](https://orchiddb.com/) · [Documentation](https://docs.orchiddb.com/) · [Conformance](https://docs.orchiddb.com/conformance.html)
 
-`new-graph` (Crabgraph) is an embedded graph engine in Rust built on DuckDB and
+OrchidDB is an embedded graph engine in Rust built on DuckDB and
 DataFusion. Cypher, Gremlin, and SPARQL frontends produce a shared Graph IR.
 Relational query regions execute in DuckDB, with a graph runtime for operations
 that do not yet lower to SQL.
@@ -16,10 +16,15 @@ default or named graph selection; other RDF term kinds remain explicit errors.
 Language coverage is partial. Managed writes use the graph runtime and persist
 changed records transactionally in DuckDB, with checkpoints for compaction. See [the engine API and its current limits](docs/engine.md).
 
+The Rust package and CLI are named `orchiddb` (previously `new-graph` and
+`crabgraph`). Update Rust imports from `new_graph` to `orchiddb`. Existing
+storage formats and JVM bridge identifiers are unchanged. Build from this
+repository; no crates.io release has been published as part of the rename.
+
 ```sh
-cargo run --bin crabgraph -- --database social.duckdb --query \
+cargo run --bin orchiddb -- --database social.duckdb --query \
   "CREATE (:Person {name:'Alice'})-[:KNOWS]->(:Person {name:'Bob'})"
-cargo run --bin crabgraph -- --database social.duckdb --query \
+cargo run --bin orchiddb -- --database social.duckdb --query \
   "MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.name, b.name"
 cargo run --example managed_graph
 ```
@@ -33,7 +38,7 @@ can be safely expressed as SQL.
 
 ## What This Project Does
 
-`new-graph` is exploring this pipeline:
+`orchiddb` is exploring this pipeline:
 
 ```text
 Cypher / Gremlin frontend
@@ -153,7 +158,7 @@ For module boundaries and parallel feature work, see the
 
 ## License
 
-`new-graph` is licensed by Daniel Henneberger under a custom GPL-3.0-only license.
+`orchiddb` is licensed by Daniel Henneberger under a custom GPL-3.0-only license.
 See `LICENSE.md` for the full terms.
 
 License fees are based on organization size:

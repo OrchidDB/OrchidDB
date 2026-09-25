@@ -8,17 +8,17 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
-use new_graph::ir::bridge::cypher as cb;
-use new_graph::ir::catalog::{PropertyGraph, nodes_from_columns};
-use new_graph::ir::interpreter::execute_rows;
-use new_graph::ir::plan::{DistinctBulk, DistinctMode, GraphPlan, Node};
-use new_graph::ir::policy::{GraphPlanPolicy, ResultForm};
-use new_graph::ir::rel::RelBackend;
-use new_graph::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
-use new_graph::ir::value::Value;
-use new_graph::language::gremlin::parser::parse_traversal;
-use new_graph::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
-use new_graph::planner::CypherPlanner;
+use orchiddb::ir::bridge::cypher as cb;
+use orchiddb::ir::catalog::{PropertyGraph, nodes_from_columns};
+use orchiddb::ir::interpreter::execute_rows;
+use orchiddb::ir::plan::{DistinctBulk, DistinctMode, GraphPlan, Node};
+use orchiddb::ir::policy::{GraphPlanPolicy, ResultForm};
+use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlDialect, SqlExecutor, SqlValue};
+use orchiddb::ir::value::Value;
+use orchiddb::language::gremlin::parser::parse_traversal;
+use orchiddb::language::gremlin::planner::GremlinPlanner as AstGremlinPlanner;
+use orchiddb::planner::CypherPlanner;
 
 /// Nodes labelled `P` with `group = [a, a, b]`. `name` and `score` let a test
 /// distinguish *which* row of a repeated group is the "first" one.
@@ -271,7 +271,7 @@ fn interpreter_node_identity_includes_label() {
 
 #[tokio::test]
 async fn sql_element_key_includes_label() {
-    use new_graph::ir::plan::LabelExpr;
+    use orchiddb::ir::plan::LabelExpr;
     let mut graph = PropertyGraph::new();
     for label in ["P", "Q"] {
         graph.add_nodes(nodes_from_columns(

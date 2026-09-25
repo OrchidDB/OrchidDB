@@ -1,7 +1,7 @@
 #![cfg(feature = "duckdb")]
 
-use new_graph::ir::rel::sql::program::{DuckDbProgram, WorkColumn, WorkType};
-use new_graph::ir::rel::sql::{DuckDbExecutor, SqlExecutor};
+use orchiddb::ir::rel::sql::program::{DuckDbProgram, WorkColumn, WorkType};
+use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlExecutor};
 use std::time::Duration;
 
 #[test]

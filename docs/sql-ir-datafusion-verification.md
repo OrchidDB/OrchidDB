@@ -48,6 +48,6 @@ case fingerprints, exclusions, and binary provenance, is committed at
 [`conformance/upstream-results/crabgraph-tinkerpop.json`](../conformance/upstream-results/crabgraph-tinkerpop.json).
 
 Existing JVM and GraphComputer evidence remains separately recorded and feeds
-the existing combined Crabgraph comparison. The production page layout and
+the existing combined OrchidDB comparison. The production page layout and
 leaderboard calculation are unchanged. GitHub Actions only builds and publishes
 static documentation and committed evidence; all tests run locally.

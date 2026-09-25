@@ -11,10 +11,10 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 
-use new_graph::ir::catalog::{
+use orchiddb::ir::catalog::{
     EdgeTable, NodeTable, PropertyGraph, edges_from_columns, nodes_from_columns,
 };
-use new_graph::ir::value::Value;
+use orchiddb::ir::value::Value;
 
 #[derive(Debug)]
 pub struct DatasetError(pub String);
@@ -638,6 +638,7 @@ impl ValueKind {
             | Value::BigInt(_)
             | Value::UInt128(_)
             | Value::BigDecimal(_)
+            | Value::Temporal(_)
             | Value::InternalId { .. }
             | Value::Node { .. }
             | Value::Edge { .. }

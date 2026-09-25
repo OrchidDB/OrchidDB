@@ -51,7 +51,7 @@ is not consulted (pass an empty `PropertyGraph` to `RelBackend::lower`).
 Programmatic:
 
 ```rust
-use new_graph::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
 
 let mut mapping = GraphMapping::new();
 // Providers back the physical table names (schema; and data for in-process).

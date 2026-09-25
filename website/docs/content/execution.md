@@ -7,7 +7,7 @@ Inspect Graph IR and generated SQL, choose a read policy, and understand executi
 `GraphEngine` defaults to `ReadMode::Hybrid`. This combines DuckDB SQL islands with graph runtime operators according to the query plan. To require a complete SQL read, set `ReadMode::SqlOnly`:
 
 ```rust
-use new_graph::engine::ReadMode;
+use orchiddb::engine::ReadMode;
 
 graph.set_read_mode(ReadMode::SqlOnly);
 let result = graph.cypher(
@@ -22,7 +22,7 @@ SQL-only mode enforces the chosen execution contract. Mapped property-graph and 
 The CLI's `--explain` flag parses and plans a query, then prints Graph IR:
 
 ```sh
-crabgraph --explain --query \
+orchiddb --explain --query \
   "MATCH (p:Person)-[:KNOWS]->(friend) RETURN p.name, friend.name"
 ```
 
@@ -31,14 +31,14 @@ Use this to inspect scans, expansions, filters, and projections. Explain mode do
 From Rust, build a plan through the language frontend and format it:
 
 ```rust
-use new_graph::language::cypher;
+use orchiddb::language::cypher;
 
 let parsed = cypher::parse_query(
     "MATCH (p:Person) RETURN p.name"
 ).map_err(|error| error.to_string())?;
 let plan = cypher::CypherPlanner::new().plan(&parsed)
     .map_err(|error| error.to_string())?;
-println!("{}", new_graph::ir::explain(&plan));
+println!("{}", orchiddb::ir::explain(&plan));
 ```
 
 ## Inspect generated SQL
