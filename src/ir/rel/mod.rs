@@ -16,6 +16,9 @@ use scans::*;
 
 mod expression;
 use expression::*;
+mod scalar_functions;
+mod scalar_types;
+use scalar_types::*;
 
 mod constants;
 use constants::*;
@@ -516,21 +519,21 @@ impl IslandReport {
 pub(crate) fn is_language_function(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     crate::ir::interpreter::is_known_function(&name)
-        || expression::is_label_function(&name)
-        || expression::is_id_function(&name)
-        || expression::is_mod_function(&name)
-        || expression::is_abs_function(&name)
-        || expression::is_pow_function(&name)
-        || expression::is_unary_math_function(&name)
-        || expression::is_binary_math_function(&name)
-        || expression::is_date_function(&name)
-        || expression::is_date_constructor(&name)
-        || expression::is_constant_collection_function(&name)
-        || expression::is_string_function(&name)
-        || expression::is_core_variadic_function(&name)
-        || expression::is_exists_function(&name)
-        || expression::is_in_function(&name)
-        || expression::cast_target_from_function_name(&name).is_ok()
+        || scalar_types::is_label_function(&name)
+        || scalar_types::is_id_function(&name)
+        || scalar_types::is_mod_function(&name)
+        || scalar_types::is_abs_function(&name)
+        || scalar_types::is_pow_function(&name)
+        || scalar_types::is_unary_math_function(&name)
+        || scalar_types::is_binary_math_function(&name)
+        || scalar_types::is_date_function(&name)
+        || scalar_types::is_date_constructor(&name)
+        || scalar_types::is_constant_collection_function(&name)
+        || scalar_types::is_string_function(&name)
+        || scalar_types::is_core_variadic_function(&name)
+        || scalar_types::is_exists_function(&name)
+        || scalar_types::is_in_function(&name)
+        || scalar_types::cast_target_from_function_name(&name).is_ok()
         || name.starts_with("cypher_")
         || name.starts_with("gremlin_")
         || name.starts_with("sparql_")
