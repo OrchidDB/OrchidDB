@@ -335,6 +335,25 @@ impl Lowerer<'_, '_> {
             }
         };
         Ok(match name {
+            "bnode" => {
+                let value = match terms.as_slice() {
+                    [] => duck_str("concat", vec![s("b"), cast(duck_str("uuid", vec![]), DataType::Utf8)]),
+                    [term] => {
+                        if !env.plan.schema().has_column_with_unqualified_name(BNODE_SCOPE) {
+                            let mut columns: Vec<_> = env.plan.schema().fields().iter()
+                                .map(|field| col_exact(field.name())).collect();
+                            columns.push(cast(duck_str("uuid", vec![]), DataType::Utf8).alias(BNODE_SCOPE));
+                            let plan = self.project(env.plan.clone(), columns)?;
+                            env.plan = self.cte(plan)?;
+                        }
+                        duck_str("concat", vec![s("b"), col_exact(BNODE_SCOPE), s("_"),
+                            duck_str("hex", vec![term.value.clone()])])
+                    }
+                    _ => return unsupported("BNODE takes zero or one argument"),
+                };
+                let term = Term { value, kind: s(KIND_BLANK), dt: null_str(), lang: null_str() };
+                if terms.is_empty() { term } else { term.only_if(terms[0].is_simple()) }
+            }
             "str" => {
                 arity(1)?;
                 let a = &terms[0];

@@ -59,6 +59,7 @@ const RDF_LANG_STRING: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langSt
 const KIND_IRI: &str = "IRI";
 const KIND_BLANK: &str = "BLANK";
 const KIND_LITERAL: &str = "LITERAL";
+const BNODE_SCOPE: &str = "__sq_bnode_scope";
 const INTEGER_TYPES: &[&str] = &[
     "integer",
     "nonPositiveInteger",
@@ -98,6 +99,7 @@ pub(super) fn lower_plan(
     let mut lowerer = Lowerer {
         ctx,
         seeds: Vec::new(),
+        graph_domains: BTreeMap::new(),
         next: 0,
     };
     let (plan, fields, result_form) = lowerer.lower_root(&plan.root, plan.policy.result_form)?;
@@ -489,6 +491,9 @@ impl Sol {
         if let Some(ord) = &self.ord {
             out.push(col_exact(ord));
         }
+        if self.plan.schema().has_column_with_unqualified_name(BNODE_SCOPE) {
+            out.push(col_exact(BNODE_SCOPE));
+        }
         out
     }
 
@@ -535,6 +540,7 @@ struct Lowerer<'c, 'a> {
     ctx: &'c mut LoweringContext<'a>,
     /// Correlation seeds for EXISTS: the outer relation, with a row key.
     seeds: Vec<Sol>,
+    graph_domains: BTreeMap<String, Sol>,
     next: usize,
 }
 
@@ -672,8 +678,12 @@ impl Lowerer<'_, '_> {
                     }
                     _ => vec![lit(1_i64).alias(self.fresh("graph"))],
                 };
-                Ok(Sol { plan: self.project(plan, columns)?, vars,
-                    keys: BTreeSet::new(), ord: None })
+                let sol = Sol { plan: self.project(plan, columns)?, vars,
+                    keys: BTreeSet::new(), ord: None };
+                for name in sol.vars.keys().filter(|name| name.starts_with("__sq_graph_scope_")) {
+                    self.graph_domains.insert(name.clone(), sol.clone());
+                }
+                Ok(sol)
             }
             Node::GraphSparqlTriplePattern {
                 dataset,
@@ -751,12 +761,12 @@ impl Lowerer<'_, '_> {
                 let right = self.ensure_seeded(right)?;
                 self.union(left, right)
             }
-            Node::GraphSparqlMinus { left, right, .. } => {
+            Node::GraphSparqlMinus { left, right, shared, .. } => {
                 let left = self.lower(left)?;
                 let seeds = std::mem::take(&mut self.seeds);
                 let right = self.lower(right);
                 self.seeds = seeds;
-                self.minus(left, right?)
+                self.minus(left, right?, shared)
             }
             Node::GraphValues { bindings, rows, .. } => self.values(bindings, rows),
             Node::GraphApply {

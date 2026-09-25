@@ -40,7 +40,7 @@ postgres = { version = "0.19", optional = true }
 regex = "1"
 sha2 = "0.10"
 serde_json = { version = "1", features = ["arbitrary_precision"] }
-spargebra = "0.4.7"
+spargebra = { version = "0.4.7", path = "vendor/spargebra" }
 thiserror = "2"
 unicode-segmentation = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

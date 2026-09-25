@@ -144,7 +144,7 @@ async fn main(){
  },
  "sparql-syntax"=>{let q=req["query"].as_str().unwrap_or("");let base=req["base"].as_str();
   if req["update"].as_bool().unwrap_or(false){new_graph::language::sparql::parse_update(q,base).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}
-  else {let parser=spargebra::SparqlParser::new();let parser=if let Some(b)=base{parser.with_base_iri(b).unwrap()}else{parser};parser.parse_query(q).map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}},
+  else {match base {Some(b)=>new_graph::language::sparql::parse_query_with_base(q,b),None=>new_graph::language::sparql::parse_query(q)}.map(|_|json!({"parsed":true})).map_err(|e|e.to_string())}},
  _=>{
  let params=req["params"].as_object().map(|m|m.iter().map(|(k,v)|(k.clone(),param(v))).collect()).unwrap_or_default();
  let q=req["query"].as_str().unwrap_or("");

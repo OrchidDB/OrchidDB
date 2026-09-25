@@ -722,7 +722,6 @@ dependencies = [
  "duckdb",
  "new-graph",
  "serde_json",
- "spargebra",
  "tokio",
 ]
 
@@ -3358,14 +3357,12 @@ dependencies = [
 [[package]]
 name = "spargebra"
 version = "0.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef3c186ffb9bf2dde7c5edd5528583f309fcb819b5773cf0e313194a990304f"
 dependencies = [
  "oxilangtag",
  "oxiri",
  "oxrdf",
  "peg",
- "rand 0.9.4",
+ "rand 0.8.6",
  "thiserror",
 ]
 

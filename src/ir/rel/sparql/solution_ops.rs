@@ -85,6 +85,13 @@ impl Lowerer<'_, '_> {
             columns.extend(term.aliased(&item.alias));
             vars.insert(item.alias.clone(), certain);
         }
+        // Subqueries project bindings, but retain the active graph partition.
+        for (name, certain) in &sol.vars {
+            if name.starts_with("__sq_graph_scope_") && !vars.contains_key(name) {
+                columns.extend(Term::columns(name).aliased(name));
+                vars.insert(name.clone(), *certain);
+            }
+        }
         if let Some(ord) = &sol.ord {
             columns.push(col_exact(ord));
         }
@@ -101,6 +108,12 @@ impl Lowerer<'_, '_> {
     }
 
     pub(super) fn distinct(&mut self, sol: Sol) -> RelResult<Sol> {
+        // The allocator namespace is execution context, not a solution
+        // binding. It must never prevent duplicate solutions from merging.
+        let sol = if sol.plan.schema().has_column_with_unqualified_name(BNODE_SCOPE) {
+            let columns = self.nonempty(sol.column_names().into_iter().map(col_exact).collect());
+            Sol { plan: self.project(sol.plan.clone(), columns)?, ..sol }
+        } else { sol };
         let Some(ord) = sol.ord.clone() else {
             let columns = self.nonempty(sol.columns());
             let plan = self.project(sol.plan.clone(), columns)?;
@@ -218,19 +231,22 @@ impl Lowerer<'_, '_> {
 
     /// `MINUS`: remove a left solution when some right solution is
     /// compatible with it and shares at least one bound variable.
-    pub(super) fn minus(&mut self, left: Sol, right: Sol) -> RelResult<Sol> {
+    pub(super) fn minus(&mut self, left: Sol, right: Sol, shared_variables: &[String]) -> RelResult<Sol> {
         let shared: Vec<_> = left
             .vars
             .keys()
-            .filter(|var| right.vars.contains_key(*var))
+            .filter(|var| shared_variables.contains(var) && right.vars.contains_key(*var))
             .cloned()
             .collect();
         if shared.is_empty() {
             return Ok(left);
         }
+        let partitions: Vec<_> = left.vars.keys()
+            .filter(|name| name.starts_with("__sq_graph_scope_") && right.vars.contains_key(*name))
+            .cloned().collect();
         let prefix = self.fresh("m:");
         let mut renamed_columns = Vec::new();
-        for var in &shared {
+        for var in shared.iter().chain(&partitions) {
             for name in var_columns(var) {
                 renamed_columns.push(col_exact(&name).alias(format!("{prefix}{name}")));
             }
@@ -258,6 +274,7 @@ impl Lowerer<'_, '_> {
         }
         let mut condition = vec![or_all(overlaps)];
         condition.extend(compatible);
+        condition.extend(partitions.iter().map(|name| Term::columns(name).same_term(&right_term(name))));
         let plan = LogicalPlanBuilder::from(left.plan.clone())
             .join_on(renamed, JoinType::LeftAnti, vec![fold(and_all(condition))?])?
             .build()?;
