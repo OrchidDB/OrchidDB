@@ -77,7 +77,10 @@ fn fixture_graph(req:&Value)->Result<PropertyGraph,String>{
 // Capture typed planner diagnostics before its public String error boundary.
 fn cypher_plan(query:&str,params:&BTreeMap<String,GValue>)->Result<new_graph::ir::plan::GraphPlan,(String,Option<Value>)>{
  use new_graph::language::cypher;
- let mut parsed=cypher::parser::parse_query(query).map_err(|e|(e.to_string(),None))?;
+ let mut parsed=cypher::parser::parse_query(query).map_err(|e|{
+  let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));
+  (e.to_string(),classification)
+ })?;
  cypher::parameters::bind_parameters(&mut parsed,params).map_err(|e|(e,None))?;
  cypher::planner::CypherPlanner::new().plan(&parsed).map_err(|e|{
   let classification=e.classification().map(|(kind,detail)|json!({"type":kind,"detail":detail,"phase":"compile time"}));

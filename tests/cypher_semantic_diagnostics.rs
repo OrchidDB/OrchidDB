@@ -5,6 +5,12 @@ use new_graph::language::cypher::planner::{CypherPlanError, CypherPlanner, Cyphe
 fn exact_semantic_validators_publish_structured_categories() {
     for (query, detail) in [
         ("RETURN missing", "UndefinedVariable"),
+        ("RETURN 9223372036854775808", "IntegerOverflow"),
+        ("RETURN -9223372036854775809", "IntegerOverflow"),
+        ("RETURN 0x8000000000000000", "IntegerOverflow"),
+        ("RETURN -0o1000000000000000000001", "IntegerOverflow"),
+        ("CREATE ()-->()", "NoSingleRelationshipType"),
+        ("MERGE ()-[:A|:B]->()", "NoSingleRelationshipType"),
         ("RETURN 1 AS a, 2 AS a", "ColumnNameConflict"),
         ("WITH 1 AS a, 2 AS a RETURN a", "ColumnNameConflict"),
         ("MATCH (a) WITH a, count(*) RETURN a", "NoExpressionAlias"),
@@ -56,4 +62,23 @@ fn structured_category_keeps_existing_diagnostic_text() {
 fn aggregate_collection_is_allowed_outside_iteration_body() {
     let query = parse_query("MATCH (n) RETURN [x IN collect(n) | x]").unwrap();
     CypherPlanner::new().plan(&query).unwrap();
+}
+
+#[test]
+fn parser_reports_lexical_and_syntax_categories() {
+    for query in ["RETURN 123abc", "RETURN 0x", "RETURN 0x1A2b3j4D5E6f7"] {
+        let error=parse_query(query).unwrap_err();
+        assert_eq!(error.classification(),Some(("SyntaxError","InvalidNumberLiteral")),"{query}: {error}");
+    }
+    assert_eq!(parse_query("RETURN (").unwrap_err().classification(),Some(("SyntaxError","UnexpectedSyntax")));
+    parse_query("RETURN '123abc', 12 /*abc*/ AS n").unwrap();
+}
+
+#[test]
+fn known_non_property_values_have_type_diagnostics() {
+    for value in ["123","42.5","true","'string'","[123,true]"] {
+        let query=parse_query(&format!("WITH {value} AS x RETURN x.num")).unwrap();
+        let error=CypherPlanner::new().plan(&query).unwrap_err();
+        assert_eq!(error.classification(),Some(("TypeError","InvalidArgumentType")),"{error}");
+    }
 }

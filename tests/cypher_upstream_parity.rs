@@ -600,3 +600,76 @@ async fn diagnosed_runtime_failure_rolls_back_writes() {
     assert_eq!(error.diagnosis,Some(RuntimeDiagnosis::NumberOutOfRange));
     assert_eq!(rows(&mut engine,"MATCH (n:Price) RETURN count(n)").await,vec![vec!["0"]]);
 }
+
+#[tokio::test]
+async fn cypher_integer_boundaries_and_dynamic_property_types() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"RETURN -9223372036854775808, 9223372036854775807").await,
+        vec![vec!["-9223372036854775808","9223372036854775807"]]);
+    rows(&mut engine,"CREATE (:Item {name:42, age:'young', foo:'present'})").await;
+    assert_eq!(rows(&mut engine,"MATCH (n:Item) RETURN n.name+1, n.age+'!', n.foo, n.missing IS NULL").await,
+        vec![vec!["43","young!","present","true"]]);
+}
+
+#[tokio::test]
+async fn cypher_coalesce_preserves_selected_type_and_short_circuits() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"RETURN coalesce(1,'text') = 1, coalesce(null,[1,true]) = [1,true], coalesce(1,1/0), {a:1}.missing IS NULL").await,
+        vec![vec!["true","true","1","true"]]);
+    rows(&mut engine,"CREATE (:N)").await;
+    assert_eq!(rows(&mut engine,"MATCH (n:N) RETURN id(n)+1").await,vec![vec!["1"]]);
+}
+
+#[tokio::test]
+async fn cypher_subscript_rejects_coercions_and_preserves_nulls() {
+    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    for (query,diagnosis) in [
+        ("RETURN [1,2][true]",RuntimeDiagnosis::InvalidType),
+        ("RETURN [1,2][1.5]",RuntimeDiagnosis::InvalidType),
+        ("RETURN [1,2]['0']",RuntimeDiagnosis::InvalidType),
+        ("RETURN 'abc'[0]",RuntimeDiagnosis::InvalidType),
+        ("RETURN {a:1}[0]",RuntimeDiagnosis::MapKeyType),
+    ] {
+        let plan=CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+        let error=engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+        assert_eq!(error.diagnosis,Some(diagnosis),"{query}: {error}");
+    }
+    assert_eq!(rows(&mut engine,"RETURN [1,2][-1], [1,2][4] IS NULL, [1,2][null] IS NULL, null[0] IS NULL").await,
+        vec![vec!["2","true","true","true"]]);
+}
+
+#[tokio::test]
+async fn cypher_range_validates_types_and_includes_integer_endpoints() {
+    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    for (query,diagnosis) in [
+        ("RETURN range(1,3,0)",RuntimeDiagnosis::NumberOutOfRange),
+        ("RETURN range(true,3)",RuntimeDiagnosis::ArgumentType),
+        ("RETURN range(1,'3')",RuntimeDiagnosis::ArgumentType),
+        ("RETURN range(1,3,1.5)",RuntimeDiagnosis::ArgumentType),
+    ] {
+        let plan=CypherPlanner::new().plan(&parse_query(query).unwrap()).unwrap();
+        let error=engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+        assert_eq!(error.diagnosis,Some(diagnosis),"{query}: {error}");
+    }
+    assert_eq!(rows(&mut engine,"RETURN range(9223372036854775806,9223372036854775807) = [9223372036854775806,9223372036854775807], range(1,3) = [1,2,3]").await,
+        vec![vec!["true","true"]]);
+}
+
+#[tokio::test]
+async fn cypher_conversions_distinguish_invalid_types_from_invalid_text() {
+    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    for expression in ["toBoolean([])","toBoolean(1.5)","toInteger({})", "toFloat(true)","toString([1])"] {
+        let query=format!("RETURN {expression}");
+        let plan=CypherPlanner::new().plan(&parse_query(&query).unwrap()).unwrap();
+        let error=engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+        assert_eq!(error.diagnosis,Some(RuntimeDiagnosis::InvalidValue),"{query}: {error}");
+    }
+    assert_eq!(rows(&mut engine,"RETURN toInteger('bad') IS NULL, toFloat('bad') IS NULL, toBoolean('bad') IS NULL, toInteger('2.9'), toString(date('2026-09-24'))").await,
+        vec![vec!["true","true","true","2","2026-09-24"]]);
+}

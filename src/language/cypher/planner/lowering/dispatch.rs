@@ -193,7 +193,7 @@ fn lower_create(
                             "Binder exception: Create relationship requires exactly one \
                              relationship label."
                                 .into(),
-                        ));
+                        ).classified(crate::language::cypher::planner::CypherSemanticError::NoSingleRelationshipType));
                     }
                     if rel.range.explicit {
                         return Err(CypherPlanError::Invalid(

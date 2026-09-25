@@ -210,7 +210,7 @@ impl<'a> LoweringContext<'a> {
                     self.lower_expr(plan, &IrExpr::Id(binding.clone()))
                 } else { Err(RelError::Unsupported("Mapped identity requires an element binding".into())) }
             }
-            IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+            IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") || name == "cypher_range" => {
                 let values = constant_range_values(args)?;
                 Ok(lit(rel_display_value(
                     &Value::List(values),
@@ -1011,8 +1011,18 @@ impl<'a> LoweringContext<'a> {
             self.lower_list_operand(plan, target)?
         };
         let data_type = target_expr.get_type(plan.schema())?;
+        let index_expr = self.lower_expr(plan, index)?;
+        if !matches!(index_expr.get_type(plan.schema())?,
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Null)
+        {
+            return Err(RelError::Unsupported("Cypher subscript index requires runtime type validation".into()));
+        }
+        if matches!(data_type, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+            return Err(RelError::Unsupported("Cypher strings are not indexable lists".into()));
+        }
         let index = Expr::Cast(Cast::new(
-            Box::new(self.lower_expr(plan, index)?),
+            Box::new(index_expr),
             DataType::Int64,
         ));
         match data_type {
@@ -1029,41 +1039,6 @@ impl<'a> LoweringContext<'a> {
                     target_expr,
                     position,
                 ))
-            }
-            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => {
-                let length = df_unicode::length(cast_utf8(target_expr.clone()));
-                let valid = Expr::and(
-                    binary(
-                        index.clone(),
-                        BinaryOp::Gte,
-                        binary(lit(0_i64), BinaryOp::Sub, length.clone()),
-                    ),
-                    binary(index.clone(), BinaryOp::Lt, length.clone()),
-                );
-                let position = Expr::Case(Case::new(
-                    None,
-                    vec![(
-                        Box::new(binary(index.clone(), BinaryOp::Lt, lit(0_i64))),
-                        Box::new(binary(
-                            binary(length, BinaryOp::Add, index.clone()),
-                            BinaryOp::Add,
-                            lit(1_i64),
-                        )),
-                    )],
-                    Some(Box::new(binary(index.clone(), BinaryOp::Add, lit(1_i64)))),
-                ));
-                Ok(Expr::Case(Case::new(
-                    None,
-                    vec![(
-                        Box::new(valid),
-                        Box::new(df_unicode::substring(
-                            cast_utf8(target_expr),
-                            position,
-                            lit(1_i64),
-                        )),
-                    )],
-                    Some(Box::new(lit(ScalarValue::Utf8(None)))),
-                )))
             }
             DataType::Null => Ok(lit(ScalarValue::Utf8(None))),
             other => Err(RelError::Unsupported(format!(

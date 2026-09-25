@@ -928,7 +928,7 @@ pub(super) fn constant_unwind_values(expr: &IrExpr, outer: bool) -> RelResult<Op
             }
             values
         }
-        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") => {
+        IrExpr::Call { name, args } if name.eq_ignore_ascii_case("range") || name == "cypher_range" => {
             constant_range_values(args)?
         }
         _ => return Ok(None),
@@ -965,10 +965,10 @@ pub(super) fn constant_range_values(args: &[IrExpr]) -> RelResult<Vec<Value>> {
             ));
         }
         values.push(Value::Int(current));
-        current = current.saturating_add(step);
-        if (step > 0 && current == i64::MAX) || (step < 0 && current == i64::MIN) {
-            break;
-        }
+        current = match current.checked_add(step) {
+            Some(next) => next,
+            None => break,
+        };
     }
     Ok(values)
 }
