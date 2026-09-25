@@ -3,265 +3,156 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crabgraph | Graph queries over your tables</title>
-  <meta name="description" content="Crabgraph is an embedded graph engine for your existing data lake. Built in Rust with DataFusion, Apache Arrow, and DuckDB. Query your tables with Cypher, Gremlin, and SPARQL.">
-  <meta name="theme-color" content="#f7f2e8">
+  <title>Graph queries in Rust | Crabgraph</title>
+  <meta name="description" content="Crabgraph is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:title" content="Graph queries in Rust | Crabgraph">
+  <meta property="og:description" content="Crabgraph is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Crabgraph | Graph queries over your tables">
-  <meta property="og:description" content="An embedded graph engine for your existing data lake. Built in Rust with DataFusion, Apache Arrow, and DuckDB.">
-  <meta property="og:url" content="https://crabgraph.net/">
-  <meta property="og:image" content="https://crabgraph.net/og.png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=crab-lakehouse">
-  <script src="/script.js?v=compact-sources" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=project-site">
+  <script src="/script.js?v=project-site" defer></script>
+  <script src="/hero-graph.js?v=1" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-
-  <header class="site-header">
-    <a class="wordmark" href="#top" aria-label="Crabgraph home">
-      <svg viewBox="0 0 40 32" aria-hidden="true">
-        <path d="M8 13 3 9M32 13l5-4M7 20l-5 3M33 20l5 3M12 9 9 3M28 9l3-6"/>
-        <path d="M9 12h22v10c0 5-4 8-11 8S9 27 9 22V12Z"/>
-        <circle cx="15" cy="17" r="1.5"/><circle cx="25" cy="17" r="1.5"/>
-        <path d="M15 23c3 2 7 2 10 0"/>
-      </svg>
-      <span>crabgraph</span>
-      <span class="version">0.1.0 / prototype</span>
-    </a>
-    <nav aria-label="Primary">
-      <a href="https://docs.crabgraph.net/">Documentation</a>
-      <a href="#architecture">Architecture</a>
-      <a href="https://docs.crabgraph.net/conformance.html">Conformance</a>
-      <a class="nav-source" href="https://github.com/henneberger/new-graph">GitHub <span aria-hidden="true">↗</span></a>
-    </nav>
-  </header>
-
-  <main id="main">
-    <section class="hero" id="top">
-      <div class="hero-copy">
-        <h1>An embedded graph engine for your data lake.</h1>
-        <p class="lede">Crabgraph is an embedded graph engine for your existing data lake. Built in Rust with DataFusion, Apache Arrow, and DuckDB, it lets you query your tables with Cypher, Gremlin, and SPARQL.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://docs.crabgraph.net/quickstart.html">Read the docs <span aria-hidden="true">↗</span></a>
-          <a class="button button-secondary" href="https://docs.crabgraph.net/conformance.html">Compare conformance</a>
-        </div>
-        <p class="hero-note">Map your existing tables and views to a graph.</p>
-      </div>
-
-      <div class="compiler-card" aria-label="Examples of graph queries and SQL" data-query-demo>
-        <div class="card-bar">
-          <div class="card-top"><span>query.plan</span><span class="status-light" id="plan-status">query examples</span></div>
-          <div class="example-tabs" role="tablist" aria-label="Query examples">
-            <button id="example-tab-cypher" type="button" role="tab" aria-controls="query-example-panel" aria-selected="true" tabindex="0" data-example="cypher"><span>Cypher</span><i aria-hidden="true"></i></button>
-            <button id="example-tab-gremlin" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="gremlin"><span>Gremlin</span><i aria-hidden="true"></i></button>
-            <button id="example-tab-sparql" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="sparql"><span>SPARQL</span><i aria-hidden="true"></i></button>
-            <button id="example-tab-recursive" type="button" role="tab" aria-controls="query-example-panel" aria-selected="false" tabindex="-1" data-example="recursive"><span>Recursive path</span><i aria-hidden="true"></i></button>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Crabgraph home"><span aria-hidden="true">🦀</span></a>
+  <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-navigation" hidden>Menu</button>
+  <div class="site-navigation" id="site-navigation">
+    <nav class="primary-nav" aria-label="Main"><a href="https://docs.crabgraph.net/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.crabgraph.net/">Docs</a></nav>
+    <nav class="project-nav" aria-label="Project"><a href="/community.html#slack">Slack</a><a href="https://github.com/henneberger/new-graph">GitHub</a></nav>
+    <form class="site-search" action="https://docs.crabgraph.net/" method="get" role="search"><label class="sr-only" for="site-search">Search documentation</label><input id="site-search" type="search" name="search" placeholder="Search docs" aria-label="Search documentation"></form>
+  </div>
+</header>
+<main id="main" class="home">
+<section class="hero" aria-labelledby="project-title">
+  <canvas class="hero-graph" aria-hidden="true"></canvas>
+  <button class="animation-toggle" type="button" aria-pressed="false" hidden>Pause animation</button>
+  <div class="hero-content">
+    <h1 id="project-title">Crabgraph</h1>
+    <p class="tagline">An embedded graph query engine written in Rust</p>
+    <p>Query connected data with Cypher, Gremlin, and SPARQL. Crabgraph maps nodes and relationships to your tables and runs graph queries using DuckDB and DataFusion.</p>
+    <div class="actions"><a class="button" href="https://docs.crabgraph.net/quickstart.html">Quickstart <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/henneberger/new-graph">GitHub <span aria-hidden="true">↗</span></a></div>
+  </div>
+</section>
+<section class="home-section" id="about" aria-labelledby="about-title">
+  <h2 id="about-title">About the Project</h2>
+  <p>Crabgraph is an embedded graph engine. Use it from a Rust application or the command line to explore relationships in your data. You can create a graph managed by Crabgraph or map a graph onto existing relational tables and views.</p>
+  <div class="technology-logos" aria-label="Built with Rust, DuckDB, Apache DataFusion, and Apache Arrow">
+    <a href="https://rust-lang.org/" class="rust-logo"><img src="/assets/logos/rust.svg" alt="" width="48" height="48"><span>Rust</span></a>
+    <a href="https://duckdb.org/"><img src="/assets/logos/duckdb.svg" alt="DuckDB" width="138" height="40"></a>
+    <a href="https://datafusion.apache.org/"><img src="/assets/logos/datafusion.svg" alt="Apache DataFusion" width="166" height="40"></a>
+    <a href="https://arrow.apache.org/"><img src="/assets/logos/arrow.png" alt="Apache Arrow" width="138" height="72"></a>
+  </div>
+  <figure class="architecture" aria-label="Cypher, Gremlin, and SPARQL feed a shared graph plan, executed with DuckDB and DataFusion, returning Arrow results.">
+    <div class="language-row"><span>Cypher</span><span>Gremlin</span><span>SPARQL</span></div>
+    <div class="flow-arrow" aria-hidden="true">↓</div>
+    <div class="flow-box">Shared graph plan <small>Graph IR → SQL IR</small></div>
+    <div class="flow-arrow" aria-hidden="true">↓</div>
+    <div class="engine-row"><span>DuckDB <small>SQL execution</small></span><span>DataFusion <small>Remaining execution stages</small></span></div>
+    <div class="flow-arrow" aria-hidden="true">↓</div>
+    <div class="flow-box result-box">Apache Arrow results</div>
+  </figure>
+  <p>The three query languages share a planning pipeline. Relational parts of a query become SQL; DataFusion executes the remaining stages. Results are returned as Arrow record batches.</p>
+  <p>Crabgraph is a prototype. Read the documentation and recorded conformance results for the current behavior and limitations.</p>
+  <div class="actions"><a class="button" href="https://docs.crabgraph.net/rust-api.html">Read the Rust API <span aria-hidden="true">↗</span></a><a class="button" href="https://docs.crabgraph.net/execution.html">Read the architecture <span aria-hidden="true">↗</span></a></div>
+</section>
+<section class="home-section usage-section" id="usage" aria-labelledby="usage-title">
+  <h2 id="usage-title">How to Use Crabgraph</h2>
+  <p>Define a graph over the data you already own, then use it in your application.</p>
+  <div class="usage-example" id="create-a-graph">
+    <h3>Create a graph</h3>
+    <p>Connect your data lake or database, map tables to nodes and relationships, and query those relationships with Cypher, Gremlin, or SPARQL.</p>
+    <figure class="data-diagram" aria-labelledby="data-diagram-caption">
+      <div class="data-flow">
+        <div class="diagram-step source-step">
+          <h4>Your existing data</h4>
+          <div class="source-group">
+            <strong>Data lake</strong>
+            <img src="/assets/logos/iceberg.svg" alt="Apache Iceberg" width="146" height="40" loading="lazy">
+            <small>Iceberg tables · Parquet files</small>
           </div>
+          <div class="source-group">
+            <strong>Databases</strong>
+            <div class="database-logos">
+              <img src="/assets/logos/duckdb.svg" alt="DuckDB" width="104" height="30" loading="lazy">
+              <span class="postgres-logo"><img src="/assets/logos/postgresql.png" alt="" width="28" height="29" loading="lazy">Postgres</span>
+            </div>
+            <small>Tables · views · SQL sources</small>
+          </div>
+          <p class="source-note">Exposed as tables or views through DuckDB</p>
         </div>
-        <div class="plan-content" id="query-example-panel" role="tabpanel" aria-labelledby="example-tab-cypher" aria-live="polite" aria-atomic="true">
-        <div class="code-stage">
-          <p class="stage-label"><b id="input-label">CYPHER INPUT</b></p>
-          <pre><code id="query-code"><span class="kw">MATCH</span> (p:Person)-[:KNOWS]-&gt;(f)
-<span class="kw">WHERE</span> f.city = <span class="str">'Chicago'</span>
-<span class="kw">RETURN</span> p.name, <span class="fn">count</span>(f)</code></pre>
-        </div>
-        <div class="compile-line" aria-hidden="true"><span></span><b>graph plan</b><span></span></div>
-        <div class="ir-stage" id="ir-rows">
-          <p class="stage-label">GRAPH IR</p>
-          <div class="ir-row"><i></i><code>GraphNodeScan</code><small>:Person</small></div>
-          <div class="ir-row indent"><i></i><code>GraphExpand</code><small>:KNOWS · out</small></div>
-          <div class="ir-row indent-2"><i></i><code>GraphFilter</code><small>city = Chicago</small></div>
-          <div class="ir-row indent-3 hot"><i></i><code>GraphAggregate</code><small>SQL region</small></div>
-        </div>
-        <div class="sql-stage">
-          <p class="stage-label"><b id="output-label">DUCKDB SQL</b></p>
-          <pre><code id="sql-code"><span class="kw">SELECT</span> p.name, <span class="fn">count</span>(f.id) …
-<span class="kw">FROM</span> person p <span class="kw">JOIN</span> knows e …</code></pre>
-        </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="conformance section-rule" aria-labelledby="conformance-title">
-      <div class="section-head">
-        <p class="section-number">Conformance</p>
-        <h2 id="conformance-title">The most complete graph language coverage.</h2>
-        <p>Crabgraph passes all 3,897 openCypher TCK scenarios and all 1,511 Apache TinkerPop scenarios, plus 974 W3C SPARQL tests.</p>
-      </div>
-      <div class="conformance-results">
-        <article>
-          <h3>Cypher</h3>
-          <p class="conformance-value">100%</p>
-          <p>3,897 / 3,897 scenarios passed</p>
-          <p class="conformance-suite">openCypher TCK</p>
-        </article>
-        <article>
-          <h3>Gremlin</h3>
-          <p class="conformance-value">100%</p>
-          <p>1,511 / 1,511 scenarios passed</p>
-          <p class="conformance-suite">Apache TinkerPop</p>
-        </article>
-        <article>
-          <h3>SPARQL</h3>
-          <p class="conformance-value">100%</p>
-          <p>974 / 974 executed tests passed</p>
-          <p class="conformance-suite">W3C SPARQL</p>
-          <p class="conformance-scope">Excludes entailment, federation, HTTP interfaces, and wire formats.</p>
-        </article>
-      </div>
-      <p class="conformance-link"><a href="https://docs.crabgraph.net/conformance.html">Compare results with Neo4j, PuppyGraph, SQLg, JanusGraph, and Apache Jena <span aria-hidden="true">↗</span></a></p>
-    </section>
-
-    <section class="premise section-rule" aria-labelledby="mapped-title">
-      <div class="section-head">
-        <p class="section-number">Mapped graphs</p>
-        <h2 id="mapped-title">Define a graph over your schema.</h2>
-      </div>
-      <div class="mapping-example">
-        <div class="mapping-tables">
-          <table>
-            <caption><code>accounts</code> <span>→ Account nodes</span></caption>
-            <thead><tr><th scope="col">id</th><th scope="col">owner</th></tr></thead>
-            <tbody><tr><td>1</td><td>Alice</td></tr><tr><td>2</td><td>Bob</td></tr></tbody>
-          </table>
-          <table>
-            <caption><code>transfers</code> <span>→ Relationships</span></caption>
-            <thead><tr><th scope="col">from_id</th><th scope="col">to_id</th><th scope="col">amount</th></tr></thead>
-            <tbody><tr><td>1</td><td>2</td><td>250</td></tr></tbody>
-          </table>
-        </div>
-        <div class="mapping-arrow" aria-hidden="true">→</div>
-        <figure class="mapping-graph">
-          <svg viewBox="0 0 460 210" role="img" aria-labelledby="mapped-graph-title mapped-graph-description">
-            <title id="mapped-graph-title">The same data, as a graph</title>
-            <desc id="mapped-graph-description">Account 1, owned by Alice, has a TRANSFERRED_TO relationship to Account 2, owned by Bob. The relationship has amount 250.</desc>
-            <path class="mapping-edge" d="M132 105H328m-10-6 10 6-10 6"/>
-            <rect class="mapping-node" x="8" y="66" width="124" height="78" rx="12"/>
-            <rect class="mapping-node" x="328" y="66" width="124" height="78" rx="12"/>
-            <text class="mapping-node-label" x="70" y="90">Account · 1</text>
-            <text class="mapping-node-name" x="70" y="120">Alice</text>
-            <text class="mapping-node-label" x="390" y="90">Account · 2</text>
-            <text class="mapping-node-name" x="390" y="120">Bob</text>
-            <text class="mapping-edge-label" x="230" y="83">TRANSFERRED_TO</text>
-            <text class="mapping-property" x="230" y="133">amount: 250</text>
+        <div class="diagram-arrow" aria-hidden="true">→</div>
+        <div class="diagram-step mapping-step">
+          <h4><span aria-hidden="true">🦀</span> Graph mapping</h4>
+          <dl class="mapping-key">
+            <div><dt><code>accounts</code></dt><dd>Account nodes</dd></div>
+            <div><dt><code>transfers</code></dt><dd>TRANSFERRED_TO relationships</dd></div>
+          </dl>
+          <svg class="mapped-graph" viewBox="0 0 260 140" role="img" aria-labelledby="mapped-graph-title">
+            <title id="mapped-graph-title">Account Alice has a TRANSFERRED_TO relationship to Account Bob.</title>
+            <path d="M64 70H196m-8-5 8 5-8 5" fill="none" stroke="#637e93" stroke-width="2"/>
+            <circle cx="36" cy="70" r="28" fill="#eef4f8" stroke="#8aa0b2"/>
+            <circle cx="224" cy="70" r="28" fill="#eef4f8" stroke="#8aa0b2"/>
+            <g text-anchor="middle" fill="#303840" font-family="system-ui, sans-serif">
+              <text x="36" y="74" font-size="12">Alice</text><text x="224" y="74" font-size="12">Bob</text>
+              <text x="130" y="55" font-size="10">TRANSFERRED_TO</text>
+              <text x="36" y="116" font-size="11">Account</text><text x="224" y="116" font-size="11">Account</text>
+            </g>
           </svg>
-          <figcaption>Rows become nodes and relationships. Columns become properties.</figcaption>
-        </figure>
-      </div>
-      <p class="mapping-write-note">Inserts, updates, and deletes write back to your mapped tables.</p>
-    </section>
-
-    <section class="existing-data section-rule" id="existing-data">
-      <div class="existing-copy">
-        <p class="section-number">Data sources</p>
-        <h2>Graph queries on Apache Iceberg.</h2>
-        <p>Run Cypher, Gremlin, and SPARQL over the Iceberg tables in your data lake. Your data stays in Iceberg, with no separate graph database to load or keep in sync.</p>
-        <p><a href="https://docs.crabgraph.net/mapped-graphs.html">Connect your tables →</a></p>
-      </div>
-      <div class="lakehouse-flow" aria-label="Crabgraph queries your Apache Iceberg tables using Cypher, Gremlin, and SPARQL">
-        <div class="lakehouse-source">
-          <svg viewBox="0 0 72 64" aria-hidden="true"><path d="m10 34 18-25 10 12 8-5 16 18Z" fill="#b8dce2" stroke="currentColor" stroke-width="1.5"/><path d="m10 34 22 23 17-6 13-17M28 9l4 25 6-13M32 34v23" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 34h64" stroke="currentColor" stroke-width="2"/></svg>
-          <div><strong>Apache Iceberg</strong><span>Your catalog and tables in object storage</span></div>
+          <small>Columns become properties.</small>
         </div>
-        <div class="lakehouse-tables" aria-label="Example Iceberg tables">
-          <div><span class="table-symbol" aria-hidden="true"></span><code>accounts</code></div>
-          <div><span class="table-symbol" aria-hidden="true"></span><code>transfers</code></div>
-        </div>
-        <div class="lakehouse-connector"><span aria-hidden="true">↓</span><small>Map tables to nodes and relationships</small></div>
-        <div class="lakehouse-engine">
-          <svg class="lakehouse-graph" viewBox="0 0 100 44" aria-hidden="true"><path d="M14 22h34m8 0 28-12M56 22l28 12" fill="none" stroke="currentColor" stroke-width="1.5"/><g fill="var(--shell)" stroke="currentColor" stroke-width="2"><circle cx="12" cy="22" r="7"/><circle cx="52" cy="22" r="7"/><circle cx="88" cy="9" r="6"/><circle cx="88" cy="35" r="6"/></g></svg>
-          <strong>Crabgraph</strong><span>Query your lakehouse as a graph</span>
-        </div>
-        <div class="lakehouse-query-branches" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div class="lakehouse-languages" aria-label="Graph query languages"><span>Cypher</span><span>Gremlin</span><span>SPARQL</span></div>
-      </div>
-    </section>
-
-    <section class="architecture section-rule" id="architecture">
-      <div class="section-head">
-        <p class="section-number">Architecture</p>
-        <h2>From graph query to execution plan.</h2>
-        <p>Each language produces Graph IR, which lowers to a SQL IR DAG. DuckDB executes SQL regions; DataFusion executes the remaining stages and passes results between them.</p>
-      </div>
-
-      <div class="pipeline" role="img" aria-label="Cypher, Gremlin, and SPARQL produce Graph IR, then a SQL IR DAG executed by DuckDB and DataFusion">
-        <div class="pipe-column sources">
-          <p class="pipe-label">LANGUAGES</p>
-          <div class="pipe-node"><b>Cypher</b><small>parser + planner</small></div>
-          <div class="pipe-node"><b>Gremlin</b><small>parser + planner</small></div>
-          <div class="pipe-node"><b>SPARQL</b><small>parser + ontology mapping</small></div>
-        </div>
-        <div class="pipe-arrow" aria-hidden="true"><span>normalize</span>→</div>
-        <div class="pipe-column core">
-          <p class="pipe-label">PLANNING</p>
-          <div class="pipe-node core-node"><b>Graph IR</b><small>paths · multiplicity · missing values · traversers</small></div>
-          <div class="foundation-line">Lower to SQL IR DAG</div>
-          <div class="island-strip"><span>optimize</span><span>partition</span><span>execute</span></div>
-        </div>
-        <div class="pipe-arrow" aria-hidden="true"><span>schedule</span>→</div>
-        <div class="pipe-column targets">
-          <p class="pipe-label">EXECUTION</p>
-          <div class="pipe-node target-best"><b>DuckDB</b><small>SQL regions</small></div>
-          <div class="pipe-node"><b>DataFusion</b><small>remaining execution stages</small></div>
+        <div class="diagram-arrow" aria-hidden="true">→</div>
+        <div class="diagram-step query-step">
+          <h4>Graph queries</h4>
+          <div class="query-languages"><span>Cypher</span><span>Gremlin</span><span>SPARQL</span></div>
+          <pre><code>MATCH (a:Account)
+  -[:TRANSFERRED_TO]-&gt;
+  (b:Account)
+RETURN a.name, b.name</code></pre>
+          <div class="example-result"><span>Alice</span><span>Bob</span></div>
+          <small>Explore the connections in your data.</small>
         </div>
       </div>
-
-      <div class="principles-grid">
-        <article>
-          <h3>Language semantics</h3>
-          <p>Graph IR records path rules, duplicate rows, optional matches, missing properties, and traverser state.</p>
-        </article>
-        <article>
-          <h3>SQL execution</h3>
-          <p>The planner groups scans, filters, joins, and aggregates into SQL regions that DuckDB can optimize together.</p>
-        </article>
-        <article>
-          <h3>Table mappings</h3>
-          <p>Mappings connect graph labels, relationships, and properties to your tables, views, and columns.</p>
-        </article>
-        <article>
-          <h3>Shared execution</h3>
-          <p>DataFusion schedules the DAG, including operations outside SQL regions. Dependent stages consume their results.</p>
-        </article>
+      <figcaption id="data-diagram-caption">Your data stays in its source. Crabgraph maps the graph and executes queries over it.<br>External sources use the relevant DuckDB extensions and connection setup.</figcaption>
+    </figure>
+    <a href="https://docs.crabgraph.net/mapped-graphs.html">Define your first mapping →</a>
+  </div>
+  <div class="usage-example" id="in-your-application">
+    <h3>A graph engine inside your application</h3>
+    <p>Use Crabgraph in a service, an analysis tool, or a command-line workflow. Your code asks a graph question; Crabgraph plans and executes it, then returns Arrow results.</p>
+    <figure class="application-diagram" aria-labelledby="application-diagram-caption">
+      <div class="application-boundary">
+        <div class="application-label"><img src="/assets/logos/rust.svg" alt="" width="30" height="30" loading="lazy"><span>Your Rust application <small>Service · analysis tool · CLI</small></span></div>
+        <div class="application-flow">
+          <div class="application-input"><span class="code-symbol" aria-hidden="true">&lt;/&gt;</span><strong>Your code</strong><small>Cypher · Gremlin · SPARQL</small></div>
+          <div class="diagram-arrow" aria-hidden="true">→</div>
+          <div class="embedded-engine"><span class="engine-crab" aria-hidden="true">🦀</span><strong>Crabgraph</strong><small>Mapping · planning · execution</small></div>
+          <div class="diagram-arrow" aria-hidden="true">→</div>
+          <div class="application-output"><img src="/assets/logos/arrow.png" alt="Apache Arrow" width="144" height="75" loading="lazy"><strong>Results for your code</strong><small>Rows, columns, and record batches</small></div>
+        </div>
+        <div class="execution-foundation">
+          <div><img src="/assets/logos/duckdb.svg" alt="DuckDB" width="116" height="34" loading="lazy"><small>Executes SQL regions</small></div>
+          <div><img src="/assets/logos/datafusion.svg" alt="Apache DataFusion" width="162" height="34" loading="lazy"><small>Executes remaining stages</small></div>
+        </div>
       </div>
-    </section>
-
-
-    <section class="duckdb section-rule">
-      <div class="duck-copy">
-        <p class="section-number">Execution</p>
-        <h2>Built with DuckDB, DataFusion, and Arrow.</h2>
-        <p>DuckDB runs the generated SQL against your mapped data. DataFusion provides logical plans and the execution stages around that SQL. Apache Arrow carries tabular results between stages.</p>
-        <p>See the <a href="https://docs.crabgraph.net/execution.html">execution guide</a> for planning details and the <a href="https://docs.crabgraph.net/conformance.html">conformance comparison</a> for results from the upstream language suites.</p>
-      </div>
-      <div class="dialect-card">
-        <p class="stage-label">Execution components</p>
-        <div class="foundation-card-row"><b>DataFusion</b><p>Logical plans<br>DAG execution<br>Custom operators</p></div>
-        <div><b>DuckDB</b><small>SQL execution</small></div>
-        <div><b>Apache Arrow</b><small>Tabular results</small></div>
-      </div>
-    </section>
-
-    <section class="cta section-rule">
-      <p class="section-number">Get started</p>
-      <h2>Map your first graph.</h2>
-      <p>The <a href="https://docs.crabgraph.net/quickstart.html">quickstart</a> walks through creating a graph and running a query. Use the <a href="https://docs.crabgraph.net/mapped-graphs.html">mapping guide</a> to connect your own tables.</p>
-      <div class="hero-actions centered">
-        <a class="button button-primary" href="https://github.com/henneberger/new-graph">Open Crabgraph on GitHub <span aria-hidden="true">↗</span></a>
-        <button class="button button-secondary copy-button" type="button" data-copy="git clone https://github.com/henneberger/new-graph.git">Copy clone command</button>
-      </div>
-      <code class="clone-line">git clone https://github.com/henneberger/new-graph.git</code>
-    </section>
-  </main>
-
-  <footer>
-    <a class="wordmark footer-mark" href="#top">
-      <svg viewBox="0 0 40 32" aria-hidden="true"><path d="M8 13 3 9M32 13l5-4M7 20l-5 3M33 20l5 3M12 9 9 3M28 9l3-6"/><path d="M9 12h22v10c0 5-4 8-11 8S9 27 9 22V12Z"/></svg>
-      <span>crabgraph</span>
-    </a>
-    <p>Cypher, Gremlin, and SPARQL over your tables.</p>
-    <div><a href="https://docs.crabgraph.net/">Documentation</a><a href="https://github.com/henneberger/new-graph">GitHub</a><a href="https://github.com/henneberger/new-graph/blob/main/README.md">README</a><a href="https://github.com/henneberger/new-graph/blob/main/LICENSE.md">License</a></div>
-  </footer>
+      <figcaption id="application-diagram-caption">Crabgraph is the graph query layer between your application and your data.<br>Embed the library in your process, or use the CLI to explore a graph.</figcaption>
+    </figure>
+    <a href="https://docs.crabgraph.net/rust-api.html">Embed Crabgraph in Rust →</a>
+  </div>
+</section>
+<section class="home-section participate" id="participate" aria-labelledby="participate-title">
+  <h2 id="participate-title">How to Participate</h2>
+  <p>Explore the code, try a query, and share what you find. GitHub is the place to report problems, discuss ideas, and propose changes. The community page explains how to get involved and lists the channels planned for the project.</p>
+  <div class="actions"><a class="button" href="https://github.com/henneberger/new-graph">GitHub <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#meetings">TSC Meetings <span aria-hidden="true">↗</span></a></div>
+</section>
+</main>
+<footer class="site-footer">
+  <a class="brand" href="/" aria-label="Crabgraph home"><span aria-hidden="true">🦀</span></a>
+  <nav aria-label="Footer"><a href="https://docs.crabgraph.net/quickstart.html">Getting Started</a><a href="/resources.html">Resources</a><a href="/ecosystem.html">Ecosystem</a><a href="/community.html">Community</a><a href="/blog.html">Blog</a><a href="https://docs.crabgraph.net/">Docs</a></nav>
+  <nav aria-label="Social and source"><a href="/community.html#mastodon">Mastodon</a><a href="/community.html#twitter">Twitter</a><a href="/community.html#linkedin">LinkedIn</a><a href="/community.html#slack">Slack</a><a href="https://github.com/henneberger/new-graph">GitHub</a></nav>
+  <p>Copyright © 2026 Daniel Henneberger. <a href="https://github.com/henneberger/new-graph/blob/main/LICENSE.md">License</a></p>
+</footer>
 </body>
 </html>

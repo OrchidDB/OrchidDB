@@ -1,8 +1,10 @@
+# Query recipes
+
 Answer common relationship questions with the customer and order graph from the mapped tutorial.
 
 ## Dataset
 
-These recipes use the [mapped graph tutorial](/mapped-graphs.html): three people, four orders, and three `FOLLOWS` relationships. Use lowercase names to match the sample rows.
+These recipes use the [mapped graph tutorial](mapped-graphs.md): three people, four orders, and three `FOLLOWS` relationships. Use lowercase names to match the sample rows.
 
 ## Find a person's friends
 
@@ -80,7 +82,7 @@ Both return three for the sample dataset.
 
 ## Filter through an RDF vocabulary
 
-With the [SPARQL ontology](/sparql.html#define-a-vocabulary):
+With the [SPARQL ontology](sparql.md#define-a-vocabulary):
 
 ```sparql
 PREFIX ex: <https://example.com/>
@@ -103,4 +105,4 @@ WHERE p.name = 'alice'
 SET p.age = 31
 ```
 
-Query `p.age` afterward to read the updated value. Use [typed parameters](/parameters.html) when the name or new age comes from user input.
+Query `p.age` afterward to read the updated value. Use [typed parameters](parameters.md) when the name or new age comes from user input.

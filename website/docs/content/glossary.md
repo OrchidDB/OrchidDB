@@ -1,3 +1,5 @@
+# Glossary
+
 A compact reference for the terms used throughout Crabgraph's documentation.
 
 ## Graph terms
@@ -48,4 +50,4 @@ A compact reference for the terms used throughout Crabgraph's documentation.
 | Named graph | An RDF graph identified by an IRI. |
 | Vocabulary | Class and predicate IRIs used to describe a domain. |
 
-Return to the [introduction](/index.html) to choose a guide, or use the search button to find a specific API or topic.
+Return to the [introduction](index.md) to choose a guide, or use the search button to find a specific API or topic.

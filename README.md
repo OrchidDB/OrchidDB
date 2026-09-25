@@ -102,6 +102,14 @@ cargo test --test gremlin_planner
 The repository commits generated parser modules under `src/grammar/generated`,
 so a normal build should only need Cargo and the Rust toolchain.
 
+## Release packages
+
+The [release workflow](.github/workflows/release.yml) builds CLI archives for
+Linux, macOS (Intel and Apple Silicon), and Windows when a version tag is pushed.
+It attaches checksummed archives to a draft GitHub release after native builds
+and CLI smoke checks succeed. See [release instructions](scripts/release/README.md)
+for tagging, manual runs, local packaging, and the proposed crates.io name.
+
 ## Repository Layout
 
 ```text

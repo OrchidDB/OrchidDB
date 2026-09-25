@@ -1,3 +1,5 @@
+# CLI reference
+
 Run a graph query from your shell, read query files, and inspect a plan with the crabgraph binary.
 
 ## Invocation
@@ -83,4 +85,4 @@ crabgraph --database social.duckdb \
   > people.tsv 2> query.log
 ```
 
-For application-controlled parameter binding and Arrow-native results, use the [Rust API](/rust-api.html).
+For application-controlled parameter binding and Arrow-native results, use the [Rust API](rust-api.md).

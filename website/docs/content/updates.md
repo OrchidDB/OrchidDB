@@ -1,3 +1,5 @@
+# Update properties
+
 Create, update, and delete graph elements in the physical tables declared by your mapping. Cypher and Gremlin use the same labels, relationship types, identity columns, and property columns for reads and writes.
 
 ## Create mapped rows
@@ -44,7 +46,7 @@ Mapped properties address scalar columns. Relationship creation uses the configu
 
 ## Transactions
 
-Each mutation statement starts and commits a transaction when the connection has no active transaction. Within an explicit executor transaction, successful statements leave that transaction open for the caller. An error during mutation execution rolls back the active transaction, including earlier changes in that transaction. See [transactions](/transactions.html#mapped-engine-transactions).
+Each mutation statement starts and commits a transaction when the connection has no active transaction. Within an explicit executor transaction, successful statements leave that transaction open for the caller. An error during mutation execution rolls back the active transaction, including earlier changes in that transaction. See [transactions](transactions.md#mapped-engine-transactions).
 
 Identity columns must be unique, non-null integers. Writes preserve identity and relationship endpoint columns; property changes address only declared writable columns.
 
@@ -77,7 +79,7 @@ let changed = graph.cypher_update_with_params(
 ).await?;
 ```
 
-The parameter values enter the parsed query as typed data. See [parameters and values](/parameters.html) for the same pattern in read queries.
+The parameter values enter the parsed query as typed data. See [parameters and values](parameters.md) for the same pattern in read queries.
 
 ## Prepare the mapping
 

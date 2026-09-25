@@ -1,3 +1,5 @@
+# Arrow results
+
 Read Arrow batches, handle nulls, and inspect execution metadata from graph queries.
 
 ## Result containers
@@ -73,4 +75,4 @@ println!("island rows: {}", result.stats.island_rows);
 println!("residual operators: {}", result.stats.residual_ops);
 ```
 
-The backend is `DuckDb`, `Hybrid`, or `GraphRuntime`. See [execution and plans](/execution.html) for how the read policy selects the execution path.
+The backend is `DuckDb`, `Hybrid`, or `GraphRuntime`. See [execution and plans](execution.md) for how the read policy selects the execution path.

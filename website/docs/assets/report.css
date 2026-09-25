@@ -1,0 +1,14 @@
+/* Only the evidence report uses these styles. The book uses stock mdBook. */
+:root { --ink: #303840; --muted: #596a7e; --paper: #fff; --line: #dce2e7; --green: #435c70; --accent: #356b91; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.6 system-ui, sans-serif; }
+a { color: var(--accent); text-underline-offset: 3px; }
+button, input, select { font: inherit; }
+:focus-visible { outline: 3px solid #4382b1; outline-offset: 3px; }
+.report-header { display: flex; flex-wrap: wrap; gap: 24px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+.comparison-page main { max-width: 1400px; margin: auto; padding: 32px 24px; }
+.comparison-page h1 { font-size: 32px; letter-spacing: normal; }
+.language-tabs { top: 0; }
+pre { overflow: auto; }
+.skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media(max-width:760px) { .comparison-page main { padding: 24px 16px; } .language-tabs { top: 0; } }

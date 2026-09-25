@@ -5,11 +5,11 @@ const base=process.env.DOCS_URL || 'http://127.0.0.1:5321';
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
 const context=await browser.newContext({viewport:{width:1440,height:1050}});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.goto(base+'/conformance.html');
+await page.goto(base+'/conformance-report.html');
 assert.equal(await page.locator('.comparison-row').count(),6533);
 assert.equal(await page.locator('.feature-card').count(),361);
 assert.equal(await page.locator('.feature-card:visible').count(),361);
-const products={tinkerpop:['Crabgraph','SQLg','PuppyGraph'],opencypher:['Crabgraph','PuppyGraph'],rdf:['Crabgraph']};
+const products={tinkerpop:['Crabgraph','SQLg','PuppyGraph','JanusGraph'],opencypher:['Crabgraph','Neo4j Community','PuppyGraph'],rdf:['Crabgraph','Apache Jena TDB2']};
 // All features stay visible; each product has exactly one column.
 for(const [suite,names] of Object.entries(products)){
   const valid=await page.locator('.feature-card[data-suite="'+suite+'"]').evaluateAll((cards,names)=>cards.every(card=>{
@@ -19,7 +19,7 @@ for(const [suite,names] of Object.entries(products)){
   await page.locator('[data-language-tab="'+suite+'"]').click();
   assert.equal(await page.locator('.feature-card:visible').count(),361);
 }
-assert.equal(await page.locator('#capabilities .comparison-table thead th').count(),4);
+assert.equal(await page.locator('#capabilities .comparison-table thead th').count(),7);
 assert.equal(await page.locator('.leaderboard-table').textContent().then(text=>/JVM|GraphComputer/.test(text)),false);
 for(const value of ['crab-wins','peer-wins','adapter','failures']){
  await page.locator('#comparison-filter').selectOption(value);
@@ -43,12 +43,12 @@ await row.locator('[data-product="upstream"] .raw-evidence').waitFor({state:'att
 const original=JSON.parse(await row.locator('[data-product="upstream"] .raw-evidence').textContent());
 assert.equal(actual.id,original.id);assert.ok(actual.case_sha256);
 const cypherAnchor=await page.locator('.feature-card[data-suite="opencypher"] .comparison-row').first().getAttribute('id');
-await page.goto(base+'/conformance.html#'+cypherAnchor);
+await page.goto(base+'/conformance-report.html#'+cypherAnchor);
 assert.equal(await page.locator('.feature-card:visible').count(),361);
 assert.equal(await page.locator('#'+cypherAnchor).isVisible(),true);
 assert.equal(await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('open'),'');
 const evidenceUrl=await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('data-evidence');
-const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['crabgraph','puppygraph']);
+const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['crabgraph','neo4j','puppygraph']);
 await page.locator('[data-language-tab="tinkerpop"]').click();
 await page.locator('#comparison-reset').click();
 for(const width of [1440,1000,760,390]){
@@ -65,7 +65,7 @@ if(await javaIndexLink.count()){
 }
 assert.deepEqual(errors,[]);await context.close();
 const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
-const staticPage=await nojs.newPage();await staticPage.goto(base+'/conformance.html');
+const staticPage=await nojs.newPage();await staticPage.goto(base+'/conformance-report.html');
 assert.equal(await staticPage.locator('.comparison-row').count(),6533);
 assert.equal(await staticPage.locator('.comparison-controls').isVisible(),false);
 assert.equal(await staticPage.locator('.language-heading:visible').count(),3);

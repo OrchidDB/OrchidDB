@@ -1,3 +1,5 @@
+# Installation
+
 Build the command-line tool and Rust library from source, then set up a local application.
 
 ## Prerequisites
@@ -41,7 +43,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 arrow = "58.2.0"
 ```
 
-The package name is `new-graph`; the Rust import is `new_graph`. Use the [quickstart](/quickstart.html) as `src/main.rs`.
+The package name is `new-graph`; the Rust import is `new_graph`. Use the [quickstart](quickstart.md) as `src/main.rs`.
 
 ## Cargo features
 
@@ -68,4 +70,4 @@ cargo build --locked --features postgres
 cargo run --locked --example managed_graph
 ```
 
-This example opens an in-memory graph, creates a relationship with a typed parameter, commits it, and prints the query results. Continue to the [quickstart](/quickstart.html) for a persistent CLI session and application example.
+This example opens an in-memory graph, creates a relationship with a typed parameter, commits it, and prints the query results. Continue to the [quickstart](quickstart.md) for a persistent CLI session and application example.

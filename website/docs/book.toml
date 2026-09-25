@@ -1,0 +1,20 @@
+[book]
+title = "Crabgraph documentation"
+authors = ["Crabgraph contributors"]
+language = "en"
+src = "content"
+description = "Use Crabgraph from Rust or the command line to query graphs and mapped tables."
+
+[build]
+build-dir = "dist"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+no-section-label = true
+git-repository-url = "https://github.com/henneberger/new-graph"
+edit-url-template = "https://github.com/henneberger/new-graph/edit/main/website/docs/{path}"
+site-url = "/"
+
+[output.html.playground]
+runnable = false

@@ -1,3 +1,5 @@
+# Rust API
+
 Find the public engine methods, result types, mapping builders, and planner entry points.
 
 ## GraphEngine
@@ -39,7 +41,7 @@ Import from `new_graph::mapped_engine`. Construct with `MappedGraphEngine::new(e
 | `executor()` / `executor_mut()` | Access the DuckDB executor. |
 | `mapping()` | Inspect the graph mapping. |
 
-Read methods return `Result<ReturnedBatches, String>`. The [mapped tutorial](/mapped-graphs.html) demonstrates source schema registration and engine construction.
+Read methods return `Result<ReturnedBatches, String>`. The [mapped tutorial](mapped-graphs.md) demonstrates source schema registration and engine construction.
 
 ## RdfGraphEngine
 
@@ -52,7 +54,7 @@ Import from `new_graph::rdf_engine`. Construct with `RdfGraphEngine::new(executo
 | `mapping()` | Inspect the RDF dataset mapping. |
 | `into_executor()` | Consume the engine and recover its DuckDB executor. |
 
-The [RDF dataset guide](/rdf.html) shows table registration and graph-column configuration.
+The [RDF dataset guide](rdf.md) shows table registration and graph-column configuration.
 
 ## Data and mapping types
 
@@ -89,4 +91,4 @@ Open `target/doc/new_graph/index.html` in a browser. Enable optional features in
 
 ## Error handling
 
-Engine methods use `Result` so the application can handle failures at each boundary. Add application context when logging a failure, preserve the engine's error message, and roll back an explicit transaction before retrying conflicting work. See [transactions](/transactions.html) for the control flow.
+Engine methods use `Result` so the application can handle failures at each boundary. Add application context when logging a failure, preserve the engine's error message, and roll back an explicit transaction before retrying conflicting work. See [transactions](transactions.md) for the control flow.
