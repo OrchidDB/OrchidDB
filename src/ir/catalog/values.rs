@@ -84,7 +84,7 @@ pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) 
                 .unwrap()
                 .value(row)
                 .to_string();
-            match field.and_then(|field| field.metadata().get("new_graph.value_type")) {
+            match field.and_then(|field| crate::ir::value::field_value_type(field)) {
                 Some(kind) if kind == "datetime" => return Value::DateTime(value),
                 Some(kind) if kind == "map" || kind == "value" => {
                     return parse_debug_value(&value).unwrap_or(Value::Null);
@@ -190,6 +190,7 @@ pub(crate) fn parse_debug_value(input: &str) -> Option<Value> {
             let (key, value) = split_debug_map_entry(&entry)?;
             map.insert(key, parse_debug_value(value.trim())?);
         }
+        crate::ir::value::normalize_struct_metadata(&mut map);
         return Some(Value::Map(map));
     }
     None

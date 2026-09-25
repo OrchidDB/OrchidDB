@@ -9,7 +9,7 @@ mkdirSync(output, {recursive:true});
 const browser = await chromium.launch({headless:true,...(process.env.CHROME_PATH ? {executablePath:process.env.CHROME_PATH} : {})});
 const expected = ['Getting Started','Resources','Ecosystem','Community','Blog','Docs'];
 try {
-  const context = await browser.newContext();
+  const context = await browser.newContext({permissions:['clipboard-read','clipboard-write']});
   const page = await context.newPage();
   const errors=[];
   page.on('pageerror',e => errors.push(e.message));
@@ -22,6 +22,12 @@ try {
       assert.deepEqual(await page.locator('.site-footer nav[aria-label="Footer"] a').allTextContents(),expected);
       assert.deepEqual(await page.locator('.site-footer nav[aria-label="Social and source"] a').allTextContents(),['Mastodon','Twitter','LinkedIn','Slack','GitHub']);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,`${width}: ${path}`);
+      if (path === '/') {
+        const box = await page.locator('.tagline').boundingBox();
+        assert.ok(Math.abs(box.x + box.width / 2 - width / 2) < 1, `Tagline centered at ${width}`);
+        assert.equal(await page.locator('.result-box').innerText(), 'Iceberg Data Lake\nMapped tables · via DuckDB');
+      }
+
       // Follow every first-party link against the local builds, including placeholders.
       if (width === 1440) {
         const links=await page.locator('a[href]').evaluateAll(nodes => nodes.map(n => n.getAttribute('href')));
@@ -57,6 +63,15 @@ try {
     await page.screenshot({path:new URL(`orchiddb-${name}.png`,output).pathname,fullPage:true});
   }
   await page.goto(base+'/');
+  await page.locator('[data-install="rust"]').click();
+  assert.equal(await page.locator('#install-rust').isVisible(), true);
+  assert.equal(await page.locator('#install-cli').isVisible(), false);
+  await page.locator('[data-copy="install-rust"]').click();
+  await page.getByText('Command copied.', {exact:true}).waitFor();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'cargo add orchiddb --git https://github.com/OrchidDB/OrchidDB');
+  await page.locator('[data-install="cli"]').click();
+  assert.equal(await page.locator('#install-cli').isVisible(), true);
+  await page.evaluate(() => scrollTo(0,0));
   const canvas = page.locator('.hero-graph');
   await page.getByRole('button', {name:'Pause animation'}).click();
   const paused = await canvas.evaluate(c => c.toDataURL());
@@ -74,6 +89,8 @@ try {
   const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
   const plain=await nojs.newPage();
   await plain.goto(base+'/');
+  assert.equal(await plain.locator('#install-cli').isVisible(), true);
+  assert.equal(await plain.locator('#install-rust').isVisible(), true);
   assert.equal(await plain.locator('.primary-nav').isVisible(),true);
   await plain.locator('.primary-nav a[href="/resources.html"]').click();
   assert.equal(await plain.locator('main h1').innerText(),'Resources');

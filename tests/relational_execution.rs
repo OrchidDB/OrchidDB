@@ -86,7 +86,7 @@ async fn branch_scans_observe_prior_writes_and_outer_rollback() {
     assert_eq!(result.stats.interpreted_ops, 0);
     assert!(result.stats.datafusion_ops > 0);
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 2);
@@ -98,7 +98,7 @@ async fn branch_scans_observe_prior_writes_and_outer_rollback() {
         .await
         .unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 0);
@@ -120,7 +120,7 @@ async fn reused_dag_resources_do_not_reuse_graph_contents() {
     let mut second = orchiddb::engine::GraphEngine::in_memory().unwrap();
     async fn count(engine: &mut orchiddb::engine::GraphEngine) -> String {
         let result = engine.gremlin("g.V().count()").await.unwrap();
-        result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"].clone()
+        result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"].clone()
     }
     first.replace_graph(graph()).unwrap();
     let original = count(&mut first).await;

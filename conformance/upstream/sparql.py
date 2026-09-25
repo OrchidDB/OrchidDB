@@ -7,7 +7,7 @@ from rdflib import Graph,URIRef,BNode,Literal
 from rdflib.query import Result
 from rdflib.compare import isomorphic
 from fetch import CACHE
-from run import Process,ROOT,REPO,crabgraph_binary
+from run import Process,ROOT,REPO,orchiddb_binary
 from rdf_fixtures import graph_file
 from rdf_result_terms import same_numeric_value
 rdflib.NORMALIZE_LITERALS=False
@@ -85,14 +85,14 @@ def expected(path):
   return {'variables':variables,'rows':rows,'ordered':any(graph.value(s,RS['index']) is not None for s in solutions)}
  return {'graph':[[term(s),term(p),term(o)] for s,p,o in graph]}
 class Sparql:
- def __init__(self,engine='crabgraph'):self.process=None;self.engine=engine
+ def __init__(self,engine='orchiddb'):self.process=None;self.engine=engine
  def send(self,request,timeout=25):
   if self.process is None or self.process.p.poll() is not None:
    if self.engine=='jena':
     root=ROOT/'adapters/jena'
     classpath=str(root/'target/classes')+os.pathsep+(root/'target/classpath.txt').read_text().strip()
     command=[os.environ.get('CONFORMANCE_JAVA','java'),'-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'JenaAdapter']
-   else:command=[str(crabgraph_binary())]
+   else:command=[str(orchiddb_binary())]
    self.process=Process(command,ROOT/f'upstream-{self.engine}-rdf.log')
   return self.process.send(request,timeout=timeout)
  def run(self,case):
@@ -101,7 +101,7 @@ class Sparql:
    if not any('Syntax' in t for t in types):
     from sparql_updates import run_update
     return run_update(self,case)
-  if any('Protocol' in t or 'ServiceDescription' in t or 'CSV' in t for t in types):return {'status':'not-applicable','reason':'This case tests an HTTP protocol or wire serializer; the compared Crabgraph API is embedded'}
+  if any('Protocol' in t or 'ServiceDescription' in t or 'CSV' in t for t in types):return {'status':'not-applicable','reason':'This case tests an HTTP protocol or wire serializer; the compared OrchidDB API is embedded'}
   if '/entailment/' in case['path']:return {'status':'skipped','reason':'Upstream entailment profile requires a separately configured reasoning dataset'}
   if case.get('result_file','') and case['result_file'].endswith(('.tsv','.csv')):return {'status':'not-applicable','reason':'Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms'}
   path=base/case['query_file'];query=path.read_text()

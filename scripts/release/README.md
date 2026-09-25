@@ -74,5 +74,5 @@ Before publishing, resolve the local `vendor/spargebra` dependency: Cargo
 replaces versioned path dependencies with registry dependencies when packaging,
 so publishing this manifest unchanged would not ship the local parser changes.
 
-The internal JVM bridge and historical conformance evidence retain their
-existing identifiers so the recorded results remain reproducible.
+The JVM bridge uses `io.orchiddb` packages and the `orchiddb-jvm-store` binary.
+Rebuild Java artifacts together with the native engine after upgrading.

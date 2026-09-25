@@ -114,7 +114,7 @@ fn complete_reads_push_down_query_work_and_preserve_result_shaping() {
         .expect("direct SQL read");
     assert!(stats.fully_pushed_down());
     assert_eq!(stats.interpreted_ops, 0);
-    assert!(returned.batch.schema().metadata().contains_key("crabgraph.cypher.typed_rows.v1"));
+    assert!(returned.batch.schema().metadata().contains_key("orchiddb.cypher.typed_rows.v1"));
     assert_eq!(render(returned), rows_of(&graph, query));
 }
 

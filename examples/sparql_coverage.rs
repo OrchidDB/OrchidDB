@@ -1,4 +1,4 @@
-//! Measures Crabgraph parser and planner coverage over `.rq` files.
+//! Measures OrchidDB parser and planner coverage over `.rq` files.
 //!
 //! Pass one or more W3C test-suite directories. Syntax-only collections
 //! should be measured separately from query-evaluation collections.

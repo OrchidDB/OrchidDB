@@ -45,7 +45,7 @@ python3 conformance/validate.py
 
 The complete native result record, including per-step timings, actual results,
 case fingerprints, exclusions, and binary provenance, is committed at
-[`conformance/upstream-results/crabgraph-tinkerpop.json`](../conformance/upstream-results/crabgraph-tinkerpop.json).
+[`conformance/upstream-results/orchiddb-tinkerpop.json`](../conformance/upstream-results/orchiddb-tinkerpop.json).
 
 Existing JVM and GraphComputer evidence remains separately recorded and feeds
 the existing combined OrchidDB comparison. The production page layout and

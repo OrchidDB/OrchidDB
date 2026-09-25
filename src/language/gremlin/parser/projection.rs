@@ -110,7 +110,7 @@ impl LoweringVisitor {
         };
         let inner = self.lower_nested_traversal(&nested);
         if let [Step::Call(name,args)]=inner.as_slice() {
-            if name=="crabgraph.jvm.comparator" {
+            if name=="orchiddb.jvm.comparator" {
                 if let [super::CallArg::Value(GValue::Map(options))]=args.as_slice() {
                     if let Some(GValue::String(script))=options.get("script") {
                         let mut spec=BySpec::default();spec.comparator=Some(script.clone());

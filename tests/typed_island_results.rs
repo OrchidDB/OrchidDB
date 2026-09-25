@@ -3,7 +3,7 @@ use orchiddb::engine::GraphEngine;
 use serde_json::Value;
 
 fn native(result: &orchiddb::engine::QueryResult, language: &str) -> Value {
-    let key = format!("crabgraph.{language}.typed_rows.v1");
+    let key = format!("orchiddb.{language}.typed_rows.v1");
     let schema = result.returned.batch.schema();
     serde_json::from_str(schema.metadata().get(&key).expect("typed result boundary")).unwrap()
 }

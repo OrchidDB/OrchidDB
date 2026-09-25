@@ -2,7 +2,7 @@
 use orchiddb::engine::GraphEngine;
 use serde_json::Value;
 fn native(result: &orchiddb::engine::QueryResult) -> Value {
-    serde_json::from_str(result.returned.batch.schema().metadata().get("crabgraph.gremlin.typed_rows.v1").unwrap()).unwrap()
+    serde_json::from_str(result.returned.batch.schema().metadata().get("orchiddb.gremlin.typed_rows.v1").unwrap()).unwrap()
 }
 #[tokio::test]
 async fn has_id_matches_public_identity_after_expansion() {

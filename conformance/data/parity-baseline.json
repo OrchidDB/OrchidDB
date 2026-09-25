@@ -25,7 +25,7 @@
   },
   "suites": {
     "tinkerpop": {
-      "crabgraph": {
+      "orchiddb": {
         "counts": {
           "skipped": 106,
           "fail": 1066,
@@ -2656,7 +2656,7 @@
       }
     },
     "opencypher": {
-      "crabgraph": {
+      "orchiddb": {
         "counts": {
           "skipped": 50,
           "fail": 2223,
@@ -4608,7 +4608,7 @@
       }
     },
     "rdf": {
-      "crabgraph": {
+      "orchiddb": {
         "counts": {
           "pass": 725,
           "fail": 97,

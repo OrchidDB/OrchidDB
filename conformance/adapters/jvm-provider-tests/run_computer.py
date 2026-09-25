@@ -77,7 +77,7 @@ def main():
     if revision != REVISION:
         parser.error(f'Expected pinned upstream {REVISION}; found {revision}')
     manifest = json.loads(args.runtime_manifest.read_text())
-    expected_jar = manifest.get('jar_sha256') or manifest.get('files', {}).get('jvm/target/crabgraph-jvm-0.1.0.jar')
+    expected_jar = manifest.get('jar_sha256') or manifest.get('files', {}).get('jvm/target/orchiddb-jvm-0.1.0.jar')
     if expected_jar != digest(args.runtime_jar):
         parser.error('Frozen runtime jar does not match its source manifest')
     out = args.output.resolve()
@@ -95,12 +95,12 @@ def main():
     java = shutil.which(args.java) or args.java
     jstack = args.jstack or str(Path(java).with_name('jstack'))
     flags = ['-Dis.testing=true', '-DassertNonDeterministic=true',
-             '-Dcrabgraph.test.computer=true',
+             '-Dorchiddb.test.computer=true',
              '--add-opens=java.base/java.util=ALL-UNNAMED',
              '--add-opens=java.base/java.lang=ALL-UNNAMED',
              '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED']
-    base = [java, *flags, '-cp', cp, 'io.crabgraph.conformance.ProviderSuite']
-    environment = dict(os.environ, CRABGRAPH_JVM_STORE=str(args.store.resolve()))
+    base = [java, *flags, '-cp', cp, 'io.orchiddb.conformance.ProviderSuite']
+    environment = dict(os.environ, ORCHIDDB_JVM_STORE=str(args.store.resolve()))
     if args.inventory:
         inventory = json.loads(args.inventory.read_text())
     else:
@@ -127,7 +127,7 @@ def main():
         'excluded_classes_owned_by_parallel_original31_run': sorted(ALGORITHMS) if args.exclude_algorithms else [],
         'upstream_assertions_modified': False, 'native_rust_traversal_evidence': False,
         'java_system_properties': {'is.testing': 'true', 'assertNonDeterministic': 'true',
-                                   'crabgraph.test.computer': 'true', 'build.dir': 'isolated per class'},
+                                   'orchiddb.test.computer': 'true', 'build.dir': 'isolated per class'},
         'store_path': str(args.store.resolve()), 'store_sha256': digest(args.store),
         'store_source_commit': args.store_source_commit,
         'runtime_jar_sha256': digest(args.runtime_jar),
@@ -160,7 +160,7 @@ def main():
         filename = f'{index:02d}-{name.rsplit(".", 1)[1].replace("$", "_")}-{occurrence}'
         result_path = out / (filename + '.json')
         command = [java, '-Dbuild.dir=' + str(out / (filename + '-test-data')),
-                   *flags, '-cp', cp, 'io.crabgraph.conformance.ProviderSuite',
+                   *flags, '-cp', cp, 'io.orchiddb.conformance.ProviderSuite',
                    name, str(upstream), str(result_path)]
         start = time.monotonic()
         with (out / (filename + '.log')).open('w') as log:

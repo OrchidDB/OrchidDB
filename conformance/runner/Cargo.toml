@@ -1,5 +1,5 @@
 [package]
-name = "crabgraph-conformance-runner"
+name = "orchiddb-conformance-runner"
 version = "0.1.0"
 edition = "2024"
 

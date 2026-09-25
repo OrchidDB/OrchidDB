@@ -203316,7 +203316,7 @@
       "named": [
         {
           "file": "sparql/sparql10/algebra/join-combo-graph-1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/algebra/join-combo-graph-1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/algebra/join-combo-graph-1.ttl"
         }
       ],
       "requires": [],
@@ -204434,11 +204434,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204464,7 +204464,7 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -204488,11 +204488,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204516,7 +204516,7 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -204540,11 +204540,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204568,11 +204568,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204596,11 +204596,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204624,11 +204624,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -204652,19 +204652,19 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g3.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g4.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4.ttl"
         }
       ],
       "requires": [],
@@ -204688,11 +204688,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g3-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g3.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
         }
       ],
       "requires": [],
@@ -204716,11 +204716,11 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g3-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g3.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
         }
       ],
       "requires": [],
@@ -204744,35 +204744,35 @@
       "named": [
         {
           "file": "sparql/sparql10/dataset/data-g1-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g3-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g4-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4-dup.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g2.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g3.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g3.ttl"
         },
         {
           "file": "sparql/sparql10/dataset/data-g4.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/dataset/data-g4.ttl"
         }
       ],
       "requires": [],
@@ -206262,7 +206262,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -206286,7 +206286,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -206333,7 +206333,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206359,7 +206359,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206385,7 +206385,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206411,7 +206411,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206437,7 +206437,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g4.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g4.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g4.ttl"
         }
       ],
       "requires": [],
@@ -206463,7 +206463,7 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g3-dup.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g3-dup.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g3-dup.ttl"
         }
       ],
       "requires": [],
@@ -206489,19 +206489,19 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g3.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g3.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g3.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g4.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g4.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g4.ttl"
         }
       ],
       "requires": [],
@@ -206527,11 +206527,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206557,11 +206557,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206587,11 +206587,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206617,11 +206617,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g2.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g2.ttl"
         }
       ],
       "requires": [],
@@ -206645,11 +206645,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-variable-join.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-variable-join.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-variable-join.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -206673,11 +206673,11 @@
       "named": [
         {
           "file": "sparql/sparql10/graph/data-optional.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-optional.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-optional.ttl"
         },
         {
           "file": "sparql/sparql10/graph/data-g1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/graph/data-g1.ttl"
         }
       ],
       "requires": [],
@@ -207291,7 +207291,7 @@
       "named": [
         {
           "file": "sparql/sparql10/optional/complex-data-1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
         }
       ],
       "requires": [],
@@ -207317,7 +207317,7 @@
       "named": [
         {
           "file": "sparql/sparql10/optional/complex-data-1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
         }
       ],
       "requires": [],
@@ -207343,7 +207343,7 @@
       "named": [
         {
           "file": "sparql/sparql10/optional/complex-data-1.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql10/optional/complex-data-1.ttl"
         }
       ],
       "requires": [],
@@ -213888,11 +213888,11 @@
       "named": [
         {
           "file": "sparql/sparql11/aggregates/singleton.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/aggregates/singleton.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/aggregates/singleton.ttl"
         },
         {
           "file": "sparql/sparql11/aggregates/pair.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/aggregates/pair.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/aggregates/pair.ttl"
         }
       ],
       "requires": [],
@@ -214814,11 +214814,11 @@
       "named": [
         {
           "file": "sparql/sparql11/bindings/data01.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/bindings/data01.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/bindings/data01.ttl"
         },
         {
           "file": "sparql/sparql11/bindings/data02.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/bindings/data02.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/bindings/data02.ttl"
         }
       ],
       "requires": [],
@@ -215107,7 +215107,7 @@
       "named": [
         {
           "file": "sparql/sparql11/construct/data.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/construct/data.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/construct/data.ttl"
         }
       ],
       "requires": [],
@@ -217932,7 +217932,7 @@
       "named": [
         {
           "file": "sparql/sparql11/exists/exists02.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/exists/exists02.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/exists/exists02.ttl"
         }
       ],
       "requires": [],
@@ -218000,7 +218000,7 @@
       "named": [
         {
           "file": "sparql/sparql11/exists/exists-graph-variable.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/exists/exists-graph-variable.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/exists/exists-graph-variable.ttl"
         }
       ],
       "requires": [],
@@ -220762,7 +220762,7 @@
       "named": [
         {
           "file": "sparql/sparql11/negation/graph-minus.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/negation/graph-minus.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/negation/graph-minus.ttl"
         }
       ],
       "requires": [],
@@ -220996,11 +220996,11 @@
       "named": [
         {
           "file": "sparql/sparql11/property-path/pp061.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp061.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp061.ttl"
         },
         {
           "file": "sparql/sparql11/property-path/pp062.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp062.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp062.ttl"
         }
       ],
       "requires": [],
@@ -221024,7 +221024,7 @@
       "named": [
         {
           "file": "sparql/sparql11/property-path/pp07.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp07.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/pp07.ttl"
         }
       ],
       "requires": [],
@@ -221363,15 +221363,15 @@
       "named": [
         {
           "file": "sparql/sparql11/property-path/ng-01.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-01.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-01.ttl"
         },
         {
           "file": "sparql/sparql11/property-path/ng-02.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-02.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-02.ttl"
         },
         {
           "file": "sparql/sparql11/property-path/ng-03.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-03.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-03.ttl"
         }
       ],
       "requires": [],
@@ -221395,15 +221395,15 @@
       "named": [
         {
           "file": "sparql/sparql11/property-path/ng-01.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-01.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-01.ttl"
         },
         {
           "file": "sparql/sparql11/property-path/ng-02.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-02.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-02.ttl"
         },
         {
           "file": "sparql/sparql11/property-path/ng-03.ttl",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-03.ttl"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/property-path/ng-03.ttl"
         }
       ],
       "requires": [],
@@ -222502,7 +222502,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq01.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
         }
       ],
       "requires": [],
@@ -222526,7 +222526,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq01.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
         }
       ],
       "requires": [],
@@ -222550,7 +222550,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq01.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
         }
       ],
       "requires": [],
@@ -222576,7 +222576,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq01.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq01.rdf"
         }
       ],
       "requires": [],
@@ -222600,7 +222600,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq05.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq05.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq05.rdf"
         }
       ],
       "requires": [],
@@ -222645,7 +222645,7 @@
       "named": [
         {
           "file": "sparql/sparql11/subquery/sq05.rdf",
-          "name": "file:///Users/henneberger/new-graph/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq05.rdf"
+          "name": "file:///Users/henneberger/orchiddb/conformance/upstream/cache/rdf/sparql/sparql11/subquery/sq05.rdf"
         }
       ],
       "requires": [],

@@ -9,7 +9,7 @@ use orchiddb::ir::rel::sql::{DuckDbExecutor, SqlError, SqlExecutor, SqlValue};
 
 fn temp_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "crabgraph-duckdb-session-{name}-{}-{}.duckdb",
+        "orchiddb-duckdb-session-{name}-{}-{}.duckdb",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

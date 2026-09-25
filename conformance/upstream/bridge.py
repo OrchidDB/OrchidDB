@@ -5,14 +5,14 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 class Rust:
  def __init__(self):
-  self.p=subprocess.Popen([os.environ.get('CONFORMANCE_CRABGRAPH_BINARY',str(ROOT/'target/debug/upstream'))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
+  self.p=subprocess.Popen([os.environ.get('CONFORMANCE_ORCHIDDB_BINARY',str(ROOT/'target/debug/upstream'))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
  def send(self,req):
   if self.p.poll() is not None:
-   raise RuntimeError('The single Crabgraph instance exited; this run cannot restart it')
+   raise RuntimeError('The single OrchidDB instance exited; this run cannot restart it')
   self.p.stdin.write(json.dumps(req)+'\n');self.p.stdin.flush()
-  if not select.select([self.p.stdout],[],[],40)[0]:self.p.kill();raise TimeoutError('Crabgraph adapter deadline')
+  if not select.select([self.p.stdout],[],[],40)[0]:self.p.kill();raise TimeoutError('OrchidDB adapter deadline')
   line=self.p.stdout.readline()
-  if not line:raise RuntimeError('Crabgraph adapter exited')
+  if not line:raise RuntimeError('OrchidDB adapter exited')
   return json.loads(line)
  def close(self):self.p.terminate();self.p.wait(timeout=5)
 def property_type(v,declared=None):
@@ -101,11 +101,11 @@ class PuppyFixture:
   return snap
  def close(self):self.pg.close()
 def main():
- backend=sys.argv[1];adapter=Rust() if backend=='crabgraph' else PuppyFixture()
+ backend=sys.argv[1];adapter=Rust() if backend=='orchiddb' else PuppyFixture()
  try:
   for line in sys.stdin:
    try:
-    req=json.loads(line);result=adapter.send(req) if backend=='crabgraph' else adapter.setup(req)
+    req=json.loads(line);result=adapter.send(req) if backend=='orchiddb' else adapter.setup(req)
    except Exception as e:result={'error':str(e),'adapter_error':True,'timeout':isinstance(e,TimeoutError)}
    print(json.dumps(result),flush=True)
  finally:adapter.close()

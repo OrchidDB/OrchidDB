@@ -162,5 +162,5 @@ planner, not as a database. Keep the graph schema and ontology mapping layers
 separate in diagrams and examples.
 
 The repository moved to `OrchidDB/OrchidDB` on 2026-09-25. The project is now
-OrchidDB, with the `orchiddb` Rust package and CLI. Historical conformance
-evidence and JVM/storage identifiers retain their original names.
+OrchidDB, with the `orchiddb` Rust package and CLI. JVM packages and storage identifiers use the project namespace. Historical
+evidence labels are normalized, with original provenance hashes retained.

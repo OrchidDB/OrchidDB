@@ -18,7 +18,7 @@ struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "crabgraph-writer-test-{}-{}",
+            "orchiddb-writer-test-{}-{}",
             std::process::id(),
             SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
@@ -251,10 +251,10 @@ fn empty_graph_export_is_valid_and_read_only_strategy_allows_export() {
     execute_rows(&plan, &graph).unwrap();
 }
 #[test]
-#[ignore = "requires pinned Java ImportGraph/ExportGraph classpath; run explicitly with CRABGRAPH_GREMLIN_IO_CLASSPATH"]
+#[ignore = "requires pinned Java ImportGraph/ExportGraph classpath; run explicitly with ORCHIDDB_GREMLIN_IO_CLASSPATH"]
 fn pinned_independent_readers_validate_all_six_default_and_explicit_writers() {
-    let classpath = std::env::var("CRABGRAPH_GREMLIN_IO_CLASSPATH").expect("codec classpath");
-    let java = std::env::var("CRABGRAPH_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
+    let classpath = std::env::var("ORCHIDDB_GREMLIN_IO_CLASSPATH").expect("codec classpath");
+    let java = std::env::var("ORCHIDDB_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
     let directory = Directory::new();
     for (format, extension) in [("graphson", "json"), ("gryo", "kryo"), ("graphml", "xml")] {
         for explicit in [false, true] {
@@ -273,7 +273,7 @@ fn pinned_independent_readers_validate_all_six_default_and_explicit_writers() {
                     "--add-opens=java.base/java.util=ALL-UNNAMED",
                     "-cp",
                     &classpath,
-                    "io.crabgraph.gremlin.codec.ImportGraph",
+                    "io.orchiddb.gremlin.codec.ImportGraph",
                     format,
                 ])
                 .arg(&file)
@@ -409,8 +409,8 @@ fn gryo_and_independent_graphson_reader_preserve_enabled_nulls() {
         .insert_edge("loop", &vertex, &vertex, BTreeMap::new())
         .unwrap();
     graph.set_gremlin_property(&edge, "n", Value::Null).unwrap();
-    let classpath = std::env::var("CRABGRAPH_GREMLIN_IO_CLASSPATH").expect("codec classpath");
-    let java = std::env::var("CRABGRAPH_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
+    let classpath = std::env::var("ORCHIDDB_GREMLIN_IO_CLASSPATH").expect("codec classpath");
+    let java = std::env::var("ORCHIDDB_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
     for (format, extension) in [("graphson", "json"), ("gryo", "kryo")] {
         let file = directory.path(&format!("nulls.{extension}"));
         query(&graph, &file, ".write()").unwrap();
@@ -421,7 +421,7 @@ fn gryo_and_independent_graphson_reader_preserve_enabled_nulls() {
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "io.crabgraph.gremlin.codec.ImportGraph",
+                "io.orchiddb.gremlin.codec.ImportGraph",
                 format,
             ])
             .arg(&file)
@@ -515,8 +515,8 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
             .set_vertex_property(&vertex, key, value, Cardinality::Single, BTreeMap::new())
             .unwrap();
     }
-    let classpath = std::env::var("CRABGRAPH_GREMLIN_IO_CLASSPATH").expect("codec classpath");
-    let java = std::env::var("CRABGRAPH_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
+    let classpath = std::env::var("ORCHIDDB_GREMLIN_IO_CLASSPATH").expect("codec classpath");
+    let java = std::env::var("ORCHIDDB_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
     for (format, extension) in [("graphson", "json"), ("gryo", "kryo")] {
         let file = directory.path(&format!("floats.{extension}"));
         query(&graph, &file, ".write()").unwrap();
@@ -527,7 +527,7 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "io.crabgraph.gremlin.codec.ImportGraph",
+                "io.orchiddb.gremlin.codec.ImportGraph",
                 format,
             ])
             .arg(&file)

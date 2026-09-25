@@ -2,7 +2,7 @@
 //!
 //! Base Arrow tables are encoded with the Arrow IPC stream format, which
 //! preserves the full schema (including per-field metadata such as
-//! `new_graph.value_type`) and every physical array type. The session
+//! `orchiddb.value_type`) and every physical array type. The session
 //! overlay — which lives in Rust-side maps rather than Arrow batches — is
 //! encoded with a self-describing binary format in which every value is
 //! prefixed by a tag so that each [`Value`] variant round-trips exactly.

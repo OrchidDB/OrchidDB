@@ -138,7 +138,7 @@ async fn durable_null_properties_survive_incremental_reopen_and_transaction_roll
         let column = result.returned.batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
         assert_eq!(column.value(0), expected, "{query}");
     }
-    let path = std::env::temp_dir().join(format!("crabgraph-null-{}-{}.duckdb", std::process::id(),
+    let path = std::env::temp_dir().join(format!("orchiddb-null-{}-{}.duckdb", std::process::id(),
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     {
         let mut engine = GraphEngine::open(&path).unwrap();

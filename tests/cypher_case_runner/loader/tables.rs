@@ -305,7 +305,7 @@ fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Fiel
                 .any(|value| value.contains("\\x") || value.contains("\\X"))
             {
                 field = field.with_metadata(HashMap::from([(
-                    "new_graph.value_type".to_string(),
+                    "orchiddb.value_type".to_string(),
                     "blob".to_string(),
                 )]));
             }
@@ -332,7 +332,7 @@ fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Fiel
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
             let field = Field::new(name, DataType::Utf8, true).with_metadata(HashMap::from([(
-                "new_graph.value_type".to_string(),
+                "orchiddb.value_type".to_string(),
                 "datetime".to_string(),
             )]));
             (field, Arc::new(StringArray::from(refs)) as ArrayRef)
@@ -370,7 +370,7 @@ fn build_column(name: &str, values: &[Option<String>], ty: &ColumnType) -> (Fiel
                 .collect();
             let refs: Vec<Option<&str>> = parsed.iter().map(|s| s.as_deref()).collect();
             let field = Field::new(name, DataType::Utf8, true).with_metadata(HashMap::from([(
-                "new_graph.value_type".to_string(),
+                "orchiddb.value_type".to_string(),
                 "value".to_string(),
             )]));
             (field, Arc::new(StringArray::from(refs)) as ArrayRef)

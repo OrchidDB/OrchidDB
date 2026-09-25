@@ -184,7 +184,7 @@ fn entries(value: &Value) -> IrResult<Vec<(Value, Value)>> {
         Value::Null => Ok(vec![]),
         Value::Map(map) => Ok(map
             .iter()
-            .filter(|(k, _)| !k.starts_with("__new_graph_"))
+            .filter(|(k, _)| !k.starts_with("__orchiddb_"))
             .map(|(k, v)| (Value::String(k.clone()), v.clone()))
             .collect()),
         Value::TypedMap(entries) => Ok(entries.clone()),

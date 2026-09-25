@@ -99,7 +99,7 @@ public final class JenaAdapter {
     }
 
     public static void main(String[] args) throws Exception {
-        Path directory = Files.createTempDirectory("crabgraph-conformance-jena-");
+        Path directory = Files.createTempDirectory("orchiddb-conformance-jena-");
         Dataset dataset = TDB2Factory.connectDataset(directory.toString());
         try (BufferedReader input = new BufferedReader(new InputStreamReader(System.in))) {
             for (String line; (line = input.readLine()) != null;) {

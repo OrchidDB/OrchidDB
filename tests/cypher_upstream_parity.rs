@@ -49,7 +49,7 @@ async fn null_slices_survive_sql_output_and_property_lists_stay_typed() {
     engine.cypher("CREATE (a {id: 7, xs: [2,3]}), (b {id: a.id, xs: [1,4]})").await.unwrap();
     let result = engine.cypher("MATCH (n) RETURN n.xs AS xs, n.id ORDER BY xs").await.unwrap();
     let schema = result.returned.batch.schema();
-    let native: serde_json::Value = serde_json::from_str(&schema.metadata()["crabgraph.cypher.typed_rows.v1"]).unwrap();
+    let native: serde_json::Value = serde_json::from_str(&schema.metadata()["orchiddb.cypher.typed_rows.v1"]).unwrap();
     assert_eq!(native[0][0]["type"], "list");
     assert_eq!(native[0][0]["value"][0]["value"], 1);
     assert_eq!(native[0][1]["value"], 7);
@@ -296,7 +296,7 @@ async fn upstream_keys_exposes_id_property_without_struct_metadata() {
         .cypher("CREATE (:TheLabel {id: 4611686018427387905})")
         .await
         .unwrap();
-    assert_eq!(rows(&mut engine, "MATCH (n:TheLabel) RETURN size(keys(n)), 'id' IN keys(n), '__new_graph_struct_order' IN keys(n)").await,
+    assert_eq!(rows(&mut engine, "MATCH (n:TheLabel) RETURN size(keys(n)), 'id' IN keys(n), '__orchiddb_struct_order' IN keys(n)").await,
         vec![vec!["1", "true", "false"]]);
 }
 

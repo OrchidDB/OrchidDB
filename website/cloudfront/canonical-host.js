@@ -1,14 +1,9 @@
 // CloudFront viewer-request function. Keep paths and search terms on old links.
 function handler(event) {
   var request = event.request;
-  var targets = {
-    'crabgraph.net': 'orchiddb.com',
-    'www.crabgraph.net': 'orchiddb.com',
-    'www.orchiddb.com': 'orchiddb.com',
-    'docs.crabgraph.net': 'docs.orchiddb.com'
-  };
-  var target = targets[request.headers.host.value.toLowerCase()];
-  if (!target) return request;
+  var host = request.headers.host.value.toLowerCase();
+  var target = host.indexOf('docs.') === 0 ? 'docs.orchiddb.com' : 'orchiddb.com';
+  if (host === target) return request;
   var params = [];
   var query = request.querystring;
   for (var key in query) {

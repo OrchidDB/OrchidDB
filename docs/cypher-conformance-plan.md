@@ -2,11 +2,11 @@
 
 ## Completion status — 2026-09-25
 
-The complete pinned openCypher 2024.3 run passes **3,897 / 3,897 scenarios** on revision `e2fbb4a`, with no skipped, failed, timed-out, or adapter-error scenarios. The [recorded results](../conformance/upstream-results/crabgraph-opencypher.json) include the source revision, executable hash, scenario hashes, assertions, and timings. Procedure fixtures use the upstream `GIVEN` definitions; result assertions and the scenario denominator are unchanged.
+The complete pinned openCypher 2024.3 run passes **3,897 / 3,897 scenarios** on revision `e2fbb4a`, with no skipped, failed, timed-out, or adapter-error scenarios. The [recorded results](../conformance/upstream-results/orchiddb-opencypher.json) include the source revision, executable hash, scenario hashes, assertions, and timings. Procedure fixtures use the upstream `GIVEN` definitions; result assertions and the scenario denominator are unchanged.
 
 Execution remains **Cypher → Graph IR → SQL IR DAG → DuckDB + DataFusion**. Language-specific validation and runtime contracts cover labels and identity, typed collections and temporal values, mutations, procedures, and error classifications. Predicate/value expression contexts are explicit; diagnostic strings do not select semantics. Mapped-write and storage regressions are checked locally alongside conformance.
 
-The same revision passes the complete **1,511 / 1,511 Gremlin scenarios**, with a single engine instance verified in the [Gremlin report](../conformance/upstream-results/crabgraph-tinkerpop.json). Both suites ran locally, sequentially, with unchanged deadlines. GitHub Actions publishes the committed static reports only.
+The same revision passes the complete **1,511 / 1,511 Gremlin scenarios**, with a single engine instance verified in the [Gremlin report](../conformance/upstream-results/orchiddb-tinkerpop.json). Both suites ran locally, sequentially, with unchanged deadlines. GitHub Actions publishes the committed static reports only.
 
 The sections below preserve the original architecture assessment and implementation priorities. Counts in the assessment describe the starting baseline.
 
@@ -49,7 +49,7 @@ Extend structured errors beyond the five current `CypherSemanticError` categorie
 
 ## Evidence and grouped scope
 
-Assessment date: 2026-09-24. Source: [recorded openCypher results](../conformance/upstream-results/crabgraph-opencypher.json), openCypher **2024.3**, pinned revision `677cbafabb8c3c5eed458fd3b1ec0daec8d67d23`.
+Assessment date: 2026-09-24. Source: [recorded openCypher results](../conformance/upstream-results/orchiddb-opencypher.json), openCypher **2024.3**, pinned revision `677cbafabb8c3c5eed458fd3b1ec0daec8d67d23`.
 
 The starting run had **1,908 / 3,897 passing (49.0%)** and **1,989 non-passing**: 1,639 failures, 300 adapter errors, 50 skipped procedure scenarios. Its build metadata identified `d2509ff` with a modified working tree. That was the checked-in evidence at assessment time, not a fresh measurement of then-current `ae16e5f`. No suite was run for the original assessment. The older Ladybug/Kuzu counts in `cypher_remaining_work.md` describe a different corpus.
 

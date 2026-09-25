@@ -7,7 +7,7 @@ impl Database {
     fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Self(std::env::temp_dir().join(format!(
-            "crabgraph-integrity-{}-{}-{}.duckdb",
+            "orchiddb-integrity-{}-{}-{}.duckdb",
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             std::time::SystemTime::now()
@@ -74,7 +74,7 @@ async fn corrupt_incremental_record_fails_open_instead_of_losing_data() {
     {
         let connection = duckdb::Connection::open(&database.0).unwrap();
         connection
-            .execute_batch("UPDATE __crabgraph_records SET payload = 'bad'::BLOB WHERE kind = 1")
+            .execute_batch("UPDATE __orchiddb_records SET payload = 'bad'::BLOB WHERE kind = 1")
             .unwrap();
     }
     assert!(GraphEngine::open(&database.0).is_err());
@@ -87,13 +87,13 @@ async fn future_storage_version_is_rejected_without_changing_it() {
     {
         let connection = duckdb::Connection::open(&database.0).unwrap();
         connection
-            .execute_batch("UPDATE __crabgraph_state SET format_version = 999")
+            .execute_batch("UPDATE __orchiddb_state SET format_version = 999")
             .unwrap();
     }
     assert!(GraphEngine::open(&database.0).is_err());
     let connection = duckdb::Connection::open(&database.0).unwrap();
     let version: i32 = connection
-        .query_row("SELECT format_version FROM __crabgraph_state", [], |r| {
+        .query_row("SELECT format_version FROM __orchiddb_state", [], |r| {
             r.get(0)
         })
         .unwrap();
@@ -105,17 +105,17 @@ async fn invalid_legacy_checkpoint_does_not_commit_a_schema_migration() {
     let database = Database::new();
     {
         let connection = duckdb::Connection::open(&database.0).unwrap();
-        connection.execute_batch("CREATE TABLE __crabgraph_state(singleton INTEGER PRIMARY KEY, format_version INTEGER, payload BLOB); INSERT INTO __crabgraph_state VALUES(1,1,'invalid'::BLOB)").unwrap();
+        connection.execute_batch("CREATE TABLE __orchiddb_state(singleton INTEGER PRIMARY KEY, format_version INTEGER, payload BLOB); INSERT INTO __orchiddb_state VALUES(1,1,'invalid'::BLOB)").unwrap();
     }
     assert!(GraphEngine::open(&database.0).is_err());
     let connection = duckdb::Connection::open(&database.0).unwrap();
     let version: i32 = connection
-        .query_row("SELECT format_version FROM __crabgraph_state", [], |row| {
+        .query_row("SELECT format_version FROM __orchiddb_state", [], |row| {
             row.get(0)
         })
         .unwrap();
     assert_eq!(version, 1);
-    let columns: i64 = connection.query_row("SELECT count(*) FROM information_schema.columns WHERE table_name = '__crabgraph_state' AND column_name = 'revision'", [], |row| row.get(0)).unwrap();
+    let columns: i64 = connection.query_row("SELECT count(*) FROM information_schema.columns WHERE table_name = '__orchiddb_state' AND column_name = 'revision'", [], |row| row.get(0)).unwrap();
     assert_eq!(columns, 0);
 }
 
@@ -130,7 +130,7 @@ async fn managed_and_sql_sessions_share_one_database_instance() {
         .connection()
         .unwrap()
         .query_row(
-            "SELECT count(*) FROM __crabgraph_records WHERE kind = 1",
+            "SELECT count(*) FROM __orchiddb_records WHERE kind = 1",
             [],
             |row| row.get(0),
         )
@@ -139,4 +139,40 @@ async fn managed_and_sql_sessions_share_one_database_instance() {
     sql.execute_batch("CREATE TABLE user_data(value BIGINT); INSERT INTO user_data VALUES(42)")
         .unwrap();
     assert_eq!(names(&mut engine).await, ["first", "second"]);
+}
+
+#[tokio::test]
+async fn opening_a_prior_namespace_preserves_checkpoint_and_incremental_records() {
+    let database = Database::new();
+    {
+        let mut engine = GraphEngine::open(&database.0).unwrap();
+        engine.cypher("CREATE (:P {name:'checkpoint'})").await.unwrap();
+        engine.checkpoint().unwrap();
+        engine.cypher("CREATE (:P {name:'incremental'})").await.unwrap();
+    }
+    {
+        let connection = duckdb::Connection::open(&database.0).unwrap();
+        connection.execute_batch("ALTER TABLE __orchiddb_state RENAME TO __previous_state; ALTER TABLE __orchiddb_records RENAME TO __previous_records").unwrap();
+    }
+    let mut engine = GraphEngine::open(&database.0).unwrap();
+    assert_eq!(names(&mut engine).await, ["checkpoint", "incremental"]);
+    engine.cypher("CREATE (:P {name:'new'})").await.unwrap();
+    drop(engine);
+    let mut reopened = GraphEngine::open(&database.0).unwrap();
+    assert_eq!(names(&mut reopened).await, ["checkpoint", "incremental", "new"]);
+}
+
+#[test]
+fn corrupt_prior_namespace_is_not_renamed_or_replaced() {
+    let database = Database::new();
+    {
+        let connection = duckdb::Connection::open(&database.0).unwrap();
+        connection.execute_batch("CREATE TABLE __previous_state(singleton INTEGER PRIMARY KEY, format_version INTEGER, payload BLOB); INSERT INTO __previous_state VALUES (1, 1, 'invalid'::BLOB)").unwrap();
+    }
+    assert!(GraphEngine::open(&database.0).is_err());
+    let connection = duckdb::Connection::open(&database.0).unwrap();
+    let count: i64 = connection.query_row("SELECT count(*) FROM information_schema.tables WHERE table_name = '__previous_state'", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+    let count: i64 = connection.query_row("SELECT count(*) FROM information_schema.tables WHERE table_name = '__orchiddb_state'", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 0);
 }

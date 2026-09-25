@@ -6,8 +6,8 @@ Build locally with Java 21:
 
 ```sh
 mvn -f jvm-codecs/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-export CRABGRAPH_GREMLIN_IO_JAVA=/path/to/java
-export CRABGRAPH_GREMLIN_IO_CLASSPATH="/path/to/jvm-codecs/target/classes:$(cat jvm-codecs/target/classpath.txt)"
+export ORCHIDDB_GREMLIN_IO_JAVA=/path/to/java
+export ORCHIDDB_GREMLIN_IO_CLASSPATH="/path/to/jvm-codecs/target/classes:$(cat jvm-codecs/target/classpath.txt)"
 ```
 
 Native `g.io(path).write()` creates a consistent native snapshot and atomically replaces the destination only after conversion succeeds. Its graph state is unchanged by exports. GraphSON preserves supported native numeric widths, exact BigInteger/BigDecimal values, public IDs, list/set/map values, vertex property cardinality and meta-properties. Gryo uses the pinned upstream serializer. GraphML supports single primitive properties, stringifies IDs and cannot preserve vertex property IDs, multi-properties or metadata; unsupported native exports fail explicitly rather than silently flattening data.

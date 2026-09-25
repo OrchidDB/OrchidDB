@@ -18,3 +18,5 @@ trademark; see https://duckdb.org/design/ for original artwork and guidelines.
 
 The source diagram shows external data exposed through DuckDB extensions and
 connections. It does not claim direct native execution against every database.
+
+Python, TypeScript, and Java artwork: [Devicon v2.17.0](https://github.com/devicons/devicon/tree/v2.17.0/icons), distributed under the [MIT license](https://github.com/devicons/devicon/blob/v2.17.0/LICENSE). Logos remain the property of their respective owners.

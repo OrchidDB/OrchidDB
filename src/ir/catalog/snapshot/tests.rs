@@ -188,7 +188,7 @@ fn roundtrip_full_graph() {
 #[test]
 fn roundtrip_preserves_field_metadata() {
     let field = Field::new("born", DataType::Utf8, true).with_metadata(HashMap::from([(
-        "new_graph.value_type".to_string(),
+        "orchiddb.value_type".to_string(),
         "datetime".to_string(),
     )]));
     let schema = Arc::new(Schema::new(vec![field]));

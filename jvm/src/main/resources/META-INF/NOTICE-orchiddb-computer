@@ -1,0 +1,8 @@
+OrchidMemory, OrchidWorkerMemory, OrchidMessageBoard, OrchidMessenger, OrchidMapEmitter, and
+OrchidReduceEmitter are adapted from Apache TinkerPop 3.7.4 (revision
+fa698ba2aba8967dcd17eb61cb13648b934fab5b), tinkergraph-gremlin module.
+Original Apache License 2.0 headers are retained. The implementation is a
+provider-independent single-process computer; it does not instantiate or
+execute against TinkerGraph. OrchidMessenger compares vertex identity by
+Element.equals instead of Java object identity, since native provider
+handles may be represented by different Java wrapper instances.

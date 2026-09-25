@@ -99,7 +99,7 @@ fn mixed_path_graph() -> PropertyGraph {
 
 fn union_property_graph() -> PropertyGraph {
     let field = Field::new("grade", DataType::Utf8, true).with_metadata(HashMap::from([(
-        "new_graph.value_type".to_string(),
+        "orchiddb.value_type".to_string(),
         "value".to_string(),
     )]));
     let values: ArrayRef = Arc::new(StringArray::from(vec![

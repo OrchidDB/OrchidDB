@@ -1,4 +1,4 @@
-name: crabgraph-conformance
+name: orchiddb-conformance
 services:
   postgres:
     image: postgres:15

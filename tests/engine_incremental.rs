@@ -4,8 +4,8 @@
 //! [`GraphEngine`].
 //!
 //! Format version 2 keeps the immutable checkpoint payload in
-//! `__crabgraph_state` (now alongside a monotonic `revision BIGINT`) and
-//! layers ordinary CREATE/SET/DELETE writes into `__crabgraph_records`
+//! `__orchiddb_state` (now alongside a monotonic `revision BIGINT`) and
+//! layers ordinary CREATE/SET/DELETE writes into `__orchiddb_records`
 //! `(kind, name, id, payload)`. Only `checkpoint()` and `replace_graph()`
 //! rewrite the checkpoint payload. `kind` is 1 for nodes, 2 for edges,
 //! 3 for node metadata, and 4 for edge metadata.
@@ -39,7 +39,7 @@ fn rows(result: QueryResult) -> Vec<String> {
 
 fn path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "crabgraph-incremental-{name}-{}-{}.duckdb",
+        "orchiddb-incremental-{name}-{}-{}.duckdb",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -81,7 +81,7 @@ async fn batched_delta_upserts_preserve_updates_rollback_and_reopen() {
 fn read_state(conn: &Connection) -> (i32, Option<i64>, Vec<u8>) {
     let state: (i32, Option<i64>, Vec<u8>) = conn
         .query_row(
-            "SELECT format_version, revision, payload FROM __crabgraph_state WHERE singleton = 1",
+            "SELECT format_version, revision, payload FROM __orchiddb_state WHERE singleton = 1",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -92,7 +92,7 @@ fn read_state(conn: &Connection) -> (i32, Option<i64>, Vec<u8>) {
 /// Read every overlay record, ordered by its primary key.
 fn read_records(conn: &Connection) -> Vec<(i32, String, i64, Vec<u8>)> {
     let mut stmt = conn
-        .prepare("SELECT kind, name, id, payload FROM __crabgraph_records ORDER BY kind, name, id")
+        .prepare("SELECT kind, name, id, payload FROM __orchiddb_records ORDER BY kind, name, id")
         .unwrap();
     let mapped = stmt
         .query_map([], |row| {
@@ -335,13 +335,13 @@ async fn legacy_format1_database_is_migrated_preserving_payload() {
     {
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
-            "CREATE TABLE __crabgraph_state (\
+            "CREATE TABLE __orchiddb_state (\
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1), \
              format_version INTEGER NOT NULL, payload BLOB NOT NULL)",
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO __crabgraph_state VALUES (1, 1, ?)",
+            "INSERT INTO __orchiddb_state VALUES (1, 1, ?)",
             params![payload],
         )
         .unwrap();
@@ -367,7 +367,7 @@ async fn legacy_format1_database_is_migrated_preserving_payload() {
             "migration must preserve the checkpoint payload"
         );
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM __crabgraph_records", [], |row| {
+            .query_row("SELECT COUNT(*) FROM __orchiddb_records", [], |row| {
                 row.get(0)
             })
             .unwrap();
@@ -404,7 +404,7 @@ async fn replace_graph_is_transactional_and_clears_records() {
     {
         let conn = Connection::open(&path).unwrap();
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM __crabgraph_records", [], |row| {
+            .query_row("SELECT COUNT(*) FROM __orchiddb_records", [], |row| {
                 row.get(0)
             })
             .unwrap();
@@ -452,7 +452,7 @@ async fn checkpoint_preserves_id_allocation_and_deleted_gaps() {
     {
         let conn = Connection::open(&path).unwrap();
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM __crabgraph_records", [], |row| {
+            .query_row("SELECT COUNT(*) FROM __orchiddb_records", [], |row| {
                 row.get(0)
             })
             .unwrap();

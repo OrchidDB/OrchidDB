@@ -99,9 +99,9 @@ pub(crate) fn finalize_return(
     if gremlin_elements || expand_elements {
         schema.metadata.insert(
             if gremlin_elements {
-                "crabgraph.gremlin.typed_columns.v1"
+                "orchiddb.gremlin.typed_columns.v1"
             } else {
-                "crabgraph.cypher.typed_columns.v1"
+                "orchiddb.cypher.typed_columns.v1"
             }
             .into(),
             serde_json::to_string(fields)
@@ -119,9 +119,9 @@ pub(crate) fn finalize_return(
             .collect();
         schema.metadata.insert(
             if gremlin_elements {
-                "crabgraph.gremlin.typed_rows.v1"
+                "orchiddb.gremlin.typed_rows.v1"
             } else {
-                "crabgraph.cypher.typed_rows.v1"
+                "orchiddb.cypher.typed_rows.v1"
             }
             .into(),
             serde_json::to_string(&typed_rows)
@@ -1060,7 +1060,7 @@ mod typed_transport_tests {
         .unwrap();
         let metadata = returned.batch.schema();
         let rows: serde_json::Value =
-            serde_json::from_str(&metadata.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&metadata.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
         assert_eq!(rows[0][0]["value"][0]["type"], "int");
         assert_eq!(rows[0][0]["value"][1]["type"], "long");
         assert_eq!(rows[0][0]["value"][2]["type"], "string");
@@ -1111,7 +1111,7 @@ mod traverser_bulk_tests {
             vec![row.clone()], &graph, &GraphPlanPolicy::gremlin()).unwrap();
         assert_eq!(returned.batch.num_rows(), 3);
         let native: serde_json::Value = serde_json::from_str(
-            &returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]
+            &returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"]
         ).unwrap();
         assert_eq!(native.as_array().unwrap().len(), 3);
         let returned = finalize_return(&["current".into()], ResultForm::RowSet,

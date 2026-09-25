@@ -110,7 +110,7 @@ async fn production_gremlin_distinct_and_existence_keep_bulk_and_duplicates() {
     ] {
         let result = engine.gremlin(query).await.unwrap();
         let rows: serde_json::Value = serde_json::from_str(
-            &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+            &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
         )
         .unwrap();
         assert_eq!(rows[0][0]["value"], expected, "{query}");

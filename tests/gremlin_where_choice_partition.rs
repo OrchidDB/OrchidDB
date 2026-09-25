@@ -107,7 +107,7 @@ async fn mixed_choice_preserves_native_integer_and_string_types() {
     engine.replace_graph(dataset::modern_graph()).unwrap();
     let result = engine.gremlin("g.V().choose(__.out().count()).option(2L,__.values('name')).option(3L,__.values('age'))").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 2, "{rows}");

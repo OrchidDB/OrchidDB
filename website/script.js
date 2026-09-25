@@ -23,3 +23,31 @@ if (menu && navigation) {
     if (event.target.closest('a')) closeMenu();
   });
 }
+
+const installOptions = document.querySelector('.install-options');
+if (installOptions) {
+  const buttons = [...installOptions.querySelectorAll('[data-install]')];
+  const choose = name => {
+    buttons.forEach(button => {
+      const selected = button.dataset.install === name;
+      button.setAttribute('aria-pressed', String(selected));
+      document.getElementById('install-' + button.dataset.install).hidden = !selected;
+    });
+    document.querySelector('.copy-status').textContent = '';
+  };
+  installOptions.hidden = false;
+  buttons.forEach(button => button.addEventListener('click', () => choose(button.dataset.install)));
+  choose('cli');
+  document.querySelectorAll('.copy-install').forEach(button => {
+    button.hidden = false;
+    button.addEventListener('click', async () => {
+      const code = document.getElementById(button.dataset.copy).querySelector('pre code').textContent;
+      try {
+        await navigator.clipboard.writeText(code);
+        document.querySelector('.copy-status').textContent = 'Command copied.';
+      } catch {
+        document.querySelector('.copy-status').textContent = 'Select the command above to copy it.';
+      }
+    });
+  });
+}

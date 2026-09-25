@@ -1,7 +1,7 @@
 {
   "cypher.trail": {
     "state": "Documented dialect difference; other deviations need review",
-    "note": "The expectation uses relationship uniqueness within one MATCH. Ladybug documents walk semantics by default. An extra match under that dialect is not automatically a defect. Crabgraph deviations still need an explicit semantic decision.",
+    "note": "The expectation uses relationship uniqueness within one MATCH. Ladybug documents walk semantics by default. An extra match under that dialect is not automatically a defect. OrchidDB deviations still need an explicit semantic decision.",
     "source": "https://docs.ladybugdb.com/cypher/difference/"
   },
   "cypher.labels": {

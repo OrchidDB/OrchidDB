@@ -34,7 +34,7 @@ pub(super) fn prepare_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDialect) -
                     if select.from.is_empty() {
                         select.projection.push(ast::SelectItem::ExprWithAlias {
                             expr: ast::Expr::Value(ast::Value::Number("1".into(), false).into()),
-                            alias: ast::Ident::new("__crabgraph_unit"),
+                            alias: ast::Ident::new("__orchiddb_unit"),
                         });
                     } else {
                         select.projection.push(ast::SelectItem::Wildcard(Default::default()));

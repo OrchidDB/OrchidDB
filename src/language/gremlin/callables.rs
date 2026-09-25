@@ -144,13 +144,13 @@ pub(crate) fn prepare(
                     )));
                 }
                 let mut index = values.len();
-                let mut temporary = format!("__crabgraph_parameter_{index}");
+                let mut temporary = format!("__orchiddb_parameter_{index}");
                 while bindings.contains_key(&temporary)
                     || values.contains_key(&temporary)
                     || input.contains(&temporary)
                 {
                     index += 1;
-                    temporary = format!("__crabgraph_parameter_{index}");
+                    temporary = format!("__orchiddb_parameter_{index}");
                 }
                 values.insert(temporary.clone(), value.clone());
                 substitutions.insert(
@@ -197,7 +197,7 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
                 let body = body.trim();
                 let closure = if body.starts_with('{') { body.to_string() } else { format!("{{{body}}}") };
                 let script = format!("({closure}).call(__sack,current)");
-                output.push(format!("call('crabgraph.jvm.sack',['script':{}])",serde_json::to_string(&script).unwrap()));
+                output.push(format!("call('orchiddb.jvm.sack',['script':{}])",serde_json::to_string(&script).unwrap()));
                 i += 4;
                 continue;
             }
@@ -247,9 +247,9 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let bound=format!(",'bindings':['__crabgraph_traverser_priors':{}{}{}]",traverser_priors || !stack.is_empty(),if values.is_empty(){""}else{","},values);
+            let bound=format!(",'bindings':['__orchiddb_traverser_priors':{}{}{}]",traverser_priors || !stack.is_empty(),if values.is_empty(){""}else{","},values);
             output.push(format!(
-                "call('crabgraph.jvm.computer',['script':{}{bound}])",
+                "call('orchiddb.jvm.computer',['script':{}{bound}])",
                 serde_json::to_string(&script).unwrap()
             ));
             i = end;
@@ -297,7 +297,7 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
                             options += &format!(",'key':{}", serde_json::to_string(&key).unwrap());
                         }
                         output.push(format!(
-                            "by(__.call('crabgraph.jvm.comparator',[{options}]))"
+                            "by(__.call('orchiddb.jvm.comparator',[{options}]))"
                         ));
                         i = end + 1;
                         continue;
@@ -330,9 +330,9 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
         if let Some(body) = callable {
             let method = stack.last().map(String::as_str).unwrap_or("");
             let (mode, argument) = match method {
-                "map" | "branch" => ("map", "__crabgraph_traverser"),
-                "flatMap" => ("flatMap", "__crabgraph_traverser"),
-                "filter" | "until" | "emit" => ("filter", "__crabgraph_traverser"),
+                "map" | "branch" => ("map", "__orchiddb_traverser"),
+                "flatMap" => ("flatMap", "__orchiddb_traverser"),
+                "filter" | "until" | "emit" => ("filter", "__orchiddb_traverser"),
                 "choose" => ("filter", "current"),
                 "by" => ("map", "current"),
                 _ => {
@@ -358,7 +358,7 @@ pub(crate) fn lower(input: &str, bindings: &HashMap<String, GremlinBinding>) -> 
             // The original callback is encoded as a string argument. It cannot
             // introduce syntax into the surrounding traversal.
             output.push(format!(
-                "__.call('crabgraph.jvm', ['script':{},'mode':'{mode}'])",
+                "__.call('orchiddb.jvm', ['script':{},'mode':'{mode}'])",
                 serde_json::to_string(&script).unwrap()
             ));
         } else {
@@ -416,7 +416,7 @@ mod tests {
         .unwrap();
         assert!(text.contains("'callback'"));
         assert!(text.contains("'Lambda.function(42)'"));
-        assert!(text.contains("__crabgraph_traverser"));
+        assert!(text.contains("__orchiddb_traverser"));
         super::super::parse_traversal(&text).unwrap();
     }
     #[test]

@@ -710,7 +710,7 @@ fn value_column(
             };
             if let Some(value_type) = value_type {
                 field = field.with_metadata(HashMap::from([(
-                    "new_graph.value_type".to_string(),
+                    "orchiddb.value_type".to_string(),
                     value_type.to_string(),
                 )]));
             }

@@ -57,7 +57,7 @@ These changes address shared causes rather than adding one-off scenario handling
 
 This plan covers **all 112 currently failing Gremlin cases: 108 failures and 4 timeouts**, not only cases that SQLg or PuppyGraph pass. It also inventories **all 106 skipped cases** separately. The 1,511-case pinned TinkerPop suite currently records **1,293 passes**. A skip is not a pass or proof that an engine operation is broken.
 
-- Result artifact: [crabgraph-tinkerpop.json](../conformance/upstream-results/crabgraph-tinkerpop.json).
+- Result artifact: [orchiddb-tinkerpop.json](../conformance/upstream-results/orchiddb-tinkerpop.json).
 - Scenario catalog, exact fixture setup, parameters and assertions: [catalog.json](../conformance/upstream/catalog.json).
 - Upstream: Apache TinkerPop **3.7.4**, revision `fa698ba2aba8967dcd17eb61cb13648b934fab5b`.
 - Recorded local sweep: **2026-09-24 06:07:00–06:10:00 UTC**, with three subsequent fresh-process fixture replays retained in `attempts`.

@@ -20,7 +20,7 @@ Keep configuration near engine construction so applications can see the persiste
 
 | Variable | Purpose |
 | --- | --- |
-| `NEW_GRAPH_INTERPRETER_MAX_STEPS` | Set an operation budget for graph interpreter execution. |
+| `ORCHIDDB_INTERPRETER_MAX_STEPS` | Set an operation budget for graph interpreter execution. |
 | `GRAPH_PG_URL` | Connection URL for PostgreSQL executor entry points that load configuration from the environment. |
 | `RUST_MIN_STACK` | Rust thread stack size; the repository's integration CI uses `16777216`. |
 

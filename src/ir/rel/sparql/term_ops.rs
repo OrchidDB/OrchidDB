@@ -181,7 +181,7 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
     let both_datetime = a
         .has_datatype(&xsd("dateTime"))
         .and(b.has_datatype(&xsd("dateTime")));
-    let temporal = |operation: &str| duck_str("__crabgraph_sparql_scalar", vec![
+    let temporal = |operation: &str| duck_str("__orchiddb_sparql_scalar", vec![
         s(operation), a.value.clone(), b.value.clone(),
         s(match op { BinaryOp::Eq => "eq", BinaryOp::Neq => "ne",
             BinaryOp::Lt => "lt", BinaryOp::Lte => "le", BinaryOp::Gt => "gt", _ => "ge" }), s("")
@@ -230,7 +230,7 @@ pub(super) fn arithmetic(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> RelRes
     }
     let zero_divisor = try_cast(b.value.clone(), DataType::Float64).eq(lit(0.0_f64));
     let decimal = if op == BinaryOp::Div {
-        duck_str("__crabgraph_sparql_scalar", vec![s("decimal_divide"),
+        duck_str("__orchiddb_sparql_scalar", vec![s("decimal_divide"),
             a.value.clone(), b.value.clone(), s(""), s("")])
     } else if op == BinaryOp::Mul {
         decimal_lexical(numeric_operands(Some(op), a, b, DataType::Decimal128(38, 9)))
@@ -288,7 +288,7 @@ pub(super) fn xsd_cast(target: &str, a: &Term) -> RelResult<Term> {
         )
     };
     Ok(match target {
-        "string" => Term::string(duck_str("__crabgraph_sparql_scalar", vec![
+        "string" => Term::string(duck_str("__orchiddb_sparql_scalar", vec![
             s("cast_string"), value, duck_str("coalesce", vec![a.dt.clone(), s("")]), s(""), s("")
         ])).only_if(
             a.kind

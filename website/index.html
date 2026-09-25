@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Graph queries in Rust | OrchidDB</title>
-  <meta name="description" content="OrchidDB is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
+  <title>Embedded graph queries over your data lake | OrchidDB</title>
+  <meta name="description" content="OrchidDB is an embedded graph engine for querying relationships over your data lake. Map tables to a graph and query with Cypher, Gremlin, or SPARQL.">
   <meta name="theme-color" content="#ffffff">
-  <meta property="og:title" content="Graph queries in Rust | OrchidDB">
-  <meta property="og:description" content="OrchidDB is an embedded graph query engine written in Rust. Explore the project, read the guides, and get involved.">
+  <meta property="og:title" content="Embedded graph queries over your data lake | OrchidDB">
+  <meta property="og:description" content="OrchidDB is an embedded graph engine for querying relationships over your data lake. Map tables to a graph and query with Cypher, Gremlin, or SPARQL.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://orchiddb.com/">
   <meta property="og:image" content="https://orchiddb.com/og.png">
@@ -36,29 +36,29 @@
   <div class="hero-content">
     <h1 id="project-title">OrchidDB</h1>
     <p class="tagline">An embedded graph query engine written in Rust</p>
-    <p>Query connected data with Cypher, Gremlin, and SPARQL. OrchidDB maps nodes and relationships to your tables and runs graph queries using DuckDB and DataFusion.</p>
-    <div class="actions"><a class="button" href="https://docs.orchiddb.com/quickstart.html">Quickstart <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a></div>
+    <p>Graph queries over your data lake. Map tables to nodes and relationships, then explore them with Cypher, Gremlin, and SPARQL. Keep your data in place and your engine inside your application.</p>
+    <div class="actions"><a class="button" href="#install">Install OrchidDB <span aria-hidden="true">↗</span></a><a class="button" href="/community.html#slack">Slack <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/OrchidDB/OrchidDB">GitHub <span aria-hidden="true">↗</span></a></div>
   </div>
 </section>
 <section class="home-section" id="about" aria-labelledby="about-title">
   <h2 id="about-title">About the Project</h2>
-  <p>OrchidDB is an embedded graph engine. Use it from a Rust application or the command line to explore relationships in your data. You can create a graph managed by OrchidDB or map a graph onto existing relational tables and views.</p>
+  <p>OrchidDB brings graph queries to your data lake. Map the tables you already own to nodes, relationships, and properties. An embedded Rust engine plans and executes the query in your application, using DuckDB to access the mapped data.</p>
   <div class="technology-logos" aria-label="Built with Rust, DuckDB, Apache DataFusion, and Apache Arrow">
     <a href="https://rust-lang.org/" class="rust-logo"><img src="/assets/logos/rust.svg" alt="" width="48" height="48"><span>Rust</span></a>
     <a href="https://duckdb.org/"><img src="/assets/logos/duckdb.svg" alt="DuckDB" width="138" height="40"></a>
     <a href="https://datafusion.apache.org/"><img src="/assets/logos/datafusion.svg" alt="Apache DataFusion" width="166" height="40"></a>
     <a href="https://arrow.apache.org/"><img src="/assets/logos/arrow.png" alt="Apache Arrow" width="138" height="72"></a>
   </div>
-  <figure class="architecture" aria-label="Cypher, Gremlin, and SPARQL feed a shared graph plan, executed with DuckDB and DataFusion, returning Arrow results.">
+  <figure class="architecture" aria-label="Cypher, Gremlin, and SPARQL feed a shared graph plan, executed with DuckDB and DataFusion over mapped data. Iceberg is accessed through the DuckDB extension.">
     <div class="language-row"><span>Cypher</span><span>Gremlin</span><span>SPARQL</span></div>
     <div class="flow-arrow" aria-hidden="true">↓</div>
     <div class="flow-box">Shared graph plan <small>Graph IR → SQL IR</small></div>
     <div class="flow-arrow" aria-hidden="true">↓</div>
     <div class="engine-row"><span>DuckDB <small>SQL execution</small></span><span>DataFusion <small>Remaining execution stages</small></span></div>
-    <div class="flow-arrow" aria-hidden="true">↓</div>
-    <div class="flow-box result-box">Apache Arrow results</div>
+    <div class="flow-arrow" aria-hidden="true">↕</div>
+    <div class="flow-box result-box lake-box"><img src="/assets/logos/iceberg.svg" alt="" width="112" height="32"><span>Iceberg Data Lake<small>Mapped tables · via DuckDB</small></span></div>
   </figure>
-  <p>The three query languages share a planning pipeline. Relational parts of a query become SQL; DataFusion executes the remaining stages. Results are returned as Arrow record batches.</p>
+  <p>The three query languages share Graph IR and SQL IR. DuckDB reads mapped tables; DataFusion handles the remaining execution stages. Iceberg access uses the DuckDB extension and your catalog configuration. Query results return as Arrow record batches.</p>
   <p>OrchidDB is a prototype. Read the documentation and recorded conformance results for the current behavior and limitations.</p>
   <div class="actions"><a class="button" href="https://docs.orchiddb.com/rust-api.html">Read the Rust API <span aria-hidden="true">↗</span></a><a class="button" href="https://docs.orchiddb.com/execution.html">Read the architecture <span aria-hidden="true">↗</span></a></div>
 </section>
@@ -124,27 +124,49 @@ RETURN a.name, b.name</code></pre>
     <a href="https://docs.orchiddb.com/mapped-graphs.html">Define your first mapping →</a>
   </div>
   <div class="usage-example" id="in-your-application">
-    <h3>A graph engine inside your application</h3>
-    <p>Use OrchidDB in a service, an analysis tool, or a command-line workflow. Your code asks a graph question; OrchidDB plans and executes it, then returns Arrow results.</p>
-    <figure class="application-diagram" aria-labelledby="application-diagram-caption">
-      <div class="application-boundary">
-        <div class="application-label"><img src="/assets/logos/rust.svg" alt="" width="30" height="30" loading="lazy"><span>Your Rust application <small>Service · analysis tool · CLI</small></span></div>
-        <div class="application-flow">
-          <div class="application-input"><span class="code-symbol" aria-hidden="true">&lt;/&gt;</span><strong>Your code</strong><small>Cypher · Gremlin · SPARQL</small></div>
-          <div class="diagram-arrow" aria-hidden="true">→</div>
-          <div class="embedded-engine"><span class="engine-orchid" aria-hidden="true">🌸</span><strong>OrchidDB</strong><small>Mapping · planning · execution</small></div>
-          <div class="diagram-arrow" aria-hidden="true">→</div>
-          <div class="application-output"><img src="/assets/logos/arrow.png" alt="Apache Arrow" width="144" height="75" loading="lazy"><strong>Results for your code</strong><small>Rows, columns, and record batches</small></div>
-        </div>
-        <div class="execution-foundation">
-          <div><img src="/assets/logos/duckdb.svg" alt="DuckDB" width="116" height="34" loading="lazy"><small>Executes SQL regions</small></div>
-          <div><img src="/assets/logos/datafusion.svg" alt="Apache DataFusion" width="162" height="34" loading="lazy"><small>Executes remaining stages</small></div>
-        </div>
-      </div>
-      <figcaption id="application-diagram-caption">OrchidDB is the graph query layer between your application and your data.<br>Embed the library in your process, or use the CLI to explore a graph.</figcaption>
+    <h3>Works with your stack</h3>
+    <p>One embedded engine, a shared client API design. Open a graph, define its mapping, and execute queries from your application.</p>
+    <div class="client-languages" aria-label="Client API design: Rust, Python, JavaScript/TypeScript, and Java">
+      <div><img src="/assets/logos/rust.svg" alt="" width="44" height="44"><strong>Rust</strong><span>Native applications</span></div>
+      <div><img src="/assets/logos/python.svg" alt="" width="44" height="44"><strong>Python</strong><span>Notebooks and data tools</span></div>
+      <div><img src="/assets/logos/typescript.svg" alt="" width="44" height="44"><strong>JavaScript / TypeScript</strong><span>Node.js applications</span></div>
+      <div><img src="/assets/logos/java.svg" alt="" width="44" height="44"><strong>Java</strong><span>JVM applications</span></div>
+    </div>
+    <figure class="client-flow" aria-label="Your application uses the client API to query OrchidDB over mapped lake tables">
+      <span>Your application<small>Services · notebooks · data tools</small></span><b aria-hidden="true">→</b>
+      <span>Client API<small>Open · map · query</small></span><b aria-hidden="true">→</b>
+      <span>OrchidDB<small>Embedded graph execution</small></span>
     </figure>
-    <a href="https://docs.orchiddb.com/rust-api.html">Embed OrchidDB in Rust →</a>
+    <p>Keep graph logic in your application and return tabular results to the rest of your stack.</p>
+    <a href="https://docs.orchiddb.com/client-apis.html">Explore the client API design →</a>
   </div>
+</section>
+<section class="home-section install-section" id="install" aria-labelledby="install-title">
+  <h2 id="install-title">Install OrchidDB</h2>
+  <p>Run graph queries from your terminal or embed the Rust library in your application.</p>
+  <div class="install-options" aria-label="Choose an installation method" hidden>
+    <button type="button" data-install="cli" aria-pressed="true" aria-controls="install-cli">Command line</button>
+    <button type="button" data-install="rust" aria-pressed="false" aria-controls="install-rust">Rust</button>
+  </div>
+  <div class="install-panel" id="install-cli">
+    <h3>Command line</h3>
+    <p>Build and install from GitHub with Cargo.</p>
+    <pre><code>cargo install --locked --git https://github.com/OrchidDB/OrchidDB --bin orchiddb</code></pre>
+    <button type="button" class="copy-install" data-copy="install-cli" hidden>Copy command</button>
+    <p class="install-note">Linux · macOS · Windows. Requires Rust and a C/C++ build toolchain. DuckDB is bundled during the build.</p>
+    <p>Then run your first query:</p>
+    <pre><code>orchiddb --query 'RETURN 1 AS value'</code></pre>
+  </div>
+  <div class="install-panel" id="install-rust">
+    <h3>Rust library</h3>
+    <p>Add OrchidDB to your Cargo project from source.</p>
+    <pre><code>cargo add orchiddb --git https://github.com/OrchidDB/OrchidDB</code></pre>
+    <button type="button" class="copy-install" data-copy="install-rust" hidden>Copy command</button>
+    <p class="install-note">The default build includes DuckDB. See the Rust guide for runtime and Arrow dependencies.</p>
+    <a href="https://docs.orchiddb.com/rust-api.html">Rust API guide →</a>
+  </div>
+  <p class="copy-status" role="status" aria-live="polite"></p>
+  <a href="https://docs.orchiddb.com/installation.html">Full installation guide →</a>
 </section>
 <section class="home-section participate" id="participate" aria-labelledby="participate-title">
   <h2 id="participate-title">How to Participate</h2>

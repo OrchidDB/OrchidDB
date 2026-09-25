@@ -55,7 +55,7 @@ def dataset_equal(actual, expected):
             statement = BNode()
             for index, value in enumerate(quad):
                 if value is not None:
-                    graph.add((statement, URIRef('urn:crabgraph:assertion:quad:' + str(index)), fromterm(value)))
+                    graph.add((statement, URIRef('urn:orchiddb:assertion:quad:' + str(index)), fromterm(value)))
         return graph
     return isomorphic(reify(actual), reify(expected))
 

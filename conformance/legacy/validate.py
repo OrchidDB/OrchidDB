@@ -6,7 +6,7 @@ from catalog import TESTS
 ROOT=Path(__file__).resolve().parent
 expected={t['id']:t for t in TESTS}
 assert len(expected)==len(TESTS)
-for product,languages in {'crabgraph':{'cypher','gremlin','sparql'},'ladybug':{'cypher'},'neo4j':{'cypher'},'puppygraph':{'cypher','gremlin'},'sqlg':{'gremlin'},'reference':{'gremlin'}}.items():
+for product,languages in {'orchiddb':{'cypher','gremlin','sparql'},'ladybug':{'cypher'},'neo4j':{'cypher'},'puppygraph':{'cypher','gremlin'},'sqlg':{'gremlin'},'reference':{'gremlin'}}.items():
  d=json.loads((ROOT/f'results/{product}.json').read_text());rows=d['results']
  assert len({r['id'] for r in rows})==len(rows),(product,'duplicate results')
  assert {r['id'] for r in rows}=={t['id'] for t in TESTS if t['language'] in languages},(product,'missing results')

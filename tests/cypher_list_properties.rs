@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 fn graph(values: Vec<Value>) -> PropertyGraph {
     let field = Field::new("items", DataType::Utf8, true).with_metadata(HashMap::from([(
-        "new_graph.value_type".into(),
+        "orchiddb.value_type".into(),
         "value".into(),
     )]));
     let values: ArrayRef = Arc::new(StringArray::from(

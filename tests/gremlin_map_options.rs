@@ -243,7 +243,7 @@ async fn multi_key_values_preserve_native_types_through_graph_engine() {
     let rows: serde_json::Value = serde_json::from_str(
         schema
             .metadata()
-            .get("crabgraph.gremlin.typed_rows.v1")
+            .get("orchiddb.gremlin.typed_rows.v1")
             .expect("native typed rows"),
     )
     .unwrap();

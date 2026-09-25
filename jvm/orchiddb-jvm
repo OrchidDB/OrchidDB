@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+module_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+java_command=${JAVA_HOME:+$JAVA_HOME/bin/}java
+exec "$java_command" -cp "$module_dir/target/orchiddb-jvm-0.1.0.jar:$(cat "$module_dir/classpath.txt")" io.orchiddb.gremlin.OrchidJvm "$@"

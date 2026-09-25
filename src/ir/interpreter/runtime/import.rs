@@ -281,8 +281,8 @@ pub(crate) fn read(graph: &PropertyGraph, path: &str, reader: &str) -> IrResult<
     let bytes = match reader {
         "graphson" => std::fs::read(path).map_err(|e| error(format!("Cannot read {path}: {e}")))?,
         "graphml" | "gryo" => {
-            let classpath = std::env::var("CRABGRAPH_GREMLIN_IO_CLASSPATH").map_err(|_|error("GraphML/Gryo require CRABGRAPH_GREMLIN_IO_CLASSPATH pointing to the TinkerPop ImportGraph codec"))?;
-            let java = std::env::var("CRABGRAPH_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
+            let classpath = std::env::var("ORCHIDDB_GREMLIN_IO_CLASSPATH").map_err(|_|error("GraphML/Gryo require ORCHIDDB_GREMLIN_IO_CLASSPATH pointing to the TinkerPop ImportGraph codec"))?;
+            let java = std::env::var("ORCHIDDB_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
             let output = Command::new(java)
                 .args([
                     "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
@@ -290,7 +290,7 @@ pub(crate) fn read(graph: &PropertyGraph, path: &str, reader: &str) -> IrResult<
                     "--add-opens=java.base/java.util=ALL-UNNAMED",
                     "-cp",
                     &classpath,
-                    "io.crabgraph.gremlin.codec.ImportGraph",
+                    "io.orchiddb.gremlin.codec.ImportGraph",
                     reader,
                     path,
                 ])

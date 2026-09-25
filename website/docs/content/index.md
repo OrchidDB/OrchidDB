@@ -1,6 +1,6 @@
 # Introduction
 
-Bring graph queries to your data. Learn to map relational tables, query with three graph languages, and embed OrchidDB in a Rust application.
+Bring embedded graph queries to your data lake. Learn to map relational tables, query with three graph languages, and embed OrchidDB in a Rust application.
 
 ## Start with your data
 
@@ -18,6 +18,7 @@ A graph mapping connects your application vocabulary to physical columns. A cust
 | Query with an RDF vocabulary | [SPARQL](sparql.md) |
 | Connect existing quad tables | [RDF datasets](rdf.md) |
 | Embed the engine in Rust | [Rust API](rust-api.md) |
+| Explore language integrations | [Client APIs](client-apis.md) |
 
 ## Three languages, one graph
 

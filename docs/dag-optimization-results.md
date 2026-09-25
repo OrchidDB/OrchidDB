@@ -40,7 +40,7 @@ Intermediate runs exposed an invalid generated window frame and a deadline-sensi
 - Read in-memory Arrow sources directly during SQL preparation; reuse one DataFusion context for other providers.
 - Reuse one query-scoped DataFusion state during logical and physical planning.
 - Avoid copying single-batch results and allocating debug strings during scan-cache hashing.
-- Add opt-in `CRABGRAPH_PROFILE_DAG=1` diagnostics for preparation, physical planning, and execution time.
+- Add opt-in `ORCHIDDB_PROFILE_DAG=1` diagnostics for preparation, physical planning, and execution time.
 - Show summed passed-scenario runtime for OrchidDB only on the existing leaderboard. Other statuses do not contribute.
 
 ## Earlier diagnostic benchmark

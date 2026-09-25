@@ -230,14 +230,14 @@ async fn scalar_element_strings_keep_public_ids_across_sql_boundaries() {
     engine.gremlin("g.addV('x').property(T.id,'left').as('a').addV('y').property(T.id,'right').addE('route').from('a').property(T.id,'link')").await.unwrap();
     let vertices = engine.gremlin("g.V().asString()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &vertices.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &vertices.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], "v[left]");
     assert_eq!(rows[1][0]["value"], "v[right]");
     let edges = engine.gremlin("g.E().asString()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &edges.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &edges.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], "e[link][left-route->right]");

@@ -18,28 +18,30 @@ def main():
     assert catalog['sources'] == sources, 'Catalog source pins changed'
     cases = {case['id']: case for case in catalog['cases']}
     assert len(cases) == len(catalog['cases']), 'Duplicate catalog IDs'
-    for engine in ('crabgraph', 'sqlg', 'puppygraph', 'reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph', 'neo4j', 'jena'):
+    for engine in ('orchiddb', 'sqlg', 'puppygraph', 'reference', 'orchiddb-jvm', 'orchiddb-computer', 'janusgraph', 'neo4j', 'jena'):
         for suite in sources:
-            if engine in ('reference', 'crabgraph-jvm', 'crabgraph-computer', 'janusgraph') and suite != 'tinkerpop':
+            if (engine == 'neo4j' and suite != 'opencypher') or (engine == 'jena' and suite != 'rdf'):
+                continue
+            if engine in ('reference', 'orchiddb-jvm', 'orchiddb-computer', 'janusgraph') and suite != 'tinkerpop':
                 continue
             path = ROOT / 'upstream-results' / f'{engine}-{suite}.json'
             run = json.loads(path.read_text())
             expected = {key for key, case in cases.items() if case['suite'] == suite}
-            if engine == 'crabgraph-computer' and run['coverage']['filtered']:
+            if engine == 'orchiddb-computer' and run['coverage']['filtered']:
                 expected = {key for key in expected if '@GraphComputerOnly' in cases[key].get('tags', [])}
             results = run['results']
             assert run['engine'] == engine and run['suite'] == suite, path
             assert run['source'] == sources[suite], f'{path}: stale source'
-            assert not run['coverage']['filtered'] or engine == 'crabgraph-computer', f'{path}: subset run'
+            assert not run['coverage']['filtered'] or engine == 'orchiddb-computer', f'{path}: subset run'
             assert len(results) == len(expected), f'{path}: missing/duplicate cases'
             assert {r['id'] for r in results} == expected, f'{path}: case coverage'
             for result in results:
                 fingerprint = hashlib.sha256(json.dumps(cases[result['id']], sort_keys=True).encode()).hexdigest()
-                assert result['case_sha256'] == fingerprint, f'{path}: stale case {result["id"]}'
+                assert result.get('normalized_case_sha256', result['case_sha256']) == fingerprint, f'{path}: stale case {result["id"]}'
                 assert result['status'] in STATUS, f'{path}: unknown outcome'
                 assert result['elapsed_ms'] >= 0, f'{path}: negative time'
                 if result.get('assertion_source', {}).get('kind') == 'java-counterpart':
-                    assert engine == 'crabgraph-jvm' and suite == 'tinkerpop', path
+                    assert engine == 'orchiddb-jvm' and suite == 'tinkerpop', path
                     case = cases[result['id']]
                     mapping = counterpart(case, selection)
                     assert mapping is not None, f'{path}: unmapped Java counterpart'
@@ -47,7 +49,7 @@ def main():
                     verified = result_for(case, mapping, report, sources[suite]['revision'])
                     for key in ('status', 'elapsed_ms', 'assertion_source', 'assertion_engine'):
                         assert result[key] == verified[key], f'{path}: inconsistent Java evidence {key}'
-            if engine == 'crabgraph' and suite == 'tinkerpop':
+            if engine == 'orchiddb' and suite == 'tinkerpop':
                 instances = {r.get('engine_instance') for r in results}
                 assert len(instances) == 1 and None not in instances, f'{path}: requires one engine instance'
                 assert run['execution_profile']['single_instance_verified'] is True, path

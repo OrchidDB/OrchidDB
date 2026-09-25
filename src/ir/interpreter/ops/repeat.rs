@@ -142,7 +142,7 @@ fn repeat_op_inner(
     //   3. Otherwise — stop when the frontier becomes empty.
     // A resource ceiling is an error, never a successful truncated result.
     const MAX_REPEAT_ITERATIONS: u32 = 10_000;
-    let trace_metrics = ctx.step_state.len() == 1 && std::env::var_os("CRABGRAPH_REPEAT_METRICS").is_some();
+    let trace_metrics = ctx.step_state.len() == 1 && std::env::var_os("ORCHIDDB_REPEAT_METRICS").is_some();
     let mut peak_expanded = seed_rows.len();
     let mut frontier = super::barrier::compact_repeat_frontier(seed_rows)?;
     let mut peak_compacted = frontier.len();

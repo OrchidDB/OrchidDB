@@ -164,7 +164,7 @@ impl MappedGraphEngine {
         .map_err(|e| e.to_string())?;
         static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
         let temporary = quote(&format!(
-            "__crabgraph_update_{}",
+            "__orchiddb_update_{}",
             NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
         ));
         let automatic = !self.executor.in_transaction();

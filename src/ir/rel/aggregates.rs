@@ -114,7 +114,7 @@ impl<'a> LoweringContext<'a> {
                 .fields()
                 .iter()
                 .find(|field| field.name().eq_ignore_ascii_case(name))
-                .and_then(|field| field.metadata().get("new_graph.value_type"))
+                .and_then(|field| crate::ir::value::field_value_type(field))
                 .is_some_and(|kind| kind == "blob")
         };
         self.graph.labels().into_iter().any(|label| {
