@@ -248,6 +248,7 @@ pub(super) fn validate_expr_kinds(expr: &Expr, scope: &SemanticScope) -> CypherP
                     | BindingKind::Float
                     | BindingKind::String
                     | BindingKind::InternalId
+                    | BindingKind::Path
                     | BindingKind::ListValue
                     | BindingKind::ListNode
                     | BindingKind::ListRelationship
@@ -469,6 +470,25 @@ pub(super) fn validate_function_expr_kind(
     scope: &SemanticScope,
 ) -> CypherPlanResult<()> {
     let lower = name.to_ascii_lowercase();
+    if matches!(lower.as_str(), "in" | "cypher_in") && args.len() == 2 {
+        let rhs = projected_expr_kind(&args[1], scope);
+        if matches!(rhs, BindingKind::Bool | BindingKind::Int | BindingKind::Float
+            | BindingKind::String | BindingKind::Node | BindingKind::Relationship
+            | BindingKind::Path | BindingKind::Date | BindingKind::Timestamp
+            | BindingKind::TimestampMs | BindingKind::Interval)
+            || matches!(&args[1], Expr::Map(_))
+        {
+            return Err(CypherPlanError::Invalid("The right operand of IN must be a list".into())
+                .classified(CypherSemanticError::InvalidArgumentType));
+        }
+    }
+    if lower == "size" && args.first().is_some_and(|arg|
+        matches!(projected_expr_kind(arg, scope), BindingKind::Node
+            | BindingKind::Relationship | BindingKind::Path))
+    {
+        return Err(CypherPlanError::Invalid("size requires a string or collection, not a graph element or path".into())
+            .classified(CypherSemanticError::InvalidArgumentType));
+    }
     if lower == "mod" && args.iter().any(|arg| !matches!(projected_expr_kind(arg, scope),
         BindingKind::Unknown | BindingKind::Value | BindingKind::Int | BindingKind::Float)) {
         return Err(CypherPlanError::Invalid("Modulo requires numeric operands".into())
@@ -492,7 +512,7 @@ pub(super) fn validate_function_expr_kind(
         && args.first().is_some_and(|arg| {
             matches!(
                 projected_expr_kind(arg, scope),
-                BindingKind::Node | BindingKind::Relationship | BindingKind::RecursiveRelationship
+                BindingKind::Node | BindingKind::Relationship | BindingKind::RecursiveRelationship | BindingKind::Path
             )
         })
     {
@@ -903,7 +923,7 @@ pub(super) fn function_result_kind(
 pub(super) fn unwind_element_kind(expr: &Expr, scope: &SemanticScope) -> BindingKind {
     match projected_expr_kind(expr, scope) {
         BindingKind::ListNode => BindingKind::Node,
-        BindingKind::ListRelationship => BindingKind::Relationship,
+        BindingKind::ListRelationship | BindingKind::RecursiveRelationship => BindingKind::Relationship,
         BindingKind::ListInt => BindingKind::Int,
         _ => BindingKind::Value,
     }
@@ -914,7 +934,7 @@ pub(super) fn validate_list_source(expr: &Expr, scope: &SemanticScope) -> Cypher
         if let Some(
             kind @ (BindingKind::Node
             | BindingKind::Relationship
-            | BindingKind::RecursiveRelationship),
+            | BindingKind::Path),
         ) = scope.kind(name)
         {
             return Err(CypherPlanError::Invalid(format!(

@@ -148,6 +148,10 @@ pub(super) fn cypher_call(
             }
             Ok(Some(if unknown { Value::Null } else { Value::Bool(false) }))
         }
+        ("cypher_in", [_, _]) => Err(InterpretError::Diagnosed {
+            code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+            message: "The right operand of IN must be a list".into(),
+        }),
         ("in", [needle, container]) if runtime_list(container).is_some() => {
             if matches!(needle, Value::Null) {
                 return Ok(Some(Value::Null));
@@ -169,11 +173,17 @@ pub(super) fn cypher_call(
         | ("cypher_slice", [_, Value::Null, _])
         | ("cypher_slice", [_, _, Value::Null]) => Ok(Some(Value::Null)),
         ("cypher_slice", [target, start, end]) => {
-            let Some(items) = runtime_list(target) else {
-                return Err(super::lists::list_extract_type_error());
+            let Value::List(items) = target else {
+                return Err(InterpretError::Diagnosed {
+                    code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+                    message: "A slice requires a list".into(),
+                });
             };
-            let (Some(start), Some(end)) = (start.as_i64(), end.as_i64()) else {
-                return Err(super::lists::list_extract_type_error());
+            let (Some(start), Some(end)) = (super::lists::range_integer_arg(start), super::lists::range_integer_arg(end)) else {
+                return Err(InterpretError::Diagnosed {
+                    code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidType,
+                    message: "Slice bounds must be integers".into(),
+                });
             };
             let len = items.len() as i64;
             let bound = |n: i64| if n < 0 { len.saturating_add(n) } else { n }.clamp(0, len) as usize;

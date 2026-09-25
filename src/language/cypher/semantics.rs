@@ -34,6 +34,7 @@ pub(crate) enum BindingKind {
     Node,
     Relationship,
     RecursiveRelationship,
+    Path,
     Bool,
     Int,
     Float,
@@ -64,6 +65,7 @@ impl BindingKind {
             BindingKind::Node => "NODE",
             BindingKind::Relationship => "REL",
             BindingKind::RecursiveRelationship => "RECURSIVE_REL",
+            BindingKind::Path => "PATH",
             BindingKind::Bool => "BOOL",
             BindingKind::Int => "INT64",
             BindingKind::Float => "DOUBLE",
@@ -383,10 +385,10 @@ impl SemanticAnalyzer {
         }
         if let Some(path) = &part.variable {
             if !scope.contains(path) {
-                scope.insert(path.clone(), BindingKind::RecursiveRelationship);
-                local_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
+                scope.insert(path.clone(), BindingKind::Path);
+                local_kinds.insert(path.clone(), BindingKind::Path);
                 if let Some(bindings) = clause_relationships.as_deref_mut() {
-                    bindings.insert(path.clone(), BindingKind::RecursiveRelationship);
+                    bindings.insert(path.clone(), BindingKind::Path);
                 }
             }
         }

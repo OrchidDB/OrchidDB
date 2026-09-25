@@ -566,7 +566,7 @@ fn validate_slice_expr_scope(
     } else {
         Err(CypherPlanError::Invalid(format!(
             "{clause} expressions may not depend on graph variables"
-        )))
+        )).classified(crate::language::cypher::planner::CypherSemanticError::NonConstantExpression))
     }
 }
 
@@ -632,16 +632,17 @@ fn literal_u64(expr: &Expr) -> CypherPlanResult<Option<u64>> {
         Expr::Literal(Literal::Float(_)) => Err(CypherPlanError::Invalid(
             "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
                 .to_string(),
-        )),
+        ).classified(crate::language::cypher::planner::CypherSemanticError::InvalidArgumentType)),
         Expr::Unary {
             op: UnaryOp::Neg,
             expr,
         } => {
-            if literal_u64(expr)?.is_some() {
+            if let Some(value) = literal_u64(expr)? {
+                if value == 0 { return Ok(Some(0)); }
                 Err(CypherPlanError::Invalid(
                     "Runtime exception: The number of rows to skip/limit must be a non-negative integer."
                         .to_string(),
-                ))
+                ).classified(crate::language::cypher::planner::CypherSemanticError::NegativeIntegerArgument))
             } else {
                 Ok(None)
             }

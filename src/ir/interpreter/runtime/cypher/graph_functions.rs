@@ -3,6 +3,13 @@ use super::*;
 
 pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Option<Value>> {
     match (name, args) {
+        ("cypher_labels" | "cypher_type", [Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_labels", [value @ Value::Node { .. }]) => call("labels", std::slice::from_ref(value), graph),
+        ("cypher_type", [value @ Value::Edge { .. }]) => call("type", std::slice::from_ref(value), graph),
+        ("cypher_labels" | "cypher_type", [_]) => Err(InterpretError::Diagnosed {
+            code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidValue,
+            message: format!("{name} requires {}", if name == "cypher_labels" { "a node" } else { "a relationship" }),
+        }),
         // ----- graph-element built-ins -----
         ("cypher_id", [value]) => Ok(Some(graph.cypher_id(value).map(Value::Int).unwrap_or(Value::Null))),
         ("id", [value]) => Ok(Some(match value {

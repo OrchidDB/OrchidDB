@@ -259,6 +259,14 @@ impl<'a> LoweringContext<'a> {
                 };
                 let start = self.lower_expr(plan, &args[1])?;
                 let end = self.lower_expr(plan, &args[2])?;
+                for value in [&start, &end] {
+                    if !matches!(value.get_type(plan.schema())?,
+                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+                        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 | DataType::Null)
+                    {
+                        return Err(RelError::Unsupported("Cypher slice bounds require runtime type validation".into()));
+                    }
+                }
                 let null_bound = Expr::or(start.clone().is_null(), end.clone().is_null());
                 let sliced = datafusion::functions_nested::expr_fn::array_slice(
                     array,
