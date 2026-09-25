@@ -267,9 +267,16 @@ impl RdfGraphEngine {
                     using,
                     pattern,
                 } => {
+                    // Update WHERE has no outer SELECT projection. Export all
+                    // in-scope bindings, including those outside a subselect.
+                    let mut variables = std::collections::BTreeSet::new();
+                    pattern.on_in_scope_variable(|variable| { variables.insert(variable.clone()); });
                     let query = Query::Select {
                         dataset: using,
-                        pattern: *pattern,
+                        pattern: spargebra::algebra::GraphPattern::Project {
+                            inner: pattern,
+                            variables: variables.into_iter().collect(),
+                        },
                         base_iri: update.base_iri.clone(),
                     };
                     let SparqlResults::Solutions { variables, rows } =
