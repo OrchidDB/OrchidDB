@@ -283,6 +283,8 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "cos",
     "cot",
     "cypher_coalesce",
+    "cypher_labels",
+    "cypher_type",
     "cypher_convert.toboolean",
     "cypher_convert.tofloat",
     "cypher_convert.tointeger",

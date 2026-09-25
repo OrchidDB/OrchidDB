@@ -673,3 +673,43 @@ async fn cypher_conversions_distinguish_invalid_types_from_invalid_text() {
     assert_eq!(rows(&mut engine,"RETURN toInteger('bad') IS NULL, toFloat('bad') IS NULL, toBoolean('bad') IS NULL, toInteger('2.9'), toString(date('2026-09-24'))").await,
         vec![vec!["true","true","true","2","2026-09-24"]]);
 }
+
+#[tokio::test]
+async fn cypher_materialized_results_are_aggregate_group_keys() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"UNWIND [[1],[2],[]] AS xs WITH any(x IN xs WHERE x=1) AS result, count(*) AS n RETURN result,n ORDER BY result").await,
+        vec![vec!["false","2"],vec!["true","1"]]);
+    assert_eq!(rows(&mut engine,"UNWIND [[1],[1],[2]] AS xs WITH [x IN xs | x+1] AS result, count(*) AS n RETURN result[0],n ORDER BY result[0]").await,
+        vec![vec!["2","2"],vec!["3","1"]]);
+}
+
+#[tokio::test]
+async fn cypher_null_slices_and_graph_function_input_domains() {
+    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"WITH [1,2,3] AS xs RETURN xs[null..null] IS NULL, xs[0..0] = [], xs[..2] = [1,2], xs[1..] = [2,3]").await,
+        vec![vec!["true","true","true","true"]]);
+    for expression in ["labels(42)","type([])"] {
+        let plan=CypherPlanner::new().plan(&parse_query(&format!("RETURN {expression}")).unwrap()).unwrap();
+        assert_eq!(engine.execute_plan_with_diagnostics(&plan).await.unwrap_err().diagnosis,Some(RuntimeDiagnosis::InvalidValue));
+    }
+    for expression in ["[1,2][true..2]","[1,2][0..'2']"] {
+        let plan=CypherPlanner::new().plan(&parse_query(&format!("RETURN {expression}")).unwrap()).unwrap();
+        assert_eq!(engine.execute_plan_with_diagnostics(&plan).await.unwrap_err().diagnosis,Some(RuntimeDiagnosis::InvalidType));
+    }
+    rows(&mut engine,"CREATE (:A)-[:R]->(:B)").await;
+    assert_eq!(rows(&mut engine,"MATCH (a:A)-[r]->() RETURN labels(a) = ['A'], type(r), labels(null) IS NULL, type(null) IS NULL").await,
+        vec![vec!["true","R","true","true"]]);
+}
+
+#[tokio::test]
+async fn cypher_relationship_lists_remain_distinct_from_paths() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    rows(&mut engine,"CREATE (:A)-[:R]->(:B)").await;
+    assert_eq!(rows(&mut engine,"MATCH p = (:A)-[rs:R*1..1]->(:B) RETURN length(p), size(rs), all(r IN rs WHERE type(r) = 'R')").await,
+        vec![vec!["1","1","true"]]);
+    assert_eq!(rows(&mut engine,"MATCH (:A)-[rs:R*1..1]->(:B) UNWIND rs AS r RETURN type(r)").await,
+        vec![vec!["R"]]);
+    assert_eq!(rows(&mut engine,"RETURN 1 SKIP -0").await,vec![vec!["1"]]);
+}

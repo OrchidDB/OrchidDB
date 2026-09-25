@@ -179,3 +179,11 @@ Temporal scenarios passed **998 / 1,004**. The six remaining failures require wi
 The subsequent scalar batch adds signed integer literal bounds, malformed-number diagnostics, relationship creation type validation, dynamic property typing, heterogeneous lazy `coalesce`, strict Cypher list/map indexing, range argument diagnoses and inclusive integer endpoints, and Cypher conversion input domains. These are language-specific IR operations or semantic checks; shared Gremlin casts retain their behavior. Their targeted tests are separate from the full-suite totals above.
 
 The next failure families remain list/quantifier semantics, matching and mutation validation, ordering/query-part scope, procedure registration, and the remaining temporal execution contracts. Continue using unchanged upstream assertions and the single production Crabgraph execution configuration.
+
+### Subsequent implementation batch: grouping and collection contracts
+
+Materialized quantifier/comprehension results now participate in the aggregation's local binding scope, so grouping can retain their values instead of treating temporary columns as constants. The previous full run had 44 failing quantifier scenarios; this is a shared cause identified in code, not a measured pass increase.
+
+The batch also separates named paths from variable-length relationship lists in Cypher semantic analysis, validates known invalid `IN`/`size` operands, introduces explicit Cypher `labels`/`type` runtime input checks, validates slice bounds without coercion, preserves null list validity at DuckDB row conversion, and classifies literal negative/noninteger and graph-dependent SKIP/LIMIT bounds. Parameter-dependent bound diagnostics still need their execution-phase contract preserved through parameter binding.
+
+Regression cases were added for grouping, path versus relationship-list operations, slicing, and diagnostics. Test execution is deferred until a larger implementation integration point; these changes do not update the measured totals or production report.

@@ -102,6 +102,7 @@ pub(super) fn validate_order_by_supported(
         BindingKind::Node
             | BindingKind::Relationship
             | BindingKind::RecursiveRelationship
+            | BindingKind::Path
             | BindingKind::InternalId
             | BindingKind::ListInt
             | BindingKind::FixedListInt

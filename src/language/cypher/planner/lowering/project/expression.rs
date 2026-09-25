@@ -269,6 +269,10 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             if name.eq_ignore_ascii_case("id") && args.len() == 1 {
                 return Ok(IrExpr::Call { name: "cypher_id".into(), args: vec![lower_expr(lowerer, &args[0])?] });
             }
+            if matches!(name.to_ascii_lowercase().as_str(), "labels" | "type") && args.len() == 1 {
+                return Ok(IrExpr::Call { name: format!("cypher_{}", name.to_ascii_lowercase()),
+                    args: vec![lower_expr(lowerer, &args[0])?] });
+            }
             if name.eq_ignore_ascii_case("typeof") && args.len() == 1 {
                 if let Some(type_name) = static_typeof_expr(&args[0]) {
                     return Ok(IrExpr::Lit(Lit::String(type_name)));

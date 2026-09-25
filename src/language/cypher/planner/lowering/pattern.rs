@@ -54,9 +54,9 @@ pub fn lower_pattern_part(
                         &mut outputs,
                         &mut output_kinds,
                         path.clone(),
-                        BindingKind::RecursiveRelationship,
+                        BindingKind::Path,
                     );
-                    pattern_kinds.insert(path.clone(), BindingKind::RecursiveRelationship);
+                    pattern_kinds.insert(path.clone(), BindingKind::Path);
                 }
             }
             let mut source = node_binding(lowerer, &part.element.start);

@@ -708,7 +708,7 @@ pub(super) fn make_range(start: &Value, end: &Value, step: &Value) -> IrResult<V
     Ok(Value::List(out))
 }
 
-fn range_integer_arg(value: &Value) -> Option<i64> {
+pub(super) fn range_integer_arg(value: &Value) -> Option<i64> {
     use num_traits::ToPrimitive;
     match value {
         Value::Byte(value) => Some(*value as i64),

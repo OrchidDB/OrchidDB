@@ -684,6 +684,15 @@ fn convert_value(value: ValueRef<'_>) -> SqlResult<SqlValue> {
         // List-valued graph properties come back as one Arrow list per row;
         // slice out this row's elements and convert them the same way.
         ValueRef::List(list, row) => {
+            // List offsets are also present for null rows. Reading only the
+            // offsets turns SQL NULL into [], losing Cypher's null semantics.
+            use arrow::array::Array;
+            if match &list {
+                ListType::Regular(array) => array.is_null(row),
+                ListType::Large(array) => array.is_null(row),
+            } {
+                return Ok(SqlValue::Null);
+            }
             let (values, offset, length) = match list {
                 ListType::Regular(array) => (
                     array.values(),
