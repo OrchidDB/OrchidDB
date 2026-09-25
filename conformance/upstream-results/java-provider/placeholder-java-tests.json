@@ -1,7 +1,7 @@
 {
   "upstream_revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
   "profile": "jvm-provider",
-  "selection": "/private/tmp/crabgraph-gremlin-final-provider/conformance/adapters/jvm-provider-tests/placeholders.json",
+  "selection": "/private/tmp/orchiddb-gremlin-final-provider/conformance/adapters/jvm-provider-tests/placeholders.json",
   "inventory_only": false,
   "run_complete": true,
   "native_rust_traversal_evidence": false,
@@ -9,7 +9,7 @@
   "effective_jvm_properties": {
     "is.testing": "true",
     "assertNonDeterministic": "",
-    "crabgraph.test.computer": "false",
+    "orchiddb.test.computer": "false",
     "build.dir": "/private/tmp/gremlin-provider-placeholders-cbd8fa3-46lg6x29-data"
   },
   "cases": [
@@ -628,9 +628,9 @@
   "working_tree_modified": false,
   "harness_working_tree_modified": false,
   "harness_source_sha256": {
-    "src/main/java/io/crabgraph/conformance/NativeGraphProvider.java": "19458f75b18a4b39fabfa54d764cb9c9335f5d7900ba51b30c053ce7027fc62d",
-    "src/main/java/io/crabgraph/conformance/ProviderSuite.java": "09b8f1ca80b60e9fedb14e855b68cc0728b8536b690663212436e0e1093cab6e",
-    "src/main/java/io/crabgraph/conformance/ProviderSupplemental.java": "d5d36fd7cf9d6050ca692667d0a10099d1f42ceea1566258f99d8b251e2d0d3f"
+    "src/main/java/io/orchiddb/conformance/NativeGraphProvider.java": "19458f75b18a4b39fabfa54d764cb9c9335f5d7900ba51b30c053ce7027fc62d",
+    "src/main/java/io/orchiddb/conformance/ProviderSuite.java": "09b8f1ca80b60e9fedb14e855b68cc0728b8536b690663212436e0e1093cab6e",
+    "src/main/java/io/orchiddb/conformance/ProviderSupplemental.java": "d5d36fd7cf9d6050ca692667d0a10099d1f42ceea1566258f99d8b251e2d0d3f"
   },
   "harness_jar_sha256": "712af1eef7d384967ff5c54a54b620acb20603ca872686720c8d56e868ea544d",
   "provider_source_commit": "cbd8fa37e26a76a723d76df27abb04a2474f5820",
@@ -638,11 +638,16 @@
   "store_sha256": "7aaa3f297a35d457b5c9c7eec23de4e157af65b07d90bc59280292c2c1bb7354",
   "jvm_flags": [
     "-Dis.testing=true",
-    "-Dcrabgraph.test.computer=false",
+    "-Dorchiddb.test.computer=false",
     "-Dbuild.dir=/private/tmp/gremlin-provider-placeholders-cbd8fa3-46lg6x29-data",
     "--add-opens=java.base/java.util=ALL-UNNAMED",
     "--add-opens=java.base/java.lang=ALL-UNNAMED",
     "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED"
   ],
-  "java_version": "openjdk version \"21.0.7\" 2025-04-15\nOpenJDK Runtime Environment Homebrew (build 21.0.7)\nOpenJDK 64-Bit Server VM Homebrew (build 21.0.7, mixed mode, sharing)\n"
+  "java_version": "openjdk version \"21.0.7\" 2025-04-15\nOpenJDK Runtime Environment Homebrew (build 21.0.7)\nOpenJDK 64-Bit Server VM Homebrew (build 21.0.7, mixed mode, sharing)\n",
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
+  }
 }

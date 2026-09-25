@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-only runner for original TinkerPop Java test classes on native CrabGraph."""
+"""Local-only runner for original TinkerPop Java test classes on native OrchidGraph."""
 import argparse
 import hashlib
 import json
@@ -37,11 +37,11 @@ def main():
                     'dependency:build-classpath', '-Dmdep.outputFile=target/classpath.txt'], check=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     harness_jar = args.output.with_suffix('.harness.jar').resolve()
-    shutil.copyfile(ROOT / 'target/crabgraph-provider-tests-0.1.0.jar', harness_jar)
+    shutil.copyfile(ROOT / 'target/orchiddb-provider-tests-0.1.0.jar', harness_jar)
     cp = [str(harness_jar), (ROOT / 'target/classpath.txt').read_text().strip()]
     if not args.inventory:
         if not args.store or not args.store.is_file():
-            parser.error('--store must identify the actual production crabgraph-jvm-store binary')
+            parser.error('--store must identify the actual production orchiddb-jvm-store binary')
         cp.append(str(args.jvm_jar) if args.jvm_jar else str(args.jvm / 'target/classes'))
         for dependency_file in ([args.jvm_classpath] if args.jvm_classpath else [args.jvm / 'classpath.txt', args.jvm / 'target/classpath.txt']):
             if dependency_file.exists():
@@ -49,16 +49,16 @@ def main():
     # Upstream tests can open additional named graphs without first clearing them.
     # Keep every run isolated from concurrent runs and interrupted-run snapshots.
     test_data_dir = tempfile.mkdtemp(prefix=args.output.stem + '-', suffix='-data', dir=args.output.parent.resolve())
-    command = [args.java, '-Dis.testing=true', '-Dcrabgraph.test.computer=' + str(args.computer).lower(), '-Dbuild.dir=' + test_data_dir, '--add-opens=java.base/java.util=ALL-UNNAMED',
+    command = [args.java, '-Dis.testing=true', '-Dorchiddb.test.computer=' + str(args.computer).lower(), '-Dbuild.dir=' + test_data_dir, '--add-opens=java.base/java.util=ALL-UNNAMED',
                '--add-opens=java.base/java.lang=ALL-UNNAMED',
                '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED',
-               '-cp', os.pathsep.join(cp), 'io.crabgraph.conformance.ProviderSuite',
+               '-cp', os.pathsep.join(cp), 'io.orchiddb.conformance.ProviderSuite',
                args.selection, str(args.upstream), str(args.output)]
     if args.inventory:
         command.append('inventory')
     environment = dict(os.environ)
     if args.store:
-        environment['CRABGRAPH_JVM_STORE'] = str(args.store.resolve())
+        environment['ORCHIDDB_JVM_STORE'] = str(args.store.resolve())
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # A failed/terminated run never inherits an older successful report.
     args.output.unlink(missing_ok=True)

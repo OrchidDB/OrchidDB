@@ -40,3 +40,13 @@ and easy to search. Its tables and downloads also work without JavaScript.
 See the [conformance runner documentation](https://github.com/OrchidDB/OrchidDB/tree/main/conformance)
 for the pinned sources, adapters, and local commands. Read the scope and method
 alongside each result; passing an imported corpus is not standards certification.
+
+## Historical evidence
+
+Project identifiers and local paths in the downloadable records were normalized
+on 2026-09-25. Outcomes and timings remain those of the recorded runs; the name
+change is not a new conformance run. Original source and binary hashes remain
+unchanged. Where local paths changed a case definition, a separate
+`normalized_case_sha256` identifies the displayed definition while
+`case_sha256` retains its original value. The original records are available
+in [the source snapshot](https://github.com/OrchidDB/OrchidDB/tree/b4c6909283114bfd77008de92929c428fc700062/conformance).

@@ -558,7 +558,7 @@ fn apply_op(
     // outer rows. Batching never crosses a reducer, write, JVM or scope fence.
     let mut grouped = if right.batchable && outer.len() > 1 {
         let key = loop {
-            let key=format!("\0crabgraph_apply_{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+            let key=format!("\0orchiddb_apply_{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
             if !right.batch_names.contains(&key) && outer.iter().all(|r| !r.bindings.contains_key(&key)) {break key;}
         };
         let frontier=outer.iter().enumerate().map(|(index,row)| {
@@ -1040,7 +1040,7 @@ fn repeat_op_inner(
     // A resource ceiling is an error, never a successful truncated result.
     const MAX_REPEAT_ITERATIONS: u32 = 10_000;
     let trace_metrics =
-        ctx.step_state.len() == 1 && std::env::var_os("CRABGRAPH_REPEAT_METRICS").is_some();
+        ctx.step_state.len() == 1 && std::env::var_os("ORCHIDDB_REPEAT_METRICS").is_some();
     let mut peak_expanded = seed_rows.len();
     let mut frontier = ops::barrier::compact_repeat_frontier(seed_rows)?;
     let mut peak_compacted = frontier.len();

@@ -222,7 +222,7 @@ async fn numeric_types_survive_engine_execution() {
             .unwrap();
         let schema = result.returned.batch.schema();
         let rows: serde_json::Value =
-            serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
         assert_eq!(rows[0][0]["type"], expected, "literal {literal}");
     }
 }
@@ -243,7 +243,7 @@ async fn compound_constants_survive_engine_execution() {
             .unwrap();
         let schema = result.returned.batch.schema();
         let rows: serde_json::Value =
-            serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
         assert_eq!(rows[0][0]["type"], expected, "literal {literal}");
         if expected == "bigdecimal" {
             assert_eq!(rows[0][0]["value"], "1.123456789");
@@ -272,7 +272,7 @@ async fn property_integer_types_survive_sql_scan() {
             .unwrap();
         let schema = result.returned.batch.schema();
         let rows: serde_json::Value =
-            serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
         assert_eq!(rows[0][0]["type"], kind, "property {key}");
     }
 }
@@ -330,7 +330,7 @@ async fn vertex_mutations_commit_through_engine() {
     let result = engine.gremlin("g.V().values('name')").await.unwrap();
     let schema = result.returned.batch.schema();
     let rows: serde_json::Value =
-        serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+        serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
     assert_eq!(rows[0][0]["value"], "marko");
 }
 
@@ -439,7 +439,7 @@ async fn merge_vertex_commits_and_matches_without_duplicate_creation() {
     let result = engine.gremlin("g.V().values('age')").await.unwrap();
     let schema = result.returned.batch.schema();
     let rows: serde_json::Value =
-        serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+        serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
     assert_eq!(rows.as_array().unwrap().len(), 1);
     assert_eq!(rows[0][0]["value"], 30);
 }
@@ -459,7 +459,7 @@ async fn both_edge_and_vertex_steps_count_self_loops_in_both_directions() {
             .unwrap();
         let schema = result.returned.batch.schema();
         let rows: serde_json::Value =
-            serde_json::from_str(&schema.metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&schema.metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
         assert_eq!(rows[0][0]["value"], 2, "{step}");
     }
 }
@@ -559,14 +559,14 @@ async fn drop_vertices_and_edges_performs_real_deletions() {
     engine.gremlin("g.E().drop()").await.unwrap();
     let result = engine.gremlin("g.E().count()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 0);
     engine.gremlin("g.V().drop()").await.unwrap();
     let result = engine.gremlin("g.V().count()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 0);
@@ -625,7 +625,7 @@ async fn merge_edge_commits_real_graph_writes() {
         .unwrap();
     let result = engine.gremlin("g.E().count()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 1);
@@ -786,7 +786,7 @@ async fn dynamic_mutation_procedures_commit_once_and_roll_back_errors() {
     );
     let result = engine.gremlin("g.V().count()").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 1);

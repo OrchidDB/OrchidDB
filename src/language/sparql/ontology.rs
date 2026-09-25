@@ -1,5 +1,5 @@
 //! Ontology vocabulary mapped onto the property-graph schema users already
-//! expose to Crabgraph. This layer contains no storage or table assumptions.
+//! expose to OrchidDB. This layer contains no storage or table assumptions.
 
 use std::collections::BTreeMap;
 

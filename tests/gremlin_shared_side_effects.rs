@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 async fn native(engine: &mut GraphEngine, query: &str) -> Value {
     let result = engine.gremlin(query).await.unwrap_or_else(|e| panic!("{query}: {e}"));
-    serde_json::from_str(&result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap()
+    serde_json::from_str(&result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap()
 }
 
 #[tokio::test]

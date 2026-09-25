@@ -187,7 +187,7 @@ fn arrow_reserved_columns_are_never_materialized_as_jvm_user_properties() {
 #[test]
 fn user_keys_survive_persistence_and_rollback_without_exposing_native_columns() {
     let path = std::env::temp_dir().join(format!(
-        "crabgraph-jvm-keys-{}-{}.ngsp",
+        "orchiddb-jvm-keys-{}-{}.ngsp",
         std::process::id(),
         SESSION_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));

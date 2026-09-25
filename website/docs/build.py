@@ -18,6 +18,7 @@ PAGES = [(slug, title) for title, slug in re.findall(
 def build():
     mdbook = os.environ.get('MDBOOK', 'mdbook')
     try:
+        subprocess.run([mdbook, 'clean', str(ROOT)], check=True)
         subprocess.run([mdbook, 'build', str(ROOT)], check=True)
     except FileNotFoundError:
         raise SystemExit('mdbook is required. Run website/scripts/install-mdbook.sh or set MDBOOK to its executable.')

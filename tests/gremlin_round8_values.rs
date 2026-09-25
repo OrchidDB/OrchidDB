@@ -2,7 +2,7 @@
 use orchiddb::engine::GraphEngine;
 use serde_json::Value;
 fn native(result: &orchiddb::engine::QueryResult) -> Value {
-    serde_json::from_str(result.returned.batch.schema().metadata().get("crabgraph.gremlin.typed_rows.v1").unwrap()).unwrap()
+    serde_json::from_str(result.returned.batch.schema().metadata().get("orchiddb.gremlin.typed_rows.v1").unwrap()).unwrap()
 }
 #[tokio::test]
 async fn decimal_and_double_remain_distinct_in_numeric_equality_results() {

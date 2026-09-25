@@ -212,7 +212,7 @@ fn partition<'a>(
     external: &'a std::collections::BTreeSet<String>,
 ) -> futures::future::BoxFuture<'a, Result<LogicalPlan>> {
     Box::pin(async move {
-        let explain = std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some();
+        let explain = std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some();
         let reason = eligibility.visit(plan);
         if explain && let Some(reason) = reason {
             eprintln!("DuckDB boundary: {reason}");
@@ -243,7 +243,7 @@ fn partition<'a>(
                 eprintln!("DuckDB boundary: SQL preparation: {error}");
             }
             if let Ok(prepared) = prepared {
-                if std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some() {
+                if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
                     eprintln!("DuckDB candidate: {}", prepared.sql.query);
                 }
                 let id = stats.duckdb_regions;
@@ -458,7 +458,7 @@ pub(crate) async fn execute_with_extensions(
     } else {
         arrow_select::concat::concat_batches(&schema, batches.iter())?
     };
-    if std::env::var_os("CRABGRAPH_PROFILE_DAG").is_some() {
+    if std::env::var_os("ORCHIDDB_PROFILE_DAG").is_some() {
         eprintln!(
             "dag-profile {}",
             serde_json::json!({

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 python3 website/docs/build.py
 
-bucket=crabgraph-landing-846199521923
+bucket=orchiddb-landing-846199521923
 # Upload only public landing assets. Never sync the repository or delete docs.
 for file in index.html resources.html ecosystem.html community.html blog.html styles.css script.js hero-graph.js favicon.svg og.png og.svg; do
   aws s3 cp "website/$file" "s3://$bucket/$file" \

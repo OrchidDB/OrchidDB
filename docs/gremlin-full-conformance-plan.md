@@ -23,7 +23,7 @@ Original baseline source: `6c67ebc4b3aff08547017b828c1554c82778d411`; published 
 - All 112 previously failing/timing-out cases are resolved as 111 passes and one explicit unsupported remote-lambda case.
 - All 23 previously blocked multi/meta-property fixture cases now pass.
 
-Sources: [current result artifact](../conformance/upstream-results/crabgraph-tinkerpop.json), [scenario catalog](../conformance/upstream/catalog.json), [completed remediation results](gremlin-remediation-results.md).
+Sources: [current result artifact](../conformance/upstream-results/orchiddb-tinkerpop.json), [scenario catalog](../conformance/upstream/catalog.json), [completed remediation results](gremlin-remediation-results.md).
 
 ### Two completion targets
 
@@ -339,7 +339,7 @@ Every current non-pass appears exactly once below. Links point to the pinned ups
 
 ## Source navigation
 
-- [Current native Gremlin result](../conformance/upstream-results/crabgraph-tinkerpop.json) and [catalog](../conformance/upstream/catalog.json): exact statuses, steps and upstream links.
+- [Current native Gremlin result](../conformance/upstream-results/orchiddb-tinkerpop.json) and [catalog](../conformance/upstream/catalog.json): exact statuses, steps and upstream links.
 - [Previous implementation/results](gremlin-remediation-results.md): verified behavior and remaining semantic boundaries.
 - Pinned local upstream checkout: `conformance/upstream/cache/tinkerpop/`.
 - Under upstream `gremlin-test/src/main/java/org/apache/tinkerpop/gremlin/`: `process/ProcessStandardSuite.java`, `process/ProcessComputerSuite.java`, `structure/StructureStandardSuite.java`, and the corresponding traversal/structure test classes.

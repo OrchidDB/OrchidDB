@@ -119,7 +119,8 @@
       "case_sha256": "4a797a7d42bfa1368b6a9cbfb3baf21f1e6e642215639fad55524274bdf9bcff",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "9ccfaa60530d583a5dd02d2389c292d2275cac8fa1151e1ff89ab25b33605d12"
     },
     {
       "id": "rdf:sparql/sparql10/ask/manifest.ttl#ask-1",
@@ -490,84 +491,96 @@
       "case_sha256": "7636aed71579f8a15e420221244809c005d368e402d599cdee55b25562593fd5",
       "elapsed_ms": 0.008,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "eb4d3dfd4b726338e5bfc2fad67787b4ec9399356988aabfa140e44e27695b37"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-02",
       "case_sha256": "2b7c6fba8ef38eaa0a2c1c88260c067468439312313016a4e36c6a19152690f4",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "527e9c7991286a9b84a29cbdfa8d84ee3e171a49b3fba5410eb05eab2fc3eeb0"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-03",
       "case_sha256": "d77140d9876d9b4716569015e867af9a1c563959700edb050eca77252545bf59",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "0658c9ac68044b72b6254500e45302341ceae590ff860480b7a1c4514ca3ede9"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-04",
       "case_sha256": "4b770bc638a1b56660b4a6417fd6b59abd00b21d8cf3f4f2b0d3f74bf0a85c78",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "0e99f6a4c14173ca7680d73238ec9a6e1eaaee5480ce6f4f0301b799b7bb861d"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-05",
       "case_sha256": "5e8c2ce24151e1d3a2ebf9ea9e0a5c32a5c2a7f2e13fa22847b08890b57827ce",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "ffb2c6faecd0971720ba2d017c9829a4c9ec31a07577d1a87874326d5742ebed"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-06",
       "case_sha256": "dfe2d573e31422da969b5ae335f4b9217fa43dcc41d1f7665e3447155274a94c",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "62b247f8ba371abe0519801096ad3e0160a23dc2c17c91e3027777c0fb3f04fe"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-07",
       "case_sha256": "386eba9e30669a79e35df310321884258a84b3409466645dd209f7aedb3fc8e7",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "8057a21aab63f77d628064b52994d078308ec59daa8172723fd6c8f146864e65"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-08",
       "case_sha256": "b51aa026669535fe9acd06b6bad4e58c0aac6408c1c212efe80411ffc2a33667",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "93612903bc92f0e443d44b0b4866ea16889d0ce2d1dad4299e6ab66b8721a608"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-11",
       "case_sha256": "2224ef1784a50b22dd49e94ee84e4df6414046e93b14365a316b74e8335cf3ca",
       "elapsed_ms": 0.008,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "76f19f96027789789e7409a352d7578f62e6ff660bbf48707fb36cdceb3863e0"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-09b",
       "case_sha256": "732b69f05c69d75e5e1d93365933c0f5e025213b372b3a1a1c82312424ddc629",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "6d73fbe59d2d186618893b8d7f6285b8074e7ad2e27fce7fd8b0610f7848167d"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-10b",
       "case_sha256": "fbb85506679d6a282dd137226e22bcfc8172626ae110111ab05244761ce14b6c",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "50e730fe004c4815fbcf45e0f24a1eb7bab118350b837699916d75c7954be13f"
     },
     {
       "id": "rdf:sparql/sparql10/dataset/manifest.ttl#dawg-dataset-12b",
       "case_sha256": "6c80a72879c99fbdda3ce52bb5b3d2414b5a42e3d9d6012beb2e121ed90ec41f",
       "elapsed_ms": 0.011,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "34254d43a3e8d4f7ddbbe2a21565dc7e83df3154e70f0f950eed3f3878a1d5c0"
     },
     {
       "id": "rdf:sparql/sparql10/distinct/manifest.ttl#no-distinct-1",
@@ -1064,14 +1077,16 @@
       "case_sha256": "ebe99bc9cb9aa474b4bd4c6ec473d1fcf0035e6dbf83be18cb31ed9fc2a09c5b",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "1a715dc73fd6adc45961d75d5875bbd73aa6a5fdd7c092a3eb8c0083b5a2bf00"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-03",
       "case_sha256": "3ca2da312295c87b7e6e64d2476f3e43912b29a65ac10586f2f8cc56cd9af8d1",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "8217cbc629ce4afb9d0fee84edf85117c853eb1b344c7441a7f2a728ccce6a78"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-04",
@@ -1085,91 +1100,104 @@
       "case_sha256": "9ba22895ac8f45c55e8747b6a234d955510982eb202eff4a26db4f36d7ed5b06",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "7f34e1074411a4e2db0667c519a0d9739761d5b39db78aa2ffbfc6c8a8947cc0"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-06",
       "case_sha256": "43af883d2d90c924d19a297922045315d6fc6560085e2dc95719c0ad24dafb08",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "67fc09480b5de1f5270b10dd200ea960068d0e4fd97ec5a10be52d139088c0ed"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-07",
       "case_sha256": "80b95db95674031523d79829c882fe34f337259cdcae41d178cee87ecc80a60a",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "c0ee6f0198d7f02d53d85a550dce61af2ef1c84772b541cfb720d4d25a6fe5f9"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-08",
       "case_sha256": "6625bf5accc65e3825b150163272e2ecc800ad43db1a65a02310372d0dab62f7",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "290b7d975b36e1d4d098768aff06a47c6daf84ea7f3e2d8adf75d16cc61c0747"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-09",
       "case_sha256": "43ab58ab5d914b89b9fed9002486c8612334ed7e5627e9e68c1330662f5a3882",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "a5d5953cb25db9cf21dcc0afb7a79449b7d11c11f923957d0388af8e1f97a0f5"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-10b",
       "case_sha256": "89ad775e4a0e223e2c9c4663bf75e796d92ac1a5ecbfd912abf30f5677b371b3",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "f2528f578153681f946b2c05011e0353d06922aebe5ec5f7dd6a581a504d36d6"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#dawg-graph-11",
       "case_sha256": "e7cea1920dca461dac5ef9ba9f2fef5c5976229378f7bd3d894ab27d8f64e779",
       "elapsed_ms": 0.011,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "579d2263fa17e19ea11b4158b9e7f09c696ecaa236766ed365c79f89988d8468"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-empty",
       "case_sha256": "31a05fa3cdba28988bb3dd0ed68fb95634573af29a9dfcb5fb95f919abd65ad3",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "864842acbf26c8f65fc5a668b91c487404c6115ad8723b039169088be37315cb"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-exist",
       "case_sha256": "c8a0e2e7ff1962e0a0aeab81301c706ce239d20a71f2d4e11db46400c2e69459",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "a184817429a16ac801fa9cb8aec13b6f3106f05c4f4022638f422202d2f87b16"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-not-exist",
       "case_sha256": "aa5c1251dd6ab1229fe6c08788a9de3d22abd8b3c7bb310f71b263b749b5db87",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "f035d3fd375c123d8b2931d251b1ed9f7d2a097068466d4811c5fdba3d3ca9a8"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-variable-scope",
       "case_sha256": "c966160397c88d31db7da67df9f5cf0ec32181441f38cb2a3a5a75fb8ffbbbda",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "130a2a0134a1a48531d65fc6aefc3f2e9558e6879ecbc0e9ea3fa7bb0e94689e"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-variable-join",
       "case_sha256": "54233052021add60e14f08f43c8f09c1a019b578a7d55660e455a9acc43cda5c",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "96887dc1a8d6ab8f1fcd34f867c9b129fb41140e2e2114765119efcbe71ea8cc"
     },
     {
       "id": "rdf:sparql/sparql10/graph/manifest.ttl#graph-optional",
       "case_sha256": "b0eef14d19a16b43dc38748550bd242d979c1854954b1a8bb0e575c913cf5f2d",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "4be4a71a6480092fefaf5b07897579c063f55b9652eb451bec62bd4aba17c454"
     },
     {
       "id": "rdf:sparql/sparql10/i18n/manifest.ttl#kanji-1",
@@ -1365,21 +1393,24 @@
       "case_sha256": "babeb51d5f0a2302945ea3eb1e2c2d419ebfac1be262b0f416bcde8feda1137e",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "67eec66156841caeb3a30472240f2864326ff10b63060e824111f3d9d79ec311"
     },
     {
       "id": "rdf:sparql/sparql10/optional/manifest.ttl#dawg-optional-complex-3",
       "case_sha256": "312a5c0a3de2938c9531a5c9869720474340e8cede1a5c3f084ca1eada090089",
       "elapsed_ms": 0.008,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "f45ec0bce2db6e91687d2348049209be151a0b0b9acc11f2474405d9cb6591e8"
     },
     {
       "id": "rdf:sparql/sparql10/optional/manifest.ttl#dawg-optional-complex-4",
       "case_sha256": "25a89542b6e5a49b067a74c73030854425f661ead83bf95cc3139e9531f6dc36",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "a61fa8d24188fbff069057567cd91a6d794eb96769da3408095d269b3090a477"
     },
     {
       "id": "rdf:sparql/sparql10/optional-filter/manifest.ttl#dawg-optional-filter-001",
@@ -3703,7 +3734,8 @@
       "case_sha256": "a954f3625e1564c0acd23b3260fd54f840c3dc2bf088deb43c187963edd4a222",
       "elapsed_ms": 0.008,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "dee282df8a476681a0f999aeabc85343e32d4eed055440e0662cfd016ed62049"
     },
     {
       "id": "rdf:sparql/sparql11/aggregates/manifest.ttl#agg-multiple-having",
@@ -4018,7 +4050,8 @@
       "case_sha256": "1994868526875890d5438b9c77b64680302333da3ddb02143bf3eb581b3f4697",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "111727d9caf93641b3246e68038e4adbaf531b6ca7bb409549fcc39c33a8bff8"
     },
     {
       "id": "rdf:sparql/sparql11/cast/manifest.ttl#cast-bool",
@@ -4116,7 +4149,8 @@
       "case_sha256": "a9677f9a174b62098c1bd665b05b95decfb5232d78750ba5ea82c430f0a90d64",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "a9177c767831b1ac92770468efdf7977208d77e596f039bbedd3594917a9f444"
     },
     {
       "id": "rdf:sparql/sparql11/construct/manifest.ttl#constructwhere05",
@@ -5096,7 +5130,8 @@
       "case_sha256": "5b636d2f3e1c7902719a0932ed3c6cf6960599b40c332138aa2dc5c69d73e86c",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "d3a2a5d190a31ed132b3987e74bb375ee221bb18b187eae80e0d998186c6fd95"
     },
     {
       "id": "rdf:sparql/sparql11/exists/manifest.ttl#exists04",
@@ -5117,7 +5152,8 @@
       "case_sha256": "6d0c78422f3ff2f8137b33b42c0aa321c9d6e4544b2405bbfc72674e0d9a4f90",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "3228c1cb7aa9dd6a8aac0ebbbe6e72b63a9cce54fd5f249268db77a4ac6cb242"
     },
     {
       "id": "rdf:sparql/sparql11/functions/manifest.ttl#strdt01",
@@ -6055,7 +6091,8 @@
       "case_sha256": "8658fd889aa31304e86c4cebe1ac368c2dba799d235f407ff8453e038675b44a",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "62693fc3bb2eb55ec0fc878b353dc01aa72660342a73a328b637acffc4a9b945"
     },
     {
       "id": "rdf:sparql/sparql11/project-expression/manifest.ttl#projexp01",
@@ -6132,14 +6169,16 @@
       "case_sha256": "5e32961ccdb412b9aaa0bedd848d9425175ac301beed8195e9113060b522e5a1",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "c08db4954e92d15a17714c41cff82287504767b54a10d57de60409dd9e13e40f"
     },
     {
       "id": "rdf:sparql/sparql11/property-path/manifest.ttl#pp07",
       "case_sha256": "c6628508bcecb3e29d7dcb8a72707e77dcf57431c97e5ebadb1b07bfe2b9af20",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "8a614702a66f8f06120a67bc83fcfefc32706cc12fa96121a0d53d45885bdbaf"
     },
     {
       "id": "rdf:sparql/sparql11/property-path/manifest.ttl#pp08",
@@ -6251,14 +6290,16 @@
       "case_sha256": "518c01db95932f26b9a39d03a373b02bbb0216919039becd0713a45c7b99b16c",
       "elapsed_ms": 0.008,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "882630ceea77e9364e2fadd3f6677ffa511dba317d412391ab41ad9fa9695661"
     },
     {
       "id": "rdf:sparql/sparql11/property-path/manifest.ttl#pp35",
       "case_sha256": "15c80f5c1c22a6d5cec794ac891b0492d5998b5728f25b09fd17c319bf331af4",
       "elapsed_ms": 0.007,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "f65aca95a2b09ff1ad569c17f20b4eeb528cd9e5058163e4ecf3f6e4e1faf2f1"
     },
     {
       "id": "rdf:sparql/sparql11/property-path/manifest.ttl#pp36",
@@ -6650,35 +6691,40 @@
       "case_sha256": "21c3479db23215996f510d2f4c5abe026d14b49795365316b568ae81caff2515",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "da7482efb8d2639de44c0a33b4f57d044379e35fffc1897bda89bfd2939d125f"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery02",
       "case_sha256": "a0e30b72f7cf4a23b782da3d22bf94960db806908fabf246ad4c753465812bd5",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "a0ac7e6578942989fb9d33b3d0943262ba538c8742697d2eab4d0148d4bcc298"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery03",
       "case_sha256": "c10599402a6de7817d1098c651c0a6e1ef9eba039b211c84df4b0177600c30af",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "77aa32f081dbaf53401da236dc626769490619edcdf07a8d56518256ef3d99c1"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery04",
       "case_sha256": "b1732aebb8ef237c114e4d5ea5181dd30fd75e6e5ca8b071af3b247c24d7cf6e",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "cf066d28daeba42bddf35f7bd5d5922b25d8822be9392d18dac9a728c2bd31a6"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery05",
       "case_sha256": "5ea3e6c97f53cc1aee4c1af935bab2e679256d33bbbd1c4f9fc6d4c466f16ba8",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "fca8c80e8db638a2d977d0746853fb72363d0b8b33b5e4412a618bdb40566425"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery06",
@@ -6692,7 +6738,8 @@
       "case_sha256": "9bed9ecb786483547f697f9d3686f8be16ac3334589c96eac7ae44b6570eef8a",
       "elapsed_ms": 0.006,
       "status": "not-applicable",
-      "reason": "No native interface for this suite in the compared product"
+      "reason": "No native interface for this suite in the compared product",
+      "normalized_case_sha256": "69b4ff74eb7148a1e44146397282b92c13015741e51baf5e1fcb56022952aef7"
     },
     {
       "id": "rdf:sparql/sparql11/subquery/manifest.ttl#subquery08",
@@ -7901,5 +7948,10 @@
   ],
   "build": {
     "version": "3.1.6"
+  },
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
   }
 }

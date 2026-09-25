@@ -2,7 +2,7 @@
 
 > Historical implementation record. Current production comparison results come
 > only from the single-instance run in
-> [crabgraph-tinkerpop.json](../conformance/upstream-results/crabgraph-tinkerpop.json).
+> [orchiddb-tinkerpop.json](../conformance/upstream-results/orchiddb-tinkerpop.json).
 > The separate execution results below are not combined into the leaderboard.
 
 ## Execution architecture
@@ -51,9 +51,9 @@ are separate tested configurations; their counts are not combined into a single
 profile's pass total.
 
 Raw evidence:
-[native](../conformance/upstream-results/crabgraph-tinkerpop.json),
-[JVM OLTP](../conformance/upstream-results/crabgraph-jvm-tinkerpop.json),
-[GraphComputer](../conformance/upstream-results/crabgraph-computer-tinkerpop.json),
+[native](../conformance/upstream-results/orchiddb-tinkerpop.json),
+[JVM OLTP](../conformance/upstream-results/orchiddb-jvm-tinkerpop.json),
+[GraphComputer](../conformance/upstream-results/orchiddb-computer-tinkerpop.json),
 [original Java placeholder tests](../conformance/upstream-results/java-provider/placeholder-java-tests.json).
 
 ## Implemented behavior

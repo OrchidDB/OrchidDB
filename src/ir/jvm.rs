@@ -45,10 +45,10 @@ pub struct JvmConfig {
 }
 impl JvmConfig {
     pub fn from_env() -> Option<Self> {
-        std::env::var("CRABGRAPH_JVM_CLASSPATH")
+        std::env::var("ORCHIDDB_JVM_CLASSPATH")
             .ok()
             .map(|classpath| Self {
-                java: std::env::var("CRABGRAPH_JAVA").unwrap_or_else(|_| "java".into()),
+                java: std::env::var("ORCHIDDB_JAVA").unwrap_or_else(|_| "java".into()),
                 classpath,
             })
     }
@@ -127,7 +127,7 @@ impl Worker {
         let mut child = Command::new(&config.java)
             .arg("-cp")
             .arg(&config.classpath)
-            .arg("io.crabgraph.gremlin.CrabIr")
+            .arg("io.orchiddb.gremlin.OrchidIr")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -189,7 +189,7 @@ pub(crate) fn execute(
         return Ok(rows);
     }
     let config = execution.config.clone().ok_or_else(|| {
-        error("GraphJvm requires CRABGRAPH_JVM_CLASSPATH or an explicit JvmConfig")
+        error("GraphJvm requires ORCHIDDB_JVM_CLASSPATH or an explicit JvmConfig")
     })?;
     let mut names = BTreeSet::new();
     for argument in &operation.arguments {

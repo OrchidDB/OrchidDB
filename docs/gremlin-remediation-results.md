@@ -54,7 +54,7 @@ These are diagnostic local timings, not controlled cross-product benchmarks. The
 
 ## Evidence identity
 
-- [Committed full result artifact](../conformance/upstream-results/crabgraph-tinkerpop.json).
+- [Committed full result artifact](../conformance/upstream-results/orchiddb-tinkerpop.json).
 - Source: `6c67ebc4b3aff08547017b828c1554c82778d411`, `working_tree_modified: false`.
 - Runner SHA-256: `f2b351682752446f7e1f20f09eacb38c1ad42266c291c230079a9b09fecdef59`.
 - Result artifact SHA-256: `997ce3ae9b04272e0e28a697884b148885026c38ab4a81ca41c3b15fd4cb0ef0`.

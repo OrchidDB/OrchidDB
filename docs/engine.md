@@ -44,7 +44,7 @@ be fully executed in DuckDB. `QueryResult.backend` and `stats` expose the
 execution path. `set_sql_timeout` bounds individual DuckDB queries and setup;
 it does not bound residual runtime work or snapshot serialization.
 The runtime rejects repeats exceeding 10,000 iterations with an execution-limit
-error. `NEW_GRAPH_INTERPRETER_MAX_STEPS` can impose a lower total operation budget.
+error. `ORCHIDDB_INTERPRETER_MAX_STEPS` can impose a lower total operation budget.
 These limits fail explicitly; they never return a successful truncated result.
 
 Managed mutation semantics currently execute in the Graph IR runtime. Persistence

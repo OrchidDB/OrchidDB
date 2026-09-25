@@ -76,5 +76,10 @@
       "run_complete": true,
       "upstream_assertions": true
     }
-  ]
+  ],
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
+  }
 }

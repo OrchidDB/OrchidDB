@@ -1,6 +1,6 @@
 # Upstream graph conformance comparison
 
-Published report: https://docs.crabgraph.net/conformance.html
+Published report: https://docs.orchiddb.net/conformance.html
 
 Compare **OrchidDB, Neo4j Community, SQLg, PuppyGraph, JanusGraph and Apache Jena**, using free editions. The primary
 corpus is the original upstream test data and assertions:
@@ -17,12 +17,12 @@ contains 51 sourced capability rows, with paid features marked separately.
 This is a compatibility comparison for these versions and profiles, not a
 certification or a claim to cover every product feature.
 
-Historical result keys and runner engine selectors retain `crabgraph` so recorded
-evidence and reproduction commands remain valid after the rename.
+Runner engine selectors and evidence keys use `orchiddb`. Recorded outcomes
+are historical; identity normalization is documented in the conformance guide.
 
 ## One OrchidDB execution
 
-The production matrix and leaderboard read `upstream-results/crabgraph-tinkerpop.json`.
+The production matrix and leaderboard read `upstream-results/orchiddb-tinkerpop.json`.
 Each scenario has one outcome from one suite invocation against one persistent
 `GraphEngine`. Typed values and callbacks enter the production Gremlin frontend,
 which lowers queries to the SQL IR DAG. DuckDB executes eligible SQL regions;
@@ -55,12 +55,12 @@ python3.12 -m venv .venv-conformance
 pip install -r conformance/requirements.txt
 python conformance/upstream/fetch.py
 python conformance/upstream/catalog.py
-cargo build --bin crabgraph-jvm-store
-export CRABGRAPH_JVM_STORE="$PWD/target/debug/crabgraph-jvm-store"
+cargo build --bin orchiddb-jvm-store
+export ORCHIDDB_JVM_STORE="$PWD/target/debug/orchiddb-jvm-store"
 export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
 mvn -q -f jvm-codecs/pom.xml install
 mvn -q -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-export CRABGRAPH_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
+export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
 CARGO_TARGET_DIR="$PWD/target" cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 docker compose -f conformance/compose.yml up -d
@@ -68,7 +68,7 @@ python conformance/wait_ready.py
 # PostgreSQL address as seen from the PuppyGraph container:
 export PUPPY_JDBC=jdbc:postgresql://postgres:5432/conformance
 python conformance/run.py --engine reference --suite tinkerpop
-for engine in crabgraph sqlg puppygraph; do
+for engine in orchiddb sqlg puppygraph; do
   for suite in opencypher tinkerpop rdf; do
     python conformance/run.py --engine "$engine" --suite "$suite"
   done
@@ -201,12 +201,12 @@ the next documentation publication. No test suite runs in GitHub Actions.
 ### Historical Java counterpart diagnostics
 
 This diagnostic adapter is excluded from the product comparison.
-The `crabgraph-jvm` adapter executes the 15 pinned Java counterparts when it
+The `orchiddb-jvm` adapter executes the 15 pinned Java counterparts when it
 encounters Apache's non-executable Gherkin placeholders. Set
 `CONFORMANCE_TINKERPOP_SOURCE` to the pinned TinkerPop checkout, or use the
 `CONFORMANCE_UPSTREAM_CACHE/tinkerpop` checkout created by `upstream/fetch.py`.
 Java 21, Maven, the production provider jar in `CONFORMANCE_GREMLIN_CLASSPATH`,
-and `CRABGRAPH_JVM_STORE` are required. The adapter verifies source hashes and
+and `ORCHIDDB_JVM_STORE` are required. The adapter verifies source hashes and
 runs the original JUnit methods locally. It records per-test timings, assertion
 source and native/provider binary provenance. Failed assertions, assumptions,
 and incomplete runs never become passing results. The production report counts each scenario once from its single engine run.

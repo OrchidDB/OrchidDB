@@ -3,9 +3,9 @@
     "category": "Languages and graph model",
     "title": "Cypher",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Native frontend",
-        "source": "https://docs.crabgraph.net/concepts.html",
+        "source": "https://docs.orchiddb.net/concepts.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -21,9 +21,9 @@
     "category": "Languages and graph model",
     "title": "Gremlin",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Native frontend",
-        "source": "https://docs.crabgraph.net/concepts.html",
+        "source": "https://docs.orchiddb.net/concepts.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -45,9 +45,9 @@
     "category": "Languages and graph model",
     "title": "SPARQL and RDF datasets",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Native frontend / datasets",
-        "source": "https://docs.crabgraph.net/rdf.html",
+        "source": "https://docs.orchiddb.net/rdf.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -57,9 +57,9 @@
     "category": "Languages and graph model",
     "title": "Property graph storage",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Managed or mapped",
-        "source": "https://docs.crabgraph.net/concepts.html",
+        "source": "https://docs.orchiddb.net/concepts.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -81,9 +81,9 @@
     "category": "Languages and graph model",
     "title": "Schema definition",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Graph mapping",
-        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "source": "https://docs.orchiddb.net/mapping-reference.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -117,9 +117,9 @@
         "kind": "unavailable",
         "reviewed": "2026-09-23"
       },
-      "crabgraph": {
+      "orchiddb": {
         "text": "JVM GraphComputer · single process",
-        "source": "https://github.com/henneberger/new-graph/blob/main/docs/gremlin-graphcomputer.md",
+        "source": "https://github.com/henneberger/orchiddb/blob/main/docs/gremlin-graphcomputer.md",
         "kind": "documented",
         "reviewed": "2026-09-24"
       }
@@ -177,9 +177,9 @@
     "category": "Data access and integration",
     "title": "Graph over existing tables",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Declarative mapping",
-        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "source": "https://docs.orchiddb.net/mapping-reference.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -195,9 +195,9 @@
     "category": "Data access and integration",
     "title": "SQL views and query sources",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "View / SQL mapping",
-        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "source": "https://docs.orchiddb.net/mapping-reference.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -207,9 +207,9 @@
     "category": "Data access and integration",
     "title": "Composite graph identifiers",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Composite keys",
-        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "source": "https://docs.orchiddb.net/mapping-reference.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -225,9 +225,9 @@
     "category": "Data access and integration",
     "title": "Mapped relationship endpoints",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Source / destination key maps",
-        "source": "https://docs.crabgraph.net/mapping-reference.html",
+        "source": "https://docs.orchiddb.net/mapping-reference.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -243,9 +243,9 @@
     "category": "Data access and integration",
     "title": "Ontology mapping",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Classes and predicates",
-        "source": "https://docs.crabgraph.net/rdf.html",
+        "source": "https://docs.orchiddb.net/rdf.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -255,9 +255,9 @@
     "category": "Data access and integration",
     "title": "Named RDF graphs",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Dataset API",
-        "source": "https://docs.crabgraph.net/rdf.html",
+        "source": "https://docs.orchiddb.net/rdf.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -267,9 +267,9 @@
     "category": "Data access and integration",
     "title": "RDF term identity",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "IRI / blank / literal terms",
-        "source": "https://docs.crabgraph.net/rdf.html",
+        "source": "https://docs.orchiddb.net/rdf.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -279,9 +279,9 @@
     "category": "Data access and integration",
     "title": "Apache Arrow result batches",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Native result format",
-        "source": "https://docs.crabgraph.net/rust-api.html",
+        "source": "https://docs.orchiddb.net/rust-api.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -291,9 +291,9 @@
     "category": "Data access and integration",
     "title": "PostgreSQL",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "SQL backend",
-        "source": "https://docs.crabgraph.net/execution.html",
+        "source": "https://docs.orchiddb.net/execution.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -315,9 +315,9 @@
     "category": "Data access and integration",
     "title": "DuckDB",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "SQL backend",
-        "source": "https://docs.crabgraph.net/execution.html",
+        "source": "https://docs.orchiddb.net/execution.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -501,9 +501,9 @@
     "category": "Execution and transactions",
     "title": "Explicit transaction API",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Begin / commit / rollback",
-        "source": "https://docs.crabgraph.net/transactions.html",
+        "source": "https://docs.orchiddb.net/transactions.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -519,9 +519,9 @@
     "category": "Execution and transactions",
     "title": "SQL pushdown",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Hybrid / SQL-only modes",
-        "source": "https://docs.crabgraph.net/execution.html",
+        "source": "https://docs.orchiddb.net/execution.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       },
@@ -537,9 +537,9 @@
     "category": "Execution and transactions",
     "title": "Explain and execution plans",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Backend and plan diagnostics",
-        "source": "https://docs.crabgraph.net/execution.html",
+        "source": "https://docs.orchiddb.net/execution.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -549,9 +549,9 @@
     "category": "Execution and transactions",
     "title": "Parameterized queries",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Typed parameter binding",
-        "source": "https://docs.crabgraph.net/parameters.html",
+        "source": "https://docs.orchiddb.net/parameters.html",
         "kind": "documented",
         "reviewed": "2026-09-23"
       }
@@ -603,9 +603,9 @@
     "category": "Deployment and security",
     "title": "Embedded use",
     "cells": {
-      "crabgraph": {
+      "orchiddb": {
         "text": "Rust library; JVM executor",
-        "source": "https://github.com/henneberger/new-graph/blob/main/docs/gremlin-jvm-executor.md",
+        "source": "https://github.com/henneberger/orchiddb/blob/main/docs/gremlin-jvm-executor.md",
         "kind": "documented",
         "reviewed": "2026-09-24"
       },

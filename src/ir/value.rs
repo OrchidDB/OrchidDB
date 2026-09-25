@@ -12,8 +12,25 @@ use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 use num_traits::FromPrimitive;
 
-pub const STRUCT_ORDER_KEY: &str = "__new_graph_struct_order";
-pub const STRUCT_TYPES_KEY: &str = "__new_graph_struct_types";
+pub const STRUCT_ORDER_KEY: &str = "__orchiddb_struct_order";
+pub const STRUCT_TYPES_KEY: &str = "__orchiddb_struct_types";
+
+/// Read current or pre-rename Arrow type metadata without losing typed values.
+pub(crate) fn field_value_type(field: &arrow::datatypes::Field) -> Option<&String> {
+    field.metadata().get("orchiddb.value_type").or_else(|| {
+        field.metadata().iter().find(|(key, _)| key.ends_with(".value_type")).map(|(_, value)| value)
+    })
+}
+
+/// Canonicalize reserved struct metadata while decoding older snapshots.
+pub(crate) fn normalize_struct_metadata(map: &mut BTreeMap<String, Value>) {
+    for (suffix, canonical) in [("_struct_order", STRUCT_ORDER_KEY), ("_struct_types", STRUCT_TYPES_KEY)] {
+        let keys: Vec<_> = map.keys().filter(|key| key.starts_with("__") && key.ends_with(suffix) && key.as_str() != canonical).cloned().collect();
+        for key in keys {
+            if let Some(value) = map.remove(&key) { map.entry(canonical.into()).or_insert(value); }
+        }
+    }
+}
 
 /// Build a native Set, retaining encounter order and typed member identity.
 pub fn gremlin_set(items: Vec<Value>) -> Value {
@@ -967,5 +984,36 @@ mod cardinality_value_tests {
         let nan=wrap("set",Value::Float(f64::NAN));
         assert_eq!(nan,nan.clone());
         assert_eq!(nan.three_valued_eq(&nan),Some(true));
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::*;
+
+    #[test]
+    fn reads_prior_arrow_type_metadata_and_prefers_the_current_key() {
+        let field = arrow::datatypes::Field::new("born", arrow::datatypes::DataType::Utf8, true)
+            .with_metadata(std::collections::HashMap::from([("previous.value_type".into(), "datetime".into())]));
+        assert_eq!(field_value_type(&field).map(String::as_str), Some("datetime"));
+        let field = field.with_metadata(std::collections::HashMap::from([
+            ("previous.value_type".into(), "datetime".into()),
+            ("orchiddb.value_type".into(), "value".into()),
+        ]));
+        assert_eq!(field_value_type(&field).map(String::as_str), Some("value"));
+    }
+
+    #[test]
+    fn normalizes_reserved_struct_metadata_without_changing_properties() {
+        let mut map = BTreeMap::from([
+            ("__previous_struct_order".into(), Value::List(vec![Value::String("name".into())])),
+            ("name".into(), Value::String("Alice".into())),
+            ("user_struct_order".into(), Value::Int(7)),
+        ]);
+        normalize_struct_metadata(&mut map);
+        assert!(map.contains_key(STRUCT_ORDER_KEY));
+        assert!(!map.contains_key("__previous_struct_order"));
+        assert_eq!(map["name"], Value::String("Alice".into()));
+        assert_eq!(map["user_struct_order"], Value::Int(7));
     }
 }

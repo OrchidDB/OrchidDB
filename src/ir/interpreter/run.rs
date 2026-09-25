@@ -145,7 +145,7 @@ impl ExecutionContext {
         self.side_effect_value(label, graph)
     }
 
-    const STEP_LIMIT_ENV: &'static str = "NEW_GRAPH_INTERPRETER_MAX_STEPS";
+    const STEP_LIMIT_ENV: &'static str = "ORCHIDDB_INTERPRETER_MAX_STEPS";
 
     pub(crate) fn charge(&mut self, units: u64) -> IrResult<()> {
         self.steps = self.steps.saturating_add(units);

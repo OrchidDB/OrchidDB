@@ -189,7 +189,7 @@ async fn replacements_read_old_values_and_unknown_properties_rollback() {
     assert_eq!(
         scalar(
             &mut e,
-            "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE '__crabgraph_%'"
+            "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE '__orchiddb_%'"
         ),
         0
     );

@@ -230,7 +230,7 @@ impl Staged {
             .unwrap_or(Path::new("."));
         for _ in 0..100 {
             let path = parent.join(format!(
-                ".crabgraph-export-{}-{}.tmp",
+                ".orchiddb-export-{}-{}.tmp",
                 std::process::id(),
                 SERIAL.fetch_add(1, Ordering::Relaxed)
             ));
@@ -279,8 +279,8 @@ pub(crate) fn write(graph: &PropertyGraph, path: &str, writer: &str) -> IrResult
             .write_all(&bytes)
             .map_err(|e| error(format!("Cannot write export: {e}")))?;
     } else {
-        let classpath = std::env::var("CRABGRAPH_GREMLIN_IO_CLASSPATH").map_err(|_|error("GraphML/Gryo require CRABGRAPH_GREMLIN_IO_CLASSPATH pointing to the TinkerPop ExportGraph codec"))?;
-        let java = std::env::var("CRABGRAPH_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
+        let classpath = std::env::var("ORCHIDDB_GREMLIN_IO_CLASSPATH").map_err(|_|error("GraphML/Gryo require ORCHIDDB_GREMLIN_IO_CLASSPATH pointing to the TinkerPop ExportGraph codec"))?;
+        let java = std::env::var("ORCHIDDB_GREMLIN_IO_JAVA").unwrap_or_else(|_| "java".into());
         let mut source = Staged::create(destination)?;
         source
             .file
@@ -294,7 +294,7 @@ pub(crate) fn write(graph: &PropertyGraph, path: &str, writer: &str) -> IrResult
                 "--add-opens=java.base/java.util=ALL-UNNAMED",
                 "-cp",
                 &classpath,
-                "io.crabgraph.gremlin.codec.ExportGraph",
+                "io.orchiddb.gremlin.codec.ExportGraph",
                 writer,
             ])
             .arg(&source.path)

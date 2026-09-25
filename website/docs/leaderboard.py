@@ -5,10 +5,10 @@ from collections import Counter
 from html import escape
 from pathlib import Path
 
-PRODUCTS = {'crabgraph': 'OrchidDB', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph', 'neo4j': 'Neo4j Community', 'jena': 'Apache Jena TDB2'}
-SUITES = [('tinkerpop', 'Gremlin', ('crabgraph', 'sqlg', 'puppygraph', 'janusgraph')),
-          ('opencypher', 'Cypher', ('crabgraph', 'neo4j', 'puppygraph')),
-          ('rdf', 'SPARQL', ('crabgraph', 'jena'))]
+PRODUCTS = {'orchiddb': 'OrchidDB', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph', 'neo4j': 'Neo4j Community', 'jena': 'Apache Jena TDB2'}
+SUITES = [('tinkerpop', 'Gremlin', ('orchiddb', 'sqlg', 'puppygraph', 'janusgraph')),
+          ('opencypher', 'Cypher', ('orchiddb', 'neo4j', 'puppygraph')),
+          ('rdf', 'SPARQL', ('orchiddb', 'jena'))]
 
 
 def passed_runtime(results):
@@ -42,7 +42,7 @@ def render(cases, get_result, runs, root, download):
             gaps = sorted(peers - passes[product])
             run = runs.get((product, suite), {})
             evidence = f'{product}-{suite}'
-            runtime = passed_runtime(results[product]) if product == 'crabgraph' else None
+            runtime = passed_runtime(results[product]) if product == 'orchiddb' else None
             duration = (f"{runtime['elapsed_ms']/1000:,.2f} s" if runtime['elapsed_ms'] is not None else 'Unavailable') if runtime else '—'
             report['suites'][suite]['products'][product] = {
                 'rank': rank if len(products) > 1 else None, 'passed': passed,
@@ -53,7 +53,7 @@ def render(cases, get_result, runs, root, download):
                 'source': run.get('source'),
                 'evidence': evidence + '.json',
             }
-            html.append('<tr' + (' class="crabgraph-standing"' if product == 'crabgraph' else '') + '>')
+            html.append('<tr' + (' class="orchiddb-standing"' if product == 'orchiddb' else '') + '>')
             if index == 0:
                 html.append(f'<th scope="rowgroup" rowspan="{len(products)}"><a href="#language-{suite}">{title}</a></th>')
             rank_label = str(rank) if len(products) > 1 else '—'

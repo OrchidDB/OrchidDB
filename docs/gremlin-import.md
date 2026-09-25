@@ -10,8 +10,8 @@ GraphML and Gryo use the pinned TinkerPop 3.7.4 Java readers in the production [
 
 For standalone engine use, compile the codec with the adapter's Maven dependencies and set:
 
-- `CRABGRAPH_GREMLIN_IO_JAVA`: the Java executable (defaults to `java`).
-- `CRABGRAPH_GREMLIN_IO_CLASSPATH`: a Java classpath containing `io.crabgraph.gremlin.codec.ImportGraph` and TinkerPop's dependencies.
+- `ORCHIDDB_GREMLIN_IO_JAVA`: the Java executable (defaults to `java`).
+- `ORCHIDDB_GREMLIN_IO_CLASSPATH`: a Java classpath containing `io.orchiddb.gremlin.codec.ImportGraph` and TinkerPop's dependencies.
 
 The local conformance Java bridge supplies both variables using its current JVM and classpath. Java codec failures are returned as import errors. The engine does not invoke a shell to run the codec.
 

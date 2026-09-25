@@ -79,7 +79,7 @@ impl RdfGraphEngine {
     async fn sparql_parsed(&mut self, query: &spargebra::Query) -> Result<ReturnedBatches, String> {
         if !self.scalar_registered {
             self.executor()?.connection().map_err(|error| error.to_string())?
-                .register_scalar_function::<scalar::SparqlScalar>("__crabgraph_sparql_scalar")
+                .register_scalar_function::<scalar::SparqlScalar>("__orchiddb_sparql_scalar")
                 .map_err(|error| error.to_string())?;
             self.scalar_registered = true;
         }

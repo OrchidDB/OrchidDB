@@ -458,9 +458,7 @@ pub(super) fn merge_property_defs(
         if excluded.contains(&field.name().as_str()) {
             continue;
         }
-        let carries_union_tag = field
-            .metadata()
-            .get("new_graph.value_type")
+        let carries_union_tag = crate::ir::value::field_value_type(field)
             .is_some_and(|kind| kind == "value");
         match defs.get_mut(field.name()) {
             Some(existing) if existing.data_type != *field.data_type() => {
@@ -498,9 +496,7 @@ pub(super) fn merge_struct_field_defs(
             continue;
         };
         let field = batch.schema().field(index).clone();
-        if !field
-            .metadata()
-            .get("new_graph.value_type")
+        if !crate::ir::value::field_value_type(&field)
             .is_some_and(|kind| kind == "value")
         {
             continue;
@@ -730,9 +726,7 @@ pub(super) fn property_array(
             // debug-encoded strings; decode them to the display text the
             // interpreter would print so downstream projections and
             // comparisons see the same rendering.
-            let is_encoded = field
-                .metadata()
-                .get("new_graph.value_type")
+            let is_encoded = crate::ir::value::field_value_type(field)
                 .is_some_and(|kind| kind == "map" || kind == "value");
             if is_encoded {
                 let source = batch

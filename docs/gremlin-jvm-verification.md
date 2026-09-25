@@ -7,7 +7,7 @@ the original Apache `gremlin-test` 3.7.4 assertions, revision
 were unchanged.
 
 This result measures upstream JVM traversal execution through the production
-CrabGraph provider and native OrchidDB store. It does not establish Rust planner
+OrchidGraph provider and native OrchidDB store. It does not establish Rust planner
 conformance or GraphComputer coverage. The 50 exclusions comprise 31
 GraphComputer-only scenarios, 15 original Gherkin placeholders and four scenarios
 requiring the opposite null-property policy. The Java provider and GraphComputer

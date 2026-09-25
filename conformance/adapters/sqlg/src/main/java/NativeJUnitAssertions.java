@@ -50,7 +50,7 @@ final class NativeJUnitAssertions {
         if(!result.wasSuccessful())throw new AssertionError(result.getFailures().stream().map(Failure::getTrace).reduce("",(a,b)->a+b));
         if(!assumptions.isEmpty())throw new AssumptionViolatedException(assumptions.toString());
         if(result.getRunCount()!=1||result.getIgnoreCount()!=0)throw new IllegalStateException("Expected exactly one original JUnit test: "+result.getRunCount());
-        if(UpstreamGremlin.backend.equals("crabgraph")&&context.queryTransports.isEmpty())throw new IllegalStateException("Original assertion made no requests to Crabgraph");
+        if(UpstreamGremlin.backend.equals("orchiddb")&&context.queryTransports.isEmpty())throw new IllegalStateException("Original assertion made no requests to OrchidDB");
     }
     /** TinkerGraph loads input fixtures only. Every traversal is submitted to the same native process. */
     static final class FixtureProvider extends AbstractGraphProvider {
@@ -68,12 +68,12 @@ final class NativeJUnitAssertions {
             if(UpstreamGremlin.backend.equals("janusgraph")){context.getGraphTraversalSource(data);return context.graph;}
             return super.openTestGraph(config);
         }
-        @Override public GraphTraversalSource traversal(Graph graph){return UpstreamGremlin.backend.equals("crabgraph")?context.remoteSource():graph.traversal();}
+        @Override public GraphTraversalSource traversal(Graph graph){return UpstreamGremlin.backend.equals("orchiddb")?context.remoteSource():graph.traversal();}
         @Override public void loadGraphData(Graph graph,LoadGraphWith data,Class test,String method){
             if(UpstreamGremlin.backend.equals("janusgraph"))return;
             if(data!=null)super.loadGraphData(graph,data,test,method);
             List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
-            graph.vertices().forEachRemaining(v->nodes.add(UpstreamGremlin.fixtureNode(v,"crabgraph")));
+            graph.vertices().forEachRemaining(v->nodes.add(UpstreamGremlin.fixtureNode(v,"orchiddb")));
             graph.edges().forEachRemaining(e->edges.add(UpstreamGremlin.fixtureEdge(e)));
             try {
                 var response=UpstreamGremlin.bridge.send(Map.of("op","fixture","name",data==null?"empty":data.value().name().toLowerCase(),"nodes",nodes,"edges",edges));

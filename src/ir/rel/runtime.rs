@@ -387,7 +387,7 @@ impl Compiler<'_> {
             let lowered = RelBackend::new()
                 .preserving_traverser_state()
                 .lower_island(&self.policy, node, self.graph, self.islands.clone());
-            if std::env::var_os("CRABGRAPH_EXPLAIN_DAG").is_some()
+            if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some()
                 && let Err(error) = &lowered {
                 eprintln!("SQL IR lowering boundary: {error}");
             }

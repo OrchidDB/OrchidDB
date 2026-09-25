@@ -85,15 +85,15 @@ class JavaAssertions:
                                    (PREFIX + row['gherkin'].rsplit(':', 1)[0], row['feature_source_sha256'])):
                 if hashlib.sha256((upstream / path).read_bytes()).hexdigest() != expected:
                     raise ValueError('Modified upstream source: ' + path)
-        jars = [Path(p) for p in self.classpath.split(os.pathsep) if Path(p).name == 'crabgraph-jvm-0.1.0.jar']
+        jars = [Path(p) for p in self.classpath.split(os.pathsep) if Path(p).name == 'orchiddb-jvm-0.1.0.jar']
         if len(jars) != 1:
-            raise ValueError('Expected one production Crabgraph JVM jar')
+            raise ValueError('Expected one production OrchidDB JVM jar')
         with tempfile.TemporaryDirectory(prefix='gremlin-java-assertions-') as folder:
             work = Path(folder)
             cp = work / 'classpath.txt'; cp.write_text(self.classpath)
             output = work / 'results.json'
             command = [sys.executable, str(ROOT / 'adapters/jvm-provider-tests/run.py'),
-                '--upstream', str(upstream), '--store', os.environ.get('CRABGRAPH_JVM_STORE', str(ROOT.parent / 'target/debug/crabgraph-jvm-store')),
+                '--upstream', str(upstream), '--store', os.environ.get('ORCHIDDB_JVM_STORE', str(ROOT.parent / 'target/debug/orchiddb-jvm-store')),
                 '--jvm-jar', str(jars[0]), '--jvm-classpath', str(cp), '--output', str(output),
                 '--java', os.environ.get('CONFORMANCE_JAVA', 'java')]
             with (ROOT / 'upstream-java-assertions.log').open('a') as log:

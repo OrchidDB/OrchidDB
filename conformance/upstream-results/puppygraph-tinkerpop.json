@@ -5260,7 +5260,7 @@
       "failed_step": "the graph initializer of",
       "status": "fail",
       "query_error": "null",
-      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({name=[Apache TinkerPop\u00a9], label=[software]})",
+      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({name=[Apache TinkerPop©], label=[software]})",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)"
     },
     {
@@ -5277,7 +5277,7 @@
       "failed_step": "the graph initializer of",
       "status": "fail",
       "query_error": "null",
-      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({name=[Apache TinkerPop\u00a9], label=[software]})",
+      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({name=[Apache TinkerPop©], label=[software]})",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)"
     },
     {
@@ -5381,7 +5381,7 @@
       "failed_step": "the graph initializer of",
       "status": "fail",
       "query_error": "null",
-      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({k=[\u8f49\u6ce8], label=[vertex]})",
+      "error": "java.util.concurrent.CompletionException: org.apache.tinkerpop.gremlin.driver.exception.ResponseException: The provided traversal has a mutating step and thus is not read only: PuppyAddVertexStartStep({k=[轉注], label=[vertex]})",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)"
     },
     {
@@ -19101,7 +19101,7 @@
       "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/LTrim.feature:23",
       "case_sha256": "6d0d7bc976279403726e52c444b722a2185f4b1edfc231b9e24233a1eb4ada50",
       "elapsed_ms": 11.395209,
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"\",\"abc\",\"abc\u3000\",\"abc\u3000\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"\",\"abc\",\"abc　\",\"abc　\"]}",
       "step_timings": [
         {
           "elapsed_ms": 0.389083,
@@ -19130,7 +19130,7 @@
       "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/LTrim.feature:44",
       "case_sha256": "9678644e652331a48170f356cd4781699c1e4072836c3518906a128b094bc8b9",
       "elapsed_ms": 10.589542,
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"feature  \",\"one test \",null,\"\",\"\",\"abc\",\"abc\u3000\",\"abc\u3000\",\"\"]}]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"feature  \",\"one test \",null,\"\",\"\",\"abc\",\"abc　\",\"abc　\",\"\"]}]}",
       "step_timings": [
         {
           "elapsed_ms": 0.34625,
@@ -27155,7 +27155,7 @@
       "query_error": "null",
       "error": "",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"\",\"\u3000abc\",\"\u3000abc\",\"abc\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"\",\"　abc\",\"　abc\",\"abc\"]}",
       "step_timings": [
         {
           "elapsed_ms": 84.733084,
@@ -27184,7 +27184,7 @@
       "query_error": "null",
       "error": "",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"  feature\",\" one test\",null,\"\",\"\",\"\u3000abc\",\"abc\",\"\u3000abc\",\"\"]}]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"  feature\",\" one test\",null,\"\",\"\",\"　abc\",\"abc\",\"　abc\",\"\"]}]}",
       "step_timings": [
         {
           "elapsed_ms": 0.758208,
@@ -40654,5 +40654,10 @@
   ],
   "build": {
     "version": "1.11.1"
+  },
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
   }
 }

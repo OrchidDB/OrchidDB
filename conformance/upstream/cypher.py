@@ -7,7 +7,7 @@ from neo4j import GraphDatabase,Query
 from neo4j.graph import Node,Relationship,Path
 from fetch import CACHE
 from bridge import PuppyFixture
-from run import Process,ROOT,REPO,crabgraph_binary
+from run import Process,ROOT,REPO,orchiddb_binary
 GRAMMAR=r'''
 ?start: value
 ?value: STRING -> string
@@ -139,7 +139,7 @@ class Cypher:
    self.seed=GraphDatabase.driver('bolt://127.0.0.1:17687',auth=('neo4j','conformance-local-only'))
    self.fixture=PuppyFixture()
  def query(self,q,params=None):
-  if self.engine=='crabgraph':
+  if self.engine=='orchiddb':
    result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
    if result.get('native_rows') is not None:
     result['rows']=[[native_value(v) for v in row] for row in result['native_rows']]
@@ -182,14 +182,14 @@ class Cypher:
  def run(self,case):
   steps=case['steps'];setup=[];params={};original=next(s['doc'] for s in steps if s['text']=='executing query:')
   procedures=[s for s in steps if s['text'].startswith('there exists a procedure')]
-  if procedures and self.engine!='crabgraph':return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
+  if procedures and self.engine!='orchiddb':return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
   for s in steps:
    if s['text']=='having executed:':setup.append(s['doc'])
    if s['text']=='parameters are:':params={r[0]:value(r[1]) for r in s['table']}
    if re.fullmatch(r'the binary-tree-[12] graph',s['text']):
     name=s['text'].split()[1];setup.append((CACHE/'opencypher/tck/graphs'/name/(name+'.cypher')).read_text())
-  if self.engine=='crabgraph':
-   if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(crabgraph_binary())],ROOT/'upstream-crabgraph-cypher.log')
+  if self.engine=='orchiddb':
+   if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(orchiddb_binary())],ROOT/'upstream-orchiddb-cypher.log')
    self.rust.send({'op':'reset'})
    for procedure in procedures:
     signature=re.fullmatch(r'there exists a procedure\s+([^()]+)\((.*?)\)\s*::\s*\((.*?)\)\s*:',procedure['text'])

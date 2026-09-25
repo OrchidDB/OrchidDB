@@ -6148,7 +6148,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"Apache TinkerPop\u00a9\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"Apache TinkerPop©\"]}",
       "error": "",
       "step_timings": [
         {
@@ -6182,7 +6182,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"Apache TinkerPop\u00a9\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"Apache TinkerPop©\"]}",
       "error": "",
       "step_timings": [
         {
@@ -6306,7 +6306,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"\u2726\",\"\u8f49\u6ce8\",\"\u2660\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"✦\",\"轉注\",\"♠\"]}",
       "error": "",
       "step_timings": [
         {
@@ -22796,7 +22796,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"abc\",\"abc\u3000\",\"abc\u3000\",\"\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"abc\",\"abc　\",\"abc　\",\"\"]}",
       "error": "",
       "step_timings": [
         {
@@ -22826,7 +22826,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"feature  \",\"one test \",null,\"\",\"\",\"abc\",\"abc\u3000\",\"abc\u3000\",\"\"]}]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"feature  \",\"one test \",null,\"\",\"\",\"abc\",\"abc　\",\"abc　\",\"\"]}]}",
       "error": "",
       "step_timings": [
         {
@@ -34350,7 +34350,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"\u3000abc\",\"abc\",\"\u3000abc\",\"\"]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[\"feature\",\"one test\",null,\"\",\"\",\"　abc\",\"abc\",\"　abc\",\"\"]}",
       "error": "",
       "step_timings": [
         {
@@ -34380,7 +34380,7 @@
       "query_error": "null",
       "assertion_engine": "Apache gremlin-test 3.7.4 StepDefinition (unmodified)",
       "status": "pass",
-      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"  feature\",\" one test\",null,\"\",\"\",\"\u3000abc\",\"abc\",\"\u3000abc\",\"\"]}]}",
+      "actual_graphson": "{\"@type\":\"g:List\",\"@value\":[{\"@type\":\"g:List\",\"@value\":[\"  feature\",\" one test\",null,\"\",\"\",\"　abc\",\"abc\",\"　abc\",\"\"]}]}",
       "error": "",
       "step_timings": [
         {
@@ -49069,5 +49069,10 @@
     "version": "1.1.0",
     "captured_at": "2026-09-24T21:50:20.933692+00:00",
     "capture_phase": "before-scenarios"
+  },
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
   }
 }

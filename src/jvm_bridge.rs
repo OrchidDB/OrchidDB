@@ -245,7 +245,7 @@ impl Store {
         }
         match op {
             "hello" => Ok(
-                json!({"version":1,"session":self.session,"storage":"crabgraph-native","persistent":self.path.is_some(),"committedReads":true,"nullPropertyValues":self.graph.supports_null_property_values()}),
+                json!({"version":1,"session":self.session,"storage":"orchiddb-native","persistent":self.path.is_some(),"committedReads":true,"nullPropertyValues":self.graph.supports_null_property_values()}),
             ),
             "begin" => Ok(Json::Null), // read/write transaction begins at open or the last commit/rollback
             "commit" => {
@@ -1446,7 +1446,7 @@ mod tests {
     #[test]
     fn persistent_commit_reopen_rollback_and_exclusive_lock() {
         let path = std::env::temp_dir().join(format!(
-            "crabgraph-jvm-test-{}-{}.ngsp",
+            "orchiddb-jvm-test-{}-{}.ngsp",
             std::process::id(),
             SESSION_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));

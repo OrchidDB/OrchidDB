@@ -16,10 +16,8 @@ default or named graph selection; other RDF term kinds remain explicit errors.
 Language coverage is partial. Managed writes use the graph runtime and persist
 changed records transactionally in DuckDB, with checkpoints for compaction. See [the engine API and its current limits](docs/engine.md).
 
-The Rust package and CLI are named `orchiddb` (previously `new-graph` and
-`crabgraph`). Update Rust imports from `new_graph` to `orchiddb`. Existing
-storage formats and JVM bridge identifiers are unchanged. Build from this
-repository; no crates.io release has been published as part of the rename.
+The Rust package and CLI are named `orchiddb`. Build from this repository;
+no crates.io release has been published. See [installation](https://docs.orchiddb.com/installation.html).
 
 ```sh
 cargo run --bin orchiddb -- --database social.duckdb --query \

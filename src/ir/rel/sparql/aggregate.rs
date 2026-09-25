@@ -174,7 +174,7 @@ impl Lowerer<'_, '_> {
                         AggKind::Avg | AggKind::AvgOrNull | AggKind::AvgOrZero
                     );
                     let dec_value = if is_avg {
-                        duck_str("__crabgraph_sparql_scalar", vec![s("decimal_divide"),
+                        duck_str("__orchiddb_sparql_scalar", vec![s("decimal_divide"),
                             cast(col_exact(name("dec")), DataType::Utf8),
                             cast(n.clone(), DataType::Utf8), s(""), s("")])
                     } else {

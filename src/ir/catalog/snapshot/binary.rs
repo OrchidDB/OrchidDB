@@ -335,6 +335,7 @@ pub(super) fn decode_map(r: &mut Reader) -> Result<BTreeMap<String, Value>, Stri
     for _ in 0..n {
         map.insert(r.str()?, decode_value(r)?);
     }
+    crate::ir::value::normalize_struct_metadata(&mut map);
     Ok(map)
 }
 

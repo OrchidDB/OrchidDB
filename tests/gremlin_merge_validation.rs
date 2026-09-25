@@ -165,14 +165,14 @@ async fn on_match_effects_commit_and_roll_back_with_the_traversal() {
     );
     let result = engine.gremlin("g.E().values('weight')").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 1);
     engine.gremlin("g.mergeE([(T.label):'knows']).option(Merge.onMatch,__.sideEffect(__.property('weight',0)).constant([:])).none()").await.unwrap();
     let result = engine.gremlin("g.E().values('weight')").await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 0);

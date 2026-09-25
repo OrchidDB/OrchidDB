@@ -41546,10 +41546,10 @@
       "case_sha256": "bfc3c476564997d01de8c6de0ddd27f4addb129beff3488729d2cc73772179c6",
       "elapsed_ms": 16.656,
       "status": "pass",
-      "query": "RETURN '\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690' AS literal",
+      "query": "RETURN '🧐🍌❖⋙⚐' AS literal",
       "expected": [
         [
-          "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+          "🧐🍌❖⋙⚐"
         ]
       ],
       "actual": {
@@ -41558,7 +41558,7 @@
         ],
         "rows": [
           [
-            "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+            "🧐🍌❖⋙⚐"
           ]
         ]
       },
@@ -41752,7 +41752,7 @@
       "query": "RETURN '\\u01FF' AS a",
       "expected": [
         [
-          "\u01ff"
+          "ǿ"
         ]
       ],
       "actual": {
@@ -41761,7 +41761,7 @@
         ],
         "rows": [
           [
-            "\u01ff"
+            "ǿ"
           ]
         ]
       },
@@ -41807,10 +41807,10 @@
       "case_sha256": "ee56395cc24726ef89b2981b5e4f08a3c816959c48e16631aa153922c115d2a6",
       "elapsed_ms": 14.074,
       "status": "pass",
-      "query": "RETURN \"\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690\" AS literal",
+      "query": "RETURN \"🧐🍌❖⋙⚐\" AS literal",
       "expected": [
         [
-          "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+          "🧐🍌❖⋙⚐"
         ]
       ],
       "actual": {
@@ -41819,7 +41819,7 @@
         ],
         "rows": [
           [
-            "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+            "🧐🍌❖⋙⚐"
           ]
         ]
       },
@@ -42079,11 +42079,11 @@
       "case_sha256": "3de49958048b4018a2323cae930bf958e2555c9e7c4b75f16577eab40d0131f9",
       "elapsed_ms": 15.135,
       "status": "pass",
-      "query": "RETURN ['abc, as#?l\u00dfdj '] AS literal",
+      "query": "RETURN ['abc, as#?lßdj '] AS literal",
       "expected": [
         [
           [
-            "abc, as#?l\u00dfdj "
+            "abc, as#?lßdj "
           ]
         ]
       ],
@@ -42094,7 +42094,7 @@
         "rows": [
           [
             [
-              "abc, as#?l\u00dfdj "
+              "abc, as#?lßdj "
             ]
           ]
         ]
@@ -42562,12 +42562,12 @@
       "case_sha256": "8265de190f3976ff9009a836eac1d734196fa57717df7fc25d7543976fa787a4",
       "elapsed_ms": 13.228,
       "status": "pass",
-      "query": "RETURN [2E-01, ', as#?l\u00dfdj ', null, 71034856, false] AS literal",
+      "query": "RETURN [2E-01, ', as#?lßdj ', null, 71034856, false] AS literal",
       "expected": [
         [
           [
             0.2,
-            ", as#?l\u00dfdj ",
+            ", as#?lßdj ",
             null,
             71034856,
             false
@@ -42582,7 +42582,7 @@
           [
             [
               0.2,
-              ", as#?l\u00dfdj ",
+              ", as#?lßdj ",
               null,
               71034856,
               false
@@ -43352,11 +43352,11 @@
       "case_sha256": "17a1789410ec542730a41941b784366f01c013e3af80f7f4a9570d31ec2f7224",
       "elapsed_ms": 14.148,
       "status": "pass",
-      "query": "RETURN {k: 'ab: c, as#?l\u00dfdj '} AS literal",
+      "query": "RETURN {k: 'ab: c, as#?lßdj '} AS literal",
       "expected": [
         [
           {
-            "k": "ab: c, as#?l\u00dfdj "
+            "k": "ab: c, as#?lßdj "
           }
         ]
       ],
@@ -43367,7 +43367,7 @@
         "rows": [
           [
             {
-              "k": "ab: c, as#?l\u00dfdj "
+              "k": "ab: c, as#?lßdj "
             }
           ]
         ]
@@ -45513,10 +45513,10 @@
       "elapsed_ms": 11.078,
       "status": "adapter-error",
       "reason": "Error observed, but TCK error type/detail/phase cannot be authoritatively classified by this adapter",
-      "query": "RETURN 42 \u2014 41",
+      "query": "RETURN 42 — 41",
       "expected_error": "a SyntaxError should be raised at compile time: InvalidUnicodeCharacter",
       "actual": {
-        "error": "{neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input '\u2014': expected whitespace, comment, '.', node labels or rel types, '[', '^', '*', '/', '%', '+', '-', \"=~\", IN, STARTS, ENDS, CONTAINS, IS, '=', '~', \"<>\", \"!=\", '<', '>', \"<=\", \">=\", AND, XOR, OR, AS, ',', ORDER, SKIP, LIMIT, FROM GRAPH, USE GRAPH, CONSTRUCT, LOAD CSV, START, MATCH, UNWIND, MERGE, CREATE UNIQUE, CREATE, SET, DELETE, REMOVE, FOREACH, WITH, CALL, RETURN, UNION, ';' or end of input (line 1, column 11 (offset: 10))} {gql_status: 50N42} {gql_status_description: error: general processing exception - unexpected error. Invalid input '\u2014': expected whitespace, comment, '.', node labels or rel types, '[', '^', '*', '/', '%', '+', '-', \"=~\", IN, STARTS, ENDS, CONTAINS, IS, '=', '~', \"<>\", \"!=\", '<', '>', \"<=\", \">=\", AND, XOR, OR, AS, ',', ORDER, SKIP, LIMIT, FROM GRAPH, USE GRAPH, CONSTRUCT, LOAD CSV, START, MATCH, UNWIND, MERGE, CREATE UNIQUE, CREATE, SET, DELETE, REMOVE, FOREACH, WITH, CALL, RETURN, UNION, ';' or end of input (line 1, column 11 (offset: 10))}",
+        "error": "{neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input '—': expected whitespace, comment, '.', node labels or rel types, '[', '^', '*', '/', '%', '+', '-', \"=~\", IN, STARTS, ENDS, CONTAINS, IS, '=', '~', \"<>\", \"!=\", '<', '>', \"<=\", \">=\", AND, XOR, OR, AS, ',', ORDER, SKIP, LIMIT, FROM GRAPH, USE GRAPH, CONSTRUCT, LOAD CSV, START, MATCH, UNWIND, MERGE, CREATE UNIQUE, CREATE, SET, DELETE, REMOVE, FOREACH, WITH, CALL, RETURN, UNION, ';' or end of input (line 1, column 11 (offset: 10))} {gql_status: 50N42} {gql_status_description: error: general processing exception - unexpected error. Invalid input '—': expected whitespace, comment, '.', node labels or rel types, '[', '^', '*', '/', '%', '+', '-', \"=~\", IN, STARTS, ENDS, CONTAINS, IS, '=', '~', \"<>\", \"!=\", '<', '>', \"<=\", \">=\", AND, XOR, OR, AS, ',', ORDER, SKIP, LIMIT, FROM GRAPH, USE GRAPH, CONSTRUCT, LOAD CSV, START, MATCH, UNWIND, MERGE, CREATE UNIQUE, CREATE, SET, DELETE, REMOVE, FOREACH, WITH, CALL, RETURN, UNION, ';' or end of input (line 1, column 11 (offset: 10))}",
         "code": "Neo.ClientError.Statement.SyntaxError"
       },
       "query_ms": [
@@ -94653,5 +94653,10 @@
   ],
   "build": {
     "version": "1.11.1"
+  },
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
   }
 }

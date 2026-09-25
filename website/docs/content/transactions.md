@@ -68,3 +68,15 @@ The `graph` variable in this example is a `MappedGraphEngine`. Outside an explic
 ## Back up a graph file
 
 For a simple file backup workflow, stop writers, close connections to the database, and then copy the database file. Keep the backup together with the application revision and mapping configuration needed to interpret it. Test restores by opening a copied database and running representative reads.
+
+## Upgrading a local database
+
+Stop other processes using the file and keep a backup before upgrading. On open,
+OrchidDB recognizes a prior graph-table namespace by its reserved schema and
+validates the checkpoint before renaming tables in a transaction. Checkpoints
+and incremental records are preserved. Ambiguous or corrupt stores are rejected
+instead of being replaced with an empty graph. Older typed Arrow metadata is
+accepted while new metadata uses the OrchidDB namespace.
+
+Rebuild JVM artifacts together with the native `orchiddb-jvm-store` executable;
+Java packages, configuration keys, and environment variables now use OrchidDB.

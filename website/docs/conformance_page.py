@@ -4,8 +4,8 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from html import escape as e
 ROOT=Path(__file__).resolve().parents[2]/'conformance'
-PRODUCTS={'crabgraph':'OrchidDB','sqlg':'SQLg','puppygraph':'PuppyGraph','janusgraph':'JanusGraph','neo4j':'Neo4j Community','jena':'Apache Jena TDB2'}
-SUITE_PRODUCTS={'opencypher':('crabgraph','neo4j','puppygraph'),'tinkerpop':('crabgraph','sqlg','puppygraph','janusgraph'),'rdf':('crabgraph','jena')}
+PRODUCTS={'orchiddb':'OrchidDB','sqlg':'SQLg','puppygraph':'PuppyGraph','janusgraph':'JanusGraph','neo4j':'Neo4j Community','jena':'Apache Jena TDB2'}
+SUITE_PRODUCTS={'opencypher':('orchiddb','neo4j','puppygraph'),'tinkerpop':('orchiddb','sqlg','puppygraph','janusgraph'),'rdf':('orchiddb','jena')}
 COLUMNS=PRODUCTS
 SUITE_COLUMNS=SUITE_PRODUCTS
 def column_name(key,suite):return COLUMNS[key]
@@ -47,7 +47,7 @@ def render(out):
  if reference.exists():(download/reference.name).write_bytes(reference.read_bytes())
  def get(p,c):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
-  if result.get('case_sha256') and result['case_sha256']!=result_fingerprint(c):return {**result,'status':'stale'}
+  if result.get('case_sha256') and result.get('normalized_case_sha256', result['case_sha256'])!=result_fingerprint(c):return {**result,'status':'stale'}
   return result
  html=['<div class="report-meta"><span>6,533 upstream scenarios · '+str(len(PRODUCTS))+' products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
  from leaderboard import render as render_leaderboard
@@ -80,7 +80,7 @@ def render(out):
    passed=counts['pass'];failed=counts['fail']+counts['timeout'];total=len(members)
    state='complete' if passed==total else 'mixed' if passed else 'failed' if failed else 'unknown'
    label='All passed' if passed==total else 'Mixed results' if passed else 'Failures recorded' if failed else 'Not applicable' if counts['not-applicable']==total else 'Not evaluated'
-   version=runs.get((product,suite),{}).get('build',{}).get('version','Local build' if product.startswith('crabgraph') else 'Version not recorded')
+   version=runs.get((product,suite),{}).get('build',{}).get('version','Local build' if product.startswith('orchiddb') else 'Version not recorded')
    note=' · '.join(str(counts[k])+' '+{'fail':'failed','timeout':'timed out','skipped':'skipped','adapter-error':'adapter limitations','unsupported':'unsupported','not-applicable':'not applicable','stale':'stale','not-run':'not run'}[k] for k in LABELS if k!='pass' and counts[k]) or 'Every scenario passed'
    bars=''.join('<span class="segment '+k+'" style="width:'+str(v/total*100)+'%" title="'+str(v)+' '+e(LABELS[k])+'"></span>' for k,v in counts.items())
    html.append('<td><a class="matrix-cell '+state+'" href="#tests-'+group_id+'" data-product-focus="'+product+'"><strong>'+str(passed)+' / '+str(total)+'</strong><span>'+label+'</span><small>'+e(note)+'</small></a></td>')
@@ -91,8 +91,8 @@ def render(out):
    if any(s in ['fail','timeout'] for s in statuses):flags.append('failures')
    if any(r['status'] in ['adapter-error','stale','not-run'] for r in results.values()):flags.append('adapter')
    if any(r['status'] in ['skipped','unsupported'] for r in results.values()):flags.append('unexecuted')
-   if results['crabgraph']['status']=='pass' and any(r['status']=='fail' for p,r in results.items() if p!='crabgraph'):flags.append('crab-wins')
-   if results['crabgraph']['status']=='fail' and any(r['status']=='pass' for p,r in results.items() if p!='crabgraph'):flags.append('peer-wins')
+   if results['orchiddb']['status']=='pass' and any(r['status']=='fail' for p,r in results.items() if p!='orchiddb'):flags.append('crab-wins')
+   if results['orchiddb']['status']=='fail' and any(r['status']=='pass' for p,r in results.items() if p!='orchiddb'):flags.append('peer-wins')
    anchor='case-'+hashlib.sha256(c['id'].encode()).hexdigest()[:16]
    html.append('<tr class="comparison-row" id="'+anchor+'" data-language="'+suite+'" data-flags="'+' '.join(flags)+'"><th scope="row"><a href="#'+anchor+'">'+e(c['name'])+'</a><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="upstream"><summary>Scenario and expectation</summary><a href="'+e(c['source'])+'">Pinned upstream source ↗</a> · <a href="'+evidence_url+'">Evidence JSON</a><div class="evidence-content"></div></details></th>')
    for p,r in results.items():
@@ -129,6 +129,7 @@ def render(out):
 <p><strong>Gremlin execution.</strong> One OrchidDB instance executes the complete suite through its production Gremlin frontend and SQL IR DAG. DuckDB executes eligible SQL regions; DataFusion executes the remaining operators, including JVM kernels. The adapter submits every traversal through the same endpoint and does not select an executor per scenario or retry failures through another implementation. The matrix and leaderboard use one recorded outcome per scenario from that run. Downloads include instance identity, source and binary hashes, JVM artifacts, timings, and assertion diagnostics. Separately recorded Java tests do not contribute to the comparison totals.</p>
 <p><strong>Timings.</strong> Recorded milliseconds include fixture setup, query execution and adapter work. Individual step timings and result differences are available in the evidence. The leaderboard ranks passed scenarios; these timings are not used as a performance ranking.</p>
 <p><strong>Versions and scope.</strong> The TCK is pinned to 2024.3, while PuppyGraph documents openCypher 9. A failure in this newer corpus is not by itself evidence of violating a product’s declared version. Gremlin uses the pinned 3.7.4 language profile. W3C coverage is SPARQL 1.0 and 1.1. These are observed compatibility results, not certification or an overall product ranking. A failure deserves investigation of the engine, adapter and language/version contract.</p>
+<p><strong>Historical evidence.</strong> Project identifiers and local paths were normalized on 2026-09-25. Outcomes and timings are unchanged; these records are not a rerun of the renamed engine. Original provenance hashes remain in the downloads. See the <a href="conformance.html#historical-evidence">normalization notes</a>.</p>
 <p><strong>Local execution only.</strong> Test engines and harnesses run on the local workstation. GitHub Actions only builds and publishes static documentation and committed evidence; it does not run tests or validation jobs. A changed case hash makes old results stale. Version pins, exact source links, complete outcomes and raw diagnostics are downloadable. <a href="https://github.com/OrchidDB/OrchidDB/tree/main/conformance">Local reproduction commands and adapter source</a> describe the execution profiles and time limits.</p>
 ''')
  html.append('</details><details class="report-section" id="versions"><summary>Versions and downloadable evidence</summary><p><a href="/downloads/conformance/upstream-catalog.json">Complete upstream catalog JSON</a> · <a href="/downloads/conformance/upstream-sources.json">Pinned source revisions</a> · <a href="/downloads/conformance/upstream-comparison.csv">Comparison CSV</a> · <a href="/downloads/conformance/reference-tinkerpop.json">Apache reference-engine check</a></p>')

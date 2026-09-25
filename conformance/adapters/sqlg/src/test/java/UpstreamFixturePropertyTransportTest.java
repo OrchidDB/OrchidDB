@@ -12,7 +12,7 @@ public class UpstreamFixturePropertyTransportTest {
    int totalRecords=0,totalMeta=0;
    while(vertices.hasNext()) {
     Vertex vertex=vertices.next();
-    Map<String,Object> encoded=UpstreamGremlin.fixtureNode(vertex,"crabgraph");
+    Map<String,Object> encoded=UpstreamGremlin.fixtureNode(vertex,"orchiddb");
     assertEquals(vertex.id(),encoded.get("id"));
     assertEquals(vertex.id().getClass().getSimpleName(),encoded.get("id_type"));
     List<?> records=(List<?>)encoded.get("property_records");
@@ -53,7 +53,7 @@ public class UpstreamFixturePropertyTransportTest {
  @Test public void modernFixtureRetainsElementIdTypesAndScalarProperties() throws Exception {
   try(TinkerGraph graph=TinkerFactory.createModern()) {
    Vertex vertex=graph.vertices(1).next();
-   Map<String,Object> node=UpstreamGremlin.fixtureNode(vertex,"crabgraph");
+   Map<String,Object> node=UpstreamGremlin.fixtureNode(vertex,"orchiddb");
    assertEquals("Integer",node.get("id_type"));
    assertEquals("marko",((Map<?,?>)node.get("properties")).get("name"));
    Edge edge=graph.edges(7).next();

@@ -4,8 +4,8 @@ import static org.junit.Assert.*;
 
 public class UpstreamLiteralTransportTest {
  @Test public void decimalAndDoubleHaveDistinctNativeLiterals() throws Exception {
-  try(var callbacks=new io.crabgraph.gremlin.CrabCallbackRegistry()) {
-   var translator=new io.crabgraph.gremlin.CrabBytecodeTranslator(callbacks);
+  try(var callbacks=new io.orchiddb.gremlin.OrchidCallbackRegistry()) {
+   var translator=new io.orchiddb.gremlin.OrchidBytecodeTranslator(callbacks);
    var code=new org.apache.tinkerpop.gremlin.process.traversal.Bytecode();
    code.addStep("inject",new BigDecimal("1"),Double.valueOf(1),new BigDecimal("12345678901234567890.00000001"),Double.NaN);
    assertEquals("g.inject(1M,1.0D,12345678901234567890.00000001M,NaN)",org.apache.tinkerpop.gremlin.process.traversal.translator.GroovyTranslator.of("g",translator).translate(code).getScript());

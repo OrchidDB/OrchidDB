@@ -155,7 +155,7 @@ impl Lowerer<'_, '_> {
                     case(
                         vec![(
                             and_all(valid),
-                            duck_str("__crabgraph_sparql_scalar",
+                            duck_str("__orchiddb_sparql_scalar",
                                 vec![s("regex"), text.value, pattern.value, s(""), options]).eq(s("true")),
                         )],
                         None,
@@ -377,7 +377,7 @@ impl Lowerer<'_, '_> {
             "sparql_resolve_iri" => {
                 arity(2)?;
                 let a = &terms[0];
-                Term::iri(duck_str("__crabgraph_sparql_scalar", vec![
+                Term::iri(duck_str("__orchiddb_sparql_scalar", vec![
                     s("resolve_iri"), a.value.clone(), terms[1].value.clone(), s(""), s("")
                 ])).only_if(a.kind.clone().eq(s(KIND_IRI)).or(a.is_simple()))
             }
@@ -556,7 +556,7 @@ impl Lowerer<'_, '_> {
                 }
                 Term {
                     value: duck_str(
-                        "__crabgraph_sparql_scalar",
+                        "__orchiddb_sparql_scalar",
                         vec![
                             s("replace"),
                             text.value.clone(),
@@ -609,14 +609,14 @@ impl Lowerer<'_, '_> {
             "sha384" | "sha512" | "encode_for_uri" => {
                 arity(1)?;
                 let a = &terms[0];
-                Term::string(duck_str("__crabgraph_sparql_scalar",
+                Term::string(duck_str("__orchiddb_sparql_scalar",
                     vec![s(name), a.value.clone(), s(""), s(""), s("")]))
                     .only_if(if name == "encode_for_uri" { a.is_string() } else { a.is_simple() })
             }
             "timezone" => {
                 arity(1)?;
                 let a = &terms[0];
-                Term::literal(duck_str("__crabgraph_sparql_scalar",
+                Term::literal(duck_str("__orchiddb_sparql_scalar",
                     vec![s(name), a.value.clone(), s(""), s(""), s("")]), &xsd("dayTimeDuration"))
                     .only_if(a.has_datatype(&xsd("dateTime")))
             }

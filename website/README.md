@@ -24,7 +24,7 @@ Quickstart, Slack, and GitHub sit below the introduction. The footer's second
 row contains Mastodon, Twitter, LinkedIn, Slack, and GitHub.
 
 - `index.html`: project introduction, technology logos, data-to-graph mapping diagram,
-  application embedding diagram, and participation.
+  client API design, source-install selector, and participation.
 - `resources.html`: guides, examples, and conformance evidence.
 - `ecosystem.html`: underlying technologies and query-language guides.
 - `community.html`: participation guidance and clearly marked channel placeholders.
@@ -67,7 +67,7 @@ builds CLI archives and smoke-checks them when a version tag is pushed.
 
 The workflow is [website.yml](../.github/workflows/website.yml). AWS access uses
 the `personal` account credentials stored as repository Actions secrets:
-`CRABGRAPH_AWS_ACCESS_KEY_ID` and `CRABGRAPH_AWS_SECRET_ACCESS_KEY`.
+`ORCHIDDB_AWS_ACCESS_KEY_ID` and `ORCHIDDB_AWS_SECRET_ACCESS_KEY`.
 
 To publish manually, install mdBook first as described in the docs README, then:
 
@@ -82,7 +82,7 @@ syncing the whole `website/` directory, which includes build sources.
 
 | Site | Private S3 location | CloudFront distribution |
 | --- | --- | --- |
-| Project website | `crabgraph-landing-846199521923` root | `E2LDPO5UT3NIDR` |
+| Project website | `orchiddb-landing-846199521923` root | `E2LDPO5UT3NIDR` |
 | Docs | Same bucket, `documentation/` prefix | `EV4E7ROH7WATO` |
 
 [STYLE.md](STYLE.md) describes the visual and editorial approach.
@@ -94,10 +94,10 @@ syncing the whole `website/` directory, which includes build sources.
 - `https://docs.orchiddb.com/` serves the mdBook documentation.
 - The public Route 53 zone is `Z094613320U7C0GG8MQQH`.
 - ACM certificate `fe939ba9-7545-4cdc-8305-fa315ac0b813` in `us-east-1`
-  covers OrchidDB and the legacy Crabgraph domains.
+  covers OrchidDB and the redirect domains.
 
-Existing S3 resource names and Actions secret names are retained. The repository
-is now `OrchidDB/OrchidDB`; its transferred Actions secrets continue to work.
+The deployment uses the OrchidDB S3 bucket and `ORCHIDDB_AWS_*` Actions
+secrets in `OrchidDB/OrchidDB`.
 
 `cloudfront/canonical-host.js` is published as the CloudFront function
 `OrchidDBCanonicalHost` and attached to both distributions at viewer request.

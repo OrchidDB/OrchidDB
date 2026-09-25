@@ -82,7 +82,7 @@ async fn upstream_forty_nested_literal_results_preserve_all_levels() {
         assert_eq!(result.returned.batch.num_rows(), 1);
         let schema = result.returned.batch.schema();
         let native: serde_json::Value =
-            serde_json::from_str(&schema.metadata()["crabgraph.cypher.typed_rows.v1"]).unwrap();
+            serde_json::from_str(&schema.metadata()["orchiddb.cypher.typed_rows.v1"]).unwrap();
         let mut value = &native[0][0];
         for level in 0..40 {
             assert_eq!(value["type"], if map { "map" } else { "list" });

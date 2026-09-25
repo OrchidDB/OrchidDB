@@ -49,7 +49,7 @@ fn execution() -> JvmExecution {
     JvmExecution {
         config: Some(
             JvmConfig::from_env()
-                .expect("Set CRABGRAPH_JVM_CLASSPATH to the built production JVM and dependencies"),
+                .expect("Set ORCHIDDB_JVM_CLASSPATH to the built production JVM and dependencies"),
         ),
         deadline: Some(Instant::now() + Duration::from_secs(40)),
         ..Default::default()
@@ -71,7 +71,7 @@ fn jvm_nodes_round_trip_through_optimizer_and_are_effect_fences() {
 #[test]
 fn gremlin_call_lowers_to_jvm_ir() {
     let parsed = orchiddb::language::gremlin::parser::parse_traversal(
-        "g.inject(2).call('crabgraph.jvm',['script':'current + 3'])",
+        "g.inject(2).call('orchiddb.jvm',['script':'current + 3'])",
     )
     .unwrap();
     let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
@@ -224,7 +224,7 @@ fn transactions_cannot_commit_inside_a_node_and_null_policy_is_preserved() {
 #[ignore = "requires the production JVM classpath"]
 fn repeat_body_uses_the_correlated_frontier() {
     let parsed = orchiddb::language::gremlin::parser::parse_traversal(
-        "g.inject(2).repeat(__.call('crabgraph.jvm',['script':'current + 1'])).times(2)",
+        "g.inject(2).repeat(__.call('orchiddb.jvm',['script':'current + 1'])).times(2)",
     )
     .unwrap();
     let plan = orchiddb::language::gremlin::planner::GremlinPlanner::new()
@@ -382,7 +382,7 @@ async fn public_engine_executes_ir_and_respects_outer_rollback() {
         .await
         .unwrap();
     engine.begin().unwrap();
-    engine.gremlin("g.V().call('crabgraph.jvm',['script':\"current.property('name','changed'); current\"])").await.unwrap();
+    engine.gremlin("g.V().call('orchiddb.jvm',['script':\"current.property('name','changed'); current\"])").await.unwrap();
     engine.rollback().unwrap();
     let rows = engine.gremlin("g.V().values('name')").await.unwrap();
     assert_eq!(
@@ -427,7 +427,7 @@ async fn ordinary_gremlin_callbacks_use_the_same_engine_and_relational_executor(
     assert_eq!(output.backend, ExecutionBackend::DataFusion);
     assert_eq!(output.returned.batch.num_rows(), 1);
     let metadata = output.returned.batch.schema();
-    assert!(metadata.metadata()["crabgraph.gremlin.typed_rows.v1"].contains("BOB"));
+    assert!(metadata.metadata()["orchiddb.gremlin.typed_rows.v1"].contains("BOB"));
     let grouped = engine
         .gremlin_with_bindings("g.V().group().by(key).by(__.count())", &bindings)
         .await
@@ -491,7 +491,7 @@ async fn production_comparator_preserves_rows_and_graph_computer_uses_query_loca
     ]);
     let result=engine.gremlin_with_bindings("g.inject('ax1','az1','ax2').as('original').order().by(first).by(second).select('original')",&bindings).await.unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], "ax2");
@@ -547,7 +547,7 @@ async fn correlated_callbacks_share_worker_and_preserve_typed_injection() {
         .await
         .unwrap();
     let rows: serde_json::Value = serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap();
     assert_eq!(rows[0][0]["value"], 21);

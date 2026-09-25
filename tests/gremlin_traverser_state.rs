@@ -11,7 +11,7 @@ async fn native(engine: &mut GraphEngine, q: &str) -> Value {
         .await
         .unwrap_or_else(|e| panic!("{q}: {e}"));
     serde_json::from_str(
-        &result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"],
+        &result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"],
     )
     .unwrap()
 }

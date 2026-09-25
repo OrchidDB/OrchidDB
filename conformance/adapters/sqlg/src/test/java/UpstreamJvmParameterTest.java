@@ -39,7 +39,7 @@ public class UpstreamJvmParameterTest {
  @Test public void originalGraphCountAssertionReceivesItsReferencedParameters() throws Exception {
   UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
   try {
-   steps.givenTheXGraph("modern");UpstreamGremlin.backend="crabgraph-jvm";
+   steps.givenTheXGraph("modern");UpstreamGremlin.backend="orchiddb-jvm";
    var json=UpstreamGremlin.json;
    UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","using the parameter vid1 defined as \"v[marko].id\"")));
    UpstreamGremlin.step(steps,json.valueToTree(Map.of("text","using the parameter unused defined as \"c[it.get()]\"")));
@@ -53,7 +53,7 @@ public class UpstreamJvmParameterTest {
  @Test public void capturedIdsSurviveElementDeletionBeforeOriginalCountAssertions() throws Exception {
   UpstreamGremlin.backend="reference";var context=new UpstreamGremlin.Context();var steps=new StepDefinition(context);
   try {
-   steps.givenTheXGraph("modern");UpstreamGremlin.backend="crabgraph-jvm";
+   steps.givenTheXGraph("modern");UpstreamGremlin.backend="orchiddb-jvm";
    UpstreamGremlin.step(steps,UpstreamGremlin.json.valueToTree(Map.of("text","using the parameter vid1 defined as \"v[marko].id\"")));
    context.graph.traversal().V(context.typedParameters.get("vid1")).drop().iterate();
    UpstreamGremlin.step(steps,UpstreamGremlin.json.valueToTree(Map.of("text","the graph should return 0 for count of \"g.V(vid1)\"")));

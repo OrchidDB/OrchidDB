@@ -34,10 +34,10 @@ await page.waitForFunction(()=>[...document.querySelectorAll('.feature-card:not(
 await page.locator('#comparison-reset').click();
 await page.screenshot({path:'/tmp/conformance-explorer-desktop.png'});
 const card=page.locator('.feature-card[data-suite="tinkerpop"]:visible').first();
-await card.locator('[data-product-focus="crabgraph"]').click();
+await card.locator('[data-product-focus="orchiddb"]').click();
 const row=card.locator('.comparison-row').first();
-await row.locator('[data-product="crabgraph"] .raw-evidence').waitFor({state:'attached'});
-const actual=JSON.parse(await row.locator('[data-product="crabgraph"] .raw-evidence').textContent());
+await row.locator('[data-product="orchiddb"] .raw-evidence').waitFor({state:'attached'});
+const actual=JSON.parse(await row.locator('[data-product="orchiddb"] .raw-evidence').textContent());
 await row.locator('[data-product="upstream"] > summary').click();
 await row.locator('[data-product="upstream"] .raw-evidence').waitFor({state:'attached'});
 const original=JSON.parse(await row.locator('[data-product="upstream"] .raw-evidence').textContent());
@@ -48,7 +48,7 @@ assert.equal(await page.locator('.feature-card:visible').count(),361);
 assert.equal(await page.locator('#'+cypherAnchor).isVisible(),true);
 assert.equal(await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('open'),'');
 const evidenceUrl=await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('data-evidence');
-const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['crabgraph','neo4j','puppygraph']);
+const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['orchiddb','neo4j','puppygraph']);
 await page.locator('[data-language-tab="tinkerpop"]').click();
 await page.locator('#comparison-reset').click();
 for(const width of [1440,1000,760,390]){

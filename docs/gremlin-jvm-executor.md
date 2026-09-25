@@ -2,24 +2,24 @@
 
 For JVM fragments inside a managed query, see [relational DAG execution](sql-ir-datafusion-execution.md). The standalone profile described below remains available.
 
-`crabgraph-jvm` is an explicit execution profile. TinkerPop 3.7.4 executes traversals
-and Groovy callbacks in the JVM; a `CrabGraph` provider performs every graph read
-and mutation through a private `crabgraph-jvm-store` process backed by OrchidDB's
+`orchiddb-jvm` is an explicit execution profile. TinkerPop 3.7.4 executes traversals
+and Groovy callbacks in the JVM; a `OrchidGraph` provider performs every graph read
+and mutation through a private `orchiddb-jvm-store` process backed by OrchidDB's
 native `PropertyGraph`. It does not execute against a TinkerGraph copy. This
 profile does not establish Rust planner or Rust callback conformance.
 
-The production module is `net.crabgraph:crabgraph-jvm:0.1.0`. It depends on pinned
+The production module is `net.orchiddb:orchiddb-jvm:0.1.0`. It depends on pinned
 TinkerPop libraries and Jackson, independently of the SQLg conformance adapter.
 Java 21, Maven and the repository's Rust toolchain are required. Build and test
 locally:
 
 ```sh
-cargo build --no-default-features --bin crabgraph-jvm-store
-export CRABGRAPH_JVM_STORE="$PWD/target/debug/crabgraph-jvm-store"
+cargo build --no-default-features --bin orchiddb-jvm-store
+export ORCHIDDB_JVM_STORE="$PWD/target/debug/orchiddb-jvm-store"
 mvn -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=classpath.txt
 ```
 
-Use `jvm/crabgraph-jvm --store "$CRABGRAPH_JVM_STORE"` for an in-memory graph or
+Use `jvm/orchiddb-jvm --store "$ORCHIDDB_JVM_STORE"` for an in-memory graph or
 add `--path /absolute/path/graph.snapshot` for durable native snapshots. The path
 is a snapshot file, not a DuckDB database. The bridge uses the existing native
 snapshot codec and an exclusive file lock; a second process cannot open the same
@@ -35,7 +35,7 @@ The command accepts one JSON object per line and emits one response per line:
 {"script":"g.V().map { t -> t.get().value('name').length() }"}
 ```
 
-Responses identify `execution_profile: "crabgraph-jvm"` and protocol version 1.
+Responses identify `execution_profile: "orchiddb-jvm"` and protocol version 1.
 Successful `result` values use GraphSON 3, retaining graph elements, non-string map
 keys, paths, sets and numeric widths. Input bindings use the typed native value
 protocol described below. Errors produce `ok: false`; callback exceptions are
@@ -45,8 +45,8 @@ with ordinary JVM privileges. This interface is not a sandbox or network server.
 Applications can use the same capability directly:
 
 ```java
-try (CrabGraph graph = CrabGraph.open(nativeExecutable, snapshotPath);
-     CrabJvmExecutor executor = new CrabJvmExecutor(graph)) {
+try (OrchidGraph graph = OrchidGraph.open(nativeExecutable, snapshotPath);
+     OrchidJvmExecutor executor = new OrchidJvmExecutor(graph)) {
     List<Object> names = executor.submit(
         "g.V().values('name')", Map.of(), Duration.ofSeconds(30)).get();
 }
@@ -70,7 +70,7 @@ open a new session to continue. Native I/O has a bounded response deadline.
 Blocking application code that ignores JVM interruption can outlive the worker
 deadline, but its native store is terminated and it cannot commit graph writes.
 
-Direct `CrabGraph` users control `tx().open()/commit()/rollback()`. Failed native
+Direct `OrchidGraph` users control `tx().open()/commit()/rollback()`. Failed native
 operations restore their statement snapshot. Transaction status is thread-local;
 write transactions serialize until their owner commits or rolls back. Other
 threads read the last committed native state and wait before starting a write.
@@ -95,7 +95,7 @@ is not an advertised provider feature.
 The provider keeps bounded native adjacency and property records between reads.
 Every mutation, transaction completion, native error and close invalidates these
 caches; atomic mutation blocks bypass them. Set JVM system properties
-`crabgraph.native.adjacencyCacheSize=0` or `crabgraph.native.propertyCacheSize=0`
+`orchiddb.native.adjacencyCacheSize=0` or `orchiddb.native.propertyCacheSize=0`
 to disable either cache. Defaults are 4,096 and 16,384 requests respectively.
 
 `freshGraph()` creates an independent in-memory native graph. A returned
@@ -104,10 +104,10 @@ graph. Executor close/cancellation explicitly terminates its entire graph family
 including intermediate compute results. Direct graph close affects that graph
 only.
 
-`CrabGraph.open(Configuration)` accepts `crabgraph.native.executable`, optional
-`crabgraph.native.path`, `crabgraph.vertex.defaultCardinality` (`single`, `list`
-or `set`), and `crabgraph.vertex.idManager`, `crabgraph.edge.idManager`,
-`crabgraph.vertexProperty.idManager` (`ANY`, `INTEGER` or `LONG`). `ANY` preserves
+`OrchidGraph.open(Configuration)` accepts `orchiddb.native.executable`, optional
+`orchiddb.native.path`, `orchiddb.vertex.defaultCardinality` (`single`, `list`
+or `set`), and `orchiddb.vertex.idManager`, `orchiddb.edge.idManager`,
+`orchiddb.vertexProperty.idManager` (`ANY`, `INTEGER` or `LONG`). `ANY` preserves
 supported numeric and string public ID types; it does not advertise support for
 arbitrary Java object IDs. Numeric ID lookup accepts string representations,
 preferring an exact stored string ID when both forms exist. Reader fixture
@@ -145,8 +145,8 @@ null values explicitly; the Rust language profile retains its existing default
 null-as-removal policy.
 
 The original Gherkin assertions remain in the pinned upstream test library.
-`--engine crabgraph-jvm` and `--engine crabgraph-computer` select separate local
-conformance profiles; `--engine crabgraph` continues to measure Rust traversal
+`--engine orchiddb-jvm` and `--engine orchiddb-computer` select separate local
+conformance profiles; `--engine orchiddb` continues to measure Rust traversal
 execution. For the 15 Java-only upstream placeholders, the JVM adapter invokes
 the original pinned JUnit counterparts through the Java provider harness. Each
 scenario records its Java assertion source, outcome, timing and build provenance;

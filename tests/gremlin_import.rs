@@ -12,7 +12,7 @@ struct File(PathBuf);
 impl File {
     fn new(extension: &str, contents: &str) -> Self {
         let path = std::env::temp_dir().join(format!(
-            "crabgraph-import-{}-{}.{}",
+            "orchiddb-import-{}-{}.{}",
             std::process::id(),
             SERIAL.fetch_add(1, Ordering::Relaxed),
             extension

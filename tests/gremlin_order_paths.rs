@@ -21,7 +21,7 @@ async fn path_order_keeps_element_prefix_before_projected_values() {
     let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
     engine.replace_graph(g).unwrap();
     let result = engine.gremlin(query).await.unwrap();
-    let rows: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+    let rows: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
     assert_eq!(rows.as_array().unwrap().iter().map(|row|row[0]["value"].as_str().unwrap()).collect::<Vec<_>>(),vec!["java","zulu","alpha","java"], "backend {:?}",result.backend);
 }
 
@@ -57,7 +57,7 @@ async fn property_paths_order_by_public_ids_in_both_directions() {
             let direct = execute_rows(&plan, &g).unwrap().into_iter().map(|r| r.bindings["current"].clone()).collect::<Vec<_>>();
             assert_eq!(direct, expected.iter().map(|s| Value::String((*s).into())).collect::<Vec<_>>(), "{query}");
             let result = engine.gremlin(&query).await.unwrap();
-            let rows: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["crabgraph.gremlin.typed_rows.v1"]).unwrap();
+            let rows: serde_json::Value = serde_json::from_str(&result.returned.batch.schema().metadata()["orchiddb.gremlin.typed_rows.v1"]).unwrap();
             assert_eq!(rows.as_array().unwrap().iter().map(|row| row[0]["value"].as_str().unwrap()).collect::<Vec<_>>(), expected, "{query}");
         }
     }

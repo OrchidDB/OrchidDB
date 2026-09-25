@@ -228,7 +228,7 @@ pub(super) fn lower_ontology_bgp(
         items.push(ProjectionItem { alias, expr });
     }
     // Expose configured resource identities for every materialized class,
-    // never Crabgraph's internal row ids unless the mapping requests that.
+    // never OrchidDB's internal row ids unless the mapping requests that.
     for (binding, label) in &binding_labels {
         let identity = typed_bindings
             .get(binding)

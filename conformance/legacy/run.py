@@ -26,13 +26,13 @@ class Process:
   except subprocess.TimeoutExpired:self.p.kill();self.p.wait()
   self.log.close()
 
-class Crabgraph:
+class OrchidDB:
  languages={'cypher','gremlin','sparql'}
  def __init__(self):
-  binary=Path(os.environ.get('CRABGRAPH_CONFORMANCE_BIN',ROOT.parent/'target/debug/crabgraph-conformance-runner')).resolve()
+  binary=Path(os.environ.get('ORCHIDDB_CONFORMANCE_BIN',ROOT.parent/'target/debug/orchiddb-conformance-runner')).resolve()
   self.version={'version':'0.1.0','edition':'repository build','binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'read_mode':os.environ.get('CONFORMANCE_READ_MODE','hybrid')}
   self.version.update(git_revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),working_tree_modified=bool(subprocess.check_output(['git','status','--porcelain','--','src','Cargo.toml','Cargo.lock'],cwd=ROOT,text=True).strip()))
-  self.proc=Process([str(binary)],ROOT/'crabgraph.log')
+  self.proc=Process([str(binary)],ROOT/'orchiddb.log')
   for q in FIXTURE:
    result=self.proc.query({'query':q})
    if 'error' in result:raise RuntimeError(result['error'])
@@ -120,7 +120,7 @@ class Reference(Sqlg):
  def __init__(self):
   super().__init__();self.version={'version':'3.7.4','edition':'TinkerGraph reference'}
 
-ENGINES={'reference':Reference,'crabgraph':Crabgraph,'ladybug':Ladybug,'neo4j':Neo4j,'puppygraph':Puppygraph,'sqlg':Sqlg}
+ENGINES={'reference':Reference,'orchiddb':OrchidDB,'ladybug':Ladybug,'neo4j':Neo4j,'puppygraph':Puppygraph,'sqlg':Sqlg}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--engine',choices=ENGINES,required=True);p.add_argument('--output',type=Path);p.add_argument('--filter',default='');p.add_argument('--repetitions',type=int,default=3);args=p.parse_args()
  if args.repetitions<1:p.error('--repetitions must be positive')

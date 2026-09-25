@@ -31,8 +31,8 @@ pub(super) fn lower_call(
     args: &[CallArg],
     options: &[CallOption],
 ) -> GremlinPlanResult<Node> {
-    if matches!(name, "crabgraph.jvm" | "crabgraph.jvm.computer" | "crabgraph.jvm.sack") {
-        let invalid = || GremlinPlanError::Unsupported("call('crabgraph.jvm', ['script': code, 'mode': 'map'|'flatMap'|'filter', 'bindings': map]) requires trusted code and literal options".into());
+    if matches!(name, "orchiddb.jvm" | "orchiddb.jvm.computer" | "orchiddb.jvm.sack") {
+        let invalid = || GremlinPlanError::Unsupported("call('orchiddb.jvm', ['script': code, 'mode': 'map'|'flatMap'|'filter', 'bindings': map]) requires trusted code and literal options".into());
         fn entries(value: &GValue) -> Option<Vec<(&str, &GValue)>> {
             match value {
                 GValue::Map(values) => Some(values.iter().map(|(key,value)| (key.as_str(),value)).collect()),
@@ -45,7 +45,7 @@ pub(super) fn lower_call(
         if !options.is_empty() || parameters.iter().any(|(key,_)| !matches!(*key,"script"|"mode"|"bindings")) { return Err(invalid()); }
         let get = |key| parameters.iter().find_map(|(name,value)| (*name == key).then_some(*value));
         let Some(GValue::String(script)) = get("script") else { return Err(invalid()); };
-        let mode = if name=="crabgraph.jvm.computer" { crate::ir::jvm::JvmMode::Computer } else { match get("mode") {
+        let mode = if name=="orchiddb.jvm.computer" { crate::ir::jvm::JvmMode::Computer } else { match get("mode") {
             None => crate::ir::jvm::JvmMode::Map,
             Some(GValue::String(mode)) if mode == "map" => crate::ir::jvm::JvmMode::Map,
             Some(GValue::String(mode)) if mode == "flatMap" => crate::ir::jvm::JvmMode::FlatMap,
@@ -53,7 +53,7 @@ pub(super) fn lower_call(
             _ => return Err(invalid()),
         }};
         let mut arguments = vec![ProjectionItem { alias: CURRENT.into(), expr: IrExpr::Binding(CURRENT.into()) }];
-        if name == "crabgraph.jvm.sack" {
+        if name == "orchiddb.jvm.sack" {
             arguments.push(ProjectionItem { alias: "__sack".into(), expr: IrExpr::Binding("__sack".into()) });
         }
         if let Some(bindings) = get("bindings") {
@@ -63,7 +63,7 @@ pub(super) fn lower_call(
             }
         }
         return Ok(Node::GraphJvm {
-            operation: crate::ir::jvm::JvmOperation { script: script.clone(), output: if name == "crabgraph.jvm.sack" { "__sack" } else { CURRENT }.into(), mode, arguments },
+            operation: crate::ir::jvm::JvmOperation { script: script.clone(), output: if name == "orchiddb.jvm.sack" { "__sack" } else { CURRENT }.into(), mode, arguments },
             input: input.boxed(),
         });
     }
@@ -137,7 +137,7 @@ pub(super) fn lower_call_source(
         }));
     }
 
-    if name == "crabgraph.jvm" {
+    if name == "orchiddb.jvm" {
         let input = Node::GraphValues { bindings: vec![CURRENT.into()], rows: vec![vec![Value::Null]], bulk: None };
         return lower_call(input, name, args, options).map(Some);
     }

@@ -82587,10 +82587,10 @@
       "case_sha256": "bfc3c476564997d01de8c6de0ddd27f4addb129beff3488729d2cc73772179c6",
       "elapsed_ms": 13.395,
       "status": "pass",
-      "query": "RETURN '\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690' AS literal",
+      "query": "RETURN '🧐🍌❖⋙⚐' AS literal",
       "expected": [
         [
-          "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+          "🧐🍌❖⋙⚐"
         ]
       ],
       "actual": {
@@ -82599,7 +82599,7 @@
         ],
         "rows": [
           [
-            "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+            "🧐🍌❖⋙⚐"
           ]
         ]
       },
@@ -82793,7 +82793,7 @@
       "query": "RETURN '\\u01FF' AS a",
       "expected": [
         [
-          "\u01ff"
+          "ǿ"
         ]
       ],
       "actual": {
@@ -82802,7 +82802,7 @@
         ],
         "rows": [
           [
-            "\u01ff"
+            "ǿ"
           ]
         ]
       },
@@ -82848,10 +82848,10 @@
       "case_sha256": "ee56395cc24726ef89b2981b5e4f08a3c816959c48e16631aa153922c115d2a6",
       "elapsed_ms": 43.545,
       "status": "pass",
-      "query": "RETURN \"\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690\" AS literal",
+      "query": "RETURN \"🧐🍌❖⋙⚐\" AS literal",
       "expected": [
         [
-          "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+          "🧐🍌❖⋙⚐"
         ]
       ],
       "actual": {
@@ -82860,7 +82860,7 @@
         ],
         "rows": [
           [
-            "\ud83e\uddd0\ud83c\udf4c\u2756\u22d9\u2690"
+            "🧐🍌❖⋙⚐"
           ]
         ]
       },
@@ -83137,11 +83137,11 @@
       "case_sha256": "3de49958048b4018a2323cae930bf958e2555c9e7c4b75f16577eab40d0131f9",
       "elapsed_ms": 13.145,
       "status": "pass",
-      "query": "RETURN ['abc, as#?l\u00dfdj '] AS literal",
+      "query": "RETURN ['abc, as#?lßdj '] AS literal",
       "expected": [
         [
           [
-            "abc, as#?l\u00dfdj "
+            "abc, as#?lßdj "
           ]
         ]
       ],
@@ -83152,7 +83152,7 @@
         "rows": [
           [
             [
-              "abc, as#?l\u00dfdj "
+              "abc, as#?lßdj "
             ]
           ]
         ]
@@ -83620,12 +83620,12 @@
       "case_sha256": "8265de190f3976ff9009a836eac1d734196fa57717df7fc25d7543976fa787a4",
       "elapsed_ms": 18.214,
       "status": "pass",
-      "query": "RETURN [2E-01, ', as#?l\u00dfdj ', null, 71034856, false] AS literal",
+      "query": "RETURN [2E-01, ', as#?lßdj ', null, 71034856, false] AS literal",
       "expected": [
         [
           [
             0.2,
-            ", as#?l\u00dfdj ",
+            ", as#?lßdj ",
             null,
             71034856,
             false
@@ -83640,7 +83640,7 @@
           [
             [
               0.2,
-              ", as#?l\u00dfdj ",
+              ", as#?lßdj ",
               null,
               71034856,
               false
@@ -84461,11 +84461,11 @@
       "case_sha256": "17a1789410ec542730a41941b784366f01c013e3af80f7f4a9570d31ec2f7224",
       "elapsed_ms": 12.498,
       "status": "pass",
-      "query": "RETURN {k: 'ab: c, as#?l\u00dfdj '} AS literal",
+      "query": "RETURN {k: 'ab: c, as#?lßdj '} AS literal",
       "expected": [
         [
           {
-            "k": "ab: c, as#?l\u00dfdj "
+            "k": "ab: c, as#?lßdj "
           }
         ]
       ],
@@ -84476,7 +84476,7 @@
         "rows": [
           [
             {
-              "k": "ab: c, as#?l\u00dfdj "
+              "k": "ab: c, as#?lßdj "
             }
           ]
         ]
@@ -86953,10 +86953,10 @@
       "case_sha256": "00b812d5dd8849028fb80df5d6e595fcdfe252209fda542be7348ad339aa50de",
       "elapsed_ms": 81.558,
       "status": "pass",
-      "query": "RETURN 42 \u2014 41",
+      "query": "RETURN 42 — 41",
       "expected_error": "a SyntaxError should be raised at compile time: InvalidUnicodeCharacter",
       "actual": {
-        "error": "{neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input '\u2014': expected an expression, ',', 'AS', 'ORDER BY', 'CALL', 'CREATE', 'LOAD CSV', 'DELETE', 'DETACH', 'FINISH', 'FOREACH', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REMOVE', 'RETURN', 'SET', 'SKIP', 'UNION', 'UNWIND', 'USE', 'WITH' or <EOF> (line 1, column 20 (offset: 19))\n\"CYPHER 5 RETURN 42 \u2014 41\"\n                    ^} {gql_status: 42001} {gql_status_description: error: syntax error or access rule violation - invalid syntax}",
+        "error": "{neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Invalid input '—': expected an expression, ',', 'AS', 'ORDER BY', 'CALL', 'CREATE', 'LOAD CSV', 'DELETE', 'DETACH', 'FINISH', 'FOREACH', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REMOVE', 'RETURN', 'SET', 'SKIP', 'UNION', 'UNWIND', 'USE', 'WITH' or <EOF> (line 1, column 20 (offset: 19))\n\"CYPHER 5 RETURN 42 — 41\"\n                    ^} {gql_status: 42001} {gql_status_description: error: syntax error or access rule violation - invalid syntax}",
         "code": "Neo.ClientError.Statement.SyntaxError",
         "diagnostics": [
           {
@@ -86965,7 +86965,7 @@
           },
           {
             "status": "42I06",
-            "description": "error: syntax error or access rule violation - invalid input. Invalid input '\u2014', expected: an expression, ',', 'AS', 'ORDER BY', 'CALL', 'CREATE', 'LOAD CSV', 'DELETE', 'DETACH', 'FINISH', 'FOREACH', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REMOVE', 'RETURN', 'SET', 'SKIP', 'UNION', 'UNWIND', 'USE', 'WITH' or <EOF>."
+            "description": "error: syntax error or access rule violation - invalid input. Invalid input '—', expected: an expression, ',', 'AS', 'ORDER BY', 'CALL', 'CREATE', 'LOAD CSV', 'DELETE', 'DETACH', 'FINISH', 'FOREACH', 'INSERT', 'LIMIT', 'MATCH', 'MERGE', 'NODETACH', 'OFFSET', 'OPTIONAL', 'REMOVE', 'RETURN', 'SET', 'SKIP', 'UNION', 'UNWIND', 'USE', 'WITH' or <EOF>."
           }
         ],
         "classification": {
@@ -154363,16 +154363,16 @@
     "adapter_revision": "79aa9d6d441a5e83dbcc1cb53d578010dc705694",
     "adapter_working_tree_modified": false,
     "adapter_source": {
-      "path": "/private/tmp/crabgraph-neo4j-harness/conformance/upstream/cypher.py",
+      "path": "/private/tmp/orchiddb-neo4j-harness/conformance/upstream/cypher.py",
       "sha256": "ce72ac5ad9f8bda2bc702134d195874f4cb71dc1ca96d2677e9cef4647e94196"
     },
     "adapter_support": {
-      "path": "/private/tmp/crabgraph-neo4j-harness/conformance/upstream/cypher_driver.py",
+      "path": "/private/tmp/orchiddb-neo4j-harness/conformance/upstream/cypher_driver.py",
       "sha256": "deafd383da70cf735b7c000e964817a09a24779f45a03271bff9af17fe50226e"
     },
     "driver_version": "6.3.1",
     "adapter_diagnostics": {
-      "path": "/private/tmp/crabgraph-neo4j-harness/conformance/upstream/neo4j_errors.py",
+      "path": "/private/tmp/orchiddb-neo4j-harness/conformance/upstream/neo4j_errors.py",
       "sha256": "f308bf041da33909064eca78186a64b407f67e80841ac5a449a2c270e7e4327e"
     },
     "diagnostic_source_revision": "54a7dcf7c2501b31866199143364c5332da8936f",
@@ -154396,5 +154396,10 @@
     ],
     "captured_at": "2026-09-25T04:02:15.069471+00:00",
     "capture_phase": "before-scenarios"
+  },
+  "identity_normalization": {
+    "date": "2026-09-25",
+    "source_commit": "b4c6909283114bfd77008de92929c428fc700062",
+    "note": "Project identifiers and local paths normalized. Outcomes, timings and original provenance hashes describe the historical run, not a rerun."
   }
 }

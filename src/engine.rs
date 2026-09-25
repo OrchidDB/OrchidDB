@@ -62,6 +62,47 @@ pub struct GraphEngine {
     dag_session: crate::ir::rel::dag::DagSession,
 }
 
+// Discover pre-rename graph tables by their reserved schema and validate the
+// checkpoint before renaming. This runs inside the initialization transaction.
+fn migrate_storage_namespace(storage: &Connection) -> EngineResult<()> {
+    let mut statement = storage.prepare(
+        "SELECT table_name FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND starts_with(table_name, '__') AND ends_with(table_name, '_state')
+           AND table_name <> '__orchiddb_state'
+         GROUP BY table_name
+         HAVING count(*) FILTER (WHERE column_name IN ('singleton', 'format_version', 'payload')) = 3
+            AND count(*) BETWEEN 3 AND 4"
+    ).map_err(|e| e.to_string())?;
+    let candidates = statement.query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if candidates.is_empty() { return Ok(()); }
+    let canonical: i64 = storage.query_row(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = '__orchiddb_state'",
+        [], |row| row.get(0)).map_err(|e| e.to_string())?;
+    if candidates.len() != 1 || canonical != 0 {
+        return Err("ambiguous graph storage namespaces; keep a backup and resolve the duplicate graph tables before opening".into());
+    }
+    let state = &candidates[0];
+    let records = format!("{}_records", state.strip_suffix("_state").unwrap());
+    let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
+    let payload: Vec<u8> = storage.query_row(
+        &format!("SELECT payload FROM {} WHERE singleton = 1", quote(state)),
+        [], |row| row.get(0)).map_err(|e| e.to_string())?;
+    decode_graph(&payload)?;
+    let records_exist: i64 = storage.query_row(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?",
+        params![records], |row| row.get(0)).map_err(|e| e.to_string())?;
+    if records_exist != 0 {
+        storage.execute_batch(&format!("ALTER TABLE {} RENAME TO __orchiddb_records", quote(&records)))
+            .map_err(|e| e.to_string())?;
+    }
+    storage.execute_batch(&format!("ALTER TABLE {} RENAME TO __orchiddb_state", quote(state)))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 impl GraphEngine {
     pub fn open(path: impl AsRef<Path>) -> EngineResult<Self> {
         let (connection, database) = sql::open_shared(path.as_ref())?;
@@ -81,16 +122,17 @@ impl GraphEngine {
             .execute_batch("BEGIN TRANSACTION")
             .map_err(|e| e.to_string())?;
         let initialize = (|| -> EngineResult<()> {
+            migrate_storage_namespace(&storage)?;
             storage
                 .execute_batch(
-                    "CREATE TABLE IF NOT EXISTS __crabgraph_state (
+                    "CREATE TABLE IF NOT EXISTS __orchiddb_state (
                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                     format_version INTEGER NOT NULL,
                     payload BLOB NOT NULL,
                     revision BIGINT DEFAULT 0
                  );
-                 ALTER TABLE __crabgraph_state ADD COLUMN IF NOT EXISTS revision BIGINT DEFAULT 0;
-                 CREATE TABLE IF NOT EXISTS __crabgraph_records (
+                 ALTER TABLE __orchiddb_state ADD COLUMN IF NOT EXISTS revision BIGINT DEFAULT 0;
+                 CREATE TABLE IF NOT EXISTS __orchiddb_records (
                     kind INTEGER NOT NULL,
                     name VARCHAR NOT NULL,
                     id BIGINT NOT NULL,
@@ -101,12 +143,12 @@ impl GraphEngine {
                 .map_err(|e| e.to_string())?;
             let initial = encode_graph(&PropertyGraph::new())?;
             storage.execute(
-                "INSERT INTO __crabgraph_state(singleton, format_version, payload, revision) VALUES (1, 2, ?, 0) ON CONFLICT DO NOTHING",
+                "INSERT INTO __orchiddb_state(singleton, format_version, payload, revision) VALUES (1, 2, ?, 0) ON CONFLICT DO NOTHING",
                 params![initial],
             ).map_err(|e| e.to_string())?;
             let version: i32 = storage
                 .query_row(
-                    "SELECT format_version FROM __crabgraph_state WHERE singleton = 1",
+                    "SELECT format_version FROM __orchiddb_state WHERE singleton = 1",
                     [],
                     |row| row.get(0),
                 )
@@ -115,7 +157,7 @@ impl GraphEngine {
                 1 => {
                     let payload: Vec<u8> = storage
                         .query_row(
-                            "SELECT payload FROM __crabgraph_state WHERE singleton = 1",
+                            "SELECT payload FROM __orchiddb_state WHERE singleton = 1",
                             [],
                             |row| row.get(0),
                         )
@@ -125,7 +167,7 @@ impl GraphEngine {
                     decode_graph(&payload)?;
                     storage
                         .execute_batch(
-                            "UPDATE __crabgraph_state SET format_version = 2 WHERE singleton = 1",
+                            "UPDATE __orchiddb_state SET format_version = 2 WHERE singleton = 1",
                         )
                         .map_err(|e| e.to_string())?;
                 }
@@ -252,7 +294,7 @@ impl GraphEngine {
         let (version, revision): (i32, i64) = self
             .storage
             .query_row(
-                "SELECT format_version, revision FROM __crabgraph_state WHERE singleton = 1",
+                "SELECT format_version, revision FROM __orchiddb_state WHERE singleton = 1",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -266,7 +308,7 @@ impl GraphEngine {
         let payload: Vec<u8> = self
             .storage
             .query_row(
-                "SELECT payload FROM __crabgraph_state WHERE singleton = 1",
+                "SELECT payload FROM __orchiddb_state WHERE singleton = 1",
                 [],
                 |row| row.get(0),
             )
@@ -275,7 +317,7 @@ impl GraphEngine {
         let mut statement = self
             .storage
             .prepare(
-                "SELECT kind, name, id, payload FROM __crabgraph_records ORDER BY kind, name, id",
+                "SELECT kind, name, id, payload FROM __orchiddb_records ORDER BY kind, name, id",
             )
             .map_err(|e| e.to_string())?;
         let records = statement
@@ -301,7 +343,7 @@ impl GraphEngine {
     /// graph-wide writer conflicts, so allocations and MERGE cannot race.
     fn advance_revision(&mut self) -> EngineResult<i64> {
         self.storage.query_row(
-            "UPDATE __crabgraph_state SET revision = revision + 1 WHERE singleton = 1 RETURNING revision",
+            "UPDATE __orchiddb_state SET revision = revision + 1 WHERE singleton = 1 RETURNING revision",
             [], |row| row.get(0),
         ).map_err(|e| e.to_string())
     }
@@ -321,7 +363,7 @@ impl GraphEngine {
             // one CREATE, even though all writes share this transaction.
             for batch in records.chunks(256) {
                 let placeholders = std::iter::repeat_n("(?, ?, ?, ?)", batch.len()).collect::<Vec<_>>().join(", ");
-                let sql = format!("INSERT INTO __crabgraph_records VALUES {placeholders}
+                let sql = format!("INSERT INTO __orchiddb_records VALUES {placeholders}
                     ON CONFLICT(kind, name, id) DO UPDATE SET payload = excluded.payload");
                 let mut parameters: Vec<&dyn duckdb::ToSql> = Vec::with_capacity(batch.len() * 4);
                 for record in batch {
@@ -350,12 +392,12 @@ impl GraphEngine {
             let revision = self.advance_revision()?;
             self.storage
                 .execute(
-                    "UPDATE __crabgraph_state SET payload = ? WHERE singleton = 1",
+                    "UPDATE __orchiddb_state SET payload = ? WHERE singleton = 1",
                     params![payload],
                 )
                 .map_err(|e| e.to_string())?;
             self.storage
-                .execute_batch("DELETE FROM __crabgraph_records")
+                .execute_batch("DELETE FROM __orchiddb_records")
                 .map_err(|e| e.to_string())?;
             Ok(revision)
         })();

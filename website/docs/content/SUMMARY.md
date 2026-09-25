@@ -29,6 +29,7 @@
 - [Parameters and values](parameters.md)
 - [Arrow results](results.md)
 - [Execution and plans](execution.md)
+- [Client APIs](client-apis.md)
 - [Rust API](rust-api.md)
 - [CLI reference](cli.md)
 

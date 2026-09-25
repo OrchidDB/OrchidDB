@@ -80,7 +80,7 @@ of all chapters in the mdBook search index.
 ## Hosting and publishing
 
 - Public output: `website/docs/dist/` (ignored by Git).
-- Private S3 prefix: `s3://crabgraph-landing-846199521923/documentation/`.
+- Private S3 prefix: `s3://orchiddb-landing-846199521923/documentation/`.
 - CloudFront distribution: `EV4E7ROH7WATO`.
 - CloudFront hostname: `d1lmeetba2mo8q.cloudfront.net`.
 - DNS: Route 53 A and AAAA aliases for `docs.orchiddb.com`.

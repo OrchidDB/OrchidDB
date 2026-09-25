@@ -20,7 +20,7 @@ fn rows(result: QueryResult) -> Vec<String> {
 
 fn path(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "crabgraph-{name}-{}-{}.duckdb",
+        "orchiddb-{name}-{}-{}.duckdb",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

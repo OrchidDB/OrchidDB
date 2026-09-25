@@ -14,8 +14,8 @@ path = "src/bin/orchiddb.rs"
 required-features = ["duckdb"]
 
 [[bin]]
-name = "crabgraph-jvm-store"
-path = "src/bin/crabgraph-jvm-store.rs"
+name = "orchiddb-jvm-store"
+path = "src/bin/orchiddb-jvm-store.rs"
 
 [features]
 default = ["duckdb"]
