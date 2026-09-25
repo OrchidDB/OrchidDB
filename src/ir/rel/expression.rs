@@ -305,6 +305,24 @@ impl<'a> LoweringContext<'a> {
                 // proves the property-domain guard, including mapped writes.
                 Ok(value)
             }
+            IrExpr::Call { name, args } if name == "gremlin_id" && args.len() == 1 && self.options.mapping.is_some() => {
+                if let IrExpr::Binding(binding) = &args[0] {
+                    return self.lower_expr(plan, &IrExpr::Id(binding.clone()));
+                }
+                Err(RelError::Unsupported("Mapped Gremlin ID requires an element binding".into()))
+            }
+            IrExpr::Call { name, args } if name == "gremlin_order_key" && args.len() == 1 && self.options.mapping.is_some() => {
+                if matches!(&args[0], IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some()) {
+                    return Err(RelError::Unsupported("Graph identity ordering requires native values".into()));
+                }
+                let value = self.lower_expr(plan, &args[0])?;
+                if value.get_type(plan.schema())?.is_nested() {
+                    return Err(RelError::Unsupported("Nested Gremlin ordering requires native values".into()));
+                }
+                // Mapped scalar columns have a fixed type rank. SQL sorts their
+                // native values; GraphSort retains Gremlin's null placement.
+                Ok(value)
+            }
             IrExpr::Call { name, args } if name == "cypher_order_key" && args.len() == 1 && self.options.mapping.is_some() => {
                 if matches!(&args[0], IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some()) {
                     return Err(RelError::Unsupported("Graph identity ordering requires native values".into()));

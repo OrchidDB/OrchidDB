@@ -77,3 +77,15 @@ async fn membership_never_duplicates_a_computed_left_operand() {
     let error = compile(r).await.unwrap_err();
     assert!(error.contains("single-evaluation"), "{error}");
 }
+
+#[tokio::test]
+async fn mapped_gremlin_ids_and_scalar_order_need_no_runtime_functions() {
+    for query in ["g.V(1).values('name')", "g.V().order().by('name').values('name')"] {
+        let mut r = request(query);
+        r["language"] = json!("gremlin");
+        let compiled = compile(r).await.unwrap();
+        let sql = compiled["sql"].as_str().unwrap();
+        assert!(!sql.contains("gremlin_id"), "{sql}");
+        assert!(!sql.contains("gremlin_order_key"), "{sql}");
+    }
+}
