@@ -1,7 +1,7 @@
 use crate::grammar::generated::cypher::cypherparser::{
     OC_CreateContext, OC_CreateContextAttrs, OC_DeleteContext, OC_DeleteContextAttrs,
     OC_MergeActionContext, OC_MergeActionContextAttrs, OC_MergeContext, OC_MergeContextAttrs,
-    OC_NodeLabelsContextAttrs, OC_RemoveContext, OC_RemoveItemContext, OC_SetContext,
+    OC_NodeLabelsContextAttrs, OC_RemoveContext, OC_RemoveContextAttrs, OC_RemoveItemContext, OC_RemoveItemContextAttrs, OC_SetContext,
     OC_SetContextAttrs, OC_SetItemContext, OC_SetItemContextAttrs, OC_UpdatingClauseContext,
     OC_UpdatingClauseContextAttrs,
 };
@@ -120,6 +120,7 @@ pub(crate) fn lower_set_item(ctx: &OC_SetItemContext<'_>) -> Result<SetItem> {
             lowered.extend(names::lower_node_label_names(label.as_ref())?);
         }
         return Ok(SetItem::Labels {
+            remove: false,
             variable,
             labels: lowered,
         });
@@ -151,12 +152,24 @@ pub(crate) fn lower_delete(ctx: &OC_DeleteContext<'_>) -> Result<Clause> {
     }))
 }
 
-pub(crate) fn lower_remove(_ctx: &OC_RemoveContext<'_>) -> Result<Clause> {
-    context::unsupported("REMOVE is outside read and side-effect query lowering")
+pub(crate) fn lower_remove(ctx: &OC_RemoveContext<'_>) -> Result<Clause> {
+    let items = ctx.oC_RemoveItem_all().into_iter()
+        .map(|item| lower_remove_item(item.as_ref())).collect::<Result<Vec<_>>>()?;
+    Ok(Clause::Set(SetClause { items }))
 }
 
-pub(crate) fn lower_remove_item(_ctx: &OC_RemoveItemContext<'_>) -> Result<()> {
-    context::unsupported("REMOVE items are outside read and side-effect query lowering")
+pub(crate) fn lower_remove_item(ctx: &OC_RemoveItemContext<'_>) -> Result<SetItem> {
+    if let Some(property) = ctx.oC_PropertyExpression() {
+        let (target, key) = split_property_target(expressions::lower_property_expression(property.as_ref())?)?;
+        return Ok(SetItem::Property { target, key, value: Expr::Literal(crate::language::cypher::ast::Literal::Null) });
+    }
+    let Some(variable) = ctx.oC_Variable() else { return context::missing("REMOVE missing variable"); };
+    let Some(labels) = ctx.oC_NodeLabels() else { return context::missing("REMOVE missing labels"); };
+    let mut lowered = Vec::new();
+    for label in labels.oC_NodeLabel_all() {
+        lowered.extend(names::lower_node_label_names(label.as_ref())?);
+    }
+    Ok(SetItem::Labels { variable: names::clean_identifier(&variable.get_text()), labels: lowered, remove: true })
 }
 
 fn split_property_target(expr: Expr) -> Result<(Expr, String)> {

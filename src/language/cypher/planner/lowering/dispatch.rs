@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::ir::expr::{BindingId, IrExpr};
+use crate::ir::expr::{BindingId, IrExpr, Lit};
 use crate::ir::plan::{
     ApplyKind, CreateEdge, CreateNode, Direction, Node, ProcedureArg, ProcedureMode,
     ProjectErrorPolicy, ProjectMode, ProjectionItem, SetMode, SetPropertyItem,
@@ -314,11 +314,6 @@ fn create_endpoint(
             return Ok(bind.clone());
         }
     }
-    if pattern.labels.len() != 1 {
-        return Err(CypherPlanError::Invalid(
-            "Binder exception: Create node requires exactly one node label.".into(),
-        ));
-    }
     let properties = lower_create_properties(lowerer, input, pattern.properties.as_ref())?;
     let bind = match &pattern.variable {
         Some(bind) => {
@@ -332,7 +327,8 @@ fn create_endpoint(
     };
     state.nodes.push(CreateNode {
         bind: Some(bind.clone()),
-        label: pattern.labels[0].clone(),
+        label: pattern.labels.first().cloned().unwrap_or_default(),
+        labels: Some(pattern.labels.clone()),
         properties,
     });
     Ok(bind)
@@ -460,10 +456,15 @@ fn lower_set_items(
                         value,
                     });
                 }
-                SetItem::Labels { variable, .. } => {
-                    return Err(CypherPlanError::Unsupported(format!(
-                        "SET {variable}:Label is not implemented yet"
-                    )));
+                SetItem::Labels { variable, labels, remove } => {
+                    let target = Expr::Variable(variable.clone());
+                    project::validate_expression_scope(lowerer, &target, "label update target")?;
+                    items.push(SetPropertyItem {
+                        target: IrExpr::Binding(variable.clone()),
+                        key: String::new(),
+                        mode: if *remove { SetMode::RemoveLabels } else { SetMode::AddLabels },
+                        value: IrExpr::List(labels.iter().map(|label| IrExpr::Lit(Lit::String(label.clone()))).collect()),
+                    });
                 }
             }
         }

@@ -487,7 +487,7 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                 })
                 .collect();
             json!({"type":"vertex", "id":id(label,*row,false), "internal_id":format!("{label}#{row}"),
-                "label":label, "properties":props})
+                "label":label, "labels":graph.node_labels(label,*row), "properties":props})
         }
         Value::Edge {
             rel_type,

@@ -238,7 +238,7 @@ fn lower_projection_body(
                     return Err(CypherPlanError::Invalid(
                         "Binder exception: Cannot evaluate expression with type AGGREGATE_FUNCTION."
                             .to_string(),
-                    ));
+                    ).classified(crate::language::cypher::planner::CypherSemanticError::InvalidAggregation));
                 }
                 let refs = free_variable_names_for_sort(&item.expr, &source_fields, &fields);
                 let has_projection_only_ref = refs.iter().any(|name| {

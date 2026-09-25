@@ -542,6 +542,11 @@ impl MappedGraphEngine {
     ) -> Result<Vec<Row>> {
         let mut rows = self.materialize_write_input(input.clone(), policy).await?;
         for node in nodes {
+            if node.labels.as_ref().is_some_and(|labels| labels.as_slice() != [node.label.clone()]) {
+                return Err("Mapped creation requires declared storage for unlabelled or multiple labels".into());
+            }
+        }
+        for node in nodes {
             let target = self.write_target(&node.label, false)?;
             rows = self
                 .insert_mapped(
@@ -695,6 +700,7 @@ impl MappedGraphEngine {
         for item in items {
             let name = binding(&item.target)?;
             let props = match item.mode {
+                SetMode::AddLabels | SetMode::RemoveLabels => return Err("Mapped label updates require declared mutable label storage".into()),
                 SetMode::Property => vec![(item.key.clone(), item.value.clone())],
                 SetMode::Merge | SetMode::Replace => map_entries(Some(&item.value))?,
             };
@@ -923,6 +929,7 @@ fn normalize_gremlin_writes(node: &mut Node) -> Result<()> {
                 nodes: vec![CreateNode {
                     bind: Some("current".into()),
                     label,
+                    labels: None,
                     properties: Some(props.clone()),
                 }],
                 edges: vec![],

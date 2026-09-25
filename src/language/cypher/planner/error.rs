@@ -19,6 +19,7 @@ pub type CypherPlanResult<T> = std::result::Result<T, CypherPlanError>;
 /// Stable semantic categories, independent of diagnostic wording.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CypherSemanticError {
+    InvalidArgumentType,
     UndefinedVariable,
     VariableAlreadyBound,
     VariableTypeConflict,
@@ -41,6 +42,7 @@ impl CypherPlanError {
             return None;
         };
         let detail = match code {
+            CypherSemanticError::InvalidArgumentType => "InvalidArgumentType",
             CypherSemanticError::UndefinedVariable => "UndefinedVariable",
             CypherSemanticError::VariableAlreadyBound => "VariableAlreadyBound",
             CypherSemanticError::VariableTypeConflict => "VariableTypeConflict",

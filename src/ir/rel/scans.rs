@@ -11,6 +11,7 @@ impl<'a> LoweringContext<'a> {
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
         }
+        let predicate = labels;
         let labels = self.node_labels(labels)?;
         let prop_defs = self.node_property_defs(&labels)?;
         let schema = node_schema(binding, &prop_defs);
@@ -36,6 +37,7 @@ impl<'a> LoweringContext<'a> {
                 Err(CatalogError::UnknownLabel(_)) => continue,
                 Err(err) => return Err(err.into()),
             };
+            let ids = ids.into_iter().filter(|id| self.graph.node_matches_labels(&label, *id, predicate)).collect::<Vec<_>>();
             if ids.is_empty() {
                 continue;
             }
@@ -208,11 +210,10 @@ impl<'a> LoweringContext<'a> {
         let mut out = match labels {
             LabelExpr::Any => self.graph.labels(),
             LabelExpr::AnyOf(labels) => labels.clone(),
-            LabelExpr::AllOf(labels) if labels.len() == 1 => labels.clone(),
             LabelExpr::AllOf(labels) => {
-                return Err(RelError::Unsupported(format!(
-                    "multi-label node scan {labels:?}"
-                )));
+                if self.graph.has_mutations() { self.graph.labels() }
+                else if labels.len() == 1 { labels.clone() }
+                else { Vec::new() }
             }
             LabelExpr::Not(_) => return Err(RelError::Unsupported("negated label scan".into())),
         };

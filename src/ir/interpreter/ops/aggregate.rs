@@ -212,7 +212,7 @@ pub(crate) fn agg_identity(kind: AggKind) -> Value {
         AggKind::AvgOrZero => Value::Float(0.0),
         AggKind::AvgOrNull => Value::Null,
         AggKind::StDev | AggKind::StDevP => Value::Float(0.0),
-        AggKind::CollectRows | AggKind::CollectTraversers => Value::List(Vec::new()),
+        AggKind::CollectRows | AggKind::CollectNonNull | AggKind::CollectTraversers => Value::List(Vec::new()),
         _ => Value::Null,
     }
 }
@@ -480,7 +480,7 @@ pub(crate) fn compute_aggregate(
                 _ => unreachable!(),
             }))
         }
-        AggKind::CollectRows | AggKind::CollectTraversers => {
+        AggKind::CollectRows | AggKind::CollectNonNull | AggKind::CollectTraversers => {
             let expr = agg
                 .arg
                 .as_ref()
@@ -492,7 +492,7 @@ pub(crate) fn compute_aggregate(
                 let v = eval(expr, row, graph)?;
                 evaluated += 1;
                 if matches!(v, Value::Null)
-                    && (matches!(agg.kind, AggKind::CollectRows)
+                    && (matches!(agg.kind, AggKind::CollectRows | AggKind::CollectNonNull)
                         || matches!(
                             expr,
                             IrExpr::Property {

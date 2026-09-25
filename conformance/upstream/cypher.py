@@ -93,7 +93,7 @@ def native_value(v):
  if kind in ('float','double'):return normalize(float(x))
  if kind in ('list','set'):return [native_value(i) for i in x]
  if kind=='map':return {native_value(k):native_value(item) for k,item in x}
- if kind=='vertex':return {'$node':{'labels':[v['label']],'properties':{k:native_value(item) for k,item in v['properties'].items()}}}
+ if kind=='vertex':return {'$node':{'labels':sorted(v.get('labels',[v['label']])),'properties':{k:native_value(item) for k,item in v['properties'].items()}}}
  if kind=='edge':return {'$relationship':{'type':v['label'],'properties':{k:native_value(item) for k,item in v['properties'].items()}}}
  if kind=='path':
   if not x or len(x)%2!=1 or any(n['type']!='vertex' for n in x[::2]) or any(e['type']!='edge' for e in x[1::2]):raise ValueError('Native path must contain alternating vertices and relationships')

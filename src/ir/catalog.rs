@@ -148,6 +148,7 @@ struct InsertedEdge {
 #[derive(Debug, Clone, Default)]
 struct GraphOverlay {
     allow_null_property_values: bool,
+    node_label_sets: BTreeMap<(String, i64), BTreeSet<String>>,
     // Gremlin edge properties may contain null; scalar null overrides remain tombstones.
     edge_null_properties: BTreeMap<(String, i64), BTreeSet<String>>,
     vertex_properties: BTreeMap<(String, i64), BTreeMap<String, Vec<properties::VertexPropertyRecord>>>,
@@ -247,7 +248,8 @@ impl PropertyGraph {
     /// Whether writes have changed the immutable Arrow catalog.
     pub fn has_mutations(&self) -> bool {
         let overlay = self.overlay.borrow();
-        !overlay.inserted_node_counts.is_empty()
+        !overlay.node_label_sets.is_empty()
+            || !overlay.inserted_node_counts.is_empty()
             || !overlay.inserted_edge_counts.is_empty()
             || !overlay.node_property_overrides.is_empty()
             || !overlay.edge_property_overrides.is_empty()

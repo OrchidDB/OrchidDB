@@ -230,6 +230,14 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         write_section(&mut out, tag, &b);
     }
 
+    let mut labels = Vec::new();
+    put_u64(&mut labels, ov.node_label_sets.len() as u64);
+    for ((storage, id), names) in &ov.node_label_sets {
+        put_str(&mut labels, storage);
+        put_i64(&mut labels, *id);
+        put_str_list(&mut labels, &names.iter().cloned().collect::<Vec<_>>());
+    }
+    write_section(&mut out, 0x23, &labels);
     write_section(&mut out, 0x22, &binary::encode_value_bytes(&Value::Bool(ov.allow_null_property_values)));
     let nulls = Value::List(ov.edge_null_properties.iter().map(|((label, id), keys)| {
         Value::List(vec![Value::String(label.clone()), Value::Long(*id),
@@ -320,6 +328,15 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
         let sub = r.blob()?;
         let mut sr = Reader::new(sub);
         match tag {
+            0x23 => {
+                let count = sr.count()?;
+                for _ in 0..count {
+                    let storage = sr.str()?;
+                    let id = sr.i64()?;
+                    let names = decode_str_list(&mut sr)?;
+                    ov.node_label_sets.insert((storage, id), names.into_iter().collect());
+                }
+            }
             0x22 => {
                 let Value::Bool(enabled) = binary::decode_value_bytes(sub)? else {
                     return Err("Invalid null property feature".into());
