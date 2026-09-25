@@ -6,7 +6,7 @@ cargo run --manifest-path examples/duckdb-client/Cargo.toml
 
 Prints `ADA` and `GRACE`. The application creates its own connection and SQL
 function, starts a transaction, compiles a graph query, and consumes a borrowed
-DuckDB cursor. It then rolls back and verifies that the connection and transaction
+DuckDB Arrow reader. Retained batches keep their own reference-counted buffers. It then rolls back and verifies that the connection and transaction
 remained under application control.
 
 This standalone application declares DuckDB itself. Its `orchiddb` dependency uses

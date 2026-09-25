@@ -92,7 +92,7 @@ Regression tests: `cargo test --test sql_compiler --test execution`.
 
 You can execute `CompiledSql.sql` directly. For a common adapter boundary,
 implement `execution::SqlSession`: declare a dialect, a driver error type, and a
-result type that can borrow the session. Its async `query` method executes the
+native Arrow `RecordBatchReader` result type that can borrow the session. Its async `query` method executes the
 SQL; `execution::execute` first rejects protocol/dialect mismatches. It performs
 no schema discovery, setup statements, data copying, buffering or commits.
 Futures may stay on the calling thread; `Send` and background scheduling are not
@@ -100,7 +100,7 @@ required. Your adapter controls streaming errors, cancellation and drop cleanup.
 
 The [DuckDB application example](../examples/duckdb-client/) declares its own
 driver dependency and implements the interface with a borrowed connection and
-streaming cursor. It registers a SQL function, queries uncommitted caller data,
+native Arrow reader. It registers a SQL function, queries uncommitted caller data,
 and verifies caller rollback afterward:
 
 ```sh
