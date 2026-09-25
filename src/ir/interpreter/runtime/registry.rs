@@ -292,6 +292,7 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "cypher_lt",
     "cypher_lte",
     "cypher_neq",
+    "cypher_percentile_fraction",
     "cypher_properties_match",
     "cypher_property_star",
     "cypher_slice",

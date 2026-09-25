@@ -541,3 +541,62 @@ async fn cypher_mixed_values_keep_types_through_unwind_and_aggregation() {
     assert_eq!(rows(&mut engine, "UNWIND [1, 'a', [1,2]] AS x WITH collect(x) AS xs RETURN xs[0] = 1, xs[1] = 'a', xs[2] = [1,2]").await,
         vec![vec!["true", "true", "true"]]);
 }
+
+#[tokio::test]
+async fn cypher_temporal_projection_and_truncation_overrides() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for (query, expected) in [
+        ("RETURN toString(localtime({hour:12,minute:31,second:14,millisecond:123,microsecond:456,nanosecond:789}))", "12:31:14.123456789"),
+        ("RETURN toString(time({time:localtime('12:31')}))", "12:31Z"),
+        ("RETURN toString(datetime.truncate('month', date('2024-02-29')))", "2024-02-01T00:00Z"),
+        ("RETURN toString(datetime.truncate('hour', datetime('1984-10-11T12:31-01:00'), {timezone:'Europe/Stockholm'}))", "1984-10-11T12:00+01:00[Europe/Stockholm]"),
+        ("RETURN toString(localtime.truncate('microsecond',localtime('12:31:14.645876123'),{nanosecond:2}))", "12:31:14.645876002"),
+    ] { assert_eq!(rows(&mut engine,query).await,vec![vec![expected]],"{query}"); }
+}
+
+#[tokio::test]
+async fn cypher_percentile_errors_retain_runtime_diagnosis() {
+    use new_graph::language::cypher::{parser::parse_query, planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine = GraphEngine::in_memory().unwrap();
+    rows(&mut engine,"CREATE (:Price {v:10})").await;
+    for function in ["percentileCont","percentileDisc"] {
+        for fraction in ["-1","1.1","1000"] {
+            let query=parse_query(&format!("MATCH (n:Price) RETURN {function}(n.v,{fraction})")).unwrap();
+            let plan=CypherPlanner::new().plan(&query).unwrap();
+            let error=engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+            assert_eq!(error.diagnosis,Some(RuntimeDiagnosis::NumberOutOfRange),"{error}");
+        }
+    }
+    assert_eq!(rows(&mut engine,"UNWIND [1,2,3,4] AS v RETURN percentileDisc(v,0.25)").await,vec![vec!["1"]]);
+}
+
+#[tokio::test]
+async fn cypher_nan_respects_operand_comparability() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"RETURN (0.0/0.0 < 'a') IS NULL, (0.0/0.0 >= 'a') IS NULL, 0.0/0.0 > 1").await,
+        vec![vec!["true","true","false"]]);
+}
+
+#[tokio::test]
+async fn cypher_duration_differences_respect_clock_and_inherited_zone() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    for (query,expected) in [
+        ("RETURN toString(duration.between(datetime('2014-07-21T21:40:36.143+0200'),datetime('2015-07-21T21:40:32.142+0100')))","P1YT59M55.999S"),
+        ("RETURN toString(duration.inMonths(date('2018-07-21'),datetime('2016-07-21T21:40:32.142+0100')))","P-1Y-11M"),
+        ("RETURN toString(duration.inDays(datetime('2014-07-21T21:40:36.143+0200'),date('2015-06-24')))","P337D"),
+        ("RETURN toString(duration.inSeconds(datetime('2017-10-29T00:00+02:00[Europe/Stockholm]'),localdatetime('2017-10-29T04:00')))","PT5H"),
+    ] { assert_eq!(rows(&mut engine,query).await,vec![vec![expected]],"{query}"); }
+}
+
+#[tokio::test]
+async fn diagnosed_runtime_failure_rolls_back_writes() {
+    use new_graph::language::cypher::{parser::parse_query,planner::CypherPlanner};
+    use new_graph::ir::diagnostics::RuntimeDiagnosis;
+    let mut engine=GraphEngine::in_memory().unwrap();
+    let query=parse_query("CREATE (n:Price {v:10}) RETURN percentileCont(n.v,2)").unwrap();
+    let plan=CypherPlanner::new().plan(&query).unwrap();
+    let error=engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+    assert_eq!(error.diagnosis,Some(RuntimeDiagnosis::NumberOutOfRange));
+    assert_eq!(rows(&mut engine,"MATCH (n:Price) RETURN count(n)").await,vec![vec!["0"]]);
+}

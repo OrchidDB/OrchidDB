@@ -158,3 +158,14 @@ The first implementation batch (`6bb0efe`) added logical label sets independent 
 The next batch extends numeric Cypher identity, write-only result shape, compound comparisons and arithmetic, limited-join SQL emission, and typed temporal values. Dates, local/offset times, local/zoned datetimes, and calendar durations travel through SQL IR residual kernels with type identity intact. Constructors, accessors, projection, truncation, calendar arithmetic, and duration differences share that representation; snapshots and incremental records persist it. Gremlin retains its existing datetime representation.
 
 These implementation notes are separate from the production comparison's measured results. The next full run must establish the new totals before publication.
+
+
+### Measured checkpoint: typed temporal batch
+
+Local runs of `575f8e5` completed with **3,313 / 3,897 Cypher passes (85.0%)** and **1,511 / 1,511 Gremlin passes**. Cypher's other outcomes were 393 failures, 140 adapter errors, 50 skips, and one timeout. Compared with `6bb0efe`, 944 scenarios became passes and one numeric/string NaN comparison regressed (net +943). The next batch corrects that comparison.
+
+Temporal scenarios now pass **856 / 1,004**. Their 148 remaining failures group into truncation (99), projection (23), duration differences (16), constructor subsecond composition (4), component aliases (4), duration string parsing (1), and date arithmetic (1). These are observed failures, not estimates.
+
+Subsequent commits split temporal responsibilities into `src/ir/temporal/`, preserve heterogeneous Cypher values at SQL boundaries, and validate scoped aggregation and projection/UNION diagnostics. The next implementation batch preserves runtime diagnoses across the same DataFusion/SQL IR pipeline and adds an engine API exposing those diagnoses; the existing string-returning API delegates to it. Percentile validation originates in an explicit Cypher expression, not the test adapter.
+
+The remaining temporal range issue requires representing proleptic Gregorian dates beyond chrono's calendar range; widening integer parsing alone cannot support those values correctly.

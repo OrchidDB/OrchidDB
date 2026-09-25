@@ -121,7 +121,10 @@ async fn main(){
  let q=req["query"].as_str().unwrap_or("");
  let mut classification=None;
  let r=if op=="gremlin"{match gremlin_bindings::bindings(&req["bindings"]) {Ok(bindings)=>engine.gremlin_with_bindings(q,&bindings).await,Err(error)=>Err(error)}}else{match cypher_plan(q,&params){
-  Ok(plan)=>engine.execute_plan(&plan).await,
+  Ok(plan)=>engine.execute_plan_with_diagnostics(&plan).await.map_err(|error|{
+   classification=error.diagnosis.map(|code|{let (kind,detail,phase)=code.classification();json!({"type":kind,"detail":detail,"phase":phase})});
+   error.to_string()
+  }),
   Err((message,detail))=>{classification=detail;Err(message)}
  }};
  r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("crabgraph.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("crabgraph.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))

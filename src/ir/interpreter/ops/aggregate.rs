@@ -663,7 +663,9 @@ fn percentile_cont(values: &[f64], percentile: f64) -> f64 {
 }
 
 fn percentile_disc(values: &[f64], percentile: f64) -> f64 {
-    let index = (percentile * (values.len() - 1) as f64).round() as usize;
+    // Discrete percentiles select the smallest rank whose cumulative
+    // distribution reaches p (nearest-rank), with p=0 selecting the first.
+    let index = ((percentile * values.len() as f64).ceil() as usize).saturating_sub(1);
     values[index]
 }
 

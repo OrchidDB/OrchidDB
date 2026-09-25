@@ -117,9 +117,7 @@ pub fn parse(kind: &str, text: &str) -> Result<TemporalValue> {
         return parse_time(text).map(TemporalValue::LocalTime);
     }
     if kind == "localdatetime" {
-        let (d, t) = text
-            .split_once('T')
-            .ok_or("Datetime requires T separator")?;
+        let (d, t) = text.split_once('T').unwrap_or((text, "00:00"));
         return Ok(TemporalValue::LocalDateTime(
             parse_date(d)?.and_time(parse_time(t)?),
         ));
@@ -134,9 +132,7 @@ pub fn parse(kind: &str, text: &str) -> Result<TemporalValue> {
             (text, None)
         };
         let (date, clock) = if kind == "datetime" {
-            let (d, t) = text
-                .split_once('T')
-                .ok_or("Datetime requires T separator")?;
+            let (d, t) = text.split_once('T').unwrap_or((text, "00:00"));
             (parse_date(d)?, t)
         } else {
             (NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(), text)
@@ -182,6 +178,28 @@ pub fn parse(kind: &str, text: &str) -> Result<TemporalValue> {
     Err(format!("Unknown temporal type {kind}"))
 }
 fn parse_duration(text: &str) -> Result<TemporalValue> {
+    // ISO alternative representation specifies year/month/day components,
+    // rather than a calendar date; do not pass it through date validation.
+    if let Some((date, time)) = text.strip_prefix('P').and_then(|s| s.split_once('T')) {
+        if date.contains('-') && time.contains(':') {
+            let date = date.split('-').collect::<Vec<_>>();
+            let time = time.split(':').collect::<Vec<_>>();
+            if date.len() == 3 && time.len() == 3 {
+                let fields = ["years", "months", "days", "hours", "minutes", "seconds"]
+                    .into_iter()
+                    .zip(date.into_iter().chain(time))
+                    .map(|(key, value)| {
+                        value
+                            .parse::<bigdecimal::BigDecimal>()
+                            .map(|v| (key.to_string(), Value::BigDecimal(v)))
+                            .map_err(|_| "Invalid duration component".to_string())
+                    })
+                    .collect::<Result<BTreeMap<_, _>>>()?;
+                return duration(&fields);
+            }
+        }
+    }
+
     let pattern=regex::Regex::new(r"^([+-])?P(?:(-?\d+(?:[.,]\d+)?)Y)?(?:(-?\d+(?:[.,]\d+)?)M)?(?:(-?\d+(?:[.,]\d+)?)W)?(?:(-?\d+(?:[.,]\d+)?)D)?(?:T(?:(-?\d+(?:[.,]\d+)?)H)?(?:(-?\d+(?:[.,]\d+)?)M)?(?:(-?\d+(?:[.,]\d+)?)S)?)?$").unwrap();
     let found = pattern
         .captures(text)

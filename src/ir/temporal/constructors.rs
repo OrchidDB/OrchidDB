@@ -235,16 +235,20 @@ pub fn construct(kind: &str, value: &Value) -> Result<Value> {
         return Ok(Value::Temporal(TemporalValue::Date(date)));
     }
     let base_time = temporal(fields, &["datetime", "time"]).and_then(TemporalValue::time);
-    let nano = if fields.contains_key("nanosecond") {
-        number(fields, "nanosecond", 0)?
-    } else if fields.contains_key("microsecond") {
-        number(fields, "microsecond", 0)?
-            .checked_mul(1000)
-            .ok_or("Microsecond overflow")?
-    } else if fields.contains_key("millisecond") {
-        number(fields, "millisecond", 0)?
+    let nano = if ["nanosecond", "microsecond", "millisecond"]
+        .iter()
+        .any(|key| fields.contains_key(*key))
+    {
+        let millis = number(fields, "millisecond", 0)?
             .checked_mul(1_000_000)
-            .ok_or("Millisecond overflow")?
+            .ok_or("Millisecond overflow")?;
+        let micros = number(fields, "microsecond", 0)?
+            .checked_mul(1000)
+            .ok_or("Microsecond overflow")?;
+        millis
+            .checked_add(micros)
+            .and_then(|v| v.checked_add(number(fields, "nanosecond", 0).ok()?))
+            .ok_or("Nanosecond overflow")?
     } else {
         base_time.map(|t| t.nanosecond() as i64).unwrap_or(0)
     };
@@ -262,8 +266,9 @@ pub fn construct(kind: &str, value: &Value) -> Result<Value> {
         "localtime" => TemporalValue::LocalTime(time),
         "localdatetime" => TemporalValue::LocalDateTime(date.and_time(time)),
         "datetime" | "time" => {
-            let inherited_zone =
-                temporal(fields, &["datetime", "time"]).map(|t| t.component("timezone"));
+            let inherited_zone = temporal(fields, &["datetime", "time"])
+                .map(|t| t.component("timezone"))
+                .filter(|zone| !matches!(zone, Value::Null));
             let zone = fields.get("timezone").or(inherited_zone.as_ref());
             let zone = match zone {
                 Some(Value::String(z)) => z.as_str(),
@@ -274,6 +279,11 @@ pub fn construct(kind: &str, value: &Value) -> Result<Value> {
             if fields.contains_key("timezone") {
                 let source_offset = temporal(fields, &["datetime", "time"]).and_then(|t| match t {
                     TemporalValue::Time(_, o) => Some(*o),
+                    TemporalValue::DateTime(d, Some(zone)) if fields.contains_key("date") => {
+                        resolve_zone(date.and_time(time), zone)
+                            .ok()
+                            .map(|(d, _)| d.offset().local_minus_utc())
+                    }
                     TemporalValue::DateTime(d, _) => Some(d.offset().local_minus_utc()),
                     _ => None,
                 });

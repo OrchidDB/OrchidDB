@@ -54,7 +54,7 @@ impl TemporalValue {
             "ordinalday" | "dayofyear" => date.map(|d| d.ordinal() as i64),
             "week" => date.map(|d| d.iso_week().week() as i64),
             "weekyear" => date.map(|d| d.iso_week().year() as i64),
-            "dayofweek" => date.map(|d| d.weekday().number_from_monday() as i64),
+            "dayofweek" | "weekday" => date.map(|d| d.weekday().number_from_monday() as i64),
             "quarter" => date.map(|d| ((d.month() - 1) / 3 + 1) as i64),
             "dayofquarter" => date.map(|d| {
                 (d - NaiveDate::from_ymd_opt(d.year(), ((d.month() - 1) / 3) * 3 + 1, 1).unwrap())

@@ -186,7 +186,8 @@ pub(super) fn cypher_compare_value(left: &Value, right: &Value, op: &str) -> Val
         _ => {
             if matches!(left, Value::Float(v) if v.is_nan()) || matches!(left, Value::Float32(v) if v.is_nan())
                 || matches!(right, Value::Float(v) if v.is_nan()) || matches!(right, Value::Float32(v) if v.is_nan()) {
-                return Value::Bool(false);
+                let numeric = |v: &Value| matches!(v, Value::Byte(_) | Value::UInt8(_) | Value::Short(_) | Value::UInt16(_) | Value::Int(_) | Value::UInt32(_) | Value::Long(_) | Value::UInt64(_) | Value::Float32(_) | Value::Float(_) | Value::BigInt(_) | Value::UInt128(_) | Value::BigDecimal(_));
+                return if numeric(left) && numeric(right) {Value::Bool(false)} else {Value::Null};
             }
             fn compare(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
                 if let (Value::List(left), Value::List(right)) = (left, right) {

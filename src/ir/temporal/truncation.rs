@@ -92,6 +92,42 @@ pub fn truncate(kind: &str, unit: &str, input: &Value, overrides: &Value) -> Res
         }
     };
     let mut fields = overrides.clone();
+    // Truncation overrides replace the zone on the truncated local value,
+    // unlike constructor projection, which preserves an existing instant.
+    let base = if fields.contains_key("timezone") {
+        match base {
+            TemporalValue::DateTime(d, _) => TemporalValue::LocalDateTime(d.naive_local()),
+            TemporalValue::Time(t, _) => TemporalValue::LocalTime(t),
+            other => other,
+        }
+    } else {
+        base
+    };
+    // Subsecond overrides fill the discarded part, preserving the retained
+    // millisecond/microsecond prefix from truncation.
+    if matches!(unit.as_str(), "millisecond" | "microsecond")
+        && ["nanosecond", "microsecond", "millisecond"]
+            .iter()
+            .any(|key| fields.contains_key(*key))
+    {
+        if let Some(time) = base.time() {
+            let retained = time.nanosecond() as i64;
+            let addition = match fields.get("nanosecond") {
+                None => 0,
+                Some(Value::Int(v) | Value::Long(v)) => *v,
+                _ => return Err("Nanosecond must be an integer".into()),
+            };
+            fields.insert(
+                "nanosecond".into(),
+                Value::Int(
+                    retained
+                        .checked_add(addition)
+                        .ok_or("Nanosecond overflow")?,
+                ),
+            );
+        }
+    }
+
     let base_key = if base.date().is_some() {
         "datetime"
     } else {
