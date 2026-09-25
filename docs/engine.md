@@ -157,6 +157,23 @@ registers a graph name in the mapped registry; it does not create SQL tables.
 tables, updates derived from existing values, duplicate prevention, blank-node
 identity, graph lifecycle, and rollback.
 
+### Service endpoints
+
+Register a logical service IRI and its HTTP transport URL with
+`RdfDatasetMapping::map_service_endpoint(iri, url)`. The query uses the logical
+IRI in its `SERVICE` clause. `allow_service_reads()` enables direct HTTP
+endpoint access when no transport alias is needed.
+
+The frontend preserves the remote query in Graph IR and lowers it to a typed
+external source in SQL IR. The shared DAG executor runs that source as a
+DataFusion physical node, then supplies its Arrow bindings to the dependent
+DuckDB region. SQL generation makes no network request. Remote RDF datatypes,
+language tags, unbound values, and blank-node scope survive this boundary.
+`SERVICE SILENT` preserves the surrounding solution when an endpoint fails.
+
+`tests/sparql_service.rs` checks the planning/execution boundary, local joins,
+empty results, and endpoint failures.
+
 ## Release work still required
 - Full Cypher, Gremlin, and mapped SPARQL execution conformance. Current
   Gremlin gaps include implicit traversal order, partition strategies, path
