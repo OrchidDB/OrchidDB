@@ -713,3 +713,25 @@ async fn cypher_relationship_lists_remain_distinct_from_paths() {
         vec![vec!["R"]]);
     assert_eq!(rows(&mut engine,"RETURN 1 SKIP -0").await,vec![vec!["1"]]);
 }
+
+#[tokio::test]
+async fn cypher_nested_ordering_uses_language_type_precedence() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"UNWIND [[1], ['a'], [], [null]] AS xs WITH xs ORDER BY xs RETURN xs = [], xs = ['a'], xs = [1], xs = [null]").await.len(),4);
+    assert_eq!(rows(&mut engine,"UNWIND [1, 'a', false] AS x WITH x ORDER BY x RETURN toString(x)").await,
+        vec![vec!["a"],vec!["false"],vec!["1"]]);
+    assert_eq!(rows(&mut engine,"UNWIND [[1], ['a'], [], [null]] AS xs WITH xs ORDER BY xs RETURN size(xs), coalesce(toString(head(xs)), 'null')").await,
+        vec![vec!["0","null"],vec!["1","a"],vec!["1","1"],vec!["1","null"]]);
+}
+
+#[tokio::test]
+async fn cypher_create_merge_and_collected_paths_keep_native_elements() {
+    let mut engine=GraphEngine::in_memory().unwrap();
+    assert_eq!(rows(&mut engine,"CREATE p = (a:A)-[:R]->(b:B) RETURN length(p), size(nodes(p)), size(relationships(p))").await,
+        vec![vec!["1","2","1"]]);
+    assert_eq!(rows(&mut engine,"MATCH p = (:A)-[:R]->(:B) WITH collect(p) AS paths RETURN [p IN paths | size(nodes(p))][0]").await,vec![vec!["2"]]);
+    assert_eq!(rows(&mut engine,"MATCH (a:A), (b:B) MERGE p = (a)-[r:R]-(b) RETURN length(p), type(r)").await,vec![vec!["1","R"]]);
+    rows(&mut engine,"MATCH p = (:A)-->(:B) DETACH DELETE p").await;
+    assert_eq!(rows(&mut engine,"MATCH (n) RETURN count(n)").await,vec![vec!["0"]]);
+    assert_eq!(rows(&mut engine,"MERGE p = (:C {id:1}) RETURN length(p)").await,vec![vec!["0"]]);
+}

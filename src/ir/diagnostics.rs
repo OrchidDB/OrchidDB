@@ -8,6 +8,8 @@ pub enum RuntimeDiagnosis {
     InvalidType,
     MapKeyType,
     InvalidValue,
+    DeleteConnectedNode,
+    MergeReadOwnWrites,
 }
 
 impl RuntimeDiagnosis {
@@ -16,12 +18,14 @@ impl RuntimeDiagnosis {
             Self::InvalidType => return ("TypeError", "InvalidArgumentType", "runtime"),
             Self::MapKeyType => return ("TypeError", "MapElementAccessByNonString", "runtime"),
             Self::InvalidValue => return ("TypeError", "InvalidArgumentValue", "runtime"),
+            Self::DeleteConnectedNode => return ("ConstraintVerificationFailed", "DeleteConnectedNode", "runtime"),
+            Self::MergeReadOwnWrites => return ("SemanticError", "MergeReadOwnWrites", "runtime"),
             _ => {}
         }
         let detail = match self {
             Self::ArgumentType => "InvalidArgumentType",
             Self::NumberOutOfRange => "NumberOutOfRange",
-            Self::InvalidType | Self::MapKeyType | Self::InvalidValue => unreachable!(),
+            _ => unreachable!(),
         };
         ("ArgumentError", detail, "runtime")
     }
@@ -42,6 +46,11 @@ impl QueryExecutionError {
         let mut source: Option<&(dyn Error + 'static)> = Some(&error);
         let mut diagnosis = None;
         while let Some(error) = source {
+            if matches!(error.downcast_ref::<crate::ir::catalog::CatalogError>(),
+                Some(crate::ir::catalog::CatalogError::DeleteIntegrity(_))) {
+                diagnosis = Some(RuntimeDiagnosis::DeleteConnectedNode);
+                break;
+            }
             if let Some(error) = error.downcast_ref::<Self>() {
                 diagnosis = error.diagnosis;
                 break;

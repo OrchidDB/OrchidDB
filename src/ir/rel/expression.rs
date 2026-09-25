@@ -197,8 +197,8 @@ impl<'a> LoweringContext<'a> {
                 Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
             }
             IrExpr::Call { name, args } if name == "path_or_self" => {
-                if self.language == Language::Gremlin {
-                    return Err(RelError::Unsupported("Gremlin path requires native runtime values".into()));
+                if matches!(self.language, Language::Gremlin | Language::Cypher) {
+                    return Err(RelError::Unsupported("Graph paths require native runtime values".into()));
                 }
                 let Some(fallback) = args.get(1) else {
                     return Err(RelError::Unsupported("path_or_self arity".into()));
@@ -713,17 +713,21 @@ impl<'a> LoweringContext<'a> {
                 let rhs = self.lower_expr(plan, &args[1])?;
                 let lt = lhs.get_type(plan.schema())?;
                 let rt = rhs.get_type(plan.schema())?;
+                if lt != rt && !(lt.is_numeric() && rt.is_numeric())
+                    && lt != DataType::Null && rt != DataType::Null {
+                    return Err(RelError::Unsupported("Cypher comparisons must not coerce unrelated operand types".into()));
+                }
                 if matches!(lt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_))
                     || matches!(rt, DataType::List(_) | DataType::LargeList(_) | DataType::Struct(_)) {
                     return Err(RelError::Unsupported("Cypher compound comparison requires three-valued element semantics".into()));
                 }
                 let comparison = self.lower_comparison_or_binary(plan, &args[0], op, &args[1])?;
-                if !matches!(op, BinaryOp::Eq | BinaryOp::Neq) && lt.is_numeric() && rt.is_numeric() {
+                if lt.is_numeric() && rt.is_numeric() {
                     let mut nan = lit(false);
                     if matches!(lt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(lhs)); }
                     if matches!(rt, DataType::Float32 | DataType::Float64) { nan = nan.or(df_math::isnan(rhs)); }
                     return Ok(Expr::Case(Case::new(None,
-                        vec![(Box::new(nan), Box::new(lit(false)))], Some(Box::new(comparison)))));
+                        vec![(Box::new(nan), Box::new(lit(matches!(op,BinaryOp::Neq))))], Some(Box::new(comparison)))));
                 }
                 Ok(comparison)
             }

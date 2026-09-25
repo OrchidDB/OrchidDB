@@ -80,6 +80,9 @@ impl<T: Clone> SnapshotCell<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct PropertyGraph {
+    /// One timestamp per statement, shared by scalar kernels and SQL planning.
+    /// Execution context only; never persisted as graph data.
+    statement_clock: SnapshotCell<Option<chrono::DateTime<chrono::Utc>>>,
     pub nodes: HashMap<String, NodeTable>,
     /// Multiple relationship types are allowed. They are stored under the
     /// rel_type key.
@@ -262,6 +265,14 @@ impl PropertyGraph {
 
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn begin_statement(&self) {
+        *self.statement_clock.borrow_mut() = Some(chrono::Utc::now());
+    }
+
+    pub(crate) fn statement_time(&self) -> chrono::DateTime<chrono::Utc> {
+        self.statement_clock.borrow().unwrap_or_else(chrono::Utc::now)
     }
 
     pub fn add_nodes(&mut self, table: NodeTable) {

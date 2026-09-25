@@ -471,6 +471,7 @@ async fn execute_rows_inner(
     resources: Option<&super::dag::DagSession>,
     prune_return: bool,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), QueryExecutionError> {
+    graph.begin_statement();
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),

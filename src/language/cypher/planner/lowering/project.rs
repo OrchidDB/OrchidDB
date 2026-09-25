@@ -174,11 +174,6 @@ fn lower_projection_body(
     } else {
         Vec::new()
     };
-    if body.include_existing && existing_fields.is_empty() {
-        return Err(CypherPlanError::Invalid(
-            "RETURN or WITH * is not allowed when there are no variables in scope".to_string(),
-        ));
-    }
     let source_fields = lowerer.visible_fields();
 
     let has_aggregate = body.items.iter().any(|item| contains_aggregate(&item.expr));
@@ -407,7 +402,7 @@ fn lower_planned_sort_keys(
 
 fn sort_key(expr: IrExpr, direction: SortDirection) -> SortKey {
     SortKey {
-        expr,
+        expr: IrExpr::Call { name: "cypher_order_key".into(), args: vec![expr] },
         dir: match direction {
             SortDirection::Asc => SortDir::Asc,
             SortDirection::Desc => SortDir::Desc,
@@ -531,7 +526,7 @@ fn rewrite_projected_sort_expr(body: &ProjectionBody, fields: &[String], expr: &
 fn invalid_order_scope() -> CypherPlanError {
     CypherPlanError::Invalid(
         "ORDER BY after DISTINCT or aggregation may only reference projected variables or projected expressions".to_string(),
-    )
+    ).classified(crate::language::cypher::planner::CypherSemanticError::UndefinedVariable)
 }
 
 fn validate_unique_fields(fields: &[String]) -> CypherPlanResult<()> {

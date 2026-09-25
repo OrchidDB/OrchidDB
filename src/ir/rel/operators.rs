@@ -108,6 +108,13 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 if self.language == Language::Cypher
+                    && path.is_some()
+                {
+                    return Err(RelError::Unsupported(
+                        "Cypher paths require typed SQL IR residual values".into(),
+                    ));
+                }
+                if self.language == Language::Cypher
                     && history.is_some()
                     && matches!(
                         match_mode,

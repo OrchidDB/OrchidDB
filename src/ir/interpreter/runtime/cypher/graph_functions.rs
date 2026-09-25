@@ -3,6 +3,20 @@ use super::*;
 
 pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Option<Value>> {
     match (name, args) {
+        ("cypher_merge_valid", [Value::Map(properties)]) => {
+            if properties.values().any(|value|matches!(value,Value::Null)) {
+                return Err(InterpretError::Diagnosed {
+                    code: crate::ir::diagnostics::RuntimeDiagnosis::MergeReadOwnWrites,
+                    message: "MERGE cannot match or create a null property".into(),
+                });
+            }
+            Ok(Some(Value::Bool(true)))
+        }
+        ("cypher_relationship_list", [Value::Path(items) | Value::List(items)]) => Ok(Some(Value::List(
+            items.iter().filter(|value|matches!(value,Value::Edge { .. })).cloned().collect()
+        ))),
+        ("cypher_relationship_list", [Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_path", [Value::List(items)]) => Ok(Some(Value::Path(items.clone()))),
         ("cypher_labels" | "cypher_type", [Value::Null]) => Ok(Some(Value::Null)),
         ("cypher_labels", [value @ Value::Node { .. }]) => call("labels", std::slice::from_ref(value), graph),
         ("cypher_type", [value @ Value::Edge { .. }]) => call("type", std::slice::from_ref(value), graph),

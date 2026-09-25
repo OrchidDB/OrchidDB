@@ -83,14 +83,6 @@ pub fn lower_pattern_part(
                 let target = node_binding(lowerer, &chain.node);
                 let target_exists = pattern_visible.contains(&target);
                 let variable_length = is_variable_length(&chain.relationship.range);
-                if let Some(max) = chain.relationship.range.max {
-                    if chain.relationship.range.min > max {
-                        return Err(CypherPlanError::Invalid(format!(
-                            "Binder exception: Lower bound of rel {} is greater than upperBound.",
-                            chain.relationship.variable.as_deref().unwrap_or("")
-                        )));
-                    }
-                }
                 let user_rel_binding = chain.relationship.variable.clone();
                 if chain.node.variable.is_some() {
                     pattern_kinds
@@ -380,7 +372,8 @@ fn validate_relationship_binding(
     kinds: &BTreeMap<String, BindingKind>,
 ) -> CypherPlanResult<()> {
     match kinds.get(binding).copied() {
-        Some(kind) if kind != expected && kind != BindingKind::Unknown => {
+        Some(kind) if kind != expected && kind != BindingKind::Unknown
+            && !(kind == BindingKind::ListRelationship && expected == BindingKind::RecursiveRelationship) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: {binding} has data type {} but {} was expected.",
                 kind.cypher_type_name(),
@@ -817,12 +810,12 @@ fn path_segment_ast_expr(path_binding: &str, source_binding: &str) -> Expr {
 
 fn recursive_relationship_expr(path_binding: &str, source_binding: &str) -> IrExpr {
     IrExpr::Call {
-        name: "recursive_relationship_path".to_string(),
-        args: vec![
+        name: "cypher_relationship_list".into(),
+        args: vec![IrExpr::Call { name: "recursive_relationship_path".into(), args: vec![
             IrExpr::Binding(path_binding.to_string()),
             IrExpr::Lit(Lit::String(String::new())),
             IrExpr::Binding(source_binding.to_string()),
-        ],
+        ]}],
     }
 }
 

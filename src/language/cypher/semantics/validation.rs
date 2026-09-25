@@ -179,7 +179,8 @@ pub(super) fn validate_relationship_binding(
     kinds: &BTreeMap<String, BindingKind>,
 ) -> CypherPlanResult<()> {
     match kinds.get(binding).copied() {
-        Some(kind) if kind != expected && kind != BindingKind::Unknown => {
+        Some(kind) if kind != expected && kind != BindingKind::Unknown
+            && !(kind == BindingKind::ListRelationship && expected == BindingKind::RecursiveRelationship) => {
             Err(CypherPlanError::Invalid(format!(
                 "Binder exception: {binding} has data type {} but {} was expected.",
                 kind.cypher_type_name(),

@@ -290,11 +290,18 @@ impl SemanticAnalyzer {
                                 if scope.contains(variable) {
                                     return Err(CypherPlanError::Invalid(format!(
                                         "Binder exception: Variable {variable} already exists."
-                                    )));
+                                    )).classified(CypherSemanticError::VariableAlreadyBound));
                                 }
                                 scope.insert(variable.clone(), BindingKind::Relationship);
                             }
                             self.validate_create_node(&chain.node, scope)?;
+                        }
+                        if let Some(path) = &part.variable {
+                            if scope.contains(path) {
+                                return Err(CypherPlanError::Invalid(format!("Variable {path} already exists"))
+                                    .classified(CypherSemanticError::VariableAlreadyBound));
+                            }
+                            scope.insert(path.clone(), BindingKind::Path);
                         }
                     }
                 }
@@ -332,12 +339,22 @@ impl SemanticAnalyzer {
                 }
                 Clause::Delete(clause) => {
                     for expr in &clause.expressions {
+                        if matches!(expr, Expr::LabelPredicate { .. }) {
+                            return Err(CypherPlanError::Invalid("DELETE cannot remove labels; use REMOVE".into())
+                                .classified(CypherSemanticError::InvalidDelete));
+                        }
                         self.validate_expr_scope(expr, scope, "DELETE expression")?;
+                        if matches!(projected_expr_kind(expr, scope), BindingKind::Bool | BindingKind::Int
+                            | BindingKind::Float | BindingKind::String | BindingKind::Date
+                            | BindingKind::Timestamp | BindingKind::TimestampMs | BindingKind::Interval) {
+                            return Err(CypherPlanError::Invalid("DELETE requires graph elements or paths".into())
+                                .classified(CypherSemanticError::InvalidArgumentType));
+                        }
                     }
                 }
                 Clause::With(clause) => {
                     validate_with_projection_aliases(&clause.projection)?;
-                    let outputs = self.analyze_projection_body(&clause.projection, scope)?;
+                    let outputs = self.analyze_projection_body(&clause.projection, scope, true)?;
                     if let Some(predicate) = &clause.predicate {
                         self.validate_with_predicate(
                             predicate,
@@ -351,7 +368,7 @@ impl SemanticAnalyzer {
                     result_fields = Some(output_fields);
                 }
                 Clause::Return(clause) => {
-                    let outputs = self.analyze_projection_body(&clause.projection, scope)?;
+                    let outputs = self.analyze_projection_body(&clause.projection, scope, false)?;
                     result_fields = Some(outputs);
                 }
             }
@@ -418,19 +435,19 @@ impl SemanticAnalyzer {
                 if repeated_in_part {
                     return Err(CypherPlanError::Invalid(format!(
                         "Binder exception: Bind relationship {rel} to relationship with same name is not supported."
-                    )));
+                    )).classified(CypherSemanticError::RelationshipUniquenessViolation));
                 }
                 if let Some(previous) = repeated_in_clause {
                     if previous == expected {
                         return Err(CypherPlanError::Invalid(format!(
                             "Binder exception: Bind relationship {rel} to relationship with same name is not supported."
-                        )));
+                        )).classified(CypherSemanticError::RelationshipUniquenessViolation));
                     }
                     return Err(CypherPlanError::Invalid(format!(
                         "Binder exception: {rel} has data type {} but {} was expected.",
                         previous.cypher_type_name(),
                         expected.cypher_type_name()
-                    )));
+                    )).classified(CypherSemanticError::VariableTypeConflict));
                 }
                 validate_relationship_binding(rel, expected, &local_kinds)?;
                 if !scope.contains(rel) {
@@ -463,8 +480,9 @@ impl SemanticAnalyzer {
         &mut self,
         body: &ProjectionBody,
         scope: &SemanticScope,
+        allow_empty_star: bool,
     ) -> CypherPlanResult<Vec<SemanticOutput>> {
-        if body.include_existing && scope.bindings.is_empty() {
+        if !allow_empty_star && body.include_existing && scope.bindings.is_empty() {
             return Err(CypherPlanError::Invalid(
                 "RETURN or WITH * is not allowed when there are no variables in scope".to_string(),
             ));
@@ -567,7 +585,7 @@ impl SemanticAnalyzer {
                 if !pattern.labels.is_empty() || pattern.properties.is_some() {
                     return Err(CypherPlanError::Invalid(format!(
                         "Binder exception: Variable {variable} already exists."
-                    )));
+                    )).classified(CypherSemanticError::VariableAlreadyBound));
                 }
                 return Ok(());
             }
