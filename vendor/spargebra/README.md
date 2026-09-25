@@ -1,3 +1,9 @@
+# OrchidDB parser fork
+
+Published as `orchiddb-spargebra` 0.1.0. This contains OrchidDB's modifications
+to spargebra 0.4.7; it is not an upstream Oxigraph release. Upstream MIT/Apache-2.0
+licenses and attribution are retained. The Rust library name remains `spargebra`.
+
 Spargebra
 =========
 

@@ -12,8 +12,8 @@
 [package]
 edition = "2024"
 rust-version = "1.87"
-name = "spargebra"
-version = "0.4.7"
+name = "orchiddb-spargebra"
+version = "0.1.0"
 authors = ["Tpt <thomas@pellissier-tanon.fr>"]
 build = false
 autolib = false
@@ -21,12 +21,12 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "SPARQL parser"
+description = "OrchidDB fork of the spargebra SPARQL parser"
 documentation = "https://docs.rs/spargebra"
 readme = "README.md"
 keywords = ["SPARQL"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/oxigraph/oxigraph/tree/main/lib/spargebra"
+repository = "https://github.com/OrchidDB/OrchidDB"
 resolver = "2"
 
 [package.metadata.docs.rs]

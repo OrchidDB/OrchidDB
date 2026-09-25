@@ -2622,6 +2622,7 @@ dependencies = [
  "md-5 0.10.6",
  "num-bigint",
  "num-traits",
+ "orchiddb-spargebra",
  "oxiri",
  "oxsdatatypes",
  "parquet",
@@ -2631,11 +2632,22 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "spargebra",
  "stacker",
  "thiserror",
  "tokio",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "orchiddb-spargebra"
+version = "0.1.0"
+dependencies = [
+ "oxilangtag",
+ "oxiri",
+ "oxrdf",
+ "peg",
+ "rand 0.8.6",
+ "thiserror",
 ]
 
 [[package]]
@@ -3549,18 +3561,6 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "spargebra"
-version = "0.4.7"
-dependencies = [
- "oxilangtag",
- "oxiri",
- "oxrdf",
- "peg",
- "rand 0.8.6",
- "thiserror",
 ]
 
 [[package]]
