@@ -1,4 +1,6 @@
-# Relational DAG execution
+# Optional managed runtime
+
+Enable Cargo feature `duckdb` to use this runtime. It is separate from the default SQL-only compiler.
 
 The managed `GraphEngine` lowers each query before execution:
 

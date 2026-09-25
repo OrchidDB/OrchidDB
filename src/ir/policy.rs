@@ -1,7 +1,7 @@
 //! `GraphPlanPolicy` — the semantic contract attached to every plan.
 //!
-//! Mirrors §0 of `docs/graph_ir_language_examples_v0_2_draft.md`. The policy
-//! is part of the logical semantics; later rewrites must preserve it.
+//! The policy is part of the logical semantics; later rewrites must preserve
+//! it. See `docs/architecture.md` for the compiler and runtime boundaries.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {

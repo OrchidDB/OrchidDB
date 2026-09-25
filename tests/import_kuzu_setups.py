@@ -333,7 +333,7 @@ WRITE_KEYWORD_RE = re.compile(r"\b(create|set|delete|merge|insert)\b", re.IGNORE
 # `UNWIND range(0, 9999) AS i MATCH (p:Person {id:i}) ...` is 10k full scans
 # of 10k nodes, because the tree interpreter has no index or hash join. Those
 # stay blocked until such queries execute relationally (see
-# docs/handoff_rel_lowering.md) rather than in the interpreter — building a
+# docs/roadmap.md) rather than in the interpreter — building a
 # bespoke index in the interpreter would be reimplementing the database we
 # already lower to.
 BULK_ROW_LIMIT = 400000

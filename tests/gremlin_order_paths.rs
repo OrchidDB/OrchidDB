@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 use orchiddb::ir::{PropertyGraph, Value, execute_rows};
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 

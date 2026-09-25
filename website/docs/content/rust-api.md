@@ -2,6 +2,12 @@
 
 Find the public engine methods, result types, mapping builders, and planner entry points.
 
+## SQL compiler (default)
+
+Use `compiler::compile` or `compiler::compile_json` to return SQL without a database driver. The optional `execution::SqlSession` interface accepts caller-owned sessions and result types. See [SQL compilation](sql-compiler.md) for runnable examples.
+
+The engine APIs below require `features = ["duckdb"]`.
+
 ## GraphEngine
 
 Import from `orchiddb::engine`. Query methods are asynchronous and return `Result<QueryResult, String>`; lifecycle methods are synchronous.

@@ -6,3 +6,6 @@ __pycache__/
 
 # Generated mdBook guides and conformance evidence
 /website/docs/dist/
+
+# Standalone caller-owned driver example
+/examples/duckdb-client/target/

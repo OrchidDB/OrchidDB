@@ -5,7 +5,7 @@
 //! The interpreter is the reference and compares through exact
 //! `BigDecimal`/`BigInt` promotion, so a literal one below a stored power of
 //! two must not match it. The DuckDB path historically round-tripped the
-//! literal through `f64` (see `docs/sql_islands_completion.md` section 1),
+//! literal through `f64`,
 //! turning `i128::MAX` into `2^127` and matching a stored `2^127.0`.
 //!
 //! Both paths test exact equality without coercing the literal to a rounded

@@ -1,7 +1,7 @@
 # Working on independent features
 
 The module boundaries follow likely change ownership, not file-size targets.
-Assign an agent a feature and its tests using this map. Most work should stay
+Use this map to locate a feature and its tests. Most work should stay
 inside that feature's implementation files; shared facades keep existing public
 paths working and contain the contracts that need coordination.
 
@@ -14,7 +14,7 @@ paths working and contain the contracts that need coordination.
 | Cypher expression/projection semantics | `src/language/cypher/planner/lowering/project/`: scalar `expression`, grouping `aggregate`, correlated queries/comprehensions `materialize`, binding `scope`, rewriting `aliases`; `semantics/` owns validation and type analysis | Scope/context types and clause dispatch remain shared. Planner and list-comprehension tests. |
 | SPARQL frontend algebra, terms, ontology | `src/language/sparql/`: `algebra`, `basic_patterns`, `ontology_lowering`, `planner_expression` (aggregates/EXISTS), `expression` (scalar expressions) | Planner context and algebra dispatch; SPARQL/RDF/mapped-engine tests. |
 | Interpreter functions and casts | `src/ir/interpreter/runtime/` | Runtime dispatch and alias registry are the routing seam; typed value/cast/helper families own implementations. Runtime tests and language execution tests. |
-| Engine function catalogs, UDF mappings and dialect rewrites | `src/ir/functions/`, `src/ir/rel/sql/functions.rs` | [Function registration guide](engine_functions.md); mapped-engine configuration and scalar/aggregate/UDF regression tests. |
+| Engine function catalogs, UDF mappings and dialect rewrites | `src/ir/functions/`, `src/ir/rel/sql/functions.rs` | [Function registration guide](architecture.md); mapped-engine configuration and scalar/aggregate/UDF regression tests. |
 | Executable relational lowering | [Relational ownership map](../src/ir/rel/README.md) | `LoweringContext`, physical binding layout and operator dispatch; relational, SQL and language-specific DuckDB tests. |
 | DataFusion extension adapter / optimizer interface | `src/ir/df/extensions.rs`, `conversion.rs`, `schema.rs` | `df.rs` preserves the public API. Conversion directions stay together; schema inference can change independently. HEP, planner and IR round-trip tests. |
 | Catalog mutation semantics | `src/ir/catalog/mutations.rs` | Graph and overlay data structures stay in `catalog.rs`; read paths remain there. Catalog, DML, mutation-visibility tests. |

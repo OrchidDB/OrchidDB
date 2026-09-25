@@ -52,7 +52,7 @@ This workflow does not call `cargo package` or `cargo publish`.
 Python 3.11+ and a native Rust release build are required:
 
 ```sh
-cargo build --locked --release --bin orchiddb
+cargo build --locked --release --features duckdb --bin orchiddb
 python3 scripts/release/package.py archive \
   --tag v0.1.0 --target aarch64-apple-darwin \
   --binary target/release/orchiddb

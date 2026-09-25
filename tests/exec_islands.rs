@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 //! Hybrid execution: SQL islands spliced into an otherwise-interpreted plan.
 //!
 //! The point of the partitioner is that an operator the relational backend

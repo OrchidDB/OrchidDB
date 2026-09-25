@@ -1,3 +1,4 @@
+#![cfg(feature = "duckdb")]
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};

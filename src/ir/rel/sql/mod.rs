@@ -16,7 +16,7 @@
 //!   generation; anything the unparser cannot express surfaces as a typed
 //!   [`SqlError::Unsupported`], never as wrong SQL.
 //! * [`SqlExecutor`] — the engine abstraction. [`DuckDbExecutor`] (feature
-//!   `duckdb`, on by default) runs everything in-memory; [`PostgresExecutor`]
+//!   `duckdb`, explicitly enabled) runs everything in-memory; [`PostgresExecutor`]
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 mod functions;

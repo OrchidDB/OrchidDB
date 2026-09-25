@@ -98,7 +98,7 @@ no schema discovery, setup statements, data copying, buffering or commits.
 Futures may stay on the calling thread; `Send` and background scheduling are not
 required. Your adapter controls streaming errors, cancellation and drop cleanup.
 
-The [DuckDB application example](../examples/duckdb-client/) declares its own
+The [DuckDB application example](https://github.com/OrchidDB/OrchidDB/tree/main/examples/duckdb-client) declares its own
 driver dependency and implements the interface with a borrowed connection and
 streaming cursor. It registers a SQL function, queries uncommitted caller data,
 and verifies caller rollback afterward:

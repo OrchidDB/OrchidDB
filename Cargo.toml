@@ -18,7 +18,7 @@ name = "orchiddb-jvm-store"
 path = "src/bin/orchiddb-jvm-store.rs"
 
 [features]
-default = ["duckdb"]
+default = []
 duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 
@@ -53,3 +53,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 parquet = { version = "58.2.0", features = ["arrow"] }
+
+[[example]]
+name = "managed_graph"
+required-features = ["duckdb"]
