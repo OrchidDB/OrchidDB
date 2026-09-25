@@ -40,6 +40,27 @@ the same execution contract.
 
 ## Work groups, in implementation order
 
+### Measured progress
+
+Revision `7a193ee`: **844 pass, 36 fail, 94 unsupported, 77 skipped,
+74 not applicable**. Apache Jena on the same fixture adapter: **914 pass,
+60 fail, 77 skipped, 74 not applicable**. These are complete local runs.
+
+Implemented query-base IRI resolution, URI encoding, SHA-384/512, regex
+replacement and flags, date-time comparisons, decimal division/averages,
+string casts, variable-free results, named graph enumeration, and a mapped
+registry for empty graph names. SPARQL Update syntax uses the production
+parser. Update execution remains a separate implementation group below.
+
+Two shared adapter corrections preserve the original fixtures: explicit
+`rs:index` result ordering, and lossless Turtle numeric tokens. Both engines
+use the same parser and assertion rules; RDF literal identity was not relaxed.
+
+During implementation, run SPARQL only. Save the complete Cypher and Gremlin
+regression suites for the end, as requested by the user.
+
+### Remaining implementation sequence
+
 1. **Adapter fidelity and peer evidence.** Correct relocated fixture bases, add
    Jena query/update transport, and compare entire update datasets. Preserve all
    pinned scenario IDs, expectations, and recorded non-passing outcomes.
@@ -64,5 +85,6 @@ the same execution contract.
     preserving Cypher 3,897/3,897 and Gremlin 1,511/1,511. Publish measured JSON
     through the existing static-site action, with one Crabgraph result per case.
 
-Batch implementation changes before full sweeps. Focused regressions validate
-new contracts; full suites run in the background after each substantial batch.
+Batch implementation changes before full SPARQL sweeps. Focused SPARQL
+regressions validate new contracts; full SPARQL runs can proceed in the
+background after each substantial batch. Run other languages only at the end.
