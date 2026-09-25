@@ -16,6 +16,10 @@ const PREFIX: &str =
     "PREFIX ex: <http://example.org/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ";
 
 fn engine() -> RdfGraphEngine {
+    engine_with("")
+}
+
+fn engine_with(extra: &str) -> RdfGraphEngine {
     let connection = duckdb::Connection::open_in_memory().unwrap();
     connection
         .execute_batch(
@@ -42,6 +46,7 @@ fn engine() -> RdfGraphEngine {
             "#,
         )
         .unwrap();
+    connection.execute_batch(extra).unwrap();
     let schema = Arc::new(Schema::new(
         [
             "g", "s", "s_kind", "p", "p_kind", "o", "o_kind", "o_dt", "o_lang",
@@ -122,6 +127,59 @@ async fn mapped_empty_named_graphs_preserve_the_graph_domain() {
     assert!(rows(&mut engine, "SELECT * WHERE { GRAPH ex:empty { ?s ?p ?o } }").await.is_empty());
     assert_eq!(rows(&mut engine, "SELECT * FROM NAMED ex:empty WHERE { GRAPH ?g {} }").await, vec![vec![iri("empty")]]);
     assert!(rows(&mut engine, "SELECT * FROM NAMED ex:absent WHERE { GRAPH ?g {} }").await.is_empty());
+    assert!(rows(&mut engine, "SELECT * WHERE { GRAPH ?g { FILTER(BOUND(?g)) } }").await.is_empty());
+    assert_eq!(rows(&mut engine, r#"SELECT ?g ?v WHERE { GRAPH ?g { VALUES (?g ?v) { (UNDEF "x") (ex:absent "y") } } }"#).await,
+        vec![vec![iri("empty"), string("x")]]);
+    assert_eq!(rows(&mut engine, "SELECT ?g ?c WHERE { GRAPH ?g { SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o } } }").await,
+        vec![vec![iri("empty"), int("0")]]);
+}
+
+#[tokio::test]
+async fn graph_variables_bind_after_optional_and_subquery_scope() {
+    let mut engine = engine_with("INSERT INTO quads VALUES
+        ('http://example.org/g1','http://example.org/a','IRI','http://example.org/p','IRI','http://example.org/other','IRI',NULL,NULL),
+        ('http://example.org/g2','http://example.org/b','IRI','http://example.org/p','IRI','http://example.org/g2','IRI',NULL,NULL);");
+    assert_eq!(rows(&mut engine, "SELECT ?s WHERE { GRAPH ?g { ?s ex:p ?o OPTIONAL { ?s ex:p ?g } } }").await,
+        vec![vec![iri("b")]]);
+    assert_eq!(sorted(&mut engine, "SELECT ?s WHERE { GRAPH ?g { SELECT ?s WHERE { ?s ex:p ?g } } }").await,
+        vec![vec![iri("a")], vec![iri("b")]]);
+    assert_eq!(sorted(&mut engine, "SELECT ?g ?c WHERE { GRAPH ?g { SELECT (COUNT(*) AS ?c) WHERE { ?s ex:p ?v FILTER(?v = ex:other) } } }").await,
+        vec![vec![iri("empty"), int("0")], vec![iri("g1"), int("1")], vec![iri("g2"), int("0")]]);
+}
+
+#[tokio::test]
+async fn parser_preserves_nested_filter_scope_and_boolean_tokens() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, r#"SELECT (TRUE AS ?a) (FaLsE AS ?b) ("TRUE" AS ?text) WHERE {}"#).await,
+        vec![vec![typed("true", "boolean"), typed("false", "boolean"), string("TRUE")]]);
+    let nested = rows(&mut engine, r#"SELECT ?name ?age WHERE {
+        ex:alice ex:name ?name OPTIONAL { { ex:alice ex:age ?age FILTER(?name = "Alice") } } }"#).await;
+    assert_eq!(nested, vec![vec![string("Alice"), None]]);
+    let direct = rows(&mut engine, r#"SELECT ?name ?age WHERE {
+        ex:alice ex:name ?name OPTIONAL { ex:alice ex:age ?age FILTER(?name = "Alice") } }"#).await;
+    assert_eq!(direct, vec![vec![string("Alice"), int("30")]]);
+    use new_graph::language::sparql::parse_query_with_base;
+    assert!(parse_query_with_base("SELECT * WHERE { FILTER (?x<?a&&?b>?y) }", EX).is_err());
+    assert!(parse_query_with_base("SELECT * WHERE { FILTER (?x < ?a && ?b > ?y) }", EX).is_ok());
+}
+
+#[tokio::test]
+async fn bnode_allocation_is_local_to_each_solution() {
+    let mut engine = engine();
+    let result = rows(&mut engine, r#"SELECT (BNODE(?x) AS ?a) (BNODE(?x) AS ?b)
+        (BNODE("other") AS ?c) WHERE { VALUES ?x { "same" "same" } }"#).await;
+    assert_eq!(result.len(), 2);
+    for row in &result {
+        assert!(matches!(&row[0], Some(RdfTermValue::BlankNode(_))));
+        assert_eq!(row[0], row[1]);
+        assert_ne!(row[0], row[2]);
+    }
+    assert_ne!(result[0][0], result[1][0]);
+    let fresh = rows(&mut engine, "SELECT (BNODE() AS ?a) (BNODE() AS ?b) WHERE {}").await;
+    assert_ne!(fresh[0][0], fresh[0][1]);
+    assert_eq!(rows(&mut engine, r#"SELECT DISTINCT ?x WHERE {
+        VALUES ?x { "same" "same" } BIND(BNODE(?x) AS ?hidden) }"#).await,
+        vec![vec![string("same")]]);
 }
 
 #[tokio::test]

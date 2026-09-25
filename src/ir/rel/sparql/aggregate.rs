@@ -15,6 +15,7 @@ impl Lowerer<'_, '_> {
             temps: Vec::new(),
         };
         let mut group_vars = Vec::new();
+        group_vars.extend(sol.vars.keys().filter(|name| name.starts_with("__sq_graph_scope_")).cloned());
         for item in group {
             match &item.expr {
                 IrExpr::Binding(name) if name == &item.alias => group_vars.push(name.clone()),
@@ -128,7 +129,7 @@ impl Lowerer<'_, '_> {
                     agg_exprs.push(counted.alias(name("count")));
                     finals.push((
                         agg.alias.clone(),
-                        Term::integer(col_exact(name("count"))),
+                        Term::integer(duck("coalesce", vec![col_exact(name("count")), lit(0_i64)], DataType::Int64)),
                         true,
                     ));
                 }
@@ -167,7 +168,7 @@ impl Lowerer<'_, '_> {
                             .alias(name("dbl")),
                     );
                     let rank = col_exact(name("rank"));
-                    let n = col_exact(name("n"));
+                    let n = duck("coalesce", vec![col_exact(name("n")), lit(0_i64)], DataType::Int64);
                     let is_avg = matches!(
                         agg.kind,
                         AggKind::Avg | AggKind::AvgOrNull | AggKind::AvgOrZero
@@ -292,6 +293,9 @@ impl Lowerer<'_, '_> {
         // Keep aggregate calls out of the finishing projection's SQL: the
         // projection references each result several times.
         let aggregated = self.cte(aggregated)?;
+        let aggregated = if group.is_empty() && !group_vars.is_empty() && sol.keys.is_empty() {
+            self.complete_graph_groups(aggregated, &group_vars)?
+        } else { aggregated };
         let mut columns = Vec::new();
         let mut vars = BTreeMap::new();
         for var in &group_vars {
@@ -313,6 +317,33 @@ impl Lowerer<'_, '_> {
         })
     }
 
-    // -- CONSTRUCT -----------------------------------------------------------
+    /// An implicit aggregate group exists once per active graph, including
+    /// graphs whose WHERE relation is empty. Complete that domain before
+    /// deriving COUNT/SUM defaults from the aggregate columns.
+    fn complete_graph_groups(&mut self, aggregated: LogicalPlan, groups: &[String]) -> RelResult<LogicalPlan> {
+        let mut domain = None;
+        for name in groups {
+            let Some(graphs) = self.graph_domains.get(name) else {
+                return unsupported("active graph aggregate has no graph domain");
+            };
+            domain = Some(match domain {
+                None => graphs.plan.clone(),
+                Some(plan) => LogicalPlanBuilder::from(plan).cross_join(graphs.plan.clone())?.build()?,
+            });
+        }
+        let prefix = self.fresh("aggregate:");
+        let names: Vec<_> = aggregated.schema().fields().iter().map(|field| field.name().clone()).collect();
+        let renamed = self.project(aggregated, names.iter()
+            .map(|name| col_exact(name).alias(format!("{prefix}{name}"))).collect())?;
+        let predicates: Vec<_> = groups.iter().map(|name|
+            col_exact(name).eq(col_exact(format!("{prefix}{name}")))).collect();
+        let joined = LogicalPlanBuilder::from(domain.expect("nonempty graph groups"))
+            .join_on(renamed, JoinType::Left, predicates)?.build()?;
+        let group_columns: BTreeSet<_> = groups.iter().flat_map(|name| var_columns(name)).collect();
+        self.project(joined, names.iter().map(|name| {
+            if group_columns.contains(name) { col_exact(name) }
+            else { col_exact(format!("{prefix}{name}")).alias(name) }
+        }).collect())
+    }
 
 }

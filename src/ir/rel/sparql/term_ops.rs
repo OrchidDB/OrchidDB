@@ -131,10 +131,10 @@ pub(super) fn promoted_rank(a: &Term, b: &Term) -> Expr {
     )
 }
 
-const KNOWN_DATATYPES: &[&str] = &["string", "boolean", "decimal", "float", "double"];
+const KNOWN_DATATYPES: &[&str] = &["string", "boolean", "date", "dateTime"];
 
 pub(super) fn known_datatype(term: &Term) -> Expr {
-    term.is_numeric().or(term.dt.clone().in_list(
+    term.is_numeric().and(try_cast(term.value.clone(), DataType::Float64).is_not_null()).or(term.dt.clone().in_list(
         KNOWN_DATATYPES
             .iter()
             .map(|local| s(&xsd(local)))
@@ -181,6 +181,11 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
     let both_datetime = a
         .has_datatype(&xsd("dateTime"))
         .and(b.has_datatype(&xsd("dateTime")));
+    let temporal = |operation: &str| duck_str("__crabgraph_sparql_scalar", vec![
+        s(operation), a.value.clone(), b.value.clone(),
+        s(match op { BinaryOp::Eq => "eq", BinaryOp::Neq => "ne",
+            BinaryOp::Lt => "lt", BinaryOp::Lte => "le", BinaryOp::Gt => "gt", _ => "ge" }), s("")
+    ]).eq(s("true"));
     let mut arms = vec![
         (
             a.kind.clone().is_null().or(b.kind.clone().is_null()),
@@ -189,12 +194,8 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
         (both_numeric, numeric),
         (both_simple, ordered(a.value.clone(), b.value.clone())),
         (both_boolean, ordered(a.boolean_value(), b.boolean_value())),
-        (both_datetime, duck_str("__crabgraph_sparql_scalar", vec![
-            s("compare_datetime"), a.value.clone(), b.value.clone(),
-            s(match op { BinaryOp::Eq => "eq", BinaryOp::Neq => "ne",
-                BinaryOp::Lt => "lt", BinaryOp::Lte => "le", BinaryOp::Gt => "gt", _ => "ge" }),
-            s("")
-        ]).eq(s("true"))),
+        (both_datetime, temporal("compare_datetime")),
+        (a.has_datatype(&xsd("date")).and(b.has_datatype(&xsd("date"))), temporal("compare_date")),
     ];
     if matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
         let equal = op == BinaryOp::Eq;
@@ -206,7 +207,7 @@ pub(super) fn compare(op: BinaryOp, a: &Term, b: &Term, rank: Expr) -> Expr {
         arms.push((
             a.dt.clone()
                 .eq(s(RDF_LANG_STRING))
-                .and(b.dt.clone().eq(s(RDF_LANG_STRING))),
+                .or(b.dt.clone().eq(s(RDF_LANG_STRING))),
             lit(!equal),
         ));
         arms.push((known_datatype(a).and(known_datatype(b)), lit(!equal)));

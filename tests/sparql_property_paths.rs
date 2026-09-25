@@ -83,6 +83,20 @@ fn string(value: &str) -> Option<RdfTermValue> {
     Some(RdfTermValue::string(value))
 }
 
+#[tokio::test]
+async fn composed_alternatives_preserve_each_route() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, "SELECT ?t WHERE { ex:alice (ex:knows|ex:knows)/(ex:knows|ex:knows) ?t }").await,
+        vec![vec![iri("cara")]; 4]);
+}
+
+#[tokio::test]
+async fn minus_does_not_count_the_implicit_graph_scope_as_a_shared_binding() {
+    let mut engine = engine();
+    assert_eq!(rows(&mut engine, "SELECT ?a WHERE { GRAPH ?g { ?a ex:knows ex:alice MINUS { ?b ex:knows ex:alice } } }").await,
+        vec![vec![iri("cara")]]);
+}
+
 async fn rows(engine: &mut RdfGraphEngine, body: &str) -> Vec<Vec<Option<RdfTermValue>>> {
     let query = format!("{PREFIX}{body}");
     if std::env::var_os("SPARQL_TEST_SQL").is_some() {

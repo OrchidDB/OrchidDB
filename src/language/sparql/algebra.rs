@@ -5,7 +5,7 @@ use super::{
     Lowered, MinusCompatibility, NamedNodePattern, Node, NullsOrder, OptionalMissing,
     OrderExpression, PathMaterialization, ProjectErrorPolicy, ProjectMode, ProjectionItem,
     RdfGraphScope, RdfTerm, Slice, SortDir, SortKey, SparqlError, SparqlPlanner, UnionAlign, Value,
-    binding, combine_apply, expression, join_typed, named_term, path, split_conjuncts, term,
+    binding, combine_apply, expression, join_typed, named_term, path, pattern_term, split_conjuncts, term,
     term_variables, terms,
 };
 impl SparqlPlanner {
@@ -35,8 +35,11 @@ impl SparqlPlanner {
                 path: path_expr,
                 object,
             } => {
-                let subject = term(subject);
-                let object = term(object);
+                // Parser-generated blank labels connect sequence path
+                // fragments. Like BGP blank labels they are existential
+                // bindings, never constants identifying stored blank nodes.
+                let subject = pattern_term(subject);
+                let object = pattern_term(object);
                 let variables = term_variables([&subject, &object]);
                 Ok(Lowered {
                     node: Node::GraphRdfPropertyPath {
@@ -260,6 +263,10 @@ impl SparqlPlanner {
                 })
             }
             GraphPattern::Graph { name, inner } => {
+                // The active graph is an evaluation context. Bind the GRAPH
+                // variable after evaluating its body, so FILTER/OPTIONAL and
+                // subquery variable scopes cannot see a premature binding.
+                let context = format!("__sq_graph_scope_{}", self.exists_marks.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
                 let named_scope = match (name, &self.query_dataset) {
                     (NamedNodePattern::NamedNode(value), Some(dataset)) => {
                         RdfGraphScope::DatasetNamedGraph {
@@ -273,9 +280,9 @@ impl SparqlPlanner {
                                 .collect(),
                         }
                     }
-                    (NamedNodePattern::Variable(value), Some(dataset)) => {
+                    (NamedNodePattern::Variable(_), Some(dataset)) => {
                         RdfGraphScope::DatasetNamedGraphVariable {
-                            variable: binding(value),
+                            variable: context.clone(),
                             allowed: dataset
                                 .named
                                 .as_ref()
@@ -288,12 +295,20 @@ impl SparqlPlanner {
                     (NamedNodePattern::NamedNode(value), None) => {
                         RdfGraphScope::NamedGraph(RdfTerm::Iri(value.as_str().into()))
                     }
-                    (NamedNodePattern::Variable(value), None) => {
-                        RdfGraphScope::NamedGraphVariable(binding(value))
+                    (NamedNodePattern::Variable(_), None) => {
+                        RdfGraphScope::NamedGraphVariable(context.clone())
                     }
                 };
-                let mut lowered = self.lower_in_scope(inner, named_scope)?;
+                let mut lowered = self.lower_in_scope(inner, named_scope.clone())?;
                 if let NamedNodePattern::Variable(value) = name {
+                    let domain = Node::GraphProject {
+                        mode: ProjectMode::PreserveVisible,
+                        items: vec![ProjectionItem { alias: binding(value), expr: IrExpr::Binding(context) }],
+                        error_policy: ProjectErrorPolicy::UnboundOnExpressionError,
+                        input: Box::new(Node::GraphSparqlGraphNames { dataset: self.dataset.clone(), graph_scope: named_scope }),
+                    };
+                    lowered.node = Node::GraphJoin { kind: JoinKind::Inner, left: Box::new(domain),
+                        right: Box::new(lowered.node), condition: None };
                     lowered.variables.insert(binding(value));
                 }
                 Ok(lowered)
