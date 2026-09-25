@@ -15,10 +15,9 @@ Write for database engineers, graph practitioners, and infrastructure teams eval
 - Use a centered introduction, About section, usage examples, and participation
   section. Prefer short paragraphs and ordinary links to feature cards or sales claims.
 - Use a white background, muted headings and orchid-purple links, and a solid dark-purple
-  introduction. Use only the 🌸 emoji as the header and footer logo, with an accessible OrchidDB home label. Use system fonts with a monospace font for code.
+  introduction. Use the approved Orchid kamon SVG in the header and footer with an accessible OrchidDB home label. The centered landing masthead uses the pale ink crest on dark plum (#30222d), with a Georgia project title. Keep system fonts for body text and monospace for code.
 - Avoid textures, custom fonts, heavy shadows, and dashboards on the homepage.
-  The header may use the abstract orchid graph animation, with pause and reduced-motion
-  support. Simple diagrams should explain actual behavior.
+  The landing hero uses the approved static ink crest. Simple diagrams should explain actual behavior.
 - Preserve the architecture/IR diagram when changing surrounding artwork or logos.
 - Documentation uses the stock mdBook theme without added guide styles or scripts.
   The separate conformance report may keep styles needed for its dense evidence tables.
