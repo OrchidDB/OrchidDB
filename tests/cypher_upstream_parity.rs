@@ -3,6 +3,41 @@
 use new_graph::engine::GraphEngine;
 
 #[tokio::test]
+async fn wide_calendar_differences_and_values_roundtrip() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for (query, expected) in [
+        ("RETURN duration.between(date('-999999999-01-01'), date('+999999999-12-31'))", "P1999999998Y11M30D"),
+        ("RETURN duration.inSeconds(localdatetime('-999999999-01-01'), localdatetime('+999999999-12-31T23:59:59'))", "PT17531639991215H59M59S"),
+        ("RETURN date({year: 1000000, month: 2, day: 29}) + duration({years:1})", "+1000001-02-28"),
+        ("RETURN date('-1000000-01-01').year", "-1000000"),
+        ("RETURN date.truncate('month', date('+1000000-02-29'))", "+1000000-02-01"),
+    ] {
+        assert_eq!(rows(&mut engine, query).await, vec![vec![expected]], "{query}");
+    }
+    for text in ["-999999999-01-01", "+999999999-12-31", "+1000000-02-29"] {
+        let value = new_graph::ir::temporal::parse("date", text).unwrap();
+        assert_eq!(new_graph::ir::temporal::TemporalValue::decode(&value.encode()).unwrap(), value);
+    }
+}
+
+#[tokio::test]
+async fn deleted_entity_reads_and_invalid_properties_keep_runtime_diagnoses() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.cypher("CREATE (:A {num: 7})-[:R {num: 8}]->(:B)").await.unwrap();
+    for query in ["MATCH (n:A) DETACH DELETE n RETURN n.num", "MATCH (n:A) DETACH DELETE n RETURN labels(n)",
+        "MATCH ()-[r]->() DELETE r RETURN r.num"] {
+        let ast = new_graph::language::cypher::parser::parse_query(query).unwrap();
+        let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
+        let error = engine.execute_plan_with_diagnostics(&plan).await.unwrap_err();
+        assert_eq!(error.diagnosis, Some(new_graph::ir::diagnostics::RuntimeDiagnosis::DeletedEntityAccess), "{query}: {error}");
+    }
+    let ast = new_graph::language::cypher::parser::parse_query("CREATE (a) SET a.x = [{num:1}]").unwrap();
+    let plan = new_graph::language::cypher::planner::CypherPlanner::new().plan(&ast).unwrap();
+    assert_eq!(engine.execute_plan_with_diagnostics(&plan).await.unwrap_err().diagnosis,
+        Some(new_graph::ir::diagnostics::RuntimeDiagnosis::InvalidPropertyType));
+}
+
+#[tokio::test]
 async fn null_slices_survive_sql_output_and_property_lists_stay_typed() {
     use arrow::array::Array;
     let mut engine = GraphEngine::in_memory().unwrap();

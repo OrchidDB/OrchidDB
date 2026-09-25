@@ -1,14 +1,16 @@
 //! Temporal type identity, ordering, display, and snapshot encoding.
-use super::{Result, parse};
+use super::{CalendarDate, Result, parse};
 use crate::ir::Value;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::{cmp::Ordering, fmt};
 #[derive(Debug, Clone, Eq)]
 pub enum TemporalValue {
     Date(NaiveDate),
+    WideDate(CalendarDate),
     LocalTime(NaiveTime),
     Time(NaiveTime, i32),
     LocalDateTime(NaiveDateTime),
+    WideLocalDateTime(CalendarDate, NaiveTime),
     DateTime(DateTime<FixedOffset>, Option<String>),
     Duration {
         months: i64,
@@ -21,6 +23,8 @@ pub enum TemporalValue {
 impl PartialEq for TemporalValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::WideDate(a), Self::WideDate(b)) => a == b,
+            (Self::WideLocalDateTime(a, at), Self::WideLocalDateTime(b, bt)) => a == b && at == bt,
             (Self::Date(a), Self::Date(b)) => a == b,
             (Self::LocalTime(a), Self::LocalTime(b)) => a == b,
             (Self::Time(a, ao), Self::Time(b, bo)) => a == b && ao == bo,
@@ -50,10 +54,10 @@ impl PartialEq for TemporalValue {
 impl TemporalValue {
     pub fn kind(&self) -> &'static str {
         match self {
-            Self::Date(_) => "date",
+            Self::Date(_) | Self::WideDate(_) => "date",
             Self::LocalTime(_) => "localtime",
             Self::Time(..) => "time",
-            Self::LocalDateTime(_) => "localdatetime",
+            Self::LocalDateTime(_) | Self::WideLocalDateTime(..) => "localdatetime",
             Self::DateTime(..) => "datetime",
             Self::Duration { .. } => "duration",
         }
@@ -66,15 +70,25 @@ impl TemporalValue {
             _ => None,
         }
     }
+    pub fn calendar_date(&self) -> Option<CalendarDate> {
+        match self {
+            Self::WideDate(date) | Self::WideLocalDateTime(date, _) => Some(*date),
+            _ => self.date().map(CalendarDate::from_chrono),
+        }
+    }
     pub fn time(&self) -> Option<NaiveTime> {
         match self {
             Self::LocalTime(t) | Self::Time(t, _) => Some(*t),
             Self::LocalDateTime(d) => Some(d.time()),
+            Self::WideLocalDateTime(_, t) => Some(*t),
             Self::DateTime(d, _) => Some(d.time()),
             _ => None,
         }
     }
     pub fn compare(&self, other: &Self) -> Option<Ordering> {
+        if self.kind() == other.kind() && matches!(self.kind(), "date" | "localdatetime") {
+            return Some(self.calendar_date()?.cmp(&other.calendar_date()?).then_with(|| self.time().cmp(&other.time())));
+        }
         match (self, other) {
             (Self::Date(a), Self::Date(b)) => Some(a.cmp(b)),
             (Self::LocalTime(a), Self::LocalTime(b)) => Some(a.cmp(b)),
@@ -161,6 +175,8 @@ impl fmt::Display for TemporalValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Date(d) => write!(f, "{d}"),
+            Self::WideDate(d) => write!(f, "{d}"),
+            Self::WideLocalDateTime(d, t) => write!(f, "{d}T{}", time_text(*t)),
             Self::LocalTime(t) => write!(f, "{}", time_text(*t)),
             Self::Time(t, o) => write!(f, "{}{}", time_text(*t), offset_text(*o)),
             Self::LocalDateTime(d) => write!(f, "{}T{}", d.date(), time_text(d.time())),

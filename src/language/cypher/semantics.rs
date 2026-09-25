@@ -15,7 +15,7 @@ use validation::{
 };
 mod references;
 use references::{collect_free_variables, remove_local_exists_bindings, scope_from_candidates};
-mod aggregates;
+pub(crate) mod aggregates;
 use aggregates::{contains_aggregate, validate_iteration_aggregate};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -161,6 +161,12 @@ struct SemanticAnalyzer {
     synthetic_counter: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExpressionContext {
+    Predicate,
+    Value,
+}
+
 impl SemanticAnalyzer {
     fn analyze_query_with_scope(
         &mut self,
@@ -197,7 +203,7 @@ impl SemanticAnalyzer {
                     self.analyze_pattern_part_with_clause(&clause.pattern, scope, None)?;
                     for item in clause.on_create.iter().chain(clause.on_match.iter()) {
                         for expr in merge_set_item_exprs(item) {
-                            self.validate_expr_scope(expr, scope, "MERGE SET")?;
+                            self.validate_expr_scope(expr, scope, ExpressionContext::Value, "MERGE SET")?;
                         }
                     }
                 }
@@ -211,7 +217,7 @@ impl SemanticAnalyzer {
                         )?;
                     }
                     if let Some(predicate) = &clause.predicate {
-                        self.validate_expr_scope(predicate, scope, "WHERE predicate")?;
+                        self.validate_expr_scope(predicate, scope, ExpressionContext::Predicate, "WHERE predicate")?;
                     }
                 }
                 Clause::Unwind(clause) => {
@@ -219,10 +225,10 @@ impl SemanticAnalyzer {
                         // UNWIND accepts heterogeneous list literals
                         // (bound as ANY[]); validate elements only.
                         for item in items {
-                            self.validate_expr_scope(item, scope, "UNWIND expression")?;
+                            self.validate_expr_scope(item, scope, ExpressionContext::Value, "UNWIND expression")?;
                         }
                     } else {
-                        self.validate_expr_scope(&clause.expr, scope, "UNWIND expression")?;
+                        self.validate_expr_scope(&clause.expr, scope, ExpressionContext::Value, "UNWIND expression")?;
                         validate_list_source(&clause.expr, scope)?;
                     }
                     if scope.contains(&clause.alias) {
@@ -257,7 +263,7 @@ impl SemanticAnalyzer {
                             return Err(CypherPlanError::Invalid("Procedure arguments cannot contain aggregates".into())
                                 .classified(CypherSemanticError::InvalidAggregation));
                         }
-                        self.validate_expr_scope(arg, scope, "procedure argument")?;
+                        self.validate_expr_scope(arg, scope, ExpressionContext::Value, "procedure argument")?;
                     }
                     let visible = scope.field_set();
                     let rebound = alias_yields
@@ -276,7 +282,7 @@ impl SemanticAnalyzer {
                         scope.insert(output.clone(), BindingKind::Unknown);
                     }
                     if let Some(predicate) = &clause.predicate {
-                        self.validate_expr_scope(predicate, scope, "WHERE predicate")?;
+                        self.validate_expr_scope(predicate, scope, ExpressionContext::Predicate, "WHERE predicate")?;
                     }
                 }
                 Clause::Create(clause) => {
@@ -287,6 +293,7 @@ impl SemanticAnalyzer {
                                 self.validate_expr_scope(
                                     properties,
                                     scope,
+                                    ExpressionContext::Value,
                                     "CREATE relationship properties",
                                 )?;
                             }
@@ -317,8 +324,8 @@ impl SemanticAnalyzer {
                                 value,
                                 ..
                             } => {
-                                self.validate_expr_scope(target, scope, "SET property target")?;
-                                self.validate_expr_scope(value, scope, "SET property value")?;
+                                self.validate_expr_scope(target, scope, ExpressionContext::Value, "SET property target")?;
+                                self.validate_expr_scope(value, scope, ExpressionContext::Value, "SET property value")?;
                             }
                             crate::language::cypher::ast::SetItem::Replace { variable, value }
                             | crate::language::cypher::ast::SetItem::Merge { variable, value } => {
@@ -328,7 +335,7 @@ impl SemanticAnalyzer {
                                     ))
                                     .classified(CypherSemanticError::UndefinedVariable));
                                 }
-                                self.validate_expr_scope(value, scope, "SET value")?;
+                                self.validate_expr_scope(value, scope, ExpressionContext::Value, "SET value")?;
                             }
                             crate::language::cypher::ast::SetItem::Labels { variable, .. } => {
                                 if !scope.contains(variable) {
@@ -347,7 +354,7 @@ impl SemanticAnalyzer {
                             return Err(CypherPlanError::Invalid("DELETE cannot remove labels; use REMOVE".into())
                                 .classified(CypherSemanticError::InvalidDelete));
                         }
-                        self.validate_expr_scope(expr, scope, "DELETE expression")?;
+                        self.validate_expr_scope(expr, scope, ExpressionContext::Value, "DELETE expression")?;
                         if matches!(projected_expr_kind(expr, scope), BindingKind::Bool | BindingKind::Int
                             | BindingKind::Float | BindingKind::String | BindingKind::Date
                             | BindingKind::Timestamp | BindingKind::TimestampMs | BindingKind::Interval) {
@@ -500,7 +507,7 @@ impl SemanticAnalyzer {
                 .classified(CypherSemanticError::InvalidAggregation));
         }
         for item in &body.items {
-            self.validate_expr_scope(&item.expr, scope, "projection expression")?;
+            self.validate_expr_scope(&item.expr, scope, ExpressionContext::Value, "projection expression")?;
         }
         let output_fields = self.projection_outputs(body, scope);
         validate_unique(
@@ -603,7 +610,7 @@ impl SemanticAnalyzer {
             }
         }
         if let Some(properties) = &pattern.properties {
-            self.validate_expr_scope(properties, scope, "CREATE properties")?;
+            self.validate_expr_scope(properties, scope, ExpressionContext::Value, "CREATE properties")?;
         }
         if let Some(variable) = &pattern.variable {
             scope.insert(variable.clone(), BindingKind::Node);
@@ -615,8 +622,17 @@ impl SemanticAnalyzer {
         &mut self,
         expr: &Expr,
         scope: &SemanticScope,
+        context: ExpressionContext,
         clause: &str,
     ) -> CypherPlanResult<()> {
+        if context == ExpressionContext::Predicate && matches!(projected_expr_kind(expr, scope), BindingKind::Node | BindingKind::Relationship) {
+            return Err(CypherPlanError::Invalid("A predicate requires a boolean value".into())
+                .classified(CypherSemanticError::InvalidArgumentType));
+        }
+        if context == ExpressionContext::Value && matches!(expr, Expr::PatternPredicate(_)) {
+            return Err(CypherPlanError::Invalid("A pattern predicate cannot be projected as a value".into())
+                .classified(CypherSemanticError::UnexpectedSyntax));
+        }
         validate_expr_kinds(expr, scope)?;
         self.validate_expr_refs(expr, &scope.field_set(), clause)
     }
@@ -672,9 +688,9 @@ impl SemanticAnalyzer {
                 let mut scope = scope_from_candidates(candidates);
                 self.analyze_pattern_part(pattern, &mut scope)?;
                 if let Some(predicate) = predicate {
-                    self.validate_expr_scope(predicate, &scope, "pattern comprehension predicate")?;
+                    self.validate_expr_scope(predicate, &scope, ExpressionContext::Predicate, "pattern comprehension predicate")?;
                 }
-                self.validate_expr_scope(map, &scope, "pattern comprehension projection")
+                self.validate_expr_scope(map, &scope, ExpressionContext::Value, "pattern comprehension projection")
             }
             Expr::ListComprehension {
                 variable,
@@ -768,7 +784,7 @@ impl SemanticAnalyzer {
             self.analyze_pattern_part(part, &mut scope)?;
         }
         if let Some(predicate) = &exists.predicate {
-            self.validate_expr_scope(predicate, &scope, "WHERE predicate")?;
+            self.validate_expr_scope(predicate, &scope, ExpressionContext::Predicate, "WHERE predicate")?;
         }
         Ok(())
     }

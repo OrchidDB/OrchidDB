@@ -26,6 +26,19 @@ fn shift(
         .and_then(|s| s.checked_add(&Duration::nanoseconds(nanos as i64)))
         .ok_or("Elapsed duration out of range")?;
     Ok(match value {
+        TemporalValue::WideDate(date) => date.add_months(months)?.add_days(days)?
+            .add_days(seconds / 86400)?.date_value(),
+        TemporalValue::WideLocalDateTime(date, time) => {
+            use chrono::Timelike;
+            let total = i128::from(time.num_seconds_from_midnight()) * 1_000_000_000
+                + i128::from(time.nanosecond()) + i128::from(seconds) * 1_000_000_000 + i128::from(nanos);
+            let day_nanos = 86400_i128 * 1_000_000_000;
+            let carry = i64::try_from(total.div_euclid(day_nanos)).map_err(|_| "Day overflow")?;
+            let clock = total.rem_euclid(day_nanos);
+            let time = NaiveTime::from_num_seconds_from_midnight_opt((clock / 1_000_000_000) as u32,
+                (clock % 1_000_000_000) as u32).ok_or("Invalid time")?;
+            date.add_months(months)?.add_days(days)?.add_days(carry)?.datetime_value(time)
+        }
         TemporalValue::Date(d) => TemporalValue::Date(
             calendar(*d)?
                 .checked_add_signed(Duration::days(seconds / 86400))
@@ -200,6 +213,10 @@ pub fn between(unit: &str, left: &Value, right: &Value) -> Result<Value> {
     let (Value::Temporal(left), Value::Temporal(right)) = (left, right) else {
         return Err("Duration difference requires temporal operands".into());
     };
+    if matches!(left, TemporalValue::WideDate(_) | TemporalValue::WideLocalDateTime(..))
+        || matches!(right, TemporalValue::WideDate(_) | TemporalValue::WideLocalDateTime(..)) {
+        return super::wide_arithmetic::between(unit, left, right).map(Value::Temporal);
+    }
     if matches!(left, TemporalValue::Duration { .. })
         || matches!(right, TemporalValue::Duration { .. })
     {

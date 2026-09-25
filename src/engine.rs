@@ -316,17 +316,18 @@ impl GraphEngine {
             .incremental_records(&pending.nodes, &pending.edges)?;
         let result = (|| -> EngineResult<i64> {
             let revision = self.advance_revision()?;
-            let mut statement = self
-                .storage
-                .prepare(
-                    "INSERT INTO __crabgraph_records VALUES (?, ?, ?, ?)
-                 ON CONFLICT(kind, name, id) DO UPDATE SET payload = excluded.payload",
-                )
-                .map_err(|e| e.to_string())?;
-            for record in records {
-                statement
-                    .execute(params![record.kind, record.name, record.id, record.payload])
-                    .map_err(|e| e.to_string())?;
+            // Bind whole batches to one upsert. A prepared statement executed
+            // once per element still starts thousands of DuckDB queries for
+            // one CREATE, even though all writes share this transaction.
+            for batch in records.chunks(256) {
+                let placeholders = std::iter::repeat_n("(?, ?, ?, ?)", batch.len()).collect::<Vec<_>>().join(", ");
+                let sql = format!("INSERT INTO __crabgraph_records VALUES {placeholders}
+                    ON CONFLICT(kind, name, id) DO UPDATE SET payload = excluded.payload");
+                let mut parameters: Vec<&dyn duckdb::ToSql> = Vec::with_capacity(batch.len() * 4);
+                for record in batch {
+                    parameters.extend([&record.kind as &dyn duckdb::ToSql, &record.name, &record.id, &record.payload]);
+                }
+                self.storage.execute(&sql, duckdb::params_from_iter(parameters)).map_err(|error| error.to_string())?;
             }
             Ok(revision)
         })();
@@ -474,7 +475,15 @@ impl GraphEngine {
     }
 
     async fn execute_dag(&mut self, plan: &GraphPlan) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
-        let result = crate::ir::rel::runtime::execute_with_session(plan, &self.graph, self.sql_timeout, Some(&self.dag_session)).await;
+        // Long clause chains create deep logical DAGs. Give each synchronous
+        // poll enough stack for lowering/optimizer recursion while retaining
+        // the same async executor, session, and wakeup behavior.
+        let result = {
+            let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(
+                plan, &self.graph, self.sql_timeout, Some(&self.dag_session)));
+            futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
+                || std::future::Future::poll(execution.as_mut(), cx))).await
+        };
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
             self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);

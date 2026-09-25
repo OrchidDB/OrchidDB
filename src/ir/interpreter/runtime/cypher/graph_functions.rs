@@ -2,7 +2,37 @@
 use super::*;
 
 pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Option<Value>> {
+    if matches!(name, "cypher_live_property" | "cypher_labels" | "cypher_type") {
+        if let Some(value) = args.first() {
+            let live = match value {
+                Value::Node { label, id } => graph.node_is_live(label, *id),
+                Value::Edge { rel_type, id, .. } => graph.live_edge_endpoints(rel_type, *id).is_some(),
+                _ => true,
+            };
+            if !live {
+                return Err(InterpretError::Diagnosed {
+                    code: crate::ir::diagnostics::RuntimeDiagnosis::DeletedEntityAccess,
+                    message: "Cannot read a deleted graph element".into(),
+                });
+            }
+        }
+    }
     match (name, args) {
+        ("cypher_nodes" | "cypher_relationships", [Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_nodes", args) => call("nodes", args, graph),
+        ("cypher_relationships", args) => call("relationships", args, graph),
+        ("cypher_property_value", [value]) => {
+            validate_property_value(value)?;
+            Ok(Some(value.clone()))
+        }
+        ("cypher_property_map", [Value::Map(values)]) => {
+            for (key, value) in values {
+                if key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY { validate_property_value(value)?; }
+            }
+            Ok(Some(Value::Map(values.clone())))
+        }
+        ("cypher_property_map", [Value::Null]) => Ok(Some(Value::Null)),
+        ("cypher_live_property", [value, Value::String(key)]) => Ok(Some(graph_element_property(graph, value, key))),
         ("cypher_merge_valid", [Value::Map(properties)]) => {
             if properties.values().any(|value|matches!(value,Value::Null)) {
                 return Err(InterpretError::Diagnosed {
@@ -202,5 +232,17 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             Ok(Some(graph_element_property(graph, target, key)))
         }
         _ => Ok(None),
+    }
+}
+
+fn validate_property_value(value: &Value) -> IrResult<()> {
+    let scalar = |value: &Value| !matches!(value, Value::Map(_) | Value::List(_) | Value::Path(_)
+        | Value::Node { .. } | Value::Edge { .. });
+    let valid = match value { Value::List(items) => items.iter().all(scalar), value => scalar(value) };
+    if valid { Ok(()) } else {
+        Err(InterpretError::Diagnosed {
+            code: crate::ir::diagnostics::RuntimeDiagnosis::InvalidPropertyType,
+            message: "Properties require scalar values or lists of scalar values".into(),
+        })
     }
 }

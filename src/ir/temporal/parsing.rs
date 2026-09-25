@@ -1,8 +1,19 @@
 //! ISO temporal parsing and timezone resolution.
-use super::{Result, TemporalValue, constructors::duration};
+use super::{CalendarDate, Result, TemporalValue, constructors::duration};
 use crate::ir::Value;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use std::collections::BTreeMap;
+fn parse_calendar_date(text: &str) -> Result<CalendarDate> {
+    if let Ok(date) = parse_date(text) { return Ok(CalendarDate::from_chrono(date)); }
+    let sign = usize::from(text.starts_with(['+', '-']));
+    let end = sign + text[sign..].bytes().take_while(u8::is_ascii_digit).count();
+    let year: i32 = text[..end].parse().map_err(|_| format!("Invalid date {text}"))?;
+    if !(-999_999_999..=999_999_999).contains(&year) { return Err("Year outside calendar range".into()); }
+    let representative = 2000 + year.rem_euclid(400);
+    let date = parse_date(&format!("{representative:04}{}", &text[end..]))?;
+    use chrono::Datelike;
+    CalendarDate::new(year + date.year() - representative, date.month(), date.day())
+}
 fn parse_date(text: &str) -> Result<NaiveDate> {
     let compact = text.bytes().all(|b| b.is_ascii_digit());
     if compact {
@@ -111,16 +122,14 @@ pub fn parse(kind: &str, text: &str) -> Result<TemporalValue> {
         return parse_duration(text);
     }
     if kind == "date" {
-        return parse_date(text).map(TemporalValue::Date);
+        return parse_calendar_date(text).map(CalendarDate::date_value);
     }
     if kind == "localtime" {
         return parse_time(text).map(TemporalValue::LocalTime);
     }
     if kind == "localdatetime" {
         let (d, t) = text.split_once('T').unwrap_or((text, "00:00"));
-        return Ok(TemporalValue::LocalDateTime(
-            parse_date(d)?.and_time(parse_time(t)?),
-        ));
+        return Ok(parse_calendar_date(d)?.datetime_value(parse_time(t)?));
     }
     if matches!(kind, "time" | "datetime") {
         let (text, zone) = if let Some((a, b)) = text.split_once('[') {

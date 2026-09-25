@@ -472,6 +472,10 @@ pub(super) fn validate_function_expr_kind(
     scope: &SemanticScope,
 ) -> CypherPlanResult<()> {
     let lower = name.to_ascii_lowercase();
+    if lower != "exists" && args.iter().any(|arg| matches!(arg, Expr::PatternPredicate(_))) {
+        return Err(CypherPlanError::Invalid("Pattern predicates cannot be consumed as collection values".into())
+            .classified(CypherSemanticError::UnexpectedSyntax));
+    }
     if matches!(lower.as_str(), "labels" | "type") && args.len() == 1 {
         let kind = projected_expr_kind(&args[0], scope);
         if matches!(kind, BindingKind::Node | BindingKind::Relationship | BindingKind::Path)
@@ -480,10 +484,6 @@ pub(super) fn validate_function_expr_kind(
             return Err(CypherPlanError::Invalid(format!("Invalid graph argument for {name}"))
                 .classified(CypherSemanticError::InvalidArgumentType));
         }
-    }
-    if lower == "size" && args.iter().any(|arg| matches!(arg, Expr::PatternPredicate(_))) {
-        return Err(CypherPlanError::Invalid("Pattern expressions cannot be used as collections".into())
-            .classified(CypherSemanticError::UnexpectedSyntax));
     }
     if matches!(lower.as_str(), "length" | "properties") && args.len() == 1 {
         let kind = projected_expr_kind(&args[0], scope);

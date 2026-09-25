@@ -110,6 +110,10 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             name: "cypher_property_star".to_string(),
             args: vec![lower_expr(lowerer, target)?],
         },
+        Expr::Property { target, key } if lowerer.check_live_properties => IrExpr::Call {
+            name: "cypher_live_property".into(),
+            args: vec![lower_expr(lowerer, target)?, IrExpr::Lit(Lit::String(key.clone()))],
+        },
         Expr::Property { target, key } => match target.as_ref() {
             Expr::Variable(binding)
                 if matches!(lowerer.binding_kind(binding), Some(
@@ -275,7 +279,7 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             if name.eq_ignore_ascii_case("id") && args.len() == 1 {
                 return Ok(IrExpr::Call { name: "cypher_id".into(), args: vec![lower_expr(lowerer, &args[0])?] });
             }
-            if matches!(name.to_ascii_lowercase().as_str(), "labels" | "type") && args.len() == 1 {
+            if matches!(name.to_ascii_lowercase().as_str(), "labels" | "type" | "nodes" | "relationships") && args.len() == 1 {
                 return Ok(IrExpr::Call { name: format!("cypher_{}", name.to_ascii_lowercase()),
                     args: vec![lower_expr(lowerer, &args[0])?] });
             }

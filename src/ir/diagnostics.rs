@@ -12,11 +12,15 @@ pub enum RuntimeDiagnosis {
     MergeReadOwnWrites,
     NegativeIntegerArgument,
     InvalidSliceArgument,
+    DeletedEntityAccess,
+    InvalidPropertyType,
 }
 
 impl RuntimeDiagnosis {
     pub fn classification(self) -> (&'static str, &'static str, &'static str) {
         match self {
+            Self::DeletedEntityAccess => return ("EntityNotFound", "DeletedEntityAccess", "runtime"),
+            Self::InvalidPropertyType => return ("TypeError", "InvalidPropertyType", "runtime"),
             Self::InvalidType => return ("TypeError", "InvalidArgumentType", "runtime"),
             Self::MapKeyType => return ("TypeError", "MapElementAccessByNonString", "runtime"),
             Self::InvalidValue => return ("TypeError", "InvalidArgumentValue", "runtime"),

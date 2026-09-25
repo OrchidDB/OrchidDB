@@ -149,6 +149,10 @@ pub(super) fn rewrite_aggregate_projection_expr(
             distinct,
             args,
         } if aggregate_kind(name).is_some() => {
+            if args.iter().any(crate::language::cypher::semantics::aggregates::contains_volatile) {
+                return Err(CypherPlanError::Invalid("Aggregate arguments must be deterministic".into())
+                    .classified(CypherSemanticError::NonConstantExpression));
+            }
             if args.iter().any(contains_aggregate) {
                 return Err(nested_aggregate_error(name, args));
             }

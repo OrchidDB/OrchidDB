@@ -4,6 +4,17 @@ use crate::ir::Value;
 use chrono::{Datelike, NaiveDate, Timelike};
 impl TemporalValue {
     pub fn component(&self, key: &str) -> Value {
+        if let Self::WideDate(date) | Self::WideLocalDateTime(date, _) = self {
+            let representative = date.representative();
+            let proxy = match self {
+                Self::WideLocalDateTime(_, time) => Self::LocalDateTime(representative.and_time(*time)),
+                _ => Self::Date(representative),
+            };
+            let value = proxy.component(key);
+            return if matches!(key.to_ascii_lowercase().as_str(), "year" | "weekyear") {
+                match value { Value::Int(year) => Value::Int(year + i64::from(date.year - representative.year())), other => other }
+            } else { value };
+        }
         if let Self::Duration {
             months,
             days,
