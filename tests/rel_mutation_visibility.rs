@@ -249,3 +249,21 @@ async fn create_update_delete_then_sql_read_has_expected_visibility() {
     let query = "MATCH (p:Person) RETURN p.name, p.age ORDER BY p.name";
     assert_rows(&graph, query, &["alice|31", "carol|41", "dave|40"]).await;
 }
+
+#[tokio::test]
+async fn scalar_ordering_preserves_numeric_order_and_cypher_null_placement() {
+    let mut graph = PropertyGraph::new();
+    let names: ArrayRef = Arc::new(StringArray::from(vec!["ten", "two", "missing"]));
+    let ages: ArrayRef = Arc::new(Int64Array::from(vec![Some(10), Some(2), None]));
+    graph.add_nodes(nodes_from_columns("Person", vec![("name", names), ("age", ages)]));
+    assert_rows(
+        &graph,
+        "MATCH (p:Person) RETURN p.name, p.age ORDER BY p.age ASC",
+        &["two|2", "ten|10", "missing|"],
+    ).await;
+    assert_rows(
+        &graph,
+        "MATCH (p:Person) RETURN p.name, p.age ORDER BY p.age DESC",
+        &["missing|", "ten|10", "two|2"],
+    ).await;
+}

@@ -323,7 +323,7 @@ impl<'a> LoweringContext<'a> {
                 // native values; GraphSort retains Gremlin's null placement.
                 Ok(value)
             }
-            IrExpr::Call { name, args } if name == "cypher_order_key" && args.len() == 1 && self.options.mapping.is_some() => {
+            IrExpr::Call { name, args } if name == "cypher_order_key" && args.len() == 1 => {
                 if matches!(&args[0], IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some()) {
                     return Err(RelError::Unsupported("Graph identity ordering requires native values".into()));
                 }
@@ -331,9 +331,14 @@ impl<'a> LoweringContext<'a> {
                 if value.get_type(plan.schema())?.is_nested() {
                     return Err(RelError::Unsupported("Nested Cypher ordering requires native values".into()));
                 }
-                // A mapped scalar column has one declared type, so SQL's
-                // scalar ordering implements the Cypher key without coercing
-                // graph identities or heterogeneous runtime values.
+                if collections::is_encoded_property(plan, &args[0])
+                    || self.projected_union_tags(plan, &args[0])?.is_some()
+                {
+                    return Err(RelError::Unsupported("Encoded Cypher ordering requires native values".into()));
+                }
+                // Both catalog and mapped scalar columns have a declared type.
+                // Their SQL ordering implements the Cypher key; GraphSort keeps
+                // the requested direction and null placement.
                 Ok(value)
             }
             IrExpr::Call { name, args } if name == "list_slice" && args.len() == 3 => {
