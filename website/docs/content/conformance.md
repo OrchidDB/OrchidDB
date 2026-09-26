@@ -9,7 +9,7 @@ remote SPARQL HTTP requests.
 
 ## Upstream compatibility evidence
 
-This comparison uses independently maintained test scenarios and expected results. It records the original upstream identifiers, fixtures, source revisions, expected output, actual output and diagnostics. Engines are grouped by supported language, using free editions and marking paid capabilities separately. The SPARQL peer, [Apache Jena](https://jena.apache.org/), uses the permissive [Apache 2.0 license](https://github.com/apache/jena/blob/jena-6.2.0/LICENSE).
+This comparison uses independently maintained test scenarios and expected results. It records the original upstream identifiers, fixtures, source revisions, outcomes and available diagnostics. Engines are grouped by supported language, using free editions and marking paid capabilities separately. The SPARQL peer, [Apache Jena](https://jena.apache.org/), uses the permissive [Apache 2.0 license](https://github.com/apache/jena/blob/jena-6.2.0/LICENSE).
 
 All upstream scenarios appear in the report, including cases that were skipped or could not be executed. Passes, failures, unsupported interfaces, adapter limitations and timeouts are distinct outcomes. Timing records local scenario wall time and available query or step measurements. Everything runs locally; GitHub Actions only builds and publishes the static documentation and committed evidence. Download the full catalog and result files for reproducibility and investigation.
 
@@ -61,7 +61,7 @@ in [the source snapshot](https://github.com/OrchidDB/OrchidDB/tree/b4c6909283114
 
 [Query cost in the report](conformance-report.html#query-cost) ranks OrchidDB
 scenarios by measured work and shows measurement coverage. Each scenario includes
-its cost; JSON evidence includes query text and individual counters, and the CSV
+its cost; compact JSON evidence includes aggregate costs and coverage, and the CSV
 includes metric version, coverage, work units and query request time.
 
 Version 1 adds SQL output rows, native input/output rows, source rows, SQL output

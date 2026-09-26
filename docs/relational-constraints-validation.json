@@ -14,7 +14,6 @@
       "changed_outcomes": 0,
       "changed_case_definitions": 0,
       "artifact": "conformance/upstream-results/orchiddb-opencypher.json",
-      "sha256": "7d5fdb36fdc165e823850a1de41d3584cc91dde33e10157fb8676cae2aba2b97",
       "cost_coverage": {
         "boundary_work": 3202,
         "elapsed_only": 695
@@ -52,7 +51,11 @@
           "coverage": "boundary_work"
         }
       ],
-      "expensive_cases": 1
+      "expensive_cases": 1,
+      "full_local_artifact": "target/relational-constraints/orchiddb-opencypher.json",
+      "full_local_sha256": "7d5fdb36fdc165e823850a1de41d3584cc91dde33e10157fb8676cae2aba2b97",
+      "sha256": "ea51182689b8cb82f016d377170ef79ed03befe4e67c6a978c7b717f2b364b12",
+      "evidence_format": "compact-v1"
     },
     "tinkerpop": {
       "started_at": "2026-09-26T23:26:32.749848+00:00",
@@ -63,7 +66,6 @@
       "changed_outcomes": 0,
       "changed_case_definitions": 0,
       "artifact": "conformance/upstream-results/orchiddb-tinkerpop.json",
-      "sha256": "a78a7b7c4a14645d295d8219bdf3da248b37dc523ffa16dae15215c31110b36f",
       "cost_coverage": {
         "boundary_work": 1417,
         "elapsed_only": 78,
@@ -102,7 +104,11 @@
           "coverage": "boundary_work"
         }
       ],
-      "expensive_cases": 2
+      "expensive_cases": 2,
+      "full_local_artifact": "target/relational-constraints/orchiddb-tinkerpop.json",
+      "full_local_sha256": "a78a7b7c4a14645d295d8219bdf3da248b37dc523ffa16dae15215c31110b36f",
+      "sha256": "fe70d2ba943f5dcd86e1e2f2946fc2c913c65acdfc81124776d9ce0f88b79ad3",
+      "evidence_format": "compact-v1"
     },
     "rdf": {
       "started_at": "2026-09-26T23:16:54.301521+00:00",
@@ -115,7 +121,6 @@
       "changed_outcomes": 0,
       "changed_case_definitions": 0,
       "artifact": "conformance/upstream-results/orchiddb-rdf.json",
-      "sha256": "d6cbb822bc9f35397e164ad64dfcf361b3259e7abdae5ac3cebdeca8ce676ed1",
       "cost_coverage": {
         "boundary_work": 512,
         "elapsed_only": 462,
@@ -154,7 +159,11 @@
           "coverage": "boundary_work"
         }
       ],
-      "expensive_cases": 0
+      "expensive_cases": 0,
+      "full_local_artifact": "target/relational-constraints/orchiddb-rdf.json",
+      "full_local_sha256": "d6cbb822bc9f35397e164ad64dfcf361b3259e7abdae5ac3cebdeca8ce676ed1",
+      "sha256": "61010dfe7cf68b67b18ebc497edbac5b010e71623fac035d09e9285ba3bd625d",
+      "evidence_format": "compact-v1"
     }
   },
   "query_cost_metric_version": 1,

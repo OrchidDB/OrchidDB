@@ -57,7 +57,18 @@ a baseline for subsequent constraint/lowering changes.
 
 The published `conformance-report.html#query-cost` displays coverage and the 50
 highest-work scenarios per suite, with links to individual cases. Per-scenario
-cells show work and coverage; expanded evidence contains query text and counters.
+cells show work and coverage. Published results contain compact summaries only;
+raw queries, fixture payloads and returned data stay in ignored `target/` files.
 CSV downloads include metric version, coverage, work units and request time.
 `query-cost-summary.json` exposes rankings and baseline comparisons. The report
 uses committed `conformance/upstream-results/orchiddb-*.json` evidence.
+
+The runner defaults to `target/conformance/`. Publish compact evidence explicitly:
+
+```
+python conformance/upstream/compact_report.py target/conformance/orchiddb-opencypher.json \
+  conformance/upstream-results/orchiddb-opencypher.json
+```
+
+Use full local reports for `--cost-baseline` comparisons; compact published
+reports omit the query sequence needed to establish baseline compatibility.

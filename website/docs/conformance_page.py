@@ -29,7 +29,7 @@ def render_java_evidence(download):
   counts=entry.get('counts',{});outcomes=' · '.join(str(count)+' '+LABELS.get(status,status).lower() for status,count in counts.items()) or 'No outcomes recorded'
   kind='Original upstream assertions' if entry.get('upstream_assertions') else 'Supplemental checks'
   complete='Complete' if entry.get('run_complete') else 'Incomplete — recorded cases only'
-  html.append('<tr><th scope="row">'+e(entry['label'])+'</th><td>'+kind+'<br><a href="/downloads/conformance/java-provider/'+e(relative.as_posix())+'">Raw results JSON</a></td><td>'+e(outcomes)+'</td><td>'+complete+'</td></tr>')
+  html.append('<tr><th scope="row">'+e(entry['label'])+'</th><td>'+kind+'<br><a href="/downloads/conformance/java-provider/'+e(relative.as_posix())+'">Results summary JSON</a></td><td>'+e(outcomes)+'</td><td>'+complete+'</td></tr>')
  html.append('</tbody></table></div><p><a href="/downloads/conformance/java-provider/index.json">Java evidence index JSON</a></p></section>')
  return ''.join(html)
 def cost_label(cost):
@@ -38,14 +38,14 @@ def cost_label(cost):
  return (f'{work:,} work units · ' if work is not None else 'Work not measured · ')+coverage.replace('_',' ')
 
 def render_query_cost(runs,cases,get,download):
- html=['<details class="report-section" id="query-cost"><summary>OrchidDB query cost <span>Measured boundary work and expensive queries</span></summary><p>Version 1 work units count SQL output rows, native input/output rows, source rows, rounded-up SQL output KiB, and 100 units per SQL execution or source request. This is a boundary-work proxy, not database scan cost or a cross-product benchmark. Fixture and observation queries are excluded from rankings. Partial measurements are lower bounds; missing measurements are never zero.</p>']
+ html=['<details class="report-section" id="query-cost"><summary>OrchidDB query cost <span>Measured boundary work and expensive queries</span></summary><p>Version 1 work units count SQL output rows, native input/output rows, source rows, rounded-up SQL output KiB, and 100 units per SQL execution or source request. Published results omit raw query payloads and returned data. Full execution evidence stays local. This is a boundary-work proxy, not database scan cost or a cross-product benchmark. Fixture and observation queries are excluded from rankings. Partial measurements are lower bounds; missing measurements are never zero.</p>']
  summaries={}
  for suite,title in SUITES.items():
   run=runs.get(('orchiddb',suite),{});summary=run.get('query_cost_summary',{});summaries[suite]=summary
   members={c['id']:c for c in cases if c['suite']==suite}
   coverage=Counter(get('orchiddb',c).get('query_cost',{}).get('coverage','unavailable') for c in members.values())
   html.append('<h3>'+e(title)+'</h3><p>'+e(' · '.join(f'{n:,} {k.replace("_"," ")}' for k,n in sorted(coverage.items())))+'</p>')
-  html.append('<p>Expensive-query threshold: '+e(str(summary.get('threshold','not recorded')))+' work units. <a href="/downloads/conformance/orchiddb-'+suite+'.json">Full costs, queries and baseline comparisons</a></p>')
+  html.append('<p>Expensive-query threshold: '+e(str(summary.get('threshold','not recorded')))+' work units. <a href="/downloads/conformance/orchiddb-'+suite+'.json">Cost summary and baseline comparisons</a></p>')
   html.append('<div class="comparison-scroll"><table class="query-cost-table"><thead><tr><th>Highest recorded work</th><th>Work units</th><th>Coverage</th><th>Query request ms</th></tr></thead><tbody>')
   for row in summary.get('highest_work',[]):
    case=members.get(row['id'])
@@ -124,7 +124,7 @@ def render(out):
     if p not in SUITE_COLUMNS[suite]:continue
     status=r['status'];elapsed=r.get('elapsed_ms');timing='<span class="timing">'+f'{elapsed:g} ms total</span>' if elapsed is not None and status!='not-applicable' else ''
     html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+('<span class="query-cost">'+e(cost_label(r.get('query_cost')))+'</span>' if p=='orchiddb' else '')+'</summary>')
-    if status!='not-run':html.append('<p><a href="/downloads/conformance/'+(p+'-'+suite)+'.json">Full run JSON</a> · find '+e(c['id'])+'</p>')
+    if status!='not-run':html.append('<p><a href="/downloads/conformance/'+(p+'-'+suite)+'.json">Run summary JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
     export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source'],r.get('query_cost',{}).get('metric_version',''),r.get('query_cost',{}).get('coverage',''),r.get('query_cost',{}).get('work_units'),r.get('query_cost',{}).get('request_elapsed_micros')])
    html.append('</tr>')
@@ -156,11 +156,11 @@ def render(out):
 <p><strong>Timings.</strong> Recorded milliseconds include fixture setup, query execution and adapter work. Individual step timings and result differences are available in the evidence. The leaderboard ranks passed scenarios; these timings are not used as a performance ranking.</p>
 <p><strong>Versions and scope.</strong> The TCK is pinned to 2024.3, while PuppyGraph documents openCypher 9. A failure in this newer corpus is not by itself evidence of violating a product’s declared version. Gremlin uses the pinned 3.7.4 language profile. W3C coverage is SPARQL 1.0 and 1.1. These are observed compatibility results, not certification or an overall product ranking. A failure deserves investigation of the engine, adapter and language/version contract.</p>
 <p><strong>Historical evidence.</strong> Project identifiers and local paths were normalized on 2026-09-25. Outcomes and timings are unchanged; these records are not a rerun of the renamed engine. Original provenance hashes remain in the downloads. See the <a href="conformance.html#historical-evidence">normalization notes</a>.</p>
-<p><strong>Local execution only.</strong> Test engines and harnesses run on the local workstation. GitHub Actions only builds and publishes static documentation and committed evidence; it does not run tests or validation jobs. A changed case hash makes old results stale. Version pins, exact source links, complete outcomes and raw diagnostics are downloadable. <a href="https://github.com/OrchidDB/OrchidDB/tree/main/conformance">Local reproduction commands and adapter source</a> describe the execution profiles and time limits.</p>
+<p><strong>Local execution only.</strong> Test engines and harnesses run on the local workstation. GitHub Actions only builds and publishes static documentation and committed evidence; it does not run tests or validation jobs. A changed case hash makes old results stale. Version pins, exact source links, complete outcomes and available diagnostics are downloadable. <a href="https://github.com/OrchidDB/OrchidDB/tree/main/conformance">Local reproduction commands and adapter source</a> describe the execution profiles and time limits.</p>
 ''')
  html.append('</details><details class="report-section" id="versions"><summary>Versions and downloadable evidence</summary><p><a href="/downloads/conformance/upstream-catalog.json">Complete upstream catalog JSON</a> · <a href="/downloads/conformance/upstream-sources.json">Pinned source revisions</a> · <a href="/downloads/conformance/upstream-comparison.csv">Comparison CSV</a> · <a href="/downloads/conformance/reference-tinkerpop.json">Apache reference-engine check</a></p>')
  for (p,s),d in runs.items():
-  html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Full evidence JSON</a></details>')
+  html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Run JSON</a></details>')
  html.append('</details></div>')
  buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source','cost_metric_version','cost_coverage','query_work_units','query_request_elapsed_micros']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
  return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('query-cost','Query cost'),('cases','Upstream cases'),('java-provider','Java provider tests'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]

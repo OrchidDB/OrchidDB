@@ -98,7 +98,7 @@ def main():
   missing=set(args.case)-{c['id'] for c in cases}
   if missing:p.error('Unknown or filtered case IDs: '+', '.join(sorted(missing)))
  if (args.limit or args.filter or args.case) and not args.output:p.error('Subset runs require --output')
- output=args.output or ROOT/'upstream-results'/f'{args.engine}-{args.suite}.json';output.parent.mkdir(parents=True,exist_ok=True);journal=output.with_suffix('.jsonl')
+ output=args.output or REPO/'target/conformance'/f'{args.engine}-{args.suite}.json';output.parent.mkdir(parents=True,exist_ok=True);journal=output.with_suffix('.jsonl')
  results=[]
  if args.resume and journal.exists():
   for line in journal.read_text().splitlines():
