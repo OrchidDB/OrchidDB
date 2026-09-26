@@ -2,6 +2,26 @@
 
 Use the CLI for DuckDB and Iceberg, or embed a language client around your own engine. Version 0.1.0 is published. Packaged native binaries currently target macOS ARM64; source builds are also available.
 
+## Binary installer
+
+Install the released CLI with bundled DuckDB. No Rust toolchain or separate database installation is needed:
+
+```sh
+curl -fsSL https://install.orchiddb.com | bash
+```
+
+The installer downloads from [OrchidDB-cli releases](https://github.com/OrchidDB/OrchidDB-cli/releases), verifies SHA-256 checksums, and installs the executable and its bundled DuckDB library into `~/.local/bin`. It never runs sudo or edits your shell configuration. With no published release it fails with source-build instructions and leaves an existing installation unchanged.
+
+Version 0.1.0 provides a **macOS ARM64 (Apple Silicon)** binary. Other platforms require a source build. The macOS binary is ad-hoc signed, not notarized.
+
+After installation, run `~/.local/bin/orchiddb --version`. Add `~/.local/bin` to your `PATH` to use `orchiddb` directly. [Direct download](https://github.com/OrchidDB/OrchidDB-cli/releases/download/v0.1.0/orchiddb-v0.1.0-macos-aarch64.tar.gz).
+
+```sh
+curl -fsSL https://install.orchiddb.com | ORCHIDDB_VERSION=v0.1.0 ORCHIDDB_INSTALL_DIR="$HOME/.local/bin" bash
+```
+
+Without a version, the installer selects the most recently created published release, including prereleases. [Review the installer](https://install.orchiddb.com/) before running it. Checksums come from the same release publisher as the archive.
+
 ## From source
 
 The standalone CLI lives in [OrchidDB-cli](https://github.com/OrchidDB/OrchidDB-cli):
@@ -16,24 +36,6 @@ orchiddb query examples/people.json --init examples/setup.sql --format table
 Use Rust with edition 2024 support, Git, and a C/C++ build toolchain. The first build compiles bundled DuckDB. Add Cargo's executable directory (usually `$HOME/.cargo/bin`) to `PATH`.
 
 Queries load the official Iceberg extension by default. First use requires network access to install the extension. Your setup SQL configures catalogs, credentials, views, plugins, and UDFs. See the [quickstart](quickstart.md) and [CLI reference](cli.md).
-
-## Binary installer
-
-After the first published CLI release:
-
-```sh
-curl -fsSL https://install.orchiddb.com | bash
-```
-
-The installer downloads from [OrchidDB-cli releases](https://github.com/OrchidDB/OrchidDB-cli/releases), verifies SHA-256 checksums, and atomically installs into `~/.local/bin`. It never runs sudo or edits your shell configuration. With no published release it fails with source-build instructions and leaves an existing installation unchanged.
-
-Release packaging targets macOS ARM64/Intel and Linux x86_64 (glibc 2.35+). Windows, Linux ARM64, and musl CLI binaries are not packaged. macOS binaries are not signed or notarized.
-
-```sh
-curl -fsSL https://install.orchiddb.com | ORCHIDDB_VERSION=v0.1.0 ORCHIDDB_INSTALL_DIR="$HOME/.local/bin" bash
-```
-
-Without a version, the installer selects the most recently created published release, including prereleases. [Review the installer](https://install.orchiddb.com/) before running it. Checksums come from the same release publisher as the archive.
 
 ## Language clients
 
