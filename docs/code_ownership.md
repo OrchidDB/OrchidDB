@@ -21,7 +21,6 @@ paths working and contain the contracts that need coordination.
 | Arrow property decoding / fixture table construction | `src/ir/catalog/values.rs`, `builders.rs` | Existing public catalog entry points remain reexported. Catalog and typed-property tests. |
 | Snapshot format and persistence | `src/ir/catalog/snapshot/` | `binary.rs` owns value tags and codecs; `sections.rs` keeps graph-section encoders/decoders together. Envelope version and graph reconstruction stay in `snapshot.rs`. Snapshot and storage-integrity tests. |
 | Explain formatting | `src/ir/plan/explain.rs` | Node definitions stay together in `plan.rs`; planner/explain tests. |
-| Ladybug fixture loading | `tests/cypher_case_runner/loader/` | Loader entry point and shared fixture types; schema, file input, value decoding and graph assembly implementations. Corpus runner compilation and existing loader consumers. |
 
 ## Assigning work
 
@@ -60,7 +59,7 @@ test execution after the shared workspace stopped rebuilding executables.
 
 ```sh
 CARGO_BUILD_JOBS=2 RUST_MIN_STACK=16777216 cargo test --tests --no-fail-fast -- \
-  --skip cypher_ladybug_cases --skip gremlin_tinkerpop_cases --test-threads=1
+  --test-threads=1
 ```
 
 Source audits compared 1,403 original function/method definitions with the
