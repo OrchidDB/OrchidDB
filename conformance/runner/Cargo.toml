@@ -10,3 +10,6 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 datafusion = "53.1.0"
 duckdb = { version = "1.10502.0", features = ["bundled", "chrono", "vtab-arrow"] }
+
+[workspace]
+resolver = "2"
