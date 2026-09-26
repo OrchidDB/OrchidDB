@@ -1,0 +1,522 @@
+//! Substring + display_for_concat + display helpers + regex.
+
+use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
+
+pub(crate) fn substring(s: &str, start: i64, end: Option<i64>) -> String {
+    let chars: Vec<&str> = unicode_segmentation::UnicodeSegmentation::graphemes(s, true).collect();
+    let len = chars.len() as i64;
+    let start = normalize_substring_index(start, len);
+    let end = end
+        .map(|e| normalize_substring_index(e, len).max(start))
+        .unwrap_or(len) as usize;
+    let start = start as usize;
+    chars[start..end].concat()
+}
+
+fn normalize_substring_index(index: i64, len: i64) -> i64 {
+    if index < 0 {
+        (len + index).max(0)
+    } else {
+        index.min(len)
+    }
+}
+
+/// Stringify a value for embedding in `concat` / `conjoin` / map-key
+/// output. Arbitrary-precision numerics carry their type tag (`d[N].m`
+/// / `d[N].i`) so a `groupCount()` keyed on a BigDecimal renders with
+/// the same form the harness expects.
+pub(crate) fn display_for_concat(v: &Value) -> String {
+    if let Some(items) = crate::ir::value::as_gremlin_set(v) {
+        let parts = items
+            .iter()
+            .map(display_for_tagged_container)
+            .collect::<Vec<_>>();
+        return format!("s[{}]", parts.join(","));
+    }
+    if let Some(rendered) = display_property_object(v) {
+        return rendered;
+    }
+    match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_concat(value)),
+        Value::MapEntry(entry) => format!("{}={}", display_for_concat(&entry.0), display_for_concat(&entry.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_concat(key),
+                    display_for_concat(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
+        Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::Long(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
+        Value::Float32(f) => display_float(*f as f64),
+        Value::Float(f) => display_float(*f),
+        Value::BigInt(n) => format!("d[{n}].n"),
+        Value::UInt128(n) => format!("d[{n}].u128"),
+        Value::BigDecimal(d) => format!("d[{d}].m"),
+        Value::Temporal(t) => t.to_string(),
+        Value::DateTime(s) => format!("dt[{s}]"),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::Null => "null".to_string(),
+        Value::Node { label, id } => format!("v[{label}#{id}]"),
+        Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_tagged_container)
+                .collect::<Vec<_>>();
+            format!("l[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            if let Some(entries) = kuzu_map_entries(map) {
+                let parts = entries
+                    .iter()
+                    .filter_map(kuzu_map_entry)
+                    .map(|(key, value)| {
+                        format!(
+                            "{}={}",
+                            display_for_kuzu_map_item(key),
+                            display_for_kuzu_map_item(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", parts.join(", "));
+            }
+            let parts = ordered_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key).map(|value| {
+                        format!("\"{key}\":\"{}\"", display_for_tagged_container(value))
+                    })
+                })
+                .collect::<Vec<_>>();
+            format!("m[{{{}}}]", parts.join(","))
+        }
+        Value::Path(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_tagged_container)
+                .collect::<Vec<_>>();
+            format!("p[{}]", parts.join(","))
+        }
+    }
+}
+
+fn display_float(value: f64) -> String {
+    if value == f64::INFINITY {
+        "Infinity".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-Infinity".to_string()
+    } else if value.is_nan() {
+        "NaN".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn kuzu_map_entries(map: &std::collections::BTreeMap<String, Value>) -> Option<&[Value]> {
+    let entries = map.get("\u{0}kuzu_map_entries")?;
+    let Value::List(entries) = entries else {
+        return None;
+    };
+    Some(entries.as_slice())
+}
+
+fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
+    let Value::List(items) = entry else {
+        return None;
+    };
+    let [key, value] = items.as_slice() else {
+        return None;
+    };
+    Some((key, value))
+}
+
+pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
+    match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_kuzu_map_item(value)),
+        Value::MapEntry(entry) => format!("{}={}", display_for_kuzu_map_item(&entry.0), display_for_kuzu_map_item(&entry.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_kuzu_map_item(key),
+                    display_for_kuzu_map_item(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Bool(true) => "True".to_string(),
+        Value::Bool(false) => "False".to_string(),
+        Value::Byte(n) => n.to_string(),
+        Value::UInt8(n) => n.to_string(),
+        Value::Short(n) => n.to_string(),
+        Value::UInt16(n) => n.to_string(),
+        Value::Int(n) | Value::Long(n) => n.to_string(),
+        Value::UInt32(n) => n.to_string(),
+        Value::UInt64(n) => n.to_string(),
+        Value::Float32(n) => (*n as f64).to_string(),
+        Value::Float(n) => n.to_string(),
+        Value::BigInt(n) => n.to_string(),
+        Value::UInt128(n) => n.to_string(),
+        Value::BigDecimal(n) => n.to_string(),
+        Value::Temporal(t) => t.to_string(),
+        Value::DateTime(s) => s.clone(),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) | Value::Path(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_kuzu_map_item)
+                .collect::<Vec<_>>();
+            format!("[{}]", parts.join(","))
+        }
+        Value::Map(map) => {
+            if let Some(entries) = kuzu_map_entries(map) {
+                let parts = entries
+                    .iter()
+                    .filter_map(kuzu_map_entry)
+                    .map(|(key, value)| {
+                        format!(
+                            "{}={}",
+                            display_for_kuzu_map_item(key),
+                            display_for_kuzu_map_item(value)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                return format!("{{{}}}", parts.join(", "));
+            }
+            let parts = ordered_map_keys(map)
+                .into_iter()
+                .filter_map(|key| {
+                    map.get(&key)
+                        .map(|value| format!("{key}: {}", display_for_kuzu_map_item(value)))
+                })
+                .collect::<Vec<_>>();
+            format!("{{{}}}", parts.join(", "))
+        }
+        Value::Node { label, id } => format!("v[{label}#{id}]"),
+        Value::Edge { rel_type, id, .. } => format!("e[{rel_type}#{id}]"),
+    }
+}
+
+fn ordered_map_keys(map: &std::collections::BTreeMap<String, Value>) -> Vec<String> {
+    if let Some(Value::List(order)) = map.get(STRUCT_ORDER_KEY) {
+        let keys = order
+            .iter()
+            .filter_map(|item| match item {
+                Value::String(key) if map.contains_key(key) => Some(key.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !keys.is_empty() {
+            return keys;
+        }
+    }
+    map.keys()
+        .filter(|key| key.as_str() != STRUCT_ORDER_KEY && key.as_str() != STRUCT_TYPES_KEY)
+        .cloned()
+        .collect()
+}
+
+/// TinkerPop property rendering: a property-object map
+/// (`{element, key, value, ...}`) renders as `vp[owner-key->value]` for
+/// vertex properties and `p[key->value]` for edge properties.
+fn display_property_object(v: &Value) -> Option<String> {
+    match v {Value::VertexProperty{key,value,..}=>Some(format!("vp[{key}->{}]",display_for_concat(value))),Value::Property{key,value,..}=>Some(format!("p[{key}->{}]",display_for_concat(value))),_=>None}
+}
+
+pub(crate) fn display_for_tagged_container(v: &Value) -> String {
+    if crate::ir::value::as_gremlin_set(v).is_some() {
+        return display_for_concat(v);
+    }
+    match v {
+        Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
+        Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
+        Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_tagged_container(value)),
+        Value::MapEntry(entry) => format!("{}={}", display_for_tagged_container(&entry.0), display_for_tagged_container(&entry.1)),
+        Value::Token(name) => format!("t[{name}]"),
+        Value::Direction(name) => format!("D[{name}]"),
+        Value::TypedMap(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    display_for_tagged_container(key),
+                    display_for_tagged_container(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Byte(n) => format!("d[{n}].b"),
+        Value::UInt8(n) => format!("d[{n}].u8"),
+        Value::Short(n) => format!("d[{n}].s"),
+        Value::UInt16(n) => format!("d[{n}].u16"),
+        Value::Int(n) => format!("d[{n}].i"),
+        Value::UInt32(n) => format!("d[{n}].u32"),
+        Value::Long(n) => format!("d[{n}].l"),
+        Value::UInt64(n) => format!("d[{n}].u64"),
+        Value::Float32(f) => format!("d[{f}].f"),
+        Value::Float(f) => format!("d[{}].d", format_f64_tag(*f)),
+        Value::BigInt(n) => format!("d[{n}].n"),
+        Value::UInt128(n) => format!("d[{n}].u128"),
+        Value::BigDecimal(d) => format!("d[{d}].m"),
+        Value::Temporal(t) => t.to_string(),
+        Value::DateTime(s) => format!("dt[{s}]"),
+        Value::InternalId { table, offset } => format!("{table}:{offset}"),
+        Value::Null => "null".to_string(),
+        Value::Node { label, id } => format!("v[{}]", display_node_name(label, *id)),
+        Value::Edge {
+            rel_type,
+            src_label,
+            src_id,
+            dst_label,
+            dst_id,
+            ..
+        } => format!(
+            "e[{}-{}->{}]",
+            display_node_name(src_label, *src_id),
+            rel_type,
+            display_node_name(dst_label, *dst_id)
+        ),
+        Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
+            let parts = items
+                .iter()
+                .map(display_for_tagged_container)
+                .collect::<Vec<_>>();
+            format!("l[{}]", parts.join(","))
+        }
+        Value::Map(_) | Value::Path(_) => display_for_concat(v),
+    }
+}
+
+pub(crate) fn display_for_group_key(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Float(f) => format!("d[{}].d", format_f64_tag(*f)),
+        Value::Float32(f) => format!("d[{}].f", format_f32_tag(*f)),
+        Value::BigInt(n) => format!("d[{n}].n"),
+        Value::UInt128(n) => format!("d[{n}].u128"),
+        Value::Temporal(t) => t.to_string(),
+        Value::DateTime(s) => format!("dt[{s}]"),
+        other => display_for_tagged_container(other),
+    }
+}
+
+fn format_f32_tag(value: f32) -> String {
+    format_f64_tag(value as f64)
+}
+
+fn format_f64_tag(value: f64) -> String {
+    if value.is_finite() && value.fract() == 0.0 {
+        format!("{value:.1}")
+    } else {
+        value.to_string()
+    }
+}
+
+pub(crate) fn display_node_name(label: &str, id: i64) -> String {
+    match (label, id) {
+        ("person", 0) => "marko".to_string(),
+        ("person", 1) => "vadas".to_string(),
+        ("person", 2) => "josh".to_string(),
+        ("person", 3) => "peter".to_string(),
+        ("software", 0) => "lop".to_string(),
+        ("software", 1) => "ripple".to_string(),
+        _ => format!("{label}#{id}"),
+    }
+}
+
+/// Native TextP regex uses search semantics (Java Matcher.find), while the
+/// native search service deliberately uses full-match semantics. Unsupported
+/// backtracking constructs fail explicitly instead of producing a false match.
+pub(crate) fn regex_match_literal(haystack: &str, pattern: &str) -> crate::ir::runtime::IrResult<bool> {
+    let regex = regex::Regex::new(pattern).map_err(|error| {
+        crate::ir::runtime::RuntimeError::Runtime(format!(
+            "Invalid native regex (lookaround and backreferences require the JVM execution profile): {error}"
+        ))
+    })?;
+    Ok(regex.is_match(haystack))
+}
+
+/// Gremlin string steps validate their input independently of Cypher functions.
+pub(crate) fn gremlin_string_call(
+    op: &str,
+    args: &[Value],
+) -> crate::ir::runtime::IrResult<Value> {
+    use crate::ir::runtime::RuntimeError;
+    let current = args.first().unwrap_or(&Value::Null);
+    if let Some(scalar) = op.strip_prefix("local_") {
+        if let Value::List(items) = current {
+            return items
+                .iter()
+                .map(|item| {
+                    let mut nested = args.to_vec();
+                    nested[0] = item.clone();
+                    gremlin_string_call(scalar, &nested).map_err(|_| {
+                        RuntimeError::Runtime(format!(
+                            "The {}(local) step can only take string or list of strings",
+                            gremlin_step_name(scalar)
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List);
+        }
+        return gremlin_string_call(scalar, args);
+    }
+    if op == "reverse" {
+        return Ok(match current {
+            Value::String(s) => Value::String(s.chars().rev().collect()),
+            Value::List(items) | Value::Path(items) | Value::BulkSet(items) => {
+                Value::List(items.iter().rev().cloned().collect())
+            }
+            other => other.clone(),
+        });
+    }
+    if op == "conjoin" {
+        let items = match current {
+            Value::List(items) | Value::Path(items) | Value::BulkSet(items) => Some(items.clone()),
+            _ => crate::ir::value::as_gremlin_set(current).map(|items| items.to_vec()),
+        }.ok_or_else(|| RuntimeError::Runtime(
+            if matches!(current, Value::Null) { "Incoming traverser for conjoin step can't be null".into() }
+            else { format!("conjoin step can only take an array or an Iterable type for incoming traversers, encountered {}", current.type_name()) }))?;
+        let delim = match args.get(1) {
+            Some(Value::String(s)) => s.as_str(),
+            _ => "",
+        };
+        return Ok(Value::String(
+            items
+                .iter()
+                .filter(|v| !matches!(v, Value::Null))
+                .map(display_for_concat)
+                .collect::<Vec<_>>()
+                .join(delim),
+        ));
+    }
+    if op == "concat" {
+        if args
+            .iter()
+            .any(|v| !matches!(v, Value::String(_) | Value::Null))
+        {
+            return Err(RuntimeError::Runtime(
+                "String concat() can only take string as argument".into(),
+            ));
+        }
+        let joined: String = args
+            .iter()
+            .filter_map(|v| {
+                if let Value::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        return Ok(if args.iter().all(|v| matches!(v, Value::Null)) {
+            Value::Null
+        } else {
+            Value::String(joined)
+        });
+    }
+    if matches!(current, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let Value::String(s) = current else {
+        return Err(RuntimeError::Runtime(format!(
+            "The {}() step can only take string as argument",
+            gremlin_step_name(op)
+        )));
+    };
+    let str_arg = |i| match args.get(i) {
+        Some(Value::String(s)) => s.as_str(),
+        _ => "",
+    };
+    Ok(match op {
+        "length" => Value::Int(s.encode_utf16().count() as i64),
+        "lcase" => Value::String(s.to_lowercase()),
+        "ucase" => Value::String(s.to_uppercase()),
+        "trim" => Value::String(s.trim().into()),
+        "ltrim" => Value::String(s.trim_start().into()),
+        "rtrim" => Value::String(s.trim_end().into()),
+        "substring" => {
+            let units: Vec<u16> = s.encode_utf16().collect();
+            let start = normalize_substring_index(
+                args.get(1).and_then(Value::as_i64).unwrap_or(0),
+                units.len() as i64,
+            ) as usize;
+            let end = args
+                .get(2)
+                .and_then(Value::as_i64)
+                .map(|n| normalize_substring_index(n, units.len() as i64) as usize)
+                .unwrap_or(units.len())
+                .max(start);
+            Value::String(String::from_utf16_lossy(&units[start..end]))
+        }
+        "replace" => Value::String(if str_arg(1).is_empty() {
+            s.clone()
+        } else {
+            s.replace(str_arg(1), str_arg(2))
+        }),
+        "split_ws" => Value::List(
+            s.split_whitespace()
+                .map(|v| Value::String(v.into()))
+                .collect(),
+        ),
+        "split" => Value::List(if matches!(args.get(1), Some(Value::Null)) {
+            s.split_whitespace()
+                .map(|v| Value::String(v.into()))
+                .collect()
+        } else if str_arg(1).is_empty() {
+            s.chars().map(|v| Value::String(v.to_string())).collect()
+        } else {
+            s.split(str_arg(1))
+                .map(|v| Value::String(v.into()))
+                .collect()
+        }),
+        _ => {
+            return Err(RuntimeError::Unsupported(format!(
+                "Gremlin string operation {op}"
+            )));
+        }
+    })
+}
+
+fn gremlin_step_name(op: &str) -> &str {
+    match op {
+        "lcase" => "toLower",
+        "ucase" => "toUpper",
+        "ltrim" => "lTrim",
+        "rtrim" => "rTrim",
+        other => other,
+    }
+}

@@ -228,7 +228,7 @@ pub(super) struct Lowerer {
     /// `withSideEffect(label, seed, op)`.
     pub(super) side_effect_reducers: BTreeMap<String, (GValue, SackOp)>,
     /// Labels written by real map-valued `groupCount(label)` side effects.
-    /// These are read by `cap(label)` through the interpreter side channel.
+    /// These are read by `cap(label)` through the query execution context.
     pub(super) group_count_side_effects: BTreeSet<String>,
     /// Recursion guard: when we are *evaluating* a subgraph filter
     /// sub-traversal we must not re-apply the strategy — otherwise the

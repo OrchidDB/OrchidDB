@@ -7,7 +7,7 @@ Inspect Graph IR and generated SQL, choose a read policy, and understand executi
 
 ## Managed read policies
 
-`GraphEngine` defaults to `ReadMode::Hybrid`. This combines DuckDB SQL islands with graph runtime operators according to the query plan. To require a complete SQL read, set `ReadMode::SqlOnly`:
+`GraphEngine` defaults to `ReadMode::Hybrid`. It lowers Graph IR to a DataFusion relational DAG, executes eligible SQL regions in DuckDB, and schedules native kernels through DataFusion. To require a complete SQL read, set `ReadMode::SqlOnly`:
 
 ```rust
 use orchiddb::engine::ReadMode;
@@ -65,10 +65,10 @@ Managed query results identify their backend:
 | Backend | Execution |
 | --- | --- |
 | `ExecutionBackend::DuckDb` | The query's execution used DuckDB. |
-| `ExecutionBackend::Hybrid` | SQL islands and graph runtime work were combined. |
-| `ExecutionBackend::GraphRuntime` | Execution used the graph runtime. |
+| `ExecutionBackend::Hybrid` | DuckDB SQL regions and DataFusion operators were combined. |
+| `ExecutionBackend::DataFusion` | The relational DAG executed through DataFusion. |
 
-`ExecStats` records `islands`, `island_rows`, `residual_ops`, `interpreted_ops`, and `declined`. Log these alongside an application query name when analyzing execution. SQL island rows are intermediate execution rows; use the result batch for the number of returned rows.
+`ExecStats` records `datafusion_ops`, `islands`, `island_rows`, `residual_ops`, and `declined`. Log these alongside an application query name when analyzing execution. SQL island rows are intermediate execution rows; use the result batch for the number of returned rows.
 
 ## SQL timeout
 
@@ -81,6 +81,8 @@ This setting applies to individual DuckDB queries and setup work. Treat the SQL 
 
 ## Planner and executor boundaries
 
-Language planners produce `GraphPlan` values. `RelBackend` handles relational lowering; SQL preparation turns the lowered plan into a dialect-specific program. `SqlExecutor` provides the execution boundary, and `IslandTarget` determines where a SQL island runs.
+Language planners produce `GraphPlan` values. `RelBackend` handles relational lowering; SQL preparation turns the lowered plan into a dialect-specific program. `SqlExecutor` supplies the SQL execution boundary. Managed execution compiles to a DataFusion relational DAG with explicit DuckDB regions and native kernels.
+
+Graph IR is retained for planning and inspection. It has no standalone recursive interpreter, and execution errors do not trigger an interpreter fallback. SPARQL `SERVICE`, including `SERVICE SILENT`, is unsupported; no remote SPARQL HTTP calls are made.
 
 Use the engine APIs for application workflows. Use these lower-level types when integrating a custom planner or execution target. See the [Rust API](rust-api.md#planning-and-execution-apis) for the module map.

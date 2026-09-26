@@ -2,7 +2,7 @@
 //!
 //! This intentionally reuses the existing Cypher and Gremlin conformance case
 //! loaders, but executes planned Graph IR through `ir::rel::RelBackend`
-//! instead of the interpreter. It is ignored by default because it is a
+//! using DataFusion. It is ignored by default because it is a
 //! progress gauge, not yet a correctness gate.
 //!
 //! Run examples:
@@ -49,8 +49,8 @@ use std::time::Instant;
 
 use orchiddb::ir::analysis::{ReadValidationError, validate_read_only};
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::exec::{ExecStats, default_target, plan_with_islands};
-use orchiddb::ir::interpreter::{ReturnedBatches, execute as interpret};
+use orchiddb::ir::exec::ExecStats;
+use orchiddb::ir::runtime::ReturnedBatches;
 use orchiddb::ir::plan::{GraphPlan, Node, ProcedureMode, explain};
 use orchiddb::ir::policy::GraphPlanPolicy;
 use orchiddb::ir::rel::RelBackend;
@@ -159,11 +159,7 @@ async fn graph_rel_backend_cases() {
 enum ExecMode {
     DataFusion,
     DuckDb,
-    /// Partition the plan into SQL islands, run each on the island target
-    /// (DuckDB by default), and let the interpreter handle whatever is left.
-    /// Unlike the whole-plan modes, a case that does not lower completely
-    /// still produces an answer, so this measures both correctness and how
-    /// much of the corpus still needs the interpreter at all.
+    /// Execute the production DataFusion DAG with SQL regions and native kernels.
     Islands,
 }
 
@@ -192,95 +188,31 @@ impl ExecMode {
     }
 }
 
-/// Corpus-wide island statistics, accumulated across cases.
-///
-/// A global rather than a threaded-through parameter: the harness is a single
-/// test entry point, and this keeps the ~25 `CaseRun` construction sites from
-/// having to carry a field none of them care about.
+/// Statistics accumulated across the serial corpus run.
 #[derive(Debug, Default)]
 struct IslandTally {
     cases: usize,
     fully_pushed_down: usize,
     islands: usize,
-    /// Why residual work remained, by reason.
-    residual_reasons: BTreeMap<String, usize>,
-    /// Cases where the SQL path and the interpreter disagreed on the answer.
-    /// The interpreter is the reference, so each of these is a lowering or
-    /// execution bug — as opposed to a corpus gap, which makes both wrong
-    /// together and shows up in neither this list nor `agreed`.
-    divergences: Vec<Divergence>,
-    agreed: usize,
+    datafusion_ops: usize,
 }
-
-#[derive(Debug)]
-struct Divergence {
-    query: String,
-    islands: Vec<String>,
-    interpreter: Vec<String>,
-}
-
 static ISLAND_TALLY: std::sync::Mutex<Option<IslandTally>> = std::sync::Mutex::new(None);
-
 fn record_island_stats(stats: &ExecStats) {
-    let mut guard = ISLAND_TALLY.lock().expect("island tally");
+    let mut guard = ISLAND_TALLY.lock().expect("DAG tally");
     let tally = guard.get_or_insert_with(IslandTally::default);
     tally.cases += 1;
     tally.islands += stats.islands;
-    if stats.fully_pushed_down() {
-        tally.fully_pushed_down += 1;
-    } else {
-        // The outermost decline is the one that actually blocks full
-        // pushdown; inner ones are consequences of the same gap.
-        if let Some(reason) = stats.declined.first() {
-            *tally
-                .residual_reasons
-                .entry(first_line(reason))
-                .or_default() += 1;
-        } else if stats.islands == 0 {
-            *tally
-                .residual_reasons
-                .entry("no island attempted".to_string())
-                .or_default() += 1;
-        }
-    }
+    tally.datafusion_ops += stats.datafusion_ops;
+    tally.fully_pushed_down += usize::from(stats.fully_pushed_down());
 }
-
 fn render_island_tally() -> String {
-    let guard = ISLAND_TALLY.lock().expect("island tally");
-    let Some(tally) = guard.as_ref() else {
-        return String::new();
-    };
-    let pct = percent(tally.fully_pushed_down, tally.cases);
-    let mut out = format!(
-        "\nislands: cases={} fully_pushed_down={} ({pct:.1}%) islands={}\n",
-        tally.cases, tally.fully_pushed_down, tally.islands
-    );
-    let mut reasons: Vec<_> = tally.residual_reasons.iter().collect();
-    reasons.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-    out.push_str("top residual reasons (cases still needing the interpreter):\n");
-    for (reason, count) in reasons.iter().take(40) {
-        out.push_str(&format!("  {count:>5}  {reason}\n"));
-    }
-    if crosscheck_enabled() {
-        let checked = tally.agreed + tally.divergences.len();
-        out.push_str(&format!(
-            "crosscheck vs interpreter: checked={} agreed={} ({:.1}%) diverged={}\n",
-            checked,
-            tally.agreed,
-            percent(tally.agreed, checked),
-            tally.divergences.len()
-        ));
-        out.push_str("\n--- divergences (SQL path vs interpreter) ---\n");
-        for divergence in &tally.divergences {
-            out.push_str(&format!(
-                "\nquery: {}\n  sql        : {:?}\n  interpreter: {:?}\n",
-                divergence.query,
-                truncate_rows(&divergence.islands),
-                truncate_rows(&divergence.interpreter),
-            ));
-        }
-    }
-    out
+    let guard = ISLAND_TALLY.lock().expect("DAG tally");
+    guard.as_ref().map(|t| {
+        format!(
+            "\nDAG: cases={} SQL regions={} DataFusion operators={} fully SQL={}\n",
+            t.cases, t.islands, t.datafusion_ops, t.fully_pushed_down
+        )
+    }).unwrap_or_default()
 }
 
 fn truncate_rows(rows: &[String]) -> Vec<String> {
@@ -629,24 +561,17 @@ async fn execute_case(
     }
 }
 
-/// Partition the plan into SQL islands, then interpret the residual.
-///
-/// Every case produces an answer here: the islands carry whatever lowers, and
-/// the interpreter covers the rest. The tally records how many cases needed
-/// the interpreter at all, which is what has to reach zero before it can be
-/// deleted.
+/// Execute the production DAG; corpus expected rows remain the independent oracle.
 async fn execute_case_islands(
-    backend: &RelBackend,
+    _backend: &RelBackend,
     plan: &GraphPlan,
     graph: &PropertyGraph,
 ) -> ExecRun {
-    let target = default_target();
-    let (hybrid, stats) = plan_with_islands(plan, graph, backend, target.as_ref()).await;
-    record_island_stats(&stats);
-    let result = interpret(&hybrid, graph).map_err(|err| format!("{err}"));
-    if crosscheck_enabled() {
-        crosscheck_against_interpreter(plan, graph, &result);
-    }
+    let result = orchiddb::ir::rel::runtime::execute(plan, graph, None).await
+        .map(|(returned, stats)| {
+            record_island_stats(&stats.into());
+            returned
+        });
     ExecRun { result, sql: None }
 }
 
@@ -658,51 +583,9 @@ fn set_current_case(query: &str) {
     *CURRENT_CASE.lock().expect("current case") = query.to_string();
 }
 
+#[cfg(feature = "duckdb")]
 fn current_case() -> String {
     CURRENT_CASE.lock().expect("current case").clone()
-}
-
-fn crosscheck_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("GRAPH_REL_CROSSCHECK").is_ok_and(|v| v == "1"))
-}
-
-/// Run the same plan straight through the interpreter and compare.
-///
-/// A case can fail for two very different reasons: the lowering is wrong, or
-/// the fixture/corpus is wrong. Only the first is ours to fix, and only this
-/// comparison tells them apart — expected-output mismatches conflate them.
-fn crosscheck_against_interpreter(
-    plan: &GraphPlan,
-    graph: &PropertyGraph,
-    islands: &Result<ReturnedBatches, String>,
-) {
-    let reference = interpret(plan, graph);
-    let render = |result: &Result<ReturnedBatches, String>| -> Vec<String> {
-        match result {
-            Ok(batches) => {
-                let mut lines = cypher_case_runner::format::lines_from_batch(batches);
-                lines.sort();
-                lines
-            }
-            Err(err) => vec![format!("<error> {}", first_line(err))],
-        }
-    };
-    // The interpreter is only a reference when it produces an answer.
-    let Ok(reference) = reference else { return };
-    let expected = render(&Ok(reference));
-    let actual = render(islands);
-    let mut guard = ISLAND_TALLY.lock().expect("island tally");
-    let tally = guard.get_or_insert_with(IslandTally::default);
-    if expected == actual {
-        tally.agreed += 1;
-    } else {
-        tally.divergences.push(Divergence {
-            query: current_case(),
-            islands: actual,
-            interpreter: expected,
-        });
-    }
 }
 
 #[cfg(feature = "duckdb")]

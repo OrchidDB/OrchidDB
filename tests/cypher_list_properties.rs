@@ -58,8 +58,8 @@ async fn rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
 async fn hybrid_rows(graph: &PropertyGraph, query: &str) -> Vec<String> {
     let parsed = parse_query(query).unwrap();
     let plan = CypherPlanner::new().plan(&parsed).unwrap();
-    let (returned, _) = orchiddb::ir::exec::execute_with_islands(
-        &plan, graph, &RelBackend::new(), &orchiddb::ir::exec::SqlTarget::duckdb(),
+    let (returned, _) = orchiddb::ir::rel::runtime::execute(
+        &plan, graph, None,
     ).await.unwrap();
     let mut rows = (0..returned.batch.num_rows()).map(|row| {
         arrow::util::display::array_value_to_string(returned.batch.column(0).as_ref(), row).unwrap()

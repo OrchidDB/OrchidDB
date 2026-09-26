@@ -1,14 +1,16 @@
 //! End-to-end tests for the new Gremlin → Graph IR planner. We construct
 //! `Traversal` AST values directly (skipping the parser, which lives in
 //! the WIP grammar tree) and run the resulting `GraphPlan` through the
-//! IR interpreter against the standard "modern" property graph.
+//! DataFusion DAG against the standard "modern" property graph.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Float64Array, Int64Array, StringArray};
 
 use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::value::Value;
 use orchiddb::language::gremlin::ast::{OptionKey, Step, Traversal, TraversalOption};
 use orchiddb::language::gremlin::planner::GremlinPlanner;
@@ -65,7 +67,7 @@ fn plan(steps: Vec<Step>) -> orchiddb::ir::plan::GraphPlan {
     GremlinPlanner::new().plan(&t(steps)).expect("plan ok")
 }
 
-fn current_strings(rows: &[orchiddb::ir::interpreter::Row]) -> Vec<String> {
+fn current_strings(rows: &[orchiddb::ir::runtime::Row]) -> Vec<String> {
     rows.iter()
         .map(
             |row| match row.bindings.get("current").expect("current binding") {
@@ -171,10 +173,10 @@ fn choose_option_dispatch_handles_predicate_none_and_unproductive() {
         &modern_graph(),
     )
     .unwrap();
-    assert_eq!(
-        current_strings(&rows),
-        vec!["marko", "Software", "vadas", "Software", "josh", "peter"]
-    );
+    // The traversal has no order() step; source order is not guaranteed.
+    let mut actual = current_strings(&rows);
+    actual.sort();
+    assert_eq!(actual, vec!["Software", "Software", "josh", "marko", "peter", "vadas"]);
 }
 
 #[test]

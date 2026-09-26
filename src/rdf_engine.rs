@@ -10,11 +10,10 @@ use std::sync::Arc;
 use arrow::array::{Array, BooleanArray, StringArray};
 
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::policy::ResultForm;
 use crate::ir::rel::rdf::{RdfDatasetMapping, binding_identity_columns};
-use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor};
-use crate::ir::rel::sql::source_program::PreparedSourceProgram;
+use crate::ir::rel::sql::{DuckDbExecutor, PreparedSql, SqlExecutor};
 use crate::ir::rel::{RelBackend, RelBackendOptions};
 use crate::language::sparql::SparqlPlanner;
 
@@ -92,15 +91,15 @@ impl RdfGraphEngine {
 
     /// The DuckDB SQL that [`RdfGraphEngine::sparql`] would execute.
     pub async fn sql(&self, query: &str) -> Result<String, String> {
-        Ok(self.prepare(query).await?.sql.query)
+        Ok(self.prepare(query).await?.query)
     }
 
-    async fn prepare(&self, query: &str) -> Result<PreparedSourceProgram, String> {
+    async fn prepare(&self, query: &str) -> Result<PreparedSql, String> {
         let parsed = crate::language::sparql::parse_query(query).map_err(|e| e.to_string())?;
         self.prepare_parsed(&parsed).await
     }
 
-    async fn prepare_parsed(&self, query: &crate::spargebra::Query) -> Result<PreparedSourceProgram, String> {
+    async fn prepare_parsed(&self, query: &crate::spargebra::Query) -> Result<PreparedSql, String> {
         // Typed RDF expressions expand into several correlated SQL columns.
         // Preserve the same session and async execution while allowing the
         // logical planner's synchronous recursion to use a larger stack.
@@ -109,10 +108,10 @@ impl RdfGraphEngine {
             || std::future::Future::poll(preparation.as_mut(), cx))).await
     }
 
-    async fn prepare_inner(&self, query: &crate::spargebra::Query) -> Result<PreparedSourceProgram, String> {
+    async fn prepare_inner(&self, query: &crate::spargebra::Query) -> Result<PreparedSql, String> {
         let lowered = self.lower_query(query)?;
         let dialect = self.executor()?.dialect();
-        PreparedSourceProgram::prepare(
+        crate::ir::rel::sql::prepare_with_external(
             &lowered,
             dialect,
             &self.mapping.physical_table_names(),

@@ -1,7 +1,9 @@
+#[path = "common/execution.rs"]
+mod datafusion_test;
 mod gremlin_case_runner;
 
 use gremlin_case_runner::{compare, dataset, format, parse};
-use orchiddb::ir::{catalog::PropertyGraph, interpreter::execute};
+use orchiddb::ir::{catalog::PropertyGraph};
 use orchiddb::language::gremlin::planner::GremlinPlanner;
 
 fn assert_rows(graph: &PropertyGraph, query: &str, expected: &[&str]) {
@@ -332,3 +334,5 @@ fn choice_and_productive_where_use_gremlin_numeric_promotion() {
         &["match"],
     );
 }
+
+use crate::datafusion_test::execute;

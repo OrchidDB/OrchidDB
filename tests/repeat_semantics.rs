@@ -1,5 +1,7 @@
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use arrow::array::{ArrayRef, Int64Array};
-use orchiddb::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
+use orchiddb::ir::{PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 use std::sync::Arc;
 
@@ -40,7 +42,7 @@ fn nonterminating_repeat_fails_instead_of_returning_a_partial_answer() {
     let plan = GremlinPlanner::new().plan(&query).unwrap();
     let error = execute(&plan, &PropertyGraph::new()).unwrap_err();
     assert!(
-        matches!(error, orchiddb::ir::InterpretError::ExecutionLimit(_)),
+        error.contains("execution limit"),
         "{error}"
     );
 }
@@ -67,3 +69,5 @@ fn repeat_dedup_keeps_seen_state_across_rounds() {
         "{error}"
     );
 }
+
+use crate::datafusion_test::{execute};

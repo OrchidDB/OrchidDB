@@ -5,7 +5,8 @@ not current bugs: use [committed evidence](verification.md) and reproduce the
 relevant query before opening work.
 
 - Expand standalone SQL compilation independently of managed-runtime conformance.
-  Writes, external SPARQL SERVICE and opaque/residual operations currently fail.
+  Writes and opaque/residual operations currently fail. SPARQL SERVICE is
+  unsupported across compiler and managed execution.
   Extend coverage with expected-result comparisons against caller-owned databases.
 - Add Gremlin/SPARQL parameter binding, broader mapped identity/schema types and
   explicitly tested PostgreSQL execution. ClickHouse needs a dialect and capability

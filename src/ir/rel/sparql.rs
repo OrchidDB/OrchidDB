@@ -17,7 +17,6 @@ mod solution_ops;
 mod aggregate;
 mod expressions;
 mod term_ops;
-mod service;
 use term_ops::*;
 
 use std::any::Any;
@@ -792,7 +791,6 @@ impl Lowerer<'_, '_> {
             Node::GraphRdfPropertyPath { dataset, graph_scope, subject, object, path, .. } => {
                 self.property_path(dataset, graph_scope, subject, object, path)
             }
-            Node::GraphService { endpoint, query, outputs, silent, .. } => self.service(endpoint, query, outputs, *silent),
             Node::GraphApply {
                 kind: ApplyKind::Scalar,
                 outputs,

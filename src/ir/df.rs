@@ -13,8 +13,7 @@
 //! - [`to_logical_plan`] turns a `GraphPlan` into a tree of
 //!   `LogicalPlan::Extension` nodes.
 //! - [`from_logical_plan`] reconstructs a `GraphPlan` from such a tree —
-//!   so a HEP-rewritten plan can be handed straight back to the
-//!   interpreter.
+//!   so a HEP-rewritten plan can be handed to relational lowering.
 //!
 //! Schemas are computed locally per operator from the IR's binding model;
 //! every binding becomes a nullable Utf8 field. The IR doesn't carry

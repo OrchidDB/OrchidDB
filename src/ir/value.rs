@@ -1,8 +1,7 @@
-//! Dynamic graph values produced and consumed by the interpreter.
+//! Dynamic graph values used by scalar evaluation and DataFusion kernels.
 //!
-//! The interpreter materializes the full result of every binding as a
-//! `Value`. We use a typed enum (rather than Arrow scalars) so that node and
-//! edge identifiers, property maps, and lists can flow through expression
+//! Native kernels represent individual bindings as a `Value`. A typed enum
+//! (rather than Arrow scalars) lets node and edge identifiers, property maps, and lists can flow through expression
 //! evaluation cleanly. Conversion to Arrow record batches happens at
 //! `GraphReturn` boundaries.
 
@@ -408,7 +407,7 @@ impl Value {
 
     /// Equality with SQL-style three-valued semantics.
     /// `null = anything` is `null`. `Unproductive` propagates as `null`
-    /// through the interpreter (we only ever store `null` here — unproductive
+    /// during scalar evaluation (we only ever store `null` here — unproductive
     /// is realized by dropping the row entirely, never by producing a value).
     pub fn three_valued_eq(&self, other: &Self) -> Option<bool> {
         fn numeric_decimal(value: &Value) -> Option<BigDecimal> {

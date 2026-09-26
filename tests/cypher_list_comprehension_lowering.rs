@@ -1,5 +1,7 @@
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute;
+use crate::datafusion_test::execute;
 use orchiddb::language::cypher::parse_query;
 use orchiddb::language::cypher::planner::lower_query;
 

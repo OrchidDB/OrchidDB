@@ -2,16 +2,18 @@
 
 //! Gremlin traverser-state semantics (repeat/loops, sacks, side-effect
 //! reducers) executed through the relational backend on DuckDB and checked
-//! against explicit expected results. Ignored probes compare the interpreter.
+//! against explicit expected results. Ignored probes compare the DataFusion DAG.
 //!
 //! `GREMLIN_STATE_PROBE="g.V()...;g.inject(1)..."` with the ignored
-//! `probe` test prints interpreter and DuckDB output side by side.
+//! `probe` test prints DataFusion DAG and DuckDB output side by side.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 mod gremlin_case_runner;
 
 use gremlin_case_runner::{compare, dataset, format};
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute as interpret;
+use crate::datafusion_test::execute_async as interpret;
 use orchiddb::ir::rel::RelBackend;
 use orchiddb::ir::rel::sql::{self, DuckDbExecutor};
 use orchiddb::language::gremlin::planner::GremlinPlanner;
@@ -24,8 +26,8 @@ fn plan(query: &str) -> orchiddb::ir::plan::GraphPlan {
         .expect("plan gremlin")
 }
 
-fn interpreter_lines(query: &str, graph: &PropertyGraph) -> Result<Vec<String>, String> {
-    interpret(&plan(query), graph)
+async fn dag_lines(query: &str, graph: &PropertyGraph) -> Result<Vec<String>, String> {
+    interpret(&plan(query), graph).await
         .map(|batches| format::lines_from_batch(&batches))
         .map_err(|error| error.to_string())
 }
@@ -79,7 +81,7 @@ async fn probe() {
     let queries = std::env::var("GREMLIN_STATE_PROBE").unwrap_or_default();
     for query in queries.split(';').map(str::trim).filter(|q| !q.is_empty()) {
         println!("=== {query}");
-        println!("interp: {:?}", interpreter_lines(query, &graph));
+        println!("DAG: {:?}", dag_lines(query, &graph).await);
         println!("duckdb: {:?}", duckdb_lines(query, &graph).await);
     }
 }

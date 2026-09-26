@@ -18,7 +18,8 @@ The default library build has no DuckDB or PostgreSQL driver dependency. Supply
 schema metadata and graph mappings to `compiler::compile`, or use the versioned
 `compiler::compile_json` interface. The result contains SQL and output field
 names. DuckDB and PostgreSQL SQL rendering are supported; unsupported operations
-fail before execution.
+fail before execution. SPARQL `SERVICE`, including `SERVICE SILENT`, is
+unsupported; OrchidDB does not make remote SPARQL HTTP requests.
 
 ```sh
 cargo run --example compile_sql
@@ -47,6 +48,9 @@ application; cross-engine joins and ClickHouse SQL are not implemented.
 
 The existing managed engine and CLI remain available with an explicit feature.
 This feature bundles DuckDB and supports broader execution than standalone SQL.
+Graph IR is lowered to a DataFusion relational execution plan, with eligible SQL
+regions running in DuckDB. There is no standalone Graph IR interpreter or
+interpreter fallback.
 
 ```sh
 cargo run --features duckdb --example managed_graph

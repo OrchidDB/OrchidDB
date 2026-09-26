@@ -5,7 +5,7 @@ use super::{
     Lowered, MinusCompatibility, NamedNodePattern, Node, NullsOrder, OptionalMissing,
     OrderExpression, PathMaterialization, ProjectErrorPolicy, ProjectMode, ProjectionItem,
     RdfGraphScope, RdfTerm, Slice, SortDir, SortKey, SparqlError, SparqlPlanner, UnionAlign, Value,
-    binding, combine_apply, expression, join_typed, named_term, path, pattern_term, split_conjuncts, term,
+    binding, combine_apply, expression, join_typed, path, pattern_term, split_conjuncts,
     term_variables, terms,
 };
 impl SparqlPlanner {
@@ -494,31 +494,9 @@ impl SparqlPlanner {
                     projection: None,
                 })
             }
-            GraphPattern::Service {
-                name,
-                inner,
-                silent,
-            } => {
-                let query = crate::spargebra::Query::Select {
-                    dataset: None,
-                    pattern: *inner.clone(),
-                    base_iri: self.base_iri.as_ref().map(|iri| oxiri::Iri::parse(iri.clone()).expect("validated query base")),
-                }.to_string();
-                let inner = self.lower_in_scope(inner, RdfGraphScope::ActiveGraph)?;
-                let outputs = inner.variables.iter().cloned().collect();
-                Ok(Lowered {
-                    node: Node::GraphService {
-                        endpoint: named_term(name),
-                        query,
-                        silent: *silent,
-                        outputs,
-                        input: Box::new(inner.node),
-                    },
-                    variables: inner.variables,
-                    identity_variables: BTreeSet::new(),
-                    projection: inner.projection,
-                })
-            }
+            GraphPattern::Service { .. } => Err(SparqlError::Unsupported(
+                "SPARQL SERVICE federation is not supported".into(),
+            )),
         }
     }
 }

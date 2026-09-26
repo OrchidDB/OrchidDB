@@ -11,7 +11,7 @@
 //!   their destination tables.
 //!
 //! This module parses both, then loads the referenced CSVs into an
-//! in-memory `PropertyGraph`. The interpreter only models scalar
+//! in-memory `PropertyGraph`. The DataFusion DAG only models scalar
 //! Arrow types (`Int64`, `Float64`, `Bool`, `String`); anything richer
 //! in the schema (struct, union, list, map, interval, uuid, bytea, …)
 //! is collapsed to the raw CSV string so projection still surfaces

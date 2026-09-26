@@ -1,6 +1,6 @@
 use super::*;
 use crate::ir::expr::{AggCall, AggKind};
-use crate::ir::interpreter::ops::{
+use crate::ir::runtime::ops::{
     aggregate::{
         checked_bulk_total, compute_aggregate, flatten_group_lists, unwrap_single_group_value,
     },
@@ -153,7 +153,7 @@ pub(super) fn group_side_effect_write(
         .get(label)
         .is_some_and(|state| state.finalizing)
     {
-        return Err(InterpretError::Unsupported(
+        return Err(RuntimeError::Unsupported(
             "a group finalizer cannot update its own side effect".into(),
         ));
     }
@@ -168,7 +168,7 @@ pub(super) fn group_side_effect_write(
                 prefix.unwrap_or_else(|| std::mem::replace(&mut suffix, group_members_source()));
             if !group_suffix_is_pure(&suffix) {
                 let (barrier, kind) = split_writer_finalizer(&mut suffix).ok_or_else(||
-                    InterpretError::Unsupported("group writers after a barrier currently require count() or fold() as the first barrier".into()))?;
+                    RuntimeError::Unsupported("group writers after a barrier currently require count() or fold() as the first barrier".into()))?;
                 finalizer = Some(suffix.boxed());
                 finalizer_reducer = Some(kind);
                 suffix = barrier;
@@ -271,7 +271,7 @@ pub(super) fn group_side_effect_write(
                 .find(|row| row.bindings.get(GROUP_KEY) == Some(&key))
             {
                 existing.bulk = existing.bulk.checked_add(bulk).ok_or_else(|| {
-                    InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+                    RuntimeError::ExecutionLimit("group traverser bulk overflow".into())
                 })?;
             } else {
                 let mut row = Row::new().with(GROUP_KEY, key);
@@ -358,7 +358,7 @@ pub(crate) fn group_side_effect_finalize(
     };
     let state = ctx.relational_groups.get_mut(label).expect("group exists");
     if state.finalizing {
-        return Err(InterpretError::Unsupported(
+        return Err(RuntimeError::Unsupported(
             "recursive group finalization".into(),
         ));
     }
@@ -401,7 +401,7 @@ fn group_map_entries(value: &Value) -> IrResult<Vec<(Value, Value)>> {
             .map(|(key, value)| (Value::String(key.clone()), value.clone()))
             .collect()),
         Value::TypedMap(entries) => Ok(entries.clone()),
-        _ => Err(InterpretError::Type(
+        _ => Err(RuntimeError::Type(
             "group side effect must be a map".into(),
         )),
     }
@@ -420,7 +420,7 @@ fn merge_finalized_group(seed: Option<&Value>, value: Value, kind: AggKind) -> I
                     previous.extend(values)
                 }
                 _ => {
-                    return Err(InterpretError::Type(
+                    return Err(RuntimeError::Type(
                         "published group value is incompatible with its barrier reducer".into(),
                     ));
                 }
@@ -446,7 +446,7 @@ fn merge_group_count_seed(seed: Option<&Value>, counts: Value) -> IrResult<Value
             .collect::<Vec<_>>(),
         Value::TypedMap(entries) => entries.clone(),
         _ => {
-            return Err(InterpretError::Type(
+            return Err(RuntimeError::Type(
                 "groupCount side-effect seed must be a map".into(),
             ));
         }
@@ -462,7 +462,7 @@ fn merge_group_count_seed(seed: Option<&Value>, counts: Value) -> IrResult<Value
     for (key, count) in counts {
         if let Some((_, value)) = entries.iter_mut().find(|(existing, _)| existing == &key) {
             let (Value::Long(initial), Value::Long(count)) = (&*value, count) else {
-                return Err(InterpretError::Type(
+                return Err(RuntimeError::Type(
                     "groupCount side-effect counts must be longs".into(),
                 ));
             };
@@ -492,7 +492,7 @@ fn compact_group_current(rows: Vec<Row>) -> IrResult<Vec<Row>> {
         if let Some(index) = positions.get(&key) {
             let previous = &mut compacted[*index];
             previous.bulk = previous.bulk.checked_add(row.bulk).ok_or_else(|| {
-                InterpretError::ExecutionLimit("group traverser bulk overflow".into())
+                RuntimeError::ExecutionLimit("group traverser bulk overflow".into())
             })?;
         } else {
             row.bindings.retain(|binding, _| {

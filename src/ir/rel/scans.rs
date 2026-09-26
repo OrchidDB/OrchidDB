@@ -294,7 +294,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     /// Ordered property keys for an element binding: catalog schema order
-    /// (matching the interpreter's `node_property_keys` /
+    /// (matching the catalog's `node_property_keys` /
     /// `edge_property_keys` iteration), filtered to the property columns
     /// actually present in the plan.
     pub(super) fn element_property_keys(
@@ -326,7 +326,7 @@ impl<'a> LoweringContext<'a> {
         keys
     }
 
-    /// Render a Cypher graph element the way the interpreter's
+    /// Render a Cypher graph element the way the runtime's
     /// `expand_element` does: nodes as `{_ID: t:o, _LABEL: l, key: value,
     /// ...}` (null properties omitted), edges as
     /// `(st:so)-{_LABEL: r, _ID: t:o, ...}->(dt:do)`.
@@ -724,7 +724,7 @@ pub(super) fn property_array(
             }
             // Structured (list / map) properties are stored as
             // debug-encoded strings; decode them to the display text the
-            // interpreter would print so downstream projections and
+            // runtime formatter would print so downstream projections and
             // comparisons see the same rendering.
             let is_encoded = crate::ir::value::field_value_type(field)
                 .is_some_and(|kind| kind == "map" || kind == "value");
@@ -997,7 +997,7 @@ pub(super) fn base_cell<'a>(
 
 /// Materialize one property column for a scan, overlay-aware.
 ///
-/// For the scalar types the interpreter can read back losslessly (booleans,
+/// For the scalar types the runtime can read back losslessly (booleans,
 /// i32/i64, f64, strings) the effective `node_property`/`edge_property` value
 /// is converted into the column's exact Arrow type, so base cells keep their
 /// values and overlay writes surface with the same type. For any other base
@@ -1197,7 +1197,7 @@ pub(super) fn struct_field_of(value: &Value, field: &str) -> Option<Value> {
 }
 
 /// Infer an Arrow type for a property key that only exists in the overlay
-/// (a brand-new label, or a key introduced by `SET`). Mirrors the interpreter's
+/// (a brand-new label, or a key introduced by `SET`). Mirrors the runtime's
 /// `ColumnKind` promotion: booleans, integers, floats, and everything else as
 /// text. Base-schema keys never reach this — they keep their exact type.
 pub(super) fn infer_element_property_type(

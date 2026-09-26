@@ -68,8 +68,7 @@ pub(super) fn node_children(node: &Node) -> Vec<&Node> {
         | GraphListComprehension { input, .. }
         | GraphSelect { input, .. }
         | GraphExpand { input, .. }
-        | GraphProject { input, .. }
-        | GraphService { input, .. } => vec![input],
+        | GraphProject { input, .. } => vec![input],
         GraphJoin { left, right, .. }
         | GraphApply { left, right, .. }
         | GraphUnion { left, right, .. }
@@ -158,7 +157,6 @@ pub(super) fn unsupported_node_name(node: &Node) -> &'static str {
         Node::GraphChoose { .. } => "GraphChoose",
         Node::GraphSelect { .. } => "GraphSelect",
         Node::GraphSparqlMinus { .. } => "GraphSparqlMinus",
-        Node::GraphService { .. } => "GraphService",
         Node::GraphProcedureCall { .. } => "GraphProcedureCall",
         Node::GraphExtension { .. } => "GraphExtension",
         Node::GraphConstructTriples { .. } => "GraphConstructTriples",

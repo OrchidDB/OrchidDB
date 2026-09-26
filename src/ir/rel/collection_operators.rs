@@ -304,8 +304,8 @@ impl<'a> LoweringContext<'a> {
 
     /// Lower three-valued ALL/ANY/NONE/SINGLE semantics by assigning each
     /// input row an identity, unnesting its list, and reducing predicate
-    /// outcomes back to one boolean per original row. The interpreter keeps
-    /// the same truth table and remains the semantic oracle for these cases.
+    /// outcomes back to one boolean per original row. The shared scalar
+    /// evaluator defines the truth table used by both execution paths.
     pub(super) fn lower_quantifier(
         &mut self,
         kind: QuantifierKind,

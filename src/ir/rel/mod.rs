@@ -49,7 +49,6 @@ mod gremlin;
 mod gremlin_state;
 pub mod mapping;
 pub mod rdf;
-pub(crate) mod rdf_service;
 mod repeat;
 mod sparql;
 pub mod sql;
@@ -93,8 +92,8 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use crate::ir::analysis::{ReadCapabilities, ReadValidationError, validate_read_capabilities};
 use crate::ir::catalog::{CatalogError, EdgeTable, NodeTable, PropertyGraph};
 use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
-use crate::ir::interpreter::{
-    ReturnedBatches, Row as InterpreterRow, compare_values, eval as interpreter_eval,
+use crate::ir::runtime::{
+    ReturnedBatches, Row as KernelRow, compare_values, eval as eval_scalar,
 };
 use crate::ir::plan::{
     ApplyKind, BindKind, ChooseArm, ChooseSelector, ChooseUnmatched, CoalesceSuccess, Direction,
@@ -256,9 +255,7 @@ impl RelBackend {
     }
 
     fn lower_inner(&self, plan: &GraphPlan, graph: &PropertyGraph) -> RelResult<LoweredPlan> {
-        let mut capabilities = ReadCapabilities::LOCAL_DUCKDB;
-        capabilities.external_reads = self.options.rdf_datasets.as_ref().is_some_and(|mapping| mapping.service_reads);
-        validate_read_capabilities(plan, capabilities)?;
+        validate_read_capabilities(plan, ReadCapabilities::LOCAL_DUCKDB)?;
         let graph_stats = graph_plan_stats(&plan.root);
         if plan.policy.language == Language::Gremlin
             && graph_stats.bidirectional_expands >= 2
@@ -417,8 +414,7 @@ fn graph_plan_stats(root: &Node) -> GraphPlanStats {
             | Node::GraphQuantifier { input, .. }
             | Node::GraphCollect { input, .. }
             | Node::GraphListComprehension { input, .. }
-            | Node::GraphSelect { input, .. }
-            | Node::GraphService { input, .. } => {
+            | Node::GraphSelect { input, .. } => {
                 stack.push((input, depth + 1));
             }
             Node::GraphJoin { left, right, .. }
@@ -522,7 +518,7 @@ impl IslandReport {
 /// aliases. Keep classification aligned with the expression dispatch.
 pub(crate) fn is_language_function(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    crate::ir::interpreter::is_known_function(&name)
+    crate::ir::runtime::is_known_function(&name)
         || scalar_types::is_label_function(&name)
         || scalar_types::is_id_function(&name)
         || scalar_types::is_mod_function(&name)

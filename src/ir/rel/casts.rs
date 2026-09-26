@@ -1,11 +1,11 @@
 //! Cast lowerings whose relational form has to be proven against the
-//! interpreter before it is used.
+//! scalar evaluator before it is used.
 //!
-//! List values cross the relational boundary as the interpreter's display
+//! List values cross the relational boundary as the runtime value display
 //! text (`[1,9]`), so a list cast is a rewrite of that text rather than a
 //! typed SQL cast. A rewrite is only emitted after checking, for every value
 //! the property actually stores, that it produces exactly the text the
-//! interpreter's cast renders; anything else declines.
+//! scalar cast renders; anything else declines.
 
 use std::collections::BTreeSet;
 
@@ -15,7 +15,7 @@ use datafusion::logical_expr::{Expr, LogicalPlan};
 use datafusion::prelude::lit;
 
 use crate::ir::expr::IrExpr;
-use crate::ir::interpreter::{Row as InterpreterRow, eval as interpreter_eval};
+use crate::ir::runtime::{Row as KernelRow, eval as eval_scalar};
 use crate::ir::value::Value;
 
 use super::{
@@ -85,7 +85,7 @@ impl LoweringContext<'_> {
         })
     }
 
-    /// Check the rewrite against the interpreter's cast for every distinct
+    /// Check the rewrite against the scalar cast for every distinct
     /// value stored under `property` on any node or relationship table.
     ///
     /// Checking every table that has the key is a superset of what the
@@ -110,8 +110,8 @@ impl LoweringContext<'_> {
             if matches!(value, Value::Null) || !seen.insert(tagged_value(&value)) {
                 return Ok(());
             }
-            let row = InterpreterRow::new().with(CAST_SUBJECT, value.clone());
-            let casted = interpreter_eval(&cast, &row, self.graph).map_err(|err| {
+            let row = KernelRow::new().with(CAST_SUBJECT, value.clone());
+            let casted = eval_scalar(&cast, &row, self.graph).map_err(|err| {
                 RelError::Unsupported(format!("list cast of `{property}`: {err}"))
             })?;
             let stored = rel_display_value(&value, self.language, context);
@@ -197,7 +197,7 @@ impl LoweringContext<'_> {
         if !matches!(expr, IrExpr::Call { .. } | IrExpr::List(_)) || !expr_is_constant(expr, &[]) {
             return Ok(None);
         }
-        let Ok(value) = interpreter_eval(expr, &InterpreterRow::new(), self.graph) else {
+        let Ok(value) = eval_scalar(expr, &KernelRow::new(), self.graph) else {
             return Ok(None);
         };
         Ok(match &value {

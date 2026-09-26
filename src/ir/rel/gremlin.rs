@@ -174,7 +174,7 @@ pub(super) fn with_empty_count_defaults(
 /// `current` may be an element while another's is a scalar. Relationally the
 /// two representations live in different columns (`current__id`/... versus
 /// `current`), and exactly one of them is populated on each row. Render the
-/// result the way the interpreter renders mixed values: element display text
+/// result the way runtime output renders mixed values: element display text
 /// for element rows, tagged scalar text otherwise.
 pub(super) fn mixed_current_display_expr(
     plan: &LogicalPlan,
@@ -189,7 +189,7 @@ pub(super) fn mixed_current_display_expr(
     if data_type == DataType::Null {
         return Ok(Some(gremlin_element_display_expr(plan, field)?));
     }
-    // Only primitive scalars have an interpreter-compatible tagged text
+    // Only primitive scalars have an runtime-compatible tagged text
     // form here; nested values keep their typed column.
     if !matches!(
         data_type,

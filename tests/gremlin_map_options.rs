@@ -1,6 +1,8 @@
 //! Index map keys and PropertyMapStep option / traversal-ring semantics.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::value::{STRUCT_ORDER_KEY, Value};
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 

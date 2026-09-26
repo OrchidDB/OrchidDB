@@ -8,7 +8,7 @@ use crate::ir::{
         PropertyGraph,
         snapshot::binary::{decode_value_bytes, encode_value},
     },
-    interpreter::{InterpretError, IrResult, ReturnedBatches, Row, eval, run::ExecutionContext},
+    runtime::{RuntimeError, IrResult, ReturnedBatches, Row, eval, context::ExecutionContext},
     jvm::JvmExecution,
     plan::{GraphPlan, Node},
     value::Value,
@@ -415,7 +415,7 @@ impl Compiler<'_> {
         self.lower_kernel(node).map(|plan| optimize::annotate(plan, node))
     }
     fn lower_kernel(&self, node: &Node) -> Result<LogicalPlan> {
-        use crate::ir::interpreter::ops::*;
+        use crate::ir::runtime::ops::*;
         use crate::ir::plan::*;
         match node {
             Node::GraphReturn { input, .. } => self.lower(input),
@@ -520,8 +520,8 @@ async fn execute_rows_inner(
 impl Compiler<'_> {
     #[allow(unused_variables, unused_mut)]
     fn lower_scalar_kernel(&self, node: &Node) -> Result<LogicalPlan> {
-        use crate::ir::interpreter::ops::*;
-        use crate::ir::interpreter::ops::{
+        use crate::ir::runtime::ops::*;
+        use crate::ir::runtime::ops::{
             aggregate::aggregate_op,
             barrier::barrier_op,
             collect::collect_op,
@@ -1165,7 +1165,7 @@ impl Compiler<'_> {
                         let all_paths = &all_paths;
                         {
                             let rows = inputs.remove(0);
-                            crate::ir::interpreter::run::shortest_path_op(
+                            crate::ir::runtime::context::shortest_path_op(
                                 source,
                                 target.as_deref(),
                                 *direction,
@@ -1255,7 +1255,7 @@ impl Compiler<'_> {
                     let ctx = &mut state.context;
                     let name = &name;
                     {
-                        Err(InterpretError::Unsupported(format!(
+                        Err(RuntimeError::Unsupported(format!(
                             "GraphExtension({name}): extension nodes have no runtime"
                         )))
                     }
@@ -1268,7 +1268,7 @@ impl Compiler<'_> {
                     let graph = &state.graph;
                     let ctx = &mut state.context;
                     {
-                        Err(InterpretError::Unsupported(
+                        Err(RuntimeError::Unsupported(
                             "unresolved SPARQL triple patterns must pass through ontology mapping"
                                 .into(),
                         ))
@@ -1282,7 +1282,7 @@ impl Compiler<'_> {
                     let graph = &state.graph;
                     let ctx = &mut state.context;
                     {
-                        Err(InterpretError::Unsupported(
+                        Err(RuntimeError::Unsupported(
                             "GraphRdfPropertyPath: SPARQL property paths require an RDF store"
                                 .into(),
                         ))
@@ -1294,22 +1294,13 @@ impl Compiler<'_> {
                     let graph = &state.graph;
                     let ctx = &mut state.context;
                     {
-                        Err(InterpretError::Unsupported(
+                        Err(RuntimeError::Unsupported(
                             "GraphSparqlMinus: solution-mapping MINUS is not yet implemented"
                                 .into(),
                         ))
                     }
                 }))
             }
-            Node::GraphService { .. } => Ok(kernel("Service", vec![], move |mut inputs, state| {
-                let graph = &state.graph;
-                let ctx = &mut state.context;
-                {
-                    Err(InterpretError::Unsupported(
-                        "GraphService: SPARQL federation is not yet implemented".into(),
-                    ))
-                }
-            })),
             Node::GraphConstructTriples { .. } => Ok(kernel(
                 "ConstructTriples",
                 vec![],
@@ -1317,7 +1308,7 @@ impl Compiler<'_> {
                     let graph = &state.graph;
                     let ctx = &mut state.context;
                     {
-                        Err(InterpretError::Unsupported(
+                        Err(RuntimeError::Unsupported(
                             "GraphConstructTriples: SPARQL CONSTRUCT output is not yet implemented"
                                 .into(),
                         ))
@@ -1329,7 +1320,7 @@ impl Compiler<'_> {
                     let graph = &state.graph;
                     let ctx = &mut state.context;
                     {
-                        Err(InterpretError::Unsupported(
+                        Err(RuntimeError::Unsupported(
                             "GraphDescribe: SPARQL DESCRIBE output is not yet implemented".into(),
                         ))
                     }
@@ -1433,7 +1424,7 @@ pub(crate) async fn execute_with_session(
         ),
     };
     let returned =
-        crate::ir::interpreter::output::finalize_return(&fields, form, rows, &local, &plan.policy)
+        crate::ir::runtime::output::finalize_return(&fields, form, rows, &local, &plan.policy)
             .map_err(QueryExecutionError::from_error)?;
     if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
     Ok((returned, stats))

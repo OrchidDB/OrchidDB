@@ -4,13 +4,15 @@
 
 #![cfg(feature = "duckdb")]
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, StringArray};
 
 use orchiddb::ir::bridge::cypher as cb;
 use orchiddb::ir::catalog::{PropertyGraph, nodes_from_columns};
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::plan::{DistinctBulk, DistinctMode, GraphPlan, Node};
 use orchiddb::ir::policy::{GraphPlanPolicy, ResultForm};
 use orchiddb::ir::rel::RelBackend;

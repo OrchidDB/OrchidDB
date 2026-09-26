@@ -8,12 +8,13 @@
 //! the plan and returned rows.
 
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute;
+use orchiddb::ir::rel::runtime::execute;
 use orchiddb::ir::plan::explain;
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
         eprintln!("usage: cypher_dbg \"<setup;setup>\" \"<query>\"");
@@ -52,7 +53,7 @@ fn main() {
         let plan = CypherPlanner::new()
             .plan(&parsed)
             .unwrap_or_else(|e| panic!("setup plan: {e}"));
-        execute(&plan, &graph).unwrap_or_else(|e| panic!("setup run: {e}"));
+        execute(&plan, &graph, None).await.unwrap_or_else(|e| panic!("setup run: {e}"));
     }
 
     let parsed = match parse_query(query) {
@@ -70,8 +71,8 @@ fn main() {
         }
     };
     println!("--- plan ---\n{}", explain(&plan));
-    match execute(&plan, &graph) {
-        Ok(returned) => {
+    match execute(&plan, &graph, None).await {
+        Ok((returned, _)) => {
             println!("--- fields: {:?}", returned.fields);
             println!(
                 "{}",

@@ -3,7 +3,7 @@
 //!
 //! Each step lowers to an `IrExpr::Call` whose runtime helper inspects
 //! the bound element's catalog row to build the requested shape. We
-//! rely on the interpreter's catalog access — at plan time the keys
+//! rely on the runtime catalog access — at plan time the keys
 //! list is already known (or empty, meaning "all keys").
 //!
 //! `valueMap`/`elementMap`/`propertyMap`/`valueMapTokens` produce a

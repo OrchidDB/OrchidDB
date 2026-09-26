@@ -1,8 +1,10 @@
 //! Supplemental native writer evidence; upstream Gherkin Write placeholders remain unchanged.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::{
     ir::{
         catalog::{Cardinality, PropertyGraph},
-        interpreter::execute_rows,
+
         value::Value,
     },
     language::gremlin::{GremlinPlanner, parse_traversal},
@@ -566,3 +568,5 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
         }
     }
 }
+
+use crate::datafusion_test::execute_rows;

@@ -1,25 +1,11 @@
-#![cfg(feature = "duckdb")]
-//! Hybrid execution: SQL islands spliced into an otherwise-interpreted plan.
-//!
-//! The point of the partitioner is that an operator the relational backend
-//! cannot lower no longer costs us the *whole* query. These tests pin both
-//! halves of that claim: a fully-lowerable plan becomes one island, a plan
-//! with an unsupported operator still islands the part beneath it, and in
-//! both cases the rows that come out match the plain interpreter.
-
-use std::sync::Arc;
-
+//! Regression coverage for SQL regions and native kernels in the DataFusion DAG.
 use arrow::array::{ArrayRef, Int64Array, StringArray};
-
 use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
-use orchiddb::ir::exec::{
-    DataFusionTarget, ExecStats, IslandTarget, SqlTarget, execute_with_islands, plan_with_islands,
-};
-use orchiddb::ir::interpreter::execute;
-use orchiddb::ir::rel::RelBackend;
+use orchiddb::ir::rel::runtime::execute_rows_with_jvm;
+use orchiddb::ir::{Node, Value};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner;
-
+use std::sync::Arc;
 /// Two people, one `knows` edge between them.
 fn fixture() -> PropertyGraph {
     let names: ArrayRef = Arc::new(StringArray::from(vec!["alice", "bob"]));
@@ -42,229 +28,172 @@ fn fixture() -> PropertyGraph {
     graph
 }
 
-fn rows_of(graph: &PropertyGraph, query: &str) -> Vec<String> {
-    let parsed = parse_query(query).expect("parse");
-    let plan = CypherPlanner::new().plan(&parsed).expect("plan");
-    render(execute(&plan, graph).expect("run"))
-}
-
-fn render(returned: orchiddb::ir::interpreter::ReturnedBatches) -> Vec<String> {
-    let batch = returned.batch;
-    (0..batch.num_rows())
-        .map(|row| {
-            (0..batch.num_columns())
-                .map(|col| {
-                    arrow::util::display::array_value_to_string(batch.column(col), row)
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>()
-                .join("|")
+async fn rows(graph: &PropertyGraph, query: &str) -> Vec<Vec<Value>> {
+    let plan = CypherPlanner::new()
+        .plan(&parse_query(query).unwrap())
+        .unwrap();
+    let Node::GraphReturn { fields, .. } = plan.root.as_ref() else {
+        panic!("expected return");
+    };
+    let (rows, stats) = execute_rows_with_jvm(&plan, graph, Default::default())
+        .await
+        .unwrap();
+    assert!(!stats.physical_plan.is_empty());
+    let mut result: Vec<_> = rows
+        .into_iter()
+        .flat_map(|r| {
+            let cells: Vec<_> = fields.iter().map(|f| r.bindings[f].clone()).collect();
+            std::iter::repeat_n(cells, r.bulk as usize)
         })
-        .collect()
+        .collect();
+    result.sort_by_key(|r| format!("{r:?}"));
+    result
 }
-
-/// Partition `query` against `target`, returning its stats and result rows.
-fn islanded_on(
-    graph: &PropertyGraph,
-    query: &str,
-    target: &dyn IslandTarget,
-) -> (ExecStats, Vec<String>) {
-    let parsed = parse_query(query).expect("parse");
-    let plan = CypherPlanner::new().plan(&parsed).expect("plan");
-    let backend = RelBackend::new();
-    let (hybrid, stats) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(plan_with_islands(&plan, graph, &backend, target));
-    let returned = execute(&hybrid, graph).expect("run hybrid");
-    (stats, render(returned))
+fn text(s: &str) -> Value {
+    Value::String(s.into())
 }
-
-/// Partition `query` on the default engine (DuckDB).
-fn islanded(graph: &PropertyGraph, query: &str) -> (usize, Vec<String>) {
-    let (stats, rows) = islanded_on(graph, query, &SqlTarget::duckdb());
-    (stats.islands, rows)
+#[tokio::test]
+async fn filtered_scan_has_expected_rows() {
+    assert_eq!(
+        rows(
+            &fixture(),
+            "MATCH (p:person) WHERE p.age > 35 RETURN p.name"
+        )
+        .await,
+        vec![vec![text("bob")]]
+    );
 }
-
-#[test]
-fn a_fully_lowerable_plan_becomes_a_single_island() {
+#[tokio::test]
+async fn result_boundary_preserves_language_metadata() {
+    let plan = CypherPlanner::new()
+        .plan(&parse_query("MATCH (p:person) RETURN p.name").unwrap())
+        .unwrap();
+    let (result, stats) = orchiddb::ir::rel::runtime::execute(&plan, &fixture(), None)
+        .await
+        .unwrap();
+    assert_eq!(result.batch.num_rows(), 2);
+    assert!(
+        result
+            .batch
+            .schema()
+            .metadata()
+            .contains_key("orchiddb.cypher.typed_rows.v1")
+    );
+    assert!(!stats.physical_plan.is_empty());
+}
+#[tokio::test]
+async fn expand_preserves_source_and_destination() {
+    assert_eq!(
+        rows(
+            &fixture(),
+            "MATCH (a:person)-[:knows]->(b:person) RETURN a.name,b.name"
+        )
+        .await,
+        vec![vec![text("alice"), text("bob")]]
+    );
+}
+#[tokio::test]
+async fn dynamic_list_kernel_composes_with_scan() {
+    assert_eq!(
+        rows(&fixture(), "MATCH (p:person) RETURN list_sort([1,p.age])").await,
+        vec![
+            vec![Value::List(vec![Value::Int(1), Value::Int(30)])],
+            vec![Value::List(vec![Value::Int(1), Value::Int(40)])]
+        ]
+    );
+}
+#[tokio::test]
+async fn mutations_persist_through_the_dag() {
     let graph = fixture();
-    let query = "MATCH (p:person) WHERE p.age > 35 RETURN p.name";
-    let (islands, rows) = islanded(&graph, query);
-    assert_eq!(islands, 1, "expected the whole plan to island");
-    assert_eq!(rows, rows_of(&graph, query));
+    assert_eq!(
+        rows(&graph, "CREATE (n:person {id:99}) RETURN n.id").await,
+        vec![vec![Value::Int(99)]]
+    );
+    assert_eq!(graph.node_ids("person").unwrap().len(), 3);
 }
-
-#[test]
-fn complete_reads_push_down_query_work_and_preserve_result_shaping() {
+#[tokio::test]
+async fn collected_strings_remain_a_typed_list() {
+    assert_eq!(
+        rows(&fixture(), "MATCH (p:person) RETURN collect(p.name)").await,
+        vec![vec![Value::List(vec![text("alice"), text("bob")])]]
+    );
+}
+#[tokio::test]
+async fn collected_integer_and_group_columns_are_not_null() {
     let graph = fixture();
-    let query = "MATCH (p:person) WHERE p.age > 35 RETURN p.name";
-    let parsed = parse_query(query).expect("parse");
-    let plan = CypherPlanner::new().plan(&parsed).expect("plan");
-    let (returned, stats) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(execute_with_islands(
-            &plan,
+    assert_eq!(
+        rows(&graph, "MATCH (p:person) RETURN collect(p.age)").await,
+        vec![vec![Value::List(vec![Value::Int(30), Value::Int(40)])]]
+    );
+    assert_eq!(
+        rows(&graph, "MATCH (p:person) RETURN p.age,collect(p.name)").await,
+        vec![
+            vec![Value::Int(30), Value::List(vec![text("alice")])],
+            vec![Value::Int(40), Value::List(vec![text("bob")])]
+        ]
+    );
+    assert_eq!(
+        rows(
             &graph,
-            &RelBackend::new(),
-            &SqlTarget::duckdb(),
-        ))
-        .expect("direct SQL read");
-    assert!(stats.fully_pushed_down());
-    assert_eq!(stats.interpreted_ops, 0);
-    assert!(returned.batch.schema().metadata().contains_key("orchiddb.cypher.typed_rows.v1"));
-    assert_eq!(render(returned), rows_of(&graph, query));
-}
-
-#[test]
-fn island_results_match_the_interpreter_for_an_expand() {
-    let graph = fixture();
-    let query = "MATCH (a:person)-[:knows]->(b:person) RETURN a.name, b.name";
-    let (islands, rows) = islanded(&graph, query);
-    assert!(islands >= 1, "expected at least one island");
-    assert_eq!(rows, rows_of(&graph, query));
-}
-
-/// The whole point: an operator the relational backend cannot lower must not
-/// stop the subtree beneath it from running as SQL.
-#[test]
-fn an_unlowerable_operator_still_islands_the_subtree_beneath_it() {
-    let graph = fixture();
-    // Dynamic `list_sort` has no relational lowering, so the projection cannot be
-    // part of an island — but the MATCH below it can.
-    let query = "MATCH (p:person) RETURN list_sort([1, p.age])";
-    let plan_islands = islanded(&graph, query);
-    assert!(
-        plan_islands.0 >= 1,
-        "expected the MATCH beneath the unlowerable projection to island, got {plan_islands:?}"
-    );
-    assert_eq!(plan_islands.1, rows_of(&graph, query));
-}
-
-/// Writes must never be executed relationally — a relational run computes a
-/// result set without ever touching the catalog, so the write would vanish.
-#[test]
-fn mutations_are_never_islanded() {
-    let graph = fixture();
-    let parsed = parse_query("CREATE (n:person {id: 99}) RETURN n.id").expect("parse");
-    let plan = CypherPlanner::new().plan(&parsed).expect("plan");
-    let backend = RelBackend::new();
-    let (_, stats) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(plan_with_islands(
-            &plan,
-            &graph,
-            &backend,
-            &SqlTarget::duckdb(),
-        ));
-    assert_eq!(stats.islands, 0, "a CREATE plan must not be islanded");
-}
-
-/// `collect()` produces a real list column. An island that cannot decode a
-/// column type used to substitute NULL, which turned every collected list
-/// into an empty cell — a wrong answer rather than a fallback.
-#[test]
-fn island_results_carry_collected_lists() {
-    let graph = fixture();
-    let query = "MATCH (p:person) RETURN collect(p.name)";
-    let (stats, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
-    assert_eq!(rows, rows_of(&graph, query));
-    assert!(
-        rows.iter().all(|row| !row.trim().is_empty()),
-        "collected list came back empty: {rows:?} (islands={})",
-        stats.islands
+            "MATCH (a:person)-[:knows]->(b:person) RETURN a.name,collect(b.age)"
+        )
+        .await,
+        vec![vec![text("alice"), Value::List(vec![Value::Int(40)])]]
     );
 }
-
-/// A column the island cannot decode must make the island decline, so the
-/// subtree is evaluated directly instead of yielding a fabricated NULL.
-#[test]
-fn undecodable_columns_decline_rather_than_null_out() {
-    let graph = fixture();
-    // Whatever the engine returns for these, the rows must agree with direct
-    // evaluation — either by decoding faithfully or by declining the island.
-    for query in [
-        "MATCH (p:person) RETURN collect(p.age)",
-        "MATCH (p:person) RETURN p.age, collect(p.name)",
-        "MATCH (a:person)-[:knows]->(b:person) RETURN a.name, collect(b.age)",
-    ] {
-        let (_, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
-        assert_eq!(rows, rows_of(&graph, query), "mismatch for `{query}`");
-    }
+#[tokio::test]
+async fn star_projection_retains_properties() {
+    let result = rows(&fixture(), "MATCH (p:person) RETURN p.*").await;
+    let expected = [("alice", 30), ("bob", 40)]
+        .into_iter()
+        .map(|(name, age)| {
+            vec![Value::Map(
+                [
+                    (
+                        "__orchiddb_struct_order".into(),
+                        Value::List(vec![text("name"), text("age")]),
+                    ),
+                    ("age".into(), Value::Long(age)),
+                    ("name".into(), text(name)),
+                ]
+                .into(),
+            )]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(result, expected);
 }
-
-/// A `x.*` projection fans one field into one column per property in the
-/// relational plan, but the residual still refers to the single field `x.*`.
-/// The island has to collapse those columns back into one map binding, in
-/// projection order, or the row comes back blank.
-#[test]
-fn island_results_carry_star_projections() {
-    let graph = fixture();
-    for query in [
-        "MATCH (p:person) RETURN p.*",
-        "MATCH (a:person)-[:knows]->(b:person) RETURN a.name, b.*",
-    ] {
-        let (stats, rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
-        assert_eq!(rows, rows_of(&graph, query), "mismatch for `{query}`");
-        assert!(
-            rows.iter().all(|row| !row.trim().is_empty()),
-            "star projection came back blank for `{query}`: {rows:?}"
-        );
-        assert!(
-            stats.islands >= 1,
-            "expected `{query}` to still island, got {stats:?}"
-        );
-    }
-}
-
-/// The engine is a swappable target, not a hardcoded dependency: the same
-/// plan must produce the same rows on DuckDB and on in-process DataFusion.
-#[test]
-fn targets_are_interchangeable() {
-    let graph = fixture();
-    let query = "MATCH (p:person) WHERE p.age > 25 RETURN p.name, p.age";
-    let (duck_stats, duck_rows) = islanded_on(&graph, query, &SqlTarget::duckdb());
-    let (df_stats, df_rows) = islanded_on(&graph, query, &DataFusionTarget);
-    assert_eq!(duck_rows, rows_of(&graph, query));
-    assert_eq!(duck_rows, df_rows);
-    assert_eq!(duck_stats.islands, df_stats.islands);
-}
-
-/// A query that lowers completely leaves the interpreter with no work — only
-/// the result-shaping boundary over already-computed rows. This is the
-/// condition that has to hold corpus-wide before the interpreter can go.
-#[test]
-fn a_fully_lowered_query_leaves_no_interpreted_operators() {
-    let graph = fixture();
-    let (stats, _) = islanded_on(
-        &graph,
-        "MATCH (p:person) WHERE p.age > 25 RETURN p.name",
-        &SqlTarget::duckdb(),
-    );
-    assert!(
-        stats.fully_pushed_down(),
-        "expected no interpreted operators, got {stats:?}"
+#[tokio::test]
+async fn two_projected_columns_preserve_types() {
+    assert_eq!(
+        rows(
+            &fixture(),
+            "MATCH (p:person) WHERE p.age >25 RETURN p.name,p.age"
+        )
+        .await,
+        vec![
+            vec![text("alice"), Value::Long(30)],
+            vec![text("bob"), Value::Long(40)]
+        ]
     );
 }
-
-/// ...and one that does not lower completely reports the gap rather than
-/// silently falling back, so the remaining work is enumerable.
-#[test]
-fn an_unlowerable_query_reports_why() {
+#[tokio::test]
+async fn repeated_execution_does_not_reuse_another_graph() {
     let graph = fixture();
-    let (stats, _) = islanded_on(
-        &graph,
-        "MATCH (p:person) RETURN list_sort([1, p.age])",
-        &SqlTarget::duckdb(),
+    assert_eq!(
+        rows(&graph, "MATCH (p:person) RETURN count(p)").await,
+        vec![vec![Value::Long(2)]]
     );
-    assert!(!stats.fully_pushed_down());
-    assert!(
-        !stats.declined.is_empty(),
-        "expected a recorded reason for the residual"
+    graph.insert_node("person", Default::default());
+    assert_eq!(
+        rows(&graph, "MATCH (p:person) RETURN count(p)").await,
+        vec![vec![Value::Long(3)]]
     );
+}
+#[tokio::test]
+async fn native_projection_errors_propagate() {
+    let plan = CypherPlanner::new()
+        .plan(&parse_query("RETURN 1 / 0").unwrap())
+        .unwrap();
+    let result = orchiddb::ir::rel::runtime::execute(&plan, &fixture(), None).await;
+    assert!(result.is_err());
 }

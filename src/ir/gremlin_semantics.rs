@@ -169,7 +169,7 @@ pub fn compare_order_keys(left: &Value, right: &Value) -> Ordering {
             .find(|ord| !ord.is_eq())
             .unwrap_or_else(|| a.len().cmp(&b.len()));
     }
-    crate::ir::interpreter::expr::compare_values(left, right)
+    crate::ir::runtime::expr::compare_values(left, right)
 }
 
 #[cfg(test)]

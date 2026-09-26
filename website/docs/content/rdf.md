@@ -90,6 +90,9 @@ WHERE { ?subject ex:knows ?object . }
 
 Register each physical table and call `map_iri_quads` repeatedly with the same dataset name. The dataset then includes each mapped source. This can expose several application-owned tables through one SPARQL entry point.
 
+SPARQL `SERVICE`, including `SERVICE SILENT`, is unsupported. Combining mapped
+tables within a dataset does not issue remote SPARQL HTTP requests.
+
 ## Keep using the connection
 
 After querying, `graph.into_executor()` returns the DuckDB executor. Use it to continue relational work in the same session. `graph.mapping()` and `graph.dataset()` expose the configuration while the engine is active.

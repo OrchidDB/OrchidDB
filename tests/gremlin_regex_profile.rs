@@ -1,5 +1,7 @@
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::{
-    ir::{catalog::PropertyGraph, interpreter::execute_rows, value::Value},
+    ir::{catalog::PropertyGraph,  value::Value},
     language::gremlin::{GremlinPlanner, parse_traversal},
 };
 
@@ -36,3 +38,5 @@ fn unsupported_native_regex_syntax_is_an_error_in_predicates_and_search() {
         assert!(error.contains("lookaround") || error.contains("backreference"), "{query}: {error}");
     }
 }
+
+use crate::datafusion_test::execute_rows;

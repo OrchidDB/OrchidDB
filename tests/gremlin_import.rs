@@ -1,6 +1,8 @@
 //! File imports use ordinary mutation plans, typed readers and transactions.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::{
-    ir::{catalog::PropertyGraph, interpreter::execute_rows, value::Value},
+    ir::{catalog::PropertyGraph,  value::Value},
     language::gremlin::{GremlinPlanner, parse_traversal},
 };
 use std::{
@@ -171,3 +173,5 @@ fn native_import_preserves_public_ids_and_property_record_owners() {
     assert_eq!(items.len(), 1);
     assert!(matches!(&items[0], Value::VertexProperty { value, .. } if matches!(value.as_ref(), Value::List(v) if v.len()==2)));
 }
+
+use crate::datafusion_test::execute_rows;

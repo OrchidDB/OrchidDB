@@ -19,7 +19,7 @@ impl<'a> LoweringContext<'a> {
             let value = self.lower_expr(plan, item)?;
             let data_type = value.get_type(plan.schema())?;
             if matches!(self.language, Language::Cypher | Language::Gql) {
-                // The interpreter prints a null list element as empty text
+                // The runtime value formatter prints a null list element as empty text
                 // (`[NULL]` is `[]`, `[NULL, NULL]` is `[,]`) and floats with
                 // six decimals. `||` propagates NULL, so every element is
                 // rendered and then defaulted to the empty string.
@@ -269,7 +269,7 @@ impl<'a> LoweringContext<'a> {
 
     /// Gremlin `valueMap()` over an element binding: renders the tagged
     /// map text (`m[{"age":"[29]","name":"[marko]"}]`) that the harness
-    /// comparator normalizes identically to the interpreter's output.
+    /// comparator normalizes identically to the runtime output.
     pub(super) fn lower_value_map(&self, plan: &LogicalPlan, name: &str, args: &[IrExpr]) -> RelResult<Expr> {
         if self.language == Language::Gremlin {
             return Err(RelError::Unsupported("Gremlin map requires native runtime values".into()));
@@ -387,7 +387,7 @@ impl<'a> LoweringContext<'a> {
                 .any(|(index, key)| keys[..index].contains(key))
             {
                 // The duplicate-key error includes the row-dependent key.
-                // Let the interpreter produce that exact public error until
+                // Let the native map kernel produce that exact public error until
                 // SQL error expressions are part of the result boundary.
                 return Err(RelError::Unsupported("dynamic duplicate map key".into()));
             }

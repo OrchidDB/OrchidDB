@@ -1,12 +1,12 @@
 //! Cypher (Ladybug) output formatter.
 //!
-//! The interpreter emits results in the gremlin-style "tagged" form
+//! The DataFusion DAG emits results in the gremlin-style "tagged" form
 //! (`l[d[1].i,d[2].i]`, `v[label#id]`, `m[{"k":"v"}]`, `true` / `false`,
 //! `null`). Ladybug case files expect a Python/Kuzu-style scalar form
 //! with pipe-separated columns (`1|2`), bracketed lists (`[1,2]`),
 //! capitalised booleans (`True` / `False`), and an empty cell for null.
 //!
-//! This module unwraps the interpreter's tagged form into the Ladybug
+//! This module unwraps the DataFusion DAG's tagged form into the Ladybug
 //! convention so the existing `compare` helper can match expected lines
 //! directly. Anything we do not recognise is passed through verbatim,
 //! which still surfaces real correctness issues rather than swallowing
@@ -18,7 +18,7 @@ use arrow::array::{
 };
 use arrow::datatypes::DataType;
 
-use orchiddb::ir::interpreter::ReturnedBatches;
+use orchiddb::ir::runtime::ReturnedBatches;
 
 pub fn lines_from_batch(batches: &ReturnedBatches) -> Vec<String> {
     let batch = &batches.batch;

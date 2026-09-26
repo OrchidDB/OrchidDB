@@ -30,7 +30,7 @@ Keeping these operations explicit gives the planner the information needed to pr
 
 ## SQL islands
 
-A SQL island is a region of a graph plan that can execute as relational SQL. DuckDB performs that work, and the result is represented as Arrow data. Hybrid managed execution combines SQL islands with graph runtime operators.
+A SQL island is a region of the lowered relational plan that executes as SQL in DuckDB and returns Arrow data. DataFusion schedules the managed execution DAG and its remaining native kernels. Graph IR is a compiler representation; it is not interpreted at runtime.
 
 ```text
 Query text
@@ -41,7 +41,7 @@ Graph IR
     ↓
 Relational lowering
     ↓
-DuckDB SQL execution + graph runtime where selected
+DataFusion execution DAG + eligible DuckDB SQL regions
     ↓
 Arrow results
 ```

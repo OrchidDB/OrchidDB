@@ -603,20 +603,6 @@ fn node_to_plan_with_policy(
             schema,
             inputs: vec![node_to_plan(left)?, node_to_plan(right)?],
         }),
-        Node::GraphService {
-            endpoint,
-            query,
-            silent,
-            outputs,
-            input,
-        } => extension(GraphService {
-            endpoint: endpoint.clone(),
-            query: query.clone(),
-            silent: *silent,
-            outputs: outputs.clone(),
-            schema,
-            inputs: vec![node_to_plan(input)?],
-        }),
         Node::GraphConstructTriples { template, input } => extension(GraphConstructTriples {
             template: template.clone(),
             plan_policy,
@@ -782,7 +768,6 @@ fn plan_to_node(plan: &LogicalPlan) -> DFResult<Node> {
         GraphSparqlGraphNames,
         GraphRdfPropertyPath,
         GraphSparqlMinus,
-        GraphService,
         GraphConstructTriples,
         GraphDescribe,
         GraphAsk,

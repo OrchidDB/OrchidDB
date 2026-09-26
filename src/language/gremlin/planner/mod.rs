@@ -10,8 +10,8 @@
 //! `GraphSelect`, `GraphRepeat`, `GraphPathFilter`, …).
 //!
 //! No Apache DataFusion or DuckDB types appear here. Downstream code can
-//! either run the resulting `GraphPlan` directly through
-//! `crate::ir::interpreter::execute` or convert it to a DataFusion
+//! execute the resulting `GraphPlan` through the DataFusion backend
+//! `crate::ir::rel::runtime::execute` or convert it to a DataFusion
 //! `LogicalPlan::Extension` tree via `crate::ir::df::to_logical_plan`.
 
 mod error;

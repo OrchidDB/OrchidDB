@@ -1,4 +1,4 @@
-//! Best-effort formatter from the interpreter's Arrow `RecordBatch` to
+//! Best-effort formatter from the DataFusion DAG's Arrow `RecordBatch` to
 //! the line-oriented expected format used by TinkerPop's `.case` files.
 //!
 //! TinkerPop's gherkin uses tag prefixes (`d[0.5].d`, `s[a,b]`, `v[name]`,
@@ -17,7 +17,7 @@ use arrow::array::{
 };
 use arrow::datatypes::DataType;
 
-use orchiddb::ir::interpreter::ReturnedBatches;
+use orchiddb::ir::runtime::ReturnedBatches;
 
 pub fn lines_from_batch(batches: &ReturnedBatches) -> Vec<String> {
     let batch = &batches.batch;

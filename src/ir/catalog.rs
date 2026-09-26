@@ -1,11 +1,11 @@
 //! In-memory property-graph store backed by Apache Arrow.
 //!
-//! The interpreter drives a `PropertyGraph`; each label has an Arrow
+//! Managed query kernels access a `PropertyGraph`; each label has an Arrow
 //! `RecordBatch` of node properties, and each relationship type has a
 //! `RecordBatch` of edge rows whose first two columns are `__src_id` and
 //! `__dst_id` (interpreted as logical row ids into the corresponding label
 //! tables). This keeps the on-disk story Arrow-native while letting the
-//! interpreter work in plain `Value`s for clarity.
+//! native kernels work in typed `Value`s.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

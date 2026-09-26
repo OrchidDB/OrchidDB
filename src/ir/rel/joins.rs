@@ -41,7 +41,7 @@ impl<'a> LoweringContext<'a> {
         // any later reference to it fails to resolve ("Referenced column
         // … was not found"). This stayed latent while nothing in the Cypher
         // path emitted `GraphJoin`; uncorrelated `MATCH (a), (b)` now does.
-        // Left order wins on collision, matching the interpreter's
+        // Left order wins on collision, matching the native join kernel's
         // `join_op`, which inserts right bindings with `or_insert_with`.
         let fields = match (left.fields, right.fields) {
             (Some(mut left_fields), Some(right_fields)) => {
@@ -168,7 +168,7 @@ impl<'a> LoweringContext<'a> {
                         .project(columns)?
                         .alias(name)?
                         .build()?;
-                    // GraphApply's interpreter lets an inner traversal's
+                    // GraphApply lets an inner traversal's
                     // synthetic Gremlin path replace the incoming path. Keep
                     // that same ownership here: a cross join with both
                     // columns named `__path` leaves DataFusion unable to

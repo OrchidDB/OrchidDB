@@ -6,8 +6,10 @@
 //! expectation in corpus notation (`v[marko]`, `d[3].l`, ...).
 //!
 //! `GREMLIN_G1_PROBE="g.V()...;g.inject(1)..."` with the ignored `probe`
-//! test prints interpreter and DuckDB output side by side.
+//! test prints DataFusion DAG and DuckDB output side by side.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 mod gremlin_case_runner;
 
 use std::sync::Arc;
@@ -16,7 +18,7 @@ use arrow::array::{ArrayRef, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema};
 use gremlin_case_runner::{compare, dataset, format};
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute as interpret;
+use crate::datafusion_test::execute_async as interpret;
 use orchiddb::ir::rel::RelBackend;
 use orchiddb::ir::rel::sql::{self, DuckDbExecutor, SqlExecutor, SqlValue, TableData};
 use orchiddb::language::gremlin::planner::GremlinPlanner;
@@ -29,8 +31,8 @@ fn plan(query: &str) -> orchiddb::ir::plan::GraphPlan {
         .expect("plan gremlin")
 }
 
-fn interpreter_lines(query: &str, graph: &PropertyGraph) -> Result<Vec<String>, String> {
-    interpret(&plan(query), graph)
+async fn dag_lines(query: &str, graph: &PropertyGraph) -> Result<Vec<String>, String> {
+    interpret(&plan(query), graph).await
         .map(|batches| format::lines_from_batch(&batches))
         .map_err(|error| error.to_string())
 }
@@ -78,7 +80,7 @@ async fn probe() {
     let queries = std::env::var("GREMLIN_G1_PROBE").unwrap_or_default();
     for query in queries.split(';').map(str::trim).filter(|q| !q.is_empty()) {
         println!("=== {query}");
-        println!("interp: {:?}", interpreter_lines(query, &graph));
+        println!("DAG: {:?}", dag_lines(query, &graph).await);
         println!("duckdb: {:?}", duckdb_lines(query, &graph).await);
         if std::env::var("GREMLIN_G1_SHOW").is_ok_and(|v| v == "1") {
             let plan = plan(query);

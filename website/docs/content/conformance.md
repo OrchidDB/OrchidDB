@@ -3,6 +3,11 @@
 Compare Cypher with Neo4j Community and PuppyGraph, Gremlin with SQLg, PuppyGraph and JanusGraph, and SPARQL with Apache Jena.
 The recorded percentages describe the optional managed runtime and the tested interfaces. They do not establish full language conformance for the newer SQL compiler clients, which reject writes, remote SERVICE calls, and operations that cannot lower to SQL. See [compiler boundaries](sql-compiler.md#boundaries).
 
+The recorded results are historical evidence for their recorded source revisions.
+They are not a fresh run of the current code. Current compiler and managed runtime
+APIs reject SPARQL `SERVICE`, including `SERVICE SILENT`; OrchidDB does not issue
+remote SPARQL HTTP requests.
+
 ## Upstream compatibility evidence
 
 This comparison uses independently maintained test scenarios and expected results. It records the original upstream identifiers, fixtures, source revisions, expected output, actual output and diagnostics. Engines are grouped by supported language, using free editions and marking paid capabilities separately. The SPARQL peer, [Apache Jena](https://jena.apache.org/), uses the permissive [Apache 2.0 license](https://github.com/apache/jena/blob/jena-6.2.0/LICENSE).

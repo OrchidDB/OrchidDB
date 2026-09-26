@@ -1,10 +1,12 @@
 //! The search service must inspect graph properties, independently of fixture IDs.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use arrow::array::StringArray;
 use orchiddb::ir::catalog::{Cardinality, PropertyGraph, nodes_from_columns};
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::value::Value;
 use orchiddb::language::gremlin::parser::parse_traversal_with_bindings;
 use orchiddb::language::gremlin::semantics::GValue;
