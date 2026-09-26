@@ -1,4 +1,4 @@
-use spargebra::term::{GroundTerm, Literal, NamedNodePattern, TermPattern, Variable};
+use crate::spargebra::term::{GroundTerm, Literal, NamedNodePattern, TermPattern, Variable};
 
 use crate::ir::expr::Lit;
 use crate::ir::plan::RdfTerm;

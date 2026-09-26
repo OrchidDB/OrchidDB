@@ -3,6 +3,7 @@ name = "orchiddb"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
+publish = ["crates-io"]
 description = "An embedded graph query engine written in Rust"
 repository = "https://github.com/OrchidDB/OrchidDB"
 homepage = "https://orchiddb.com"
@@ -10,7 +11,7 @@ documentation = "https://docs.orchiddb.com"
 include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE.md"]
 
 [workspace]
-members = ["vendor/spargebra"]
+members = []
 resolver = "2"
 
 [[bin]]
@@ -24,6 +25,11 @@ path = "src/bin/orchiddb-jvm-store.rs"
 
 [features]
 default = []
+# Optional syntax extensions of the embedded SPARQL parser.
+sep-0002 = []
+sep-0006 = []
+sparql-12 = ["oxrdf/rdf-12"]
+standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
 
@@ -51,7 +57,10 @@ reqwest = { version = "0.12.28", default-features = false, features = ["rustls-t
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
-spargebra = { package = "orchiddb-spargebra", version = "=0.1.0", path = "vendor/spargebra" }
+oxilangtag = "0.1"
+oxrdf = "=0.3.4"
+peg = "0.8"
+rand = ">=0.8,<0.10"
 thiserror = "2"
 unicode-segmentation = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

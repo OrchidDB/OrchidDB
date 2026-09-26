@@ -3,12 +3,12 @@
 use super::{RdfGraphEngine, RdfTermValue, SparqlResults};
 use crate::ir::rel::rdf::IriQuadSource;
 use crate::ir::rel::sql::mutation::{MappedMutation, RowCondition};
-use spargebra::algebra::GraphTarget;
-use spargebra::term::{
+use crate::spargebra::algebra::GraphTarget;
+use crate::spargebra::term::{
     BlankNode, GraphName, GraphNamePattern, GroundTermPattern, NamedNodePattern, QuadPattern,
     TermPattern,
 };
-use spargebra::{GraphUpdateOperation, Query};
+use crate::spargebra::{GraphUpdateOperation, Query};
 use std::collections::BTreeMap;
 
 type Result<T> = std::result::Result<T, String>;
@@ -227,7 +227,7 @@ impl RdfGraphEngine {
         }
     }
 
-    async fn apply_operations(&mut self, update: spargebra::Update) -> Result<()> {
+    async fn apply_operations(&mut self, update: crate::spargebra::Update) -> Result<()> {
         for operation in update.operations {
             let mut effects = Vec::new();
             match operation {
@@ -274,7 +274,7 @@ impl RdfGraphEngine {
                     pattern.on_in_scope_variable(|variable| { variables.insert(variable.clone()); });
                     let query = Query::Select {
                         dataset: using,
-                        pattern: spargebra::algebra::GraphPattern::Project {
+                        pattern: crate::spargebra::algebra::GraphPattern::Project {
                             inner: pattern,
                             variables: variables.into_iter().collect(),
                         },

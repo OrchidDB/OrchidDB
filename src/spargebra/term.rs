@@ -85,7 +85,7 @@ impl From<GroundTerm> for Term {
 /// The default string formatter is returning a N-Quads representation.
 ///
 /// ```
-/// use spargebra::term::{GroundTriple, NamedNode};
+/// use orchiddb::spargebra::term::{GroundTriple, NamedNode};
 ///
 /// assert_eq!(
 ///     "<http://example.com/s> <http://example.com/p> <http://example.com/o>",
@@ -195,7 +195,7 @@ impl TryFrom<GraphNamePattern> for GraphName {
 /// The default string formatter is returning a N-Quads representation.
 ///
 /// ```
-/// use spargebra::term::{NamedNode, Quad};
+/// use orchiddb::spargebra::term::{NamedNode, Quad};
 ///
 /// assert_eq!(
 ///     "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/g>",
@@ -270,7 +270,7 @@ impl TryFrom<QuadPattern> for Quad {
 /// The default string formatter is returning a N-Quads representation.
 ///
 /// ```
-/// use spargebra::term::{NamedNode, GroundQuad};
+/// use orchiddb::spargebra::term::{NamedNode, GroundQuad};
 ///
 /// assert_eq!(
 ///     "<http://example.com/s> <http://example.com/p> <http://example.com/o> <http://example.com/g>",

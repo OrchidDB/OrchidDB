@@ -1,7 +1,7 @@
-use crate::SparqlParser;
-use crate::algebra::*;
-use crate::parser::SparqlSyntaxError;
-use crate::term::*;
+use crate::spargebra::SparqlParser;
+use crate::spargebra::algebra::*;
+use crate::spargebra::parser::SparqlSyntaxError;
+use crate::spargebra::term::*;
 use oxiri::Iri;
 use std::fmt;
 use std::str::FromStr;
@@ -9,7 +9,7 @@ use std::str::FromStr;
 /// A parsed [SPARQL query](https://www.w3.org/TR/sparql11-query/).
 ///
 /// ```
-/// use spargebra::SparqlParser;
+/// use orchiddb::spargebra::SparqlParser;
 ///
 /// let query_str = "SELECT ?s ?p ?o WHERE { ?s ?p ?o . }";
 /// let query = SparqlParser::new().parse_query(query_str)?;
@@ -18,7 +18,7 @@ use std::str::FromStr;
 ///     query.to_sse(),
 ///     "(project (?s ?p ?o) (bgp (triple ?s ?p ?o)))"
 /// );
-/// # Ok::<_, spargebra::SparqlSyntaxError>(())
+/// # Ok::<_, orchiddb::spargebra::SparqlSyntaxError>(())
 /// ```
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub enum Query {

@@ -76,7 +76,7 @@ impl RdfGraphEngine {
         self.sparql_parsed(&parsed).await
     }
 
-    async fn sparql_parsed(&mut self, query: &spargebra::Query) -> Result<ReturnedBatches, String> {
+    async fn sparql_parsed(&mut self, query: &crate::spargebra::Query) -> Result<ReturnedBatches, String> {
         if !self.scalar_registered {
             self.executor()?.connection().map_err(|error| error.to_string())?
                 .register_scalar_function::<scalar::SparqlScalar>("__orchiddb_sparql_scalar")
@@ -100,7 +100,7 @@ impl RdfGraphEngine {
         self.prepare_parsed(&parsed).await
     }
 
-    async fn prepare_parsed(&self, query: &spargebra::Query) -> Result<PreparedSourceProgram, String> {
+    async fn prepare_parsed(&self, query: &crate::spargebra::Query) -> Result<PreparedSourceProgram, String> {
         // Typed RDF expressions expand into several correlated SQL columns.
         // Preserve the same session and async execution while allowing the
         // logical planner's synchronous recursion to use a larger stack.
@@ -109,7 +109,7 @@ impl RdfGraphEngine {
             || std::future::Future::poll(preparation.as_mut(), cx))).await
     }
 
-    async fn prepare_inner(&self, query: &spargebra::Query) -> Result<PreparedSourceProgram, String> {
+    async fn prepare_inner(&self, query: &crate::spargebra::Query) -> Result<PreparedSourceProgram, String> {
         let lowered = self.lower_query(query)?;
         let dialect = self.executor()?.dialect();
         PreparedSourceProgram::prepare(
@@ -121,11 +121,11 @@ impl RdfGraphEngine {
         .map_err(|error| error.to_string())
     }
 
-    fn lower_query(&self, query: &spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
+    fn lower_query(&self, query: &crate::spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
         stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,|| self.lower_query_inner(query))
     }
 
-    fn lower_query_inner(&self, query: &spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
+    fn lower_query_inner(&self, query: &crate::spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
         let plan = SparqlPlanner::new(&self.dataset)
             .plan(query)
             .map_err(|error| error.to_string())?;

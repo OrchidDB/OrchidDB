@@ -7,11 +7,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use spargebra::algebra::{
+use crate::spargebra::algebra::{
     AggregateExpression, AggregateFunction, Expression, GraphPattern, OrderExpression, QueryDataset,
 };
-use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
-use spargebra::{Query, SparqlParser};
+use crate::spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
+use crate::spargebra::{Query, SparqlParser};
 
 use crate::ir::expr::{AggCall, AggKind, BinaryOp, IrExpr};
 use crate::ir::plan::{
@@ -45,7 +45,7 @@ use terms::{binding, exact_term, named_term, term};
 #[derive(Debug, thiserror::Error)]
 pub enum SparqlError {
     #[error("SPARQL parse error: {0}")]
-    Parse(#[from] spargebra::SparqlSyntaxError),
+    Parse(#[from] crate::spargebra::SparqlSyntaxError),
     #[error("invalid SPARQL base IRI: {0}")]
     BaseIri(String),
     #[error("unsupported SPARQL: {0}")]
@@ -56,7 +56,7 @@ pub fn parse_query(source: &str) -> Result<Query, SparqlError> {
     Ok(SparqlParser::new().parse_query(source)?)
 }
 
-pub fn parse_update(source: &str, base_iri: Option<&str>) -> Result<spargebra::Update, SparqlError> {
+pub fn parse_update(source: &str, base_iri: Option<&str>) -> Result<crate::spargebra::Update, SparqlError> {
     let parser = SparqlParser::new();
     let parser = if let Some(base) = base_iri {
         parser.with_base_iri(base).map_err(|error| SparqlError::BaseIri(error.to_string()))?

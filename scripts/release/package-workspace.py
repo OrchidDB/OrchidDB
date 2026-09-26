@@ -1,47 +1,61 @@
 #!/usr/bin/env python3
-"""Package registry-ready crates together before their first registry publication.
-
-Copy the reviewed source checkouts into a temporary Cargo workspace. Only local
-manifest locations change; Cargo normalizes them to exact registry versions.
-Cargo verifies the normalized packages using its workspace package index.
-"""
-import argparse, os, re, shutil, subprocess, tempfile
+"""Verify engine/client registry archives together without publishing either crate."""
+import argparse
+import os
 from pathlib import Path
-p=argparse.ArgumentParser(description=__doc__)
-p.add_argument('--core',type=Path,required=True)
-p.add_argument('--rust',type=Path)
-p.add_argument('--cli',type=Path)
-p.add_argument('--output',type=Path,required=True)
-p.add_argument('--no-verify',action='store_true',help='Only for packaging diagnostics; releases must verify')
-a=p.parse_args()
-if a.cli and not a.rust: p.error('--cli requires --rust')
-a.output.mkdir(parents=True,exist_ok=True)
-def copy_checkout(source,dest):
-    source=source.resolve()
-    files=subprocess.check_output(['git','-C',str(source),'ls-files','-z']).decode().split('\0')
-    for f in filter(None,files):
-        src=source/f
+import re
+import shutil
+import subprocess
+import tempfile
+import tomllib
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--core', type=Path, required=True)
+p.add_argument('--rust', type=Path)
+p.add_argument('--output', type=Path, required=True)
+p.add_argument('--test', action='store_true')
+p.add_argument('--system-test-driver', action='store_true', help='Test with an existing DuckDB 1.5.2 library instead of building it')
+a = p.parse_args()
+a.output = a.output.resolve()
+a.output.mkdir(parents=True, exist_ok=True)
+
+def copy_checkout(source, destination):
+    source = source.resolve()
+    files = subprocess.check_output(['git', '-C', str(source), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')
+    for name in set(filter(None, files)):
+        src = source / name
         if src.is_file():
-            (dest/f).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest/f)
+            (destination / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, destination / name)
+
 with tempfile.TemporaryDirectory(prefix='orchiddb-crates-') as temp:
-    root=Path(temp);members=['orchiddb','orchiddb/vendor/spargebra']
-    copy_checkout(a.core,root/'orchiddb')
-    core=root/'orchiddb/Cargo.toml'
-    core.write_text(re.sub(r'\n\[workspace\]\n.*?(?=\n\[)', '\n',core.read_text(),flags=re.S))
-    lock=a.core/'Cargo.lock'
+    root = Path(temp)
+    copy_checkout(a.core, root / 'orchiddb')
+    manifest = root / 'orchiddb/Cargo.toml'
+    version = tomllib.loads(manifest.read_text())['package']['version']
+    manifest.write_text(re.sub(r'\n\[workspace\]\n.*?(?=\n\[)', '\n', manifest.read_text(), flags=re.S))
+    members = ['orchiddb']
+    packages = [('orchiddb', version)]
+    shutil.copy2(a.core / 'Cargo.lock', root / 'Cargo.lock')
     if a.rust:
-        copy_checkout(a.rust,root/'orchiddb-rust');members.append('orchiddb-rust');lock=a.rust/'Cargo.lock'
-        f=root/'orchiddb-rust/Cargo.toml'
-        f.write_text(re.sub(r'^orchiddb = \{[^\n]+', 'orchiddb = { version = "=0.1.0", path = "../orchiddb", default-features = false }',f.read_text(),flags=re.M))
-    if a.cli:
-        copy_checkout(a.cli,root/'orchiddb-cli');members.append('orchiddb-cli');lock=a.cli/'Cargo.lock'
-        f=root/'orchiddb-cli/Cargo.toml'
-        f.write_text(re.sub(r'^orchiddb-client = \{[^\n]+', 'orchiddb-client = { version = "=0.1.0", path = "../orchiddb-rust", default-features = false }',f.read_text(),flags=re.M))
-    (root/'Cargo.toml').write_text('[workspace]\nresolver = "2"\nmembers = '+str(members).replace("'",'"')+'\n')
-    shutil.copy2(lock,root/'Cargo.lock')
-    # Resolve source-location changes while retaining the reviewed dependency versions.
-    subprocess.run(['cargo','metadata','--format-version','1'],cwd=root,check=True,stdout=subprocess.DEVNULL)
-    flags=['--no-verify'] if a.no_verify else []
-    subprocess.run(['cargo','package','--workspace','--locked',*flags],cwd=root,check=True)
-    target=Path(os.environ.get('CARGO_TARGET_DIR',root/'target')).resolve()
-    for f in (target/'package').glob('orchiddb*.crate'): shutil.copy2(f,a.output/f.name)
+        copy_checkout(a.rust, root / 'orchiddb-rust')
+        members.append('orchiddb-rust')
+        manifest = root / 'orchiddb-rust/Cargo.toml'
+        client = tomllib.loads(manifest.read_text())
+        if client['dependencies']['orchiddb']['version'] != '=' + version:
+            raise SystemExit('Client engine version does not match the staged engine')
+        manifest.write_text(re.sub(r'^orchiddb = \{[^\n]+', 'orchiddb = { version = "=' + version + '", path = "../orchiddb", default-features = false }', manifest.read_text(), flags=re.M))
+        packages.append((client['package']['name'], client['package']['version']))
+    (root / 'Cargo.toml').write_text('[workspace]\nresolver = "2"\nmembers = ' + repr(members).replace("'", '"') + '\n')
+    subprocess.run(['cargo', 'metadata', '--format-version', '1'], cwd=root, check=True, stdout=subprocess.DEVNULL)
+    if a.test:
+        subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb', '--test', 'sql_compiler', '--test', 'execution'], cwd=root, check=True)
+        subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb', '--doc', 'spargebra::'], cwd=root, check=True)
+        if a.rust:
+            subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb-client', *(['--no-default-features'] if a.system_test_driver else [])], cwd=root, check=True)
+    # Cargo verifies dependent packages against its local workspace package index.
+    subprocess.run(['cargo', 'package', '--workspace', '--locked', '--registry', 'crates-io'], cwd=root, check=True)
+    target = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')).resolve()
+    for name, version in packages:
+        artifact = target / 'package' / f'{name}-{version}.crate'
+        shutil.copy2(artifact, a.output / artifact.name)
