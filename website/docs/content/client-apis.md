@@ -2,7 +2,7 @@
 
 Map your existing tables, compile a Cypher, Gremlin, or mapped SPARQL read query to SQL, then consume native Arrow batches from your own engine. The compiler receives schema and mapping metadata, not your data. Clients do not bundle DuckDB.
 
-Each repository includes working source examples and release packaging. Registry packages are not published yet; follow the source instructions below.
+Version 0.1.0 is published. Each repository includes working source examples; packaged native compilers currently target macOS ARM64.
 
 ## Shared execution contract
 
@@ -41,15 +41,34 @@ In a client checkout, run `cargo run --example borrowed_duckdb` for mappings, a 
 
 [Repository](https://github.com/OrchidDB/OrchidDB-java) · [Arrow guide](https://github.com/OrchidDB/OrchidDB-java/blob/main/docs/arrow.md).
 
-Follow the repository setup to check out its pinned core, build the JNI compiler, and run:
+Use Java 17+ and add both published Maven dependencies:
 
-```sh
-./scripts/run-example.sh ArrowBatches
+```xml
+<dependency>
+  <groupId>com.orchiddb</groupId>
+  <artifactId>orchiddb-java</artifactId>
+  <version>0.1.0</version>
+</dependency>
+<dependency>
+  <groupId>com.orchiddb</groupId>
+  <artifactId>orchiddb-java</artifactId>
+  <version>0.1.0</version>
+  <classifier>macos-aarch64</classifier>
+  <scope>runtime</scope>
+</dependency>
 ```
+
+```java
+var compiler = io.orchiddb.NativeSqlCompiler.load();
+```
+
+Maven resolves the compiler JAR; `load()` verifies, extracts and loads it automatically. No manual binary download, library path, Rust toolchain or source checkout is needed. Version 0.1.0 includes **macOS ARM64 JVMs only**; other platform compiler JARs are not published for this version.
+
+For a complete application example, see [ArrowBatches.java](https://github.com/OrchidDB/OrchidDB-java/blob/main/orchiddb-java/src/test/java/io/orchiddb/examples/ArrowBatches.java).
 
 `JdbcEngine.withArrow` takes your JDBC connection, Arrow allocator, and driver export callback. `Graph.queryArrow` returns an `ArrowResult`. Java vectors are borrowed: consume them before advancing or closing the result. Copy/transfer data explicitly if it must outlive that scope. Your parent allocator and connection remain caller-owned.
 
-Java requires an Arrow-compatible JVM setup, including `--add-opens=java.base/java.nio=ALL-UNNAMED`; the example launcher handles it. DuckDB JDBC is test-only. Maven Central packaging is configured but not published. The optional `orchiddb-gremlin` module adds fluent TinkerPop traversal integration; other clients accept Gremlin text.
+Java requires an Arrow-compatible JVM setup, including `--add-opens=java.base/java.nio=ALL-UNNAMED`; the example launcher handles it. Supply your own JDBC driver and Arrow memory implementation as described in the Arrow guide; DuckDB JDBC is test-only in the client repository. The optional `com.orchiddb:orchiddb-gremlin:0.1.0` dependency adds fluent TinkerPop traversal integration; other clients accept Gremlin text.
 
 ## Python
 
