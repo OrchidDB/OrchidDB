@@ -31,8 +31,17 @@ impl LoweringContext<'_> {
         rel_types: &LabelExpr,
         dir: Direction,
         length: &crate::ir::plan::Length,
+        history: Option<&str>,
     ) -> RelResult<LoweredNode> {
-        let input = self.lower_node(input)?;
+        let mut input = self.lower_node(input)?;
+        if let Some(history) = history {
+            if !has_exact_col(&input.plan, history) {
+                let mut projection = existing_columns(&input.plan, &BTreeSet::new());
+                projection.push(Self::empty_relationship_history().alias(history));
+                let plan = LogicalPlanBuilder::from(input.plan.clone()).project(projection)?.build()?;
+                input = input.with_plan(plan);
+            }
+        }
         if has_binding_shape(&input.plan, source).is_none() {
             return Err(RelError::Unsupported(format!(
                 "expand source `{source}` is not an element binding"
@@ -49,6 +58,7 @@ impl LoweringContext<'_> {
             rel_types,
             dir,
             length,
+            history,
         );
         match recursive {
             Ok(lowered) => Ok(lowered),
@@ -63,6 +73,7 @@ impl LoweringContext<'_> {
                     rel_types,
                     dir,
                     length,
+                    history,
                 )
                 .map_err(|fallback_error| {
                     RelError::Unsupported(format!(
@@ -88,6 +99,7 @@ impl LoweringContext<'_> {
         rel_types: &LabelExpr,
         dir: Direction,
         length: &crate::ir::plan::Length,
+        history: Option<&str>,
     ) -> RelResult<LoweredNode> {
         // Gremlin path values have a different rendering contract. Traversals
         // that do not expose the relationship binding still use recursion.
@@ -119,7 +131,7 @@ impl LoweringContext<'_> {
             col_exact(id_col(source)).alias(WORK_CUR_ID),
             col_exact(label_col(source)).alias(WORK_CUR_LABEL),
             lit(0_i64).alias(WORK_DEPTH),
-            lit(",").alias(WORK_TRAIL),
+            history.map(col_exact).unwrap_or_else(|| lit(",")).alias(WORK_TRAIL),
             seed_nodes.alias(WORK_NODES),
             lit("").alias(WORK_RELS),
         ]);
@@ -183,19 +195,20 @@ impl LoweringContext<'_> {
             )?
             .build()?;
 
-        let edge_key = concat_exprs(vec![
+        let edge_key = if history.is_some() { Self::relationship_key(&edge_binding) } else { concat_exprs(vec![
             lit(","),
             col_exact(label_col(&edge_binding)),
             lit(":"),
             cast_utf8(col_exact(id_col(&edge_binding))),
             lit(","),
-        ]);
+        ]) };
+        let unused = if history.is_some() {
+            Expr::Not(Box::new(datafusion::functions_nested::expr_fn::array_has(col_exact(WORK_TRAIL), edge_key.clone())))
+        } else {
+            binary(df_unicode::strpos(col_exact(WORK_TRAIL), edge_key.clone()), BinaryOp::Eq, lit(0_i64))
+        };
         recursive_joined = LogicalPlanBuilder::from(recursive_joined)
-            .filter(binary(
-                df_unicode::strpos(col_exact(WORK_TRAIL), edge_key.clone()),
-                BinaryOp::Eq,
-                lit(0_i64),
-            ))?
+            .filter(unused)?
             .build()?;
 
         // Path values contain intermediate nodes only. At recursive depth d,
@@ -284,7 +297,9 @@ impl LoweringContext<'_> {
             next_id.alias(WORK_CUR_ID),
             next_label.alias(WORK_CUR_LABEL),
             binary(col_exact(WORK_DEPTH), BinaryOp::Add, lit(1_i64)).alias(WORK_DEPTH),
-            string_concat(col_exact(WORK_TRAIL), edge_key).alias(WORK_TRAIL),
+            (if history.is_some() {
+                datafusion::functions_nested::expr_fn::array_append(col_exact(WORK_TRAIL), edge_key)
+            } else { string_concat(col_exact(WORK_TRAIL), edge_key) }).alias(WORK_TRAIL),
             next_nodes.alias(WORK_NODES),
             next_rels.alias(WORK_RELS),
         ]);
@@ -384,9 +399,12 @@ impl LoweringContext<'_> {
         }
         let mut final_projection = projection_names
             .into_iter()
-            .filter(|name| has_exact_col(&consumed, name))
+            .filter(|name| has_exact_col(&consumed, name) && history != Some(name.as_str()))
             .map(|name| col_exact(&name).alias(name))
             .collect::<Vec<_>>();
+        if let Some(history) = history {
+            final_projection.push(col_exact(WORK_TRAIL).alias(history));
+        }
         if let Some(rel) = rel_binding {
             let source_display =
                 self.cypher_element_display_expr(&consumed, source, BindingShape::Node)?;
@@ -436,6 +454,7 @@ impl LoweringContext<'_> {
         rel_types: &LabelExpr,
         dir: Direction,
         length: &crate::ir::plan::Length,
+        history: Option<&str>,
     ) -> RelResult<LoweredNode> {
         let lo = length.min;
         let hi = length.max.ok_or_else(|| {
@@ -538,6 +557,9 @@ impl LoweringContext<'_> {
                         rel_types,
                     )?,
                 };
+                if let Some(history) = history {
+                    chain = self.track_relationship(chain, history, &hop_rel)?;
+                }
                 hop_rels.push(hop_rel);
                 hop_source = hop_target;
             }

@@ -128,6 +128,7 @@ impl LoweringContext<'_> {
                     ));
                 }
                 if self.language == Language::Cypher
+                    && self.options.mapping.is_none()
                     && history.is_some()
                     && matches!(
                         match_mode,
@@ -141,6 +142,10 @@ impl LoweringContext<'_> {
                         "Cypher relationship-history expansion requires runtime".into(),
                     ));
                 }
+                let sql_history = if self.language == Language::Cypher
+                    && self.options.mapping.is_some()
+                    && matches!(match_mode, crate::ir::policy::MatchMode::DifferentRelationships)
+                { history.as_deref() } else { None };
                 if length.is_variable_length() {
                     // Cypher represents a variable relationship through its
                     // synthetic path binding, then projects the user-visible
@@ -157,6 +162,7 @@ impl LoweringContext<'_> {
                         rel_types,
                         *dir,
                         length,
+                        sql_history,
                     )?
                 } else {
                     self.lower_expand(
@@ -169,6 +175,7 @@ impl LoweringContext<'_> {
                         rel_types,
                         *dir,
                         path.as_deref(),
+                        sql_history,
                     )?
                 }
             }
