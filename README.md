@@ -7,11 +7,27 @@ SPARQL over mapped tables to SQL, then run it with your own database connection.
 [Java client](https://github.com/OrchidDB/OrchidDB-java) ·
 [Examples](examples/) · [Conformance](https://docs.orchiddb.com/conformance.html)
 
+## Install the CLI
+
+Version 0.1.0 is released. Install the macOS ARM64 CLI with bundled DuckDB:
+
+```sh
+curl -fsSL https://install.orchiddb.com | bash
+export PATH="$HOME/.local/bin:$PATH"
+orchiddb --version
+```
+
+The installer verifies release checksums. Follow the
+[quickstart](https://docs.orchiddb.com/quickstart.html) to query tables without a
+Rust toolchain or source checkout. See [installation](https://docs.orchiddb.com/installation.html)
+for pinned versions, source builds, and published Rust, Python, JavaScript,
+Java, Elixir, and C++ packages.
+
 ## Compile to SQL
 
 ```toml
 [dependencies]
-orchiddb = { git = "https://github.com/OrchidDB/OrchidDB.git" }
+orchiddb = { version = "=0.1.0", default-features = false }
 ```
 
 The default library build has no DuckDB or PostgreSQL driver dependency. Supply

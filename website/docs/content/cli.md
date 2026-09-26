@@ -2,6 +2,18 @@
 
 The standalone [OrchidDB-cli](https://github.com/OrchidDB/OrchidDB-cli) bundles DuckDB and loads the official Iceberg extension by default. It compiles graph reads to SQL and returns Arrow results.
 
+## Install
+
+Install the released v0.1.0 CLI on macOS ARM64 (Apple Silicon):
+
+```sh
+curl -fsSL https://install.orchiddb.com | bash
+export PATH="$HOME/.local/bin:$PATH"
+orchiddb --version
+```
+
+See [installation](installation.md) for pinned versions, direct downloads, and source builds. The [quickstart](quickstart.md) provides complete input files and runs with the installed binary, without a repository checkout.
+
 ## Invocation
 
 ```sh
@@ -24,14 +36,14 @@ orchiddb --version
 
 Use space-separated option values. The request is a file, not inline query text. This binary does not accept the legacy managed CLI's `--query`, `--language`, or `--explain` flags.
 
-## Run the included example
+## Run a query
 
-From an `OrchidDB-cli` checkout after [installation](installation.md):
+Save `people.json` and `setup.sql` from the [quickstart](quickstart.md), then run:
 
 ```sh
-orchiddb query examples/people.json --init examples/setup.sql --format table
-orchiddb compile examples/people.json
-orchiddb query examples/people.json --init examples/setup.sql > people.arrow
+orchiddb query people.json --init setup.sql --format table --no-iceberg
+orchiddb compile people.json
+orchiddb query people.json --init setup.sql --no-iceberg > people.arrow
 ```
 
 The setup creates source tables and the request maps them to a `Person` label. Arrow IPC goes to stdout; errors go to stderr. A failure returns a nonzero exit status. See the [quickstart](quickstart.md) for complete input files.

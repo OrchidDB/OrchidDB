@@ -2,7 +2,7 @@
 
 Map your existing tables, compile a Cypher, Gremlin, or mapped SPARQL read query to SQL, then consume native Arrow batches from your own engine. The compiler receives schema and mapping metadata, not your data. Clients do not bundle DuckDB.
 
-Version 0.1.0 is published. Each repository includes working source examples; packaged native compilers currently target macOS ARM64.
+Version 0.1.0 is published on crates.io, PyPI, npm, Maven Central, and Hex, with C++ binaries on GitHub Releases. See the [package links and installation commands](installation.md#published-packages). Each repository includes working source examples; packaged native compilers currently target macOS ARM64.
 
 ## Shared execution contract
 
@@ -100,10 +100,12 @@ The context closes the reader, not the connection. Retained PyArrow batches own 
 [Repository](https://github.com/OrchidDB/OrchidDB-js). Node.js 20+:
 
 ```sh
-npm install @orchiddb/client@0.1.0
+npm install @orchiddb/client@0.1.0 apache-arrow@17
 ```
 
 From a client checkout, run `cd examples && npm ci && npm start`. Its package.json installs the published client and the application-owned DuckDB-Wasm driver.
+
+Apache Arrow is an optional peer dependency needed for the Arrow interfaces and TypeScript declarations. For compilation alone, install only `@orchiddb/client`.
 
 The published package includes the macOS ARM64 compiler. `Compiler.compile(request)` returns a SQL plan. Your `ExecutionEngine.execute(plan)` returns a schema, async Arrow batch iterator, and `close()` method. The `batches(result)` helper closes resources on completion, failure, and early exit.
 

@@ -10,6 +10,14 @@ A graph mapping connects your application vocabulary to physical columns. A cust
 
 ## Choose a starting point
 
+Version 0.1.0 is available as a [CLI installer and published language packages](installation.md#published-packages). On macOS ARM64, install the CLI and run the [quickstart](quickstart.md) without a Rust toolchain or source checkout:
+
+```sh
+curl -fsSL https://install.orchiddb.com | bash
+export PATH="$HOME/.local/bin:$PATH"
+orchiddb --version
+```
+
 | Your goal | Start here |
 | --- | --- |
 | Run your first graph query | [Quickstart](quickstart.md) |

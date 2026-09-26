@@ -2,22 +2,26 @@
 
 Query existing tables through a graph mapping. The standalone CLI bundles DuckDB and loads Iceberg by default; no graph store is created.
 
-## Build the CLI
+## Install the CLI
 
 ```sh
-git clone https://github.com/OrchidDB/OrchidDB-cli.git
-cd OrchidDB-cli
-cargo build --locked --release
+curl -fsSL https://install.orchiddb.com | bash
+export PATH="$HOME/.local/bin:$PATH"
+orchiddb --version
 ```
 
-The checkout includes `examples/setup.sql`:
+The published v0.1.0 binary supports macOS ARM64 (Apple Silicon) and includes DuckDB. No Rust toolchain or source checkout is needed. See [installation](installation.md) for version pinning, other platforms, and source builds.
+
+## Create the input files
+
+In a working directory, save this as `setup.sql`:
 
 ```sql
 CREATE TABLE people(id BIGINT, name VARCHAR);
 INSERT INTO people VALUES (1, 'Ada'), (2, 'Grace');
 ```
 
-And `examples/people.json`, describing the table schema and its graph mapping:
+Save this as `people.json`, describing the table schema and its graph mapping:
 
 ```json
 {
@@ -37,16 +41,16 @@ And `examples/people.json`, describing the table schema and its graph mapping:
 ## Execute the query
 
 ```sh
-./target/release/orchiddb query examples/people.json --init examples/setup.sql --format table
+orchiddb query people.json --init setup.sql --format table --no-iceberg
 ```
 
-The result contains Ada and Grace. The first query needs network access to install Iceberg; append `--no-iceberg` to this table-only example to skip extension setup.
+The result contains Ada and Grace. This table-only example uses `--no-iceberg` to skip extension setup. By default, the CLI loads the official Iceberg extension; its first installation requires network access.
 
 ## Inspect SQL or export Arrow
 
 ```sh
-./target/release/orchiddb compile examples/people.json
-./target/release/orchiddb query examples/people.json --init examples/setup.sql > people.arrow
+orchiddb compile people.json
+orchiddb query people.json --init setup.sql --no-iceberg > people.arrow
 ```
 
 Compilation does not open a database. Query output defaults to an Arrow IPC stream, so use `--format table` for terminal output. Each invocation above uses a fresh in-memory database.
@@ -60,7 +64,7 @@ CREATE VIEW people AS
 SELECT id, name FROM iceberg_scan('/path/to/table/metadata/v1.metadata.json');
 ```
 
-Keep the graph mapping aligned with the view's real schema. The compiler sees the metadata; DuckDB accesses the source data.
+Keep the graph mapping aligned with the view's real schema, and omit `--no-iceberg` when querying it. The compiler sees the metadata; DuckDB accesses the source data.
 
 ## Embed in your application
 

@@ -8,9 +8,11 @@ Install the released CLI with bundled DuckDB. No Rust toolchain or separate data
 
 ```sh
 curl -fsSL https://install.orchiddb.com | bash
+export PATH="$HOME/.local/bin:$PATH"
+orchiddb --version
 ```
 
-The installer downloads from [OrchidDB-cli releases](https://github.com/OrchidDB/OrchidDB-cli/releases), verifies SHA-256 checksums, and installs the executable and its bundled DuckDB library into `~/.local/bin`. It never runs sudo or edits your shell configuration. With no published release it fails with source-build instructions and leaves an existing installation unchanged.
+The installer downloads from [OrchidDB-cli releases](https://github.com/OrchidDB/OrchidDB-cli/releases), verifies SHA-256 checksums, and installs the executable and its bundled DuckDB library into `~/.local/bin`. It never runs sudo or edits your shell configuration. The `export` above updates the current shell; add it to your shell configuration to keep the command available in new terminals.
 
 Version 0.1.0 provides a **macOS ARM64 (Apple Silicon)** binary. Other platforms require a source build. The macOS binary is ad-hoc signed, not notarized.
 
@@ -21,6 +23,24 @@ curl -fsSL https://install.orchiddb.com | ORCHIDDB_VERSION=v0.1.0 ORCHIDDB_INSTA
 ```
 
 Without a version, the installer selects the most recently created published release, including prereleases. [Review the installer](https://install.orchiddb.com/) before running it. Checksums come from the same release publisher as the archive.
+
+Run the installer again to upgrade, or set `ORCHIDDB_VERSION` to select a specific release. Keep the installed `lib/libduckdb.dylib` alongside the executable on macOS. Continue with the [quickstart](quickstart.md) to run a query without cloning a repository.
+
+## Published packages
+
+The following 0.1.0 releases are available. The CLI includes DuckDB 1.5.2; embedded clients use an application-owned database driver.
+
+| Component | Published distribution | Installation |
+| --- | --- | --- |
+| CLI | [GitHub release](https://github.com/OrchidDB/OrchidDB-cli/releases/tag/v0.1.0) | Installer above; macOS ARM64 binary |
+| Rust | [orchiddb-client on crates.io](https://crates.io/crates/orchiddb-client/0.1.0) | `cargo add orchiddb-client@0.1.0 --no-default-features` |
+| Python | [orchiddb on PyPI](https://pypi.org/project/orchiddb/0.1.0/) | `python -m pip install "orchiddb[arrow]==0.1.0"` |
+| JavaScript / TypeScript | [@orchiddb/client on npm](https://www.npmjs.com/package/@orchiddb/client/v/0.1.0) | `npm install @orchiddb/client@0.1.0 apache-arrow@17` |
+| Java | [com.orchiddb:orchiddb-java on Maven Central](https://central.sonatype.com/artifact/com.orchiddb/orchiddb-java/0.1.0) | [API and native compiler dependencies](client-apis.md#java) |
+| Elixir | [orchiddb on Hex](https://hex.pm/packages/orchiddb/0.1.0) | `{:orchiddb, "~> 0.1.0"}` plus the [native compiler](client-apis.md#elixir) |
+| C++ | [GitHub release](https://github.com/OrchidDB/OrchidDB-cpp/releases/tag/v0.1.0) | [Download and configure CMake](client-apis.md#c) |
+
+Packaged native compilers in this release target macOS ARM64. The Python wheel requires macOS 26 or newer and Python 3.10+; the Node.js client requires Node.js 20+; Java requires Java 17+ and an ARM64 JVM. Rust compiles from source through Cargo. See [client setup](client-apis.md) for driver dependencies, native library setup, and runnable examples.
 
 ## From source
 
@@ -73,11 +93,11 @@ The library compiles metadata and query text only; result data never crosses thi
 
 ## Core compiler library
 
-For direct compiler development:
+Install the published core compiler directly from crates.io:
 
 ```toml
 [dependencies]
-orchiddb = { git = "https://github.com/OrchidDB/OrchidDB.git", default-features = false }
+orchiddb = { version = "=0.1.0", default-features = false }
 ```
 
 See [SQL compilation](sql-compiler.md). For application integration, prefer the [Rust client](client-apis.md#rust).
