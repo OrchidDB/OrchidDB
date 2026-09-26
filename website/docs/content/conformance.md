@@ -3,8 +3,7 @@
 Compare Cypher with Neo4j Community and PuppyGraph, Gremlin with SQLg, PuppyGraph and JanusGraph, and SPARQL with Apache Jena.
 The recorded percentages describe the optional managed runtime and the tested interfaces. They do not establish full language conformance for the newer SQL compiler clients, which reject writes, remote SERVICE calls, and operations that cannot lower to SQL. See [compiler boundaries](sql-compiler.md#boundaries).
 
-The recorded results are historical evidence for their recorded source revisions.
-They are not a fresh run of the current code. Current compiler and managed runtime
+OrchidDB results include the complete relational-constraint validation run: 6,382 passes with unchanged exclusions. Peer results retain their recorded source revisions. Current compiler and managed runtime
 APIs reject SPARQL `SERVICE`, including `SERVICE SILENT`; OrchidDB does not issue
 remote SPARQL HTTP requests.
 
@@ -17,7 +16,7 @@ All upstream scenarios appear in the report, including cases that were skipped o
 ## Comparison report
 
 [Open the full conformance report](conformance-report.html) for suite totals,
-feature matrices, per-scenario results, timings, and downloadable JSON and CSV
+feature matrices, per-scenario results, query costs, timings, and downloadable JSON and CSV
 evidence. The report is generated from committed results; building the docs
 does not run the test suites.
 
@@ -57,3 +56,21 @@ unchanged. Where local paths changed a case definition, a separate
 `normalized_case_sha256` identifies the displayed definition while
 `case_sha256` retains its original value. The original records are available
 in [the source snapshot](https://github.com/OrchidDB/OrchidDB/tree/b4c6909283114bfd77008de92929c428fc700062/conformance).
+
+## Query cost
+
+[Query cost in the report](conformance-report.html#query-cost) ranks OrchidDB
+scenarios by measured work and shows measurement coverage. Each scenario includes
+its cost; JSON evidence includes query text and individual counters, and the CSV
+includes metric version, coverage, work units and query request time.
+
+Version 1 adds SQL output rows, native input/output rows, source rows, SQL output
+memory in rounded-up KiB, and 100 units per SQL execution or source request.
+It measures work at execution boundaries, not internal database scans or all
+DataFusion operators. Partial costs are lower bounds; unmeasured work is shown
+explicitly. Fixture and observation queries are excluded from rankings.
+Costs do not change pass/fail outcomes or compare performance between products.
+
+The first measured run provides a baseline. Use `--cost-baseline` with the local
+conformance runner to compare later runs with matching case definitions, query
+text, metric version and complete coverage.

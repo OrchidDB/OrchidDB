@@ -1,0 +1,190 @@
+{
+  "verified_at": "2026-09-26T23:30:04.585439+00:00",
+  "base_commit": "968904b2a69ae88f41f101d89a9eb15aba0decdf",
+  "working_tree": true,
+  "source_fingerprint": "915e52e76b34135eb10c61bcc46e9207ae5f8bcaa9981f9bd02bdabe1fbcac48",
+  "source_files": 409,
+  "suites": {
+    "opencypher": {
+      "started_at": "2026-09-26T23:16:54.301597+00:00",
+      "finished_at": "2026-09-26T23:22:53.519813+00:00",
+      "outcomes": {
+        "pass": 3897
+      },
+      "changed_outcomes": 0,
+      "changed_case_definitions": 0,
+      "artifact": "conformance/upstream-results/orchiddb-opencypher.json",
+      "sha256": "7d5fdb36fdc165e823850a1de41d3584cc91dde33e10157fb8676cae2aba2b97",
+      "cost_coverage": {
+        "boundary_work": 3202,
+        "elapsed_only": 695
+      },
+      "cases_with_work_measurements": 3202,
+      "highest_work": [
+        {
+          "id": "opencypher:tck/features/expressions/aggregation/Aggregation3.feature:51",
+          "work_units": 4006009,
+          "request_elapsed_micros": 4245168,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "opencypher:tck/features/clauses/return/Return6.feature:82",
+          "work_units": 14691,
+          "request_elapsed_micros": 33332,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "opencypher:tck/features/expressions/quantifier/Quantifier10.feature:33",
+          "work_units": 13239,
+          "request_elapsed_micros": 637719,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "opencypher:tck/features/expressions/quantifier/Quantifier10.feature:56",
+          "work_units": 13239,
+          "request_elapsed_micros": 616773,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "opencypher:tck/features/expressions/quantifier/Quantifier11.feature:33",
+          "work_units": 13239,
+          "request_elapsed_micros": 617292,
+          "coverage": "boundary_work"
+        }
+      ],
+      "expensive_cases": 1
+    },
+    "tinkerpop": {
+      "started_at": "2026-09-26T23:26:32.749848+00:00",
+      "finished_at": "2026-09-26T23:29:47.505795+00:00",
+      "outcomes": {
+        "pass": 1511
+      },
+      "changed_outcomes": 0,
+      "changed_case_definitions": 0,
+      "artifact": "conformance/upstream-results/orchiddb-tinkerpop.json",
+      "sha256": "a78a7b7c4a14645d295d8219bdf3da248b37dc523ffa16dae15215c31110b36f",
+      "cost_coverage": {
+        "boundary_work": 1417,
+        "elapsed_only": 78,
+        "partial": 16
+      },
+      "cases_with_work_measurements": 1433,
+      "highest_work": [
+        {
+          "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Graph.feature:60",
+          "work_units": 590245,
+          "request_elapsed_micros": 3559027,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/Group.feature:165",
+          "work_units": 291570,
+          "request_elapsed_micros": 2909220,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Count.feature:91",
+          "work_units": 63569,
+          "request_elapsed_micros": 1136102,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/sideEffect/SideEffectCap.feature:112",
+          "work_units": 48351,
+          "request_elapsed_micros": 554710,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Count.feature:102",
+          "work_units": 41420,
+          "request_elapsed_micros": 732753,
+          "coverage": "boundary_work"
+        }
+      ],
+      "expensive_cases": 2
+    },
+    "rdf": {
+      "started_at": "2026-09-26T23:16:54.301521+00:00",
+      "finished_at": "2026-09-26T23:17:53.695319+00:00",
+      "outcomes": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "changed_outcomes": 0,
+      "changed_case_definitions": 0,
+      "artifact": "conformance/upstream-results/orchiddb-rdf.json",
+      "sha256": "d6cbb822bc9f35397e164ad64dfcf361b3259e7abdae5ac3cebdeca8ce676ed1",
+      "cost_coverage": {
+        "boundary_work": 512,
+        "elapsed_only": 462,
+        "not_executed": 151
+      },
+      "cases_with_work_measurements": 512,
+      "highest_work": [
+        {
+          "id": "rdf:sparql/sparql10/algebra/manifest.ttl#filter-nested-2",
+          "work_units": 202,
+          "request_elapsed_micros": 44094,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "rdf:sparql/sparql10/open-world/manifest.ttl#open-eq-10",
+          "work_units": 165,
+          "request_elapsed_micros": 118823,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "rdf:sparql/sparql10/open-world/manifest.ttl#open-eq-11",
+          "work_units": 165,
+          "request_elapsed_micros": 186798,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "rdf:sparql/sparql10/open-world/manifest.ttl#open-eq-08",
+          "work_units": 153,
+          "request_elapsed_micros": 118098,
+          "coverage": "boundary_work"
+        },
+        {
+          "id": "rdf:sparql/sparql11/functions/manifest.ttl#concat02",
+          "work_units": 153,
+          "request_elapsed_micros": 64650,
+          "coverage": "boundary_work"
+        }
+      ],
+      "expensive_cases": 0
+    }
+  },
+  "query_cost_metric_version": 1,
+  "query_cost_scope": "SQL boundary work and native graph-kernel visits; elapsed-only coverage explicitly identified for syntax, errors and RDF updates",
+  "local_checks": {
+    "unit_tests": 195,
+    "integration_tests": 165,
+    "constraint_tests": 20,
+    "cost_tests": 4,
+    "python_cost_report_tests": 4,
+    "jvm_tests": 64,
+    "all_targets_compile": [
+      "default",
+      "duckdb"
+    ],
+    "logs": {
+      "local-tests-final.log": "2f5da1aefb10d7c443a70fc7cec62d9f70bbf9dea1e1d0cedd489b295b88c341",
+      "check-default-final.log": "dbb8b013f33e92f935ea3f883b52160080c23f58516cd5a3b95cb97e0ffe77af",
+      "check-duckdb-final.log": "80856aa119ce534883826b56d7cfb2b2b8411d2019b0fedc0d993f7a6d8ad8ec",
+      "jvm-tests-final.log": "9ddf3781b5e43a87b1d67caac2bc4b251f9ce8d77c509c8369129f4b0359fd55",
+      "adapter-build-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "review_unchanged": {
+    "examples/mapped_execution_plans.rs": "bce1d97ba256d87179b52e1088c44bef8da149bace14735290307f153e9d4ab2",
+    "docs/mapped-execution-plans.md": "bccd06f42f91ce307d7a626c9d9d2a0c6cc65e26e9b1f4da420256225ffb4e54",
+    "docs/mapped-execution-plan-review.md": "108b3b7163c5c45335731b17fc1bedd2379c1ccb3f4c96152b6b14592ef7d413"
+  },
+  "binaries": {
+    "upstream": "9084942229fcc16e1afa69ffb3100a868d4238b84c094f96f6644afbadedac6f",
+    "orchiddb-jvm-store": "cbffb2d56b9b7680ac29b107073d28ff158f34befb560725afed2a6a38070d87"
+  }
+}

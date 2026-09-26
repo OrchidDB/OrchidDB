@@ -218,6 +218,9 @@ pub struct GraphMapping {
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
+    constraints: super::constraints::ConstraintCatalog,
+    constraint_scope: Option<String>,
+    view_dependencies: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl fmt::Debug for GraphMapping {
@@ -233,6 +236,114 @@ impl fmt::Debug for GraphMapping {
 impl GraphMapping {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Supply engine-neutral constraints. The caller owns enforcement and revision validity.
+    pub fn set_constraints(&mut self, catalog: super::constraints::ConstraintCatalog) -> &mut Self {
+        self.constraints = catalog;
+        self
+    }
+    pub fn constraints(&self) -> &super::constraints::ConstraintCatalog {
+        &self.constraints
+    }
+    /// Activate facts validated in this exact caller-owned immutable snapshot.
+    /// Never reuse a mapping with this scope after writes or snapshot changes.
+    pub fn set_constraint_scope(&mut self, scope: Option<String>) -> &mut Self {
+        self.constraint_scope = scope;
+        self
+    }
+    pub fn validate_constraints(&self) -> RelResult<()> {
+        let schemas = self
+            .tables
+            .iter()
+            .map(|(n, p)| (n.clone(), p.schema()))
+            .collect();
+        self.constraints
+            .validate(&schemas)
+            .map_err(RelError::Unsupported)
+    }
+    fn constrained_provider(&self, name: &str) -> DFResult<Arc<dyn TableProvider>> {
+        self.validate_constraints()
+            .map_err(|e| DataFusionError::Plan(e.to_string()))?;
+        let p = self
+            .tables
+            .get(name)
+            .ok_or_else(|| DataFusionError::Plan(format!("unknown mapped table {name}")))?;
+        // Rebind view definitions against the current supplied catalog, so a
+        // replacement catalog cannot leave old proofs captured inside a view.
+        let p = if p.get_logical_plan().is_some() {
+            if let Some(sql) = p.get_table_definition() {
+                Arc::new(ViewTable::new(
+                    self.plan_sql(sql)
+                        .map_err(|e| DataFusionError::Plan(e.to_string()))?,
+                    Some(sql.into()),
+                )) as Arc<dyn TableProvider>
+            } else {
+                p.clone()
+            }
+        } else {
+            p.clone()
+        };
+        super::constraints::bind(name, p, &self.constraints, self.constraint_scope.as_deref())
+    }
+    /// Plan a relational query against the supplied mapping schemas and constraints.
+    pub fn relational_plan(&self, sql: &str) -> RelResult<LogicalPlan> {
+        self.plan_sql(sql)
+    }
+
+    /// Degree upper bounds and endpoint integrity derived from supplied facts.
+    pub fn relationship_multiplicity(
+        &self,
+        rel_type: &str,
+    ) -> RelResult<super::constraints::RelationshipMultiplicity> {
+        use super::constraints::{RelationshipMultiplicity, analyze};
+        let edge = self
+            .edge(rel_type)
+            .ok_or_else(|| RelError::Unsupported(format!("unknown relationship {rel_type}")))?;
+        let plan = self.source_plan(&edge.source)?;
+        let p = analyze(&plan);
+        let index = |name: &str| {
+            plan.schema()
+                .index_of_column_by_name(None, name)
+                .ok_or_else(|| RelError::Unsupported(format!("missing endpoint {name}")))
+        };
+        let src = index(&edge.src_column)?;
+        let dst = index(&edge.dst_column)?;
+        let exists = |index: usize, label: &str| -> RelResult<bool> {
+            let node = self
+                .node(label)
+                .ok_or_else(|| RelError::Unsupported(format!("unknown endpoint label {label}")))?;
+            let target = self.source_plan(&node.source)?;
+            let t = analyze(&target);
+            let key = target
+                .schema()
+                .index_of_column_by_name(None, &node.id_column)
+                .ok_or_else(|| RelError::Unsupported("missing target identity".into()))?;
+            Ok(p.non_null.contains(&index)
+                && (p.foreign_keys.iter().any(|f| {
+                    f.columns == vec![index]
+                        && t.complete_sources.contains(&f.target)
+                        && t.origins
+                            .get(key)
+                            .and_then(|o| o.as_ref())
+                            .is_some_and(|o| {
+                                o.table == f.target && f.references == vec![o.column.clone()]
+                            })
+                }) || p
+                    .origins
+                    .get(index)
+                    .and_then(|o| o.as_ref())
+                    .is_some_and(|o| {
+                        t.complete_sources.contains(&o.table)
+                            && t.origins.get(key).and_then(|o| o.as_ref()) == Some(o)
+                    })))
+        };
+        Ok(RelationshipMultiplicity {
+            at_most_one_outgoing: p.unique_on(&[src], false),
+            at_most_one_incoming: p.unique_on(&[dst], false),
+            source_endpoint_exists: exists(src, &edge.src_label)?,
+            target_endpoint_exists: exists(dst, &edge.dst_label)?,
+        })
     }
 
     /// Register (or replace) a node-label mapping.
@@ -256,7 +367,9 @@ impl GraphMapping {
         name: impl Into<String>,
         provider: Arc<dyn TableProvider>,
     ) -> &mut Self {
-        self.tables.insert(name.into(), provider);
+        let name = name.into();
+        self.view_dependencies.remove(&name);
+        self.tables.insert(name, provider);
         self
     }
 
@@ -265,11 +378,27 @@ impl GraphMapping {
     /// and projections push through it); on an external engine the name is
     /// expected to exist as a table or view in the target database.
     pub fn register_view(&mut self, name: impl Into<String>, sql: &str) -> RelResult<&mut Self> {
-        let plan = self.plan_sql(sql)?;
-        self.tables.insert(
-            name.into(),
-            Arc::new(ViewTable::new(plan, Some(sql.to_string()))),
-        );
+        let name = name.into();
+        let (plan, dependencies) = self.plan_sql_with_dependencies(sql)?;
+        let mut pending = dependencies.iter().cloned().collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        while let Some(dependency) = pending.pop() {
+            if dependency == name {
+                return Err(RelError::Unsupported(format!("cyclic mapped view {name}")));
+            }
+            if seen.insert(dependency.clone()) {
+                pending.extend(
+                    self.view_dependencies
+                        .get(&dependency)
+                        .into_iter()
+                        .flatten()
+                        .cloned(),
+                );
+            }
+        }
+        self.view_dependencies.insert(name.clone(), dependencies);
+        self.tables
+            .insert(name, Arc::new(ViewTable::new(plan, Some(sql.to_string()))));
         Ok(self)
     }
 
@@ -293,10 +422,20 @@ impl GraphMapping {
     /// for an external engine these are the user's own tables/views and must
     /// not be materialized by the SQL layer.
     pub fn physical_table_names(&self) -> BTreeSet<String> {
-        self.tables.keys().cloned().chain(
-            self.nodes.values().map(|m| &m.source).chain(self.edges.values().map(|m| &m.source))
-                .filter_map(|source| match source {MappedSource::Table(name)=>Some(name.clone()),MappedSource::Query(_)=>None})
-        ).collect()
+        self.tables
+            .keys()
+            .cloned()
+            .chain(
+                self.nodes
+                    .values()
+                    .map(|m| &m.source)
+                    .chain(self.edges.values().map(|m| &m.source))
+                    .filter_map(|source| match source {
+                        MappedSource::Table(name) => Some(name.clone()),
+                        MappedSource::Query(_) => None,
+                    }),
+            )
+            .collect()
     }
 
     /// Build the source plan for a mapped source: a bare scan for
@@ -304,7 +443,7 @@ impl GraphMapping {
     fn source_plan(&self, source: &MappedSource) -> RelResult<LogicalPlan> {
         match source {
             MappedSource::Table(name) => {
-                let provider = self.tables.get(name).ok_or_else(|| {
+                let _provider = self.tables.get(name).ok_or_else(|| {
                     RelError::Unsupported(format!(
                         "mapping references table `{name}` but no provider/schema is registered; \
                          call GraphMapping::register_table or register_table_schema"
@@ -312,7 +451,7 @@ impl GraphMapping {
                 })?;
                 Ok(LogicalPlanBuilder::scan(
                     name.clone(),
-                    provider_as_source(Arc::clone(provider)),
+                    provider_as_source(self.constrained_provider(name)?),
                     None,
                 )?
                 .build()?)
@@ -324,6 +463,9 @@ impl GraphMapping {
     /// Parse a SQL `SELECT` against the registered tables using
     /// datafusion-sql.
     fn plan_sql(&self, sql: &str) -> RelResult<LogicalPlan> {
+        Ok(self.plan_sql_with_dependencies(sql)?.0)
+    }
+    fn plan_sql_with_dependencies(&self, sql: &str) -> RelResult<(LogicalPlan, BTreeSet<String>)> {
         let mut statements = datafusion::sql::parser::DFParser::parse_sql(sql)
             .map_err(|err| RelError::Unsupported(format!("mapping query parse: {err}")))?;
         if statements.len() != 1 {
@@ -335,9 +477,10 @@ impl GraphMapping {
         let statement = statements.pop_front().expect("one statement");
         let provider = MappingContextProvider::new(self);
         let planner = SqlToRel::new(&provider);
-        planner
+        let plan = planner
             .statement_to_plan(statement)
-            .map_err(|err| RelError::Unsupported(format!("mapping query plan: {err}")))
+            .map_err(|err| RelError::Unsupported(format!("mapping query plan: {err}")))?;
+        Ok((plan, provider.requested.into_inner()))
     }
 }
 
@@ -698,6 +841,7 @@ fn union_all(mut branches: Vec<LogicalPlan>) -> RelResult<LogicalPlan> {
 
 struct MappingContextProvider<'a> {
     mapping: &'a GraphMapping,
+    requested: std::cell::RefCell<BTreeSet<String>>,
     options: ConfigOptions,
     udfs: Vec<Arc<ScalarUDF>>,
     udafs: Vec<Arc<AggregateUDF>>,
@@ -708,6 +852,7 @@ impl<'a> MappingContextProvider<'a> {
     fn new(mapping: &'a GraphMapping) -> Self {
         Self {
             mapping,
+            requested: Default::default(),
             options: ConfigOptions::default(),
             udfs: datafusion::functions::all_default_functions(),
             udafs: datafusion::functions_aggregate::all_default_aggregate_functions(),
@@ -718,9 +863,17 @@ impl<'a> MappingContextProvider<'a> {
 
 impl ContextProvider for MappingContextProvider<'_> {
     fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
-        let table = name.table();
+        let qualified = name.to_string();
+        let table = if self.mapping.tables.contains_key(&qualified) {
+            qualified.as_str()
+        } else {
+            name.table()
+        };
+        self.requested.borrow_mut().insert(table.to_string());
         match self.mapping.tables.get(table) {
-            Some(provider) => Ok(provider_as_source(Arc::clone(provider))),
+            Some(_) => Ok(provider_as_source(
+                self.mapping.constrained_provider(table)?,
+            )),
             None => Err(DataFusionError::Plan(format!(
                 "mapping query references unknown table `{table}`; register it on the GraphMapping"
             ))),
@@ -811,6 +964,12 @@ impl GraphMapping {
         let mut mapping = GraphMapping::new();
         for (path, entries) in &sections {
             match path.as_slice() {
+                [kind] if kind == "constraints" => {
+                    let json = require_key(entries, "catalog", "constraints")?;
+                    mapping.constraints = serde_json::from_str(&json)
+                        .map_err(|e| RelError::Unsupported(format!("constraint catalog: {e}")))?;
+                    // Snapshot activation is deliberately not serialized.
+                }
                 [kind, name] if kind == "node" => {
                     let source = section_source(entries, &format!("node.{name}"))?;
                     let id = require_key(entries, "id", &format!("node.{name}"))?;
@@ -911,6 +1070,12 @@ impl GraphMapping {
                 }
             }
             out.push('\n');
+        }
+        if !self.constraints.tables.is_empty() || !self.constraints.revision.is_empty() {
+            out.push_str(&format!(
+                "[constraints]\ncatalog = {}\n",
+                quote(&serde_json::to_string(&self.constraints).expect("serializable catalog"))
+            ));
         }
         out
     }

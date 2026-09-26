@@ -42,6 +42,10 @@ pub struct CompileRequest {
     pub functions: Vec<Function>,
     #[serde(default)]
     pub ontology: Ontology,
+    #[serde(default)]
+    pub constraints: crate::ir::rel::constraints::ConstraintCatalog,
+    #[serde(default)]
+    pub constraint_scope: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,6 +134,7 @@ pub struct CompiledSql {
     pub dialect: String,
     pub sql: String,
     pub fields: Vec<String>,
+    pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
 }
 
 /// Supported schema types are explicit. Unknown JDBC/extension types must be
@@ -258,6 +263,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         mapping.register_table_schema(&table.name, schema.clone());
         schemas.insert(table.name.clone(), schema);
     }
+    mapping.set_constraints(request.constraints.clone()).set_constraint_scope(request.constraint_scope.clone());
+    mapping.validate_constraints().map_err(|e|e.to_string())?;
     let check = |table: &str, column: &str, id: bool| -> Result<(), String> {
         let schema = schemas
             .get(table)
@@ -337,7 +344,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         .map(|(k, v)| Ok((k.clone(), parameter(v)?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     let mapping = Arc::new(mapping);
-    let lowered = with_operator_table(Arc::new(registry), || -> Result<_, String> {
+    let mut lowered = with_operator_table(Arc::new(registry), || -> Result<_, String> {
         let plan = match request.language.as_str() {
             "cypher" => {
                 let mut parsed = crate::language::cypher::parser::parse_query(&request.query)
@@ -427,12 +434,15 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         }
         Ok(TreeNodeRecursion::Continue)
     }).map_err(|e| e.to_string())?;
+    let (optimized, constraint_proofs) = crate::ir::rel::constraints::optimize(lowered.plan.clone()).map_err(|e|e.to_string())?;
+    lowered.plan = optimized;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
         version: 1,
         dialect: request.dialect,
         sql,
         fields: lowered.fields,
+        constraint_proofs,
     })
 }
 

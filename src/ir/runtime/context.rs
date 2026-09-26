@@ -11,6 +11,7 @@ use super::{RuntimeError, IrResult, Row};
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
     pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
+    pub(crate) query_cost: crate::ir::QueryCost,
     pub(crate) nested_dag_stats: crate::ir::rel::dag::DagStats,
     pub(crate) sql_timeout: Option<std::time::Duration>,
     pub(crate) jvm: crate::ir::jvm::JvmExecution,
@@ -127,6 +128,7 @@ impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
             relational_groups: BTreeMap::new(),
+            query_cost: Default::default(),
             nested_dag_stats: Default::default(),
             sql_timeout:None,
             jvm: Default::default(),

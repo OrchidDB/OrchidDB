@@ -128,7 +128,7 @@ def rows_equal(actual,expected,ordered,unordered_lists=False):
  return True
 class Cypher:
  def __init__(self,engine):
-  self.engine=engine;self.rust=None;self.driver=None;self.fixture=None;self.seed=None
+  self.engine=engine;self.rust=None;self.driver=None;self.fixture=None;self.seed=None;self.query_costs=[];self.query_phase="fixture"
   if engine=='neo4j':
    from cypher_driver import install_lossless_temporal_hydration
    install_lossless_temporal_hydration()
@@ -140,7 +140,12 @@ class Cypher:
    self.fixture=PuppyFixture()
  def query(self,q,params=None):
   if self.engine=='orchiddb':
-   result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
+   started=time.monotonic()
+   try:result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
+   except Exception:
+    self.query_costs.append({'query':q,'phase':getattr(self,'query_phase','fixture'),'cost':{'metric_version':1,'coverage':'elapsed_only','work_units':None,'request_elapsed_micros':int((time.monotonic()-started)*1000000),'reason':'adapter_error'}})
+    raise
+   self.query_costs.append({'query':q,'phase':getattr(self,'query_phase','fixture'),'cost':result.get('query_cost')})
    if result.get('native_rows') is not None:
     result['rows']=[[native_value(v) for v in row] for row in result['native_rows']]
     if result.get('native_columns') is not None:result['columns']=result['native_columns']
@@ -171,6 +176,7 @@ class Cypher:
     result['classification']=classify(result['code'],getattr(e,'message',str(e)),phase,result['diagnostics'])
    return result
  def snapshot(self):
+  previous=getattr(self,'query_phase','fixture');self.query_phase='observation'
   if self.engine=="puppygraph":return self.fixture.snapshot()
   queries={'nodes':'MATCH (n) RETURN id(n)','relationships':'MATCH ()-[r]->() RETURN id(r)','labels':'MATCH (n) UNWIND labels(n) AS l RETURN DISTINCT l','node_properties':'MATCH (n) UNWIND keys(n) AS k RETURN id(n),k,n[k]','edge_properties':'MATCH ()-[r]->() UNWIND keys(r) AS k RETURN id(r),k,r[k]'}
   result={}
@@ -178,8 +184,10 @@ class Cypher:
    v=self.query(q)
    if 'error' in v or 'adapter_error' in v:raise ValueError('Cannot observe TCK side effects: '+str(v))
    result[k]=set(json.dumps(r,sort_keys=True) for r in v['rows'])
+  self.query_phase=previous
   return result
  def run(self,case):
+  self.query_costs=[];self.query_phase='fixture'
   steps=case['steps'];setup=[];params={};original=next(s['doc'] for s in steps if s['text']=='executing query:')
   procedures=[s for s in steps if s['text'].startswith('there exists a procedure')]
   if procedures and self.engine!='orchiddb':return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
@@ -233,6 +241,7 @@ class Cypher:
     if text in ['any graph','an empty graph','having executed:','parameters are:'] or re.fullmatch(r'the binary-tree-[12] graph',text):continue
     if text in ['executing query:','executing control query:']:
      if text=='executing query:':before=self.snapshot()
+     self.query_phase='query' if text=='executing query:' else 'control'
      start=time.monotonic();actual=self.query(s['doc'],params);query_ms.append(round((time.monotonic()-start)*1000,3));continue
     if 'should be raised' in text:
      if 'error' not in actual:return {'status':'fail','query':original,'expected_error':text,'actual':actual,'query_ms':query_ms}

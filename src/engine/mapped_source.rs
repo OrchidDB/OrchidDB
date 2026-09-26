@@ -447,6 +447,10 @@ pub(super) fn attach(
 ) -> Result<PropertyGraph, String> {
     let mut graph;
     let mut resolved = (*mapping).clone();
+    // Runtime statements may write or observe a new snapshot. Only persistent
+    // enforcement contracts survive here; snapshot proofs belong to caller-owned
+    // immutable compile/execution scopes.
+    resolved.set_constraint_scope(None);
     {
         let mut guard = executor.lock().map_err(|e| e.to_string())?;
         let connection = guard.connection().map_err(|e| e.to_string())?;

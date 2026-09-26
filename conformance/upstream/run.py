@@ -91,7 +91,7 @@ class Gremlin:
  def close(self):
   if self.process:self.process.close()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);args=p.parse_args()
  if args.resume and args.engine=='orchiddb' and args.suite=='tinkerpop':p.error('OrchidDB Gremlin conformance requires one uninterrupted instance; resume is not permitted')
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
@@ -163,6 +163,7 @@ def main():
   with journal.open('a') as f:
    for i,case in enumerate(cases):
     if case['id'] in done:continue
+    if adapter is not None and hasattr(adapter,'query_costs'):adapter.query_costs=[]
     before=time.monotonic()
     try:result=adapter.run(case) if adapter else {'status':'not-applicable','reason':'No native interface for this suite in the compared product'}
     except TimeoutError as e:result={'status':'timeout','reason':str(e)}
@@ -170,6 +171,9 @@ def main():
     if args.suite=='tinkerpop':
      capability=gremlin_capability(result)
      if capability:result={**result,'capability':capability}
+    if args.engine=='orchiddb':
+     from query_cost import collect
+     result['query_cost']=collect(adapter,result)
     result={'id':case['id'],'case_sha256':hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest(),'elapsed_ms':round((time.monotonic()-before)*1000,3),**result}
     results.append(result);f.write(json.dumps(result)+'\n');f.flush()
     if (i+1)%50==0:print(args.engine,args.suite,i+1,'/',len(cases),flush=True)
@@ -184,6 +188,10 @@ def main():
   instances=sorted({r['engine_instance'] for r in results if r.get('engine_instance')})
   content['execution_profile']['engine_instances']=instances
   content['execution_profile']['single_instance_verified']=len(instances)==1 and all(r.get('engine_instance')==instances[0] for r in results)
+ if args.engine=='orchiddb':
+  from query_cost import summarize
+  baseline=json.loads(args.cost_baseline.read_text()) if args.cost_baseline else None
+  content['query_cost_summary']=summarize(results,args.cost_work_threshold,baseline)
  content['build']=build
  output.write_text(json.dumps(content,indent=2)+'\n')
  from collections import Counter

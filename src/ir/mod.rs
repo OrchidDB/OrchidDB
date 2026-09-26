@@ -9,6 +9,8 @@ pub mod df;
 pub mod diagnostics;
 pub mod procedures;
 pub mod exec;
+pub mod query_cost;
+pub use query_cost::QueryCost;
 pub mod expr;
 pub mod functions;
 pub mod gremlin_semantics;

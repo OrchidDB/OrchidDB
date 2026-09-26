@@ -125,11 +125,15 @@ async fn rdf(req:&Value)->Result<Value,String>{
   let names=rows.into_iter().filter_map(|row|match row.into_iter().next().flatten(){Some(RdfTermValue::Iri(v))=>Some(v),_=>None}).collect::<Vec<_>>();
   return Ok(json!({"quads":quads,"named_graphs":names}));
  }
- match engine.query(req["query"].as_str().unwrap_or("")).await? {
+ let result=engine.query(req["query"].as_str().unwrap_or("")).await?;
+ let response:Result<Value,String>=match result {
  SparqlResults::Boolean(v)=>Ok(json!({"boolean":v})),
  SparqlResults::Solutions{variables,rows}=>Ok(json!({"variables":variables.iter().map(|s|s.trim_start_matches('?')).collect::<Vec<_>>(),"rows":rows.into_iter().map(|r|r.into_iter().map(|v|v.map(term)).collect::<Vec<_>>()).collect::<Vec<_>>()})),
  SparqlResults::Graph(rows)=>Ok(json!({"graph":rows.into_iter().map(|r|r.into_iter().map(term).collect::<Vec<_>>()).collect::<Vec<_>>()}))
- }
+ };
+ let mut output=response?;
+ output["query_cost"]=engine.last_query_stats().ok_or("missing RDF execution stats")?.cost.report();
+ Ok(output)
 }
 #[tokio::main]
 async fn main(){
@@ -137,6 +141,7 @@ async fn main(){
  for line in io::stdin().lock().lines(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
  let op=req["op"].as_str().unwrap_or("cypher");
+ let request_started=std::time::Instant::now();
  let result:Result<Value,String>=match op{
  "fixture"=>fixture_graph(&req).and_then(|graph|engine.replace_graph(graph).map(|_|json!({"ok":true}))),
  "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
@@ -164,9 +169,14 @@ async fn main(){
   }),
   Err((message,detail))=>{classification=detail;Err(message)}
  }};
- r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
- let mut output=result.unwrap_or_else(|e|json!({"error":e}));output["engine_instance"]=json!(std::process::id().to_string());println!("{output}");io::stdout().flush().unwrap();
+ let mut output=result.unwrap_or_else(|e|json!({"error":e}));
+ if matches!(op,"cypher"|"gremlin"|"rdf"|"sparql-syntax") {
+  if output.get("query_cost").is_none() {output["query_cost"]=json!({"metric_version":1,"coverage":"elapsed_only","work_units":null,"reason":if op=="sparql-syntax"{"syntax_only"}else if output.get("error").is_some(){"query_error"}else{"non_dag_update"}});}
+  output["query_cost"]["request_elapsed_micros"]=json!(request_started.elapsed().as_micros().min(u64::MAX as u128) as u64);
+ }
+ output["engine_instance"]=json!(std::process::id().to_string());println!("{output}");io::stdout().flush().unwrap();
  }
 }
 

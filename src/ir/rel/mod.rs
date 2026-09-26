@@ -50,6 +50,7 @@ mod gremlin;
 mod gremlin_state;
 mod gremlin_strings;
 pub mod mapping;
+pub mod constraints;
 pub mod rdf;
 mod repeat;
 mod sparql;
@@ -326,7 +327,8 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
         .set_usize("datafusion.optimizer.max_passes", 1)
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
     let ctx = optimizer::session(config);
-    let df = ctx.execute_logical_plan(lowered.plan).await?;
+    let (plan, _) = constraints::optimize(lowered.plan)?;
+    let df = ctx.execute_logical_plan(plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {
         RecordBatch::new_empty(output_schema)

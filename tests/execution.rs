@@ -33,6 +33,7 @@ impl SqlSession for Session {
 }
 fn query() -> CompiledSql {
     CompiledSql {
+        constraint_proofs: vec![],
         version: 1,
         dialect: "duckdb".into(),
         sql: "SELECT 42".into(),

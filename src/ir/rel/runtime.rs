@@ -356,9 +356,18 @@ impl ExecutionPlan for KernelExec {
                     if kernel.name != "DecodeTraversers" {state.graph.prefetch_source(rows);}
                 }
                 state.graph.check_source().map_err(failure)?;
+                if !kernel.name.contains("DecodeTraversers") {
+                    let cost = &mut state.context.query_cost;
+                    cost.native_kernel_calls = cost.native_kernel_calls.saturating_add(1);
+                    cost.native_input_rows = cost.native_input_rows.saturating_add(input_rows.iter().map(|rows| rows.len() as u64).sum::<u64>());
+                }
                 let rows = (kernel.kernel)(input_rows, &mut state)
                     .map_err(|error| DataFusionError::External(Box::new(error)))?;
                 state.graph.check_source().map_err(failure)?;
+                if !kernel.name.contains("DecodeTraversers") {
+                    let cost = &mut state.context.query_cost;
+                    cost.native_output_rows = cost.native_output_rows.saturating_add(rows.len() as u64);
+                }
                 encode_rows(rows)
             })
             .await
@@ -524,6 +533,7 @@ async fn execute_rows_inner(
     state.context.jvm.check().map_err(QueryExecutionError::from_error)?;
     graph.restore_execution_overlay(&state.graph);
     stats.merge_execution(&state.context.nested_dag_stats);
+    stats.cost.add_work(&state.context.query_cost);
     Ok((rows, stats))
 }
 
@@ -1416,7 +1426,8 @@ pub(crate) async fn execute_with_session(
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), QueryExecutionError> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
-    let (rows, stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources, true).await?;
+    let started = std::time::Instant::now();
+    let (rows, mut stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources, true).await?;
     let (fields, form) = match plan.root.as_ref() {
         Node::GraphReturn {
             fields,
@@ -1440,6 +1451,8 @@ pub(crate) async fn execute_with_session(
             .map_err(QueryExecutionError::from_error)?;
     local.check_source()?;
     if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
+    stats.cost.result_rows = returned.batch.num_rows() as u64;
+    stats.cost.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     Ok((returned, stats))
 }
 

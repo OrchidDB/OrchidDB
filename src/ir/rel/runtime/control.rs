@@ -26,6 +26,7 @@ struct PreparedSubplan {
     state: Arc<Mutex<State>>,
     task: Arc<TaskContext>,
     stats: super::super::dag::DagStats,
+    cost: Arc<Mutex<crate::ir::QueryCost>>,
 }
 impl Subplan {
     fn run(
@@ -68,9 +69,10 @@ impl Subplan {
                 super::super::dag::DagSession::with_shared(source.executor(), mapping.physical_table_names()));
             #[cfg(not(feature = "duckdb"))]
             let resources = None;
+            let cost = Arc::new(Mutex::new(crate::ir::QueryCost::default()));
             let result = if let Some(resources) = resources {
                 runtime.block_on(super::super::dag::prepare_with_extensions(
-                    &self.plan, vec![Arc::new(KernelPlanner { state: state.clone() })], &resources))
+                    &self.plan, vec![Arc::new(KernelPlanner { state: state.clone() })], &resources, cost.clone()))
             } else {
                 let session = datafusion::prelude::SessionContext::new_with_config(
                     datafusion::prelude::SessionConfig::new().with_target_partitions(1));
@@ -87,7 +89,7 @@ impl Subplan {
                     return Err(RuntimeError::Runtime(failure.to_string()));
                 }
             };
-            PreparedSubplan { physical, state, task, stats }
+            PreparedSubplan { physical, state, task, stats, cost }
         };
         if graph.source.is_some() {
             prepared.state.lock().map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?
@@ -103,6 +105,8 @@ impl Subplan {
                 .lock()
                 .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?,
         );
+        finished.context.query_cost.add_work(&std::mem::take(&mut *prepared.cost.lock()
+            .map_err(|_| RuntimeError::Runtime("Query cost poisoned".into()))?));
         *ctx = std::mem::take(&mut finished.context);
         // Empty query state prevents cache cycles through named group reducers,
         // and prevents one frontier's writes or bindings leaking into the next.

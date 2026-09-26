@@ -10,8 +10,10 @@ use arrow::datatypes::{DataType, Field};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecStats {
+    pub cost: crate::ir::QueryCost,
     /// Physical DAG scheduled for this execution, including SQL island boundaries.
     pub physical_plan: String,
+    pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
     /// Operators scheduled by the DataFusion relational DAG.
     pub datafusion_ops: usize,
     /// Regions delegated to DuckDB.
@@ -338,8 +340,14 @@ pub fn contains_mutation(node: &Node) -> bool {
 
 impl From<crate::ir::rel::dag::DagStats> for ExecStats {
     fn from(stats: crate::ir::rel::dag::DagStats) -> Self {
+        let mut cost = stats.cost;
+        cost.native_source_queries = stats.native_source_queries.len() as u64;
+        cost.native_source_rows = stats.native_source_rows as u64;
         Self {
+            island_rows: cost.sql_output_rows.min(usize::MAX as u64) as usize,
+            cost,
             physical_plan: stats.physical_plan,
+            constraint_proofs: stats.constraint_proofs,
             islands: stats.duckdb_regions,
             datafusion_ops: stats.datafusion_operators,
             sql_queries: stats.sql_queries,

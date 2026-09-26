@@ -44,7 +44,7 @@ The JSON protocol is version 1; unknown fields and unsupported versions fail.
 
 ```rust,ignore
 let response = orchiddb::compiler::compile_json(request_json).await?;
-// Response contains version, dialect, sql, fields.
+// Response contains version, dialect, sql, fields, constraint_proofs.
 // The client decides whether, where and how to execute that SQL.
 ```
 
@@ -61,6 +61,9 @@ compared as `BIGINT` (integers of different widths), `DECIMAL(20,0)`
 always accompanies the comparison, so equal text cannot match across labels.
 Bindings must ensure
 ID uniqueness/non-nullability and referential integrity in their actual data.
+Optional [supplied relational constraints](relational-constraints.md) make proven
+keys, non-nullability, dependencies and endpoint integrity available to the planner.
+The compiler does not discover or validate source data automatically.
 Mapped identities do not require a physical primary-key index; supported
 index types depend on the target database.
 

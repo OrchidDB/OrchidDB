@@ -27,6 +27,7 @@ pub struct RdfGraphEngine {
     mapping: Arc<RdfDatasetMapping>,
     dataset: String,
     scalar_registered: bool,
+    last_query_stats: Option<crate::ir::exec::ExecStats>,
 }
 
 impl RdfGraphEngine {
@@ -40,8 +41,11 @@ impl RdfGraphEngine {
             mapping,
             dataset: dataset.into(),
             scalar_registered: false,
+            last_query_stats: None,
         }
     }
+
+    pub fn last_query_stats(&self) -> Option<&crate::ir::exec::ExecStats> { self.last_query_stats.as_ref() }
 
     pub fn dataset(&self) -> &str {
         &self.dataset
@@ -71,6 +75,7 @@ impl RdfGraphEngine {
     /// datatype, and language columns of each field (see
     /// `binding_identity_columns`); [`RdfGraphEngine::query`] decodes them.
     pub async fn sparql(&mut self, query: &str) -> Result<ReturnedBatches, String> {
+        self.last_query_stats=None;
         let parsed = crate::language::sparql::parse_query(query).map_err(|e| e.to_string())?;
         self.sparql_parsed(&parsed).await
     }
@@ -84,9 +89,12 @@ impl RdfGraphEngine {
         }
         let lowered = self.lower_query(query)?;
         let mut execution = Box::pin(crate::ir::rel::dag::execute_with_extensions(lowered,vec![],None,Some(&self.resources)));
-        futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
+        let (output,stats)=futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
             || std::future::Future::poll(execution.as_mut(),cx))).await
-            .map(|(output,_)|output).map_err(|error|error.to_string())
+            .map_err(|error|error.to_string())?;
+        drop(execution);
+        self.last_query_stats=Some(stats.into());
+        Ok(output)
     }
 
     /// The DuckDB SQL that [`RdfGraphEngine::sparql`] would execute.

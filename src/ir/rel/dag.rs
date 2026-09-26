@@ -31,9 +31,11 @@ use futures::stream;
 
 #[derive(Debug, Clone, Default)]
 pub struct DagStats {
+    pub cost: crate::ir::QueryCost,
     pub duckdb_regions: usize,
     pub datafusion_operators: usize,
     pub physical_plan: String,
+    pub constraint_proofs: Vec<super::constraints::RewriteProof>,
     pub sql_queries: Vec<String>,
     pub native_source_queries: Vec<String>,
     pub native_source_rows: usize,
@@ -288,6 +290,7 @@ fn partition<'a>(
 #[derive(Debug)]
 struct RegionPlanner {
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
+    cost: Arc<Mutex<crate::ir::QueryCost>>,
 }
 #[cfg(feature = "duckdb")]
 #[async_trait]
@@ -313,6 +316,7 @@ impl ExtensionPlanner for RegionPlanner {
         Ok(Some(Arc::new(DuckDbExec {
             prepared: region.prepared.clone(),
             executor: self.executor.clone(),
+            cost: self.cost.clone(),
             properties,
         })))
     }
@@ -321,6 +325,7 @@ impl ExtensionPlanner for RegionPlanner {
 #[cfg(feature = "duckdb")]
 #[derive(Debug)]
 struct DuckDbExec {
+    cost: Arc<Mutex<crate::ir::QueryCost>>,
     prepared: Arc<sql::PreparedSql>,
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
     properties: Arc<PlanProperties>,
@@ -366,6 +371,7 @@ impl ExecutionPlan for DuckDbExec {
         }
         let executor = self.executor.clone();
         let prepared = self.prepared.clone();
+        let cost = self.cost.clone();
         let schema = self.schema();
         let expected = schema.clone();
         let work = async move {
@@ -376,6 +382,12 @@ impl ExecutionPlan for DuckDbExec {
                 let returned = stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
                     || executor.execute_prepared_arrow(&prepared))
                     .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                {
+                    let mut cost = cost.lock().map_err(|_| DataFusionError::Execution("Query cost poisoned".into()))?;
+                    cost.sql_executions = cost.sql_executions.saturating_add(1);
+                    cost.sql_output_rows = cost.sql_output_rows.saturating_add(returned.num_rows() as u64);
+                    cost.sql_output_bytes = cost.sql_output_bytes.saturating_add(returned.get_array_memory_size() as u64);
+                }
                 let arrays = returned.columns().iter().zip(expected.fields())
                     .map(|(array, field)| coerce_sql_array(array, field.data_type()))
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -402,6 +414,7 @@ pub(crate) async fn prepare_with_extensions(
     logical: &LogicalPlan,
     mut extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     resources: &DagSession,
+    cost: Arc<Mutex<crate::ir::QueryCost>>,
 ) -> RelResult<(Arc<dyn ExecutionPlan>, Arc<TaskContext>, DagStats)> {
     let session = &resources.session;
     // Optimize while relational scans and expressions remain visible, before
@@ -409,8 +422,11 @@ pub(crate) async fn prepare_with_extensions(
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let optimized = if resources.optimize { query_state.optimize(logical)? } else { logical.clone() };
-    let mut stats = DagStats::default();
+    let (initial, mut proofs) = super::constraints::optimize(logical.clone())?;
+    let optimized = if resources.optimize { query_state.optimize(&initial)? } else { initial };
+    let (optimized, more) = super::constraints::optimize(optimized)?;
+    proofs.extend(more);
+    let mut stats = DagStats { constraint_proofs: proofs, ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
@@ -428,6 +444,7 @@ pub(crate) async fn prepare_with_extensions(
     #[cfg(feature = "duckdb")]
     extensions.push(Arc::new(RegionPlanner {
         executor: resources.executor.clone(),
+        cost,
     }));
     let planner = DefaultPhysicalPlanner::with_extension_planners(extensions);
     let physical = planner
@@ -454,7 +471,8 @@ pub(crate) async fn execute_with_extensions(
             &owned
         }
     };
-    let (physical, task, stats) = prepare_with_extensions(&lowered.plan, extensions, resources).await?;
+    let cost = Arc::new(Mutex::new(crate::ir::QueryCost::default()));
+    let (physical, task, mut stats) = prepare_with_extensions(&lowered.plan, extensions, resources, cost.clone()).await?;
     let prepared_at = std::time::Instant::now();
     let planned_at = std::time::Instant::now();
     let schema = physical.schema();
@@ -472,6 +490,9 @@ pub(crate) async fn execute_with_extensions(
     } else {
         arrow_select::concat::concat_batches(&schema, batches.iter())?
     };
+    stats.cost = cost.lock().map_err(|_| DataFusionError::Execution("Query cost poisoned".into()))?.clone();
+    stats.cost.result_rows = batch.num_rows() as u64;
+    stats.cost.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     if std::env::var_os("ORCHIDDB_PROFILE_DAG").is_some() {
         eprintln!(
             "dag-profile {}",
@@ -523,6 +544,8 @@ fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::datatypes::D
 
 impl DagStats {
     pub(crate) fn merge_execution(&mut self, nested: &Self) {
+        self.cost.add_work(&nested.cost);
+        self.constraint_proofs.extend(nested.constraint_proofs.iter().cloned());
         self.duckdb_regions += nested.duckdb_regions;
         self.datafusion_operators += nested.datafusion_operators;
         self.sql_queries.extend(nested.sql_queries.iter().cloned());

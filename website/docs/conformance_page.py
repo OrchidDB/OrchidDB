@@ -32,6 +32,31 @@ def render_java_evidence(download):
   html.append('<tr><th scope="row">'+e(entry['label'])+'</th><td>'+kind+'<br><a href="/downloads/conformance/java-provider/'+e(relative.as_posix())+'">Raw results JSON</a></td><td>'+e(outcomes)+'</td><td>'+complete+'</td></tr>')
  html.append('</tbody></table></div><p><a href="/downloads/conformance/java-provider/index.json">Java evidence index JSON</a></p></section>')
  return ''.join(html)
+def cost_label(cost):
+ if not cost:return 'Not recorded'
+ work=cost.get('work_units');coverage=cost.get('coverage','unavailable')
+ return (f'{work:,} work units · ' if work is not None else 'Work not measured · ')+coverage.replace('_',' ')
+
+def render_query_cost(runs,cases,get,download):
+ html=['<details class="report-section" id="query-cost"><summary>OrchidDB query cost <span>Measured boundary work and expensive queries</span></summary><p>Version 1 work units count SQL output rows, native input/output rows, source rows, rounded-up SQL output KiB, and 100 units per SQL execution or source request. This is a boundary-work proxy, not database scan cost or a cross-product benchmark. Fixture and observation queries are excluded from rankings. Partial measurements are lower bounds; missing measurements are never zero.</p>']
+ summaries={}
+ for suite,title in SUITES.items():
+  run=runs.get(('orchiddb',suite),{});summary=run.get('query_cost_summary',{});summaries[suite]=summary
+  members={c['id']:c for c in cases if c['suite']==suite}
+  coverage=Counter(get('orchiddb',c).get('query_cost',{}).get('coverage','unavailable') for c in members.values())
+  html.append('<h3>'+e(title)+'</h3><p>'+e(' · '.join(f'{n:,} {k.replace("_"," ")}' for k,n in sorted(coverage.items())))+'</p>')
+  html.append('<p>Expensive-query threshold: '+e(str(summary.get('threshold','not recorded')))+' work units. <a href="/downloads/conformance/orchiddb-'+suite+'.json">Full costs, queries and baseline comparisons</a></p>')
+  html.append('<div class="comparison-scroll"><table class="query-cost-table"><thead><tr><th>Highest recorded work</th><th>Work units</th><th>Coverage</th><th>Query request ms</th></tr></thead><tbody>')
+  for row in summary.get('highest_work',[]):
+   case=members.get(row['id'])
+   if not case:continue
+   anchor='case-'+hashlib.sha256(row['id'].encode()).hexdigest()[:16]
+   html.append('<tr><td><a href="#'+anchor+'">'+e(case['name'])+'</a></td><td>'+f'{row["work_units"]:,}'+'</td><td>'+e(row['coverage'].replace('_',' '))+'</td><td>'+f'{row["request_elapsed_micros"]/1000:,.3f}'+'</td></tr>')
+  html.append('</tbody></table></div>')
+ (download/'query-cost-summary.json').write_text(json.dumps(summaries,indent=2)+'\n')
+ html.append('<p><a href="/downloads/conformance/query-cost-summary.json">Cost rankings and baseline comparisons JSON</a></p></details>')
+ return ''.join(html)
+
 def render(out):
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=catalog['cases'];runs={};lookup={}
  download=out/'downloads/conformance';download.mkdir(parents=True,exist_ok=True)
@@ -49,7 +74,7 @@ def render(out):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
   if result.get('case_sha256') and result.get('normalized_case_sha256', result['case_sha256'])!=result_fingerprint(c):return {**result,'status':'stale'}
   return result
- html=['<div class="report-meta"><span>6,533 upstream scenarios · '+str(len(PRODUCTS))+' products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
+ html=['<div class="report-meta"><span>6,533 upstream scenarios · '+str(len(PRODUCTS))+' products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#query-cost">Query cost</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
  from leaderboard import render as render_leaderboard
  html.append(render_leaderboard(cases,get,runs,ROOT,download))
  html.append('<nav class="language-tabs" aria-label="Query languages">'+''.join('<a href="#language-'+suite+'" data-language-tab="'+suite+'">'+label+'<span>'+str(len({c['feature'] for c in cases if c['suite']==suite}))+' features</span></a>' for suite,label in [('tinkerpop','Gremlin'),('opencypher','Cypher'),('rdf','SPARQL')])+'</nav>')
@@ -98,10 +123,10 @@ def render(out):
    for p,r in results.items():
     if p not in SUITE_COLUMNS[suite]:continue
     status=r['status'];elapsed=r.get('elapsed_ms');timing='<span class="timing">'+f'{elapsed:g} ms total</span>' if elapsed is not None and status!='not-applicable' else ''
-    html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+'</summary>')
+    html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+('<span class="query-cost">'+e(cost_label(r.get('query_cost')))+'</span>' if p=='orchiddb' else '')+'</summary>')
     if status!='not-run':html.append('<p><a href="/downloads/conformance/'+(p+'-'+suite)+'.json">Full run JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
-    export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source']])
+    export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source'],r.get('query_cost',{}).get('metric_version',''),r.get('query_cost',{}).get('coverage',''),r.get('query_cost',{}).get('work_units'),r.get('query_cost',{}).get('request_elapsed_micros')])
    html.append('</tr>')
   html.append('</tbody></table></div></details></td></tr></tbody>')
  html.append('</table></div></section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
@@ -113,6 +138,7 @@ def render(out):
    html.append('<td>'+''.join('<span class="count-line '+status+'">'+str(counts[status])+' '+e(LABELS[status].lower())+'</span>' for status in LABELS if counts[status])+'</td>')
   html.append('</tr></tbody></table></div>')
  html.append('</details>')
+ html.append(render_query_cost(runs,cases,get,download))
  html.append(render_java_evidence(download))
  caps=json.loads((ROOT/'data/capabilities.json').read_text());caps=[{**c,'cells':{p:v for p,v in c['cells'].items() if p in PRODUCTS}} for c in caps];caps=[c for c in caps if c['cells']]
  (download/'capabilities.json').write_text(json.dumps(caps,indent=2)+'\n')
@@ -136,5 +162,5 @@ def render(out):
  for (p,s),d in runs.items():
   html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Full evidence JSON</a></details>')
  html.append('</details></div>')
- buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
- return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('cases','Upstream cases'),('java-provider','Java provider tests'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]
+ buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source','cost_metric_version','cost_coverage','query_work_units','query_request_elapsed_micros']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
+ return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('query-cost','Query cost'),('cases','Upstream cases'),('java-provider','Java provider tests'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]

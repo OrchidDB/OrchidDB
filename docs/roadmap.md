@@ -19,9 +19,9 @@ relevant query before opening work.
 - Address quarantined Cartesian/count-only corpus queries without materializing
   enormous intermediate joins; keep fixture omissions and memory limits separate
   from language failures. See `MEMORY_QUARANTINE` in the corpus runner.
-- Improve metadata for unique keys, relationship multiplicity and nested types.
-  Distinguish validated constraints from estimates; estimates cannot justify
-  removing rows or errors. Preserve duplicate input occurrence identity.
+- Extend [supplied relational constraints](relational-constraints.md) with nested-field
+  metadata and broader proven containment rules. Keep validated constraints separate
+  from estimates and preserve duplicate input occurrence identity.
 - Measure SQL boundary costs and physical work. Assess correlated scalar/lateral
   plans, shared aggregates/windows and repeated subplans with null/error/effect
   equivalence tests. Temporal ASOF specialization needs actual query semantics,

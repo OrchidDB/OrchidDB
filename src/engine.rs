@@ -652,6 +652,7 @@ impl GraphEngine {
                 (returned, stats.into())
             }
             ReadMode::SqlOnly => {
+                let cost_started=std::time::Instant::now();
                 let lowered = self
                     .backend
                     .lower(plan, &self.graph)
@@ -662,6 +663,14 @@ impl GraphEngine {
                 let returned = sql::execute_prepared(&mut self.strict_executor, &prepared)
                     .map_err(|e| e.to_string())?;
                 let stats = ExecStats {
+                    cost: crate::ir::QueryCost {
+                        sql_executions: 1,
+                        sql_output_rows: returned.batch.num_rows() as u64,
+                        sql_output_bytes: returned.batch.get_array_memory_size() as u64,
+                        result_rows: returned.batch.num_rows() as u64,
+                        elapsed_micros: cost_started.elapsed().as_micros().min(u64::MAX as u128) as u64,
+                        ..Default::default()
+                    },
                     islands: 1,
                     island_rows: returned.batch.num_rows(),
                     ..ExecStats::default()

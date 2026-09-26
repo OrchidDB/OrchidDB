@@ -51,6 +51,7 @@
       let actual=data.actual??data.actual_graphson;
       if(typeof actual==='string'){try{actual=JSON.parse(actual);}catch{}}
       block(target,'Actual result',actual);
+      block(target,'Query cost and measurements',data.query_cost);
       if(data.elapsed_ms!==undefined){const timing=document.createElement('p');timing.textContent=data.elapsed_ms.toLocaleString()+' ms total scenario time';target.append(timing);}
     }
     const raw=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='Raw evidence JSON';pre.className='raw-evidence';pre.textContent=JSON.stringify(data,null,2);raw.append(summary,pre);target.append(raw);

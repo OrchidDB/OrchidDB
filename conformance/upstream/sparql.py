@@ -85,7 +85,7 @@ def expected(path):
   return {'variables':variables,'rows':rows,'ordered':any(graph.value(s,RS['index']) is not None for s in solutions)}
  return {'graph':[[term(s),term(p),term(o)] for s,p,o in graph]}
 class Sparql:
- def __init__(self,engine='orchiddb'):self.process=None;self.engine=engine
+ def __init__(self,engine='orchiddb'):self.process=None;self.engine=engine;self.query_costs=[]
  def send(self,request,timeout=25):
   if self.process is None or self.process.p.poll() is not None:
    if self.engine=='jena':
@@ -94,8 +94,11 @@ class Sparql:
     command=[os.environ.get('CONFORMANCE_JAVA','java'),'-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'JenaAdapter']
    else:command=[str(orchiddb_binary())]
    self.process=Process(command,ROOT/f'upstream-{self.engine}-rdf.log')
-  return self.process.send(request,timeout=timeout)
+  response=self.process.send(request,timeout=timeout)
+  self.query_costs.append({"query":request.get("query",""),"phase":"query","cost":response.get("query_cost")})
+  return response
  def run(self,case):
+  self.query_costs=[]
   types=case['types'];base=CACHE/'rdf'
   if any('Update' in t for t in types):
    if not any('Syntax' in t for t in types):

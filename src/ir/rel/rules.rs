@@ -14,6 +14,7 @@ pub(super) fn unique_on(plan: &LogicalPlan, keys: &[Expr]) -> bool {
             _ => None,
         })
         .collect::<BTreeSet<_>>();
+    if super::constraints::analyze(plan).unique_on(&indices.iter().copied().collect::<Vec<_>>(), true) { return true; }
     schema.functional_dependencies().iter().any(|dep| {
         dep.mode == Dependency::Single
             && dep.target_indices.len() == schema.fields().len()
