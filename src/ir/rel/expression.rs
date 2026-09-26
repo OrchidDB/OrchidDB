@@ -4,6 +4,12 @@ use super::*;
 
 impl<'a> LoweringContext<'a> {
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if let IrExpr::Call { name, args } = expr
+            && matches!(name.as_str(), "gremlin_string_length" | "gremlin_string_substring")
+        {
+            let args = args.iter().map(|arg| self.lower_expr(plan, arg)).collect::<RelResult<Vec<_>>>()?;
+            return super::gremlin_strings::call(name, args, plan.schema());
+        }
         if matches!(expr, IrExpr::Call { name, .. } if name.starts_with("gremlin_string_") || name == "gremlin_cast_date") {
             return Err(RelError::Unsupported("Gremlin scalar semantics require native values".into()));
         }
@@ -305,11 +311,25 @@ impl<'a> LoweringContext<'a> {
                 // proves the property-domain guard, including mapped writes.
                 Ok(value)
             }
-            IrExpr::Call { name, args } if name == "gremlin_id" && args.len() == 1 && self.options.mapping.is_some() => {
+            IrExpr::Call { name, args } if name == "gremlin_sum_result" && args.len() == 2 => {
+                let sum = self.lower_expr(plan, &args[0])?;
+                let count = self.lower_expr(plan, &args[1])?;
+                let kind = sum.get_type(plan.schema())?;
+                if !kind.is_numeric() { return Err(RelError::Unsupported("Gremlin sum requires numeric SQL values".into())); }
+                let sum = if matches!(kind, DataType::Int8 | DataType::Int16 | DataType::Int32) {
+                    Expr::Cast(Cast::new(Box::new(sum), DataType::Int64))
+                } else { sum };
+                Ok(datafusion::logical_expr::when(count.eq(lit(0_i64)), lit(ScalarValue::Null)).otherwise(sum)?)
+            }
+            IrExpr::Call { name, args } if name == "gremlin_id" && args.len() == 1 => {
                 if let IrExpr::Binding(binding) = &args[0] {
-                    return self.lower_expr(plan, &IrExpr::Id(binding.clone()));
+                    if self.options.mapping.is_some() {
+                        return self.lower_expr(plan, &IrExpr::Id(binding.clone()));
+                    }
+                    let column = prop_col(binding, "__w_public_id");
+                    if has_exact_col(plan, &column) { return Ok(col_exact(column)); }
                 }
-                Err(RelError::Unsupported("Mapped Gremlin ID requires an element binding".into()))
+                Err(RelError::Unsupported("Gremlin ID requires a typed element identity column".into()))
             }
             IrExpr::Call { name, args } if name == "gremlin_order_key" && args.len() == 1 && self.options.mapping.is_some() => {
                 if matches!(&args[0], IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some()) {
@@ -845,7 +865,7 @@ impl<'a> LoweringContext<'a> {
                     Ok(if op == "neq" { Expr::Not(Box::new(equal)) } else { equal })
                 } else { Ok(binary(lhs, operator, rhs)) }
             }
-            IrExpr::ListFilter { list, item, predicate } if self.options.mapping.is_some() => {
+            IrExpr::ListFilter { list, item, predicate } => {
                 let IrExpr::Call { name, args } = list.as_ref() else {
                     return Err(RelError::Unsupported("Mapped list filter requires property values".into()));
                 };
@@ -860,6 +880,7 @@ impl<'a> LoweringContext<'a> {
                     let IrExpr::Lit(Lit::String(key)) = key else { return Err(RelError::Unsupported("Dynamic mapped property key".into())); };
                     let column = prop_col(binding, key);
                     if !has_exact_col(plan, &column) { continue; }
+                    self.check_gremlin_property(plan, binding, key)?;
                     let value = col_exact(&column);
                     // Introduce the iterator only for type/name resolution, then
                     // substitute its scalar column into the SQL predicate.
@@ -876,19 +897,36 @@ impl<'a> LoweringContext<'a> {
                 }
                 Ok(result.unwrap_or_else(||make_array(vec![])))
             }
-            IrExpr::Call { name, args } if name == "requested_property_values" && self.options.mapping.is_some() => {
+            IrExpr::Call { name, args } if name == "requested_property_values" => {
                 let [IrExpr::Binding(binding), IrExpr::List(keys)] = args.as_slice() else {
                     return Err(RelError::Unsupported("Mapped property projection requires literal keys".into()));
                 };
                 let mut columns = Vec::new();
                 if keys.is_empty() {
                     let prefix = format!("{binding}__prop__");
-                    columns.extend(plan.schema().fields().iter().filter(|f| f.name().starts_with(&prefix)).map(|f|col_exact(f.name())));
+                    let keys = if self.options.mapping.is_none() {
+                        let shape = has_binding_shape(plan, binding)
+                            .ok_or_else(|| RelError::Unsupported("Property values require an element binding".into()))?;
+                        self.element_property_keys(plan, binding, shape)
+                    } else {
+                        plan.schema().fields().iter().filter_map(|f| f.name().strip_prefix(&prefix).map(str::to_owned)).collect()
+                    };
+                    for key in keys {
+                        if key.starts_with("__") { continue; }
+                        let column = prop_col(binding, &key);
+                        if has_exact_col(plan, &column) {
+                            self.check_gremlin_property(plan, binding, &key)?;
+                            columns.push(col_exact(column));
+                        }
+                    }
                 } else {
                     for key in keys {
                         let IrExpr::Lit(Lit::String(key)) = key else { return Err(RelError::Unsupported("Dynamic mapped property key".into())); };
                         let column = prop_col(binding, key);
-                        if has_exact_col(plan, &column) { columns.push(col_exact(column)); }
+                        if has_exact_col(plan, &column) {
+                            self.check_gremlin_property(plan, binding, key)?;
+                            columns.push(col_exact(column));
+                        }
                     }
                 }
                 let types = columns.iter().map(|c|c.get_type(plan.schema())).collect::<datafusion::common::Result<Vec<_>>>()?;
@@ -900,11 +938,6 @@ impl<'a> LoweringContext<'a> {
                     result = Some(match result { Some(previous) => array_concat(vec![previous,item]), None => item });
                 }
                 Ok(result.unwrap_or_else(||make_array(vec![])))
-            }
-            IrExpr::Call { name, .. } if name == "requested_property_values" => {
-                Err(RelError::Unsupported(
-                    "Heterogeneous Gremlin property values require native runtime values".into(),
-                ))
             }
             IrExpr::Call { name, args } => {
                 let args = args
@@ -929,6 +962,35 @@ impl<'a> LoweringContext<'a> {
                 "expression `{other:?}` is not relationally lowered yet"
             ))),
         }
+    }
+
+    fn check_gremlin_property(&self, plan: &LogicalPlan, binding: &str, key: &str) -> RelResult<()> {
+        if self.options.mapping.is_some() { return Ok(()); }
+        if has_exact_col(plan, &union_tag_col(binding, key)) || has_exact_col(plan, &collections::list_shadow_col(binding, key)) {
+            return Err(RelError::Unsupported("Structured Gremlin property values require a typed native kernel".into()));
+        }
+        {
+            // A nullable scalar column cannot distinguish an absent property
+            // from an explicitly present null, or retain multiple properties.
+            for label in self.graph.labels() {
+                for id in self.graph.node_ids(&label)? {
+                    let owner = Value::Node { label: label.clone(), id };
+                    let properties = self.graph.properties(&owner, &[key.to_owned()]);
+                    if properties.len() > 1 || properties.iter().any(|p| matches!(p, Value::VertexProperty { value, .. } if matches!(value.as_ref(), Value::Null | Value::List(_) | Value::Set(_) | Value::Map(_) | Value::TypedMap(_) | Value::BulkSet(_)))) {
+                        return Err(RelError::Unsupported("Multi-valued or present-null Gremlin properties require a typed native kernel".into()));
+                    }
+                }
+            }
+            for rel_type in self.graph.rel_types() {
+                for id in self.graph.edge_ids(&rel_type) {
+                    let owner = Value::Edge { rel_type: rel_type.clone(), id, src_label: String::new(), src_id: 0, dst_label: String::new(), dst_id: 0, projected_properties: None };
+                    if self.graph.properties(&owner, &[key.to_owned()]).iter().any(|p| matches!(p, Value::Property { value, .. } if matches!(value.as_ref(), Value::Null | Value::List(_) | Value::Set(_) | Value::Map(_) | Value::TypedMap(_)))) {
+                        return Err(RelError::Unsupported("Structured or present-null Gremlin edge properties require a typed native kernel".into()));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Evaluate a constant expression through the scalar evaluator so folding
@@ -1212,6 +1274,15 @@ impl LoweringContext<'_> {
     ) -> RelResult<Expr> {
         let lhs = self.lower_expr(plan, left)?;
         let rhs = self.lower_expr(plan, right)?;
+        if self.language == Language::Gremlin && matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+            let lt = lhs.get_type(plan.schema())?;
+            let rt = rhs.get_type(plan.schema())?;
+            let text = |t: &DataType| matches!(t, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View);
+            if (lt.is_numeric() && text(&rt)) || (rt.is_numeric() && text(&lt)) {
+                return Ok(datafusion::logical_expr::when(lhs.is_null().or(rhs.is_null()), lit(ScalarValue::Boolean(None)))
+                    .otherwise(lit(op == BinaryOp::Neq))?);
+            }
+        }
         if self.language == Language::Cypher && matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div) {
             let lt = lhs.get_type(plan.schema())?;
             let rt = rhs.get_type(plan.schema())?;

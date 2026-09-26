@@ -128,6 +128,9 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     }
     if dialect != SqlDialect::DuckDb {
+        if name.starts_with("__orchiddb_utf16_") {
+            return Err(SqlError::Unsupported("UTF-16 string SQL is currently implemented for DuckDB".into()));
+        }
         return Ok(());
     }
     let ast::FunctionArguments::List(arguments) = &function.args else {
@@ -145,6 +148,27 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     match (name.as_str(), args.len()) {
+        ("__orchiddb_utf16_length", 1) => {
+            *expr = template(r"CAST(length(regexp_replace(__arg0, '[\x{10000}-\x{10FFFF}]', 'xx', 'g')) AS INTEGER)", &args)?;
+        }
+        ("__orchiddb_utf16_substring", 2 | 3) => {
+            let mut args = args;
+            if args.len() == 2 {
+                args.push(ast::Expr::Value(ast::Value::Number("9223372036854775807".into(), false).into()));
+            }
+            *expr = template(r"
+                (SELECT CASE WHEN __local0.s IS NULL THEN NULL ELSE COALESCE(
+                    (SELECT string_agg(CASE WHEN p >= lo AND p + w <= hi THEN ch ELSE '�' END, '' ORDER BY p)
+                     FROM (SELECT ch, w, sum(w) OVER (ORDER BY ord ROWS UNBOUNDED PRECEDING) - w AS p
+                           FROM (SELECT ch, ord, CASE WHEN unicode(ch) > 65535 THEN 2 ELSE 1 END AS w
+                                 FROM unnest(regexp_extract_all(__local0.s, '(?s).')) WITH ORDINALITY AS __local1(ch, ord)) AS __local2) AS __local3
+                     WHERE hi > lo AND p < hi AND p + w > lo), '') END
+                 FROM (SELECT s,
+                         greatest(0, least(n, CASE WHEN a < 0 THEN n + a ELSE a END)) AS lo,
+                         greatest(0, least(n, CASE WHEN b < 0 THEN n + b ELSE b END)) AS hi
+                       FROM (SELECT s, a, b, length(regexp_replace(s, '[\x{10000}-\x{10FFFF}]', 'xx', 'g')) AS n
+                             FROM (SELECT __arg0 AS s, coalesce(__arg1, 0) AS a, coalesce(__arg2, 9223372036854775807) AS b) AS __local2) AS __local1) AS __local0)", &args)?;
+        }
         ("array_min", 1) => rename(function, "list_min"),
         ("array_max", 1) => rename(function, "list_max"),
         ("regexp_like", 2 | 3) => rename(function, "regexp_matches"),

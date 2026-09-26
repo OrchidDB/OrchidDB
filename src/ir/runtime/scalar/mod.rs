@@ -30,6 +30,7 @@ mod search;
 pub(crate) use registry::is_known_function;
 mod string_functions;
 mod strings;
+pub(crate) use strings::gremlin_string_call;
 pub(crate) mod temporal;
 mod type_check;
 mod vectors;

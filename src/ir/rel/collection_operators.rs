@@ -51,7 +51,7 @@ impl<'a> LoweringContext<'a> {
         output: &str,
         input: &Node,
     ) -> RelResult<LoweredNode> {
-        if self.language == Language::Gremlin {
+        if self.language == Language::Gremlin && !self.options.tolerate_internal_path_state {
             return Err(RelError::Unsupported("Gremlin group map requires native runtime values".into()));
         }
         use crate::ir::plan::GroupValue;
@@ -64,9 +64,23 @@ impl<'a> LoweringContext<'a> {
         let value_alias = "__gm_value";
         let mut collected_value = false;
         let value_agg = match value {
-            GroupValue::Traversal { .. } => return Err(RelError::Unsupported(
-                "correlated group traversal requires native execution".into(),
-            )),
+            GroupValue::Traversal { traversal, .. } => match traversal.as_ref() {
+                Node::GraphAggregate { group, aggs, input: body, .. }
+                    if group.is_empty() && aggs.len() == 1
+                        && matches!(body.as_ref(), Node::GraphCorrelate { .. })
+                        && matches!(aggs[0].kind, AggKind::CountRows | AggKind::CountBulk)
+                        && aggs[0].arg.is_none() => count_all(),
+                Node::GraphProject { items, input: body, .. }
+                    if matches!(body.as_ref(), Node::GraphCorrelate { .. }) => {
+                    let current = items.iter().find(|item| item.alias == "current")
+                        .ok_or_else(|| RelError::Unsupported("group traversal has no current value".into()))?;
+                    if !matches!(current.expr, IrExpr::Lit(_)) {
+                        return Err(RelError::Unsupported("nonconstant group assignment requires ordered reduction".into()));
+                    }
+                    df_min(self.lower_expr(&input.plan, &current.expr)?)
+                }
+                _ => return Err(RelError::Unsupported("correlated group traversal requires native execution".into())),
+            },
             GroupValue::CountBulk => count_all(),
             GroupValue::Aggregate(agg) => match agg.kind {
                 AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
@@ -162,11 +176,18 @@ impl<'a> LoweringContext<'a> {
                 .ok_or_else(|| RelError::Unsupported("group value type is unavailable".into()))?;
             gremlin_tagged_text_expr(col_exact(value_alias), &value_type)
         };
+        let escape = |text: Expr| {
+            let text = df_string::replace(text, lit("\\"), lit("\\\\"));
+            let text = df_string::replace(text, lit("\""), lit("\\\""));
+            let text = df_string::replace(text, lit("\n"), lit("\\n"));
+            let text = df_string::replace(text, lit("\r"), lit("\\r"));
+            df_string::replace(text, lit("\t"), lit("\\t"))
+        };
         let entry = concat_exprs(vec![
             lit("\""),
-            df_core::coalesce(vec![col_exact("__gm_key"), lit("null")]),
+            escape(df_core::coalesce(vec![col_exact("__gm_key"), lit("null")])),
             lit("\":\""),
-            value_text,
+            escape(value_text),
             lit("\""),
         ]);
         let entries = LogicalPlanBuilder::from(grouped)

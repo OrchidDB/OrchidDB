@@ -14,7 +14,11 @@ impl LoweringContext<'_> {
                 result_form,
                 input,
             } => {
-                let input = self.lower_node(input)?;
+                let input = if let GraphCap { labels, input } = input.as_ref() {
+                    self.lower_terminal_cap(labels, input)?
+                } else if let GraphGroupMap { key, value, output, input } = input.as_ref() {
+                    self.lower_group_map(key, value, output, input)?
+                } else { self.lower_node(input)? };
                 if self.rdf_typed_terms_used
                     && fields.iter().any(|field| {
                         rdf::binding_identity_columns(field)
@@ -195,8 +199,12 @@ impl LoweringContext<'_> {
             GraphAggregate {
                 group, aggs, input, ..
             } => {
-                if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Sum | AggKind::Avg)) {
+                if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Avg)) {
                     return Err(RelError::Unsupported("Gremlin aggregate requires native values and empty-stream semantics".into()));
+                }
+                if self.language == Language::Gremlin && !self.options.tolerate_internal_path_state
+                    && aggs.iter().any(|agg| agg.kind == AggKind::Sum) {
+                    return Err(RelError::Unsupported("Gremlin sum traverser state requires a native relational kernel".into()));
                 }
                 // Count-only consumers cannot observe which representative
                 // dedup kept or its order. Preserve correlation partitions.
@@ -506,12 +514,8 @@ impl LoweringContext<'_> {
                 outer,
                 input,
             } => self.lower_unwind(input_expr, bind, *outer, input)?,
-            GraphGroupMap {
-                key,
-                value,
-                output,
-                input,
-            } => self.lower_group_map(key, value, output, input)?,
+            GraphSideEffect { reducer, input, .. } if reducer == "register" && self.options.tolerate_internal_path_state => self.lower_node(input)?,
+            GraphGroupMap { .. } => return Err(RelError::Unsupported("Intermediate group maps require typed relational values".into())),
             GraphCollect {
                 value,
                 distinct,
