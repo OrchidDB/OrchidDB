@@ -304,3 +304,45 @@ async fn null_traversers_are_productive() {
     )
     .await;
 }
+
+#[tokio::test]
+async fn utf16_strings_preserve_surrogate_boundaries_in_sql_and_datafusion() {
+    let graph = PropertyGraph::new();
+    graph.insert_node("text", [("name".into(), orchiddb::ir::Value::String("A😀B".into()))].into());
+    for (suffix, expected) in [
+        ("length()", "d[4].i"),
+        ("substring(1,3)", "😀"),
+        ("substring(1,2)", "�"),
+        ("substring(2,3)", "�"),
+        ("substring(-3,-1)", "😀"),
+        ("substring(3,2)", ""),
+        ("substring(2,2)", ""),
+    ] {
+        let query = format!("g.V().values('name').{suffix}");
+        assert_duckdb(&query, &graph, &[expected]).await;
+        let result = RelBackend::new().execute(&plan(&query), &graph).await.unwrap();
+        if suffix == "length()" {
+            assert_eq!(result.batch.column(0).data_type(), &DataType::Int32);
+            assert_eq!(format::lines_from_batch(&result), vec!["4"], "DataFusion: {query}");
+        } else {
+            let values = result.batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+            assert_eq!(values.value(0), expected, "DataFusion: {query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn public_ids_are_not_storage_offsets_or_coerced_strings() {
+    let graph = modern();
+    assert_duckdb("g.V(1).values('name')", &graph, &["marko"]).await;
+    assert_duckdb("g.V(1).id()", &graph, &["d[1].i"]).await;
+    assert_duckdb("g.V('person#0').values('name')", &graph, &[]).await;
+}
+
+#[tokio::test]
+async fn group_keys_preserve_quotes_and_backslashes() {
+    let graph = PropertyGraph::new();
+    graph.insert_node("text", [("name".into(), orchiddb::ir::Value::String("a\"b\\c".into()))].into());
+    assert_duckdb("g.V().groupCount().by('name')", &graph,
+        &[r#"m[{"a\"b\\c":"d[1].l"}]"#]).await;
+}

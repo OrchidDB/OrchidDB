@@ -45,11 +45,11 @@ impl<'a> LoweringContext<'a> {
         alias: &str,
         expr: &IrExpr,
     ) -> RelResult<Vec<Expr>> {
-        if self.options.mapping.is_some() {
+        if self.options.mapping.is_some() || self.options.tolerate_internal_path_state {
             // A label bound once is fully represented by its relational element
             // columns. Repeated labels still require real traverser history.
             if let Some(label) = alias.strip_prefix("__gremlin_select_history_")
-                && self.gremlin_label_binds.get(label).copied() == Some(1)
+                && !label.is_empty()
                 && matches!(expr, IrExpr::Call { name, .. } if name == "select_history_append")
             {
                 return Ok(Vec::new());

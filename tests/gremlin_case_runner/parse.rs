@@ -204,7 +204,11 @@ fn modern_bindings() -> &'static HashMap<String, GValue> {
             ("eid11", MODERN_EID11),
             ("eid12", MODERN_EID12),
         ] {
-            map.insert(name.to_string(), GValue::String(id.to_string()));
+            // ID parameters refer to the fixture's public IDs, not storage addresses.
+            let value = name.strip_prefix("vid").or_else(|| name.strip_prefix("eid"))
+                .and_then(|number| number.parse::<i64>().ok())
+                .map(GValue::Int).unwrap_or_else(|| GValue::String(id.to_string()));
+            map.insert(name.to_string(), value);
         }
         map
     })

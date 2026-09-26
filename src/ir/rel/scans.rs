@@ -62,6 +62,7 @@ impl<'a> LoweringContext<'a> {
             false,
             batches,
         )?;
+        let batches = self.with_public_ids(binding, batches, false)?;
         self.scan_batches_keyed("nodes", batches, &[id_col(binding), label_col(binding)])
     }
 
@@ -123,7 +124,39 @@ impl<'a> LoweringContext<'a> {
             true,
             batches,
         )?;
+        let batches = self.with_public_ids(binding, batches, true)?;
         self.scan_batches_keyed("edges", batches, &[id_col(binding), label_col(binding)])
+    }
+
+    // Keep provider identities distinct from internal per-label row offsets.
+    fn with_public_ids(&self, binding: &str, batches: Vec<RecordBatch>, edge: bool) -> RelResult<Vec<RecordBatch>> {
+        if self.language != Language::Gremlin { return Ok(batches); }
+        let mut ids = Vec::new();
+        for batch in &batches {
+            let labels = batch.column_by_name(&label_col(binding)).unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+            let offsets = batch.column_by_name(&id_col(binding)).unwrap().as_any().downcast_ref::<Int64Array>().unwrap();
+            let mut values = Vec::new();
+            for row in 0..batch.num_rows() {
+                let name = labels.value(row).to_owned();
+                let id = offsets.value(row);
+                let element = if edge {
+                    Value::Edge { rel_type: name, id, src_label: String::new(), src_id: 0, dst_label: String::new(), dst_id: 0, projected_properties: None }
+                } else { Value::Node { label: name, id } };
+                values.push(self.graph.element_public_id(&element));
+            }
+            ids.push(values);
+        }
+        let Some(kind) = homogeneous_scalar_type(ids.iter().flatten()) else {
+            // Other queries may still use the graph; only ID consumers decline.
+            return Ok(batches);
+        };
+        batches.into_iter().zip(ids).map(|(batch, ids)| {
+            let mut fields = batch.schema().fields().iter().cloned().collect::<Vec<_>>();
+            fields.push(Arc::new(Field::new(prop_col(binding, "__w_public_id"), kind.clone(), true)));
+            let mut arrays = batch.columns().to_vec();
+            arrays.push(values_array(self.language, ids.iter(), &kind)?);
+            Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays)?)
+        }).collect()
     }
 
     pub(super) fn lower_values(
@@ -141,7 +174,7 @@ impl<'a> LoweringContext<'a> {
                     .filter_map(|row| row.get(index))
                     .collect::<Vec<_>>();
                 if homogeneous_scalar_type(values.iter().copied()).is_none()
-                    && !(self.options.mapping.is_some() && values.iter().all(|v|matches!(v,Value::Null))) {
+                    && !values.iter().all(|v|matches!(v,Value::Null)) {
                     return Err(RelError::Unsupported(
                         "Heterogeneous graph-language values require native runtime types".into(),
                     ));

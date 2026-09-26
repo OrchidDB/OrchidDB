@@ -47,6 +47,7 @@ mod casts;
 mod collections;
 mod gremlin;
 mod gremlin_state;
+mod gremlin_strings;
 pub mod mapping;
 pub mod rdf;
 mod repeat;

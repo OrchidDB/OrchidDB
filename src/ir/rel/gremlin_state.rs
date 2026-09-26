@@ -6,6 +6,45 @@ use datafusion::logical_expr::{
 use std::any::Any;
 
 impl LoweringContext<'_> {
+    /// A terminal cap can be reduced in SQL without replaying its input.
+    /// Other side-effect placements still require the relational state kernel.
+    pub(super) fn lower_terminal_cap(&mut self, labels: &[String], mut node: &Node) -> RelResult<LoweredNode> {
+        let [wanted] = labels else { return Err(RelError::Unsupported("multi-label SQL cap".into())); };
+        while let Node::GraphSideEffect { reducer, input, .. } = node {
+            if reducer != "register" { break; }
+            node = input;
+        }
+        let Node::GraphSideEffect { label, value_input, value, seed, reducer, input, .. } = node else {
+            return Err(RelError::Unsupported("SQL cap requires a direct reducer".into()));
+        };
+        if label != wanted { return Err(RelError::Unsupported("SQL cap has intervening side effects".into())); }
+        let source = self.lower_node(input)?;
+        let mut values = self.lower_with_correlate(source.plan, value_input)?;
+        values.islands.merge(source.islands);
+        let arg = self.lower_expr(&values.plan, value)?;
+        if reducer == "collect" && matches!(seed, Value::BulkSet(items) if items.is_empty()) {
+            // ReturnedBatches expands a terminal BulkSet into its members.
+            let plan = LogicalPlanBuilder::from(values.plan.clone()).project(vec![arg.alias("current")])?.build()?;
+            return Ok(values.with_plan(plan));
+        }
+        let kind = arg.get_type(values.plan.schema())?;
+        if !kind.is_numeric() { return Err(RelError::Unsupported("SQL side-effect reducer requires numeric values".into())); }
+        let seed_kind = infer_property_data_type(&[seed.clone()]);
+        let seed_value = lit(value_to_scalar(seed, &seed_kind, self.language)?);
+        let aggregate = match reducer.as_str() {
+            "sum" => df_sum(arg), "min" => df_min(arg), "max" => df_max(arg),
+            _ => return Err(RelError::Unsupported(format!("SQL cap reducer {reducer}"))),
+        };
+        let reduced = LogicalPlanBuilder::from(values.plan.clone()).aggregate(Vec::<Expr>::new(), vec![aggregate.alias("__reduced")])?.build()?;
+        let combined = sack_binary(seed_value.clone(), col_exact("__reduced"), reducer)?;
+        let result = df_core::coalesce(vec![combined, seed_value]);
+        // Gremlin's reducer retains the numeric seed type when all inputs have
+        // that type; DuckDB SUM otherwise widens an integer to HUGEINT.
+        let result = if seed_kind == kind { Expr::Cast(datafusion::logical_expr::expr::Cast::new(Box::new(result), kind)) } else { result };
+        let plan = LogicalPlanBuilder::from(reduced).project(vec![result.alias("current")])?.build()?;
+        Ok(values.with_plan(plan))
+    }
+
     pub(super) fn lower_gremlin_state_call(
         &self,
         plan: &LogicalPlan,
