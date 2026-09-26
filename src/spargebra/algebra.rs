@@ -1,6 +1,6 @@
 //! [SPARQL 1.1 Query Algebra](https://www.w3.org/TR/sparql11-query/#sparqlQuery) representation.
 
-use crate::term::*;
+use crate::spargebra::term::*;
 use oxrdf::LiteralRef;
 use std::fmt;
 

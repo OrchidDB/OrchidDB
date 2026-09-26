@@ -23,7 +23,7 @@ impl SparqlPlanner {
                 let id = self
                     .exists_marks
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let mark = spargebra::term::Variable::new_unchecked(format!("__exists_{id}"));
+                let mark = crate::spargebra::term::Variable::new_unchecked(format!("__exists_{id}"));
                 let right = self.lower_in_scope(pattern, scope.clone())?;
                 let alias = binding(&mark);
                 let correlation = lowered
@@ -61,7 +61,7 @@ impl SparqlPlanner {
                 lowered.variables.insert(alias);
                 E::Greater(
                     boxed(E::Variable(mark)),
-                    boxed(E::Literal(spargebra::term::Literal::from(0_i64))),
+                    boxed(E::Literal(crate::spargebra::term::Literal::from(0_i64))),
                 )
             }
             E::NamedNode(_) | E::Literal(_) | E::Variable(_) | E::Bound(_) => expr.clone(),
@@ -106,7 +106,7 @@ impl SparqlPlanner {
 
     pub(super) fn aggregate(
         &self,
-        variable: &spargebra::term::Variable,
+        variable: &crate::spargebra::term::Variable,
         aggregate: &AggregateExpression,
     ) -> Result<AggCall, SparqlError> {
         let alias = binding(variable);

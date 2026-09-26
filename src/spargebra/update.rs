@@ -1,7 +1,7 @@
-use crate::SparqlParser;
-use crate::algebra::*;
-use crate::parser::SparqlSyntaxError;
-use crate::term::*;
+use crate::spargebra::SparqlParser;
+use crate::spargebra::algebra::*;
+use crate::spargebra::parser::SparqlSyntaxError;
+use crate::spargebra::term::*;
 use oxiri::Iri;
 use std::fmt;
 use std::str::FromStr;
@@ -9,13 +9,13 @@ use std::str::FromStr;
 /// A parsed [SPARQL update](https://www.w3.org/TR/sparql11-update/).
 ///
 /// ```
-/// use spargebra::SparqlParser;
+/// use orchiddb::spargebra::SparqlParser;
 ///
 /// let update_str = "CLEAR ALL ;";
 /// let update = SparqlParser::new().parse_update(update_str)?;
 /// assert_eq!(update.to_string().trim(), update_str);
 /// assert_eq!(update.to_sse(), "(update (clear all))");
-/// # Ok::<_, spargebra::SparqlSyntaxError>(())
+/// # Ok::<_, orchiddb::spargebra::SparqlSyntaxError>(())
 /// ```
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Update {

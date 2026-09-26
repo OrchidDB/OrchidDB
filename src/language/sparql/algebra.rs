@@ -499,7 +499,7 @@ impl SparqlPlanner {
                 inner,
                 silent,
             } => {
-                let query = spargebra::Query::Select {
+                let query = crate::spargebra::Query::Select {
                     dataset: None,
                     pattern: *inner.clone(),
                     base_iri: self.base_iri.as_ref().map(|iri| oxiri::Iri::parse(iri.clone()).expect("validated query base")),

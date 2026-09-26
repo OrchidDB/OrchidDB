@@ -2622,11 +2622,14 @@ dependencies = [
  "md-5 0.10.6",
  "num-bigint",
  "num-traits",
- "orchiddb-spargebra",
+ "oxilangtag",
  "oxiri",
+ "oxrdf",
  "oxsdatatypes",
  "parquet",
+ "peg",
  "postgres",
+ "rand 0.8.6",
  "regex",
  "reqwest",
  "serde",
@@ -2636,18 +2639,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "unicode-segmentation",
-]
-
-[[package]]
-name = "orchiddb-spargebra"
-version = "0.1.0"
-dependencies = [
- "oxilangtag",
- "oxiri",
- "oxrdf",
- "peg",
- "rand 0.8.6",
- "thiserror",
 ]
 
 [[package]]

@@ -27,7 +27,7 @@ locally; publishing committed reports does not rerun the suite.
 
 `cases/` is executable corpus input and remains in the repository. `jvm/` and
 `jvm-codecs/` are production modules, not copies of the standalone Java client.
-`vendor/spargebra` is a Cargo path dependency. Keep all of them.
+`src/spargebra` embeds the modified SPARQL parser and its upstream license notices. Keep all of them.
 
 ## Performance
 

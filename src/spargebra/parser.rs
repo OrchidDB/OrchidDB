@@ -1,9 +1,9 @@
 #![allow(clippy::ignored_unit_patterns)]
 
-use crate::algebra::*;
-use crate::query::*;
-use crate::term::*;
-use crate::update::*;
+use crate::spargebra::algebra::*;
+use crate::spargebra::query::*;
+use crate::spargebra::term::*;
+use crate::spargebra::update::*;
 use oxilangtag::LanguageTag;
 use oxiri::{Iri, IriParseError};
 use oxrdf::vocab::{rdf, xsd};
@@ -22,12 +22,12 @@ use std::str::FromStr;
 /// A SPARQL parser
 ///
 /// ```
-/// use spargebra::SparqlParser;
+/// use orchiddb::spargebra::SparqlParser;
 ///
 /// let query_str = "SELECT ?s ?p ?o WHERE { ?s ?p ?o . }";
 /// let query = SparqlParser::new().parse_query(query_str)?;
 /// assert_eq!(query.to_string(), query_str);
-/// # Ok::<_, spargebra::SparqlSyntaxError>(())
+/// # Ok::<_, orchiddb::spargebra::SparqlSyntaxError>(())
 /// ```
 #[must_use]
 #[derive(Clone, Default)]
@@ -46,7 +46,7 @@ impl SparqlParser {
     /// Provides an IRI that could be used to resolve the operation relative IRIs.
     ///
     /// ```
-    /// use spargebra::SparqlParser;
+    /// use orchiddb::spargebra::SparqlParser;
     ///
     /// let query = SparqlParser::new().with_base_iri("http://example.com/")?.parse_query("SELECT * WHERE { <s> <p> <o> }")?;
     /// assert_eq!(query.to_string(), "BASE <http://example.com/>\nSELECT * WHERE { <http://example.com/s> <http://example.com/p> <http://example.com/o> . }");
@@ -61,7 +61,7 @@ impl SparqlParser {
     /// Set a default IRI prefix used during parsing.
     ///
     /// ```
-    /// use spargebra::SparqlParser;
+    /// use orchiddb::spargebra::SparqlParser;
     ///
     /// let query = SparqlParser::new()
     ///     .with_prefix("ex", "http://example.com/")?
@@ -89,7 +89,7 @@ impl SparqlParser {
     ///
     /// ```
     /// use oxrdf::NamedNode;
-    /// use spargebra::SparqlParser;
+    /// use orchiddb::spargebra::SparqlParser;
     ///
     /// SparqlParser::new()
     ///     .with_custom_aggregate_function(NamedNode::new("http://example.com/concat")?)
@@ -107,12 +107,12 @@ impl SparqlParser {
     /// Parse the given query string using the already set options.
     ///
     /// ```
-    /// use spargebra::SparqlParser;
+    /// use orchiddb::spargebra::SparqlParser;
     ///
     /// let query_str = "SELECT ?s ?p ?o WHERE { ?s ?p ?o . }";
     /// let query = SparqlParser::new().parse_query(query_str)?;
     /// assert_eq!(query.to_string(), query_str);
-    /// # Ok::<_, spargebra::SparqlSyntaxError>(())
+    /// # Ok::<_, orchiddb::spargebra::SparqlSyntaxError>(())
     /// ```
     #[cfg_attr(
         not(feature = "standard-unicode-escaping"),
@@ -132,12 +132,12 @@ impl SparqlParser {
     /// Parse the given update string using the already set options.
     ///
     /// ```
-    /// use spargebra::SparqlParser;
+    /// use orchiddb::spargebra::SparqlParser;
     ///
     /// let update_str = "CLEAR ALL ;";
     /// let update = SparqlParser::new().parse_update(update_str)?;
     /// assert_eq!(update.to_string().trim(), update_str);
-    /// # Ok::<_, spargebra::SparqlSyntaxError>(())
+    /// # Ok::<_, orchiddb::spargebra::SparqlSyntaxError>(())
     /// ```
     #[cfg_attr(
         not(feature = "standard-unicode-escaping"),

@@ -1,4 +1,4 @@
-use spargebra::algebra::{Expression, Function};
+use crate::spargebra::algebra::{Expression, Function};
 
 use crate::ir::expr::{BinaryOp, IrExpr, Lit};
 
@@ -90,7 +90,7 @@ fn lower_with(expression: &Expression, typed: bool, base: Option<&str>) -> IrExp
     }
 }
 
-fn typed_literal(value: &spargebra::term::Literal) -> IrExpr {
+fn typed_literal(value: &crate::spargebra::term::Literal) -> IrExpr {
     if let Some(language) = value.language() {
         return call(
             SPARQL_LANG_LITERAL,

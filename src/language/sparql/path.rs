@@ -1,4 +1,4 @@
-use spargebra::algebra::PropertyPathExpression;
+use crate::spargebra::algebra::PropertyPathExpression;
 
 use crate::ir::plan::{RdfPathExpr, ZeroLengthPolicy};
 

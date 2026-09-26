@@ -1,151 +1,96 @@
-name: Package OrchidDB release
-
+name: Prepare Rust release
 on:
-  push:
-    tags: ['v[0-9]*']
   workflow_dispatch:
     inputs:
-      tag:
-        description: Existing tag matching Cargo.toml (for example v0.1.0)
-        required: true
+      ref:
+        description: Commit, branch, or existing v0.1.0 tag to verify
         type: string
-
+        default: main
+        required: true
+      publish:
+        description: Publish to crates.io (requires an existing matching version tag)
+        type: boolean
+        default: false
 permissions:
   contents: read
-
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: rust-release-${{ inputs.ref }}
   cancel-in-progress: false
-
 env:
-  RUST_VERSION: '1.93.1'
   CARGO_BUILD_JOBS: '2'
-  CARGO_PROFILE_RELEASE_DEBUG: '0'
-  CARGO_PROFILE_RELEASE_STRIP: symbols
-  CARGO_TERM_COLOR: always
-
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  RUST_MIN_STACK: '16777216'
 jobs:
-  prepare:
+  package:
     runs-on: ubuntu-22.04
     outputs:
-      tag: ${{ steps.metadata.outputs.tag }}
-      commit: ${{ steps.metadata.outputs.commit }}
-      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      commit: ${{ steps.source.outputs.commit }}
+      version: ${{ steps.source.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.93.1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate the tag and package version
-        id: metadata
+      - name: Validate source and publish intent
+        id: source
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: python scripts/release/package.py metadata --tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
-
-  build:
-    needs: prepare
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            executable: orchiddb
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            executable: orchiddb
-          - os: macos-14
-            target: aarch64-apple-darwin
-            executable: orchiddb
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            executable: orchiddb.exe
-    defaults:
-      run:
-        shell: bash
-    env:
-      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      RELEASE_TARGET: ${{ matrix.target }}
-      RELEASE_EXECUTABLE: ${{ matrix.executable }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.commit }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install the pinned Rust toolchain
+          RELEASE_REF: ${{ inputs.ref }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
-          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
-          rustup default "$RUST_VERSION"
-      - name: Build the CLI with bundled DuckDB
-        run: cargo build --locked --release --features duckdb --bin orchiddb --target "$RELEASE_TARGET"
-      - name: Smoke check and package the native binary
+          python - <<'PYTHON'
+          import os, subprocess, tomllib
+          version = tomllib.load(open('Cargo.toml', 'rb'))['package']['version']
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if os.environ['PUBLISH'] == 'true':
+              tag = 'v' + version
+              if os.environ['RELEASE_REF'] != tag:
+                  raise SystemExit('Publishing requires ref=' + tag)
+              tagged = subprocess.check_output(['git', 'rev-parse', 'refs/tags/' + tag + '^{commit}'], text=True).strip()
+              if tagged != commit:
+                  raise SystemExit('Tag does not match the checked-out commit')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('commit=' + commit + '\nversion=' + version + '\n')
+          PYTHON
+      - name: Test and verify registry packages without publishing
+        run: python scripts/release/package-workspace.py --core . --output dist --test
+      - name: Record artifact provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
         run: |
-          python scripts/release/package.py archive \
-            --tag "$RELEASE_TAG" --target "$RELEASE_TARGET" \
-            --binary "target/$RELEASE_TARGET/release/$RELEASE_EXECUTABLE" \
-            --output target/release-packages
+          printf '%s\n' "$SOURCE_COMMIT" > dist/SOURCE_COMMIT
+          cd dist
+          sha256sum ./*.crate SOURCE_COMMIT > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target }}
-          path: target/release-packages/*
+          name: verified-crates
+          path: dist/*
           if-no-files-found: error
-          compression-level: 0
-          retention-days: 14
-
-  draft-release:
-    needs: [prepare, build]
+          retention-days: 30
+  publish:
+    if: ${{ inputs.publish }}
+    needs: package
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    environment: crates-io
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.commit }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@1.93.1
       - uses: actions/download-artifact@v4
         with:
-          pattern: release-*
-          path: target/release-packages
-          merge-multiple: true
-      - name: Package explicitly labeled client download placeholders
-        run: python scripts/release/mock_clients.py --output target/release-packages
-      - name: Verify all archives and collect checksums
-        run: python scripts/release/package.py verify --tag "$RELEASE_TAG" --directory target/release-packages
-      - name: Create or update the draft release
-        shell: bash
+          name: verified-crates
+          path: dist
+      - name: Publish the verified orchiddb archive
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ needs.package.outputs.version }}
+          SOURCE_COMMIT: ${{ needs.package.outputs.commit }}
         run: |
-          set -euo pipefail
-          assets=(target/release-packages/*.tar.gz target/release-packages/*.zip target/release-packages/SHA256SUMS)
-          if existing_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [[ "$existing_draft" != true ]]; then
-              echo "Release $RELEASE_TAG is already published; refusing to replace its assets." >&2
-              exit 1
-            fi
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            flags=()
-            if [[ "$RELEASE_PRERELEASE" == true ]]; then flags+=(--prerelease); fi
-            gh release create "$RELEASE_TAG" "${assets[@]}" \
-              --verify-tag --draft "${flags[@]}" \
-              --title "OrchidDB $RELEASE_TAG" \
-              --notes-file scripts/release/NOTES.md
-          fi
-          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+          test -n "$CARGO_REGISTRY_TOKEN"
+          cd dist
+          sha256sum -c SHA256SUMS
+          test "$(cat SOURCE_COMMIT)" = "$SOURCE_COMMIT"
+          tar -xzf "orchiddb-$VERSION.crate"
+          cargo publish --locked --manifest-path "orchiddb-$VERSION/Cargo.toml"

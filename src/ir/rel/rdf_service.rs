@@ -74,7 +74,7 @@ impl ServiceSource {
             .pointer("/results/bindings")
             .and_then(Value::as_array)
             .ok_or("SERVICE response lacks SELECT bindings")?;
-        let scope = spargebra::term::BlankNode::default().as_str().to_owned();
+        let scope = crate::spargebra::term::BlankNode::default().as_str().to_owned();
         let mut rows = Vec::new();
         for binding in bindings {
             let mut row = Vec::new();
