@@ -37,6 +37,5 @@
 # Resources
 
 - [Conformance comparison](conformance.md)
-- [Query recipes](recipes.md)
 - [Configuration](configuration.md)
 - [Glossary](glossary.md)

@@ -61,7 +61,7 @@ The language frontends produce a shared Graph IR. Compiler-only clients lower su
 
 ## Follow a learning path
 
-Begin with [installation](installation.md), run the [quickstart](quickstart.md), then choose a [client example](client-apis.md). The separate [mapped graph tutorial](mapped-graphs.md) covers core runtime APIs and a customer/order dataset used in the [query recipes](recipes.md).
+Begin with [installation](installation.md), run the [quickstart](quickstart.md), then choose a [client example](client-apis.md). The separate [mapped graph tutorial](mapped-graphs.md) covers core runtime APIs using a customer/order dataset.
 
 For application integration, continue with [typed parameters](parameters.md), [Arrow results](results.md), and [transactions](transactions.md). The [CLI reference](cli.md), [mapping reference](mapping-reference.md), and [Rust API](rust-api.md) provide the details to keep nearby while coding.
 

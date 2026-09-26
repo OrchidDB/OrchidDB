@@ -111,7 +111,7 @@ let friends = graph.gremlin(
 ).await?;
 ```
 
-Alice follows bob and carol. See [query recipes](recipes.md) for aggregation, filtering, and additional traversals over this dataset.
+Alice follows bob and carol.
 
 ## Write through the mapping
 
