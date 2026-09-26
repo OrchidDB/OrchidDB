@@ -1,6 +1,6 @@
 # Installation
 
-Use the CLI for DuckDB and Iceberg, or embed a language client around your own engine. Source builds are available. Registry packages and binary releases are not published yet.
+Use the CLI for DuckDB and Iceberg, or embed a language client around your own engine. Version 0.1.0 is published. Packaged native binaries currently target macOS ARM64; source builds are also available.
 
 ## From source
 
@@ -46,7 +46,7 @@ Without a version, the installer selects the most recently created published rel
 | Elixir | [OrchidDB-elixir](https://github.com/OrchidDB/OrchidDB-elixir) | ADBC Arrow C Stream callback |
 | C++ | [OrchidDB-cpp](https://github.com/OrchidDB/OrchidDB-cpp) | Arrow C stream with RAII ownership |
 
-Start with [client setup and runnable examples](client-apis.md). These clients compile SQL without a DuckDB driver dependency. Your application supplies the engine. Rust uses a Git dependency; Java builds its JNI compiler; the other bindings use the shared native compiler below.
+Start with [client setup and runnable examples](client-apis.md). These clients compile SQL without a DuckDB driver dependency. Your application supplies the engine. For Java, add the API and macOS ARM64 compiler JAR dependencies from Maven Central, then call `NativeSqlCompiler.load()`. Maven supplies the compiler automatically: no manual native binary download or Rust build is required. See [Java installation](client-apis.md#java) for the complete dependency block and Arrow setup. The Java 0.1.0 compiler package supports macOS ARM64 JVMs only. The shared compiler instructions below apply to source builds of the other bindings.
 
 ## Shared native compiler
 
