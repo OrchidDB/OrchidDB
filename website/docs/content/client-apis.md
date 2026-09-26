@@ -21,7 +21,7 @@ Parameters are specialized into SQL. Cache keys must include their values, schem
 [Repository and example](https://github.com/OrchidDB/OrchidDB-rust). Add the client to your application:
 
 ```sh
-cargo add orchiddb-client --git https://github.com/OrchidDB/OrchidDB-rust --no-default-features
+cargo add orchiddb-client@0.1.0 --no-default-features
 ```
 
 `SqlSession` declares a dialect and returns an Arrow `RecordBatchReader`. Its result may borrow the session. Retained batches own reference-counted buffers after reader drop. The driver is your dependency.
@@ -35,7 +35,7 @@ for batch in &mut batches {
 }
 ```
 
-In a client checkout, run `cargo run --example borrowed_duckdb` for mappings, a caller-defined function, a borrowed connection, and rollback. Crates.io publication requires packaging the core compiler and its modified parser first; use a reviewed Git revision today.
+In a client checkout, run `cargo run --example borrowed_duckdb` for mappings, a caller-defined function, a borrowed connection, and rollback. Version 0.1.0 is available on crates.io.
 
 ## Java
 
@@ -72,17 +72,13 @@ Java requires an Arrow-compatible JVM setup, including `--add-opens=java.base/ja
 
 ## Python
 
-[Repository and complete example](https://github.com/OrchidDB/OrchidDB-python). In a source checkout:
+[Repository and complete example](https://github.com/OrchidDB/OrchidDB-python). Install from PyPI:
 
 ```sh
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[test]'
-# Set ORCHIDDB_NATIVE_LIBRARY using the installation guide.
-python examples/people.py
+python -m pip install "orchiddb[arrow]==0.1.0"
 ```
 
-The test extra supplies DuckDB and PyArrow for the example; they are not bundled with the compiler. Build the [matching native compiler](installation.md#shared-native-compiler) first.
+The published wheel bundles the compiler for macOS 26+ on Apple Silicon. Supply your own database driver. Other platforms require a [source build](installation.md#shared-native-compiler).
 
 ```python
 from orchiddb import Compiler, DuckDBEngine, Graph
@@ -100,15 +96,12 @@ The context closes the reader, not the connection. Retained PyArrow batches own 
 [Repository](https://github.com/OrchidDB/OrchidDB-js). Node.js 20+:
 
 ```sh
-npm ci
-npm run build
-# Set ORCHIDDB_NATIVE_LIBRARY using the installation guide.
-node examples/duckdb-wasm.mjs
+npm install @orchiddb/client@0.1.0
 ```
 
-Build the [native compiler](installation.md#shared-native-compiler) first. `Compiler.compile(request)` returns a SQL plan. Your `ExecutionEngine.execute(plan)` returns a schema, async Arrow batch iterator, and `close()` method. The `batches(result)` helper closes resources on completion, failure, and early exit.
+The published package includes the macOS ARM64 compiler. `Compiler.compile(request)` returns a SQL plan. Your `ExecutionEngine.execute(plan)` returns a schema, async Arrow batch iterator, and `close()` method. The `batches(result)` helper closes resources on completion, failure, and early exit.
 
-The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in Node.js; it is not a browser compiler. Compilation is synchronous, so use a worker for latency-sensitive services. Pass exact signed 64-bit parameters as `bigint`, for example `9007199254740993n`. Unsafe integer Numbers, non-finite Numbers, and bigint values outside signed int64 are rejected, including inside nested parameters. Follow the producer's batch lifetime contract. npm packaging is configured for `@orchiddb/client`, not published.
+The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in Node.js; it is not a browser compiler. Compilation is synchronous, so use a worker for latency-sensitive services. Pass exact signed 64-bit parameters as `bigint`, for example `9007199254740993n`. Unsafe integer Numbers, non-finite Numbers, and bigint values outside signed int64 are rejected, including inside nested parameters. Follow the producer's batch lifetime contract. Version 0.1.0 is available on npm as `@orchiddb/client`.
 
 ## Elixir
 
@@ -122,21 +115,24 @@ mix run examples/duckdb.exs
 
 Build the [matching native compiler](installation.md#shared-native-compiler) first. `OrchidDB.compile(request)` returns `{:ok, plan}` or `{:error, reason}`. The C NIF runs compilation on a dirty CPU scheduler.
 
-Optional `OrchidDB.query_arrow(connection, request, callback)` uses ADBC. Its Arrow C Stream pointer is valid only inside the callback and must not escape it. The connection stays caller-owned. Integration tests execute compiled queries through the real DuckDB ADBC driver and verify native Arrow ingestion, large integers, nulls, caller rollback, and cleanup after consumer errors. Hex source packaging is configured, not published.
+Optional `OrchidDB.query_arrow(connection, request, callback)` uses ADBC. Its Arrow C Stream pointer is valid only inside the callback and must not escape it. The connection stays caller-owned. Integration tests execute compiled queries through the real DuckDB ADBC driver and verify native Arrow ingestion, large integers, nulls, caller rollback, and cleanup after consumer errors. Add `{:orchiddb, "~> 0.1.0"}` to your Mix dependencies to install the published Hex package. The native compiler is still required separately.
 
 ## C++
 
-[Repository](https://github.com/OrchidDB/OrchidDB-cpp). Requires C++17 and CMake:
+Download the [0.1.0 macOS ARM64 binary package](https://github.com/OrchidDB/OrchidDB-cpp/releases/download/v0.1.0/orchiddb-cpp-0.1.0-Darwin-arm64.tar.gz) ([SHA-256 checksums](https://github.com/OrchidDB/OrchidDB-cpp/releases/download/v0.1.0/SHA256SUMS)). It includes C++17 headers, CMake configuration, the JSON dependency, and the compiled native library. No Rust build is required. Other platforms can [build from source](https://github.com/OrchidDB/OrchidDB-cpp).
 
-```sh
-cmake -S . -B build
-cmake --build build
-cmake --install build --prefix "$HOME/.local"
+Extract the archive and pass its directory as `-DCMAKE_PREFIX_PATH=/path/to/extracted/package`. In your application's CMakeLists.txt:
+
+```cmake
+find_package(OrchidDB CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE OrchidDB::orchiddb)
 ```
 
-Build the [native compiler](installation.md#shared-native-compiler) and set its library path. Consumers use `find_package(OrchidDB CONFIG REQUIRED)` and link `OrchidDB::orchiddb`. `ExecutionEngine` supplies an `ArrowResult`; stream, schema, and batch use separate move-only RAII wrappers and release callbacks. Batches can outlive the stream.
+Set `ORCHIDDB_NATIVE_LIBRARY` to the extracted `lib/liborchiddb_compiler.dylib` before running your application.
 
-The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples/duckdb_engine.hpp) and integration example show ownership and rollback. `./scripts/test.sh` downloads a checksum-pinned test driver and runs them. CMake release archives include the native compiler; no release is published yet.
+`ExecutionEngine` supplies an `ArrowResult`; stream, schema, and batch use separate move-only RAII wrappers and release callbacks. Batches can outlive the stream.
+
+The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples/duckdb_engine.hpp) and integration example show ownership and rollback. `./scripts/test.sh` downloads a checksum-pinned test driver and runs them. The published CMake archive includes the native compiler.
 
 ## Data lake access and performance
 
