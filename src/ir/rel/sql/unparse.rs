@@ -5,7 +5,8 @@ use super::*;
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let plan = strip_constant_sorts(lowered.plan.clone())?;
+    let plan = expand_sort_fetch(lowered.plan.clone())?;
+    let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = strip_column_qualifiers(plan)
@@ -370,5 +371,29 @@ fn strip_constant_sorts(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
             datafusion::logical_expr::LogicalPlanBuilder::from(input).limit(0, sort.fetch)?.build()?
         } else { input };
         Ok(Transformed::yes(result))
+    })?.data)
+}
+
+/// The upstream unparser overwrites an enclosing LIMIT with Sort.fetch,
+/// which includes the outer OFFSET. Keep TopK as a separate limit scope.
+fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
+    let mut boundary = 0;
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Sort(mut sort) = node else { return Ok(Transformed::no(node)); };
+        // SQL ORDER BY expressions can resolve a shadowed name against the
+        // projection input instead of its output. Materialize that scope.
+        if matches!(sort.input.as_ref(), LogicalPlan::Projection(_)) {
+            sort.input = std::sync::Arc::new(datafusion::logical_expr::LogicalPlanBuilder::from(sort.input.as_ref().clone())
+                .alias(format!("__w_sql_cte_sort_input_{boundary}"))?.build()?);
+            boundary += 1;
+        }
+        let Some(fetch) = sort.fetch.take() else { return Ok(Transformed::yes(LogicalPlan::Sort(sort))); };
+        let columns = sort.input.schema().columns().into_iter().map(Expr::Column).collect::<Vec<_>>();
+        let keys = sort.expr.clone();
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::Sort(sort))
+            .limit(0, Some(fetch))?.project(columns)?
+            .alias(format!("__w_sql_cte_topk_{boundary}"))?.sort(keys)?.build()?;
+        boundary += 1;
+        Ok(Transformed::yes(plan))
     })?.data)
 }

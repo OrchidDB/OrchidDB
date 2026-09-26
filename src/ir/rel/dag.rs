@@ -48,12 +48,20 @@ pub(crate) struct DagSession {
 }
 impl DagSession {
     pub(crate) fn new(timeout: Option<std::time::Duration>) -> Self {
+        let session = SessionContext::new_with_config(
+            SessionConfig::new().with_target_partitions(1),
+        );
+        // Removing the last constant grouping key changes empty-input
+        // semantics: a grouped aggregate has zero rows, a global one has one.
+        let rules = session.state().optimizers().iter()
+            .filter(|rule| rule.name() != "eliminate_group_by_constant")
+            .cloned().collect();
+        let state = datafusion::execution::session_state::SessionStateBuilder::new_from_existing(session.state())
+            .with_optimizer_rules(rules).build();
         Self {
             external: Default::default(),
             optimize: true,
-            session: SessionContext::new_with_config(
-                SessionConfig::new().with_target_partitions(1),
-            ),
+            session: SessionContext::new_with_state(state),
             #[cfg(feature = "duckdb")]
             executor: Arc::new(Mutex::new(
                 timeout

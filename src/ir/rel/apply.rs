@@ -304,7 +304,12 @@ pub(super) fn guard_scalar_cardinality(
         .window(vec![row_number])?
         .build()?;
     let bad_cast = Expr::Cast(Cast::new(
-        Box::new(lit("scalar subquery returned more than one row")),
+        // Keep the invalid cast dependent on this row. Otherwise constant
+        // folding raises it even when the CASE branch is never selected.
+        Box::new(datafusion::functions::string::expr_fn::concat(vec![
+            lit("scalar subquery returned more than one row: "),
+            Expr::Cast(Cast::new(Box::new(col_exact(&rank)), DataType::Utf8)),
+        ])),
         DataType::Boolean,
     ));
     let guard = Expr::Case(Case::new(

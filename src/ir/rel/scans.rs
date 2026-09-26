@@ -346,13 +346,22 @@ impl<'a> LoweringContext<'a> {
         };
         match shape {
             BindingShape::Node => {
-                for label in self.graph.node_label_order() {
-                    push_keys(self.graph.node_property_keys_with_id(label));
+                let mut labels = self.graph.node_label_order().to_vec();
+                // Overlay-created labels are absent from base table order.
+                for label in self.graph.labels() {
+                    if !labels.contains(&label) { labels.push(label); }
+                }
+                for label in labels {
+                    push_keys(self.graph.node_property_keys_with_id(&label));
                 }
             }
             BindingShape::Edge => {
-                for rel_type in self.graph.edge_rel_order() {
-                    push_keys(self.graph.edge_property_keys(rel_type));
+                let mut types = self.graph.edge_rel_order().to_vec();
+                for rel_type in self.graph.rel_types() {
+                    if !types.contains(&rel_type) { types.push(rel_type); }
+                }
+                for rel_type in types {
+                    push_keys(self.graph.edge_property_keys(&rel_type));
                 }
             }
         }
