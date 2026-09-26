@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='orchiddb-crates-') as temp:
         subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb', '--test', 'sql_compiler', '--test', 'execution'], cwd=root, check=True)
         subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb', '--doc', 'spargebra::'], cwd=root, check=True)
         if a.rust:
-            subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb-client', *(['--no-default-features'] if a.system_test_driver else [])], cwd=root, check=True)
+            subprocess.run(['cargo', 'test', '--locked', '-p', 'orchiddb-client', *(['--no-default-features'] if a.system_test_driver else ['--features', 'bundled-test-driver'])], cwd=root, check=True)
     # Cargo verifies dependent packages against its local workspace package index.
     subprocess.run(['cargo', 'package', '--workspace', '--locked', '--registry', 'crates-io'], cwd=root, check=True)
     target = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')).resolve()
