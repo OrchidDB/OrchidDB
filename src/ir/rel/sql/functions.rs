@@ -127,12 +127,6 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         );
         return Ok(());
     }
-    if dialect != SqlDialect::DuckDb {
-        if name.starts_with("__orchiddb_utf16_") {
-            return Err(SqlError::Unsupported("UTF-16 string SQL is currently implemented for DuckDB".into()));
-        }
-        return Ok(());
-    }
     let ast::FunctionArguments::List(arguments) = &function.args else {
         return Ok(());
     };
@@ -147,6 +141,15 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     let Some(args) = args else {
         return Ok(());
     };
+    if dialect != SqlDialect::DuckDb {
+        if name.starts_with("__orchiddb_utf16_") {
+            return Err(SqlError::Unsupported("UTF-16 string SQL is currently implemented for DuckDB".into()));
+        }
+        if name == "array_has" && args.len() == 2 {
+            *expr = template("array_position(__arg0, __arg1) IS NOT NULL", &args)?;
+        }
+        return Ok(());
+    }
     match (name.as_str(), args.len()) {
         ("__orchiddb_utf16_length", 1) => {
             *expr = template(r"CAST(length(regexp_replace(__arg0, '[\x{10000}-\x{10FFFF}]', 'xx', 'g')) AS INTEGER)", &args)?;

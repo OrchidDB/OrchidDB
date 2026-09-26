@@ -111,7 +111,13 @@ pub fn lower_pattern_part(
                 }
                 let path_binding = shared_path_binding
                     .clone()
-                    .or_else(|| variable_length.then(|| lowerer.synthetic("path")));
+                    .or_else(|| {
+                        // Anonymous endpoint-only traversals do not expose a path value.
+                        (variable_length && (user_rel_binding.is_some()
+                            || chain.relationship.recursive.is_some()
+                            || chain.relationship.properties.is_some()))
+                            .then(|| lowerer.synthetic("path"))
+                    });
                 let rel_binding = expand_relationship_binding(
                     lowerer,
                     &chain.relationship,

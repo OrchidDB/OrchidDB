@@ -182,6 +182,7 @@ impl LoweringContext<'_> {
             rel_types,
             *dir,
             None,
+            history.as_deref().filter(|_| self.options.mapping.is_some()),
         )?;
         let mut bindings = vec![source];
         if existing {

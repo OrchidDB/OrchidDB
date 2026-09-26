@@ -54,6 +54,7 @@ impl<'a> LoweringContext<'a> {
         rel_types: &LabelExpr,
         dir: Direction,
         path: Option<&str>,
+        history: Option<&str>,
     ) -> RelResult<LoweredNode> {
         if self.language == Language::Gremlin
             && !self.options.tolerate_internal_path_state
@@ -92,6 +93,9 @@ impl<'a> LoweringContext<'a> {
                 rel_types,
             ),
         }?;
+        if let Some(history) = history {
+            expanded = self.track_relationship(expanded, history, &rel)?;
+        }
         if let Some(path) = path {
             expanded = self.materialize_fixed_path(expanded, path, source, target, &rel)?;
         } else if rel_binding.is_none() {
@@ -105,6 +109,30 @@ impl<'a> LoweringContext<'a> {
             expanded = expanded.with_plan(plan);
         }
         Ok(expanded)
+    }
+
+    /// Keep exact edge identities as an SQL list. Labels are part of identity;
+    /// membership is element-wise, never a substring match on serialized paths.
+    pub(super) fn relationship_key(rel: &str) -> Expr {
+        concat_exprs(vec![col_exact(label_col(rel)), lit(":"), cast_utf8(col_exact(id_col(rel)))])
+    }
+
+    pub(super) fn empty_relationship_history() -> Expr {
+        // A typed sentinel avoids an untyped empty array in SQL. Real keys
+        // always contain ':' followed by a signed integer, so cannot be empty.
+        datafusion::functions_nested::expr_fn::make_array(vec![lit("")])
+    }
+
+    pub(super) fn track_relationship(&self, input: LoweredNode, history: &str, rel: &str) -> RelResult<LoweredNode> {
+        use datafusion::functions_nested::expr_fn::{array_has, array_append};
+        let previous = if has_exact_col(&input.plan, history) { col_exact(history) } else { Self::empty_relationship_history() };
+        let key = Self::relationship_key(rel);
+        let filtered = LogicalPlanBuilder::from(input.plan.clone())
+            .filter(Expr::Not(Box::new(array_has(previous.clone(), key.clone()))))?.build()?;
+        let mut projection = existing_columns(&filtered, &BTreeSet::from([history.to_owned()]));
+        projection.push(array_append(previous, key).alias(history));
+        let plan = LogicalPlanBuilder::from(filtered).project(projection)?.build()?;
+        Ok(input.with_plan(plan))
     }
 
     pub(super) fn materialize_fixed_path(
