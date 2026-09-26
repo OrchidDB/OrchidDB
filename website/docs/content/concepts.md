@@ -24,9 +24,23 @@ Mapped engines use the schemas registered in their mappings to plan queries, whi
 
 ## Graph IR
 
-Graph IR is the common representation produced by the language frontends. It carries graph operations such as node scans, expansion, filtering, projection, aggregation, and path traversal.
+Graph IR (graph intermediate representation) is OrchidDB's shared logical query plan for Cypher, Gremlin, and SPARQL. It describes what a query should do using graph operations such as node scans, relationship expansion, filtering, projection, aggregation, and path traversal. It represents the query, not the stored graph data.
 
-Keeping these operations explicit gives the planner the information needed to preserve language semantics while choosing relational execution. The [execution guide](execution.md) shows how to inspect this representation.
+Each language frontend parses and validates a query, then translates it into a tree of these operations. Operators introduce bindings for nodes, relationships, and values; expressions refer to those bindings to read properties, compare values, or compute results. The plan also carries rules for missing values, matching, and paths so that sharing a representation preserves each language's behavior.
+
+For example:
+
+```cypher
+MATCH (p:Person)-[:FOLLOWS]->(q:Person)
+WHERE p.name = 'Ada'
+RETURN q.name
+```
+
+Conceptually, this becomes a scan of `Person` nodes, a filter for `p.name`, an outgoing `FOLLOWS` expansion to another `Person`, and a projection of `q.name`. This is a simplified description, not literal explain output. Relational lowering uses the graph mappings to turn scans into table reads, a single-hop expansion into joins on endpoint identities, and property access into column expressions.
+
+Graph IR gives the languages a common planning layer, so relational lowering and SQL generation can be shared instead of implemented separately for every language and SQL dialect. Keeping graph operations and their rules explicit also lets later stages preserve graph identity, duplicate results, and path constraints when translating them into relational operations.
+
+Graph IR is lowered before execution. [Compiler clients](sql-compiler.md) return SQL for supported reads and reject queries that cannot be fully lowered. The optional managed runtime executes the lowered DataFusion plan with eligible SQL regions in DuckDB and remaining native kernels. Graph IR itself is not interpreted at runtime. The [execution guide](execution.md#inspect-graph-ir) shows how to inspect it.
 
 ## SQL islands
 

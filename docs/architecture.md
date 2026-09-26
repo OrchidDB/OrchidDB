@@ -20,6 +20,23 @@ owns schema discovery, transactions, connection leasing, extensions, UDF setup,
 result decoding, cancellation and caches. Compile-time function declarations
 only describe signatures and SQL targets; they do not install implementations.
 
+## Graph IR
+
+Graph IR (graph intermediate representation) is the shared logical query plan
+between the language frontends and relational lowering. It represents a query
+as a tree of graph operators, including node scans, relationship expansion,
+filters, projections, aggregation and path traversal. Operators produce named
+bindings; value expressions refer to those bindings. Plan policies retain
+language-specific rules for matching, missing values and paths.
+
+Relational lowering uses the graph catalog and mappings to translate these
+operations into table scans, joins and other relational operators. For example,
+a single-hop relationship expansion becomes joins on mapped endpoint identities.
+This common layer lets Cypher, Gremlin and SPARQL share relational lowering and
+SQL generation while retaining their language semantics. Graph IR describes
+the query rather than stored data, and is consumed before execution. See
+[core concepts](../website/docs/content/concepts.md#graph-ir) for a query example.
+
 ## Language and IR ownership
 
 Parsing normalizes syntax into a typed AST. Semantic analysis validates names,
