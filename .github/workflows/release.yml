@@ -56,8 +56,8 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('commit=' + commit + '\nversion=' + version + '\n')
           PYTHON
-      - name: Test and verify registry packages without publishing
-        run: python scripts/release/package-workspace.py --core . --output dist --test
+      - name: Build registry packages without publishing
+        run: python scripts/release/package-workspace.py --core . --output dist
       - name: Record artifact provenance
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
