@@ -35,7 +35,7 @@ for batch in &mut batches {
 }
 ```
 
-In a client checkout, run `cargo run --example borrowed_duckdb` for mappings, a caller-defined function, a borrowed connection, and rollback. Version 0.1.0 is available on crates.io.
+In a client checkout, run `cargo run --manifest-path examples/Cargo.toml --features bundled` for mappings, a caller-defined function, a borrowed connection, and rollback. The standalone example resolves OrchidDB 0.1.0 from crates.io. The example owns its DuckDB dependency; `--features bundled` builds that driver.
 
 ## Java
 
@@ -64,6 +64,8 @@ var compiler = io.orchiddb.NativeSqlCompiler.load();
 
 Maven resolves the compiler JAR; `load()` verifies, extracts and loads it automatically. No manual binary download, library path, Rust toolchain or source checkout is needed. Version 0.1.0 includes **macOS ARM64 JVMs only**; other platform compiler JARs are not published for this version.
 
+Run `./scripts/run-example.sh ArrowBatches` from a Java client checkout. Its standalone example POM downloads the published Maven packages and requires no Rust checkout. Run `./scripts/run-gremlin-example.sh` for the optional Gremlin module.
+
 For a complete application example, see [ArrowBatches.java](https://github.com/OrchidDB/OrchidDB-java/blob/main/orchiddb-java/src/test/java/io/orchiddb/examples/ArrowBatches.java).
 
 `JdbcEngine.withArrow` takes your JDBC connection, Arrow allocator, and driver export callback. `Graph.queryArrow` returns an `ArrowResult`. Java vectors are borrowed: consume them before advancing or closing the result. Copy/transfer data explicitly if it must outlive that scope. Your parent allocator and connection remain caller-owned.
@@ -77,6 +79,8 @@ Java requires an Arrow-compatible JVM setup, including `--add-opens=java.base/ja
 ```sh
 python -m pip install "orchiddb[arrow]==0.1.0"
 ```
+
+To run the checked-in example in a fresh virtual environment, use `python -m pip install -r examples/requirements.txt` followed by `python examples/people.py`.
 
 The published wheel bundles the compiler for macOS 26+ on Apple Silicon. Supply your own database driver. Other platforms require a [source build](installation.md#shared-native-compiler).
 
@@ -99,6 +103,8 @@ The context closes the reader, not the connection. Retained PyArrow batches own 
 npm install @orchiddb/client@0.1.0
 ```
 
+From a client checkout, run `cd examples && npm ci && npm start`. Its package.json installs the published client and the application-owned DuckDB-Wasm driver.
+
 The published package includes the macOS ARM64 compiler. `Compiler.compile(request)` returns a SQL plan. Your `ExecutionEngine.execute(plan)` returns a schema, async Arrow batch iterator, and `close()` method. The `batches(result)` helper closes resources on completion, failure, and early exit.
 
 The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in Node.js; it is not a browser compiler. Compilation is synchronous, so use a worker for latency-sensitive services. Pass exact signed 64-bit parameters as `bigint`, for example `9007199254740993n`. Unsafe integer Numbers, non-finite Numbers, and bigint values outside signed int64 are rejected, including inside nested parameters. Follow the producer's batch lifetime contract. Version 0.1.0 is available on npm as `@orchiddb/client`.
@@ -108,12 +114,13 @@ The example uses DuckDB-Wasm's native Arrow stream. The binding itself runs in N
 [Repository](https://github.com/OrchidDB/OrchidDB-elixir). With Elixir, Erlang headers, `make`, and a C compiler:
 
 ```sh
+cd examples
 mix deps.get
-# Set ORCHIDDB_NATIVE_LIBRARY using the installation guide.
-mix run examples/duckdb.exs
+# Set ORCHIDDB_NATIVE_LIBRARY to the downloaded compiler library.
+mix run duckdb.exs
 ```
 
-Build the [matching native compiler](installation.md#shared-native-compiler) first. `OrchidDB.compile(request)` returns `{:ok, plan}` or `{:error, reason}`. The C NIF runs compilation on a dirty CPU scheduler.
+The standalone example uses Hex package `orchiddb` 0.1.0. Download the [macOS ARM64 compiler](https://github.com/OrchidDB/OrchidDB-native/releases/download/v0.1.0/orchiddb-compiler-v0.1.0-aarch64-apple-darwin.tar.gz), extract it, and point `ORCHIDDB_NATIVE_LIBRARY` at its `lib/liborchiddb_compiler.dylib`. Other platforms require a [source build](installation.md#shared-native-compiler). `OrchidDB.compile(request)` returns `{:ok, plan}` or `{:error, reason}`. The C NIF runs compilation on a dirty CPU scheduler.
 
 Optional `OrchidDB.query_arrow(connection, request, callback)` uses ADBC. Its Arrow C Stream pointer is valid only inside the callback and must not escape it. The connection stays caller-owned. Integration tests execute compiled queries through the real DuckDB ADBC driver and verify native Arrow ingestion, large integers, nulls, caller rollback, and cleanup after consumer errors. Add `{:orchiddb, "~> 0.1.0"}` to your Mix dependencies to install the published Hex package. The native compiler is still required separately.
 
@@ -132,7 +139,7 @@ Set `ORCHIDDB_NATIVE_LIBRARY` to the extracted `lib/liborchiddb_compiler.dylib` 
 
 `ExecutionEngine` supplies an `ArrowResult`; stream, schema, and batch use separate move-only RAII wrappers and release callbacks. Batches can outlive the stream.
 
-The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples/duckdb_engine.hpp) and integration example show ownership and rollback. `./scripts/test.sh` downloads a checksum-pinned test driver and runs them. The published CMake archive includes the native compiler.
+The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples/duckdb_engine.hpp) and integration example show ownership and rollback. To run against the downloaded package, configure `cmake -S examples -B examples/build` with `CMAKE_PREFIX_PATH` pointing to the extracted archive and `DUCKDB_INCLUDE_DIR` / `DUCKDB_LIBRARY` pointing to your DuckDB installation. Then run `cmake --build examples/build` and `ctest --test-dir examples/build --output-on-failure`. The published CMake archive includes the native compiler.
 
 ## Data lake access and performance
 
