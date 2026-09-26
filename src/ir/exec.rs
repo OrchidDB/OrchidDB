@@ -1,231 +1,27 @@
-//! Legacy reference island planner used by comparison tests.
+//! Managed execution statistics and relational Arrow result decoding.
 //!
-//! Production managed queries use `ir::rel::runtime`: a relational DAG
-//! scheduled by DataFusion, with explicit DuckDB regions and native kernels.
-//! The historical rewrite below remains available as a reference implementation.
-//!
-//! Hybrid executable plans: SQL islands spliced into a Graph IR plan.
-//!
-//! The relational backend ([`crate::ir::rel`]) is all-or-nothing — it lowers
-//! a whole [`GraphPlan`] to one relational plan, or fails. That makes a
-//! single unsupported operator very expensive: `list_append` sitting in a
-//! projection discards the scan, filter and joins beneath it, and the entire
-//! query falls back to the tree interpreter.
-//!
-//! This module partitions instead. It walks the plan top-down looking for
-//! *maximal* subtrees the relational backend accepts, executes each one as a
-//! SQL island, and rewrites that subtree in place as [`Node::GraphValues`]
-//! holding the island's result rows. Whatever could not be lowered runs
-//! afterwards over those materialized rows.
-//!
-//! Splicing the results back in as `GraphValues` is what keeps this cheap:
-//! the residual is still an ordinary Graph IR plan, so it needs no new
-//! operator, no new executor, and no changes to any existing consumer of
-//! `Node`.
-//!
-//! Two things are deliberately never islanded:
-//!
-//! * **Mutations.** `GraphCreate` has a relational lowering, but executing it
-//!   through DataFusion would compute a result set without ever writing to
-//!   the catalog. Writes must reach the graph store, so any subtree
-//!   containing one stays with the interpreter.
-//! * **Correlated subtrees.** A subtree under an `Apply`'s right side refers
-//!   to bindings produced outside it. Lowering it standalone fails on the
-//!   unresolved binding, so it declines to island on its own.
-
-use std::future::Future;
-use std::pin::Pin;
-
+//! Query execution is scheduled by the DataFusion relational DAG.
+use crate::ir::catalog::array_value;
+use crate::ir::plan::Node;
+use crate::ir::runtime::ReturnedBatches;
+use crate::ir::value::Value;
 use arrow::array::Array;
 use arrow::datatypes::{DataType, Field};
 
-use crate::ir::catalog::{PropertyGraph, array_value};
-use crate::ir::interpreter::{ReturnedBatches, execute as interpreter_execute};
-use crate::ir::plan::{GraphPlan, Node};
-use crate::ir::rel::sql;
-use crate::ir::rel::{LoweredPlan, RelBackend, execute_lowered};
-use crate::ir::value::Value;
-
-/// A future returned by [`IslandTarget::execute`]. Boxed because the trait is
-/// object-safe by design: the target is chosen at runtime (config, env var,
-/// or per-call), not at compile time.
-pub type IslandFuture<'a> = Pin<Box<dyn Future<Output = Result<ReturnedBatches, String>> + 'a>>;
-
-/// Where a SQL island actually runs.
-///
-/// The partitioner decides *what* to push down; this decides *who executes
-/// it*. Keeping them apart is what makes the engine retargetable: DuckDB is
-/// the default, but nothing above this trait knows that.
-pub trait IslandTarget {
-    /// Short name for diagnostics and harness reporting (`duckdb`, ...).
-    fn name(&self) -> &str;
-    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a>;
-}
-
-/// In-process DataFusion. No external engine, no SQL text — useful as a
-/// reference target and for environments without a database.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DataFusionTarget;
-
-impl IslandTarget for DataFusionTarget {
-    fn name(&self) -> &str {
-        "datafusion"
-    }
-
-    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a> {
-        Box::pin(async move {
-            execute_lowered(lowered)
-                .await
-                .map_err(|err| format!("{err}"))
-        })
-    }
-}
-
-/// A real SQL engine: the lowered plan is unparsed to dialect-specific SQL,
-/// the referenced tables are materialized, and the query runs on the engine.
-///
-/// Generic over the executor so any [`SqlExecutor`](crate::ir::rel::sql::SqlExecutor)
-/// implementation — DuckDB, Postgres, or one added later — can back an island
-/// without touching the partitioner.
-pub struct SqlTarget<F, E> {
-    dialect: sql::SqlDialect,
-    make_executor: F,
-    executor: std::sync::Mutex<Option<E>>,
-}
-
-impl<F, E> SqlTarget<F, E>
-where
-    F: Fn() -> sql::SqlResult<E>,
-    E: sql::SqlExecutor,
-{
-    pub fn new(dialect: sql::SqlDialect, make_executor: F) -> Self {
-        Self {
-            dialect,
-            make_executor,
-            executor: std::sync::Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(feature = "duckdb")]
-impl SqlTarget<fn() -> sql::SqlResult<sql::DuckDbExecutor>, sql::DuckDbExecutor> {
-    /// The default target: a reusable in-process DuckDB session.
-    #[cfg(feature = "duckdb")]
-    pub fn duckdb() -> Self {
-        Self::new(sql::SqlDialect::DuckDb, || Ok(sql::DuckDbExecutor::new()))
-    }
-}
-
-#[cfg(feature = "postgres")]
-impl SqlTarget<fn() -> sql::SqlResult<sql::PostgresExecutor>, sql::PostgresExecutor> {
-    /// Postgres, connecting per island through
-    /// [`PostgresExecutor::ENV_URL`](sql::PostgresExecutor::ENV_URL).
-    pub fn postgres() -> Self {
-        Self::new(sql::SqlDialect::Postgres, || {
-            let url = std::env::var(sql::PostgresExecutor::ENV_URL).map_err(|_| {
-                sql::SqlError::Setup(format!("{} is not set", sql::PostgresExecutor::ENV_URL))
-            })?;
-            sql::PostgresExecutor::connect(&url)
-        })
-    }
-}
-
-impl<F, E> IslandTarget for SqlTarget<F, E>
-where
-    F: Fn() -> sql::SqlResult<E>,
-    E: sql::SqlExecutor,
-{
-    fn name(&self) -> &str {
-        self.dialect.name()
-    }
-
-    fn execute<'a>(&'a self, lowered: LoweredPlan) -> IslandFuture<'a> {
-        Box::pin(async move {
-            // SQL engines run synchronously and cannot be cancelled once
-            // started, so oversized plans are refused up front rather than
-            // allowed to pin a core. DataFusion applies the same bound in
-            // `execute_lowered`.
-            let nodes = logical_plan_nodes(&lowered.plan);
-            if nodes > MAX_ISLAND_PLAN_NODES {
-                return Err(format!(
-                    "island plan too large for uncancellable execution ({nodes} nodes)"
-                ));
-            }
-            let prepared = sql::prepare(&lowered, self.dialect)
-                .await
-                .map_err(|err| format!("{err}"))?;
-            let mut executor = self
-                .executor
-                .lock()
-                .map_err(|_| "SQL executor lock was poisoned".to_string())?;
-            if executor.is_none() {
-                *executor = Some((self.make_executor)().map_err(|err| format!("{err}"))?);
-            }
-            sql::execute_prepared(executor.as_mut().expect("initialized"), &prepared)
-                .map_err(|err| format!("{err}"))
-        })
-    }
-}
-
-/// Upper bound on the relational plan size handed to a synchronous engine.
-const MAX_ISLAND_PLAN_NODES: usize = 200;
-
-fn logical_plan_nodes(plan: &datafusion::logical_expr::LogicalPlan) -> usize {
-    let mut count = 0usize;
-    let mut stack = vec![plan];
-    while let Some(node) = stack.pop() {
-        count += 1;
-        stack.extend(node.inputs());
-    }
-    count
-}
-
-/// The default island target: DuckDB when compiled in, DataFusion otherwise.
-///
-/// `GRAPH_ISLAND_TARGET` overrides it (`duckdb`, `postgres`, `datafusion`) so
-/// the same binary can be pointed at a different engine.
-pub fn default_target() -> Box<dyn IslandTarget> {
-    let requested = std::env::var("GRAPH_ISLAND_TARGET").unwrap_or_default();
-    match requested.as_str() {
-        "datafusion" => Box::new(DataFusionTarget),
-        #[cfg(feature = "postgres")]
-        "postgres" => Box::new(SqlTarget::postgres()),
-        #[cfg(feature = "duckdb")]
-        _ => Box::new(SqlTarget::duckdb()),
-        #[cfg(not(feature = "duckdb"))]
-        _ => Box::new(DataFusionTarget),
-    }
-}
-
-/// What the partitioner did, for tests and for the harness to report.
 #[derive(Debug, Clone, Default)]
 pub struct ExecStats {
-    /// Operators executed by the DataFusion relational DAG.
+    /// Operators scheduled by the DataFusion relational DAG.
     pub datafusion_ops: usize,
-    /// Subtrees executed relationally.
+    /// Regions delegated to DuckDB.
     pub islands: usize,
-    /// Rows those islands returned in total.
+    /// Rows produced by delegated regions when recorded by the engine.
     pub island_rows: usize,
-    /// Every operator left in the rewritten plan, islands included.
-    pub residual_ops: usize,
-    /// Operators the interpreter must still evaluate — everything in the
-    /// residual except the spliced-in island results and the `GraphReturn`
-    /// result-shaping boundary, neither of which does query work.
-    pub interpreted_ops: usize,
-    /// Why subtrees declined to island, outermost attempt first. This is the
-    /// work list for closing lowering gaps — every entry is a query shape
-    /// that still needs the interpreter.
-    pub declined: Vec<String>,
 }
 
 impl ExecStats {
-    /// Did the whole plan push down, leaving the interpreter nothing to do
-    /// but shape already-computed rows?
-    ///
-    /// This is the metric that gates retiring the interpreter: it can be
-    /// deleted once every case in the corpus reports `true`.
+    /// Whether all query operators were delegated to SQL.
     pub fn fully_pushed_down(&self) -> bool {
-        self.islands >= 1 && self.interpreted_ops == 0 && self.datafusion_ops == 0
+        self.islands >= 1 && self.datafusion_ops == 0
     }
 }
 
@@ -241,193 +37,9 @@ const DST_LABEL_SUFFIX: &str = "__dst_label";
 /// Separator between a `x.*` projection alias and each expanded property.
 const STAR_SEP: &str = "__star__";
 
-/// Rewrite `plan` so every maximal relationally-lowerable subtree is replaced
-/// by its already-computed rows.
-///
-/// The returned plan is an ordinary Graph IR plan and can be handed straight
-/// to the interpreter. On any island failure the subtree is left untouched,
-/// so the worst case is exactly today's behaviour.
-pub async fn plan_with_islands(
-    plan: &GraphPlan,
-    graph: &PropertyGraph,
-    backend: &RelBackend,
-    target: &dyn IslandTarget,
-) -> (GraphPlan, ExecStats) {
-    fn observes_path(node: &Node) -> bool {
-        matches!(node, Node::GraphPathFilter { .. })
-            || matches!(node, Node::GraphCurrentProject { expr: crate::ir::expr::IrExpr::Call { name, .. }, .. } if name == "path_or_self")
-            || children(node).into_iter().any(observes_path)
-    }
-    let preserving_backend;
-    let backend = if observes_path(&plan.root) {
-        preserving_backend = backend.preserving_traverser_state();
-        &preserving_backend
-    } else { backend };
-    let mut root = (*plan.root).clone();
-    let mut stats = ExecStats::default();
-    islandize(&mut root, &plan.policy, graph, backend, target, &mut stats).await;
-    stats.residual_ops = count_ops(&root);
-    stats.interpreted_ops = count_interpreted_ops(&root);
-    (
-        GraphPlan {
-            policy: plan.policy.clone(),
-            root: Box::new(root),
-        },
-        stats,
-    )
-}
-
-/// Execute a read plan directly on the relational target when the complete
-/// plan lowers. Only if whole-plan lowering or execution declines do we
-/// partition it into hybrid islands and invoke the interpreter for the
-/// residual.
-///
-/// Fully supported reads push query work into the target. Language result
-/// shaping remains at the interpreter boundary so graph identities and
-/// nested value types survive the SQL result conversion.
-pub async fn execute_with_islands(
-    plan: &GraphPlan,
-    graph: &PropertyGraph,
-    backend: &RelBackend,
-    target: &dyn IslandTarget,
-) -> Result<(ReturnedBatches, ExecStats), String> {
-    // GraphReturn owns language-specific result shaping. Returning the SQL
-    // batch directly erases graph identities and nested value types. Its
-    // input can still execute as one complete SQL island; only the final
-    // result boundary must reconstruct the typed values.
-    if !matches!(plan.root.as_ref(), Node::GraphReturn { .. })
-        && !contains_mutation(&plan.root)
-        && let Ok(lowered) = backend.lower(plan, graph)
-        && let Ok(returned) = target.execute(lowered).await
-    {
-        let rows = returned.batch.num_rows();
-        return Ok((
-            returned,
-            ExecStats {
-                islands: 1,
-                island_rows: rows,
-                residual_ops: 0,
-                interpreted_ops: 0,
-                datafusion_ops: 0,
-                declined: Vec::new(),
-            },
-        ));
-    }
-
-    let (hybrid, stats) = plan_with_islands(plan, graph, backend, target).await;
-    let returned = interpreter_execute(&hybrid, graph).map_err(|err| err.to_string())?;
-    Ok((returned, stats))
-}
-
-/// Try to island `node`; if it declines, recurse into its children.
-///
-/// Boxed because the recursion is async — `islandize` awaits itself.
-fn islandize<'a>(
-    node: &'a mut Node,
-    policy: &'a crate::ir::policy::GraphPlanPolicy,
-    graph: &'a PropertyGraph,
-    backend: &'a RelBackend,
-    target: &'a dyn IslandTarget,
-    stats: &'a mut ExecStats,
-) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-    Box::pin(async move {
-        match try_island(node, policy, graph, backend, target).await {
-            Ok(values) => {
-                if let Node::GraphValues { rows, .. } = &values {
-                    stats.islands += 1;
-                    stats.island_rows += rows.len();
-                }
-                *node = values;
-                return;
-            }
-            Err(Decline::Ineligible) => {}
-            Err(Decline::Reason(reason)) => stats.declined.push(reason),
-        }
-        for child in children_mut(node) {
-            islandize(child, policy, graph, backend, target, stats).await;
-        }
-    })
-}
-
-/// Why a subtree did not become an island.
-enum Decline {
-    /// Structurally not a candidate (leaf, mutation, result boundary). Not a
-    /// gap in the lowering, so it is not worth reporting.
-    Ineligible,
-    /// The relational backend or the target engine rejected it. These are the
-    /// gaps worth closing.
-    Reason(String),
-}
-
-/// Recursive SQL materializes every walk. For a repeat explicitly proven
-/// independent of path history, the interpreter can retain multiplicities
-/// in a compact frontier. Prefer that execution path whenever the proof holds;
-/// even a short repeat can otherwise expand a high-degree graph enormously.
-fn prefers_bulk_repeat(node: &Node) -> bool {
-    fn marked(node: &Node) -> bool {
-        if let Node::GraphProject { items, .. } = node {
-            if items.iter().any(|item| item.alias == "__gremlin_bulk_safe" && item.expr == crate::ir::expr::IrExpr::lit_bool(true)) { return true; }
-        }
-        children(node).into_iter().any(marked)
-    }
-    if let Node::GraphRepeat { seed, .. } = node {
-        if marked(seed) { return true; }
-    }
-    children(node).into_iter().any(prefers_bulk_repeat)
-}
-
-/// Execute `node` on the target engine and materialize the result.
-async fn try_island(
-    node: &Node,
-    policy: &crate::ir::policy::GraphPlanPolicy,
-    graph: &PropertyGraph,
-    backend: &RelBackend,
-    target: &dyn IslandTarget,
-) -> Result<Node, Decline> {
-    // A bare source is already as cheap as it gets; islanding one buys
-    // nothing and only costs a materialization.
-    if children_count(node) == 0 {
-        return Err(Decline::Ineligible);
-    }
-    if contains_mutation(node) || prefers_bulk_repeat(node) {
-        return Err(Decline::Ineligible);
-    }
-    // `GraphReturn` is result shaping, not query work: it names the output
-    // columns and applies the result form. Islanding it would hand the
-    // engine's column order to the caller instead of the declared field
-    // order, so it stays put and its input islands instead.
-    if matches!(node, Node::GraphReturn { .. }) {
-        return Err(Decline::Ineligible);
-    }
-    let candidate = GraphPlan {
-        policy: policy.clone(),
-        root: Box::new(node.clone()),
-    };
-    let lowered = backend
-        .lower(&candidate, graph)
-        .map_err(|err| Decline::Reason(format!("{err}")))?;
-    let returned = target
-        .execute(lowered)
-        .await
-        .map_err(|err| Decline::Reason(format!("{}: {err}", target.name())))?;
-    batch_to_values(&returned).ok_or_else(|| {
-        Decline::Reason("island result did not match the graph column encoding".to_string())
-    })
-}
-
-/// Rebuild a relational result batch into `GraphValues` bindings.
-///
-/// The relational encoding spreads one graph binding over several columns
-/// (`p__id`, `p__label`, `p__prop__age`). Node and edge bindings are
-/// reassembled from their id/label columns; property columns are dropped
-/// because the catalog remains the source of truth for property reads, so
-/// carrying them would only risk disagreeing with it.
-fn batch_to_values(returned: &ReturnedBatches) -> Option<Node> {
-    let (bindings, rows) = batch_to_bindings(returned)?;
-    Some(Node::GraphValues { bindings, rows, bulk: None })
-}
-
-pub(crate) fn batch_to_bindings(returned: &ReturnedBatches) -> Option<(Vec<String>, Vec<Vec<Value>>)> {
+pub(crate) fn batch_to_bindings(
+    returned: &ReturnedBatches,
+) -> Option<(Vec<String>, Vec<Vec<Value>>)> {
     let batch = &returned.batch;
     let schema = batch.schema();
     let names: Vec<String> = schema
@@ -628,27 +240,40 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
     }
     match array.data_type() {
         DataType::Null => Some(Value::Null),
-        DataType::Boolean
-        | DataType::Int32
-        | DataType::Float64
-        | DataType::Utf8 => Some(array_value(array, row, field)),
+        DataType::Boolean | DataType::Int32 | DataType::Float64 | DataType::Utf8 => {
+            Some(array_value(array, row, field))
+        }
         // Preserve the declared Arrow widths at the language boundary.
-        DataType::Int8 => array.as_any().downcast_ref::<arrow::array::Int8Array>()
+        DataType::Int8 => array
+            .as_any()
+            .downcast_ref::<arrow::array::Int8Array>()
             .map(|typed| Value::Byte(typed.value(row))),
-        DataType::Int16 => array.as_any().downcast_ref::<arrow::array::Int16Array>()
+        DataType::Int16 => array
+            .as_any()
+            .downcast_ref::<arrow::array::Int16Array>()
             .map(|typed| Value::Short(typed.value(row))),
-        DataType::Int64 => array.as_any().downcast_ref::<arrow::array::Int64Array>()
+        DataType::Int64 => array
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
             .map(|typed| Value::Long(typed.value(row))),
-        DataType::UInt8 => array.as_any().downcast_ref::<arrow::array::UInt8Array>()
+        DataType::UInt8 => array
+            .as_any()
+            .downcast_ref::<arrow::array::UInt8Array>()
             .map(|typed| Value::UInt8(typed.value(row))),
-        DataType::UInt16 => array.as_any().downcast_ref::<arrow::array::UInt16Array>()
+        DataType::UInt16 => array
+            .as_any()
+            .downcast_ref::<arrow::array::UInt16Array>()
             .map(|typed| Value::UInt16(typed.value(row))),
-        DataType::UInt32 => array.as_any().downcast_ref::<arrow::array::UInt32Array>()
+        DataType::UInt32 => array
+            .as_any()
+            .downcast_ref::<arrow::array::UInt32Array>()
             .map(|typed| Value::UInt32(typed.value(row))),
-        DataType::UInt64 => array.as_any().downcast_ref::<arrow::array::UInt64Array>()
+        DataType::UInt64 => array
+            .as_any()
+            .downcast_ref::<arrow::array::UInt64Array>()
             .map(|typed| Value::UInt64(typed.value(row))),
         // The lowering uses zero-scale decimals for 128-bit integers and
-        // scaled decimals for `DECIMAL(p, s)`; the interpreter holds those as
+        // scaled decimals for `DECIMAL(p, s)`; the value representation holds those as
         // `BigInt` and a `BigDecimal` carrying the declared scale.
         DataType::Decimal128(_, scale) => {
             let typed = array
@@ -707,227 +332,12 @@ pub fn contains_mutation(node: &Node) -> bool {
     crate::ir::analysis::contains_source_mutation(node)
 }
 
-fn count_ops(node: &Node) -> usize {
-    1 + children(node).into_iter().map(count_ops).sum::<usize>()
-}
-
-/// Operators that represent real work left for the interpreter. Spliced
-/// island results and the `GraphReturn` boundary are excluded: the first is
-/// already computed, the second only names and shapes the output.
-fn count_interpreted_ops(node: &Node) -> usize {
-    let self_cost = usize::from(!matches!(
-        node,
-        Node::GraphValues { .. } | Node::GraphReturn { .. }
-    ));
-    self_cost
-        + children(node)
-            .into_iter()
-            .map(count_interpreted_ops)
-            .sum::<usize>()
-}
-
-fn children_count(node: &Node) -> usize {
-    children(node).len()
-}
-
-fn children(node: &Node) -> Vec<&Node> {
-    use Node::*;
-    match node {
-        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
-        GraphGroupSideEffect { input, key_input, value, .. } => {
-            let mut nodes = vec![input.as_ref(), key_input.as_ref()];
-            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
-                nodes.push(traversal.as_ref());
-            }
-            nodes
-        }
-        GraphGroupMap { input, value, .. } => {
-            let mut nodes = vec![input.as_ref()];
-            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
-                nodes.push(traversal.as_ref());
-            }
-            nodes
-        }
-        GraphMerge {
-            input,
-            match_arm,
-            create_arm,
-            ..
-        } => vec![input, match_arm, create_arm],
-        GraphReturn { input, .. }
-        | GraphConstructTriples { input, .. }
-        | GraphDescribe { input, .. }
-        | GraphAsk { input, .. }
-        | GraphBind { input, .. }
-        | GraphPathPattern { input, .. }
-        | GraphPathFilter { input, .. }
-        | GraphCreate { input, .. }
-        | GraphSetProperty { input, .. }
-        | GraphDelete { input, .. }
-        | GraphFilter { input, .. }
-        | GraphCurrentProject { input, .. }
-        | GraphJvm { input, .. }
-        | GraphAggregate { input, .. }
-        | GraphGroupCountSideEffect { input, .. }
-        | GraphReadSideEffect { input, .. }
-        | GraphCap { input, .. }
-        | GraphShortestPath { input, .. }
-        | GraphDistinct { input, .. }
-        | GraphSort { input, .. }
-        | GraphSample { input, .. }
-        | GraphSlice { input, .. }
-        | GraphSliceExpr { input, .. }
-        | GraphBarrier { input, .. }
-        | GraphUnwind { input, .. }
-        | GraphQuantifier { input, .. }
-        | GraphCollect { input, .. }
-        | GraphListComprehension { input, .. }
-        | GraphSelect { input, .. }
-        | GraphExpand { input, .. }
-        | GraphProject { input, .. }
-        | GraphService { input, .. } => vec![input],
-        GraphJoin { left, right, .. }
-        | GraphApply { left, right, .. }
-        | GraphUnion { left, right, .. }
-        | GraphSparqlMinus { left, right, .. } => vec![left, right],
-        GraphRepeat {
-            emit,
-            seed,
-            body,
-            until_traversal,
-            prefix_traversal,
-            ..
-        } => {
-            let mut out = vec![seed.as_ref(), body.as_ref()];
-            out.extend(until_traversal.iter().map(|node| node.as_ref()));
-            out.extend(prefix_traversal.iter().map(|node| node.as_ref()));
-            if let crate::ir::plan::EmitMode::AfterEachIfTraversal(traversal) = emit {
-                out.push(traversal);
-            }
-            out
-        }
-        GraphCoalesce { input, arms, .. } => {
-            let mut out = vec![input.as_ref()];
-            out.extend(arms.iter());
-            out
-        }
-        GraphChoose {
-            input,
-            arms,
-            default,
-            ..
-        } => {
-            let mut out = vec![input.as_ref()];
-            out.extend(arms.iter().map(|arm| &arm.body));
-            out.extend(default.iter().map(|node| node.as_ref()));
-            out
-        }
-        GraphProcedureCall { input, .. } => input.iter().map(|node| node.as_ref()).collect(),
-        GraphExtension { inputs, .. } => inputs.iter().collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn children_mut(node: &mut Node) -> Vec<&mut Node> {
-    use Node::*;
-    match node {
-        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
-        GraphGroupSideEffect { input, key_input, value, .. } => {
-            let mut nodes = vec![input.as_mut(), key_input.as_mut()];
-            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
-                nodes.push(traversal.as_mut());
-            }
-            nodes
-        }
-        GraphGroupMap { input, value, .. } => {
-            let mut nodes = vec![input.as_mut()];
-            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value {
-                nodes.push(traversal.as_mut());
-            }
-            nodes
-        }
-        GraphMerge {
-            input,
-            match_arm,
-            create_arm,
-            ..
-        } => vec![input, match_arm, create_arm],
-        GraphReturn { input, .. }
-        | GraphConstructTriples { input, .. }
-        | GraphDescribe { input, .. }
-        | GraphAsk { input, .. }
-        | GraphBind { input, .. }
-        | GraphPathPattern { input, .. }
-        | GraphPathFilter { input, .. }
-        | GraphCreate { input, .. }
-        | GraphSetProperty { input, .. }
-        | GraphDelete { input, .. }
-        | GraphFilter { input, .. }
-        | GraphCurrentProject { input, .. }
-        | GraphJvm { input, .. }
-        | GraphAggregate { input, .. }
-        | GraphGroupCountSideEffect { input, .. }
-        | GraphReadSideEffect { input, .. }
-        | GraphCap { input, .. }
-        | GraphShortestPath { input, .. }
-        | GraphDistinct { input, .. }
-        | GraphSort { input, .. }
-        | GraphSample { input, .. }
-        | GraphSlice { input, .. }
-        | GraphSliceExpr { input, .. }
-        | GraphBarrier { input, .. }
-        | GraphUnwind { input, .. }
-        | GraphQuantifier { input, .. }
-        | GraphCollect { input, .. }
-        | GraphListComprehension { input, .. }
-        | GraphSelect { input, .. }
-        | GraphExpand { input, .. }
-        | GraphProject { input, .. }
-        | GraphService { input, .. } => vec![input],
-        GraphJoin { left, right, .. }
-        | GraphApply { left, right, .. }
-        | GraphUnion { left, right, .. }
-        | GraphSparqlMinus { left, right, .. } => vec![left, right],
-        GraphRepeat {
-            emit,
-            seed,
-            body,
-            until_traversal,
-            prefix_traversal,
-            ..
-        } => {
-            let mut out = vec![seed.as_mut(), body.as_mut()];
-            out.extend(until_traversal.iter_mut().map(|node| node.as_mut()));
-            out.extend(prefix_traversal.iter_mut().map(|node| node.as_mut()));
-            if let crate::ir::plan::EmitMode::AfterEachIfTraversal(traversal) = emit {
-                out.push(traversal.as_mut());
-            }
-            out
-        }
-        GraphCoalesce { input, arms, .. } => {
-            let mut out = vec![input.as_mut()];
-            out.extend(arms.iter_mut());
-            out
-        }
-        GraphChoose {
-            input,
-            arms,
-            default,
-            ..
-        } => {
-            let mut out = vec![input.as_mut()];
-            out.extend(arms.iter_mut().map(|arm| &mut arm.body));
-            out.extend(default.iter_mut().map(|node| node.as_mut()));
-            out
-        }
-        GraphProcedureCall { input, .. } => input.iter_mut().map(|node| node.as_mut()).collect(),
-        GraphExtension { inputs, .. } => inputs.iter_mut().collect(),
-        _ => Vec::new(),
-    }
-}
-
 impl From<crate::ir::rel::dag::DagStats> for ExecStats {
-    fn from(stats:crate::ir::rel::dag::DagStats)->Self {
-        Self {islands:stats.duckdb_regions,datafusion_ops:stats.datafusion_operators,residual_ops:stats.datafusion_operators,..Default::default()}
+    fn from(stats: crate::ir::rel::dag::DagStats) -> Self {
+        Self {
+            islands: stats.duckdb_regions,
+            datafusion_ops: stats.datafusion_operators,
+            ..Default::default()
+        }
     }
 }

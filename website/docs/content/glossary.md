@@ -33,8 +33,8 @@ A compact reference for the terms used throughout OrchidDB's documentation.
 | --- | --- |
 | Graph IR | The intermediate graph representation shared by language frontends. |
 | Lowering | Transforming a plan into another representation while preserving its meaning. |
-| SQL island | A region of a graph plan executed as relational SQL. |
-| Hybrid execution | Execution that combines SQL islands with graph runtime operators. |
+| SQL island | A region of the lowered relational plan executed as SQL in DuckDB. |
+| Hybrid execution | A DataFusion execution DAG combining DuckDB SQL regions and native kernels. |
 | Arrow batch | A columnar result represented by an Apache Arrow `RecordBatch`. |
 | Checkpoint | A compact persisted snapshot of managed graph records. |
 | Snapshot isolation | A transaction's consistent database view, combined with its own writes. |

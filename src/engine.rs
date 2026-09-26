@@ -14,7 +14,7 @@ use crate::ir::catalog::PropertyGraph;
 use crate::ir::diagnostics::QueryExecutionError;
 use crate::ir::catalog::incremental::IncrementalRecord;
 use crate::ir::exec::{ExecStats, contains_mutation};
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::plan::GraphPlan;
 use crate::ir::rel::{RelBackend, sql};
 use crate::ir::value::Value;
@@ -23,7 +23,7 @@ use crate::storage::{decode_graph, encode_graph};
 
 pub type EngineResult<T> = Result<T, String>;
 
-/// Read execution policy. Strict SQL never silently invokes the interpreter.
+/// Read execution policy. Strict SQL never silently switches to native execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReadMode {
     #[default]

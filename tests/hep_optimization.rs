@@ -4,12 +4,14 @@
 //!   `UserDefinedLogicalNodeCore`, so HEP rules can downcast to a
 //!   specific operator type and rewrite the plan in place.
 //! - Plans round-trip via `to_logical_plan` ↔ `from_logical_plan`, so a
-//!   HEP-rewritten plan can flow back into the IR interpreter unchanged.
+//!   HEP-rewritten plan can flow back into the DataFusion DAG unchanged.
 //!
 //! These tests stand in for a real HEP rule set: they manually
 //! pattern-match and rewrite, then verify the rewritten plan still
-//! executes correctly through the interpreter.
+//! executes correctly through the DataFusion DAG.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
@@ -21,7 +23,7 @@ use orchiddb::ir::df::{
     GraphFilter, GraphNodeScan, GraphReturn, downcast_graph_ir, from_logical_plan, to_logical_plan,
 };
 use orchiddb::ir::expr::{BinaryOp, IrExpr};
-use orchiddb::ir::interpreter::execute;
+use crate::datafusion_test::execute;
 use orchiddb::language::gremlin::ast::{Step, Traversal};
 use orchiddb::language::gremlin::planner::GremlinPlanner;
 use orchiddb::language::gremlin::semantics::{GValue, Predicate};

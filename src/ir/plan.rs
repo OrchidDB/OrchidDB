@@ -425,7 +425,7 @@ pub enum QuantifierKind {
 // ============================================================
 
 /// One RDF term as it appears in `GraphSparqlTriplePattern`,
-/// `GraphRdfPropertyPath`, `GraphConstructTriples`, `GraphService`, etc.
+/// `GraphRdfPropertyPath`, `GraphConstructTriples`, etc.
 /// Mirrors the spec's `iri(...)`, `literal(...)`, `?var`, `_:b`
 /// renderings.
 #[derive(Debug, Clone, PartialEq)]
@@ -453,7 +453,7 @@ pub enum RdfTerm {
 pub enum RdfGraphScope {
     /// SPARQL default graph.
     DefaultGraph,
-    /// Active graph at evaluation time (used by SERVICE and by
+    /// Active graph at evaluation time (used by
     /// property paths inside `GRAPH ?g { ... }`).
     ActiveGraph,
     /// `GRAPH iri(:g) { ... }`.
@@ -586,8 +586,8 @@ pub enum SampleKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    /// An explicit interpreter/JVM boundary. The JVM receives evaluated typed
-    /// arguments; bindings, traverser bulk and hidden state stay in the interpreter.
+    /// An explicit native-kernel/JVM boundary. The JVM receives evaluated typed
+    /// arguments; bindings, traverser bulk and hidden state stay in the execution context.
     /// Trusted scripts may mutate the caller's graph, so this is an effect fence.
     GraphJvm {
         operation: crate::ir::jvm::JvmOperation,
@@ -647,7 +647,7 @@ pub enum Node {
     /// `GraphEmpty()`.
     GraphEmpty,
     /// `GraphCorrelate(bindings)`. Used as the source of an `Apply` right
-    /// side; the interpreter materializes one row containing the correlated
+    /// side; the relational control kernel supplies one row containing the correlated
     /// bindings.
     GraphCorrelate {
         bindings: Vec<BindingId>,
@@ -1025,17 +1025,6 @@ pub enum Node {
         shared: Vec<BindingId>,
         left: Box<Node>,
         right: Box<Node>,
-    },
-    /// `GraphService(endpoint, silent, outputs)` — SPARQL federated
-    /// pattern. The `input` is the inner pattern that runs against
-    /// `endpoint`. Spec §8.13.
-    GraphService {
-        endpoint: RdfTerm,
-        /// Parsed, resolved service algebra serialized as a SELECT request.
-        query: String,
-        silent: bool,
-        outputs: Vec<BindingId>,
-        input: Box<Node>,
     },
     /// `GraphProcedureCall(name, args, yields, mode)` — Cypher `CALL`,
     /// Gremlin `g.call(...)`. `input` is `None` for top-level calls and

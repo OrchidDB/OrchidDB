@@ -109,7 +109,7 @@ impl<'a> LoweringContext<'a> {
                 }
                 // Kuzu's `ID()` yields an internal id that prints as
                 // `table:offset`, not a bare offset. Mirror
-                // `interpreter::element_id` so the same element gets the same
+                // `runtime::element_id` so the same element gets the same
                 // id whichever path evaluated it.
                 let table_index = match has_binding_shape(plan, binding) {
                     Some(BindingShape::Node) => label_index_case(
@@ -926,13 +926,13 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    /// Evaluate a constant expression through the interpreter so folding
+    /// Evaluate a constant expression through the scalar evaluator so folding
     /// matches engine semantics exactly (including Kuzu-style error text).
-    /// Returns `Ok(None)` when the interpreter cannot evaluate it for an
+    /// Returns `Ok(None)` when the scalar evaluator cannot evaluate it for an
     /// internal reason, letting the relational lowering take over.
     pub(super) fn try_constant_fold(&self, expr: &IrExpr) -> RelResult<Option<Expr>> {
-        let row = InterpreterRow::new();
-        match interpreter_eval(expr, &row, self.graph) {
+        let row = KernelRow::new();
+        match eval_scalar(expr, &row, self.graph) {
             Ok(Value::Map(_)) if self.language == Language::Cypher => {
                 // Rendering a map here destroys its key/value types before
                 // later WITH expressions can read them. Keep it in runtime

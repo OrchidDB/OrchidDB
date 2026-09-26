@@ -1,5 +1,4 @@
-//! Graph IR — logical operators, an in-memory property graph store, and
-//! an interpreter that runs the IR over Apache Arrow record batches.
+//! Graph IR: logical operators, graph catalog and DataFusion-backed execution.
 //!
 //! Reference: `docs/architecture.md`.
 
@@ -13,23 +12,20 @@ pub mod exec;
 pub mod expr;
 pub mod functions;
 pub mod gremlin_semantics;
-pub mod interpreter;
+pub mod runtime;
 pub mod jvm;
 pub mod plan;
 pub mod policy;
 pub mod rel;
 pub mod value;
 
-#[cfg(test)]
-mod tests;
-
 pub use catalog::{
     CatalogError, CatalogResult, EdgeTable, NodeTable, PropertyGraph, edges_from_columns,
     nodes_from_columns,
 };
 pub use expr::{AggCall, AggKind, BinaryOp, IrExpr, Lit, StringOp};
-pub use interpreter::{
-    InterpretError, IrResult, ReturnedBatches, Row, eval, execute, execute_rows,
+pub use runtime::{
+    RuntimeError, IrResult, ReturnedBatches, Row, eval,
 };
 pub use plan::{
     ApplyKind, BindKind, Direction, DistinctMode, GraphPlan, LabelExpr, Length, Node, NullsOrder,

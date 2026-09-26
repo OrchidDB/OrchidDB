@@ -17,10 +17,12 @@ physical planning
                 +-- JvmExec   explicit native JVM fragment
 ```
 
-There is no Graph IR interpreter fallback in the managed engine. The historical
-interpreter remains a reference implementation for tests. Scalar evaluation,
-aggregation, graph access, and result-formatting kernels are shared with it;
-DataFusion owns physical execution and input scheduling.
+Graph IR is a compiler representation, not an executable interpreter tree.
+DataFusion owns physical execution and input scheduling. Scalar evaluation,
+aggregation, graph access, and result-formatting kernels live in `ir::runtime`;
+there is no standalone Graph IR interpreter or legacy island-rewrite fallback.
+SPARQL `SERVICE`, including `SERVICE SILENT`, is rejected before execution;
+the runtime does not issue remote SPARQL HTTP requests.
 
 ## Lowering and placement
 
@@ -123,7 +125,7 @@ must be run with `--include-ignored`.
 
 The pinned Apache TinkerPop scenarios run through `GraphEngine` using
 `conformance/upstream/run.py --engine orchiddb --suite tinkerpop`. That exercises
-the production relational executor, not the reference interpreter. GitHub Actions
+the production DataFusion relational executor. GitHub Actions
 publishes committed static results only; it does not execute these tests.
 
 ## Typed Gremlin callbacks

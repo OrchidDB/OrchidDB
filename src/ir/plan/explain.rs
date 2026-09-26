@@ -589,21 +589,6 @@ fn write_node(buf: &mut String, node: &Node, depth: usize) {
             writeln!(buf, "right:").ok();
             write_node(buf, right, depth + 2);
         }
-        Node::GraphService {
-            endpoint,
-            silent,
-            outputs,
-            input,
-            ..
-        } => {
-            writeln!(
-                buf,
-                "GraphService(endpoint=[{endpoint:?}], silent=[{silent}], outputs=[{}])",
-                outputs.join(", ")
-            )
-            .ok();
-            write_node(buf, input, depth + 1);
-        }
         Node::GraphConstructTriples { template, input } => {
             writeln!(
                 buf,

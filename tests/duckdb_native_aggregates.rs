@@ -1,5 +1,7 @@
 #![cfg(feature = "duckdb")]
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::{
@@ -118,14 +120,12 @@ fn native_aggregate_invalid_arity_is_rejected_during_binding() {
 }
 
 #[test]
-fn interpreter_reports_native_aggregate_requirement_even_on_empty_input() {
+fn dag_executes_native_aggregate_on_empty_input() {
     let parsed = parse_query("MATCH (p:P) WHERE p.x > 100 RETURN median(p.x)").unwrap();
     let plan = CypherPlanner::new().plan(&parsed).unwrap();
-    let error = orchiddb::ir::interpreter::execute_rows(&plan, &graph()).unwrap_err();
-    assert!(
-        error.to_string().contains("require relational execution"),
-        "{error}"
-    );
+    let result = crate::datafusion_test::execute(&plan, &graph()).unwrap();
+    assert_eq!(result.batch.num_rows(), 1);
+    assert!(result.batch.column(0).is_null(0));
 }
 
 #[tokio::test]

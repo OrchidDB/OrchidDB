@@ -3,7 +3,7 @@
 //! These tests probe the seams the happy-path suite leaves open: concurrent
 //! writers, invalid transaction state, recovery from a commit-time conflict,
 //! statement atomicity in autocommit mode, and agreement between the strict
-//! SQL read path and the interpreter before and after a mutation. They are
+//! SQL read path and the DataFusion DAG before and after a mutation. They are
 //! written to detect *incorrect answers* (a silent lost update, a partially
 //! applied statement, a strict-SQL result that disagrees with the graph)
 //! rather than to assert that incomplete features have shipped.

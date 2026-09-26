@@ -1,6 +1,8 @@
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use arrow::array::{ArrayRef, Int64Array};
 use orchiddb::ir::value::{Value, gremlin_set};
-use orchiddb::ir::{PropertyGraph, edges_from_columns, execute, nodes_from_columns};
+use orchiddb::ir::{PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 use std::sync::Arc;
 
@@ -30,7 +32,7 @@ fn coalesce_constant_retains_scalar_history() {
     );
     let traversal = parse_traversal(&format!("{prefix}.simplePath().path()")).unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    let mut paths = orchiddb::ir::interpreter::execute_rows(&plan, &graph)
+    let mut paths = crate::datafusion_test::execute_rows(&plan, &graph)
         .unwrap()
         .iter()
         .map(|row| {
@@ -79,7 +81,7 @@ fn path_labels_attach_to_positions_including_multiple_labels() {
     let traversal =
         parse_traversal("g.V().as('a','b').out().as('c').path().select(Column.keys)").unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    let rows = orchiddb::ir::interpreter::execute_rows(&plan, &graph).unwrap();
+    let rows = crate::datafusion_test::execute_rows(&plan, &graph).unwrap();
     let expected = Value::List(vec![
         gremlin_set(vec![Value::String("a".into()), Value::String("b".into())]),
         gremlin_set(vec![Value::String("c".into())]),
@@ -269,7 +271,7 @@ fn prefix_until_does_not_replay_its_input_writer() {
 fn native_values(query: &str) -> Vec<Value> {
     let traversal = parse_traversal(query).unwrap();
     let plan = GremlinPlanner::new().plan(&traversal).unwrap();
-    orchiddb::ir::interpreter::execute_rows(&plan, &PropertyGraph::new())
+    crate::datafusion_test::execute_rows(&plan, &PropertyGraph::new())
         .unwrap().into_iter().map(|row| row.bindings["current"].clone()).collect()
 }
 
@@ -321,3 +323,5 @@ fn unbounded_stateful_repeat_drains_each_seed_before_requesting_the_next() {
     // One incoming traverser with bulk two stays one seed with bulk two.
     assert_eq!(results("g.inject(1,1).barrier().repeat(__.not(__.select('seen').unfold().is(1)).aggregate('seen')).cap('seen').unfold().count()", &PropertyGraph::new()), ["2"]);
 }
+
+use crate::datafusion_test::{execute};

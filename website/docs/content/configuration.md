@@ -11,7 +11,7 @@ Configure engine execution, Cargo features, and development checks for a reprodu
 | --- | --- | --- |
 | Storage path | `GraphEngine::open(path)` | Open a persistent graph file. |
 | Ephemeral storage | `GraphEngine::in_memory()` | Create an in-memory graph. |
-| Read policy | `set_read_mode(ReadMode::Hybrid)` | Combine SQL islands and graph runtime work. |
+| Read policy | `set_read_mode(ReadMode::Hybrid)` | Execute a DataFusion relational DAG with eligible DuckDB SQL regions. |
 | SQL read policy | `set_read_mode(ReadMode::SqlOnly)` | Require complete SQL read execution. |
 | SQL timeout | `set_sql_timeout(Duration)` | Bound individual DuckDB SQL queries and setup. |
 | Mapping | `MappedGraphEngine::new(executor, mapping)` | Use the application's source schemas and graph vocabulary. |
@@ -23,7 +23,7 @@ Keep configuration near engine construction so applications can see the persiste
 
 | Variable | Purpose |
 | --- | --- |
-| `ORCHIDDB_INTERPRETER_MAX_STEPS` | Set an operation budget for graph interpreter execution. |
+| `ORCHIDDB_EXECUTION_MAX_STEPS` | Set the operation budget for managed DataFusion execution, including loops. |
 | `GRAPH_PG_URL` | Connection URL for PostgreSQL executor entry points that load configuration from the environment. |
 | `RUST_MIN_STACK` | Rust thread stack size; the repository's integration CI uses `16777216`. |
 

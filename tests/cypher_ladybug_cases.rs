@@ -11,7 +11,7 @@
 //!                     correctness regression and fails the test.
 //!   - `ParseError`  — embedded Cypher couldn't be tokenized / parsed.
 //!   - `PlanError`   — planner returned an `Unsupported` / `Plan` error.
-//!   - `RunError`    — interpreter error (catalog miss, type error, …).
+//!   - `RunError`    — execution error (catalog miss, type error, …).
 //!   - `Skipped`     — case file unreadable, or its dataset isn't yet
 //!                     supported by the harness.
 //!
@@ -49,6 +49,8 @@
 //! still under construction. Any `Incorrect` row fails the test
 //! immediately so a real correctness regression can never sneak past CI.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -59,7 +61,8 @@ use std::time::{Duration, Instant};
 use num_bigint::BigInt;
 
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::{ReturnedBatches, execute};
+use orchiddb::ir::runtime::ReturnedBatches;
+use crate::datafusion_test::execute;
 use orchiddb::ir::plan::explain;
 use orchiddb::ir::value::{STRUCT_ORDER_KEY, Value};
 use orchiddb::language::cypher::parser::parse_query;
@@ -1293,7 +1296,7 @@ fn expected_error_category(line: &str) -> Option<ErrorCategory> {
 /// Engine error types per stage:
 ///   - Parse: `CypherParseError::{Parse, Unsupported}`
 ///   - Plan:  `CypherPlanError::{Unsupported, Invalid}`
-///   - Run:   `InterpretError::{Catalog, Type, Runtime, Unbound,
+///   - Run:   `RuntimeError::{Catalog, Type, Runtime, Unbound,
 ///            Unsupported, ExecutionLimit}`
 ///
 /// `Unsupported` / not-implemented messages are *never* accepted: an

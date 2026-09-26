@@ -423,7 +423,7 @@ impl LoweringContext<'_> {
             GraphSort { keys, input } => {
                 let input = self.lower_node(input)?;
                 // Gremlin inserts an internal source-order marker to make
-                // interpreter scans deterministic. The relational scan is
+                // native graph scans deterministic. The relational scan is
                 // already emitted in that catalog order. Materializing this
                 // marker as a SQL SORT can cause DataFusion to discard a
                 // later user-facing order().by(...) as redundant.

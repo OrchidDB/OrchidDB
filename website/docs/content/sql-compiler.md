@@ -76,9 +76,10 @@ dialect in their plan cache keys. Gremlin/SPARQL parameter bindings are not yet
 implemented. Do not treat the full runtime's language conformance as coverage
 of the standalone SQL subset.
 
-Writes, remote SERVICE calls, opaque extensions, and unlowerable operations
-fail. Internal table materializations are rejected by inspecting the logical
-plan before unparsing; they are never collected or executed. Constant seed
+Writes, opaque extensions, and unlowerable operations fail. SPARQL `SERVICE`,
+including `SERVICE SILENT`, is unsupported in both compiler and managed runtime;
+OrchidDB does not make remote SPARQL HTTP requests. Internal table materializations
+are rejected by inspecting the logical plan before unparsing; they are never collected or executed. Constant seed
 rows in mapped plans are emitted as SQL expressions instead of private tables.
 
 Source-to-engine routing belongs to the client. Today's Java binding requires

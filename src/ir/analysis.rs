@@ -10,7 +10,6 @@ use crate::ir::plan::{EmitMode, GraphPlan, Node, ProcedureMode};
 pub enum Effect {
     Pure,
     QueryLocalState,
-    ExternalRead,
     ReadProcedure,
     SourceMutation,
     OpaqueExtension,
@@ -19,16 +18,14 @@ pub enum Effect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadCapabilities {
     pub query_local_state: bool,
-    pub external_reads: bool,
     pub read_procedures: bool,
 }
 
 impl ReadCapabilities {
     /// Local DuckDB reads may use temporary query state, but cannot invoke
-    /// remote sources or procedures without a separately planned adapter.
+    /// procedures without a separately planned adapter.
     pub const LOCAL_DUCKDB: Self = Self {
         query_local_state: true,
-        external_reads: false,
         read_procedures: false,
     };
 
@@ -36,7 +33,6 @@ impl ReadCapabilities {
     /// refused because their effects cannot be proven safe.
     pub const ALL_READS: Self = Self {
         query_local_state: true,
-        external_reads: true,
         read_procedures: true,
     };
 }
@@ -88,10 +84,6 @@ pub fn validate_read_capabilities(
                 first_capability_error
                     .get_or_insert_with(|| missing_capability(effect, node, path.clone()));
             }
-            Effect::ExternalRead if !capabilities.external_reads => {
-                first_capability_error
-                    .get_or_insert_with(|| missing_capability(effect, node, path.clone()));
-            }
             Effect::ReadProcedure if !capabilities.read_procedures => {
                 first_capability_error
                     .get_or_insert_with(|| missing_capability(effect, node, path.clone()));
@@ -139,7 +131,6 @@ pub fn node_effect(node: &Node) -> Effect {
             mode: ProcedureMode::Read,
             ..
         } => Effect::ReadProcedure,
-        Node::GraphService { .. } => Effect::ExternalRead,
         Node::GraphGroupSideEffect { .. } | Node::GraphGroupCountSideEffect { .. } | Node::GraphSideEffect { .. } | Node::GraphReadSideEffect { .. } | Node::GraphCap { .. } | Node::GraphSample { .. } => Effect::QueryLocalState,
         Node::GraphExtension { .. } => Effect::OpaqueExtension,
         _ => Effect::Pure,
@@ -167,7 +158,6 @@ fn operator_name(node: &Node) -> &'static str {
         Node::GraphReadSideEffect { .. } => "GraphReadSideEffect",
         Node::GraphCap { .. } => "GraphCap",
         Node::GraphSample { .. } => "GraphSample",
-        Node::GraphService { .. } => "GraphService",
         Node::GraphExtension { .. } => "GraphExtension",
         _ => "Graph IR node",
     }
@@ -225,8 +215,7 @@ pub(crate) fn children(node: &Node) -> Vec<&Node> {
         | GraphListComprehension { input, .. }
         | GraphSelect { input, .. }
         | GraphExpand { input, .. }
-        | GraphProject { input, .. }
-        | GraphService { input, .. } => vec![input],
+        | GraphProject { input, .. } => vec![input],
         GraphJoin { left, right, .. }
         | GraphApply { left, right, .. }
         | GraphUnion { left, right, .. }
@@ -432,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn local_capabilities_distinguish_query_state_and_external_reads() {
+    fn local_capabilities_allow_query_state_but_not_procedures() {
         let local_state = plan(Node::GraphCap {
             labels: vec!["counts".into()],
             input: Node::GraphGroupCountSideEffect {
@@ -446,22 +435,6 @@ mod tests {
             validate_read_capabilities(&local_state, ReadCapabilities::LOCAL_DUCKDB),
             Ok(())
         );
-        let service = plan(Node::GraphService {
-            endpoint: crate::ir::plan::RdfTerm::Variable("endpoint".into()),
-            query: "SELECT * WHERE {}".into(),
-            silent: false,
-            outputs: vec![],
-            input: Node::GraphOneRow.boxed(),
-        });
-        assert!(matches!(
-            validate_read_capabilities(&service, ReadCapabilities::LOCAL_DUCKDB),
-            Err(ReadValidationError::MissingCapability {
-                effect: Effect::ExternalRead,
-                ..
-            })
-        ));
-        assert_eq!(validate_read_only(&service), Ok(()));
-
         let read_procedure = plan(Node::GraphProcedureCall {
             name: "db.labels".into(),
             args: vec![],

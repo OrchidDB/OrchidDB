@@ -444,16 +444,6 @@ fn schema_fields_for_node(node: &Node) -> Vec<Field> {
             fields
         }
         Node::GraphSparqlMinus { left, .. } => schema_fields_for_node(left),
-        Node::GraphService { outputs, input, .. } => {
-            let mut fields = schema_fields_for_node(input);
-            for output in outputs {
-                upsert_field(
-                    &mut fields,
-                    semantic_field(output, DataType::Utf8, true, "rdf_term"),
-                );
-            }
-            fields
-        }
         Node::GraphConstructTriples { .. } | Node::GraphDescribe { .. } => {
             vec![semantic_field(
                 "_rdf_graph",

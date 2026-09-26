@@ -8,7 +8,7 @@
 //! when the body consumes the frontier and after the recursion, so the work
 //! table schema stays fixed across iterations.
 //!
-//! Semantics mirror `interpreter::ops::repeat::repeat_op` exactly:
+//! Repeat lowering preserves the language execution contract:
 //!
 //! * `times(n)` bounds the iteration count;
 //! * `until(p)` is checked after every step; matching rows stop advancing and
@@ -19,7 +19,7 @@
 //!   `until` / `emit` see the post-step count.
 //!
 //! Unbounded loops terminate through the frontier becoming empty or `until`.
-//! Like the interpreter, a loop that is still live after
+//! A loop that is still live after
 //! [`MAX_REPEAT_ITERATIONS`] iterations fails loudly instead of returning a
 //! truncated answer: the recursive term raises a runtime error.
 //!
@@ -40,8 +40,8 @@ use super::varlen::case_when;
 use super::*;
 use crate::ir::plan::EmitMode;
 
-/// Same ceiling as the interpreter's `MAX_REPEAT_ITERATIONS`; reaching it is an
-/// error in both engines, never a truncated result.
+/// Loop ceiling shared with the relational control kernel; reaching it is an
+/// error, never a truncated result.
 const MAX_REPEAT_ITERATIONS: u32 = 10_000;
 /// Largest `times(n)` the unrolled fallback expands.
 const REPEAT_UNROLL_CAP: u32 = 8;
@@ -115,7 +115,7 @@ impl LoweringContext<'_> {
             .any(|field| field == LOOPS_BINDING || field.starts_with("__loops:"))
         {
             // The outer loop counter would have to survive the inner loop's
-            // rows; keep that to the interpreter/unrolled form.
+            // rows; use the native control kernel or unrolled form.
             return Err(RelError::Unsupported(
                 "GraphRepeat nested in a loop-counting scope".into(),
             ));
@@ -632,7 +632,7 @@ impl LoweringContext<'_> {
             let mut pending = vec![spec.body];
             while let Some(node) = pending.pop() {
                 if matches!(node, Node::GraphDistinct { .. }) {
-                    // The repeat interpreter shares a seen set across rounds.
+                    // The repeat control kernel shares a seen set across rounds.
                     // Independent SQL DISTINCT windows would reset that state.
                     return Err(RelError::Unsupported(
                         "GraphRepeat with stateful deduplication across iterations".into(),
@@ -652,7 +652,7 @@ impl LoweringContext<'_> {
                     ));
                 }
             },
-            // Mirrors the interpreter: the seed is only emitted when a
+            // The seed is only emitted when a
             // prefix-emit predicate/traversal was attached.
             (EmitMode::AfterEachIteration, None) => false,
             (EmitMode::AfterEachIfPredicate(_) | EmitMode::AfterEachIfTraversal(_), None) => {

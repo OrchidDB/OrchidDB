@@ -2,10 +2,9 @@
 //!
 //! Compile graph queries to SQL with [`compiler`]; callers own execution through
 //! their driver or the optional [`execution`] interface. See `docs/architecture.md`.
-//! The Gremlin frontend (`crate::language::gremlin`) lowers parsed
-//! traversals into Graph IR `Node` values; the interpreter under
-//! `crate::ir::interpreter` runs them against an Apache Arrow backed
-//! `PropertyGraph`.
+//! Graph IR is lowered to SQL or DataFusion plans; shared runtime kernels
+//! supply scalar semantics without a recursive Graph IR interpreter.
+
 
 pub mod spargebra;
 pub mod compiler;

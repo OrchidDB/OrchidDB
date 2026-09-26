@@ -1,7 +1,7 @@
 //! Correlated relational subplans. Branches and loop bodies are lowered before
 //! execution and run through DataFusion with their own frontier relation.
 use super::*;
-use crate::ir::interpreter::ops;
+use crate::ir::runtime::ops;
 use crate::ir::{
     expr::IrExpr,
     plan::{ApplyKind, ChooseSelector, CoalesceSuccess},
@@ -40,13 +40,13 @@ impl Subplan {
         ctx: &mut ExecutionContext, batch_key: Option<String>,
     ) -> IrResult<Vec<Row>> {
         let runtime = tokio::runtime::Handle::current();
-        let error = |e: DataFusionError| InterpretError::Runtime(e.to_string());
+        let error = |e: DataFusionError| RuntimeError::Runtime(e.to_string());
         // A query-local slot caches the physical operators, never their output.
         // Taking the slot permits reentrant calls to prepare another instance.
         let cached = self
             .prepared
             .lock()
-            .map_err(|_| InterpretError::Runtime("Subplan cache poisoned".into()))?
+            .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))?
             .take();
         let live = State {
             graph: graph.clone(),
@@ -58,7 +58,7 @@ impl Subplan {
             *prepared
                 .state
                 .lock()
-                .map_err(|_| InterpretError::Runtime("Subplan state poisoned".into()))? = live;
+                .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))? = live;
             prepared
         } else {
             let state = Arc::new(Mutex::new(live));
@@ -96,7 +96,7 @@ impl Subplan {
             &mut *prepared
                 .state
                 .lock()
-                .map_err(|_| InterpretError::Runtime("Subplan state poisoned".into()))?,
+                .map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?,
         );
         *ctx = std::mem::take(&mut finished.context);
         // Empty query state prevents cache cycles through named group reducers,
@@ -104,7 +104,7 @@ impl Subplan {
         *self
             .prepared
             .lock()
-            .map_err(|_| InterpretError::Runtime("Subplan cache poisoned".into()))? =
+            .map_err(|_| RuntimeError::Runtime("Subplan cache poisoned".into()))? =
             Some(prepared);
         let mut rows = Vec::new();
         for batch in result.map_err(error)? {
@@ -390,7 +390,7 @@ impl Compiler<'_> {
                     .map(|n| self.lower(n))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(kernel("Procedure", inputs, move |mut inputs, state| {
-                    crate::ir::interpreter::run::procedure_call_op(
+                    crate::ir::runtime::context::procedure_call_op(
                         &name,
                         &args,
                         &yields,
@@ -569,9 +569,9 @@ fn apply_op(
         let mut groups=vec![Vec::new();outer.len()];
         for mut row in rows {
             let Some(Value::UInt64(index))=row.bindings.remove(&key) else {
-                return Err(InterpretError::Runtime("batched subplan lost occurrence identity".into()));
+                return Err(RuntimeError::Runtime("batched subplan lost occurrence identity".into()));
             };
-            let group=groups.get_mut(index as usize).ok_or_else(|| InterpretError::Runtime("invalid occurrence identity".into()))?;
+            let group=groups.get_mut(index as usize).ok_or_else(|| RuntimeError::Runtime("invalid occurrence identity".into()))?;
             group.push(row);
         }
         Some(groups.into_iter())
@@ -646,7 +646,7 @@ fn apply_op(
                     }
                     if compatible {
                         row.bulk = outer_row.bulk.checked_mul(inner.bulk).ok_or_else(|| {
-                            InterpretError::Runtime("correlated traverser bulk overflow".into())
+                            RuntimeError::Runtime("correlated traverser bulk overflow".into())
                         })?;
                         ctx.charge(1)?;
                         out.push(row);
@@ -670,7 +670,7 @@ fn apply_op(
                         ctx.charge(1)?;
                         let mut row = outer_row.clone();
                         row.bulk = outer_row.bulk.checked_mul(inner.bulk).ok_or_else(|| {
-                            InterpretError::Runtime("correlated traverser bulk overflow".into())
+                            RuntimeError::Runtime("correlated traverser bulk overflow".into())
                         })?;
                         for binding in outputs {
                             row.bindings.insert(
@@ -710,7 +710,7 @@ fn apply_op(
             ApplyKind::Scalar => {
                 if inner_rows.len() != 1 {
                     if outputs.is_empty() {
-                        return Err(InterpretError::Type(
+                        return Err(RuntimeError::Type(
                             "scalar apply produced no output bindings".into(),
                         ));
                     }
@@ -1090,7 +1090,7 @@ fn repeat_op_inner(
             }
         }
         if iteration >= MAX_REPEAT_ITERATIONS {
-            return Err(InterpretError::ExecutionLimit(format!(
+            return Err(RuntimeError::ExecutionLimit(format!(
                 "repeat exceeded {MAX_REPEAT_ITERATIONS} iterations"
             )));
         }
@@ -1254,7 +1254,7 @@ fn merge_op(
 
 fn endpoint(row: &Row, binding: &str, rel_type: &str) -> IrResult<Value> {
     row.bindings.get(binding).cloned().ok_or_else(|| {
-        InterpretError::Type(format!(
+        RuntimeError::Type(format!(
             "CREATE relationship `{rel_type}` endpoint `{binding}` is not bound"
         ))
     })
@@ -1316,7 +1316,7 @@ fn write_side_effect(
                 Value::BulkSet(items) | Value::List(items) => items.extend(values),
                 _ => {
                     for value in values {
-                        *state = crate::ir::interpreter::runtime::reductions::apply_sack_op(
+                        *state = crate::ir::runtime::scalar::reductions::apply_sack_op(
                             state, &value, reducer,
                         );
                     }
@@ -1326,7 +1326,7 @@ fn write_side_effect(
     } else {
         for value in values {
             *state =
-                crate::ir::interpreter::runtime::reductions::apply_sack_op(state, &value, reducer);
+                crate::ir::runtime::scalar::reductions::apply_sack_op(state, &value, reducer);
         }
     }
     Ok(rows)

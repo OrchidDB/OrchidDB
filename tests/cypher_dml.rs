@@ -1,12 +1,14 @@
-//! End-to-end coverage for Cypher write clauses against the interpreter.
+//! End-to-end coverage for Cypher write clauses against the DataFusion DAG.
 //!
 //! `CREATE` with relationship patterns, `MERGE`, whole-map `SET`, and
 //! relationship `DELETE` all mutate the catalog overlay rather than the
 //! immutable Arrow fixtures, so these tests double as overlay regression
 //! tests (id allocation, adjacency, property replacement).
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute;
+use crate::datafusion_test::execute;
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner;
 

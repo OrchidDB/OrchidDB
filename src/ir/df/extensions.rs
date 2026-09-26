@@ -940,27 +940,6 @@ ir_extension! {
 }
 
 ir_extension! {
-    /// Children are `[input]` — the inner pattern that runs against the
-    /// remote endpoint.
-    GraphService {
-        endpoint: RdfTerm,
-        query: String,
-        silent: bool,
-        outputs: Vec<String>,
-    }
-    rebuild(s, c) {
-        let mut c = c;
-        Node::GraphService {
-            endpoint: s.endpoint.clone(),
-            query: s.query.clone(),
-            silent: s.silent,
-            outputs: s.outputs.clone(),
-            input: Box::new(c.remove(0)),
-        }
-    },
-}
-
-ir_extension! {
     /// SPARQL `CONSTRUCT` output. Single child.
     GraphConstructTriples {
         template: Vec<ConstructTriple>,
@@ -1027,7 +1006,7 @@ ir_extension! {
     },
 }
 
-// Sampling remains an interpreter operator but round-trips through HEP.
+// Sampling uses a native DataFusion kernel and round-trips through HEP.
 ir_extension! {
     GraphSample {
         kind: crate::ir::plan::SampleKind,

@@ -74,7 +74,7 @@ fn bind(
     let return_type = catalog.bind(name, kind, args, schema)?;
     let target = catalog.target_name(name);
     // Conservative: native calls must never be folded by DataFusion or the
-    // interpreter. The engine applies its own volatility and null semantics.
+    // host scalar evaluator. The engine applies its own volatility and null semantics.
     Ok(EngineCall {
         name: format!("{ENGINE_FUNCTION_PREFIX}{target}"),
         return_type,

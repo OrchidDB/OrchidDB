@@ -3,7 +3,7 @@
 use super::{MappedGraphEngine, children, find_mutation, mutation_kind};
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::Lit;
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::plan::{
     CreateEdge, CreateNode, ProjectErrorPolicy, ProjectMode, ProjectionItem, SetMode,
     SetPropertyItem,

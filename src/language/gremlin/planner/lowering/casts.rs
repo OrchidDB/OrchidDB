@@ -1,7 +1,7 @@
 //! Scalar casts: `asNumber`, `asString`, `asBool`, `asDate`.
 //!
 //! Each lowers to a `GraphProject` whose expression is an
-//! `IrExpr::Call` against a runtime cast helper. The interpreter
+//! `IrExpr::Call` against a runtime cast helper. The scalar evaluator
 //! dispatches the call name to a per-target conversion. Complex inputs
 //! (List/Map/Node/Edge) follow Gremlin's "best effort" rule: numeric/
 //! bool casts of a non-scalar produce `null`; string casts of a non-

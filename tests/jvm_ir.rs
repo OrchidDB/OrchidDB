@@ -13,7 +13,7 @@ fn execute_rows_with_jvm(
     plan: &GraphPlan,
     graph: &PropertyGraph,
     jvm: JvmExecution,
-) -> Result<Vec<orchiddb::ir::interpreter::Row>, String> {
+) -> Result<Vec<orchiddb::ir::runtime::Row>, String> {
     tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(orchiddb::ir::rel::runtime::execute_rows_with_jvm(

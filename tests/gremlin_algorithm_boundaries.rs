@@ -1,8 +1,10 @@
 //! Native execution must not fabricate GraphComputer results.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::collections::BTreeMap;
 
 use orchiddb::ir::catalog::{Cardinality, PropertyGraph};
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::value::Value;
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 

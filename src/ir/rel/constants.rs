@@ -110,7 +110,7 @@ pub(super) fn expr_is_constant(expr: &IrExpr, bound: &[&str]) -> bool {
 /// free, and not tied to internal traversal state.
 pub(super) fn constant_foldable_function(name: &str) -> bool {
     let normalized = name.to_ascii_lowercase();
-    if !crate::ir::interpreter::is_known_function(&normalized) || normalized.starts_with("__") {
+    if !crate::ir::runtime::is_known_function(&normalized) || normalized.starts_with("__") {
         return false;
     }
     const DENY: &[&str] = &[
@@ -147,7 +147,7 @@ pub(super) fn constant_foldable_function(name: &str) -> bool {
 }
 
 /// Kuzu-style engine errors ("Conversion exception: ...") are expected
-/// outcomes for some cases; internal interpreter errors are not and should
+/// outcomes for some cases; internal scalar evaluation errors are not and should
 /// fall back to relational lowering.
 pub(super) fn looks_like_engine_error(message: &str) -> bool {
     const PREFIXES: &[&str] = &[
@@ -441,7 +441,7 @@ pub(super) fn value_to_f64(value: &Value) -> Option<f64> {
 }
 
 /// Gremlin tagged text for a scalar expression, mirroring the
-/// interpreter's `tagged_value` (`d[5].i`, `d[2.0].d`, raw strings,
+/// runtime `tagged_value` (`d[5].i`, `d[2.0].d`, raw strings,
 /// `true`/`false`).
 pub(super) fn gremlin_tagged_text_expr(expr: Expr, data_type: &DataType) -> Expr {
     match data_type {
@@ -461,7 +461,7 @@ pub(super) fn gremlin_tagged_text_expr(expr: Expr, data_type: &DataType) -> Expr
     }
 }
 
-/// Render one property column as the text the interpreter's
+/// Render one property column as the text the runtime's
 /// `format_property_value` would produce.
 pub(super) fn render_property_text_expr(column: Expr, data_type: &DataType) -> Expr {
     match data_type {
@@ -821,7 +821,7 @@ pub(super) fn display_for_list_to_string(value: &Value) -> String {
 /// Kuzu numbers relationship tables in the same namespace as node tables and
 /// reserves a second internal slot per relationship type for the reverse
 /// adjacency table, so visible ids advance by two per type after the node
-/// tables. This mirrors `interpreter::element_id::edge_table_index`; the two
+/// tables. This mirrors `runtime::element_id::edge_table_index`; the two
 /// must agree or the same edge prints with different ids depending on which
 /// path ran it.
 pub(super) fn rel_index_case(label_expr: Expr, graph: &PropertyGraph) -> Expr {
@@ -860,7 +860,7 @@ mod folding_tests {
     use super::*;
 
     #[test]
-    fn engine_calls_are_not_interpreter_constants_even_with_null_arguments() {
+    fn engine_calls_are_not_scalar_constants_even_with_null_arguments() {
         for name in [
             "unknown_function",
             "stats",

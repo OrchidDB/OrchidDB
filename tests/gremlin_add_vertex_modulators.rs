@@ -1,6 +1,8 @@
 //! AddVertexStep property parameters run against the incoming traverser.
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use orchiddb::ir::catalog::PropertyGraph;
-use orchiddb::ir::interpreter::execute_rows;
+use crate::datafusion_test::execute_rows;
 use orchiddb::ir::value::Value;
 use orchiddb::language::gremlin::{GremlinPlanner, parse_traversal};
 

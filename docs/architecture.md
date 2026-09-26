@@ -38,7 +38,11 @@ ordering, bag multiplicity, exact numeric types and observable evaluation counts
 The optional [managed runtime](runtime.md) executes a relational DAG, placing
 eligible regions in DuckDB and residual native operators in DataFusion. Explicit
 JVM operators use the [native JVM provider](jvm.md). These capabilities support
-broader language behavior than a standalone SQL statement can express.
+broader language behavior than a standalone SQL statement can express. Graph IR
+remains a compiler representation; the standalone recursive interpreter and
+legacy island-rewrite execution path have been removed. Runtime scalar helpers
+and DataFusion operator kernels live in `ir::runtime`. SPARQL `SERVICE`, including
+`SERVICE SILENT`, is unsupported in both compiler and managed execution.
 `engine`, `mapped_engine`, `rdf_engine` and the CLI require `features = ["duckdb"]`.
 That explicit feature still bundles DuckDB for compatibility. Neither it nor the
 optional PostgreSQL driver is enabled by an ordinary library dependency.

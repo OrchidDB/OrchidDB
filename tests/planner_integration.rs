@@ -1,7 +1,9 @@
 //! Black-box integration tests for the public planner API. Demonstrates
 //! that a Cypher query AST and a Gremlin traversal AST flow through the
-//! planner into the interpreter and produce Arrow record batches.
+//! planner into the DataFusion DAG and produce Arrow record batches.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
@@ -10,7 +12,7 @@ use orchiddb::ir::bridge::cypher as cb;
 use orchiddb::ir::bridge::gremlin as gb;
 use orchiddb::ir::catalog::{PropertyGraph, edges_from_columns, nodes_from_columns};
 use orchiddb::ir::expr::{BinaryOp, Lit};
-use orchiddb::ir::interpreter::execute;
+use crate::datafusion_test::execute;
 use orchiddb::ir::plan::{Direction, Length, SortDir};
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner as AstCypherPlanner;

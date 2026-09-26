@@ -89,3 +89,14 @@ async fn mapped_gremlin_ids_and_scalar_order_need_no_runtime_functions() {
         assert!(!sql.contains("gremlin_order_key"), "{sql}");
     }
 }
+
+#[test]
+fn service_and_service_silent_are_rejected_during_planning() {
+    use orchiddb::language::sparql::{SparqlPlanner, SparqlError};
+    for modifier in ["", "SILENT "] {
+        let query = format!("SELECT ?n WHERE {{ SERVICE {modifier}<http://127.0.0.1:1/unreachable> {{ BIND(42 AS ?n) }} }}");
+        let error = SparqlPlanner::default().plan_str(&query).unwrap_err();
+        assert!(matches!(error, SparqlError::Unsupported(_)), "{error}");
+        assert!(error.to_string().contains("SERVICE"), "{error}");
+    }
+}

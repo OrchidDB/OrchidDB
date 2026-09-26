@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::functions::{OperatorTable, with_operator_table};
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::plan::{GraphPlan, Node, ProcedureMode};
 use crate::ir::rel::mapping::GraphMapping;
 use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor, execute_prepared, prepare_with_external};
@@ -276,8 +276,7 @@ fn children(node: &Node) -> Vec<&Node> {
         | GraphListComprehension { input, .. }
         | GraphSelect { input, .. }
         | GraphExpand { input, .. }
-        | GraphProject { input, .. }
-        | GraphService { input, .. } => vec![input],
+        | GraphProject { input, .. } => vec![input],
         GraphJoin { left, right, .. }
         | GraphApply { left, right, .. }
         | GraphUnion { left, right, .. }

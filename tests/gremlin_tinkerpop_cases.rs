@@ -11,7 +11,7 @@
 //!                     correctness regression and fails the test.
 //!   - `ParseError`  — embedded Gremlin couldn't be tokenized / parsed.
 //!   - `PlanError`   — planner returned an `Unsupported` / `Plan` error.
-//!   - `RunError`    — interpreter error (catalog miss, type error, …).
+//!   - `RunError`    — execution error (catalog miss, type error, …).
 //!   - `Skipped`     — case file unreadable, or its dataset isn't yet
 //!                     supported by the harness.
 //!
@@ -31,12 +31,15 @@
 //! still under construction. Any `Incorrect` row fails the test
 //! immediately so a real correctness regression can never sneak past CI.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use orchiddb::ir::interpreter::{ReturnedBatches, execute};
+use orchiddb::ir::runtime::ReturnedBatches;
+use crate::datafusion_test::execute;
 use orchiddb::ir::plan::explain;
 use orchiddb::language::gremlin::planner::GremlinPlanner;
 

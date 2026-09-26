@@ -115,14 +115,15 @@ shape acts as a sentinel. Existing literal merge option maps remain supported.
 
 Supplemental native coverage is in `tests/gremlin_dynamic_cardinality.rs` and
 `tests/gremlin_merge_validation.rs`, with representation/codec unit tests in
-`src/ir/value.rs`, interpreter output, and snapshot encoding. This extends the
+`src/ir/value.rs`, runtime result formatting, and snapshot encoding. This extends the
 native semantic coverage beyond the pinned Gherkin scenario count; JVM-backed
 provider tests remain separate execution evidence.
 
 
 ## Native Gremlin semantic backlog evidence
 
-These changes execute in the Rust traversal interpreter over OrchidDB storage.
+These semantics are implemented by native kernels over OrchidDB storage,
+with relational lowering and DataFusion scheduling in the managed runtime.
 The supplemental tests do not alter the pinned Gherkin catalog or its expected
 answers. Reference probes used TinkerPop 3.7.4, revision
 `fa698ba2aba8967dcd17eb61cb13648b934fab5b`, to establish behavior; native execution

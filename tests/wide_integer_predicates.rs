@@ -2,21 +2,23 @@
 //!
 //! Pins the exact-comparison semantics for out-of-range integer literals in
 //! scan predicates (`WHERE t.id = 170141183460469231731687303715884105727`).
-//! The interpreter is the reference and compares through exact
+//! DataFusion scalar kernels compare through exact
 //! `BigDecimal`/`BigInt` promotion, so a literal one below a stored power of
 //! two must not match it. The DuckDB path historically round-tripped the
 //! literal through `f64`,
 //! turning `i128::MAX` into `2^127` and matching a stored `2^127.0`.
 //!
 //! Both paths test exact equality without coercing the literal to a rounded
-//! float. DuckDB tests require the default `duckdb` feature.
+//! float. DuckDB tests require the optional `duckdb` feature.
 
+#[path = "common/execution.rs"]
+mod datafusion_test;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Float64Array};
 
 use orchiddb::ir::catalog::{PropertyGraph, nodes_from_columns};
-use orchiddb::ir::interpreter::execute;
+use crate::datafusion_test::execute;
 use orchiddb::language::cypher::parser::parse_query;
 use orchiddb::language::cypher::planner::CypherPlanner;
 

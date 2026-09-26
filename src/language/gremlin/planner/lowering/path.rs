@@ -1,7 +1,7 @@
 //! `path()` / `path().from(label)` / `path().to(label)` projections.
 //!
 //! The expand operators already accumulate the visited objects under
-//! the synthetic `__path` binding (see `interpreter::expand_op`). So
+//! the synthetic `__path` binding (see `ir::runtime::ops::expand`). So
 //! `path()` lowers to a `GraphCurrentProject` that pulls that binding
 //! into `current`. When the chain has no expansions yet, `__path` is
 //! absent — we fall back to a singleton list containing `current`.

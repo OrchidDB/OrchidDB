@@ -10,7 +10,7 @@ use std::{
 };
 
 use super::{LoweredPlan, RelResult, sql};
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use async_trait::async_trait;
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
 use datafusion::common::{DFSchemaRef, DataFusionError, Result};
@@ -92,7 +92,6 @@ struct DuckDbRegion {
     id: usize,
     schema: DFSchemaRef,
     prepared: Arc<sql::PreparedSql>,
-    sources: Vec<(String,LogicalPlan)>,
 }
 impl fmt::Debug for DuckDbRegion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -130,7 +129,7 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
         "DuckDbRegion"
     }
     fn inputs(&self) -> Vec<&LogicalPlan> {
-        self.sources.iter().map(|(_,plan)|plan).collect()
+        vec![]
     }
     fn schema(&self) -> &DFSchemaRef {
         &self.schema
@@ -146,12 +145,10 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
         expressions: Vec<Expr>,
         inputs: Vec<LogicalPlan>,
     ) -> Result<Self> {
-        if !expressions.is_empty() || inputs.len() != self.sources.len() {
+        if !expressions.is_empty() || !inputs.is_empty() {
             return Err(DataFusionError::Plan("DuckDB region dependency mismatch".into()));
         }
-        let mut rebuilt = self.clone();
-        rebuilt.sources = self.sources.iter().zip(inputs).map(|((name,_),plan)|(name.clone(),plan)).collect();
-        Ok(rebuilt)
+        Ok(self.clone())
     }
 }
 
@@ -238,23 +235,21 @@ fn partition<'a>(
                 result_form: crate::ir::policy::ResultForm::RowSet,
                 islands: Default::default(),
             };
-            let prepared = sql::source_program::PreparedSourceProgram::prepare(&candidate, sql::SqlDialect::DuckDb,external).await;
+            let prepared = sql::prepare_with_external(&candidate, sql::SqlDialect::DuckDb, external).await;
             if explain && let Err(error) = &prepared {
                 eprintln!("DuckDB boundary: SQL preparation: {error}");
             }
             if let Ok(prepared) = prepared {
                 if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
-                    eprintln!("DuckDB candidate: {}", prepared.sql.query);
+                    eprintln!("DuckDB candidate: {}", prepared.query);
                 }
                 let id = stats.duckdb_regions;
                 stats.duckdb_regions += 1;
-                stats.datafusion_operators += prepared.sources.len();
                 return Ok(LogicalPlan::Extension(Extension {
                     node: Arc::new(DuckDbRegion {
                         id,
                         schema: plan.schema().clone(),
-                        prepared: Arc::new(prepared.sql),
-                        sources: prepared.sources,
+                        prepared: Arc::new(prepared),
                     }),
                 }));
             }
@@ -281,7 +276,7 @@ impl ExtensionPlanner for RegionPlanner {
         _planner: &dyn PhysicalPlanner,
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
-        physical_inputs: &[Arc<dyn ExecutionPlan>],
+        _physical_inputs: &[Arc<dyn ExecutionPlan>],
         _state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let Some(region) = node.as_any().downcast_ref::<DuckDbRegion>() else {
@@ -298,7 +293,6 @@ impl ExtensionPlanner for RegionPlanner {
             prepared: region.prepared.clone(),
             executor: self.executor.clone(),
             properties,
-            sources: region.sources.iter().map(|(name,_)|name.clone()).zip(physical_inputs.iter().cloned()).collect(),
         })))
     }
 }
@@ -309,7 +303,6 @@ struct DuckDbExec {
     prepared: Arc<sql::PreparedSql>,
     executor: Arc<Mutex<sql::DuckDbExecutor>>,
     properties: Arc<PlanProperties>,
-    sources: Vec<(String,Arc<dyn ExecutionPlan>)>,
 }
 #[cfg(feature = "duckdb")]
 impl DisplayAs for DuckDbExec {
@@ -329,22 +322,21 @@ impl ExecutionPlan for DuckDbExec {
         &self.properties
     }
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        self.sources.iter().map(|(_,plan)|plan).collect()
+        vec![]
     }
     fn with_new_children(
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        if children.len() != self.sources.len() {
+        if !children.is_empty() {
             return Err(DataFusionError::Plan("DuckDbExec dependency mismatch".into()));
         }
-        Ok(Arc::new(Self { prepared:self.prepared.clone(),executor:self.executor.clone(),properties:self.properties.clone(),
-            sources:self.sources.iter().zip(children).map(|((name,_),plan)|(name.clone(),plan)).collect() }))
+        Ok(self)
     }
     fn execute(
         &self,
         partition: usize,
-        context: Arc<TaskContext>,
+        _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         if partition != 0 {
             return Err(DataFusionError::Execution(
@@ -355,14 +347,7 @@ impl ExecutionPlan for DuckDbExec {
         let prepared = self.prepared.clone();
         let schema = self.schema();
         let expected = schema.clone();
-        let sources = self.sources.clone();
         let work = async move {
-            let mut prepared = (*prepared).clone();
-            for (name,source) in sources {
-                let schema = source.schema();
-                let batches = datafusion::physical_plan::collect(source,context.clone()).await?;
-                prepared.tables.push(sql::TableData { name,schema,batches });
-            }
             tokio::task::spawn_blocking(move || {
                 let mut executor = executor
                     .lock()

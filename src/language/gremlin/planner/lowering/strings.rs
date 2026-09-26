@@ -1,6 +1,6 @@
 //! Per-element string operations applied to the current scalar
 //! projection. Each variant maps to an IR `Call` against a runtime
-//! UDF (see `ir::interpreter::eval_call`).
+//! UDF (see `ir::runtime::eval_call`).
 
 use super::context::{CURRENT, ChildTraversalKind, Lowerer, PATH, TraversalContext};
 use super::sub_traversal::lower_child_traversal;

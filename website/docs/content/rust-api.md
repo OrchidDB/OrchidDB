@@ -72,7 +72,7 @@ The [RDF dataset guide](rdf.md) shows table registration and graph-column config
 | `ir::rel::mapping` | `GraphMapping`, `NodeMapping`, `EdgeMapping`, `MappedSource` |
 | `ir::rel::rdf` | `RdfDatasetMapping`, `IriQuadSource` |
 | `language::sparql` | `OntologyMapping`, `ClassMapping`, `PredicateMapping` |
-| `ir::interpreter` | `ReturnedBatches` |
+| `ir::runtime` | `ReturnedBatches` |
 | `ir::catalog` | `PropertyGraph` |
 | `ir` | `Value` |
 
@@ -86,7 +86,11 @@ The [RDF dataset guide](rdf.md) shows table registration and graph-column config
 | `ir::plan` | `GraphPlan`, graph `Node` operators |
 | `ir::rel` | `RelBackend`, `RelBackendOptions`, `LoweredPlan` |
 | `ir::rel::sql` | `DuckDbExecutor`, `SqlExecutor`, `SqlDialect` |
-| `ir::exec` | `IslandTarget`, `DataFusionTarget`, `SqlTarget`, `ExecStats` |
+| `ir::exec` | `ExecStats` |
+
+Graph IR is lowered before execution. The managed runtime uses DataFusion
+physical operators and native kernels; there is no standalone Graph IR
+interpreter or legacy island target API.
 
 ## Generate symbol documentation
 

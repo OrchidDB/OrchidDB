@@ -1,6 +1,6 @@
 //! Native JVM compute kernel for relational DataFusion execution. Graph state never leaves the native provider:
 //! Java calls back into an execution-local native overlay, published on success.
-use crate::ir::interpreter::{InterpretError, IrResult, Row, eval};
+use crate::ir::runtime::{RuntimeError, IrResult, Row, eval};
 use crate::ir::{
     catalog::PropertyGraph,
     plan::{Node, ProjectionItem},
@@ -86,8 +86,8 @@ impl JvmExecution {
         Ok(())
     }
 }
-fn error(message: impl Into<String>) -> InterpretError {
-    InterpretError::Runtime(message.into())
+fn error(message: impl Into<String>) -> RuntimeError {
+    RuntimeError::Runtime(message.into())
 }
 pub fn contains_jvm(node: &Node) -> bool {
     matches!(node, Node::GraphJvm { .. })

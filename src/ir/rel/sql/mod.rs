@@ -38,8 +38,6 @@ pub mod program;
 #[cfg(feature = "duckdb")]
 pub mod mutation;
 #[cfg(feature = "duckdb")]
-pub(crate) mod source_program;
-#[cfg(feature = "duckdb")]
 pub(crate) use database::{SharedDatabase, open_shared};
 #[cfg(feature = "postgres")]
 mod postgres_exec;
@@ -73,7 +71,7 @@ use datafusion::sql::unparser::dialect::{
 };
 
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::interpreter::ReturnedBatches;
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::policy::ResultForm;
 
 use super::LoweredPlan;

@@ -63,8 +63,8 @@ impl QueryExecutionError {
                 diagnosis = error.diagnosis;
                 break;
             }
-            if let Some(crate::ir::InterpretError::Diagnosed { code, .. }) =
-                error.downcast_ref::<crate::ir::InterpretError>()
+            if let Some(crate::ir::RuntimeError::Diagnosed { code, .. }) =
+                error.downcast_ref::<crate::ir::RuntimeError>()
             {
                 diagnosis = Some(*code);
                 break;

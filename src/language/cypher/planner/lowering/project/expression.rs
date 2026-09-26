@@ -308,7 +308,7 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                     "DISTINCT is only valid for aggregate function `{name}`"
                 )));
             }
-            if !crate::ir::interpreter::is_known_function(name)
+            if !crate::ir::runtime::is_known_function(name)
                 && !crate::ir::functions::is_registered_function(name)
             {
                 return Err(CypherPlanError::Invalid(format!("Unknown function {name}"))
