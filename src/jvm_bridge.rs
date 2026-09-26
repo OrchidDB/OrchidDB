@@ -62,6 +62,9 @@ impl Store {
         // first access. Allocate those once before the two transaction views can
         // diverge, otherwise unrelated writer allocations could change a reader's
         // property ID when that writer commits. Native records already have IDs.
+        // Source-backed graphs share lazy property handles across views; never
+        // scan their tables merely to initialize a JVM callback.
+        if graph.source.is_none() {
         for label in graph.labels() {
             let mut keys = graph.node_property_keys(&label);
             keys.sort();
@@ -74,6 +77,7 @@ impl Store {
                     &keys,
                 );
             }
+        }
         }
         Self {
             checkpoint: graph.clone(),
@@ -320,7 +324,7 @@ impl Store {
                 validate_name(label)?;
                 let properties = self.pairs(r, "properties")?;
                 let id = r.get("id").map(|id| self.decode_id(id)).transpose()?;
-                let vertex = self.graph.insert_node(label, BTreeMap::new());
+                let vertex = self.graph.try_insert_node_with_key(label, BTreeMap::new(), id.as_ref()).map_err(err)?;
                 if let Some(id) = id {
                     self.graph.set_element_public_id(&vertex, id).map_err(err)?;
                 } else {
@@ -453,7 +457,7 @@ impl Store {
                 }
                 let mut edges = vec![];
                 if direction != "IN" {
-                    edges.extend(self.graph.out_edges(&label, id, &labels));
+                    edges.extend(self.graph.out_edges(&label, id.clone(), &labels));
                 }
                 if direction != "OUT" {
                     edges.extend(self.graph.in_edges(&label, id, &labels));
@@ -520,14 +524,14 @@ impl Store {
         }
         Ok(result)
     }
-    fn edge(&self, label: &str, row: i64) -> Result<Value> {
+    fn edge(&self, label: &str, row: crate::ir::ElementId) -> Result<Value> {
         let (src_label, src_id, dst_label, dst_id) = self
             .graph
-            .live_edge_endpoints(label, row)
+            .live_edge_endpoints(label, row.clone().into())
             .ok_or("edge does not exist")?;
         Ok(Value::Edge {
             rel_type: label.into(),
-            id: row,
+            id: row.clone().into(),
             src_label,
             src_id,
             dst_label,
@@ -612,16 +616,16 @@ impl Store {
         match string(h, "kind")? {
             "vertex" => {
                 let label = string(h, "label")?;
-                let row = integer(field(h, "row")?)?;
-                if !self.graph.node_is_live(label, row) {
+                let row = element_key(field(h, "row")?)?;
+                if !self.graph.node_is_live(label, row.clone().into()) {
                     return Err("vertex does not exist".into());
                 }
                 Ok(Value::Node {
                     label: label.into(),
-                    id: row,
+                    id: row.clone().into(),
                 })
             }
-            "edge" => self.edge(string(h, "label")?, integer(field(h, "row")?)?),
+            "edge" => self.edge(string(h, "label")?, element_key(field(h, "row")?)?),
             kind @ ("vertex_property" | "property") => {
                 let owner = self.resolve(field(h, "owner")?)?;
                 let key = string(h, "key")?;
@@ -654,6 +658,14 @@ impl Store {
     pub fn encode(&self, v: &Value) -> Result<Json> {
         let tagged = |kind: &str, value: Json| json!({"type":kind,"value":value});
         Ok(match v {
+            Value::Scalar(value) => {
+                if let Some(value)=crate::ir::value::scalar_semantic_value(value){return self.encode(&value);}
+                tagged("scalar",json!({"data_type":value.data_type().to_string(),"display":value.to_string(),"bytes":crate::ir::identity::encode_scalar(value)}))
+            },
+            Value::UInt8(v)=>tagged("int",json!(*v as i64)),
+            Value::UInt16(v)=>tagged("int",json!(*v as i64)),
+            Value::UInt32(v)=>tagged("long",json!(*v as i64)),
+            Value::UInt64(v)=>tagged("bigint",json!(v.to_string())),
             Value::Null => json!({"type":"null"}),
             Value::Bool(v) => tagged("boolean", json!(v)),
             Value::String(v) => tagged("string", json!(v)),
@@ -701,7 +713,7 @@ impl Store {
                 dst_id,
                 ..
             } => {
-                json!({"type":"edge","handle":self.handle(v)?,"label":rel_type,"id":self.encode(&self.graph.element_public_id(v))?,"out":self.encode(&Value::Node{label:src_label.clone(),id:*src_id})?,"in":self.encode(&Value::Node{label:dst_label.clone(),id:*dst_id})?})
+                json!({"type":"edge","handle":self.handle(v)?,"label":rel_type,"id":self.encode(&self.graph.element_public_id(v))?,"out":self.encode(&Value::Node{label:src_label.clone(),id:src_id.clone()})?,"in":self.encode(&Value::Node{label:dst_label.clone(),id:dst_id.clone()})?})
             }
             Value::VertexProperty {
                 owner, key, value, ..
@@ -751,6 +763,11 @@ impl Store {
             }
         };
         Ok(match kind {
+            "scalar" => {
+                let bytes=v.get("bytes").and_then(Json::as_array).ok_or("invalid scalar payload")?;
+                let bytes=bytes.iter().map(|v|v.as_u64().and_then(|v|u8::try_from(v).ok()).ok_or("invalid scalar byte".to_string())).collect::<Result<Vec<_>>>()?;
+                Value::Scalar(crate::ir::identity::decode_scalar(&bytes)?)
+            }
             "boolean" => Value::Bool(v.as_bool().ok_or("expected boolean")?),
             "string" => Value::String(v.as_str().ok_or("expected string")?.into()),
             "byte" => Value::Byte(number()?.parse().map_err(err)?),
@@ -1408,13 +1425,13 @@ mod tests {
         graph
             .add_edges(edges_from_columns("r", "a", "b", vec![1], vec![0], vec![]))
             .unwrap();
-        assert!(graph.node_is_live("a", 0));
-        assert!(!graph.node_is_live("a", -1));
-        assert!(!graph.node_is_live("a", 2));
-        assert!(!graph.node_is_live("missing", 0));
-        assert!(graph.live_edge_endpoints("r", -1).is_none());
-        assert!(graph.live_edge_endpoints("r", 2).is_none());
-        assert!(graph.live_edge_endpoints("missing", 0).is_none());
+        assert!(graph.node_is_live("a", 0.into()));
+        assert!(!graph.node_is_live("a", (-1).into()));
+        assert!(!graph.node_is_live("a", 2.into()));
+        assert!(!graph.node_is_live("missing", 0.into()));
+        assert!(graph.live_edge_endpoints("r", (-1).into()).is_none());
+        assert!(graph.live_edge_endpoints("r", 2.into()).is_none());
+        assert!(graph.live_edge_endpoints("missing", 0.into()).is_none());
         let mut s = Store::from_graph(graph);
         let vertices = call(&mut s, json!({"op":"vertices"}));
         let edges = call(&mut s, json!({"op":"edges"}));
@@ -1482,3 +1499,10 @@ mod tests {
 #[cfg(test)]
 #[path = "jvm_bridge/user_keys_tests.rs"]
 mod user_keys_tests;
+
+fn element_key(value: &Json) -> Result<crate::ir::ElementId> {
+    if let Some(id)=value.as_i64() {return Ok(id.into());}
+    let bytes=value.get("scalar_key").and_then(Json::as_array).ok_or("invalid scalar element key")?;
+    let bytes=bytes.iter().map(|v|v.as_u64().and_then(|v|u8::try_from(v).ok()).ok_or("invalid key byte".to_string())).collect::<std::result::Result<Vec<_>,_>>()?;
+    crate::ir::ElementId::decode(&bytes)
+}

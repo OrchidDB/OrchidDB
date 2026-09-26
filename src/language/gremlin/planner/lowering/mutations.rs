@@ -2,12 +2,19 @@
 use super::context::{CURRENT, Lowerer};
 use super::literals::gvalue_to_expr;
 use crate::ir::expr::IrExpr;
-use crate::ir::plan::{CreateEdge, CreateNode, Node, SetMode, SetPropertyItem};
+use crate::ir::plan::{Node, SetMode, SetPropertyItem};
 use crate::language::gremlin::planner::error::GremlinPlanResult;
 use crate::language::gremlin::semantics::GValue;
 
 pub(super) fn lower_add_vertex(input: Node, label: &str, lo: &Lowerer) -> Node {
-    write_call(input,"gremlin.mutation.add_vertex",vec![IrExpr::lit_str(label),partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null))])
+    write_call(
+        input,
+        "gremlin.mutation.add_vertex",
+        vec![
+            IrExpr::lit_str(label),
+            partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null)),
+        ],
+    )
 }
 
 pub(super) fn lower_property(input: Node, key: &str, value: &GValue) -> GremlinPlanResult<Node> {
@@ -20,27 +27,6 @@ pub(super) fn lower_property(input: Node, key: &str, value: &GValue) -> GremlinP
         }],
         input: input.boxed(),
     })
-}
-
-pub(super) fn lower_add_edge(
-    input: Node,
-    label: &str,
-    from: Option<&str>,
-    to: Option<&str>,
-    lo: &Lowerer,
-) -> Node {
-    Node::GraphCreate {
-        graph: "default".into(),
-        nodes: vec![],
-        edges: vec![CreateEdge {
-            bind: Some(CURRENT.into()),
-            rel_type: label.into(),
-            src: from.unwrap_or(CURRENT).into(),
-            dst: to.unwrap_or(CURRENT).into(),
-            properties: partition_properties(lo),
-        }],
-        input: input.boxed(),
-    }
 }
 
 pub(super) fn lower_drop(input: Node) -> Node {
@@ -242,13 +228,34 @@ pub(super) fn lower_dynamic_property(
     ))
 }
 
-pub(super) fn lower_native_property(input:Node,cardinality:&str,key:&crate::language::gremlin::ast::MutationArgument,value:&crate::language::gremlin::ast::MutationArgument,meta:&[(String,GValue)],lo:&mut Lowerer,ctx:&super::context::TraversalContext)->GremlinPlanResult<Node>{
-    let (input,key)=argument(input,key,lo,ctx)?;
-    let (input,value)=argument(input,value,lo,ctx)?;
-    let meta=gvalue_to_expr(&GValue::Map(meta.iter().cloned().collect()))?;
-    Ok(write_call(input,"gremlin.mutation.property_native",vec![IrExpr::Binding(CURRENT.into()),key,value,IrExpr::lit_str(if cardinality == "default" {"single"} else {cardinality}),meta]))
+pub(super) fn lower_native_property(
+    input: Node,
+    cardinality: &str,
+    key: &crate::language::gremlin::ast::MutationArgument,
+    value: &crate::language::gremlin::ast::MutationArgument,
+    meta: &[(String, GValue)],
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node> {
+    let (input, key) = argument(input, key, lo, ctx)?;
+    let (input, value) = argument(input, value, lo, ctx)?;
+    let meta = gvalue_to_expr(&GValue::Map(meta.iter().cloned().collect()))?;
+    Ok(write_call(
+        input,
+        "gremlin.mutation.property_native",
+        vec![
+            IrExpr::Binding(CURRENT.into()),
+            key,
+            value,
+            IrExpr::lit_str(if cardinality == "default" {
+                "single"
+            } else {
+                cardinality
+            }),
+            meta,
+        ],
+    ))
 }
-
 
 /// Fold addV property parameters exactly where GraphTraversal.property does:
 /// their child traversals observe the incoming object, before vertex creation.
@@ -262,9 +269,31 @@ pub(super) fn lower_vertex_with_properties<'a, I>(
 where
     I: Iterator<Item = &'a crate::language::gremlin::ast::Step>,
 {
+    let node = lower_dynamic_vertex(input, label, lo, ctx)?;
+    lower_creation_with_properties(node, steps, lo, ctx)
+}
+
+pub(super) fn lower_creation_with_properties<'a, I>(
+    mut node: Node,
+    steps: &mut std::iter::Peekable<I>,
+    lo: &mut Lowerer,
+    ctx: &super::context::TraversalContext,
+) -> GremlinPlanResult<Node>
+where
+    I: Iterator<Item = &'a crate::language::gremlin::ast::Step>,
+{
     use crate::ir::plan::{ProjectErrorPolicy, ProjectMode, ProjectionItem};
     use crate::language::gremlin::ast::{MutationArgument, Step};
-    let (mut input, label) = argument(input, label, lo, ctx)?;
+    let edge_creation =
+        matches!(&node,Node::GraphProcedureCall{name,..} if name=="gremlin.mutation.add_edge");
+    let Node::GraphProcedureCall {
+        input: ref mut source,
+        ..
+    } = node
+    else {
+        unreachable!("creation procedure");
+    };
+    let mut input = *source.take().expect("creation input");
     let mut parameters = Vec::new();
     let mut remaining = Vec::new();
     while matches!(
@@ -282,7 +311,8 @@ where
             remaining.push(step);
             continue;
         };
-        let foldable = meta.is_empty()
+        let foldable = (!edge_creation || matches!(value, MutationArgument::Literal(_)))
+            && meta.is_empty()
             && (matches!(
                 key,
                 MutationArgument::Traversal(_) | MutationArgument::Literal(GValue::Token(_))
@@ -313,14 +343,24 @@ where
         };
         parameters.push((IrExpr::Binding(key_binding), IrExpr::Binding(value_binding)));
     }
-    let mut node = write_call(
-        input,
-        "gremlin.mutation.add_vertex",
-        vec![
-            label,
-            partition_properties(lo).unwrap_or(IrExpr::Lit(crate::ir::expr::Lit::Null)),
-        ],
-    );
+    let Node::GraphProcedureCall {
+        args,
+        input: source,
+        ..
+    } = &mut node
+    else {
+        unreachable!();
+    };
+    *source = Some(input.boxed());
+    args.push(crate::ir::plan::ProcedureArg {
+        name: None,
+        value: IrExpr::List(
+            parameters
+                .iter()
+                .map(|(key, value)| IrExpr::List(vec![key.clone(), value.clone()]))
+                .collect(),
+        ),
+    });
     for (key, value) in parameters {
         node = write_call(
             node,
@@ -331,6 +371,7 @@ where
                 value,
                 IrExpr::lit_str("list"),
                 gvalue_to_expr(&GValue::Map(Default::default()))?,
+                IrExpr::Lit(crate::ir::expr::Lit::Bool(true)),
             ],
         );
     }

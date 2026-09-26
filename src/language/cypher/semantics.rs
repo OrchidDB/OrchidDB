@@ -873,7 +873,7 @@ mod tests {
     fn rejects_unwind_of_path_binding() {
         let err = analyze_error("MATCH p = ()-[*1..2]->() UNWIND p AS x RETURN x");
         assert!(
-            err.contains("Binder exception: p has data type RECURSIVE_REL but LIST was expected.")
+            err.contains("Binder exception: p has data type PATH but LIST was expected.")
         );
     }
 
@@ -884,38 +884,31 @@ mod tests {
     }
 
     #[test]
-    fn accepts_union_branches_with_different_output_names_by_position() {
-        let output_fields = analyze_outputs(
-            "MATCH (p:person) RETURN p.age UNION ALL MATCH (p1:person) RETURN p1.age",
-        )
-        .expect("analyze");
-        assert_eq!(output_fields, vec!["p.age".to_string()]);
+    fn union_requires_matching_output_names() {
+        // openCypher Union1/Union2: columns are matched by name, not position.
+        let query = parse_query("MATCH (p:person) RETURN p.age UNION ALL MATCH (p1:person) RETURN p1.age").unwrap();
+        let err = analyze_query(&query).unwrap_err();
+        assert_eq!(err.classification(), Some(("SyntaxError", "DifferentColumnsInUnion")));
+        assert_eq!(analyze_outputs("MATCH (p:person) RETURN p.age AS age UNION ALL MATCH (p1:person) RETURN p1.age AS age").unwrap(), vec!["age"]);
     }
 
     #[test]
     fn rejects_union_arity_mismatch() {
-        let err = analyze_error("RETURN 1 AS left, 2 AS extra UNION RETURN 1 AS right");
-        assert!(err.contains(
-            "Binder exception: The number of columns to union/union all must be the same."
-        ));
+        let query = parse_query("RETURN 1 AS value, 2 AS extra UNION RETURN 1 AS value").unwrap();
+        let err = analyze_query(&query).unwrap_err();
+        assert_eq!(err.classification(), Some(("SyntaxError", "DifferentColumnsInUnion")));
     }
 
     #[test]
-    fn rejects_union_property_type_mismatch() {
-        let err = analyze_error(
-            "MATCH (p:person) RETURN p.fName UNION ALL MATCH (p1:person) RETURN p1.age",
-        );
-        assert!(
-            err.contains("Binder exception: p1.age has data type INT64 but STRING was expected.")
-        );
+    fn union_does_not_infer_property_types_from_names() {
+        let output = analyze_outputs("MATCH (p:person) RETURN p.fName AS value UNION ALL MATCH (p1:person) RETURN p1.age AS value").unwrap();
+        assert_eq!(output, vec!["value"]);
     }
 
     #[test]
     fn rejects_mixed_union_and_union_all() {
-        let err = analyze_error(
-            "MATCH (p:person) RETURN p.age UNION ALL MATCH (p1:person) RETURN p1.age UNION MATCH (p2:person) RETURN p2.age",
-        );
-        assert!(err.contains("Binder exception: Union and union all can not be used together."));
+        let err = analyze_error("RETURN 1 AS value UNION ALL RETURN 2 AS value UNION RETURN 3 AS value");
+        assert!(err.contains("Union and union all can not be used together."), "{err}");
     }
 
     #[test]
@@ -924,39 +917,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_order_by_node_and_complex_property_types() {
+    fn order_by_checks_known_types_without_guessing_property_types() {
         let err = analyze_error("MATCH (a:person) RETURN a ORDER BY a");
-        assert!(
-            err.contains("Binder exception: Cannot order by a. Order by NODE is not supported.")
-        );
-
-        let err = analyze_error("MATCH (a:person) RETURN a ORDER BY a.workedHours");
-        assert!(err.contains(
-            "Binder exception: Cannot order by a.workedHours. Order by INT64[] is not supported."
-        ));
+        assert!(err.contains("Order by NODE is not supported."), "{err}");
+        assert!(analyze_outputs("MATCH (a:person) RETURN a ORDER BY a.workedHours").is_ok());
     }
 
     #[test]
     fn rejects_known_invalid_arithmetic_type_pairs() {
-        let err = analyze_error("MATCH (a:person) RETURN a.age + 'hh'");
-        assert!(err.contains(
-            "Binder exception: Cannot match a built-in function for given function +(INT64,STRING)."
-        ));
-
-        let err = analyze_error("MATCH (a:person) WHERE id(a) + 1 < id(a) RETURN a");
-        assert!(err.contains("Binder exception: Function + did not receive correct arguments:"));
+        let err = analyze_error("RETURN true + 1");
+        assert!(err.contains("+(BOOL,INT64)"), "{err}");
+        // Property names do not establish a static type without a schema.
+        assert!(analyze_outputs("MATCH (a:person) RETURN a.age + 'hh'").is_ok());
+        assert!(analyze_outputs("MATCH (a:person) WHERE id(a) + 1 < id(a) RETURN a").is_ok());
     }
 
     #[test]
-    fn rejects_invalid_coalesce_static_calls() {
+    fn coalesce_requires_arguments_but_allows_mixed_types() {
         let err = analyze_error("RETURN coalesce()");
-        assert!(err.contains("Binder exception: COALESCE requires at least one argument"));
-
-        let err = analyze_error("RETURN coalesce(1, 'hello')");
-        assert!(err.contains(
-            "Binder exception: Expression hello has data type STRING but expected INT64."
-        ));
+        assert!(err.contains("COALESCE requires at least one argument"), "{err}");
+        assert!(analyze_outputs("RETURN coalesce(1, 'hello')").is_ok());
     }
+
 }
 
 /// Every variable a pattern part binds (node and relationship).

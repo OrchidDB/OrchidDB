@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) fn lit_to_expr(value: &Lit) -> Expr {
     match value {
+        Lit::Scalar(value) => lit(value.clone()),
         Lit::Null => lit(ScalarValue::Null),
         Lit::Bool(value) => lit(*value),
         Lit::Int(value) => lit(*value),
@@ -14,6 +15,7 @@ pub(super) fn lit_to_expr(value: &Lit) -> Expr {
 
 pub(super) fn value_literal_expr(value: &Value) -> RelResult<Expr> {
     match value {
+        Value::Scalar(value) => Ok(lit(value.clone())),
         Value::Null => Ok(lit(ScalarValue::Null)),
         Value::Bool(value) => Ok(lit(*value)),
         Value::Byte(value) => Ok(lit(ScalarValue::Int8(Some(*value)))),
@@ -37,6 +39,7 @@ pub(super) fn value_literal_expr(value: &Value) -> RelResult<Expr> {
 
 pub(super) fn lit_to_value(value: &Lit) -> Value {
     match value {
+        Lit::Scalar(value) => Value::Scalar(value.clone()),
         Lit::Null => Value::Null,
         Lit::Bool(value) => Value::Bool(*value),
         Lit::Int(value) => Value::Int(*value),
@@ -544,6 +547,7 @@ pub(super) fn constant_result_expr(
 
 pub(super) fn tagged_value(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty { key, value, .. } => format!("vp[{key}->{}]", tagged_value(value)),
         Value::Property { key, value, .. } => format!("p[{key}->{}]", tagged_value(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", tagged_value(value)),
@@ -614,6 +618,7 @@ pub(super) fn tagged_value(value: &Value) -> String {
 
 pub(super) fn cypher_plain_value(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty { key, value, .. } => {
             format!("vp[{key}->{}]", cypher_plain_value(value))
         }
@@ -750,6 +755,7 @@ pub(super) fn visible_map_keys(map: &BTreeMap<String, Value>) -> Vec<String> {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty { key, value, .. } => {
             format!("vp[{key}->{}]", display_for_list_to_string(value))
         }

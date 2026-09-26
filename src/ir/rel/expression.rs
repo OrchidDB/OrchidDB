@@ -983,7 +983,7 @@ impl<'a> LoweringContext<'a> {
             }
             for rel_type in self.graph.rel_types() {
                 for id in self.graph.edge_ids(&rel_type) {
-                    let owner = Value::Edge { rel_type: rel_type.clone(), id, src_label: String::new(), src_id: 0, dst_label: String::new(), dst_id: 0, projected_properties: None };
+                    let owner = Value::Edge { rel_type: rel_type.clone(), id, src_label: String::new(), src_id: 0.into(), dst_label: String::new(), dst_id: 0.into(), projected_properties: None };
                     if self.graph.properties(&owner, &[key.to_owned()]).iter().any(|p| matches!(p, Value::Property { value, .. } if matches!(value.as_ref(), Value::Null | Value::List(_) | Value::Set(_) | Value::Map(_) | Value::TypedMap(_)))) {
                         return Err(RelError::Unsupported("Structured or present-null Gremlin edge properties require a typed native kernel".into()));
                     }

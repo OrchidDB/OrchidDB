@@ -58,51 +58,51 @@ fn id_projection_graph() -> PropertyGraph {
 fn path_predicates_detect_repeated_nodes_and_edges() {
     let edge = Value::Edge {
         rel_type: "knows".into(),
-        id: 12,
+        id: 12.into(),
         src_label: "person".into(),
-        src_id: 7,
+        src_id: 7.into(),
         dst_label: "person".into(),
-        dst_id: 6,
+        dst_id: 6.into(),
         projected_properties: None,
     };
     let repeated_node = Value::Path(vec![
         Value::Node {
             label: "person".into(),
-            id: 7,
+            id: 7.into(),
         },
         edge.clone(),
         Value::Node {
             label: "person".into(),
-            id: 6,
+            id: 6.into(),
         },
         Value::Edge {
             rel_type: "knows".into(),
-            id: 13,
+            id: 13.into(),
             src_label: "person".into(),
-            src_id: 6,
+            src_id: 6.into(),
             dst_label: "person".into(),
-            dst_id: 7,
+            dst_id: 7.into(),
             projected_properties: None,
         },
         Value::Node {
             label: "person".into(),
-            id: 7,
+            id: 7.into(),
         },
     ]);
     let repeated_edge = Value::Path(vec![
         Value::Node {
             label: "person".into(),
-            id: 7,
+            id: 7.into(),
         },
         edge.clone(),
         Value::Node {
             label: "person".into(),
-            id: 6,
+            id: 6.into(),
         },
         edge,
         Value::Node {
             label: "person".into(),
-            id: 7,
+            id: 7.into(),
         },
     ]);
 
@@ -115,11 +115,11 @@ fn properties_projects_internal_element_ids() {
     let graph = id_projection_graph();
     let edge = Value::Edge {
         rel_type: "knows".into(),
-        id: 0,
+        id: 0.into(),
         src_label: "person".into(),
-        src_id: 0,
+        src_id: 0.into(),
         dst_label: "person".into(),
-        dst_id: 1,
+        dst_id: 1.into(),
         projected_properties: None,
     };
 

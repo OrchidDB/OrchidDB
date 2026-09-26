@@ -160,7 +160,7 @@ fn fails_on_unsupported_parameter_value() {
             "other",
             Value::Node {
                 label: "person".to_string(),
-                id: 1,
+                id: 1.into(),
             },
         )]),
     )

@@ -65,7 +65,7 @@ mod tests {
         g.delete_value(
             &Value::Node {
                 label: "Person".into(),
-                id: 1,
+                id: 1.into(),
             },
             true,
         )

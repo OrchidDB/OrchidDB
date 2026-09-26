@@ -179,8 +179,8 @@ fn arrow_reserved_columns_are_never_materialized_as_jvm_user_properties() {
     );
     assert_eq!(properties(&mut store, &edge, &["__src_id"]), json!([null_property]));
     assert_eq!(
-        store.graph.edge_endpoints("link", 0),
-        Some(("node".into(), 0, "node".into(), 1))
+        store.graph.edge_endpoints("link", 0.into()),
+        Some(("node".into(), 0.into(), "node".into(), 1.into()))
     );
 }
 

@@ -3,6 +3,23 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    /// A mapped edge fixes endpoint labels. Apply that metadata before building
+    /// a union of candidate tables; SQL execution must never open unrelated
+    /// sources just to discard their labels in a join.
+    pub(super) fn mapped_endpoint_labels(&self, labels: &LabelExpr, types: &LabelExpr, dir: Direction) -> RelResult<LabelExpr> {
+        let Some(mapping) = &self.options.mapping else { return Ok(labels.clone()); };
+        let types = mapping::resolve_names(types, || mapping.rel_types(), "relationship")?;
+        let allowed = mapping::resolve_names(labels, || mapping.labels(), "label")?;
+        let mut endpoints = BTreeSet::new();
+        for kind in types {
+            if let Some(edge) = mapping.edge(&kind) {
+                if dir != Direction::Out { endpoints.insert(edge.src_label.clone()); }
+                if dir != Direction::In { endpoints.insert(edge.dst_label.clone()); }
+            }
+        }
+        Ok(LabelExpr::AnyOf(allowed.into_iter().filter(|label| endpoints.contains(label)).collect()))
+    }
+
     pub(super) fn lower_bind(
         &mut self,
         bind: &str,
@@ -113,20 +130,38 @@ impl<'a> LoweringContext<'a> {
 
     /// Keep exact edge identities as an SQL list. Labels are part of identity;
     /// membership is element-wise, never a substring match on serialized paths.
-    pub(super) fn relationship_key(rel: &str) -> Expr {
-        concat_exprs(vec![col_exact(label_col(rel)), lit(":"), cast_utf8(col_exact(id_col(rel)))])
+    pub(super) fn relationship_key(plan: &LogicalPlan, rel: &str) -> Expr {
+        let column = id_col(rel);
+        let key = col_exact(column.clone());
+        let field = plan.schema().field_with_unqualified_name(&column).expect("relationship id");
+        let mut data_type = field.data_type();
+        while let DataType::Dictionary(_, value_type) = data_type {
+            data_type = value_type;
+        }
+        let key = if matches!(data_type, DataType::Binary | DataType::LargeBinary
+            | DataType::BinaryView | DataType::FixedSizeBinary(_)) {
+            // Binary identities may contain arbitrary bytes, not UTF-8.
+            datafusion::functions::encoding::expr_fn::encode(
+                key, lit("hex"))
+        } else {
+            cast_utf8(key)
+        };
+        let label = col_exact(label_col(rel));
+        // Length-prefix the label so ("A:B", "c") cannot collide with
+        // ("A", "B:c") in relationship-history membership.
+        concat_exprs(vec![cast_utf8(df_unicode::character_length(label.clone())), lit(":"), label, lit(":"), key])
     }
 
     pub(super) fn empty_relationship_history() -> Expr {
         // A typed sentinel avoids an untyped empty array in SQL. Real keys
-        // always contain ':' followed by a signed integer, so cannot be empty.
+        // always contain ':', so cannot be empty.
         datafusion::functions_nested::expr_fn::make_array(vec![lit("")])
     }
 
     pub(super) fn track_relationship(&self, input: LoweredNode, history: &str, rel: &str) -> RelResult<LoweredNode> {
         use datafusion::functions_nested::expr_fn::{array_has, array_append};
         let previous = if has_exact_col(&input.plan, history) { col_exact(history) } else { Self::empty_relationship_history() };
-        let key = Self::relationship_key(rel);
+        let key = Self::relationship_key(&input.plan, rel);
         let filtered = LogicalPlanBuilder::from(input.plan.clone())
             .filter(Expr::Not(Box::new(array_has(previous.clone(), key.clone()))))?.build()?;
         let mut projection = existing_columns(&filtered, &BTreeSet::from([history.to_owned()]));
@@ -237,6 +272,18 @@ impl<'a> LoweringContext<'a> {
         let from_label = format!("{rel}__traverse_from_label");
         let to_id = format!("{rel}__traverse_to_id");
         let to_label = format!("{rel}__traverse_to_label");
+        let field_type = |name: String| {
+            edge_scan
+                .plan
+                .schema()
+                .field_with_unqualified_name(&name)
+                .map(|field| field.data_type().clone())
+                .ok()
+        };
+        let endpoint_type = match (field_type(src_id_col(&rel)), field_type(dst_id_col(&rel))) {
+            (Some(src), Some(dst)) => common_identity_type(&src, &dst),
+            _ => None,
+        };
         let orient = |reverse: bool| -> RelResult<LogicalPlan> {
             let mut builder = LogicalPlanBuilder::from(edge_scan.plan.clone());
             if reverse && self.language != Language::Gremlin {
@@ -244,8 +291,7 @@ impl<'a> LoweringContext<'a> {
                 // Gremlin both()/bothE() concatenate outgoing and incoming
                 // traversers, so the same self-loop participates twice.
                 builder = builder.filter(
-                    col_exact(src_id_col(&rel))
-                        .not_eq(col_exact(dst_id_col(&rel)))
+                    identity_compare(&[&edge_scan.plan], &src_id_col(&rel), BinaryOp::Neq, &dst_id_col(&rel))
                         .or(col_exact(src_label_col(&rel)).not_eq(col_exact(dst_label_col(&rel)))),
                 )?;
             }
@@ -265,10 +311,16 @@ impl<'a> LoweringContext<'a> {
                     dst_label_col(&rel),
                 )
             };
+            // Both orientations feed one union, so endpoints of different
+            // identity types (e.g. text people, integer companies) share one.
+            let endpoint = |name: String| match &endpoint_type {
+                Some(target) => Expr::Cast(Cast::new(Box::new(col_exact(name)), target.clone())),
+                None => col_exact(name),
+            };
             projection.extend([
-                col_exact(src_id).alias(&from_id),
+                endpoint(src_id).alias(&from_id),
                 col_exact(src_label).alias(&from_label),
-                col_exact(dst_id).alias(&to_id),
+                endpoint(dst_id).alias(&to_id),
                 col_exact(dst_label).alias(&to_label),
             ]);
             Ok(builder.project(projection)?.build()?)
@@ -276,14 +328,14 @@ impl<'a> LoweringContext<'a> {
         let oriented = LogicalPlanBuilder::from(orient(false)?)
             .union(orient(true)?)?
             .build()?;
-        let source_join = vec![binding_pair_eq(source, &from_id, &from_label)];
+        let source_join = vec![binding_pair_eq(&[&input.plan, &oriented], source, &from_id, &from_label)];
         let mut joined = LogicalPlanBuilder::from(input.plan.clone())
             .join_on(oriented, JoinType::Inner, source_join)?
             .build()?;
 
         match target_mode {
             TargetMode::Existing => {
-                let opposite = binding_pair_eq(target, &to_id, &to_label);
+                let opposite = binding_pair_eq(&[&joined], target, &to_id, &to_label);
                 joined = LogicalPlanBuilder::from(joined).filter(opposite)?.build()?;
             }
             TargetMode::BindNew
@@ -295,8 +347,14 @@ impl<'a> LoweringContext<'a> {
                 } else {
                     target.to_string()
                 };
-                let target_scan = self.lower_node_scan(&target_scan_binding, target_labels)?;
-                let target_join = vec![binding_pair_eq(&target_scan_binding, &to_id, &to_label)];
+                let labels = self.mapped_endpoint_labels(target_labels, rel_types, Direction::Both)?;
+                let target_scan = self.lower_node_scan(&target_scan_binding, &labels)?;
+                let target_join = vec![binding_pair_eq(
+                    &[&joined, &target_scan.plan],
+                    &target_scan_binding,
+                    &to_id,
+                    &to_label,
+                )];
                 joined = LogicalPlanBuilder::from(joined)
                     .join_on(target_scan.plan, JoinType::Inner, target_join)?
                     .build()?;
@@ -368,10 +426,11 @@ impl<'a> LoweringContext<'a> {
         };
 
         let source_join = vec![
-            binary(
-                col_exact(id_col(source)),
+            identity_compare(
+                &[&input.plan, &edge_scan.plan],
+                &id_col(source),
                 BinaryOp::Eq,
-                col_exact(edge_source_id),
+                &edge_source_id,
             ),
             binary(
                 col_exact(label_col(source)),
@@ -386,11 +445,7 @@ impl<'a> LoweringContext<'a> {
         match target_mode {
             TargetMode::Existing => {
                 let filters = vec![
-                    binary(
-                        col_exact(id_col(target)),
-                        BinaryOp::Eq,
-                        col_exact(edge_target_id),
-                    ),
+                    identity_compare(&[&joined], &id_col(target), BinaryOp::Eq, &edge_target_id),
                     binary(
                         col_exact(label_col(target)),
                         BinaryOp::Eq,
@@ -409,12 +464,14 @@ impl<'a> LoweringContext<'a> {
                 } else {
                     target.to_string()
                 };
-                let target_scan = self.lower_node_scan(&target_scan_binding, target_labels)?;
+                let labels = self.mapped_endpoint_labels(target_labels, rel_types, dir)?;
+                let target_scan = self.lower_node_scan(&target_scan_binding, &labels)?;
                 let target_join = vec![
-                    binary(
-                        col_exact(id_col(&target_scan_binding)),
+                    identity_compare(
+                        &[&joined, &target_scan.plan],
+                        &id_col(&target_scan_binding),
                         BinaryOp::Eq,
-                        col_exact(edge_target_id),
+                        &edge_target_id,
                     ),
                     binary(
                         col_exact(label_col(&target_scan_binding)),

@@ -43,7 +43,7 @@ impl PropertyGraph {
         let Value::Node { label, id } = owner else {
             return;
         };
-        let address = (label.clone(), *id);
+        let address = (label.clone(), id.clone());
         if self
             .overlay
             .borrow()
@@ -53,13 +53,18 @@ impl PropertyGraph {
         {
             return;
         }
-        let value = self.node_property(label, *id, key);
+        let value = self.node_property(label, id.clone(), key);
         let mut ov = self.overlay.borrow_mut();
         let records = if value == Value::Null {
             vec![]
         } else {
-            let property_id = ov.next_property_id;
-            ov.next_property_id += 1;
+            let property_id = if let Some(source) = &self.source {
+                source.property_handle(label, id, key)
+            } else {
+                let id = ov.next_property_id;
+                ov.next_property_id += 1;
+                id
+            };
             vec![VertexPropertyRecord {
                 id: property_id,
                 value,
@@ -87,7 +92,7 @@ impl PropertyGraph {
     fn properties_inner(&self, owner: &Value, keys: &[String], jvm_user_keys: bool) -> Vec<Value> {
         match owner {
             Value::Node { label, id } => {
-                if !self.node_is_live(label, *id) {
+                if !self.node_is_live(label, id.clone()) {
                     return vec![];
                 }
                 let keys = if keys.is_empty() {
@@ -99,20 +104,20 @@ impl PropertyGraph {
                 for key in keys.into_iter().filter(|k| {
                     (!k.starts_with("__") || (jvm_user_keys
                         && self.overlay.borrow().vertex_properties
-                            .get(&(label.clone(), *id)).is_some_and(|m| m.contains_key(k))))
+                            .get(&(label.clone(), id.clone())).is_some_and(|m| m.contains_key(k))))
                         && (k != "id"
                             || self
                                 .overlay
                                 .borrow()
                                 .vertex_properties
-                                .get(&(label.clone(), *id))
+                                .get(&(label.clone(), id.clone()))
                                 .is_some_and(|m| m.contains_key(k)))
                 }) {
                     self.ensure_vertex_property(owner, &key);
                     let ov = self.overlay.borrow();
                     if let Some(records) = ov
                         .vertex_properties
-                        .get(&(label.clone(), *id))
+                        .get(&(label.clone(), id.clone()))
                         .and_then(|m| m.get(&key))
                     {
                         out.extend(records.iter().map(|r| Value::VertexProperty {
@@ -126,7 +131,7 @@ impl PropertyGraph {
                 out
             }
             Value::Edge { rel_type, id, .. } => {
-                if !self.overlay.borrow().edge_is_live(rel_type, *id) {
+                if !self.overlay.borrow().edge_is_live(rel_type, id.clone()) {
                     return vec![];
                 }
                 let keys = if keys.is_empty() {
@@ -140,15 +145,15 @@ impl PropertyGraph {
                         if !k.starts_with("__") { return true; }
                         if !jvm_user_keys { return false; }
                         let ov = self.overlay.borrow();
-                        let address = (rel_type.clone(), *id);
+                        let address = (rel_type.clone(), id.clone());
                         ov.inserted_edges.get(&address).is_some_and(|e| e.properties.contains_key(k))
                             || ov.edge_property_overrides.get(&address).is_some_and(|p| p.contains_key(k))
                             || ov.edge_null_properties.get(&address).is_some_and(|keys| keys.contains(k))
                     })
                     .filter_map(|key| {
-                        let value = self.edge_property(rel_type, *id, &key);
+                        let value = self.edge_property(rel_type, id.clone(), &key);
                         let present_null = self.overlay.borrow().edge_null_properties
-                            .get(&(rel_type.clone(), *id)).is_some_and(|keys| keys.contains(&key));
+                            .get(&(rel_type.clone(), id.clone())).is_some_and(|keys| keys.contains(&key));
                         (value != Value::Null || present_null).then(|| Value::Property {
                             owner: Box::new(owner.clone()),
                             key,
@@ -172,11 +177,11 @@ impl PropertyGraph {
                 };
                 let ov = self.overlay.borrow();
                 ov.vertex_properties
-                    .get(&(label.clone(), *vertex_id))
+                    .get(&(label.clone(), vertex_id.clone()))
                     .and_then(|m| m.get(key))
                     .into_iter()
                     .flatten()
-                    .filter(|r| r.id == *id)
+                    .filter(|r| r.id == id.clone())
                     .flat_map(|r| r.meta.iter())
                     .filter(|(key, _)| keys.is_empty() || keys.contains(key))
                     .map(|(key, value)| Value::Property {
@@ -202,8 +207,8 @@ impl PropertyGraph {
                 let is_null = value == Value::Null && self.supports_null_property_values();
                 self.set_property_scalar(target, key, value)?;
                 let mut overlay = self.overlay.borrow_mut();
-                if is_null && overlay.edge_is_live(rel_type, *id) {
-                    overlay.edge_null_properties.entry((rel_type.clone(), *id))
+                if is_null && overlay.edge_is_live(rel_type, id.clone()) {
+                    overlay.edge_null_properties.entry((rel_type.clone(), id.clone()))
                         .or_default().insert(key.into());
                     note_key(&mut overlay.override_edge_keys, rel_type, key);
                 }
@@ -259,11 +264,11 @@ impl PropertyGraph {
         // when the JVM explicitly creates a user property with the same name.
         if jvm_user_keys && key.starts_with("__") {
             self.overlay.borrow_mut().vertex_properties
-                .entry((label.clone(), *id)).or_default()
+                .entry((label.clone(), id.clone())).or_default()
                 .entry(key.into()).or_default();
         }
         self.ensure_vertex_property(owner, key);
-        let address = (label.clone(), *id);
+        let address = (label.clone(), id.clone());
         let allow_null = self.supports_null_property_values();
         let mut ov = self.overlay.borrow_mut();
         if cardinality == Cardinality::Set {
@@ -347,14 +352,14 @@ impl PropertyGraph {
         else {
             return Err(CatalogError::Schema("Invalid vertex property owner".into()));
         };
-        let address = (label.clone(), *vertex_id);
+        let address = (label.clone(), vertex_id.clone());
         let allow_null = self.supports_null_property_values();
         let mut ov = self.overlay.borrow_mut();
         let record = ov
             .vertex_properties
             .get_mut(&address)
             .and_then(|m| m.get_mut(property_key))
-            .and_then(|rs| rs.iter_mut().find(|r| r.id == *id))
+            .and_then(|rs| rs.iter_mut().find(|r| r.id == id.clone()))
             .ok_or_else(|| CatalogError::Schema("Vertex property no longer exists".into()))?;
         if value == Value::Null && !allow_null {
             record.meta.remove(key);
@@ -370,10 +375,10 @@ impl PropertyGraph {
             Value::Property { owner, key, .. } => {
                 if let Value::VertexProperty { id, owner: vertex, key: property_key, .. } = owner.as_ref() {
                     if let Value::Node { label, id: vertex_id } = vertex.as_ref() {
-                        let address = (label.clone(), *vertex_id);
+                        let address = (label.clone(), vertex_id.clone());
                         if let Some(record) = self.overlay.borrow_mut().vertex_properties
                             .get_mut(&address).and_then(|m| m.get_mut(property_key))
-                            .and_then(|records| records.iter_mut().find(|r| r.id == *id)) {
+                            .and_then(|records| records.iter_mut().find(|r| r.id == id.clone())) {
                             record.meta.remove(key);
                         }
                         self.pending.borrow_mut().nodes.insert(address);
@@ -391,14 +396,14 @@ impl PropertyGraph {
                 else {
                     return Ok(());
                 };
-                let address = (label.clone(), *vertex_id);
+                let address = (label.clone(), vertex_id.clone());
                 let mut ov = self.overlay.borrow_mut();
                 let scalar = if let Some(records) = ov
                     .vertex_properties
                     .get_mut(&address)
                     .and_then(|m| m.get_mut(key))
                 {
-                    records.retain(|r| r.id != *id);
+                    records.retain(|r| r.id != id.clone());
                     records
                         .first()
                         .map(|r| r.value.clone())
@@ -414,9 +419,10 @@ impl PropertyGraph {
     }
 
     pub fn element_public_id(&self, element: &Value) -> Value {
+        if let Some(id) = self.source_identity(element) { return id; }
         let address = match element {
-            Value::Node { label, id } => (false, label.clone(), *id),
-            Value::Edge { rel_type, id, .. } => (true, rel_type.clone(), *id),
+            Value::Node { label, id } => (false, label.clone(), id.clone()),
+            Value::Edge { rel_type, id, .. } => (true, rel_type.clone(), id.clone()),
             Value::VertexProperty { id, owner, key, .. } => {
                 if let Value::Node {
                     label,
@@ -427,15 +433,15 @@ impl PropertyGraph {
                         .overlay
                         .borrow()
                         .vertex_properties
-                        .get(&(label.clone(), *vertex_id))
+                        .get(&(label.clone(), vertex_id.clone()))
                         .and_then(|m| m.get(key))
-                        .and_then(|rs| rs.iter().find(|r| r.id == *id))
+                        .and_then(|rs| rs.iter().find(|r| r.id == id.clone()))
                         .and_then(|r| r.public_id.clone())
                     {
                         return public_id;
                     }
                 }
-                return Value::Long(*id);
+                return Value::Long(id.clone());
             }
             _ => return Value::Null,
         };
@@ -443,23 +449,24 @@ impl PropertyGraph {
             return value.clone();
         }
         let legacy = if address.0 {
-            self.edge_property(&address.1, address.2, "id")
+            self.edge_property(&address.1, address.2.clone(), "id")
         } else {
-            self.node_property(&address.1, address.2, "id")
+            self.node_property(&address.1, address.2.clone(), "id")
         };
         if legacy != Value::Null {
             legacy
         } else {
-            Value::String(format!("{}#{}", address.1, address.2))
+            Value::String(format!("{}#{}", address.1, address.2.clone()))
         }
     }
 
     /// Allocate an identity independently of ordinary properties for Gremlin
     /// creation. Legacy catalog insertions retain their existing id-column API.
     pub fn assign_generated_public_id(&self, element: &Value) -> CatalogResult<()> {
+        if self.source_identity(element).is_some() {return Ok(());}
         let (edge, name, id) = match element {
-            Value::Node { label, id } => (false, label, *id),
-            Value::Edge { rel_type, id, .. } => (true, rel_type, *id),
+            Value::Node { label, id } => (false, label, id.clone()),
+            Value::Edge { rel_type, id, .. } => (true, rel_type, id.clone()),
             _ => return Err(CatalogError::Schema("Expected element".into())),
         };
         let mut candidate = Value::String(format!("{name}#{id}"));
@@ -500,7 +507,7 @@ impl PropertyGraph {
             .flat_map(|m| m.values())
             .flatten()
             .any(|r| {
-                r.id != *id
+                r.id != id.clone()
                     && r.public_id
                         .as_ref()
                         .unwrap_or(&Value::Long(r.id))
@@ -514,9 +521,9 @@ impl PropertyGraph {
         }
         let record = ov
             .vertex_properties
-            .get_mut(&(label.clone(), *vertex_id))
+            .get_mut(&(label.clone(), vertex_id.clone()))
             .and_then(|m| m.get_mut(key))
-            .and_then(|rs| rs.iter_mut().find(|r| r.id == *id))
+            .and_then(|rs| rs.iter_mut().find(|r| r.id == id.clone()))
             .ok_or_else(|| CatalogError::Schema("Vertex property no longer exists".into()))?;
         let next_id = public_id.as_i64().and_then(|id| id.checked_add(1));
         record.public_id = Some(public_id);
@@ -527,17 +534,21 @@ impl PropertyGraph {
         self.pending
             .borrow_mut()
             .nodes
-            .insert((label.clone(), *vertex_id));
+            .insert((label.clone(), vertex_id.clone()));
         Ok(())
     }
 
     pub fn set_element_public_id(&self, element: &Value, public_id: Value) -> CatalogResult<()> {
+        if let Some(key)=self.source_identity(element) {
+            return if key.three_valued_eq(&public_id)==Some(true) {Ok(())} else {Err(CatalogError::Schema("mapped identities are the source primary keys".into()))};
+        }
+
         if matches!(public_id, Value::Null | Value::List(_) | Value::Map(_)) {
             return Err(CatalogError::Schema("Invalid element id".into()));
         }
         let address = match element {
-            Value::Node { label, id } => (false, label.clone(), *id),
-            Value::Edge { rel_type, id, .. } => (true, rel_type.clone(), *id),
+            Value::Node { label, id } => (false, label.clone(), id.clone()),
+            Value::Edge { rel_type, id, .. } => (true, rel_type.clone(), id.clone()),
             _ => {
                 return Err(CatalogError::Schema(
                     "Element id requires a vertex or edge".into(),
@@ -556,12 +567,12 @@ impl PropertyGraph {
             self.pending
                 .borrow_mut()
                 .edges
-                .insert((address.1.clone(), address.2));
+                .insert((address.1.clone(), address.2.clone()));
         } else {
             self.pending
                 .borrow_mut()
                 .nodes
-                .insert((address.1.clone(), address.2));
+                .insert((address.1.clone(), address.2.clone()));
         }
         let mut ov = self.overlay.borrow_mut();
         if let Some(old) = ov.public_ids.insert(address.clone(), public_id.clone()) {
@@ -579,6 +590,17 @@ impl PropertyGraph {
 
     pub fn find_element_by_public_id(&self, public_id: &Value, edge: bool) -> Option<Value> {
         let mut addresses = Vec::new();
+        if self.source.is_some() {
+            if let Ok(id)=ElementId::try_from(public_id) {
+                for name in if edge {self.rel_types()}else{self.labels()} {
+                    let Some(kind)=self.key_types.get(&(edge,name.clone())) else {continue};
+                    if let Ok(key)=id.scalar().cast_to(kind).map_err(|e|e.to_string()).and_then(ElementId::new) {
+                        addresses.push((edge,name,key));
+                    }
+                }
+            }
+        }
+
         {
             let ov = self.overlay.borrow();
             addresses.extend(
@@ -596,33 +618,20 @@ impl PropertyGraph {
                     .cloned(),
             );
         }
-        // Legacy Arrow catalogs have implicit identities. Native inserts use
-        // the explicit index above, so fixture/import creation is linear.
-        if edge {
-            for (label, count) in &self.edge_row_counts {
-                for id in 0..*count {
-                    addresses.push((true, label.clone(), id));
-                }
-            }
-        } else {
-            for (label, table) in &self.nodes {
-                for id in 0..table.batch.num_rows() as i64 {
-                    addresses.push((false, label.clone(), id));
-                }
-            }
-        }
+        let keys=if edge {&self.edge_keys} else {&self.node_keys};
+        for (label,ids) in keys {for id in ids {addresses.push((edge,label.clone(),id.clone()));}}
         for (edge, name, id) in addresses {
             let value = if edge {
-                if !self.overlay.borrow().edge_is_live(&name, id) {
+                if !self.overlay.borrow().edge_is_live(&name, id.clone().into()) {
                     continue;
                 }
-                let Some((src_label, src_id, dst_label, dst_id)) = self.edge_endpoints(&name, id)
+                let Some((src_label, src_id, dst_label, dst_id)) = self.edge_endpoints(&name, id.clone().into())
                 else {
                     continue;
                 };
                 Value::Edge {
                     rel_type: name,
-                    id,
+                    id: id.clone().into(),
                     src_label,
                     src_id,
                     dst_label,
@@ -630,10 +639,10 @@ impl PropertyGraph {
                     projected_properties: None,
                 }
             } else {
-                if !self.node_is_live(&name, id) {
+                if !self.node_is_live(&name, id.clone().into()) {
                     continue;
                 }
-                Value::Node { label: name, id }
+                Value::Node { label: name, id: id.clone().into() }
             };
             if self.element_public_id(&value).three_valued_eq(public_id) == Some(true) {
                 return Some(value);
@@ -655,16 +664,16 @@ impl GraphOverlay {
         self.unassigned_public_ids = self
             .inserted_nodes
             .keys()
-            .map(|(label, id)| (false, label.clone(), *id))
+            .map(|(label, id)| (false, label.clone(), id.clone()))
             .chain(
                 self.inserted_edges
                     .keys()
-                    .map(|(label, id)| (true, label.clone(), *id)),
+                    .map(|(label, id)| (true, label.clone(), id.clone())),
             )
             .filter(|address| !self.public_ids.contains_key(address))
             .collect();
     }
-    pub(super) fn native_node_state(&self, key: &(String, i64)) -> Value {
+    pub(super) fn native_node_state(&self, key: &(String, ElementId)) -> Value {
         let records = self
             .vertex_properties
             .get(key)
@@ -693,7 +702,7 @@ impl GraphOverlay {
         Value::List(vec![
             Value::Long(self.next_property_id),
             self.public_ids
-                .get(&(false, key.0.clone(), key.1))
+                .get(&(false, key.0.clone(), key.1.clone()))
                 .cloned()
                 .unwrap_or(Value::Null),
             Value::Map(records),
@@ -701,7 +710,7 @@ impl GraphOverlay {
     }
     pub(super) fn restore_native_node_state(
         &mut self,
-        key: (String, i64),
+        key: (String, ElementId),
         state: &Value,
     ) -> Result<(), String> {
         let Value::List(fields) = state else {
@@ -711,10 +720,10 @@ impl GraphOverlay {
             return Err("Invalid native node fields".into());
         };
         self.next_property_id = self.next_property_id.max(*next);
-        self.public_ids.remove(&(false, key.0.clone(), key.1));
+        self.public_ids.remove(&(false, key.0.clone(), key.1.clone()));
         if public_id != &Value::Null {
             self.public_ids
-                .insert((false, key.0.clone(), key.1), public_id.clone());
+                .insert((false, key.0.clone(), key.1.clone()), public_id.clone());
         }
         let mut records = BTreeMap::new();
         for (name, value) in props {
@@ -731,7 +740,7 @@ impl GraphOverlay {
                     return Err("Invalid property fields".into());
                 };
                 rs.push(VertexPropertyRecord {
-                    id: *id,
+                    id: id.clone(),
                     value: value.clone(),
                     public_id: if public_id == &Value::Null {
                         None

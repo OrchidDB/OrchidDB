@@ -151,6 +151,10 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     }
     match (name.as_str(), args.len()) {
+        ("encode", 2) if matches!(&args[1],
+            ast::Expr::Value(value) if value.value == ast::Value::SingleQuotedString("hex".into())) => {
+            *expr = template("lower(hex(__arg0))", &args[..1])?;
+        }
         ("__orchiddb_utf16_length", 1) => {
             *expr = template(r"CAST(length(regexp_replace(__arg0, '[\x{10000}-\x{10FFFF}]', 'xx', 'g')) AS INTEGER)", &args)?;
         }

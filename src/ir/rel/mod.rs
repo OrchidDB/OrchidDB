@@ -10,6 +10,7 @@
 pub mod dag;
 pub mod runtime;
 mod island_planner;
+mod optimizer;
 mod rules;
 mod scans;
 use scans::*;
@@ -324,7 +325,7 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
     let config = SessionConfig::new()
         .set_usize("datafusion.optimizer.max_passes", 1)
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
-    let ctx = SessionContext::new_with_config(config);
+    let ctx = optimizer::session(config);
     let df = ctx.execute_logical_plan(lowered.plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {

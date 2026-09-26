@@ -146,16 +146,11 @@ fn catalog_binding_does_not_evaluate_calls() {
 }
 
 #[test]
-fn unknown_null_call_and_wrong_arity_fail_during_lowering() {
-    for q in ["RETURN made_up_function(NULL)", "RETURN bit_count(1, 2)"] {
-        let plan = CypherPlanner::new().plan(&parse_query(q).unwrap()).unwrap();
-        assert!(
-            RelBackend::new()
-                .lower(&plan, &PropertyGraph::new())
-                .is_err(),
-            "{q}"
-        );
-    }
+fn unknown_null_call_and_wrong_arity_are_rejected_before_execution() {
+    let unknown = CypherPlanner::new().plan(&parse_query("RETURN made_up_function(NULL)").unwrap()).unwrap_err();
+    assert_eq!(unknown.classification(), Some(("SyntaxError", "UnknownFunction")));
+    let plan = CypherPlanner::new().plan(&parse_query("RETURN bit_count(1, 2)").unwrap()).unwrap();
+    assert!(RelBackend::new().lower(&plan, &PropertyGraph::new()).is_err());
 }
 
 #[test]

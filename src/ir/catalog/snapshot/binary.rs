@@ -56,6 +56,8 @@ pub(super) fn put_u64(out: &mut Vec<u8>, v: u64) {
     out.extend_from_slice(&v.to_le_bytes());
 }
 
+pub(super) fn put_id(out: &mut Vec<u8>, id: &ElementId) { put_bytes(out, &id.encode()); }
+
 pub(super) fn put_i64(out: &mut Vec<u8>, v: i64) {
     out.extend_from_slice(&v.to_le_bytes());
 }
@@ -110,8 +112,9 @@ pub(super) fn write_section(out: &mut Vec<u8>, tag: u8, payload: &[u8]) {
 
 pub(crate) fn encode_value(out: &mut Vec<u8>, value: &Value) {
     match value {
-        Value::VertexProperty {id,owner,key,value} => {put_u8(out, 0x40);put_i64(out,*id);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
+        Value::VertexProperty {id,owner,key,value} => {put_u8(out, 0x40);put_i64(out,id.clone());encode_value(out,owner);put_str(out,key);encode_value(out,value);}
         Value::Property {owner,key,value} => {put_u8(out, 0x41);encode_value(out,owner);put_str(out,key);encode_value(out,value);}
+        Value::Scalar(value) => { put_u8(out, 35); put_bytes(out, &crate::ir::identity::encode_scalar(value)); }
         Value::Null => put_u8(out, V_NULL),
         Value::Bool(b) => {
             put_u8(out, V_BOOL);
@@ -184,9 +187,9 @@ pub(crate) fn encode_value(out: &mut Vec<u8>, value: &Value) {
             put_str(out, v);
         }
         Value::Node { label, id } => {
-            put_u8(out, V_NODE);
+            put_u8(out, 33);
             put_str(out, label);
-            put_i64(out, *id);
+            put_bytes(out, &id.encode());
         }
         Value::Edge {
             rel_type,
@@ -197,13 +200,13 @@ pub(crate) fn encode_value(out: &mut Vec<u8>, value: &Value) {
             dst_id,
             projected_properties,
         } => {
-            put_u8(out, V_EDGE);
+            put_u8(out, 34);
             put_str(out, rel_type);
-            put_i64(out, *id);
+            put_bytes(out, &id.encode());
             put_str(out, src_label);
-            put_i64(out, *src_id);
+            put_bytes(out, &src_id.encode());
             put_str(out, dst_label);
-            put_i64(out, *dst_id);
+            put_bytes(out, &dst_id.encode());
             match projected_properties {
                 None => put_u8(out, 0),
                 Some(keys) => {
@@ -282,17 +285,25 @@ fn decode_value(r: &mut Reader) -> Result<Value, String> {
             offset: r.i64()?,
         },
         V_STRING => Value::String(r.str()?),
+        33 => Value::Node { label: r.str()?, id: crate::ir::ElementId::decode(r.blob()?)? },
+        34 => Value::Edge {
+            rel_type: r.str()?, id: crate::ir::ElementId::decode(r.blob()?)?,
+            src_label: r.str()?, src_id: crate::ir::ElementId::decode(r.blob()?)?,
+            dst_label: r.str()?, dst_id: crate::ir::ElementId::decode(r.blob()?)?,
+            projected_properties: if r.u8()? != 0 { Some(decode_str_list(r)?) } else { None },
+        },
+        35 => Value::Scalar(crate::ir::identity::decode_scalar(r.blob()?)?),
         V_NODE => Value::Node {
             label: r.str()?,
-            id: r.i64()?,
+            id: r.i64()?.into(),
         },
         V_EDGE => Value::Edge {
             rel_type: r.str()?,
-            id: r.i64()?,
+            id: r.i64()?.into(),
             src_label: r.str()?,
-            src_id: r.i64()?,
+            src_id: r.i64()?.into(),
             dst_label: r.str()?,
-            dst_id: r.i64()?,
+            dst_id: r.i64()?.into(),
             projected_properties: if r.u8()? != 0 {
                 Some(decode_str_list(r)?)
             } else {
@@ -413,6 +424,9 @@ pub(super) struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    pub(super) fn element_id(&mut self, typed: bool) -> Result<ElementId, String> {
+        if typed { ElementId::decode(self.blob()?) } else { Ok(self.i64()?.into()) }
+    }
     pub(super) fn new(buf: &'a [u8]) -> Self {
         Self { buf, pos: 0 }
     }
@@ -520,7 +534,7 @@ mod typed_map_tests {
                 Value::TypedMap(vec![(
                     Value::Node {
                         label: "person".into(),
-                        id: 2,
+                        id: 2.into(),
                     },
                     Value::Bool(true),
                 )]),

@@ -69,12 +69,22 @@ where
         Step::AddDynamicV { label } => {
             super::mutations::lower_vertex_with_properties(input, label, steps, lo, ctx)
         }
-        Step::AddDynamicE { label,from,to } => super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx),
+        Step::AddDynamicE { label,from,to } => {
+            let node=super::mutations::lower_dynamic_edge(input,label,from.as_ref(),to.as_ref(),lo,ctx)?;
+            super::mutations::lower_creation_with_properties(node,steps,lo,ctx)
+        },
         Step::PropertyNative {cardinality,key,value,meta} => super::mutations::lower_native_property(input,cardinality,key,value,meta,lo,ctx),
         Step::PropertyDynamic { key,value } => super::mutations::lower_dynamic_property(input,key,value,lo,ctx),
         Step::MergeE { criteria, on_create, on_match } => super::merge::lower_merge_edge(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx, false),
         Step::MergeV { criteria, on_create, on_match } => super::merge::lower_merge_vertex(input, criteria.as_ref(), on_create.as_ref(), on_match.as_ref(), lo, ctx),
-        Step::AddE { label, from, to } => Ok(super::mutations::lower_add_edge(input, label, from.as_deref(), to.as_deref(), lo)),
+        Step::AddE { label, from, to } => {
+            use crate::language::gremlin::ast::MutationArgument;
+            let label=MutationArgument::Literal(crate::language::gremlin::semantics::GValue::String(label.clone()));
+            let from=from.as_ref().map(|name|MutationArgument::Label(name.clone()));
+            let to=to.as_ref().map(|name|MutationArgument::Label(name.clone()));
+            let node=super::mutations::lower_dynamic_edge(input,&label,from.as_ref(),to.as_ref(),lo,ctx)?;
+            super::mutations::lower_creation_with_properties(node,steps,lo,ctx)
+        },
         Step::AddV { label } => super::mutations::lower_vertex_with_properties(
             input,
             &crate::language::gremlin::ast::MutationArgument::Literal(

@@ -103,6 +103,7 @@ fn numeric_type(value: &Value) -> bool {
 
 pub(super) fn cypher_list_type_name(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.data_type().to_string(),
         Value::VertexProperty {..} => "VERTEXPROPERTY".into(),
         Value::Property {..} => "PROPERTY".into(),
         Value::MapEntry(_) => "MAP_ENTRY".into(),
@@ -345,6 +346,7 @@ pub(super) fn list_product_value(items: &[Value]) -> Value {
 
 pub(super) fn display_for_list_to_string(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {..}|Value::Property {..} => super::strings::display_for_concat(value),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_list_to_string(value)),
         Value::MapEntry(entry) => format!("{}={}", display_for_list_to_string(&entry.0), display_for_list_to_string(&entry.1)),

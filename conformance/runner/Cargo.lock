@@ -714,18 +714,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchiddb-conformance-runner"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "datafusion",
- "duckdb",
- "orchiddb",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2388,37 +2376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchiddb"
-version = "0.1.0"
-dependencies = [
- "antlr4rust",
- "arrow",
- "arrow-select",
- "async-trait",
- "bigdecimal",
- "chrono",
- "chrono-tz",
- "datafusion",
- "datafusion-sql",
- "duckdb",
- "futures",
- "md-5",
- "num-bigint",
- "num-traits",
- "oxiri",
- "oxsdatatypes",
- "regex",
- "reqwest",
- "serde_json",
- "sha2",
- "spargebra",
- "stacker",
- "thiserror",
- "tokio",
- "unicode-segmentation",
-]
-
-[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2531,6 +2488,52 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "orchiddb"
+version = "0.1.0"
+dependencies = [
+ "antlr4rust",
+ "arrow",
+ "arrow-select",
+ "async-trait",
+ "bigdecimal",
+ "chrono",
+ "chrono-tz",
+ "datafusion",
+ "datafusion-sql",
+ "duckdb",
+ "futures",
+ "md-5",
+ "num-bigint",
+ "num-traits",
+ "oxilangtag",
+ "oxiri",
+ "oxrdf",
+ "oxsdatatypes",
+ "peg",
+ "rand 0.9.4",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "stacker",
+ "thiserror",
+ "tokio",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "orchiddb-conformance-runner"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "datafusion",
+ "duckdb",
+ "orchiddb",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "ordered-float"
@@ -3353,18 +3356,6 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "spargebra"
-version = "0.4.7"
-dependencies = [
- "oxilangtag",
- "oxiri",
- "oxrdf",
- "peg",
- "rand 0.8.6",
- "thiserror",
 ]
 
 [[package]]

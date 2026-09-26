@@ -1,16 +1,12 @@
-//! Native SQL updates for explicitly writable mapped queries.
+//! Affected-row compatibility API over the common mutation executor.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{MappedGraphEngine, children};
-use crate::ir::catalog::PropertyGraph;
 use crate::ir::expr::IrExpr;
-use crate::ir::plan::{
-    GraphPlan, LabelExpr, Node, ProjectErrorPolicy, ProjectMode, ProjectionItem, SetMode,
-};
+use crate::ir::plan::{LabelExpr, Node, SetMode};
 use crate::ir::rel::mapping::MappedSource;
-use crate::ir::rel::sql::{SqlDialect, SqlExecutor, SqlValue, prepare_with_external};
+
 use crate::ir::value::Value;
 use crate::language::cypher::{
     ast::Clause, parameters::bind_parameters, parser::parse_query, planner::CypherPlanner,
@@ -18,13 +14,13 @@ use crate::language::cypher::{
 
 impl MappedGraphEngine {
     /// Execute one `MATCH ... SET binding.property = expression` assignment
-    /// directly as DuckDB UPDATE, returning the number of affected rows.
+    /// through the shared executor, returning the number of affected rows.
     ///
     /// This explicit write API accepts no RETURN, CREATE, DELETE, MERGE, map
     /// replacement, or multiple assignments. The target must resolve to one
     /// mapped table with unique, non-null matching identities. Query mappings
     /// and identifier/endpoint changes are rejected. Expressions and predicates
-    /// must lower completely to SQL; there is no graph-runtime fallback.
+    /// use the same graph runtime as ordinary queries.
     ///
     /// Joins an explicit executor transaction, otherwise commits atomically.
     /// After a DuckDB transaction error, roll back the explicit transaction.
@@ -65,7 +61,7 @@ impl MappedGraphEngine {
         })?;
         let Node::GraphReturn {
             input: write,
-            result_form,
+            result_form: _,
             ..
         } = plan.root.as_ref()
         else {
@@ -91,7 +87,7 @@ impl MappedGraphEngine {
                     .into(),
             );
         };
-        let (source, id_column, property) = if *is_edge {
+        let (source, _id_column, _property) = if *is_edge {
             let mapped = self.mapping.edge(label).ok_or("missing edge mapping")?;
             let id = mapped
                 .id_column
@@ -116,125 +112,64 @@ impl MappedGraphEngine {
             }
             (&mapped.source, &mapped.id_column, property)
         };
-        let MappedSource::Table(table) = source else {
+        let MappedSource::Table(_table) = source else {
             return Err("SQL updates require a table-backed mapping, not a query mapping".into());
         };
-        let quote = |name: &str| SqlDialect::DuckDb.quote_ident(name);
-        let table = datafusion::common::TableReference::from(table.as_str())
-            .to_vec()
-            .iter()
-            .map(|part| quote(part))
-            .collect::<Vec<_>>()
-            .join(".");
-        let id_column = quote(id_column);
-        let property = quote(property);
-        let read = GraphPlan {
-            policy: plan.policy.clone(),
-            root: Box::new(Node::GraphReturn {
-                fields: vec!["__cg_update_id".into(), "__cg_update_value".into()],
-                result_form: *result_form,
-                input: Box::new(Node::GraphProject {
-                    mode: ProjectMode::ReplaceScope,
-                    error_policy: ProjectErrorPolicy::PropagateError,
-                    items: vec![
-                        ProjectionItem {
-                            alias: "__cg_update_id".into(),
-                            expr: IrExpr::Binding(crate::ir::rel::id_col(binding)),
-                        },
-                        ProjectionItem {
-                            alias: "__cg_update_value".into(),
-                            expr: item.value.clone(),
-                        },
-                    ],
-                    input: input.clone(),
-                }),
-            }),
-        };
-        let lowered = self.with_functions(|| {
-            self.backend()
-                .lower(&read, &PropertyGraph::new())
-                .map_err(|e| e.to_string())
-        })?;
-        let prepared = prepare_with_external(
-            &lowered,
-            SqlDialect::DuckDb,
-            &self.mapping.physical_table_names(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-        let temporary = quote(&format!(
-            "__orchiddb_update_{}",
-            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
+        let binding = binding.replace('`', "``");
+        let mut check = parsed.clone();
+        check.clauses.pop();
+        check.clauses.extend(
+            parse_query(&format!(
+                "RETURN count(*) AS __rows, count(DISTINCT `{binding}`) AS __unique"
+            ))
+            .map_err(|e| e.to_string())?
+            .clauses,
+        );
+        let check =
+            self.with_functions(|| CypherPlanner::new().plan(&check).map_err(|e| e.to_string()))?;
+        let query = format!(
+            "{} RETURN count(DISTINCT `{binding}`) AS __updated",
+            query.trim().trim_end_matches(';')
+        );
         let automatic = !self.executor.in_transaction();
         if automatic {
             self.executor.begin().map_err(|e| e.to_string())?;
         }
-        let mut created = false;
-        let result = (|| -> Result<usize, String> {
-            self.executor
-                .run_with_tables(
-                    &prepared.tables,
-                    &prepared.setup,
-                    &format!("CREATE TEMP TABLE {temporary} AS {}", prepared.query),
-                )
-                .map_err(|e| e.to_string())?;
-            created = true;
-            // Duplicate matches cannot be reduced to an arbitrary UPDATE FROM
-            // row: repeated Cypher updates can depend on the previous value.
-            let duplicates = self.executor.run(&[], &format!(
-                "SELECT count(*) FROM (SELECT \"__cg_update_id\" FROM {temporary} GROUP BY \"__cg_update_id\" HAVING count(*) > 1 OR \"__cg_update_id\" IS NULL)"
-            )).map_err(|e| e.to_string())?;
-            if integer_result(&duplicates)? != 0 {
-                return Err("SQL update matched duplicate or null graph identifiers".into());
+        let result = async {
+            let counts = self.run_plan(&check).await?;
+            let count = |index| -> Result<i64, String> {
+                Ok(counts
+                    .batch
+                    .column(index)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Int64Array>()
+                    .ok_or("invalid match count")?
+                    .value(0))
+            };
+            if count(0)? != count(1)? {
+                return Err("SQL updates require unique matching identities".into());
             }
-            let ambiguous = self.executor.run(&[], &format!(
-                "SELECT count(*) FROM (SELECT t.\"__cg_update_id\" FROM {temporary} t LEFT JOIN {table} s ON s.{id_column} = t.\"__cg_update_id\" GROUP BY t.\"__cg_update_id\" HAVING count(s.{id_column}) <> 1)"
-            )).map_err(|e| e.to_string())?;
-            if integer_result(&ambiguous)? != 0 {
-                return Err("mapped source does not have unique graph identifiers".into());
+            let result = self.cypher_with_params(&query, parameters).await?;
+            let count = result
+                .batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow::array::Int64Array>()
+                .ok_or("runtime did not return an affected-row count")?;
+            if count.len() != 1 {
+                return Err("invalid affected-row count".into());
             }
-            let result = self.executor.run(&[], &format!(
-                "UPDATE {table} AS source SET {property} = candidates.\"__cg_update_value\" FROM {temporary} AS candidates WHERE source.{id_column} = candidates.\"__cg_update_id\""
-            )).map_err(|e| e.to_string())?;
-            integer_result(&result)
-        })();
-        let cleanup = if created {
-            self.executor
-                .execute_batch(&format!("DROP TABLE {temporary}"))
-                .map_err(|e| e.to_string())
-        } else {
-            Ok(())
-        };
-        let result = result.and_then(|count| cleanup.map(|()| count));
-        if automatic {
-            match result {
-                Ok(count) => {
-                    if let Err(error) = self.executor.commit() {
-                        let _ = self.executor.rollback();
-                        return Err(error.to_string());
-                    }
-                    Ok(count)
-                }
-                Err(error) => {
-                    let _ = self.executor.rollback();
-                    Err(error)
-                }
-            }
-        } else {
-            result
+            usize::try_from(count.value(0)).map_err(|e| e.to_string())
         }
-    }
-}
-
-fn integer_result(rows: &[Vec<SqlValue>]) -> Result<usize, String> {
-    match rows {
-        [row] => match row.as_slice() {
-            [SqlValue::Int(value)] => usize::try_from(*value).map_err(|e| e.to_string()),
-            _ => Err("DuckDB did not return an affected-row count".into()),
-        },
-        _ => Err("DuckDB did not return an affected-row count".into()),
+        .await;
+        if automatic {
+            if result.is_ok() {
+                self.executor.commit().map_err(|e| e.to_string())?;
+            } else {
+                let _ = self.executor.rollback();
+            }
+        }
+        result
     }
 }
 

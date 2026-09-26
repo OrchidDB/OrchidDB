@@ -157,6 +157,7 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
             args: vec![IrExpr::Lit(Lit::String(name.clone()))],
         },
         Expr::Literal(lit) => IrExpr::Lit(match lit {
+            Literal::Scalar(value) => Lit::Scalar(value.clone()),
             Literal::Null => Lit::Null,
             Literal::Bool(value) => Lit::Bool(*value),
             Literal::Integer(value) => {

@@ -1,39 +1,24 @@
-//! Public mapped-table graph query engine.
-//!
-//! `MappedGraphEngine` is the integration seam between the language
-//! frontends and an external SQL engine for "bring your own schema" graphs.
-//! It owns a [`DuckDbExecutor`] and an `Arc<GraphMapping>`; every query is
-//! parsed, lowered to Graph IR, lowered again through the relational backend
-//! with the mapping installed (so node/edge scans resolve against the user's
-//! own tables and views), unparsed to DuckDB SQL, and executed there.
-//!
-//! Cypher and Gremlin mutations resolve identities and properties through the
-//! same mapping as reads. SQL read regions supply the rows for transactional
-//! INSERT, UPDATE, and DELETE statements on the mapped physical tables.
-//! No managed property-graph overlay is used for mapped writes.
-//!
-//! [`MappedGraphEngine::cypher_update`] also provides affected-row counts for
-//! individual property assignments.
+//! Compatibility facade for the unified graph executor with mapped DuckDB storage.
+//! Language semantics and mutations run through the same relational DAG and
+//! typed graph kernels used by `GraphEngine`. The SQL compiler is also exposed
+//! through `explain_cypher`; runtime islands resolve the same mapped sources.
 
 mod update;
-mod write;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::functions::{OperatorTable, with_operator_table};
-use crate::ir::runtime::ReturnedBatches;
 use crate::ir::plan::{GraphPlan, Node, ProcedureMode};
 use crate::ir::rel::mapping::GraphMapping;
-use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor, execute_prepared, prepare_with_external};
+use crate::ir::rel::sql::{DuckDbExecutor, SqlExecutor, prepare_with_external};
 use crate::ir::rel::{RelBackend, RelBackendOptions};
+use crate::ir::runtime::ReturnedBatches;
 use crate::ir::value::Value;
 use crate::language::cypher::parser::parse_query;
 use crate::language::cypher::planner::CypherPlanner;
-use crate::language::gremlin::parser::parse_traversal;
-use crate::language::gremlin::planner::GremlinPlanner;
-use crate::language::sparql::{OntologyMapping, SparqlPlanner};
+use crate::language::sparql::OntologyMapping;
 
 /// Owns the external SQL executor and the schema mapping that turns graph
 /// labels/edge types into the user's relational tables.
@@ -109,23 +94,22 @@ impl MappedGraphEngine {
         parameters: &BTreeMap<String, Value>,
     ) -> Result<ReturnedBatches, String> {
         let plan = self.with_functions(|| {
-            let mut parsed = parse_query(query).map_err(|err| err.to_string())?;
-            crate::language::cypher::parameters::bind_parameters(&mut parsed, parameters)?;
-            CypherPlanner::new()
-                .plan(&parsed)
-                .map_err(|err| err.to_string())
+            crate::engine::plan_cypher(query, parameters, &Default::default())
         })?;
         self.run_plan(&plan).await
     }
 
     /// Run a Gremlin traversal or mutation against the mapped schema.
     pub async fn gremlin(&mut self, query: &str) -> Result<ReturnedBatches, String> {
-        let plan = self.with_functions(|| {
-            let traversal = parse_traversal(query).map_err(|err| err.to_string())?;
-            GremlinPlanner::new()
-                .plan(&traversal)
-                .map_err(|err| err.to_string())
-        })?;
+        self.gremlin_with_bindings(query, &Default::default()).await
+    }
+
+    pub async fn gremlin_with_bindings(
+        &mut self,
+        query: &str,
+        bindings: &std::collections::HashMap<String, crate::language::gremlin::GremlinBinding>,
+    ) -> Result<ReturnedBatches, String> {
+        let plan = self.with_functions(|| crate::engine::plan_gremlin(query, bindings))?;
         self.run_plan(&plan).await
     }
 
@@ -137,12 +121,7 @@ impl MappedGraphEngine {
         query: &str,
         ontology: OntologyMapping,
     ) -> Result<ReturnedBatches, String> {
-        let plan = self.with_functions(|| {
-            SparqlPlanner::new("mapped")
-                .with_ontology(ontology)
-                .plan_str(query)
-                .map_err(|err| err.to_string())
-        })?;
+        let plan = self.with_functions(|| crate::engine::plan_sparql(query, ontology))?;
         self.run_plan(&plan).await
     }
 
@@ -181,22 +160,12 @@ impl MappedGraphEngine {
 
     /// Lower a plan, prepare it against the executor's dialect, and execute it.
     async fn run_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
-        if find_mutation(&plan.root).is_some() { self.run_mutations(plan).await }
-        else { self.run_read_plan(plan).await }
-    }
-
-    async fn run_read_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
-        reject_mutations(plan)?;
-        let lowered = self.with_functions(|| {
-            self.backend()
-                .lower(plan, &PropertyGraph::new())
-                .map_err(|err| err.to_string())
-        })?;
-        let external = self.mapping.physical_table_names();
-        let prepared = prepare_with_external(&lowered, self.executor.dialect(), &external)
-            .await
-            .map_err(|err| err.to_string())?;
-        execute_prepared(&mut self.executor, &prepared).map_err(|err| err.to_string())
+        let table=self.operator_table.clone();
+        let mut execution=Box::pin(crate::engine::execute_mapped(&mut self.executor, self.mapping.clone(), plan));
+        futures::future::poll_fn(|cx| {
+            let mut poll=|| std::future::Future::poll(execution.as_mut(),cx);
+            match &table {Some(table)=>with_operator_table(table.clone(),poll),None=>poll()}
+        }).await
     }
 }
 

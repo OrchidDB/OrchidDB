@@ -10,12 +10,20 @@ use arrow::datatypes::{DataType, Field};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecStats {
+    /// Physical DAG scheduled for this execution, including SQL island boundaries.
+    pub physical_plan: String,
     /// Operators scheduled by the DataFusion relational DAG.
     pub datafusion_ops: usize,
     /// Regions delegated to DuckDB.
     pub islands: usize,
     /// Rows produced by delegated regions when recorded by the engine.
     pub island_rows: usize,
+    /// SQL emitted for the executed islands (before DuckDB optimization).
+    pub sql_queries: Vec<String>,
+    /// Demand-driven source SQL used by residual graph kernels.
+    pub native_source_queries: Vec<String>,
+    /// Source rows fetched by residual kernels, excluding SQL island output.
+    pub native_source_rows: usize,
 }
 
 impl ExecStats {
@@ -145,11 +153,8 @@ pub(crate) fn batch_to_bindings(
     let column_value = |index: usize, row: usize| -> Option<Value> {
         decode_value(batch.column(index).as_ref(), row, Some(schema.field(index)))
     };
-    let as_i64 = |value: &Value| -> Option<i64> {
-        match value {
-            Value::Int(v) | Value::Long(v) => Some(*v),
-            _ => None,
-        }
+    let key = |index: usize, row: usize| -> Option<crate::ir::ElementId> {
+        crate::ir::ElementId::new(datafusion::common::ScalarValue::try_from_array(batch.column(index),row).ok()?).ok()
     };
     let as_label = |value: &Value| -> Option<String> {
         match value {
@@ -183,7 +188,7 @@ pub(crate) fn batch_to_bindings(
                 Source::NodeCols(id, label) => {
                     let id_value = column_value(*id, row)?;
                     let label_value = column_value(*label, row)?;
-                    match (as_i64(&id_value), as_label(&label_value)) {
+                    match (key(*id,row), as_label(&label_value)) {
                         (Some(id), Some(label)) => Value::Node { label, id },
                         // A null id is an outer-join miss, not a broken
                         // encoding; anything else means the island did not
@@ -204,15 +209,11 @@ pub(crate) fn batch_to_bindings(
                                 .as_ref()
                                 .and_then(as_label)
                                 .unwrap_or_default(),
-                            id: id
-                                .and_then(|index| column_value(index, row))
-                                .as_ref()
-                                .and_then(as_i64)
-                                .unwrap_or_default(),
+                            id: key((*id)?,row)?,
                             src_label: as_label(&column_value(*src_label, row)?)?,
-                            src_id: as_i64(&src_id_value)?,
+                            src_id: key(*src_id,row)?,
                             dst_label: as_label(&column_value(*dst_label, row)?)?,
-                            dst_id: as_i64(&column_value(*dst_id, row)?)?,
+                            dst_id: key(*dst_id,row)?,
                             projected_properties: None,
                         }
                     }
@@ -229,8 +230,8 @@ pub(crate) fn batch_to_bindings(
 /// Decode one Arrow cell into a [`Value`], or `None` if the type has no
 /// faithful representation here.
 ///
-/// `None` is load-bearing: it makes the whole island decline, so the subtree
-/// falls back to direct evaluation. The alternative — substituting `Null` for
+/// `None` rejects an invalid island transport value; execution errors never
+/// retry a query through a different evaluator. The alternative — substituting `Null` for
 /// anything unrecognized, which is what [`array_value`] does by design for
 /// property reads — turns an unsupported type into a silently wrong answer.
 /// That is exactly how `collect()` results were being dropped.
@@ -288,7 +289,7 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
                     i64::from(*scale),
                 )))
             } else {
-                None
+                datafusion::common::ScalarValue::try_from_array(array,row).ok().map(Value::Scalar)
             }
         }
         DataType::Float32 => array
@@ -315,6 +316,9 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
                 .downcast_ref::<arrow::array::LargeListArray>()?;
             decode_list(typed.value(row).as_ref(), inner)
         }
+        kind if crate::ir::rel::mapping::is_identity_type(kind) => {
+            datafusion::common::ScalarValue::try_from_array(array,row).ok().map(Value::Scalar)
+        }
         _ => None,
     }
 }
@@ -335,8 +339,12 @@ pub fn contains_mutation(node: &Node) -> bool {
 impl From<crate::ir::rel::dag::DagStats> for ExecStats {
     fn from(stats: crate::ir::rel::dag::DagStats) -> Self {
         Self {
+            physical_plan: stats.physical_plan,
             islands: stats.duckdb_regions,
             datafusion_ops: stats.datafusion_operators,
+            sql_queries: stats.sql_queries,
+            native_source_queries: stats.native_source_queries,
+            native_source_rows: stats.native_source_rows,
             ..Default::default()
         }
     }

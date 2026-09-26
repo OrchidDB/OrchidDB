@@ -51,8 +51,18 @@ let response = orchiddb::compiler::compile_json(request_json).await?;
 Table names use SQL identifier syntax, including quoted qualified identifiers.
 Bindings must quote individual identifier parts. Column/property names are
 literal strings. Schemas contain metadata only; no source data is passed into
-the compiler. Mapped identities must be signed integers. Bindings must ensure
+the compiler. Mapped identities may use any non-null scalar type, including booleans, integers,
+floats, strings, binary, decimals, dates, times, timestamps, durations and
+intervals. Floating-point keys follow the target engine's equality semantics. Each label keeps its column's native type, so joins on a label's key
+are not wrapped in casts. Where one scan unions labels whose key types differ,
+such as an unlabeled `MATCH (n)`, and that union is joined, the keys are
+compared as `BIGINT` (integers of different widths), `DECIMAL(20,0)`
+(when mixing uint64 with other integers), or as text. Label equality
+always accompanies the comparison, so equal text cannot match across labels.
+Bindings must ensure
 ID uniqueness/non-nullability and referential integrity in their actual data.
+Mapped identities do not require a physical primary-key index; supported
+index types depend on the target database.
 
 Optional `edges` describe label, table, id, source/target columns,
 source_label/target_label, and property-to-column mappings. Optional `functions`
@@ -61,8 +71,10 @@ describe language-facing name, SQL target, parameter type list, return type
 its engine. SPARQL's optional `ontology` maps classes, properties and directed
 relationships; see the public request structs for the complete contract.
 
-Supported schema types are boolean, int8/int16/int32/int64, float32/float64,
-string, binary, date, timestamp (microseconds, no timezone), and
+Supported schema types are boolean, int8/int16/int32/int64,
+uint8/uint16/uint32/uint64, float32/float64, string, binary, date, time and
+duration (microseconds), interval (month/day/nanosecond),
+timestamp (microseconds, no timezone), and
 `decimal:precision:scale` with precision up to 38. Unsupported source types
 require a caller-owned cast/view. Unsupported SQL dialects fail explicitly;
 DuckDB and PostgreSQL rendering are currently implemented.

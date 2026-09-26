@@ -42,7 +42,7 @@ pub(crate) fn node_scan(
     let mut out = Vec::new();
     for label in matching_labels(labels, graph) {
         for row_id in graph.node_ids(&label)? {
-            if !graph.node_matches_labels(&label, row_id, labels) { continue; }
+            if !graph.node_matches_labels(&label, row_id.clone(), labels) { continue; }
             let mut row = Row::new();
             row.bindings.insert(
                 binding.to_string(),
@@ -68,7 +68,7 @@ pub(crate) fn rel_scan(
     for rel_type in candidate_types {
         for row_id in graph.edge_ids(&rel_type) {
             let (src_label, src_id, dst_label, dst_id) =
-                graph.edge_endpoints(&rel_type, row_id).expect("endpoints");
+                graph.edge_endpoints(&rel_type, row_id.clone()).ok_or_else(|| super::super::RuntimeError::Runtime(graph.check_source().err().unwrap_or_else(|| "missing mapped edge endpoints".into())))?;
             let mut row = Row::new();
             row.bindings.insert(
                 binding.to_string(),
@@ -96,6 +96,8 @@ pub(crate) fn matching_labels(labels: &LabelExpr, graph: &PropertyGraph) -> Vec<
             .into_iter()
             .filter(|label| names.iter().any(|n| n == label))
             .collect(),
+        LabelExpr::AllOf(names) if graph.mapping.is_some() => all.into_iter()
+            .filter(|label| names.iter().all(|name| name == label)).collect(),
         LabelExpr::AllOf(_) => all,
         LabelExpr::Not(inner) => {
             let blocked = matching_labels(inner, graph);

@@ -75,6 +75,7 @@ pub(crate) fn rdf_value(term: &RdfTerm) -> Value {
         RdfTerm::BlankNode(value) => Value::String(format!("_:{value}")),
         RdfTerm::LanguageTagged { value, lang } => Value::String(format!("{value}@{lang}")),
         RdfTerm::Typed { lexical, datatype } => Value::String(format!("{lexical}^^{datatype}")),
+        RdfTerm::Literal(Lit::Scalar(value)) => Value::Scalar(value.clone()),
         RdfTerm::Literal(Lit::Null) => Value::Null,
         RdfTerm::Literal(Lit::Bool(value)) => Value::Bool(*value),
         RdfTerm::Literal(Lit::Int(value)) => Value::Int(*value),

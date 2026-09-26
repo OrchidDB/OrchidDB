@@ -5,6 +5,7 @@
 //! evaluation cleanly. Conversion to Arrow record batches happens at
 //! `GraphReturn` boundaries.
 
+use super::identity::ElementId;
 use std::collections::BTreeMap;
 
 use bigdecimal::BigDecimal;
@@ -83,6 +84,7 @@ pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
     }
     let scalar = |tag, bytes| framed(tag, [bytes]);
     match value {
+        Value::Scalar(v) => scalar(35, crate::ir::identity::encode_scalar(v)),
         Value::Null => vec![0],
         Value::Bool(v) => scalar(1, vec![u8::from(*v)]),
         Value::Byte(v) => scalar(12, v.to_be_bytes().to_vec()),
@@ -107,8 +109,8 @@ pub(crate) fn set_member_key(value: &Value) -> Vec<u8> {
         Value::Token(v) => scalar(24, v.as_bytes().to_vec()),
         Value::Direction(v) => scalar(25, v.as_bytes().to_vec()),
         Value::InternalId { table, offset } => framed(17, [table.to_be_bytes().to_vec(), offset.to_be_bytes().to_vec()]),
-        Value::Node { label, id } => framed(5, [label.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
-        Value::Edge { rel_type, id, .. } => framed(6, [rel_type.as_bytes().to_vec(), id.to_be_bytes().to_vec()]),
+        Value::Node { label, id } => framed(5, [label.as_bytes().to_vec(), id.encode()]),
+        Value::Edge { rel_type, id, .. } => framed(6, [rel_type.as_bytes().to_vec(), id.encode()]),
         Value::VertexProperty { id, .. } => scalar(0x40, id.to_be_bytes().to_vec()),
         Value::Property { key, value, .. } => framed(0x41, [key.as_bytes().to_vec(), set_member_key(value)]),
         Value::List(items) => framed(7, items.iter().map(set_member_key)),
@@ -188,6 +190,8 @@ mod native_set_tests {
 
 #[derive(Debug, Clone)]
 pub enum Value {
+    /// Lossless scalar values not covered by the language-native variants.
+    Scalar(datafusion::common::ScalarValue),
     /// Cypher `null` / SPARQL unbound. Distinct from `Unproductive`.
     Null,
     Bool(bool),
@@ -222,17 +226,17 @@ pub enum Value {
     /// `nodes(<label>)` relation.
     Node {
         label: String,
-        id: i64,
+        id: ElementId,
     },
     /// A property-graph edge. Carries source and target node identifiers so
     /// that `r.src` / `r.dst` and `EndpointVertex` work without a re-scan.
     Edge {
         rel_type: String,
-        id: i64,
+        id: ElementId,
         src_label: String,
-        src_id: i64,
+        src_id: ElementId,
         dst_label: String,
-        dst_id: i64,
+        dst_id: ElementId,
         /// Optional Cypher recursive-relationship projection keys. `None`
         /// means render the edge's full catalog property bag.
         projected_properties: Option<Vec<String>>,
@@ -266,6 +270,7 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,
+            (Self::Scalar(a), Self::Scalar(b)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Temporal(a), Self::Temporal(b)) => a == b,
             (Self::Byte(a), Self::Byte(b)) => a == b,
@@ -338,6 +343,7 @@ impl Value {
     }
     pub fn type_name(&self) -> &'static str {
         match self {
+        Self::Scalar(_) => "scalar",
             Self::Null => "null",
             Self::Bool(_) => "bool",
             Self::Byte(_) => "byte",
@@ -410,6 +416,10 @@ impl Value {
     /// during scalar evaluation (we only ever store `null` here — unproductive
     /// is realized by dropping the row entirely, never by producing a value).
     pub fn three_valued_eq(&self, other: &Self) -> Option<bool> {
+        if let (Self::Scalar(a),Self::Scalar(b))=(self,other) { if a.data_type()==b.data_type(){return Some(a==b);} }
+        if let Self::Scalar(v)=self {if let Some(v)=scalar_semantic_value(v){return v.three_valued_eq(other);}}
+        if let Self::Scalar(v)=other {if let Some(v)=scalar_semantic_value(v){return self.three_valued_eq(&v);}}
+
         fn numeric_decimal(value: &Value) -> Option<BigDecimal> {
             use bigdecimal::FromPrimitive;
             match value {
@@ -567,6 +577,10 @@ impl Value {
     }
 
     pub fn three_valued_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if let (Self::Scalar(a),Self::Scalar(b))=(self,other) { if a.data_type()==b.data_type(){return a.partial_cmp(b);} }
+        if let Self::Scalar(v)=self {if let Some(v)=scalar_semantic_value(v){return v.three_valued_cmp(other);}}
+        if let Self::Scalar(v)=other {if let Some(v)=scalar_semantic_value(v){return self.three_valued_cmp(&v);}}
+
         if let (Self::Temporal(a), Self::Temporal(b)) = (self, other) { return a.compare(b); }
         fn numeric_decimal(value: &Value) -> Option<BigDecimal> {
             use bigdecimal::FromPrimitive;
@@ -1015,4 +1029,25 @@ mod namespace_tests {
         assert_eq!(map["name"], Value::String("Alice".into()));
         assert_eq!(map["user_struct_order"], Value::Int(7));
     }
+}
+
+/// Bridge lossless Arrow scalars into the existing language numeric semantics.
+pub(crate) fn scalar_semantic_value(value: &datafusion::common::ScalarValue) -> Option<Value> {
+    use datafusion::common::ScalarValue as S;
+    if value.is_null(){return Some(Value::Null);}
+    Some(match value {
+        S::Boolean(Some(v))=>Value::Bool(*v),
+        S::Int8(Some(v))=>Value::Byte(*v), S::Int16(Some(v))=>Value::Short(*v),
+        S::Int32(Some(v))=>Value::Int(*v as i64), S::Int64(Some(v))=>Value::Int(*v),
+        S::UInt8(Some(v))=>Value::UInt8(*v), S::UInt16(Some(v))=>Value::UInt16(*v),
+        S::UInt32(Some(v))=>Value::UInt32(*v), S::UInt64(Some(v))=>Value::UInt64(*v),
+        S::Float16(Some(v))=>Value::Float32(v.to_f32()), S::Float32(Some(v))=>Value::Float32(*v), S::Float64(Some(v))=>Value::Float(*v),
+        S::Utf8(Some(v))|S::LargeUtf8(Some(v))|S::Utf8View(Some(v))=>Value::String(v.clone()),
+        S::Decimal32(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(BigInt::from(*v),*scale as i64)),
+        S::Decimal64(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(BigInt::from(*v),*scale as i64)),
+        S::Decimal128(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(BigInt::from(*v),*scale as i64)),
+        S::Decimal256(Some(v),_,scale)=>Value::BigDecimal(BigDecimal::new(v.to_string().parse().ok()?,*scale as i64)),
+        S::Dictionary(_,v)=>return scalar_semantic_value(v),
+        _=>return None,
+    })
 }

@@ -123,12 +123,38 @@ impl LoweringContext<'_> {
         // already bound and are added when the full path is rendered.
         let seed_nodes = lit("");
 
+        let edge_scan = self.lower_rel_scan(&edge_binding, rel_types)?;
+        // The cursor id crosses the recursive union: the seed (source node)
+        // and every step (edge endpoint) must share one identity type.
+        let type_of = |plan: &LogicalPlan, name: String| {
+            plan.schema()
+                .field_with_unqualified_name(&name)
+                .map(|field| field.data_type().clone())
+                .ok()
+        };
+        let mut work_id_type = type_of(&input.plan, id_col(source));
+        for endpoint in [src_id_col(&edge_binding), dst_id_col(&edge_binding)] {
+            if let (Some(current), Some(next)) = (&work_id_type, type_of(&edge_scan.plan, endpoint)) {
+                if let Some(common) = common_identity_type(current, &next) {
+                    work_id_type = Some(common);
+                }
+            }
+        }
+        let work_id = |plan: &LogicalPlan, name: String| -> Expr {
+            match (&work_id_type, type_of(plan, name.clone())) {
+                (Some(target), Some(actual)) if &actual != target => {
+                    Expr::Cast(Cast::new(Box::new(col_exact(name)), target.clone()))
+                }
+                _ => col_exact(name),
+            }
+        };
+
         let mut seed_projection = input_columns
             .iter()
             .map(|name| col_exact(name).alias(name))
             .collect::<Vec<_>>();
         seed_projection.extend([
-            col_exact(id_col(source)).alias(WORK_CUR_ID),
+            work_id(&input.plan, id_col(source)).alias(WORK_CUR_ID),
             col_exact(label_col(source)).alias(WORK_CUR_LABEL),
             lit(0_i64).alias(WORK_DEPTH),
             history.map(col_exact).unwrap_or_else(|| lit(",")).alias(WORK_TRAIL),
@@ -157,12 +183,11 @@ impl LoweringContext<'_> {
                 .build()?;
         }
 
-        let edge_scan = self.lower_rel_scan(&edge_binding, rel_types)?;
         let source_is_src = Expr::and(
             binary(
                 col_exact(WORK_CUR_ID),
                 BinaryOp::Eq,
-                col_exact(src_id_col(&edge_binding)),
+                work_id(&edge_scan.plan, src_id_col(&edge_binding)),
             ),
             binary(
                 col_exact(WORK_CUR_LABEL),
@@ -174,7 +199,7 @@ impl LoweringContext<'_> {
             binary(
                 col_exact(WORK_CUR_ID),
                 BinaryOp::Eq,
-                col_exact(dst_id_col(&edge_binding)),
+                work_id(&edge_scan.plan, dst_id_col(&edge_binding)),
             ),
             binary(
                 col_exact(WORK_CUR_LABEL),
@@ -195,11 +220,9 @@ impl LoweringContext<'_> {
             )?
             .build()?;
 
-        let edge_key = if history.is_some() { Self::relationship_key(&edge_binding) } else { concat_exprs(vec![
+        let edge_key = if history.is_some() { Self::relationship_key(&edge_scan.plan, &edge_binding) } else { concat_exprs(vec![
             lit(","),
-            col_exact(label_col(&edge_binding)),
-            lit(":"),
-            cast_utf8(col_exact(id_col(&edge_binding))),
+            Self::relationship_key(&edge_scan.plan, &edge_binding),
             lit(","),
         ]) };
         let unused = if history.is_some() {
@@ -218,12 +241,17 @@ impl LoweringContext<'_> {
         islands.merge(edge_scan.islands);
         let current_node_display = if rel_binding.is_some() {
             let node_binding = format!("__w_node_{uniq}");
-            let node_scan = self.lower_node_scan(&node_binding, &LabelExpr::Any)?;
+            // A recursive cursor must be an endpoint of one of the selected
+            // relationship mappings. Do not union unrelated node sources just
+            // to reconstruct intermediate path values.
+            let labels = self.mapped_endpoint_labels(&LabelExpr::Any, rel_types, Direction::Both)?;
+            let node_scan = self.lower_node_scan(&node_binding, &labels)?;
             let node_join = vec![
-                binary(
-                    col_exact(id_col(&node_binding)),
+                identity_compare(
+                    &[&recursive_joined, &node_scan.plan],
+                    &id_col(&node_binding),
                     BinaryOp::Eq,
-                    col_exact(WORK_CUR_ID),
+                    WORK_CUR_ID,
                 ),
                 binary(
                     col_exact(label_col(&node_binding)),
@@ -246,18 +274,18 @@ impl LoweringContext<'_> {
 
         let (next_id, next_label) = match dir {
             Direction::Out => (
-                col_exact(dst_id_col(&edge_binding)),
+                work_id(&edge_scan.plan, dst_id_col(&edge_binding)),
                 col_exact(dst_label_col(&edge_binding)),
             ),
             Direction::In => (
-                col_exact(src_id_col(&edge_binding)),
+                work_id(&edge_scan.plan, src_id_col(&edge_binding)),
                 col_exact(src_label_col(&edge_binding)),
             ),
             Direction::Both => (
                 case_when(
                     source_is_src.clone(),
-                    col_exact(dst_id_col(&edge_binding)),
-                    col_exact(src_id_col(&edge_binding)),
+                    work_id(&edge_scan.plan, dst_id_col(&edge_binding)),
+                    work_id(&edge_scan.plan, src_id_col(&edge_binding)),
                 ),
                 case_when(
                     source_is_src,
@@ -329,13 +357,11 @@ impl LoweringContext<'_> {
 
         match target_mode {
             TargetMode::Existing => {
+                let same_target =
+                    identity_compare(&[&consumed], &id_col(target), BinaryOp::Eq, WORK_CUR_ID);
                 consumed = LogicalPlanBuilder::from(consumed)
                     .filter(Expr::and(
-                        binary(
-                            col_exact(id_col(target)),
-                            BinaryOp::Eq,
-                            col_exact(WORK_CUR_ID),
-                        ),
+                        same_target,
                         binary(
                             col_exact(label_col(target)),
                             BinaryOp::Eq,
@@ -354,16 +380,18 @@ impl LoweringContext<'_> {
                     target.to_string()
                 };
                 let target_scan = self.lower_node_scan(&target_scan_binding, target_labels)?;
+                let target_id = identity_compare(
+                    &[&consumed, &target_scan.plan],
+                    &id_col(&target_scan_binding),
+                    BinaryOp::Eq,
+                    WORK_CUR_ID,
+                );
                 consumed = LogicalPlanBuilder::from(consumed)
                     .join_on(
                         target_scan.plan,
                         JoinType::Inner,
                         vec![
-                            binary(
-                                col_exact(id_col(&target_scan_binding)),
-                                BinaryOp::Eq,
-                                col_exact(WORK_CUR_ID),
-                            ),
+                            target_id,
                             binary(
                                 col_exact(label_col(&target_scan_binding)),
                                 BinaryOp::Eq,
@@ -476,11 +504,7 @@ impl LoweringContext<'_> {
             let plan = match target_mode {
                 TargetMode::Existing => {
                     let same = Expr::and(
-                        binary(
-                            col_exact(id_col(target)),
-                            BinaryOp::Eq,
-                            col_exact(id_col(source)),
-                        ),
+                        identity_compare(&[&input.plan], &id_col(target), BinaryOp::Eq, &id_col(source)),
                         binary(
                             col_exact(label_col(target)),
                             BinaryOp::Eq,
@@ -567,10 +591,11 @@ impl LoweringContext<'_> {
             for i in 0..hop_rels.len() {
                 for j in (i + 1)..hop_rels.len() {
                     let same = Expr::and(
-                        binary(
-                            col_exact(id_col(&hop_rels[i])),
+                        identity_compare(
+                            &[&chain.plan],
+                            &id_col(&hop_rels[i]),
                             BinaryOp::Eq,
-                            col_exact(id_col(&hop_rels[j])),
+                            &id_col(&hop_rels[j]),
                         ),
                         binary(
                             col_exact(label_col(&hop_rels[i])),

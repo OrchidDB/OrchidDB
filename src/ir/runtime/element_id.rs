@@ -27,14 +27,16 @@ pub(crate) fn edge_table_index(graph: &PropertyGraph, rel_type: &str) -> i64 {
 }
 
 pub(crate) fn element_internal_id(graph: &PropertyGraph, value: &Value) -> Option<Value> {
+    if let Some(id) = graph.source_identity(value) { return Some(id); }
     match value {
+        Value::Node { id, .. } | Value::Edge { id, .. } if id.as_i64().is_none() => Some(id.to_value()),
         Value::Node { label, id } => Some(Value::InternalId {
             table: node_table_index(graph, label),
-            offset: *id,
+            offset: id.as_i64()?,
         }),
         Value::Edge { rel_type, id, .. } => Some(Value::InternalId {
             table: edge_table_index(graph, rel_type),
-            offset: *id,
+            offset: id.as_i64()?,
         }),
         Value::InternalId { .. } => Some(value.clone()),
         _ => None,

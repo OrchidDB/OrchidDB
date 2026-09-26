@@ -65,11 +65,13 @@ pub(crate) fn expand_op(
         LabelExpr::AnyOf(names) | LabelExpr::AllOf(names) => names.clone(),
         LabelExpr::Not(_) => Vec::new(),
     };
+    let nodes=upstream.iter().filter_map(|row| match row.bindings.get(source) {Some(Value::Node{label,id})=>Some((label.clone(),id.clone())),_=>None}).collect::<Vec<_>>();
+    graph.prefetch_adjacency(&nodes,dir,&rel_filter);
     let mut out = Vec::new();
     for row in upstream {
         ctx.charge(1)?;
         let source_node = match row.bindings.get(source) {
-            Some(Value::Node { label, id }) => (label.clone(), *id),
+            Some(Value::Node { label, id }) => (label.clone(), id.clone()),
             _ => continue,
         };
         // BFS up to the bounded max, emitting rows whose hop count is in
@@ -92,16 +94,16 @@ pub(crate) fn expand_op(
             .unwrap_or_else(|| {
                 vec![Value::Node {
                     label: source_node.0.clone(),
-                    id: source_node.1,
+                    id: source_node.1.clone(),
                 }]
             });
-        let mut frontier: Vec<(String, i64, Vec<Value>, Vec<Value>)> = vec![(
+        let mut frontier: Vec<(String, crate::ir::ElementId, Vec<Value>, Vec<Value>)> = vec![(
             source_node.0.clone(),
-            source_node.1,
+            source_node.1.clone(),
             initial_history,
             initial_path,
         )];
-        if length.min == 0 && graph.node_matches_labels(&source_node.0, source_node.1, target_labels) {
+        if length.min == 0 && graph.node_matches_labels(&source_node.0, source_node.1.clone(), target_labels) {
             let emit = match target_mode {
                 TargetMode::Existing => match row.bindings.get(target) {
                     Some(Value::Node { label, id }) => {
@@ -118,7 +120,7 @@ pub(crate) fn expand_op(
                         target.to_string(),
                         Value::Node {
                             label: source_node.0.clone(),
-                            id: source_node.1,
+                            id: source_node.1.clone(),
                         },
                     );
                 }
@@ -137,29 +139,30 @@ pub(crate) fn expand_op(
             }
         }
         for hop in 1..=max_hops {
+            graph.prefetch_adjacency(&frontier.iter().map(|(label,id,_,_)|(label.clone(),id.clone())).collect::<Vec<_>>(),dir,&rel_filter);
             let mut next_frontier = Vec::new();
             for (cur_label, cur_id, history_so_far, path_so_far) in frontier {
                 ctx.charge(1)?;
                 let edges = match dir {
                     Direction::Out => graph
-                        .out_edges(&cur_label, cur_id, &rel_filter)
+                        .out_edges(&cur_label, cur_id.clone().into(), &rel_filter)
                         .into_iter()
                         .map(|edge| (Direction::Out, edge))
                         .collect::<Vec<_>>(),
                     Direction::In => graph
-                        .in_edges(&cur_label, cur_id, &rel_filter)
+                        .in_edges(&cur_label, cur_id.clone().into(), &rel_filter)
                         .into_iter()
                         .map(|edge| (Direction::In, edge))
                         .collect::<Vec<_>>(),
                     Direction::Both => {
                         let mut both = graph
-                            .out_edges(&cur_label, cur_id, &rel_filter)
+                            .out_edges(&cur_label, cur_id.clone().into(), &rel_filter)
                             .into_iter()
                             .map(|edge| (Direction::Out, edge))
                             .collect::<Vec<_>>();
                         both.extend(
                             graph
-                                .in_edges(&cur_label, cur_id, &rel_filter)
+                                .in_edges(&cur_label, cur_id.clone().into(), &rel_filter)
                                 .into_iter()
                                 .map(|edge| (Direction::In, edge)),
                         );
@@ -177,16 +180,16 @@ pub(crate) fn expand_op(
                     let mut path = path_so_far.clone();
                     let edge_value = Value::Edge {
                         rel_type: rel_type.clone(),
-                        id: edge_row,
+                        id: edge_row.clone(),
                         src_label: oriented_edge_src_label(edge_dir, &cur_label, &other_label),
-                        src_id: oriented_edge_src_id(edge_dir, cur_id, other_id),
+                        src_id: oriented_edge_src_id(edge_dir, cur_id.clone(), other_id.clone()).into(),
                         dst_label: oriented_edge_dst_label(edge_dir, &cur_label, &other_label),
-                        dst_id: oriented_edge_dst_id(edge_dir, cur_id, other_id),
+                        dst_id: oriented_edge_dst_id(edge_dir, cur_id.clone(), other_id.clone()).into(),
                         projected_properties: None,
                     };
                     let target_node = Value::Node {
                         label: other_label.clone(),
-                        id: other_id,
+                        id: other_id.clone(),
                     };
                     // `match_mode` owns relationship reuse. `path_mode`
                     // can still request stricter path classes when a
@@ -204,7 +207,7 @@ pub(crate) fn expand_op(
                                 | (_, MatchMode::DifferentRelationships)
                         );
                     let history_contains = (enforces_history
-                        && path_contains_edge(&history, &rel_type, edge_row))
+                        && path_contains_edge(&history, &rel_type, edge_row.clone()))
                         || (enforces_path && path_contains_edge(&path, &rel_type, edge_row));
                     if history_contains {
                         continue;
@@ -223,7 +226,7 @@ pub(crate) fn expand_op(
                     }
                     if hop >= length.min {
                         // Target label filter.
-                        if !graph.node_matches_labels(&other_label, other_id, target_labels) {
+                        if !graph.node_matches_labels(&other_label, other_id.clone(), target_labels) {
                             // Still extend frontier; just don't emit.
                         } else {
                             // For `Existing` mode, the row must already
@@ -293,7 +296,7 @@ fn oriented_edge_src_label(dir: Direction, current: &str, other: &str) -> String
     }
 }
 
-fn oriented_edge_src_id(dir: Direction, current: i64, other: i64) -> i64 {
+fn oriented_edge_src_id(dir: Direction, current: crate::ir::ElementId, other: crate::ir::ElementId) -> crate::ir::ElementId {
     match dir {
         Direction::In => other,
         Direction::Out | Direction::Both => current,
@@ -307,14 +310,14 @@ fn oriented_edge_dst_label(dir: Direction, current: &str, other: &str) -> String
     }
 }
 
-fn oriented_edge_dst_id(dir: Direction, current: i64, other: i64) -> i64 {
+fn oriented_edge_dst_id(dir: Direction, current: crate::ir::ElementId, other: crate::ir::ElementId) -> crate::ir::ElementId {
     match dir {
         Direction::In => current,
         Direction::Out | Direction::Both => other,
     }
 }
 
-fn path_contains_edge(path: &[Value], rel_type: &str, id: i64) -> bool {
+fn path_contains_edge(path: &[Value], rel_type: &str, id: crate::ir::ElementId) -> bool {
     path.iter().any(|value| {
         matches!(
             value,
@@ -322,7 +325,7 @@ fn path_contains_edge(path: &[Value], rel_type: &str, id: i64) -> bool {
                 rel_type: existing_type,
                 id: existing_id,
                 ..
-            } if existing_type == rel_type && *existing_id == id
+            } if existing_type == rel_type && existing_id == &id
         )
     })
 }

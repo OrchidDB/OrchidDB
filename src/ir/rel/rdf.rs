@@ -289,6 +289,7 @@ fn constant_identity_conditions(
 fn literal_identity(value: &crate::ir::expr::Lit) -> (String, String) {
     use crate::ir::expr::Lit;
     match value {
+        Lit::Scalar(value) => (value.to_string(), "http://www.w3.org/2001/XMLSchema#string".into()),
         Lit::Null => (
             String::new(),
             "http://www.w3.org/2001/XMLSchema#string".into(),

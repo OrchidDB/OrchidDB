@@ -76,8 +76,9 @@ pub enum MappedSource {
 pub struct NodeMapping {
     pub label: String,
     pub source: MappedSource,
-    /// Column holding the node id. Must be integer-typed (it is cast to
-    /// `BIGINT`); ids only need to be unique within the label.
+    /// Column holding the node id. Any non-null scalar type is accepted (see
+    /// [`is_identity_type`]) and keeps its source type; ids only need to be
+    /// unique within the label.
     pub id_column: String,
     /// Graph property name -> source column name.
     pub properties: BTreeMap<String, String>,
@@ -212,7 +213,7 @@ impl EdgeMapping {
 /// The full label/edge-type -> relational-schema mapping, plus the table
 /// providers (schemas and, in-process, data) the mapped sources resolve
 /// against.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GraphMapping {
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
@@ -292,7 +293,10 @@ impl GraphMapping {
     /// for an external engine these are the user's own tables/views and must
     /// not be materialized by the SQL layer.
     pub fn physical_table_names(&self) -> BTreeSet<String> {
-        self.tables.keys().cloned().collect()
+        self.tables.keys().cloned().chain(
+            self.nodes.values().map(|m| &m.source).chain(self.edges.values().map(|m| &m.source))
+                .filter_map(|source| match source {MappedSource::Table(name)=>Some(name.clone()),MappedSource::Query(_)=>None})
+        ).collect()
     }
 
     /// Build the source plan for a mapped source: a bare scan for
@@ -456,7 +460,7 @@ pub(super) fn lower_mapped_rel_scan(
     Ok(LoweredNode::new(union_all(branches)?))
 }
 
-fn resolve_names(
+pub(super) fn resolve_names(
     expr: &LabelExpr,
     all: impl FnOnce() -> Vec<String>,
     what: &str,
@@ -519,11 +523,20 @@ fn property_exprs(
     Ok(out)
 }
 
-/// Reference an id column, cast to `BIGINT` so ids line up across tables and
-/// with join synthesis. Non-integer id columns are rejected up front.
+/// Reference an id column in its source type. Branches of multi-label scans
+/// are reconciled afterwards by [`union_all`].
 fn id_expr(plan: &LogicalPlan, column: &str, what: &str) -> RelResult<Expr> {
     let data_type = source_column_type(plan, column, what)?;
-    let is_integer = matches!(
+    if !is_identity_type(&data_type) {
+        return Err(RelError::Unsupported(format!(
+            "{what}: id column `{column}` has type {data_type:?}, which cannot be an element identity"
+        )));
+    }
+    Ok(col_exact(resolve_column(plan, column)?))
+}
+
+fn is_integer_type(data_type: &DataType) -> bool {
+    matches!(
         data_type,
         DataType::Int8
             | DataType::Int16
@@ -533,18 +546,41 @@ fn id_expr(plan: &LogicalPlan, column: &str, what: &str) -> RelResult<Expr> {
             | DataType::UInt16
             | DataType::UInt32
             | DataType::UInt64
-    );
-    if !is_integer {
-        return Err(RelError::Unsupported(format!(
-            "{what}: id column `{column}` must be integer-typed, found {data_type:?}"
-        )));
+    )
+}
+
+/// Non-null scalar key types. Equality follows the execution engine, including
+/// floating-point equality. Nested values are not scalar identities.
+pub(crate) fn is_identity_type(data_type: &DataType) -> bool {
+    if let DataType::Dictionary(_, value_type) = data_type {
+        return is_identity_type(value_type);
     }
-    let column = col_exact(resolve_column(plan, column)?);
-    Ok(if data_type == DataType::Int64 {
-        column
-    } else {
-        Expr::Cast(Cast::new(Box::new(column), DataType::Int64))
-    })
+    is_integer_type(data_type)
+        || matches!(
+            data_type,
+            DataType::Boolean
+                | DataType::Float16
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Utf8
+                | DataType::LargeUtf8
+                | DataType::Utf8View
+                | DataType::Binary
+                | DataType::LargeBinary
+                | DataType::BinaryView
+                | DataType::FixedSizeBinary(_)
+                | DataType::Decimal32(_, _)
+                | DataType::Decimal64(_, _)
+                | DataType::Decimal128(_, _)
+                | DataType::Decimal256(_, _)
+                | DataType::Date32
+                | DataType::Date64
+                | DataType::Timestamp(_, _)
+                | DataType::Time32(_)
+                | DataType::Time64(_)
+                | DataType::Duration(_)
+                | DataType::Interval(_)
+        )
 }
 
 fn source_column_type(plan: &LogicalPlan, column: &str, what: &str) -> RelResult<DataType> {
@@ -590,7 +626,64 @@ fn schema_field_type(schema: &DFSchema, name: &str) -> Option<DataType> {
         .map(|field| field.data_type().clone())
 }
 
+/// Union per-label branches. Each label keeps its native id type; when
+/// branches disagree, the union alone carries a shared type: `Int64` for
+/// integers of different widths, otherwise text. Identity stays qualified by
+/// the label column, so the text form cannot merge elements of different labels.
 fn union_all(mut branches: Vec<LogicalPlan>) -> RelResult<LogicalPlan> {
+    if branches.len() > 1 {
+        let width = branches[0].schema().fields().len();
+        let mut targets = BTreeMap::new();
+        for index in 0..width {
+            let name = branches[0].schema().field(index).name().clone();
+            if ![super::ID_SUFFIX, super::SRC_ID_SUFFIX, super::DST_ID_SUFFIX]
+                .iter()
+                .any(|suffix| name.ends_with(suffix))
+            {
+                continue;
+            }
+            let types = branches
+                .iter()
+                .map(|branch| branch.schema().field(index).data_type().clone())
+                .collect::<BTreeSet<_>>();
+            if types.len() > 1 {
+                let target = if types.iter().all(is_integer_type) {
+                    if types.contains(&DataType::UInt64) {
+                        DataType::Decimal128(20, 0)
+                    } else {
+                        DataType::Int64
+                    }
+                } else {
+                    DataType::Utf8
+                };
+                targets.insert(index, target);
+            }
+        }
+        if !targets.is_empty() {
+            branches = branches
+                .into_iter()
+                .map(|branch| {
+                    let exprs = branch
+                        .schema()
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, field)| {
+                            let column = col_exact(field.name().clone());
+                            match targets.get(&index) {
+                                Some(target) if field.data_type() != target => {
+                                    Expr::Cast(Cast::new(Box::new(column), target.clone()))
+                                        .alias(field.name())
+                                }
+                                _ => column,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    Ok(LogicalPlanBuilder::from(branch).project(exprs)?.build()?)
+                })
+                .collect::<RelResult<Vec<_>>>()?;
+        }
+    }
     let first = branches.remove(0);
     let mut builder = LogicalPlanBuilder::from(first);
     for branch in branches {

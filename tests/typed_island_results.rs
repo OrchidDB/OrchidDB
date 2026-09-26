@@ -139,3 +139,13 @@ async fn gremlin_fold_and_cap_preserve_collection_semantics() {
     let result = engine.gremlin("g.V().values('missing').max()").await.unwrap();
     assert_eq!(native(&result, "gremlin"), serde_json::json!([]));
 }
+
+#[tokio::test]
+async fn sql_islands_preserve_nested_empty_and_null_lists() {
+    let mut engine = GraphEngine::in_memory().unwrap();
+    for expr in ["[]", "[null]", "[[]]", "[[[[[[[]]]]]]]", "range(0,-1)", "keys({})"] {
+        let result = engine.cypher(&format!("RETURN {expr} AS value")).await.unwrap();
+        assert_eq!(result.returned.batch.num_rows(), 1, "{expr}");
+        assert!(result.stats.islands > 0, "{expr}");
+    }
+}

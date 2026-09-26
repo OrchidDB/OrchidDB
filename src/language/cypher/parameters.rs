@@ -546,6 +546,7 @@ fn bind_recursive(
 
 fn value_to_expr(value: &Value) -> Result<Expr, ParameterBindError> {
     Ok(match value {
+        Value::Scalar(value) => Expr::Literal(Literal::Scalar(value.clone())),
         Value::Null => Expr::Literal(Literal::Null),
         Value::Bool(value) => Expr::Literal(Literal::Bool(*value)),
         Value::Byte(value) => Expr::Literal(Literal::Integer(value.to_string())),
@@ -555,7 +556,7 @@ fn value_to_expr(value: &Value) -> Result<Expr, ParameterBindError> {
         Value::Int(value) => Expr::Literal(Literal::Integer(value.to_string())),
         Value::UInt32(value) => Expr::Literal(Literal::Integer(value.to_string())),
         Value::Long(value) => Expr::Literal(Literal::Integer(value.to_string())),
-        Value::UInt64(value) => Expr::Literal(Literal::Integer(value.to_string())),
+        Value::UInt64(value) => Expr::Literal(Literal::Scalar(datafusion::common::ScalarValue::UInt64(Some(*value)))),
         Value::Float32(value) if value.is_finite() => Expr::Literal(Literal::Float(*value as f64)),
         Value::Float(value) if value.is_finite() => Expr::Literal(Literal::Float(*value)),
         Value::BigInt(value) => Expr::Literal(Literal::Integer(value.to_string())),

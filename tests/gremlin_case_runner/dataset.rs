@@ -618,6 +618,7 @@ enum ValueKind {
 impl ValueKind {
     fn of(value: &Value) -> Self {
         match value {
+            Value::Scalar(_) => Self::Value,
             Value::Bool(_) => Self::Bool,
             Value::Int(_) => Self::Int,
             Value::Float(_) => Self::Float,

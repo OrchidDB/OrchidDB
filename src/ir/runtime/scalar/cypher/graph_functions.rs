@@ -7,8 +7,8 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
     if matches!(name, "cypher_live_property" | "cypher_labels") {
         if let Some(value) = args.first() {
             let live = match value {
-                Value::Node { label, id } => graph.node_is_live(label, *id),
-                Value::Edge { rel_type, id, .. } => graph.live_edge_endpoints(rel_type, *id).is_some(),
+                Value::Node { label, id } => graph.node_is_live(label, id.clone()),
+                Value::Edge { rel_type, id, .. } => graph.live_edge_endpoints(rel_type, id.clone()).is_some(),
                 _ => true,
             };
             if !live {
@@ -57,7 +57,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             message: format!("{name} requires {}", if name == "cypher_labels" { "a node" } else { "a relationship" }),
         }),
         // ----- graph-element built-ins -----
-        ("cypher_id", [value]) => Ok(Some(graph.cypher_id(value).map(Value::Int).unwrap_or(Value::Null))),
+        ("cypher_id", [value]) => Ok(Some(graph.source_identity(value).unwrap_or_else(|| graph.cypher_id(value).map(Value::Int).unwrap_or(Value::Null)))),
         ("id", [value]) => Ok(Some(match value {
             Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. } => {
                 element_internal_id(graph, value).unwrap_or(Value::Null)
@@ -70,13 +70,13 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             _ => Value::Null,
         })),
         ("cypher_has_label", [Value::Node { label, id }, Value::String(wanted)]) =>
-            Ok(Some(Value::Bool(graph.node_labels(label, *id).contains(wanted)))),
+            Ok(Some(Value::Bool(graph.node_labels(label, id.clone()).contains(wanted)))),
         ("cypher_has_label", [Value::Edge { rel_type, .. }, Value::String(wanted)]) =>
             Ok(Some(Value::Bool(rel_type == wanted))),
         ("cypher_has_label", [Value::Null, _]) => Ok(Some(Value::Null)),
         ("cypher_has_label", _) => Err(RuntimeError::Type("Label predicate requires a node".into())),
         ("labels", [value]) => Ok(Some(match value {
-            Value::Node { label, id } => Value::List(graph.node_labels(label, *id).into_iter().map(Value::String).collect()),
+            Value::Node { label, id } => Value::List(graph.node_labels(label, id.clone()).into_iter().map(Value::String).collect()),
             _ => Value::Null,
         })),
         ("type", [value]) => Ok(Some(match value {
@@ -92,7 +92,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             ],
         ) => Ok(Some(Value::Node {
             label: src_label.clone(),
-            id: *src_id,
+            id: src_id.clone(),
         })),
         (
             "end_node",
@@ -103,7 +103,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             ],
         ) => Ok(Some(Value::Node {
             label: dst_label.clone(),
-            id: *dst_id,
+            id: dst_id.clone(),
         })),
         ("start_node", [Value::Path(_) | Value::List(_)]) => Err(RuntimeError::Runtime(
             "Binder exception: Function START_NODE did not receive correct arguments:\nActual:   (RECURSIVE_REL)\nExpected: (REL)".to_string(),
@@ -171,7 +171,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                 .node_property_keys_with_id(label)
                 .into_iter()
                 .filter(|key| key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY)
-                .filter(|key| !matches!(graph.node_property(label, *id, key), Value::Null))
+                .filter(|key| !matches!(graph.node_property(label, id.clone(), key), Value::Null))
                 .map(Value::String)
                 .collect(),
         ))),
@@ -180,7 +180,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                 .edge_property_keys(rel_type)
                 .into_iter()
                 .filter(|key| key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY)
-                .filter(|key| !matches!(graph.edge_property(rel_type, *id, key), Value::Null))
+                .filter(|key| !matches!(graph.edge_property(rel_type, id.clone(), key), Value::Null))
                 .map(Value::String)
                 .collect(),
         ))),
@@ -195,7 +195,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
         ("properties", [Value::Node { label, id }]) => {
             let mut map = std::collections::BTreeMap::new();
             for key in graph.node_property_keys_with_id(label) {
-                let value = graph.node_property(label, *id, &key);
+                let value = graph.node_property(label, id.clone(), &key);
                 if key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !matches!(value, Value::Null) {
                     map.insert(key, value);
                 }
@@ -205,7 +205,7 @@ pub(super) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
         ("properties", [Value::Edge { rel_type, id, .. }]) => {
             let mut map = std::collections::BTreeMap::new();
             for key in graph.edge_property_keys(rel_type) {
-                let value = graph.edge_property(rel_type, *id, &key);
+                let value = graph.edge_property(rel_type, id.clone(), &key);
                 if key != STRUCT_ORDER_KEY && key != STRUCT_TYPES_KEY && !matches!(value, Value::Null) {
                     map.insert(key, value);
                 }

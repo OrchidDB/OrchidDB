@@ -131,7 +131,7 @@ fn graph_identity_uncommitted_writes_and_failure_rollback() {
     let rows = execute_rows_with_jvm(&plan(change.clone()), &graph, execution()).unwrap();
     assert_eq!(rows[0].get("current"), vertex);
     assert_eq!(
-        graph.node_property("person", 0, "name"),
+        graph.node_property("person", 0.into(), "name"),
         Value::String("after".into())
     );
     graph
@@ -144,7 +144,7 @@ fn graph_identity_uncommitted_writes_and_failure_rollback() {
     );
     assert!(execute_rows_with_jvm(&plan(failing), &graph, execution()).is_err());
     assert_eq!(
-        graph.node_property("person", 0, "name"),
+        graph.node_property("person", 0.into(), "name"),
         Value::String("caller".into())
     );
     let failing = jvm(
@@ -154,7 +154,7 @@ fn graph_identity_uncommitted_writes_and_failure_rollback() {
     );
     assert!(execute_rows_with_jvm(&plan(failing), &graph, execution()).is_err());
     assert_eq!(
-        graph.node_property("person", 0, "name"),
+        graph.node_property("person", 0.into(), "name"),
         Value::String("caller".into())
     );
 }
@@ -182,7 +182,7 @@ fn cancellation_and_deadline_terminate_worker_without_publishing_writes() {
     thread.join().unwrap();
     assert!(error.to_string().contains("cancelled"), "{error}");
     assert!(started.elapsed() < Duration::from_secs(10));
-    assert_eq!(graph.node_property("person", 0, "cancelled"), Value::Null);
+    assert_eq!(graph.node_property("person", 0.into(), "cancelled"), Value::Null);
     let mut runtime = execution();
     runtime.deadline = Some(Instant::now() + Duration::from_millis(100));
     assert!(
@@ -208,7 +208,7 @@ fn transactions_cannot_commit_inside_a_node_and_null_policy_is_preserved() {
     ));
     assert!(execute_rows_with_jvm(&work, &graph, execution()).is_err());
     assert_eq!(
-        graph.node_property("person", 0, "name"),
+        graph.node_property("person", 0.into(), "name"),
         Value::String("caller".into())
     );
     let work = plan(jvm(
@@ -328,7 +328,7 @@ fn datafusion_failure_after_jvm_restores_caller_state() {
     };
     assert!(execute_rows_with_jvm(&plan(suffix), &graph, execution()).is_err());
     assert_eq!(
-        graph.node_property("person", 0, "name"),
+        graph.node_property("person", 0.into(), "name"),
         Value::String("caller".into())
     );
 }
@@ -353,7 +353,7 @@ fn graphcomputer_fragment_uses_private_native_result_graph() {
         )
     );
     assert_eq!(
-        graph.node_property("person", 0, "gremlin.pageRankVertexProgram.pageRank"),
+        graph.node_property("person", 0.into(), "gremlin.pageRankVertexProgram.pageRank"),
         Value::Null,
         "NEW result graph must not mutate the source"
     );
@@ -368,7 +368,7 @@ fn graphcomputer_fragment_uses_private_native_result_graph() {
         "{error}"
     );
     assert_eq!(
-        graph.node_property("person", 0, "gremlin.pageRankVertexProgram.pageRank"),
+        graph.node_property("person", 0.into(), "gremlin.pageRankVertexProgram.pageRank"),
         Value::Null
     );
 }

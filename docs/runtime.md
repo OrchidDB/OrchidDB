@@ -34,8 +34,9 @@ inputs. They retain no executable Graph IR subtree.
 `ir::rel::dag` partitions the resulting relational plan. DuckDB regions are
 explicit sources in the physical DAG; their inputs are registered Arrow tables.
 DataFusion executes the remaining joins, expressions, and extension kernels.
-Extension nodes, volatile or unknown scalar UDFs, and empty relations are excluded
-from SQL regions. Explicitly bound DuckDB-native functions retain their native
+Extension nodes, volatile or unknown scalar UDFs, and empty relations producing
+no rows are excluded from SQL regions. Constant one-row relations can form SQL
+islands. Explicitly bound DuckDB-native functions retain their native
 placement, including native volatility and null semantics. SQL execution errors propagate; execution is never retried in
 another engine.
 
@@ -49,8 +50,10 @@ repeat its writes. Bounded lazy side-effect pipelines retain bounded consumption
 
 Inputs with observable effects run in dependency order. A statement containing
 mutating branches uses live native scans so a later branch sees earlier writes.
-Correlated subplans use live native scans for the same reason. Ordinary read
-regions and a pure prefix before a JVM operation remain eligible for DuckDB.
+Mapped correlated subplans retain SQL-eligible reads on the same statement
+connection; native correlation and traversal kernels consume their results.
+Mutation fences retain live overlay reads. Ordinary read regions and a pure
+prefix before a JVM operation remain eligible for DuckDB.
 
 ## Arrow boundary
 
@@ -147,9 +150,23 @@ JVM classes and dependencies, and optionally `ORCHIDDB_JAVA` to the Java executa
 
 ### Write storage
 
-Managed mutations, including JVM callback writes, currently modify the native
-`PropertyGraph` overlay. `GraphEngine` persists incremental records in
-`__orchiddb_records` and checkpoints in `__orchiddb_state`. This is separate
-from the external table mappings used by relational reads. Mapped write-through
-requires mutation lowering against those same table/column mappings and a shared
-transaction; it is not implemented by this execution change.
+Mutations, including JVM callback writes, use the shared `PropertyGraph` overlay.
+For managed storage, `GraphEngine` persists incremental records in
+`__orchiddb_records` and checkpoints in `__orchiddb_state`. With
+`GraphEngine::mapped`, the source-table adapter writes changed records directly
+to mapped DuckDB tables in the statement's transaction. Unmapped data and
+unsupported storage capabilities are rejected; no overflow table is created.
+Mapped scans remain references to the user's DuckDB tables throughout relational
+lowering and SQL island placement. Schema binding uses zero-row queries; it does
+not load graph data. Residual kernels fetch referenced records in typed-key
+batches and adjacency for the current frontier on the same connection. Their
+query-scoped cache contains only accessed records. Write batches flush the
+statement overlay to the mapped tables without a full-graph reload. Island
+results cross the execution boundary as Arrow arrays, preserving scalar types.
+`QueryResult.stats` exposes island SQL, native source SQL, and fetched source
+row counts for execution-plan regression checks.
+
+Scalar source keys remain typed identities throughout execution. The legacy
+`MappedGraphEngine` API delegates to this same runtime. See the
+[unified graph engine design](unified-graph-engine.md) for the contract and
+verification results.

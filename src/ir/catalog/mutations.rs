@@ -6,11 +6,11 @@ impl PropertyGraph {
     /// Cypher numeric identity is independent of labels and Gremlin public IDs.
     pub fn cypher_id(&self, value: &Value) -> Option<i64> {
         let (edge, name, id) = match value {
-            Value::Node { label, id } => (false, label, *id),
-            Value::Edge { rel_type, id, .. } => (true, rel_type, *id),
+            Value::Node { label, id } => (false, label, id.clone()),
+            Value::Edge { rel_type, id, .. } => (true, rel_type, id.clone()),
             _ => return None,
         };
-        if let Some(id) = self.overlay.borrow().cypher_ids.get(&(edge, name.clone(), id)) { return Some(*id); }
+        if let Some(id) = self.overlay.borrow().cypher_ids.get(&(edge, name.clone(), id.clone())) { return Some(id.clone()); }
         // Older checkpoints predate numeric Cypher IDs. Fill their insertion
         // slots deterministically, retaining any IDs already persisted by newer writes.
         {
@@ -21,13 +21,13 @@ impl PropertyGraph {
             let base_count = if edge { self.edge_row_counts.values().sum::<i64>() }
                 else { self.nodes.values().map(|table| table.batch.num_rows() as i64).sum::<i64>() };
             let used = overlay.cypher_ids.iter().filter(|((is_edge, _, _), _)| *is_edge == edge)
-                .map(|(_, id)| *id).collect::<std::collections::BTreeSet<_>>();
+                .map(|(_, id)| id.clone()).collect::<std::collections::BTreeSet<_>>();
             let mut next = base_count;
             for (source, count) in sources {
                 let base = if edge { self.edge_row_counts.get(&source).copied().unwrap_or(0) }
                     else { self.nodes.get(&source).map(|table| table.batch.num_rows() as i64).unwrap_or(0) };
                 for row in base..base + count {
-                    let key = (edge, source.clone(), row);
+                    let key = (edge, source.clone(), row.into());
                     if !overlay.cypher_ids.contains_key(&key) {
                         while used.contains(&next) { next += 1; }
                         overlay.cypher_ids.insert(key, next);
@@ -35,17 +35,17 @@ impl PropertyGraph {
                     }
                 }
             }
-            if let Some(id) = overlay.cypher_ids.get(&(edge, name.clone(), id)) { return Some(*id); }
+            if let Some(id) = overlay.cypher_ids.get(&(edge, name.clone(), id.clone())) { return Some(id.clone()); }
         }
         let mut offset = 0;
         if edge {
             for candidate in &self.edge_order {
-                if candidate == name { return Some(offset + id); }
+                if candidate == name { return id.as_i64().map(|id| offset + id); }
                 offset += self.edge_row_counts.get(candidate).copied().unwrap_or(0);
             }
         } else {
             for candidate in &self.node_order {
-                if candidate == name { return Some(offset + id); }
+                if candidate == name { return id.as_i64().map(|id| offset + id); }
                 offset += self.nodes[candidate].batch.num_rows() as i64;
             }
         }
@@ -53,8 +53,8 @@ impl PropertyGraph {
     }
 
     /// Logical Cypher labels do not participate in the physical element address.
-    pub fn node_labels(&self, storage: &str, id: i64) -> Vec<String> {
-        self.overlay.borrow().node_label_sets.get(&(storage.to_string(), id))
+    pub fn node_labels(&self, storage: &str, id: ElementId) -> Vec<String> {
+        self.overlay.borrow().node_label_sets.get(&(storage.to_string(), id.clone()))
             .map(|labels| labels.iter().cloned().collect())
             .unwrap_or_else(|| vec![storage.to_string()])
     }
@@ -63,15 +63,15 @@ impl PropertyGraph {
         let Value::Node { label, id } = node else {
             return Err(CatalogError::Schema("Labels require a node".into()));
         };
-        if !self.node_is_live(label, *id) {
+        if !self.node_is_live(label, id.clone()) {
             return Err(CatalogError::Schema("Cannot label a deleted node".into()));
         }
-        self.overlay.borrow_mut().node_label_sets.insert((label.clone(), *id), labels.into_iter().collect());
-        self.pending.borrow_mut().nodes.insert((label.clone(), *id));
+        self.overlay.borrow_mut().node_label_sets.insert((label.clone(), id.clone()), labels.into_iter().collect());
+        self.pending.borrow_mut().nodes.insert((label.clone(), id.clone()));
         Ok(())
     }
 
-    pub fn node_matches_labels(&self, storage: &str, id: i64, expr: &crate::ir::plan::LabelExpr) -> bool {
+    pub fn node_matches_labels(&self, storage: &str, id: ElementId, expr: &crate::ir::plan::LabelExpr) -> bool {
         use crate::ir::plan::LabelExpr;
         match expr {
             LabelExpr::Any => true,
@@ -86,12 +86,17 @@ impl PropertyGraph {
     }
 
     /// Append an edge between two node values. Returns the new edge value.
-    pub fn insert_edge(
+    pub fn insert_edge(&self, rel_type: impl Into<String>, src:&Value,dst:&Value,properties:BTreeMap<String,Value>)->CatalogResult<Value> {
+        self.insert_edge_with_key(rel_type,src,dst,properties,None)
+    }
+
+    pub fn insert_edge_with_key(
         &self,
         rel_type: impl Into<String>,
         src: &Value,
         dst: &Value,
         properties: BTreeMap<String, Value>,
+        supplied_key: Option<&Value>,
     ) -> CatalogResult<Value> {
         if properties.values().any(Value::contains_cardinality_value) {
             return Err(CatalogError::Schema("Cardinality values cannot be stored as graph properties".into()));
@@ -99,12 +104,12 @@ impl PropertyGraph {
         let rel_type = rel_type.into();
         let (src_label, src_id) = node_ref(src, &rel_type, "source")?;
         let (dst_label, dst_id) = node_ref(dst, &rel_type, "destination")?;
-        if !self.node_is_live(&src_label, src_id) {
+        if !self.node_is_live(&src_label, src_id.clone()) {
             return Err(CatalogError::Schema(format!(
                 "relationship `{rel_type}` source node `{src_label}#{src_id}` does not exist"
             )));
         }
-        if !self.node_is_live(&dst_label, dst_id) {
+        if !self.node_is_live(&dst_label, dst_id.clone()) {
             return Err(CatalogError::Schema(format!(
                 "relationship `{rel_type}` destination node `{dst_label}#{dst_id}` does not exist"
             )));
@@ -120,6 +125,8 @@ impl PropertyGraph {
                  do not match the declared endpoint labels"
             )));
         }
+        let mut properties=self.mapped_insert_properties(true,&rel_type,properties)?;
+        let mapped_id = self.mapped_insert_key(true, &rel_type, &mut properties, supplied_key)?;
         let base = self
             .edge_row_counts
             .get(&rel_type)
@@ -137,38 +144,38 @@ impl PropertyGraph {
             .inserted_edge_counts
             .entry(rel_type.clone())
             .or_insert(0);
-        let id = base + *counter;
+        let id = mapped_id.unwrap_or_else(|| ElementId::from(base + *counter));
         *counter += 1;
-        overlay.cypher_ids.insert((true, rel_type.clone(), id), cypher_id);
-        overlay.unassigned_public_ids.insert((true,rel_type.clone(),id));
+        overlay.cypher_ids.insert((true, rel_type.clone(), id.clone().into()), cypher_id);
+        overlay.unassigned_public_ids.insert((true,rel_type.clone(),id.clone().into()));
         overlay
             .inserted_out_adj
-            .entry((src_label.clone(), src_id))
+            .entry((src_label.clone(), src_id.clone()))
             .or_default()
-            .push((rel_type.clone(), id));
+            .push((rel_type.clone(), id.clone().into()));
         overlay
             .inserted_in_adj
-            .entry((dst_label.clone(), dst_id))
+            .entry((dst_label.clone(), dst_id.clone()))
             .or_default()
-            .push((rel_type.clone(), id));
+            .push((rel_type.clone(), id.clone().into()));
         note_keys(&mut overlay.inserted_edge_keys, &rel_type, &properties);
         overlay.inserted_edges.insert(
-            (rel_type.clone(), id),
+            (rel_type.clone(), id.clone().into()),
             InsertedEdge {
                 src_label: src_label.clone(),
-                src_id,
+                src_id: src_id.clone(),
                 dst_label: dst_label.clone(),
-                dst_id,
+                dst_id: dst_id.clone(),
                 properties,
             },
         );
         self.pending
             .borrow_mut()
             .edges
-            .insert((rel_type.clone(), id));
+            .insert((rel_type.clone(), id.clone().into()));
         Ok(Value::Edge {
             rel_type,
-            id,
+            id: id.clone().into(),
             src_label,
             src_id,
             dst_label,
@@ -177,12 +184,23 @@ impl PropertyGraph {
         })
     }
 
-    pub fn insert_node(
+    pub fn insert_node(&self, label: impl Into<String>, properties: BTreeMap<String, Value>) -> Value {
+        self.try_insert_node(label, properties).expect("fixture node insertion")
+    }
+
+    pub fn try_insert_node(&self, label:impl Into<String>, properties:BTreeMap<String,Value>)->CatalogResult<Value> {
+        self.try_insert_node_with_key(label,properties,None)
+    }
+
+    pub fn try_insert_node_with_key(
         &self,
         label: impl Into<String>,
         properties: BTreeMap<String, Value>,
-    ) -> Value {
+        supplied_key: Option<&Value>,
+    ) -> CatalogResult<Value> {
         let label = label.into();
+        let mut properties=self.mapped_insert_properties(false,&label,properties)?;
+        let mapped_id = self.mapped_insert_key(false, &label, &mut properties, supplied_key)?;
         let base_rows = self
             .nodes
             .get(&label)
@@ -195,16 +213,16 @@ impl PropertyGraph {
             .inserted_node_counts
             .entry(label.clone())
             .or_insert(0);
-        let id = base_rows + *counter;
+        let id = mapped_id.unwrap_or_else(|| ElementId::from(base_rows + *counter));
         *counter += 1;
-        overlay.cypher_ids.insert((false, label.clone(), id), cypher_id);
-        overlay.unassigned_public_ids.insert((false,label.clone(),id));
+        overlay.cypher_ids.insert((false, label.clone(), id.clone().into()), cypher_id);
+        overlay.unassigned_public_ids.insert((false,label.clone(),id.clone().into()));
         note_keys(&mut overlay.inserted_node_keys, &label, &properties);
         overlay
             .inserted_nodes
-            .insert((label.clone(), id), properties);
-        self.pending.borrow_mut().nodes.insert((label.clone(), id));
-        Value::Node { label, id }
+            .insert((label.clone(), id.clone().into()), properties);
+        self.pending.borrow_mut().nodes.insert((label.clone(), id.clone().into()));
+        Ok(Value::Node { label, id: id.clone().into() })
     }
 
     pub fn set_property(&self, target: &Value, key: impl Into<String>, value: Value) -> CatalogResult<()> {
@@ -215,7 +233,7 @@ impl PropertyGraph {
         if matches!(target, Value::VertexProperty { .. }) { return self.set_meta_property(target, &key, value); }
         if let Value::Node {label,id} = target {
             // Scalar language writes replace any existing Gremlin multi-property.
-            let address=(label.clone(),*id);
+            let address=(label.clone(),id.clone());
             let mut overlay=self.overlay.borrow_mut();
             if let Some(records)=overlay.vertex_properties.get_mut(&address) {records.remove(&key);if records.is_empty(){overlay.vertex_properties.remove(&address);}}
         }
@@ -234,7 +252,7 @@ impl PropertyGraph {
         let key = key.into();
         match target {
             Value::Node { label, id } => {
-                let node_key = (label.clone(), *id);
+                let node_key = (label.clone(), id.clone());
                 let mut overlay = self.overlay.borrow_mut();
                 if overlay.deleted_nodes.contains(&node_key) {
                     return Ok(());
@@ -266,7 +284,7 @@ impl PropertyGraph {
                 Ok(())
             }
             Value::Edge { rel_type, id, .. } => {
-                let edge_key = (rel_type.clone(), *id);
+                let edge_key = (rel_type.clone(), id.clone());
                 let mut overlay = self.overlay.borrow_mut();
                 if overlay.deleted_edges.contains(&edge_key) {
                     return Ok(());
@@ -317,12 +335,12 @@ impl PropertyGraph {
         }
         if let Value::Node{label,id}=target {
             let mut overlay=self.overlay.borrow_mut();
-            if replace {overlay.vertex_properties.remove(&(label.clone(),*id));}
-            else if let Some(records)=overlay.vertex_properties.get_mut(&(label.clone(),*id)) {for key in properties.keys(){records.remove(key);}}
+            if replace {overlay.vertex_properties.remove(&(label.clone(),id.clone()));}
+            else if let Some(records)=overlay.vertex_properties.get_mut(&(label.clone(),id.clone())) {for key in properties.keys(){records.remove(key);}}
         }
         match target {
             Value::Node { label, id } => {
-                let node_key = (label.clone(), *id);
+                let node_key = (label.clone(), id.clone());
                 let mut overlay = self.overlay.borrow_mut();
                 if overlay.deleted_nodes.contains(&node_key) {
                     return Ok(());
@@ -351,7 +369,7 @@ impl PropertyGraph {
                 Ok(())
             }
             Value::Edge { rel_type, id, .. } => {
-                let edge_key = (rel_type.clone(), *id);
+                let edge_key = (rel_type.clone(), id.clone());
                 let mut overlay = self.overlay.borrow_mut();
                 if overlay.deleted_edges.contains(&edge_key) {
                     return Ok(());
@@ -393,16 +411,16 @@ impl PropertyGraph {
         match target {
             Value::VertexProperty { .. } | Value::Property { .. } => self.remove_property(target),
             Value::Node { label, id } => {
-                let outgoing = self.out_edges(label, *id, &[]);
-                let incoming = self.in_edges(label, *id, &[]);
+                let outgoing = self.out_edges(label, id.clone(), &[]);
+                let incoming = self.in_edges(label, id.clone(), &[]);
                 if detach {
                     let mut overlay = self.overlay.borrow_mut();
                     for (rel_type, edge_row, _, _) in outgoing.iter().chain(incoming.iter()) {
-                        overlay.deleted_edges.insert((rel_type.clone(), *edge_row));
+                        overlay.deleted_edges.insert((rel_type.clone(), edge_row.clone()));
                         self.pending
                             .borrow_mut()
                             .edges
-                            .insert((rel_type.clone(), *edge_row));
+                            .insert((rel_type.clone(), edge_row.clone()));
                     }
                 } else if !outgoing.is_empty() || !incoming.is_empty() {
                     return Err(CatalogError::DeleteIntegrity(format!(
@@ -413,19 +431,19 @@ impl PropertyGraph {
                 self.overlay
                     .borrow_mut()
                     .deleted_nodes
-                    .insert((label.clone(), *id));
-                self.pending.borrow_mut().nodes.insert((label.clone(), *id));
+                    .insert((label.clone(), id.clone()));
+                self.pending.borrow_mut().nodes.insert((label.clone(), id.clone()));
                 Ok(())
             }
             Value::Edge { rel_type, id, .. } => {
                 self.overlay
                     .borrow_mut()
                     .deleted_edges
-                    .insert((rel_type.clone(), *id));
+                    .insert((rel_type.clone(), id.clone()));
                 self.pending
                     .borrow_mut()
                     .edges
-                    .insert((rel_type.clone(), *id));
+                    .insert((rel_type.clone(), id.clone()));
                 Ok(())
             }
             _ => Ok(()),

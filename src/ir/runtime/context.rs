@@ -11,6 +11,7 @@ use super::{RuntimeError, IrResult, Row};
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
     pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
+    pub(crate) nested_dag_stats: crate::ir::rel::dag::DagStats,
     pub(crate) sql_timeout: Option<std::time::Duration>,
     pub(crate) jvm: crate::ir::jvm::JvmExecution,
     pub(crate) random_steps: BTreeMap<String, super::ops::sample::JavaRandom>,
@@ -126,6 +127,7 @@ impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
             relational_groups: BTreeMap::new(),
+            nested_dag_stats: Default::default(),
             sql_timeout:None,
             jvm: Default::default(),
             random_steps: BTreeMap::new(),

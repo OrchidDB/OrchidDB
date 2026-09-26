@@ -232,7 +232,7 @@ impl Import {
         use crate::ir::catalog::Cardinality;
         let mut vertices = BTreeMap::new();
         for vertex in self.vertices {
-            let element = graph.insert_node(vertex.label, BTreeMap::new());
+            let element = graph.try_insert_node(vertex.label, BTreeMap::new())?;
             graph.set_element_public_id(&element, vertex.id)?;
             for (key, records) in vertex.properties {
                 for record in records {

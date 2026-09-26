@@ -19,6 +19,7 @@ pub(crate) fn encode_key(values: &[Value]) -> Vec<u8> {
 pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
     let mut buf = Vec::new();
     match v {
+        Value::Scalar(_) => return crate::ir::value::set_member_key(v),
         Value::Null => buf.push(0),
         Value::Bool(b) => {
             buf.push(1);
@@ -83,13 +84,13 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
             buf.push(5);
             buf.extend_from_slice(label.as_bytes());
             buf.push(0);
-            buf.extend_from_slice(&id.to_be_bytes());
+            buf.extend_from_slice(&id.encode());
         }
         Value::Edge { rel_type, id, .. } => {
             buf.push(6);
             buf.extend_from_slice(rel_type.as_bytes());
             buf.push(0);
-            buf.extend_from_slice(&id.to_be_bytes());
+            buf.extend_from_slice(&id.encode());
         }
         Value::VertexProperty { id, .. } => {
             buf.push(0x40);

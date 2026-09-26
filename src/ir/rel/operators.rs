@@ -127,23 +127,7 @@ impl LoweringContext<'_> {
                         "Cypher paths require typed SQL IR residual values".into(),
                     ));
                 }
-                if self.language == Language::Cypher
-                    && self.options.mapping.is_none()
-                    && history.is_some()
-                    && matches!(
-                        match_mode,
-                        crate::ir::policy::MatchMode::DifferentRelationships
-                    )
-                {
-                    // SQL expansion does not carry relationship-history
-                    // state across pattern segments. Use the runtime rather
-                    // than silently count walks that reuse a relationship.
-                    return Err(RelError::Unsupported(
-                        "Cypher relationship-history expansion requires runtime".into(),
-                    ));
-                }
                 let sql_history = if self.language == Language::Cypher
-                    && self.options.mapping.is_some()
                     && matches!(match_mode, crate::ir::policy::MatchMode::DifferentRelationships)
                 { history.as_deref() } else { None };
                 if length.is_variable_length() {

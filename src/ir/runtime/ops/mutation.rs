@@ -24,7 +24,7 @@ pub(crate) fn create_op(
                 Some(expr) => map_value(eval(expr, &row, graph)?)?,
                 None => BTreeMap::new(),
             };
-            let value = graph.insert_node(node.label.clone(), properties);
+            let value = graph.try_insert_node(node.label.clone(), properties)?;
             if let Some(labels) = &node.labels {
                 graph.set_node_labels(&value, labels.clone())?;
             }
@@ -79,7 +79,7 @@ pub(crate) fn set_property_op(
                     let Value::List(names) = value else {
                         return Err(RuntimeError::Type("Label update requires a list".into()));
                     };
-                    let mut labels = graph.node_labels(label, *id).into_iter().collect::<std::collections::BTreeSet<_>>();
+                    let mut labels = graph.node_labels(label, id.clone()).into_iter().collect::<std::collections::BTreeSet<_>>();
                     for name in names {
                         let Value::String(name) = name else { return Err(RuntimeError::Type("Label must be a string".into())); };
                         if item.mode == SetMode::AddLabels { labels.insert(name); } else { labels.remove(&name); }

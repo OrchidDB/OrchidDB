@@ -25,6 +25,7 @@ struct PreparedSubplan {
     physical: Arc<dyn ExecutionPlan>,
     state: Arc<Mutex<State>>,
     task: Arc<TaskContext>,
+    stats: super::super::dag::DagStats,
 }
 impl Subplan {
     fn run(
@@ -62,32 +63,36 @@ impl Subplan {
             prepared
         } else {
             let state = Arc::new(Mutex::new(live));
-            let session = datafusion::prelude::SessionContext::new_with_config(
-                datafusion::prelude::SessionConfig::new().with_target_partitions(1),
-            );
-            // Correlated lowering uses live native scans rather than frozen SQL
-            // snapshots. Each native operator is still a DataFusion physical node.
-            let planner =
-                datafusion::physical_planner::DefaultPhysicalPlanner::with_extension_planners(
-                    vec![Arc::new(KernelPlanner {
-                        state: state.clone(),
-                    })],
-                );
-            let physical = match runtime
-                .block_on(planner.create_physical_plan(&self.plan, &session.state()))
-            {
+            #[cfg(feature = "duckdb")]
+            let resources = graph.source.as_ref().zip(graph.mapping.as_ref()).map(|(source, mapping)|
+                super::super::dag::DagSession::with_shared(source.executor(), mapping.physical_table_names()));
+            #[cfg(not(feature = "duckdb"))]
+            let resources = None;
+            let result = if let Some(resources) = resources {
+                runtime.block_on(super::super::dag::prepare_with_extensions(
+                    &self.plan, vec![Arc::new(KernelPlanner { state: state.clone() })], &resources))
+            } else {
+                let session = datafusion::prelude::SessionContext::new_with_config(
+                    datafusion::prelude::SessionConfig::new().with_target_partitions(1));
+                let planner = datafusion::physical_planner::DefaultPhysicalPlanner::with_extension_planners(
+                    vec![Arc::new(KernelPlanner { state: state.clone() })]);
+                runtime.block_on(planner.create_physical_plan(&self.plan, &session.state()))
+                    .map(|physical| (physical, session.task_ctx(), Default::default()))
+                    .map_err(super::super::RelError::from)
+            };
+            let (physical, task, stats) = match result {
                 Ok(plan) => plan,
                 Err(failure) => {
                     *ctx = std::mem::take(&mut state.lock().unwrap().context);
-                    return Err(error(failure));
+                    return Err(RuntimeError::Runtime(failure.to_string()));
                 }
             };
-            PreparedSubplan {
-                physical,
-                state,
-                task: session.task_ctx(),
-            }
+            PreparedSubplan { physical, state, task, stats }
         };
+        if graph.source.is_some() {
+            prepared.state.lock().map_err(|_| RuntimeError::Runtime("Subplan state poisoned".into()))?
+                .context.nested_dag_stats.merge_execution(&prepared.stats);
+        }
         let result = runtime.block_on(datafusion::physical_plan::collect(
             prepared.physical.clone(),
             prepared.task.clone(),
@@ -160,7 +165,10 @@ impl Compiler<'_> {
         let compiler = Compiler {
             graph: self.graph,
             policy: self.policy.clone(),
-            sql: false,
+            // Mapped reads share the statement connection. Independent scans
+            // inside a correlated body remain eligible for SQL pushdown;
+            // mutation fences retain the live overlay path.
+            sql: self.sql && self.graph.source.is_some(),
             islands: self.islands.clone(),
         };
         Ok(Subplan {
@@ -222,6 +230,14 @@ impl Compiler<'_> {
                 left,
                 right,
             } => {
+                // A single empty outer row introduces no correlation. Keep
+                // the right side visible to ordinary DAG island partitioning.
+                if *kind == ApplyKind::Inner && correlation.is_empty()
+                    && matches!(left.as_ref(), Node::GraphOneRow)
+                    && self.graph.source.is_some()
+                    && self.policy.language == crate::ir::policy::Language::Cypher {
+                    return self.lower(right);
+                }
                 let kind = *kind;
                 let correlation = correlation.clone();
                 let outputs = outputs.clone();

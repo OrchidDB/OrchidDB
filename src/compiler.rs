@@ -14,7 +14,7 @@ use crate::ir::{
     },
     value::Value,
 };
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit};
 use datafusion::{
     common::{DFSchema, DataFusionError, tree_node::TreeNodeRecursion},
     logical_expr::{Expr, LogicalPlan},
@@ -141,11 +141,18 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "int16" => DataType::Int16,
         "int32" => DataType::Int32,
         "int64" => DataType::Int64,
+        "uint8" => DataType::UInt8,
+        "uint16" => DataType::UInt16,
+        "uint32" => DataType::UInt32,
+        "uint64" => DataType::UInt64,
         "float32" => DataType::Float32,
         "float64" => DataType::Float64,
         "string" => DataType::Utf8,
         "binary" => DataType::Binary,
         "date" => DataType::Date32,
+        "time" => DataType::Time64(TimeUnit::Microsecond),
+        "duration" => DataType::Duration(TimeUnit::Microsecond),
+        "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
         _ if value.starts_with("decimal:") => {
             let parts: Vec<_> = value.split(':').collect();
@@ -258,14 +265,10 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         let field = schema
             .field_with_name(column)
             .map_err(|_| format!("missing column `{table}.{column}`"))?;
-        if id
-            && !matches!(
-                field.data_type(),
-                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
-            )
-        {
+        if id && !crate::ir::rel::mapping::is_identity_type(field.data_type()) {
             return Err(format!(
-                "identity `{table}.{column}` must be a signed integer"
+                "identity `{table}.{column}` requires a non-null scalar type, got {:?}",
+                field.data_type()
             ));
         }
         Ok(())

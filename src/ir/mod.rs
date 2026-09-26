@@ -18,6 +18,8 @@ pub mod plan;
 pub mod policy;
 pub mod rel;
 pub mod value;
+pub mod identity;
+pub use identity::ElementId;
 
 pub use catalog::{
     CatalogError, CatalogResult, EdgeTable, NodeTable, PropertyGraph, edges_from_columns,

@@ -65,15 +65,15 @@ async fn typed_traversers_and_correlated_state_have_expected_results() {
     let text = |s: &str| Value::String(s.into());
     let a = Value::Node {
         label: "person".into(),
-        id: 0,
+        id: 0.into(),
     };
     let b = Value::Node {
         label: "person".into(),
-        id: 1,
+        id: 1.into(),
     };
     let c = Value::Node {
         label: "software".into(),
-        id: 0,
+        id: 0.into(),
     };
     for (query, expected) in [
         (

@@ -218,6 +218,7 @@ impl Lowerer<'_, '_> {
         Ok(match expr {
             IrExpr::Binding(name) => env.term(name),
             IrExpr::Lit(value) => match value {
+                Lit::Scalar(_) => Term::error(),
                 Lit::Null => Term::error(),
                 other => {
                     let (lexical, datatype) = literal_identity(other)?;

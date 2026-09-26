@@ -42,7 +42,7 @@ fn coalesce_constant_retains_scalar_history() {
             items
                 .iter()
                 .map(|item| match item {
-                    Value::Node { label, id } => match graph.node_property(label, *id, "name") {
+                    Value::Node { label, id } => match graph.node_property(label, id.clone(), "name") {
                         Value::String(name) => name,
                         _ => panic!("missing name"),
                     },

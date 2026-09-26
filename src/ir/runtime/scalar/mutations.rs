@@ -1,7 +1,7 @@
 //! Internal write procedures. The caller is an explicit GraphProcedureCall
 //! with Write mode, so calls cannot be folded or duplicated as scalar expressions.
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::runtime::{RuntimeError, IrResult};
+use crate::ir::runtime::{IrResult, RuntimeError};
 use crate::ir::value::Value;
 use std::collections::BTreeMap;
 
@@ -29,6 +29,70 @@ fn properties(value: &Value) -> IrResult<BTreeMap<String, Value>> {
 }
 
 pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResult<Value> {
+    if name == "gremlin.mutation.property_native" && args.len() == 6 {
+        if graph.mapping.is_some() {
+            return Ok(args[0].clone());
+        }
+        return call(name, &args[..5], graph);
+    }
+    let original_arity = match name {
+        "gremlin.mutation.add_vertex" => 2,
+        "gremlin.mutation.add_edge" => 4,
+        _ => 0,
+    };
+    if original_arity > 0 && args.len() == original_arity + 1 {
+        if graph.mapping.is_none() {
+            return call(name, &args[..original_arity], graph);
+        }
+        let Value::List(pairs) = &args[original_arity] else {
+            return Err(error("invalid creation properties"));
+        };
+        let mut props = properties(&args[original_arity - 1])?;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut supplied_key = None;
+        for pair in pairs {
+            let Value::List(pair) = pair else {
+                return Err(error("invalid creation property"));
+            };
+            let [key, value] = pair.as_slice() else {
+                return Err(error("invalid creation property"));
+            };
+            if matches!(key,Value::Token(token) if token=="id") {
+                if supplied_key.replace(value.clone()).is_some() {
+                    return Err(error("multiple primary keys supplied"));
+                }
+                continue;
+            }
+            let Value::String(key) = key else {
+                return Err(error("invalid mapped creation property key"));
+            };
+            if !seen.insert(key.clone()) {
+                return Err(error(
+                    "mapped storage cannot represent repeated creation properties",
+                ));
+            }
+            props.insert(key.clone(), value.clone());
+        }
+        for value in props.values() {
+            ensure_storable_property_value(value)?;
+        }
+        let name = label(&args[0])?;
+        let element = if original_arity == 2 {
+            graph.try_insert_node_with_key(name, props.clone(), supplied_key.as_ref())?
+        } else {
+            graph.insert_edge_with_key(
+                name,
+                &args[1],
+                &args[2],
+                props.clone(),
+                supplied_key.as_ref(),
+            )?
+        };
+        for (key, value) in props {
+            graph.set_gremlin_property(&element, &key, value)?;
+        }
+        return Ok(element);
+    }
     match (name, args) {
         (
             "gremlin.mutation.merge_create",
@@ -95,7 +159,13 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
                     };
                     let (value, cardinality) = cardinality_value(value, default)?;
                     ensure_storable_property_value(&value)?;
-                    graph.set_vertex_property(element, &key, value, cardinality, BTreeMap::new())?;
+                    graph.set_vertex_property(
+                        element,
+                        &key,
+                        value,
+                        cardinality,
+                        BTreeMap::new(),
+                    )?;
                 } else {
                     graph.set_gremlin_property(element, &key, value)?;
                 }
@@ -104,17 +174,25 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
         }
         ("gremlin.mutation.add_vertex", [name, props]) => {
             let props = properties(props)?;
-            for value in props.values() { ensure_storable_property_value(value)?; }
-            let element = graph.insert_node(label(name)?, props.clone());
-            for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
+            for value in props.values() {
+                ensure_storable_property_value(value)?;
+            }
+            let element = graph.try_insert_node(label(name)?, props.clone())?;
+            for (key, value) in props {
+                graph.set_gremlin_property(&element, &key, value)?;
+            }
             graph.assign_generated_public_id(&element)?;
             Ok(element)
         }
         ("gremlin.mutation.add_edge", [name, src, dst, props]) => {
             let props = properties(props)?;
-            for value in props.values() { ensure_storable_property_value(value)?; }
+            for value in props.values() {
+                ensure_storable_property_value(value)?;
+            }
             let element = graph.insert_edge(label(name)?, src, dst, props.clone())?;
-            for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
+            for (key, value) in props {
+                graph.set_gremlin_property(&element, &key, value)?;
+            }
             graph.assign_generated_public_id(&element)?;
             Ok(element)
         }
@@ -210,8 +288,12 @@ fn public_key(key: &str) -> IrResult<()> {
 fn validate(map: &[(Value, Value)], edge: bool, updates: bool) -> IrResult<()> {
     for (key, value) in map {
         if let Value::CardinalityValue { cardinality, value } = value {
-            if edge { return Err(error("mergeE does not support vertex property cardinality")); }
-            if !matches!(key, Value::String(_)) { return Err(error("Cardinality requires a property key")); }
+            if edge {
+                return Err(error("mergeE does not support vertex property cardinality"));
+            }
+            if !matches!(key, Value::String(_)) {
+                return Err(error("Cardinality requires a property key"));
+            }
             parse_cardinality(cardinality)?;
             ensure_storable_property_value(value)?;
         } else {
@@ -322,12 +404,12 @@ pub(crate) fn matches(
                 let actual = if direction == "OUT" {
                     Value::Node {
                         label: src_label.clone(),
-                        id: *src_id,
+                        id: src_id.clone(),
                     }
                 } else {
                     Value::Node {
                         label: dst_label.clone(),
-                        id: *dst_id,
+                        id: dst_id.clone(),
                     }
                 };
                 if actual != resolved {
@@ -418,10 +500,12 @@ fn merge_create(
             props.clone(),
         )?
     } else {
-        graph.insert_node(name, BTreeMap::new())
+        graph.try_insert_node(name, props.clone())?
     };
     if edge {
-        for (key, value) in props { graph.set_gremlin_property(&element, &key, value)?; }
+        for (key, value) in props {
+            graph.set_gremlin_property(&element, &key, value)?;
+        }
     } else {
         for (key, value, cardinality) in vertex_properties {
             graph.set_vertex_property(&element, &key, value, cardinality, BTreeMap::new())?;
@@ -434,9 +518,14 @@ fn merge_create(
     Ok(element)
 }
 
-fn cardinality_value(value: Value, default: &str) -> IrResult<(Value, crate::ir::catalog::Cardinality)> {
+fn cardinality_value(
+    value: Value,
+    default: &str,
+) -> IrResult<(Value, crate::ir::catalog::Cardinality)> {
     match value {
-        Value::CardinalityValue { cardinality, value } => Ok((*value, parse_cardinality(&cardinality)?)),
+        Value::CardinalityValue { cardinality, value } => {
+            Ok((*value, parse_cardinality(&cardinality)?))
+        }
         value => Ok((value, parse_cardinality(default)?)),
     }
 }
@@ -444,7 +533,9 @@ fn cardinality_value(value: Value, default: &str) -> IrResult<(Value, crate::ir:
 // Cardinality wrappers are execution instructions, not graph property data.
 fn ensure_storable_property_value(value: &Value) -> IrResult<()> {
     if value.contains_cardinality_value() {
-        return Err(error("Cardinality values must be consumed by a vertex merge option, not stored as graph properties"));
+        return Err(error(
+            "Cardinality values must be consumed by a vertex merge option, not stored as graph properties",
+        ));
     }
     Ok(())
 }

@@ -132,11 +132,11 @@ pub(crate) fn project_path_edges(items: &[Value], rel_keys: &[Value]) -> Value {
                     ..
                 } => Value::Edge {
                     rel_type: rel_type.clone(),
-                    id: *id,
+                    id: id.clone(),
                     src_label: src_label.clone(),
-                    src_id: *src_id,
+                    src_id: src_id.clone(),
                     dst_label: dst_label.clone(),
-                    dst_id: *dst_id,
+                    dst_id: dst_id.clone(),
                     projected_properties: Some(keys.clone()),
                 },
                 other => other.clone(),
@@ -161,9 +161,9 @@ pub(crate) fn project_value_by_key(value: &Value, key: &str, graph: &PropertyGra
     match value {
         Value::Node { label, .. } if key == "__label" => Value::String(label.clone()),
         Value::Edge { rel_type, .. } if key == "__label" => Value::String(rel_type.clone()),
-        Value::Node { id, .. } | Value::Edge { id, .. } if key == "__id" => Value::Int(*id),
-        Value::Node { label, id } => graph.node_property(label, *id, key),
-        Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, *id, key),
+        Value::Node { id, .. } | Value::Edge { id, .. } if key == "__id" => id.to_value(),
+        Value::Node { label, id } => graph.node_property(label, id.clone(), key),
+        Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, id.clone(), key),
         Value::Map(map) => map.get(key).cloned().unwrap_or(Value::Null),
         _ => Value::Null,
     }

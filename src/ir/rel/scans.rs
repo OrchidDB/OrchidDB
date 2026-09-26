@@ -8,6 +8,9 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         labels: &LabelExpr,
     ) -> RelResult<LoweredNode> {
+        if self.options.mapping.is_none() && (self.graph.mapping.is_some() || self.graph.source_keys) {
+            return Err(RelError::Unsupported("source-key graph scans require the shared typed graph kernel".into()));
+        }
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_node_scan(self, &user_mapping, binding, labels);
         }
@@ -37,7 +40,7 @@ impl<'a> LoweringContext<'a> {
                 Err(CatalogError::UnknownLabel(_)) => continue,
                 Err(err) => return Err(err.into()),
             };
-            let ids = ids.into_iter().filter(|id| self.graph.node_matches_labels(&label, *id, predicate)).collect::<Vec<_>>();
+            let ids = ids.into_iter().filter(|id| self.graph.node_matches_labels(&label, id.clone(), predicate)).collect::<Vec<_>>();
             if ids.is_empty() {
                 continue;
             }
@@ -71,6 +74,9 @@ impl<'a> LoweringContext<'a> {
         binding: &str,
         types: &LabelExpr,
     ) -> RelResult<LoweredNode> {
+        if self.options.mapping.is_none() && (self.graph.mapping.is_some() || self.graph.source_keys) {
+            return Err(RelError::Unsupported("source-key graph scans require the shared typed graph kernel".into()));
+        }
         if let Some(user_mapping) = self.options.mapping.clone() {
             return mapping::lower_mapped_rel_scan(self, &user_mapping, binding, types);
         }
@@ -90,7 +96,7 @@ impl<'a> LoweringContext<'a> {
                     batches.push(normalize_edge_table(
                         binding,
                         table,
-                        base_id,
+                        base_id.into(),
                         &prop_defs,
                         schema.clone(),
                         self.language,
@@ -140,8 +146,8 @@ impl<'a> LoweringContext<'a> {
                 let name = labels.value(row).to_owned();
                 let id = offsets.value(row);
                 let element = if edge {
-                    Value::Edge { rel_type: name, id, src_label: String::new(), src_id: 0, dst_label: String::new(), dst_id: 0, projected_properties: None }
-                } else { Value::Node { label: name, id } };
+                    Value::Edge { rel_type: name, id: id.clone().into(), src_label: String::new(), src_id: 0.into(), dst_label: String::new(), dst_id: 0.into(), projected_properties: None }
+                } else { Value::Node { label: name, id: id.clone().into() } };
                 values.push(self.graph.element_public_id(&element));
             }
             ids.push(values);
@@ -898,7 +904,7 @@ pub(super) fn property_struct_field_array(
 pub(super) fn materialize_node_scan_batch(
     binding: &str,
     label: &str,
-    ids: &[i64],
+    ids: &[crate::ir::ElementId],
     graph: &PropertyGraph,
     props: &[PropertyDef],
     schema: SchemaRef,
@@ -906,7 +912,7 @@ pub(super) fn materialize_node_scan_batch(
 ) -> RelResult<RecordBatch> {
     let rows = ids.len();
     let mut arrays: Vec<ArrayRef> = vec![
-        Arc::new(Int64Array::from(ids.to_vec())),
+        identity_array(ids)?,
         Arc::new(StringArray::from_iter_values((0..rows).map(|_| label))),
     ];
     for prop in props {
@@ -942,7 +948,7 @@ pub(super) fn materialize_node_scan_batch(
 pub(super) fn materialize_edge_scan_batch(
     binding: &str,
     rel_type: &str,
-    ids: &[i64],
+    ids: &[crate::ir::ElementId],
     graph: &PropertyGraph,
     props: &[PropertyDef],
     schema: SchemaRef,
@@ -953,9 +959,9 @@ pub(super) fn materialize_edge_scan_batch(
     let mut src_ids = Vec::with_capacity(rows);
     let mut dst_labels = Vec::with_capacity(rows);
     let mut dst_ids = Vec::with_capacity(rows);
-    for &id in ids {
+    for id in ids.iter().cloned() {
         let (src_label, src_id, dst_label, dst_id) =
-            graph.edge_endpoints(rel_type, id).ok_or_else(|| {
+            graph.edge_endpoints(rel_type, id.clone().into()).ok_or_else(|| {
                 RelError::Unsupported(format!("edge `{rel_type}` row {id} has no endpoints"))
             })?;
         src_labels.push(src_label);
@@ -964,12 +970,12 @@ pub(super) fn materialize_edge_scan_batch(
         dst_ids.push(dst_id);
     }
     let mut arrays: Vec<ArrayRef> = vec![
-        Arc::new(Int64Array::from(ids.to_vec())),
+        identity_array(ids)?,
         Arc::new(StringArray::from_iter_values((0..rows).map(|_| rel_type))),
         Arc::new(StringArray::from(src_labels)),
-        Arc::new(Int64Array::from(src_ids)),
+        identity_array(&src_ids)?,
         Arc::new(StringArray::from(dst_labels)),
-        Arc::new(Int64Array::from(dst_ids)),
+        identity_array(&dst_ids)?,
     ];
     for prop in props {
         arrays.push(materialize_property_array(
@@ -1001,13 +1007,13 @@ pub(super) fn element_property_value(
     graph: &PropertyGraph,
     is_edge: bool,
     element: &str,
-    id: i64,
+    id: crate::ir::ElementId,
     name: &str,
 ) -> Value {
     if is_edge {
-        graph.edge_property(element, id, name)
+        graph.edge_property(element, id.clone().into(), name)
     } else {
-        graph.node_property(element, id, name)
+        graph.node_property(element, id.clone().into(), name)
     }
 }
 
@@ -1017,24 +1023,9 @@ pub(super) fn base_cell<'a>(
     graph: &'a PropertyGraph,
     is_edge: bool,
     element: &str,
-    id: i64,
+    id: crate::ir::ElementId,
 ) -> Option<(&'a RecordBatch, usize)> {
-    if is_edge {
-        let tables = graph.edge_tables(element).ok()?;
-        let mut offset = 0_i64;
-        for table in tables {
-            let rows = table.batch.num_rows() as i64;
-            if id >= offset && id < offset + rows {
-                return Some((&table.batch, (id - offset) as usize));
-            }
-            offset += rows;
-        }
-        None
-    } else {
-        let table = graph.node_table(element).ok()?;
-        let local = id as usize;
-        (local < table.batch.num_rows()).then_some((&table.batch, local))
-    }
+    graph.base_cell(is_edge, element, &id)
 }
 
 /// Materialize one property column for a scan, overlay-aware.
@@ -1050,7 +1041,7 @@ pub(super) fn materialize_property_array(
     graph: &PropertyGraph,
     is_edge: bool,
     element: &str,
-    ids: &[i64],
+    ids: &[crate::ir::ElementId],
     name: &str,
     data_type: &DataType,
     language: Language,
@@ -1060,8 +1051,8 @@ pub(super) fn materialize_property_array(
         DataType::Boolean | DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Utf8
     );
     let mut scalars: Vec<ScalarValue> = Vec::with_capacity(ids.len());
-    for &id in ids {
-        let value = element_property_value(graph, is_edge, element, id, name);
+    for id in ids.iter().cloned() {
+        let value = element_property_value(graph, is_edge, element, id.clone(), name);
         if supported {
             scalars.push(value_to_scalar(&value, data_type, language)?);
             continue;
@@ -1183,11 +1174,11 @@ pub(super) fn materialize_union_tag_array(
     graph: &PropertyGraph,
     is_edge: bool,
     element: &str,
-    ids: &[i64],
+    ids: &[crate::ir::ElementId],
     name: &str,
 ) -> RelResult<ArrayRef> {
     let mut builder = StringBuilder::new();
-    for &id in ids {
+    for id in ids.iter().cloned() {
         let value = element_property_value(graph, is_edge, element, id, name);
         match union_tag_of(&value) {
             Some(tag) => builder.append_value(tag),
@@ -1211,13 +1202,13 @@ pub(super) fn materialize_struct_field_array(
     graph: &PropertyGraph,
     is_edge: bool,
     element: &str,
-    ids: &[i64],
+    ids: &[crate::ir::ElementId],
     name: &str,
     struct_field: &str,
     language: Language,
 ) -> RelResult<ArrayRef> {
     let mut builder = StringBuilder::new();
-    for &id in ids {
+    for id in ids.iter().cloned() {
         let value = element_property_value(graph, is_edge, element, id, name);
         match struct_field_of(&value, struct_field) {
             Some(Value::Null) | None => builder.append_null(),
@@ -1248,7 +1239,7 @@ pub(super) fn infer_element_property_type(
     element: &str,
     name: &str,
 ) -> DataType {
-    let ids: Vec<i64> = if is_edge {
+    let ids: Vec<crate::ir::ElementId> = if is_edge {
         graph.edge_ids(element)
     } else {
         graph.node_ids(element).unwrap_or_default()
@@ -1430,6 +1421,7 @@ pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
     let mut data_type = DataType::Utf8;
     for value in values.iter().copied() {
         match value {
+            Value::Scalar(v) => data_type = promote_type(data_type, v.data_type())?,
             Value::Temporal(_) => return Err(RelError::Unsupported("typed Cypher temporal materialization requires a residual kernel".into())),
             Value::Null => {}
             Value::Bool(_) => data_type = promote_type(data_type, DataType::Boolean)?,
@@ -1706,4 +1698,9 @@ pub(super) fn values_array<'a>(
             "GraphValues type `{other:?}`"
         ))),
     }
+}
+
+fn identity_array(ids: &[crate::ir::ElementId]) -> RelResult<ArrayRef> {
+    if ids.is_empty() { return Ok(Arc::new(Int64Array::from(Vec::<i64>::new()))); }
+    Ok(ScalarValue::iter_to_array(ids.iter().map(|id| id.scalar().clone()))?)
 }

@@ -112,8 +112,8 @@ fn edge_tables_eq(
 
 #[cfg(test)]
 fn locs_eq(
-    a: &HashMap<(String, i64), EdgeRowLocation>,
-    b: &HashMap<(String, i64), EdgeRowLocation>,
+    a: &HashMap<(String, ElementId), EdgeRowLocation>,
+    b: &HashMap<(String, ElementId), EdgeRowLocation>,
 ) -> bool {
     a.len() == b.len()
         && a.iter().all(|(k, v)| {
@@ -124,8 +124,8 @@ fn locs_eq(
 
 #[cfg(test)]
 fn adj_eq(
-    a: &HashMap<(String, i64, String), Vec<EdgeRef>>,
-    b: &HashMap<(String, i64, String), Vec<EdgeRef>>,
+    a: &HashMap<(String, crate::ir::ElementId, String), Vec<EdgeRef>>,
+    b: &HashMap<(String, crate::ir::ElementId, String), Vec<EdgeRef>>,
 ) -> bool {
     a.len() == b.len()
         && a.iter().all(|(k, v)| {
@@ -142,8 +142,8 @@ fn adj_eq(
 
 #[cfg(test)]
 fn inserted_edges_eq(
-    a: &BTreeMap<(String, i64), InsertedEdge>,
-    b: &BTreeMap<(String, i64), InsertedEdge>,
+    a: &BTreeMap<(String, ElementId), InsertedEdge>,
+    b: &BTreeMap<(String, ElementId), InsertedEdge>,
 ) -> bool {
     a.len() == b.len()
         && a.iter().all(|(k, v)| {

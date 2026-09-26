@@ -269,11 +269,10 @@ async fn duplicate_matching_ids_are_rejected_without_modifications() {
         "expected a duplicate-id rejection, got: {err}"
     );
 
-    let result = engine
-        .cypher("MATCH (p:Person) RETURN p.age ORDER BY p.age")
-        .await
-        .expect("read after rejected update");
-    assert_eq!(lines(&result.batch), vec!["28", "30", "41"]);
+    // Duplicate keys cannot form a graph; verify the unchanged source rows directly.
+    let mut statement=engine.executor_mut().connection().unwrap().prepare("SELECT age FROM users ORDER BY age").unwrap();
+    let ages=statement.query_map([],|row|row.get::<_,i64>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
+    assert_eq!(ages,vec![28,30,41]);
 }
 
 #[tokio::test]

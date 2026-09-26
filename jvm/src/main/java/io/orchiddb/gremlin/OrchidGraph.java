@@ -302,7 +302,7 @@ public final class OrchidGraph implements Graph {
             if(this==ANY) {
                 if(id instanceof String || id instanceof Byte || id instanceof Short || id instanceof Integer ||
                    id instanceof Long || id instanceof Float || id instanceof Double || id instanceof java.math.BigInteger ||
-                   id instanceof java.math.BigDecimal) return id;
+                   id instanceof java.math.BigDecimal || id instanceof OrchidScalar) return id;
                 throw new IllegalArgumentException("Unsupported native identifier type: "+id.getClass().getName());
             }
             if(id instanceof Number) {

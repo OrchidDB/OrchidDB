@@ -29,7 +29,7 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
             graph,
             &Value::Node {
                 label: src_label.clone(),
-                id: *src_id,
+                id: src_id.clone(),
             },
         )
         .unwrap_or(Value::Null),
@@ -42,12 +42,12 @@ pub(crate) fn graph_element_property(graph: &PropertyGraph, value: &Value, key: 
             graph,
             &Value::Node {
                 label: dst_label.clone(),
-                id: *dst_id,
+                id: dst_id.clone(),
             },
         )
         .unwrap_or(Value::Null),
-        (Value::Node { label, id }, _) => graph.node_property(label, *id, key),
-        (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, *id, key),
+        (Value::Node { label, id }, _) => graph.node_property(label, id.clone(), key),
+        (Value::Edge { rel_type, id, .. }, _) => graph.edge_property(rel_type, id.clone(), key),
         (Value::TypedMap(entries), _) => entries
             .iter()
             .find(|(candidate, _)| candidate == &Value::String(key.to_string()))
@@ -64,13 +64,13 @@ pub(super) fn gremlin_scan_order(graph: &PropertyGraph, value: &Value) -> Value 
     // Default identity includes the label, while scan order retains the
     // catalog's row ordinal. Changing identity must not reorder traversers.
     match value {
-        Value::Node { label, id } if graph.node_property(label, *id, "id") == Value::Null => {
-            return Value::Long(*id);
+        Value::Node { label, id } if graph.node_property(label, id.clone(), "id") == Value::Null => {
+            return id.to_value();
         }
         Value::Edge { rel_type, id, .. }
-            if graph.edge_property(rel_type, *id, "id") == Value::Null =>
+            if graph.edge_property(rel_type, id.clone(), "id") == Value::Null =>
         {
-            return Value::Long(*id);
+            return id.to_value();
         }
         _ => {}
     }
@@ -110,6 +110,7 @@ fn gremlin_orderability_parts(graph: &PropertyGraph, value: &Value) -> (i64, Val
         return (11, Value::List(keys));
     }
     match value {
+        Value::Scalar(_) => (15, value.clone()),
         Value::TypedMap(entries) => (13, map_order_key(graph, entries.iter().map(|(key,value)| (key.clone(),value.clone())).collect())),
         Value::MapEntry(entry) => (14, Value::List(vec![nested_order_key(graph,&entry.0), nested_order_key(graph,&entry.1)])),
         Value::Token(_) | Value::Direction(_) | Value::CardinalityValue {..} => (14, value.clone()),
@@ -286,9 +287,9 @@ pub(crate) fn shortest_paths(
         return shortest_path_between(
             graph,
             label,
-            *id,
+            id.clone(),
             target_label,
-            *target_id,
+            target_id.clone(),
             direction,
             rel_filter,
             max_distance,
@@ -307,7 +308,7 @@ pub(crate) fn shortest_paths(
         }
     }
     targets.sort_by_key(|(target_label, target_id)| {
-        match graph.node_property(target_label, *target_id, "name") {
+        match graph.node_property(target_label, target_id.clone(), "name") {
             Value::String(name) => name,
             _ => format!("{target_label}:{target_id}"),
         }
@@ -318,7 +319,7 @@ pub(crate) fn shortest_paths(
         if let Some(path) = shortest_path_between(
             graph,
             label,
-            *id,
+            id.clone(),
             &target_label,
             target_id,
             direction,
@@ -335,51 +336,58 @@ pub(crate) fn shortest_paths(
 fn shortest_path_between(
     graph: &PropertyGraph,
     start_label: &str,
-    start_id: i64,
+    start_id: crate::ir::ElementId,
     target_label: &str,
-    target_id: i64,
+    target_id: crate::ir::ElementId,
     direction: Direction,
     rel_filter: &[String],
     max_distance: Option<f64>,
     include_edges: bool,
 ) -> Option<Vec<Value>> {
     let start_key = (start_label.to_string(), start_id);
-    let target_key = (target_label.to_string(), target_id);
+    let target_key = (target_label.to_string(), target_id.clone());
     let mut queue = VecDeque::from([start_key.clone()]);
     let mut seen = HashSet::from([start_key.clone()]);
     let mut distance = HashMap::from([(start_key.clone(), 0usize)]);
-    let mut parent: HashMap<(String, i64), ((String, i64), Value)> = HashMap::new();
+    let mut parent: HashMap<(String, crate::ir::ElementId), ((String, crate::ir::ElementId), Value)> = HashMap::new();
 
+    let mut prefetched_distance=None;
     while let Some((label, id)) = queue.pop_front() {
-        if (label.as_str(), id) == (target_label, target_id) {
+        if (label.as_str(), id.clone()) == (target_label, target_id.clone()) {
             break;
         }
-        let next_distance = distance.get(&(label.clone(), id)).copied().unwrap_or(0) + 1;
+        let next_distance = distance.get(&(label.clone(), id.clone())).copied().unwrap_or(0) + 1;
+        if graph.source.is_some() && prefetched_distance!=Some(next_distance) {
+            let nodes=std::iter::once((label.clone(),id.clone())).chain(queue.iter().filter(|key| distance.get(*key).copied().unwrap_or(0)+1==next_distance).cloned()).collect::<Vec<_>>();
+            graph.prefetch_adjacency(&nodes,direction,rel_filter);
+            prefetched_distance=Some(next_distance);
+        }
+
         if max_distance.is_some_and(|max| (next_distance as f64) > max) {
             continue;
         }
         let mut neighbors = match direction {
             Direction::Out => graph
-                .out_edges(&label, id, rel_filter)
+                .out_edges(&label, id.clone().into(), rel_filter)
                 .into_iter()
                 .map(|(rel_type, edge_row, other_label, other_id)| {
                     (other_label, other_id, rel_type, edge_row)
                 })
                 .collect::<Vec<_>>(),
             Direction::In => graph
-                .in_edges(&label, id, rel_filter)
+                .in_edges(&label, id.clone().into(), rel_filter)
                 .into_iter()
                 .map(|(rel_type, edge_row, other_label, other_id)| {
                     (other_label, other_id, rel_type, edge_row)
                 })
                 .collect::<Vec<_>>(),
             Direction::Both => graph
-                .out_edges(&label, id, rel_filter)
+                .out_edges(&label, id.clone().into(), rel_filter)
                 .into_iter()
                 .map(|(rel_type, edge_row, other_label, other_id)| {
                     (other_label, other_id, rel_type, edge_row)
                 })
-                .chain(graph.in_edges(&label, id, rel_filter).into_iter().map(
+                .chain(graph.in_edges(&label, id.clone().into(), rel_filter).into_iter().map(
                     |(rel_type, edge_row, other_label, other_id)| {
                         (other_label, other_id, rel_type, edge_row)
                     },
@@ -391,14 +399,14 @@ fn shortest_path_between(
             let next = (other_label, other_id);
             if seen.insert(next.clone()) {
                 let Some((src_label, src_id, dst_label, dst_id)) =
-                    graph.edge_endpoints(&rel_type, edge_row)
+                    graph.edge_endpoints(&rel_type, edge_row.clone())
                 else {
                     continue;
                 };
                 parent.insert(
                     next.clone(),
                     (
-                        (label.clone(), id),
+                        (label.clone(), id.clone()),
                         Value::Edge {
                             rel_type,
                             id: edge_row,
@@ -435,7 +443,7 @@ fn shortest_path_between(
                 path.push(edge);
             }
         }
-        path.push(Value::Node { label, id });
+        path.push(Value::Node { label, id: id.clone().into() });
         previous_edge = edge;
     }
     Some(path)
@@ -551,7 +559,7 @@ pub(super) fn is_trail_path(items: &[Value]) -> bool {
     let mut seen = HashSet::new();
     for item in items {
         if let Value::Edge { rel_type, id, .. } = item {
-            if !seen.insert((rel_type.as_str(), *id)) {
+            if !seen.insert((rel_type.as_str(), id.clone())) {
                 return false;
             }
         }
@@ -563,7 +571,7 @@ pub(super) fn is_acyclic_path(items: &[Value]) -> bool {
     let mut seen = HashSet::new();
     for item in items {
         if let Value::Node { label, id } = item {
-            if !seen.insert((label.as_str(), *id)) {
+            if !seen.insert((label.as_str(), id.clone())) {
                 return false;
             }
         }

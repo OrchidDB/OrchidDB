@@ -39,7 +39,7 @@ fn bound_search_map_finds_properties_by_value_with_reordered_ids_and_labels() {
     ));
     let expected = Value::Node {
         label: "account".into(),
-        id: 2,
+        id: 2.into(),
     };
     for suffix in [".element()", ".with('type','Vertex').element()"] {
         let bindings = HashMap::from([(

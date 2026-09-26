@@ -40,8 +40,8 @@ async fn validates_protocol_dialect_and_schema() {
     r["nodes"][0]["id"] = json!("missing");
     assert!(compile(r).await.unwrap_err().contains("missing column"));
     let mut r = request("RETURN 1");
-    r["tables"][0]["columns"][0]["data_type"] = json!("string");
-    assert!(compile(r).await.unwrap_err().contains("signed integer"));
+    r["tables"][0]["columns"][0]["data_type"] = json!("list");
+    assert!(compile(r).await.unwrap_err().contains("unsupported schema type"));
 }
 #[tokio::test]
 async fn rejects_mutations_and_missing_bindings() {
@@ -98,5 +98,22 @@ fn service_and_service_silent_are_rejected_during_planning() {
         let error = SparqlPlanner::default().plan_str(&query).unwrap_err();
         assert!(matches!(error, SparqlError::Unsupported(_)), "{error}");
         assert!(error.to_string().contains("SERVICE"), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn every_declared_scalar_type_can_be_a_primary_key() {
+    for ty in [
+        "boolean", "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64", "float32", "float64",
+        "string", "binary", "date", "time", "timestamp", "duration", "interval",
+        "decimal:38:2",
+    ] {
+        for dialect in ["duckdb", "postgres"] {
+            let mut r = request("MATCH (p:Person) RETURN id(p)");
+            r["dialect"] = json!(dialect);
+            r["tables"][0]["columns"][0]["data_type"] = json!(ty);
+            compile(r).await.unwrap_or_else(|e| panic!("{dialect} {ty}: {e}"));
+        }
     }
 }

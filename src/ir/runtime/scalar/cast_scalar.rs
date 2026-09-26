@@ -11,6 +11,7 @@ use crate::ir::value::Value;
 
 pub(super) fn value_type_name(value: &Value) -> &'static str {
     match value {
+        Value::Scalar(_) => "SCALAR",
         Value::VertexProperty {..} => "VERTEXPROPERTY".into(),
         Value::Property {..} => "PROPERTY".into(),
         Value::Null => "NULL",

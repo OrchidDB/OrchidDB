@@ -246,6 +246,17 @@ impl ColumnBuilder {
     }
 
     fn finish(self) -> (DataType, ArrayRef) {
+        if let Some(kind) = self.values.iter().find_map(|v| match v { Value::Scalar(v) => Some(v.data_type()), _ => None }) {
+            let values = self.values.iter().map(|v| match v {
+                Value::Scalar(v) if v.data_type() == kind => Some(v.clone()),
+                Value::Null => datafusion::common::ScalarValue::try_from(&kind).ok(),
+                _ => None,
+            }).collect::<Option<Vec<_>>>();
+            if let Some(values) = values {
+                if let Ok(array) = datafusion::common::ScalarValue::iter_to_array(values) { return (kind, array); }
+            }
+        }
+
         let kind = if self.cypher_output {
             infer_kind(&self.values)
         } else {
@@ -448,12 +459,13 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
 fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Value {
     use serde_json::json;
     let tagged = |kind: &str, value: serde_json::Value| json!({"type": kind, "value": value});
-    let id = |label: &str, row: i64, edge: bool| {
-        let element=if edge {let (src_label,src_id,dst_label,dst_id)=graph.edge_endpoints(label,row).unwrap_or_default();Value::Edge{rel_type:label.into(),id:row,src_label,src_id,dst_label,dst_id,projected_properties:None}} else {Value::Node{label:label.into(),id:row}};
+    let id = |label: &str, row: crate::ir::ElementId, edge: bool| {
+        let element=if edge {let (src_label,src_id,dst_label,dst_id)=graph.edge_endpoints(label,row.clone().into()).unwrap_or_default();Value::Edge{rel_type:label.into(),id:row.clone().into(),src_label,src_id,dst_label,dst_id,projected_properties:None}} else {Value::Node{label:label.into(),id:row.clone().into()}};
         let user_id=graph.element_public_id(&element);
         gremlin_typed_value(&user_id, graph)
     };
     match value {
+        Value::Scalar(v) => tagged("scalar", json!({"scalar_key": crate::ir::identity::encode_scalar(v)})),
         Value::Null => tagged("null", json!(null)),
         Value::Bool(v) => tagged("boolean", json!(v)),
         Value::Byte(v) => tagged("byte", json!(v)),
@@ -481,12 +493,12 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                 .into_iter()
                 .filter(|key| is_visible_map_key(key))
                 .filter_map(|key| {
-                    let value = graph.node_property(label, *row, &key);
+                    let value = graph.node_property(label, row.clone(), &key);
                     (value != Value::Null).then(|| (key, gremlin_typed_value(&value, graph)))
                 })
                 .collect();
-            json!({"type":"vertex", "id":id(label,*row,false), "internal_id":format!("{label}#{row}"),
-                "label":label, "labels":graph.node_labels(label,*row), "properties":props})
+            json!({"type":"vertex", "id":id(label,row.clone(),false), "internal_id":format!("{label}#{row}"),
+                "label":label, "labels":graph.node_labels(label,row.clone()), "properties":props})
         }
         Value::Edge {
             rel_type,
@@ -502,13 +514,13 @@ fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Valu
                 .into_iter()
                 .filter(|key| is_visible_map_key(key))
                 .filter_map(|key| {
-                    let value = graph.edge_property(rel_type, *row, &key);
+                    let value = graph.edge_property(rel_type, row.clone(), &key);
                     (value != Value::Null).then(|| (key, gremlin_typed_value(&value, graph)))
                 })
                 .collect();
-            json!({"type":"edge", "id":id(rel_type,*row,true), "internal_id":format!("{rel_type}#{row}"),
-                "label":rel_type, "outV":id(src_label,*src_id,false), "outVLabel":src_label,
-                "inV":id(dst_label,*dst_id,false), "inVLabel":dst_label, "properties":props})
+            json!({"type":"edge", "id":id(rel_type,row.clone(),true), "internal_id":format!("{rel_type}#{row}"),
+                "label":rel_type, "outV":id(src_label,src_id.clone(),false), "outVLabel":src_label,
+                "inV":id(dst_label,dst_id.clone(),false), "inVLabel":dst_label, "properties":props})
         }
         Value::List(items) => tagged(
             "list",
@@ -621,18 +633,18 @@ fn gremlin_display_element(value: Value, graph: &PropertyGraph) -> Value {
     }
 }
 
-fn gremlin_node_name(graph: &PropertyGraph, label: &str, id: i64) -> String {
-    match graph.node_property(label, id, "name") {
+fn gremlin_node_name(graph: &PropertyGraph, label: &str, id: crate::ir::ElementId) -> String {
+    match graph.node_property(label, id.clone().into(), "name") {
         Value::String(name) => name,
         _ => format!("{label}#{id}"),
     }
 }
 
-fn format_node(graph: &PropertyGraph, label: &str, id: i64) -> String {
+fn format_node(graph: &PropertyGraph, label: &str, id: crate::ir::ElementId) -> String {
     let table_id = node_table_index(graph, label);
     let mut parts = vec![format!("_ID: {table_id}:{id}"), format!("_LABEL: {label}")];
     for key in graph.node_property_keys_with_id(label) {
-        let value = graph.node_property(label, id, &key);
+        let value = graph.node_property(label, id.clone().into(), &key);
         if matches!(value, Value::Null) {
             continue;
         }
@@ -644,11 +656,11 @@ fn format_node(graph: &PropertyGraph, label: &str, id: i64) -> String {
 fn format_edge(
     graph: &PropertyGraph,
     rel_type: &str,
-    id: i64,
+    id: crate::ir::ElementId,
     src_label: &str,
-    src_id: i64,
+    src_id: crate::ir::ElementId,
     dst_label: &str,
-    dst_id: i64,
+    dst_id: crate::ir::ElementId,
     projected_properties: Option<&[String]>,
 ) -> String {
     let table_id = edge_table_index(graph, rel_type);
@@ -665,7 +677,7 @@ fn format_edge(
         .map(|keys| keys.to_vec())
         .unwrap_or_else(|| graph.edge_property_keys(rel_type));
     for key in keys {
-        let value = graph.edge_property(rel_type, id, &key);
+        let value = graph.edge_property(rel_type, id.clone().into(), &key);
         if matches!(value, Value::Null) {
             continue;
         }
@@ -683,6 +695,7 @@ fn format_edge(
 /// keep their decimal point, lists/maps recurse.
 fn format_property_value(value: &Value) -> String {
     match value {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",format_property_value(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",format_property_value(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]",format_property_value(value)),

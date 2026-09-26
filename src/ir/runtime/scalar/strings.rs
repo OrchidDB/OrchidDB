@@ -37,6 +37,7 @@ pub(crate) fn display_for_concat(v: &Value) -> String {
         return rendered;
     }
     match v {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_concat(value)),
@@ -151,6 +152,7 @@ fn kuzu_map_entry(entry: &Value) -> Option<(&Value, &Value)> {
 
 pub(crate) fn display_for_kuzu_map_item(v: &Value) -> String {
     match v {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_kuzu_map_item(value)),
@@ -256,6 +258,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
         return display_for_concat(v);
     }
     match v {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_concat(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_concat(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_tagged_container(value)),
@@ -294,7 +297,7 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
         Value::DateTime(s) => format!("dt[{s}]"),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
         Value::Null => "null".to_string(),
-        Value::Node { label, id } => format!("v[{}]", display_node_name(label, *id)),
+        Value::Node { label, id } => format!("v[{}]", display_node_name(label, id.clone())),
         Value::Edge {
             rel_type,
             src_label,
@@ -304,9 +307,9 @@ pub(crate) fn display_for_tagged_container(v: &Value) -> String {
             ..
         } => format!(
             "e[{}-{}->{}]",
-            display_node_name(src_label, *src_id),
+            display_node_name(src_label, src_id.clone()),
             rel_type,
-            display_node_name(dst_label, *dst_id)
+            display_node_name(dst_label, dst_id.clone())
         ),
         Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
@@ -344,14 +347,14 @@ fn format_f64_tag(value: f64) -> String {
     }
 }
 
-pub(crate) fn display_node_name(label: &str, id: i64) -> String {
-    match (label, id) {
-        ("person", 0) => "marko".to_string(),
-        ("person", 1) => "vadas".to_string(),
-        ("person", 2) => "josh".to_string(),
-        ("person", 3) => "peter".to_string(),
-        ("software", 0) => "lop".to_string(),
-        ("software", 1) => "ripple".to_string(),
+pub(crate) fn display_node_name(label: &str, id: crate::ir::ElementId) -> String {
+    match (label, id.as_i64()) {
+        ("person", Some(0)) => "marko".to_string(),
+        ("person", Some(1)) => "vadas".to_string(),
+        ("person", Some(2)) => "josh".to_string(),
+        ("person", Some(3)) => "peter".to_string(),
+        ("software", Some(0)) => "lop".to_string(),
+        ("software", Some(1)) => "ripple".to_string(),
         _ => format!("{label}#{id}"),
     }
 }

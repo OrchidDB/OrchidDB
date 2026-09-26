@@ -24,6 +24,7 @@ use super::{RuntimeError, IrResult};
 pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
     match expr {
         IrExpr::Lit(lit) => Ok(match lit {
+            Lit::Scalar(value) => Value::Scalar(value.clone()),
             Lit::Null => Value::Null,
             Lit::Bool(b) => Value::Bool(*b),
             Lit::Int(n) => Value::Int(*n),
@@ -96,7 +97,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             }
         }
         IrExpr::Id(binding) => match row.bindings.get(binding) {
-            Some(Value::Node { id, .. }) | Some(Value::Edge { id, .. }) => Ok(Value::Int(*id)),
+            Some(Value::Node { id, .. }) | Some(Value::Edge { id, .. }) => Ok(id.to_value()),
             _ => Ok(Value::Null),
         },
         IrExpr::Label(binding) => match row.bindings.get(binding) {

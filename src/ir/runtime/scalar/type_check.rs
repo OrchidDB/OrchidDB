@@ -10,6 +10,7 @@ pub(crate) fn typeof_matches(value: &Value, name: &str) -> bool {
         .trim_start_matches("java.math.")
         .to_ascii_lowercase();
     match value {
+        Value::Scalar(v) => v.data_type().to_string().to_ascii_lowercase() == normalised,
         Value::BulkSet(_) => matches!(normalised.as_str(), "bulkset" | "set" | "collection"),
         Value::Set(_) => matches!(normalised.as_str(), "set" | "collection"),
         Value::Null => normalised == "null",

@@ -247,7 +247,7 @@ pub(super) fn cypher_call(
             let mut order = Vec::new();
             for key in graph.node_property_keys_with_id(label) {
                 order.push(Value::String(key.clone()));
-                map.insert(key.clone(), graph.node_property(label, *id, &key));
+                map.insert(key.clone(), graph.node_property(label, id.clone(), &key));
             }
             map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
             Ok(Some(Value::Map(map)))
@@ -257,7 +257,7 @@ pub(super) fn cypher_call(
             let mut order = Vec::new();
             for key in graph.edge_property_keys(rel_type) {
                 order.push(Value::String(key.clone()));
-                map.insert(key.clone(), graph.edge_property(rel_type, *id, &key));
+                map.insert(key.clone(), graph.edge_property(rel_type, id.clone(), &key));
             }
             map.insert(STRUCT_ORDER_KEY.to_string(), Value::List(order));
             Ok(Some(Value::Map(map)))
@@ -1149,7 +1149,7 @@ pub(super) fn cypher_call(
             _ => Value::Null,
         })),
         ("rowid", [v]) => Ok(Some(match v {
-            Value::Node { id, .. } | Value::Edge { id, .. } => Value::Long(*id),
+            Value::Node { id, .. } | Value::Edge { id, .. } => id.to_value(),
             _ => Value::Null,
         })),
         ("regexp_extract_all", [Value::String(s), Value::String(pat)]) => {
@@ -1555,7 +1555,7 @@ pub(super) fn cypher_call(
             Value::Long(2),
         ]))),
         ("prop_macro", [Value::Node { label, id }]) => {
-            Ok(Some(graph.node_property(label, *id, "ID")))
+            Ok(Some(graph.node_property(label, id.clone(), "ID")))
         }
         ("var_macro", [value]) => Ok(Some(value.clone())),
         ("func_macro", [value]) => Ok(Some(

@@ -44,12 +44,12 @@ pub(crate) fn path_pattern_op(
                 head.0.clone(),
                 Value::Node {
                     label: start_label.clone(),
-                    id: start_id,
+                    id: start_id.clone().into(),
                 },
             );
             let initial_path = vec![Value::Node {
                 label: start_label,
-                id: start_id,
+                id: start_id.clone().into(),
             }];
             walk(&parts[1..], seed, initial_path, &mut matches, graph);
         }
@@ -81,10 +81,10 @@ fn ground_first_node(
     bind: &str,
     labels: &LabelExpr,
     graph: &PropertyGraph,
-) -> Vec<(String, i64)> {
+) -> Vec<(String, crate::ir::ElementId)> {
     if let Some(Value::Node { label, id }) = row.bindings.get(bind) {
-        if graph.node_matches_labels(label, *id, labels) {
-            return vec![(label.clone(), *id)];
+        if graph.node_matches_labels(label, id.clone(), labels) {
+            return vec![(label.clone(), id.clone())];
         }
         return Vec::new();
     }
@@ -92,7 +92,7 @@ fn ground_first_node(
     for label in matching_labels(labels, graph) {
         let Ok(ids) = graph.node_ids(&label) else { continue; };
         for id in ids {
-            if graph.node_matches_labels(&label, id, labels) { starts.push((label.clone(), id)); }
+            if graph.node_matches_labels(&label, id.clone(), labels) { starts.push((label.clone(), id)); }
         }
     }
     starts
@@ -151,7 +151,7 @@ fn walk(rest: &[PathPart], row: Row, path: Vec<Value>, out: &mut Vec<Row>, graph
 #[allow(clippy::too_many_arguments)]
 fn expand_one_step(
     cur_label: &str,
-    cur_id: i64,
+    cur_id: crate::ir::ElementId,
     dir: Direction,
     rel_filter: &[String],
     length: &Length,
@@ -166,23 +166,24 @@ fn expand_one_step(
     // Variable-length: try every hop count in [min, max] separately.
     let max = length.max.unwrap_or(length.min.max(1));
     let min = length.min.max(1);
-    let mut frontier: Vec<(String, i64, Vec<Value>, Option<Value>)> =
+    let mut frontier: Vec<(String, crate::ir::ElementId, Vec<Value>, Option<Value>)> =
         vec![(cur_label.to_string(), cur_id, path.to_vec(), None)];
     for hop in 1..=max {
+        if graph.source.is_some() {graph.prefetch_adjacency(&frontier.iter().map(|(label,id,_,_)|(label.clone(),id.clone())).collect::<Vec<_>>(),dir,rel_filter);}
         let mut next_frontier = Vec::new();
         for (cl, cid, path_so_far, _last_edge) in frontier.drain(..) {
             let edges = match dir {
-                Direction::Out => graph.out_edges(&cl, cid, rel_filter),
-                Direction::In => graph.in_edges(&cl, cid, rel_filter),
+                Direction::Out => graph.out_edges(&cl, cid.clone().into(), rel_filter),
+                Direction::In => graph.in_edges(&cl, cid.clone().into(), rel_filter),
                 Direction::Both => {
-                    let mut e = graph.out_edges(&cl, cid, rel_filter);
-                    e.extend(graph.in_edges(&cl, cid, rel_filter));
+                    let mut e = graph.out_edges(&cl, cid.clone().into(), rel_filter);
+                    e.extend(graph.in_edges(&cl, cid.clone().into(), rel_filter));
                     e
                 }
             };
             for (rel_type, edge_row, other_label, other_id) in edges {
                 let mut p = path_so_far.clone();
-                let (sl, sid, dl, did) = match graph.edge_endpoints(&rel_type, edge_row) {
+                let (sl, sid, dl, did) = match graph.edge_endpoints(&rel_type, edge_row.clone()) {
                     Some(t) => t,
                     None => continue,
                 };
@@ -198,15 +199,15 @@ fn expand_one_step(
                 p.push(edge_value.clone());
                 p.push(Value::Node {
                     label: other_label.clone(),
-                    id: other_id,
+                    id: other_id.clone(),
                 });
-                if hop >= min && graph.node_matches_labels(&other_label, other_id, &next_node.1) {
+                if hop >= min && graph.node_matches_labels(&other_label, other_id.clone(), &next_node.1) {
                     let mut new_row = row.clone();
                     new_row.bindings.insert(
                         next_node.0.clone(),
                         Value::Node {
                             label: other_label.clone(),
-                            id: other_id,
+                            id: other_id.clone(),
                         },
                     );
                     if let Some(rb) = rel_bind {

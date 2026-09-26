@@ -296,16 +296,14 @@ impl LoweringContext<'_> {
                     .into_iter()
                     .skip(2),
             );
+            let join = binding_pair_eq(
+                &[&input.plan, &vertices.plan],
+                &item.alias,
+                &id_col(&binding),
+                &label_col(&binding),
+            );
             let joined = LogicalPlanBuilder::from(input.plan.clone())
-                .join_on(
-                    vertices.plan,
-                    JoinType::Inner,
-                    vec![binding_pair_eq(
-                        &item.alias,
-                        &id_col(&binding),
-                        &label_col(&binding),
-                    )],
-                )?
+                .join_on(vertices.plan, JoinType::Inner, vec![join])?
                 .project(projections)?
                 .build()?;
             input.islands.merge(vertices.islands);

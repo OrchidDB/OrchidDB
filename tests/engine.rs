@@ -193,7 +193,7 @@ async fn sql_only_reads_report_duckdb_execution() {
 }
 
 #[tokio::test]
-async fn property_pattern_parameters_require_maps() {
+async fn pattern_parameters_require_explicit_property_keys() {
     let mut engine = GraphEngine::in_memory().unwrap();
     engine
         .cypher("CREATE (:P {n:1}), (:P {n:2})")
@@ -206,12 +206,16 @@ async fn property_pattern_parameters_require_maps() {
     assert_eq!(
         rows(
             engine
-                .cypher_with_params("MATCH (p:P $props) RETURN p.n", &map)
+                .cypher_with_params("MATCH (p:P {n:$props.n}) RETURN p.n", &map)
                 .await
                 .unwrap()
         ),
         ["1"]
     );
+    // openCypher Match1[6] rejects a parameter in place of the property map,
+    // even when the parameter's value is itself a map.
+    let error = engine.cypher_with_params("MATCH (p:P $props) RETURN p.n", &map).await.unwrap_err();
+    assert!(error.contains("MATCH and MERGE patterns require explicit property keys"), "{error}");
     let invalid = BTreeMap::from([("props".into(), Value::Bool(true))]);
     assert!(
         engine

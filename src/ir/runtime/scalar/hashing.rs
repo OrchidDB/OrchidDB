@@ -11,7 +11,8 @@ pub(super) fn hash_function_value(value: &Value) -> Value {
 
 fn hash_value_u64(value: &Value) -> u64 {
     match value {
-        Value::VertexProperty {id,..} => murmurhash64(*id as u64),
+        Value::Scalar(v) => { use std::hash::{Hash, Hasher}; let mut h = std::collections::hash_map::DefaultHasher::new(); v.hash(&mut h); h.finish() },
+        Value::VertexProperty {id,..} => murmurhash64(id.clone() as u64),
         Value::Property { .. } => crate::ir::value::set_member_key(value).into_iter().fold(
             murmurhash64(0x41), |hash, byte| combine_hash_scalar(hash, murmurhash64(u64::from(byte)))
         ),

@@ -9,6 +9,7 @@ use super::super::scalar::temporal;
 /// would slot into this table when their runtime variants are added.
 fn orderability_tag(v: &Value) -> u8 {
     match v {
+        Value::Scalar(_) => 18,
         Value::Null => 0,
         Value::Bool(_) => 1,
         Value::Byte(_)
@@ -46,6 +47,8 @@ fn orderability_tag(v: &Value) -> u8 {
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
     use std::cmp::Ordering;
+    if let Value::Scalar(v)=a {if let Some(v)=crate::ir::value::scalar_semantic_value(v){return compare_values(&v,b);}}
+    if let Value::Scalar(v)=b {if let Some(v)=crate::ir::value::scalar_semantic_value(v){return compare_values(a,&v);}}
     if let Some(ordering) = temporal_value_ordering(a, b) {
         return ordering;
     }
@@ -61,6 +64,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
         return compare_numeric_values(a, b);
     }
     match (a, b) {
+        (Value::Scalar(x), Value::Scalar(y)) => x.data_type().cmp(&y.data_type()).then_with(|| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)),
         (Value::Temporal(x), Value::Temporal(y)) => x.compare(y).unwrap_or_else(|| x.kind().cmp(y.kind()).then_with(|| x.encode().cmp(&y.encode()))),
         (Value::String(x), Value::String(y)) => {
             blob_string_ordering(x, y).unwrap_or_else(|| x.cmp(y))

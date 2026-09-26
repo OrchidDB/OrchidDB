@@ -352,8 +352,13 @@ impl ExecutionPlan for KernelExec {
                 let mut state = state.lock().map_err(|_| failure("Query state poisoned"))?;
                 state.context.jvm.check().map_err(failure)?;
                 state.context.charge(1).map_err(failure)?;
+                for rows in &mut input_rows { state.graph.normalize_source_rows(rows).map_err(failure)?;
+                    if kernel.name != "DecodeTraversers" {state.graph.prefetch_source(rows);}
+                }
+                state.graph.check_source().map_err(failure)?;
                 let rows = (kernel.kernel)(input_rows, &mut state)
                     .map_err(|error| DataFusionError::External(Box::new(error)))?;
+                state.graph.check_source().map_err(failure)?;
                 encode_rows(rows)
             })
             .await
@@ -384,7 +389,7 @@ impl Compiler<'_> {
                     | Node::GraphEmpty
             )
         {
-            let lowered = RelBackend::new()
+            let lowered = RelBackend::with_options(super::RelBackendOptions { mapping: self.graph.mapping.clone(), ..Default::default() })
                 .preserving_traverser_state()
                 .lower_island(&self.policy, node, self.graph, self.islands.clone());
             if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some()
@@ -471,11 +476,15 @@ async fn execute_rows_inner(
     resources: Option<&super::dag::DagSession>,
     prune_return: bool,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), QueryExecutionError> {
+    #[cfg(feature = "duckdb")]
+    let mapped_resources = if resources.is_none() { graph.source.as_ref().zip(graph.mapping.as_ref()).map(|(source,mapping)| super::dag::DagSession::with_shared(source.executor(),mapping.physical_table_names())) } else {None};
+    #[cfg(feature = "duckdb")]
+    let resources = resources.or(mapped_resources.as_ref());
     graph.begin_statement();
     let compiler = Compiler {
         graph,
         policy: plan.policy.clone(),
-        sql: !has_mutating_branches(&plan.root),
+        sql: !has_mutating_branches(&plan.root) && !(graph.mapping.is_some() && graph.has_mutations()),
         islands: super::island_planner::IslandMemo::new(&plan.root),
     };
     let needed = if prune_return { match plan.root.as_ref() {
@@ -500,7 +509,7 @@ async fn execute_rows_inner(
         result_form: crate::ir::policy::ResultForm::RowSet,
         islands: Default::default(),
     };
-    let (returned, stats) = super::dag::execute_with_extensions(
+    let (returned, mut stats) = super::dag::execute_with_extensions(
         lowered,
         vec![Arc::new(KernelPlanner {
             state: state.clone(),
@@ -514,6 +523,7 @@ async fn execute_rows_inner(
     let state = state.lock().map_err(|_| "Query state poisoned")?;
     state.context.jvm.check().map_err(QueryExecutionError::from_error)?;
     graph.restore_execution_overlay(&state.graph);
+    stats.merge_execution(&state.context.nested_dag_stats);
     Ok((rows, stats))
 }
 
@@ -1423,9 +1433,12 @@ pub(crate) async fn execute_with_session(
             crate::ir::policy::ResultForm::RowSet,
         ),
     };
+    local.prefetch_source(&rows);
+    local.check_source()?;
     let returned =
         crate::ir::runtime::output::finalize_return(&fields, form, rows, &local, &plan.policy)
             .map_err(QueryExecutionError::from_error)?;
+    local.check_source()?;
     if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
     Ok((returned, stats))
 }

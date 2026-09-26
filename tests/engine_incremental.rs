@@ -96,7 +96,7 @@ fn read_records(conn: &Connection) -> Vec<(i32, String, i64, Vec<u8>)> {
         .unwrap();
     let mapped = stmt
         .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((row.get(0)?, row.get(1)?, row.get::<_,orchiddb::ir::ElementId>(2)?.as_i64().expect("integer fixture key"), row.get(3)?))
         })
         .unwrap();
     mapped

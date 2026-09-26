@@ -170,19 +170,19 @@ fn add_endpoint_tokens(entries: &mut Vec<(Value, Value)>, value: &Value, graph: 
     {
         entries.push((
             Value::Direction("OUT".into()),
-            endpoint_token(graph, src_label, *src_id),
+            endpoint_token(graph, src_label, src_id.clone()),
         ));
         entries.push((
             Value::Direction("IN".into()),
-            endpoint_token(graph, dst_label, *dst_id),
+            endpoint_token(graph, dst_label, dst_id.clone()),
         ));
     }
 }
 
-fn endpoint_token(graph: &PropertyGraph, label: &str, id: i64) -> Value {
+fn endpoint_token(graph: &PropertyGraph, label: &str, id: crate::ir::ElementId) -> Value {
     let node = Value::Node {
         label: label.to_string(),
-        id,
+        id: id.clone().into(),
     };
     Value::TypedMap(vec![
         (

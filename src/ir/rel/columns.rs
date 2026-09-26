@@ -212,19 +212,66 @@ pub(super) fn duplicate_binding_projection_only(
     Ok(projections)
 }
 
-pub(super) fn binding_pair_eq(binding: &str, id_column: &str, label_column: &str) -> Expr {
+pub(super) fn binding_pair_eq(
+    plans: &[&LogicalPlan],
+    binding: &str,
+    id_column: &str,
+    label_column: &str,
+) -> Expr {
     Expr::and(
-        binary(
-            col_exact(id_col(binding)),
-            BinaryOp::Eq,
-            col_exact(id_column),
-        ),
+        identity_compare(plans, &id_col(binding), BinaryOp::Eq, id_column),
         binary(
             col_exact(label_col(binding)),
             BinaryOp::Eq,
             col_exact(label_column),
         ),
     )
+}
+
+/// Shared type for two element identities, or `None` when they already
+/// match. Mapped labels keep their native id types and only multi-label
+/// unions widen them, so the sides of an endpoint join can differ: integers
+/// meet as `Int64` (or decimal when UInt64 is present), anything else as text. Label equality accompanies every
+/// identity comparison, so the text form cannot match across labels.
+pub(super) fn common_identity_type(left: &DataType, right: &DataType) -> Option<DataType> {
+    if left == right || left.is_null() || right.is_null() {
+        return None;
+    }
+    Some(if left.is_integer() && right.is_integer() {
+        if matches!(left, DataType::UInt64) || matches!(right, DataType::UInt64) {
+            DataType::Decimal128(20, 0)
+        } else {
+            DataType::Int64
+        }
+    } else {
+        DataType::Utf8
+    })
+}
+
+fn identity_type_in(plans: &[&LogicalPlan], name: &str) -> Option<DataType> {
+    plans.iter().find_map(|plan| {
+        plan.schema()
+            .fields()
+            .iter()
+            .find(|field| field.name() == name)
+            .map(|field| field.data_type().clone())
+    })
+}
+
+/// Compare two identity columns found in `plans`, reconciling their types.
+pub(super) fn identity_compare(plans: &[&LogicalPlan], left: &str, op: BinaryOp, right: &str) -> Expr {
+    let (lhs, rhs) = (col_exact(left), col_exact(right));
+    match (identity_type_in(plans, left), identity_type_in(plans, right)) {
+        (Some(a), Some(b)) => match common_identity_type(&a, &b) {
+            Some(target) => binary(
+                Expr::Cast(Cast::new(Box::new(lhs), target.clone())),
+                op,
+                Expr::Cast(Cast::new(Box::new(rhs), target)),
+            ),
+            None => binary(lhs, op, rhs),
+        },
+        _ => binary(lhs, op, rhs),
+    }
 }
 
 /// Columns produced by a `x.*` projection expansion for `field`, in plan

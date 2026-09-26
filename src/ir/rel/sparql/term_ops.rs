@@ -418,6 +418,7 @@ pub(super) fn xsd_cast(target: &str, a: &Term) -> RelResult<Term> {
 /// Lexical form and datatype of a scalar literal constant.
 pub(super) fn literal_identity(value: &Lit) -> RelResult<(String, String)> {
     Ok(match value {
+        Lit::Scalar(_) => return unsupported("Arrow scalar is not an RDF term"),
         Lit::Null => return unsupported("NULL is not an RDF term"),
         Lit::Bool(value) => (value.to_string(), xsd("boolean")),
         Lit::Int(value) => (value.to_string(), xsd("integer")),

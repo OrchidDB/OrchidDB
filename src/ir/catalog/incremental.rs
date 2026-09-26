@@ -25,6 +25,7 @@
 //! and a SHA-256 checksum over `version ++ kind ++ name ++ id ++ body` so
 //! corrupted or swapped records are rejected.
 
+use crate::ir::ElementId;
 use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
@@ -34,7 +35,7 @@ use super::{GraphOverlay, InsertedEdge, PropertyGraph};
 use crate::ir::value::Value;
 
 /// Wire-format version for incremental records.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 /// Length in bytes of the per-record SHA-256 checksum.
 const CHECKSUM_LEN: usize = 32;
 /// Fixed header size: 4-byte version + 32-byte checksum.
@@ -84,7 +85,7 @@ const META_TAGS: [i64; 3] = [T_COUNT, T_INSERTED_KEYS, T_OVERRIDE_KEYS];
 pub(crate) struct IncrementalRecord {
     pub kind: i32,
     pub name: String,
-    pub id: i64,
+    pub id: ElementId,
     pub payload: Vec<u8>,
 }
 
@@ -98,20 +99,20 @@ fn field(tag: i64, value: Value) -> Value {
 /// The checksum covers the version, kind, name and id so that records whose
 /// payloads have been swapped, or whose identity fields have been altered,
 /// fail validation.
-fn record_checksum(kind: i32, name: &str, id: i64, body: &[u8]) -> [u8; 32] {
+fn record_checksum(version: u32, kind: i32, name: &str, id: &ElementId, body: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(VERSION.to_le_bytes());
+    hasher.update(version.to_le_bytes());
     hasher.update(kind.to_le_bytes());
     hasher.update((name.len() as u64).to_le_bytes());
     hasher.update(name.as_bytes());
-    hasher.update(id.to_le_bytes());
+    if version == 1 { hasher.update(id.as_i64().unwrap_or_default().to_le_bytes()); } else { hasher.update(id.encode()); }
     hasher.update(body);
     hasher.finalize().into()
 }
 
-fn encode_record(kind: i32, name: &str, id: i64, body: &Value) -> IncrementalRecord {
+fn encode_record(kind: i32, name: &str, id: ElementId, body: &Value) -> IncrementalRecord {
     let body_bytes = encode_value_bytes(body);
-    let checksum = record_checksum(kind, name, id, &body_bytes);
+    let checksum = record_checksum(VERSION, kind, name, &id, &body_bytes);
     let mut payload = Vec::with_capacity(HEADER_LEN + body_bytes.len());
     payload.extend_from_slice(&VERSION.to_le_bytes());
     payload.extend_from_slice(&checksum);
@@ -130,12 +131,12 @@ fn decode_body(record: &IncrementalRecord) -> Result<Value, String> {
         return Err("incremental record payload too short".to_string());
     }
     let version = u32::from_le_bytes(record.payload[0..4].try_into().unwrap());
-    if version != VERSION {
+    if version != 1 && version != VERSION {
         return Err(format!("unsupported incremental record version {version}"));
     }
     let stored: [u8; CHECKSUM_LEN] = record.payload[4..HEADER_LEN].try_into().unwrap();
     let body = &record.payload[HEADER_LEN..];
-    let computed = record_checksum(record.kind, &record.name, record.id, body);
+    let computed = record_checksum(version, record.kind, &record.name, &record.id.clone(), body);
     if stored != computed {
         return Err("incremental record checksum mismatch".to_string());
     }
@@ -233,14 +234,7 @@ fn decode_inserted_edge(value: &Value) -> Result<InsertedEdge, String> {
             other.type_name()
         )),
     };
-    let id_at = |item: &Value, what: &str| match item {
-        Value::Int(v) if *v >= 0 => Ok(*v),
-        Value::Int(v) => Err(format!("incremental record {what} is negative ({v})")),
-        other => Err(format!(
-            "incremental record {what} must be an integer, got {}",
-            other.type_name()
-        )),
-    };
+    let id_at = |item: &Value, _what: &str| ElementId::try_from(item);
     Ok(InsertedEdge {
         src_label: string_at(&items[0], "src_label")?,
         src_id: id_at(&items[1], "src_id")?,
@@ -253,10 +247,10 @@ fn decode_inserted_edge(value: &Value) -> Result<InsertedEdge, String> {
 /// Rebuild the inserted adjacency caches from `inserted_edges`. Deleted
 /// inserted edges are still indexed; reads filter them via `edge_is_live`,
 /// matching the behaviour of `insert_edge`.
-type EdgePositions = BTreeMap<(String, i64), usize>;
+type EdgePositions = BTreeMap<(String, ElementId), usize>;
 
 fn adjacency_positions(ov: &GraphOverlay) -> (EdgePositions, EdgePositions) {
-    let positions = |adj: &std::collections::HashMap<(String, i64), Vec<(String, i64)>>| {
+    let positions = |adj: &std::collections::HashMap<(String, ElementId), Vec<(String, ElementId)>>| {
         adj.values()
             .flat_map(|edges| edges.iter().enumerate().map(|(i, edge)| (edge.clone(), i)))
             .collect()
@@ -276,13 +270,13 @@ fn rebuild_inserted_adjacency(
     ov.inserted_in_adj.clear();
     for ((rel_type, id), edge) in &ov.inserted_edges {
         ov.inserted_out_adj
-            .entry((edge.src_label.clone(), edge.src_id))
+            .entry((edge.src_label.clone(), edge.src_id.clone()))
             .or_default()
-            .push((rel_type.clone(), *id));
+            .push((rel_type.clone(), id.clone()));
         ov.inserted_in_adj
-            .entry((edge.dst_label.clone(), edge.dst_id))
+            .entry((edge.dst_label.clone(), edge.dst_id.clone()))
             .or_default()
-            .push((rel_type.clone(), *id));
+            .push((rel_type.clone(), id.clone()));
     }
     for edges in ov.inserted_out_adj.values_mut() {
         edges.sort_by_key(|edge| outgoing.get(edge).copied().unwrap_or(usize::MAX));
@@ -298,32 +292,20 @@ impl PropertyGraph {
     /// labels / rel-types are encoded; the base Arrow tables are never read.
     pub(crate) fn incremental_records(
         &self,
-        nodes: &BTreeSet<(String, i64)>,
-        edges: &BTreeSet<(String, i64)>,
+        nodes: &BTreeSet<(String, ElementId)>,
+        edges: &BTreeSet<(String, ElementId)>,
     ) -> Result<Vec<IncrementalRecord>, String> {
         let ov = self.overlay.borrow();
         let mut records = Vec::new();
 
         for key in nodes {
-            if key.1 < 0 {
-                return Err(format!(
-                    "touched node `{}` has negative id {}",
-                    key.0, key.1
-                ));
-            }
             let body = encode_node_body(key, &ov);
-            records.push(encode_record(KIND_NODE, &key.0, key.1, &Value::List(body)));
+            records.push(encode_record(KIND_NODE, &key.0, key.1.clone(), &Value::List(body)));
         }
 
         for key in edges {
-            if key.1 < 0 {
-                return Err(format!(
-                    "touched edge `{}` has negative id {}",
-                    key.0, key.1
-                ));
-            }
             let body = encode_edge_body(key, &ov);
-            records.push(encode_record(KIND_EDGE, &key.0, key.1, &Value::List(body)));
+            records.push(encode_record(KIND_EDGE, &key.0, key.1.clone(), &Value::List(body)));
         }
 
         let mut labels: BTreeSet<&str> = BTreeSet::new();
@@ -332,7 +314,7 @@ impl PropertyGraph {
         }
         for label in labels {
             let body = encode_node_meta_body(label, &ov);
-            records.push(encode_record(KIND_NODE_META, label, 0, &Value::List(body)));
+            records.push(encode_record(KIND_NODE_META, label, 0.into(), &Value::List(body)));
         }
 
         let mut rel_types: BTreeSet<&str> = BTreeSet::new();
@@ -344,7 +326,7 @@ impl PropertyGraph {
             records.push(encode_record(
                 KIND_EDGE_META,
                 rel_type,
-                0,
+                0.into(),
                 &Value::List(body),
             ));
         }
@@ -377,7 +359,7 @@ impl PropertyGraph {
                             .ok_or("inserted edge is missing adjacency order")?;
                         let position =
                             usize::try_from(decode_count(value)?).map_err(|e| e.to_string())?;
-                        positions.insert((record.name.clone(), record.id), position);
+                        positions.insert((record.name.clone(), record.id.clone()), position);
                     }
                 }
             }
@@ -388,9 +370,9 @@ impl PropertyGraph {
     }
 }
 
-fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
+fn encode_node_body(key: &(String, ElementId), ov: &GraphOverlay) -> Vec<Value> {
     let mut fields = vec![field(T_NATIVE, ov.native_node_state(key)), field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values))];
-    if let Some(id) = ov.cypher_ids.get(&(false, key.0.clone(), key.1)) { fields.push(field(T_CYPHER_ID, Value::Long(*id))); }
+    if let Some(id) = ov.cypher_ids.get(&(false, key.0.clone(), key.1.clone())) { fields.push(field(T_CYPHER_ID, Value::Long(id.clone()))); }
     if let Some(labels) = ov.node_label_sets.get(key) {
         fields.push(field(T_LABELS, Value::List(labels.iter().cloned().map(Value::String).collect())));
     }
@@ -409,9 +391,9 @@ fn encode_node_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     fields
 }
 
-fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
-    let mut fields = vec![field(T_NATIVE, ov.public_ids.get(&(true,key.0.clone(),key.1)).cloned().unwrap_or(Value::Null))];
-    if let Some(id) = ov.cypher_ids.get(&(true, key.0.clone(), key.1)) { fields.push(field(T_CYPHER_ID, Value::Long(*id))); }
+fn encode_edge_body(key: &(String, ElementId), ov: &GraphOverlay) -> Vec<Value> {
+    let mut fields = vec![field(T_NATIVE, ov.public_ids.get(&(true,key.0.clone(),key.1.clone())).cloned().unwrap_or(Value::Null))];
+    if let Some(id) = ov.cypher_ids.get(&(true, key.0.clone(), key.1.clone())) { fields.push(field(T_CYPHER_ID, Value::Long(id.clone()))); }
     fields.push(field(T_NULL_VALUES, Value::Bool(ov.allow_null_property_values)));
     if let Some(keys) = ov.edge_null_properties.get(key) {
         fields.push(field(T_NULL_PROPERTIES, Value::List(keys.iter().cloned().map(Value::String).collect())));
@@ -419,9 +401,9 @@ fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
     if let Some(edge) = ov.inserted_edges.get(key) {
         let inserted = Value::List(vec![
             Value::String(edge.src_label.clone()),
-            Value::Int(edge.src_id),
+            Value::Scalar(edge.src_id.scalar().clone()),
             Value::String(edge.dst_label.clone()),
-            Value::Int(edge.dst_id),
+            Value::Scalar(edge.dst_id.scalar().clone()),
             Value::Map(edge.properties.clone()),
         ]);
         fields.push(field(T_INSERTED, inserted));
@@ -429,12 +411,12 @@ fn encode_edge_body(key: &(String, i64), ov: &GraphOverlay) -> Vec<Value> {
             (
                 T_OUT_POSITION,
                 ov.inserted_out_adj
-                    .get(&(edge.src_label.clone(), edge.src_id)),
+                    .get(&(edge.src_label.clone(), edge.src_id.clone())),
             ),
             (
                 T_IN_POSITION,
                 ov.inserted_in_adj
-                    .get(&(edge.dst_label.clone(), edge.dst_id)),
+                    .get(&(edge.dst_label.clone(), edge.dst_id.clone())),
             ),
         ] {
             if let Some(position) =
@@ -494,25 +476,13 @@ fn encode_edge_meta_body(rel_type: &str, ov: &GraphOverlay) -> Vec<Value> {
 fn apply_one(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), String> {
     match record.kind {
         KIND_NODE => {
-            if record.id < 0 {
-                return Err(format!(
-                    "node overlay record `{}` has negative id {}",
-                    record.name, record.id
-                ));
-            }
             apply_node(ov, record)
         }
         KIND_EDGE => {
-            if record.id < 0 {
-                return Err(format!(
-                    "edge overlay record `{}` has negative id {}",
-                    record.name, record.id
-                ));
-            }
             apply_edge(ov, record)
         }
         KIND_NODE_META => {
-            if record.id != 0 {
+            if record.id != ElementId::from(0) {
                 return Err(format!(
                     "node metadata record `{}` must have id 0, got {}",
                     record.name, record.id
@@ -521,7 +491,7 @@ fn apply_one(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), St
             apply_node_meta(ov, record)
         }
         KIND_EDGE_META => {
-            if record.id != 0 {
+            if record.id != ElementId::from(0) {
                 return Err(format!(
                     "edge metadata record `{}` must have id 0, got {}",
                     record.name, record.id
@@ -536,10 +506,10 @@ fn apply_one(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), St
 fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), String> {
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &ENTITY_TAGS)?;
-    let key = (record.name.clone(), record.id);
+    let key = (record.name.clone(), record.id.clone());
     if let Some(value) = fields.get(&T_CYPHER_ID) {
         let Value::Long(id) = value else { return Err("Invalid Cypher identity".into()); };
-        ov.cypher_ids.insert((false, key.0.clone(), key.1), *id);
+        ov.cypher_ids.insert((false, key.0.clone(), key.1.clone()), id.clone());
     }
     if let Some(value) = fields.get(&T_NULL_VALUES) {
         ov.allow_null_property_values = decode_flag(value)?;
@@ -582,17 +552,17 @@ fn apply_node(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), S
 fn apply_edge(ov: &mut GraphOverlay, record: &IncrementalRecord) -> Result<(), String> {
     let body = decode_body(record)?;
     let fields = decode_fields(&body, &EDGE_TAGS)?;
-    let key = (record.name.clone(), record.id);
+    let key = (record.name.clone(), record.id.clone());
     if let Some(value) = fields.get(&T_CYPHER_ID) {
         let Value::Long(id) = value else { return Err("Invalid Cypher identity".into()); };
-        ov.cypher_ids.insert((true, key.0.clone(), key.1), *id);
+        ov.cypher_ids.insert((true, key.0.clone(), key.1.clone()), id.clone());
     }
     if let Some(value) = fields.get(&T_NULL_VALUES) {
         ov.allow_null_property_values = decode_flag(value)?;
     }
 
-    ov.public_ids.remove(&(true,key.0.clone(),key.1));
-    if let Some(value) = fields.get(&T_NATIVE).filter(|v| ***v != Value::Null) {ov.public_ids.insert((true,key.0.clone(),key.1),(*value).clone());}
+    ov.public_ids.remove(&(true,key.0.clone(),key.1.clone()));
+    if let Some(value) = fields.get(&T_NATIVE).filter(|v| ***v != Value::Null) {ov.public_ids.insert((true,key.0.clone(),key.1.clone()),(*value).clone());}
     ov.edge_null_properties.remove(&key);
     if let Some(value) = fields.get(&T_NULL_PROPERTIES) {
         let Value::List(keys) = value else { return Err("Invalid null property keys".into()); };
@@ -711,7 +681,9 @@ mod tests {
         g
     }
 
-    fn touched_sets(g: &PropertyGraph) -> (BTreeSet<(String, i64)>, BTreeSet<(String, i64)>) {
+    use crate::ir::ElementId;
+
+    fn touched_sets(g: &PropertyGraph) -> (BTreeSet<(String, ElementId)>, BTreeSet<(String, ElementId)>) {
         let ov = g.overlay.borrow();
         let mut nodes = BTreeSet::new();
         nodes.extend(ov.inserted_nodes.keys().cloned());
@@ -729,7 +701,7 @@ mod tests {
     fn node(label: &str, id: i64) -> Value {
         Value::Node {
             label: label.to_string(),
-            id,
+            id: id.into(),
         }
     }
 
@@ -749,7 +721,7 @@ mod tests {
                 BTreeMap::from([("since".to_string(), Value::Int(2020))]),
             )
             .unwrap();
-        assert!(matches!(e, Value::Edge { id: 2, .. }));
+        assert!(matches!(e, Value::Edge { ref id, .. } if id.as_i64() == Some(2)));
 
         // Property override on base node 0.
         g.set_property(&node("P", 0), "age", Value::Int(99))
@@ -773,46 +745,46 @@ mod tests {
         // Inserted node/edge restored over the checkpoint.
         assert_eq!(restored.node_ids("P").unwrap(), vec![0i64, 1, 3]);
         assert_eq!(
-            restored.node_property("P", 3, "name"),
+            restored.node_property("P", 3.into(), "name"),
             Value::String("d".into())
         );
         assert_eq!(restored.edge_ids("LIKES"), vec![0i64, 2]);
         assert_eq!(
-            restored.edge_endpoints("LIKES", 2),
-            Some(("P".to_string(), 3, "P".to_string(), 0))
+            restored.edge_endpoints("LIKES", 2.into()),
+            Some(("P".to_string(), 3.into(), "P".to_string(), 0.into()))
         );
         assert_eq!(
-            restored.edge_property("LIKES", 2, "since"),
+            restored.edge_property("LIKES", 2.into(), "since"),
             Value::Int(2020)
         );
 
         // Property override.
-        assert_eq!(restored.node_property("P", 0, "age"), Value::Int(99));
+        assert_eq!(restored.node_property("P", 0.into(), "age"), Value::Int(99));
         assert_eq!(
-            restored.node_property("P", 0, "name"),
+            restored.node_property("P", 0.into(), "name"),
             Value::String("a".into())
         );
 
         // Whole-bag replacement.
         assert_eq!(
-            restored.node_property("P", 1, "name"),
+            restored.node_property("P", 1.into(), "name"),
             Value::String("B".into())
         );
-        assert_eq!(restored.node_property("P", 1, "age"), Value::Null);
+        assert_eq!(restored.node_property("P", 1.into(), "age"), Value::Null);
 
         // Deletion.
-        assert_eq!(restored.node_property("P", 2, "name"), Value::Null);
-        assert!(restored.out_edges("P", 3, &[]).contains(&(
+        assert_eq!(restored.node_property("P", 2.into(), "name"), Value::Null);
+        assert!(restored.out_edges("P", 3.into(), &[]).contains(&(
             "LIKES".to_string(),
-            2,
+            2.into(),
             "P".to_string(),
-            0
+            0.into()
         )));
-        assert!(restored.in_edges("P", 0, &[]).contains(&(
+        assert!(restored.in_edges("P", 0.into(), &[]).contains(&(
             "LIKES".to_string(),
-            2,
+            2.into(),
             "P".to_string(),
-            3
+            3.into()
         )));
 
         // Counters survive the checkpoint (id gaps preserved: node 2 deleted,
@@ -821,7 +793,7 @@ mod tests {
         let e3 = restored
             .insert_edge("LIKES", &node("P", 4), &node("P", 0), BTreeMap::new())
             .unwrap();
-        assert!(matches!(e3, Value::Edge { id: 3, .. }));
+        assert!(matches!(e3, Value::Edge { ref id, .. } if id.as_i64() == Some(3)));
     }
 
     #[test]
@@ -866,10 +838,10 @@ mod tests {
         let mut restored = PropertyGraph::snapshot_decode(&checkpoint).unwrap();
         restored.apply_incremental_records(&records).unwrap();
         assert_eq!(
-            graph.out_edges("P", 0, &[]),
-            restored.out_edges("P", 0, &[])
+            graph.out_edges("P", 0.into(), &[]),
+            restored.out_edges("P", 0.into(), &[])
         );
-        assert_eq!(graph.in_edges("P", 1, &[]), restored.in_edges("P", 1, &[]));
+        assert_eq!(graph.in_edges("P", 1.into(), &[]), restored.in_edges("P", 1.into(), &[]));
     }
 
     #[test]
@@ -923,7 +895,7 @@ mod tests {
         assert!(restored.apply_incremental_records(&[unknown_kind]).is_err());
 
         let mut negative_id = records[0].clone();
-        negative_id.id = -1;
+        negative_id.id = (-1).into();
         assert!(restored.apply_incremental_records(&[negative_id]).is_err());
     }
 
@@ -957,18 +929,18 @@ mod tests {
         ));
         restored.apply_incremental_records(&records).unwrap();
 
-        match restored.node_property("P", 1, "f") {
+        match restored.node_property("P", 1.into(), "f") {
             Value::Float(v) => assert!(v.is_nan()),
             other => panic!("expected Float NaN, got {other:?}"),
         }
-        match restored.node_property("P", 1, "list") {
+        match restored.node_property("P", 1.into(), "list") {
             Value::List(items) => match &items[0] {
                 Value::Float(v) => assert!(v.is_nan()),
                 other => panic!("expected Float NaN in list, got {other:?}"),
             },
             other => panic!("expected List, got {other:?}"),
         }
-        match restored.node_property("P", 1, "neg") {
+        match restored.node_property("P", 1.into(), "neg") {
             Value::Float(v) => assert_eq!(v.to_bits(), (-0.0f64).to_bits()),
             other => panic!("expected Float, got {other:?}"),
         }

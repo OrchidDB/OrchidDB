@@ -123,6 +123,8 @@ impl DuckDbExecutor {
 
     /// Return the underlying connection, opening an in-memory database on
     /// first use.
+    pub(crate) fn take_connection(&mut self) -> Option<Connection> { self.connection.take() }
+
     pub fn connection(&mut self) -> SqlResult<&Connection> {
         self.ensure_connection()?;
         // Connection has interior mutability: callers can execute arbitrary
@@ -353,6 +355,24 @@ impl SqlExecutor for DuckDbExecutor {
     }
 
     fn run(&mut self, setup: &[String], query: &str) -> SqlResult<Vec<Vec<SqlValue>>> {
+        self.run_query(setup, query, execute_query)
+    }
+
+}
+
+impl DuckDbExecutor {
+    /// Keep island results in Arrow, preserving binary, temporal, decimal and
+    /// full-width scalar keys without a lossy row/string round trip.
+    pub(crate) fn execute_prepared_arrow(&mut self, prepared: &super::PreparedSql) -> SqlResult<RecordBatch> {
+        self.ensure_connection()?;
+        let cache=!self.in_transaction();
+        let mut in_use=BTreeSet::new();
+        for table in &prepared.tables {in_use.insert(self.ensure_scan_table(table,cache)?);}
+        let result=self.run_query(&prepared.setup,&prepared.query,execute_arrow);
+        if cache {self.evict_scan_tables(&in_use);}
+        result
+    }
+    fn run_query<T: Send + 'static>(&mut self, setup: &[String], query: &str, execute: fn(&Connection, &str) -> SqlResult<T>) -> SqlResult<T> {
         self.ensure_connection()?;
         let conn = self.connection.as_ref().expect("connection initialized");
         let wrap_setup = !self.in_transaction();
@@ -382,7 +402,7 @@ impl SqlExecutor for DuckDbExecutor {
                 execute_setup_block(conn, &block, wrap_setup)?;
                 self.applied_setup.insert(key, block);
             }
-            return execute_query(conn, query);
+            return execute(conn, query);
         };
         let setup_timeout = self.setup_timeout.unwrap_or(query_timeout);
         let conn = self.connection.take().expect("connection initialized");
@@ -401,7 +421,7 @@ impl SqlExecutor for DuckDbExecutor {
                 completed.push((key, block));
             }
             let _ = setup_sender.send(());
-            let result = execute_query(&conn, &query);
+            let result = execute(&conn, &query);
             let _ = sender.send((conn, result, completed));
         });
         let received = match setup_receiver.recv_timeout(setup_timeout) {
@@ -478,6 +498,12 @@ impl SqlExecutor for DuckDbExecutor {
         let _ = worker.join();
         result
     }
+}
+fn execute_arrow(conn: &Connection, query: &str) -> SqlResult<RecordBatch> {
+    let mut statement=conn.prepare(query).map_err(|e|SqlError::Execution(format!("duckdb prepare: {e}")))?;
+    let reader=statement.query_arrow([]).map_err(|e|SqlError::Execution(format!("duckdb query: {e}")))?;
+    let schema=reader.get_schema();
+    Ok(arrow::compute::concat_batches(&schema,&reader.collect::<Vec<_>>())?)
 }
 
 /// Apply one setup block, wrapping it in its own transaction so a statement

@@ -72,7 +72,7 @@ pub(super) fn search(args: &[Value], graph: &PropertyGraph) -> IrResult<Value> {
         for rel_type in graph.rel_types() {
             for id in graph.edge_ids(&rel_type) {
                 let Some((src_label, src_id, dst_label, dst_id)) =
-                    graph.edge_endpoints(&rel_type, id)
+                    graph.edge_endpoints(&rel_type, id.clone())
                 else {
                     continue;
                 };

@@ -481,16 +481,18 @@ impl LoweringContext<'_> {
                 }
                 projection.push(col_exact(&field).alias(target));
             }
+            let same_id = identity_compare(
+                &[&plan, &scan.plan],
+                &id_col(binding),
+                BinaryOp::Eq,
+                &id_col(&scan_binding),
+            );
             let joined = LogicalPlanBuilder::from(plan)
                 .join_on(
                     scan.plan,
                     JoinType::Left,
                     vec![
-                        binary(
-                            col_exact(id_col(binding)),
-                            BinaryOp::Eq,
-                            col_exact(id_col(&scan_binding)),
-                        ),
+                        same_id,
                         binary(
                             col_exact(label_col(binding)),
                             BinaryOp::Eq,
@@ -582,16 +584,18 @@ impl LoweringContext<'_> {
             ])?
             .distinct()?
             .build()?;
+        let same_id = identity_compare(
+            &[&plan, &matched_set],
+            &id_col(CURRENT_BINDING),
+            BinaryOp::Eq,
+            &key_id,
+        );
         let joined = LogicalPlanBuilder::from(plan)
             .join_on(
                 matched_set,
                 JoinType::Left,
                 vec![
-                    binary(
-                        col_exact(id_col(CURRENT_BINDING)),
-                        BinaryOp::Eq,
-                        col_exact(&key_id),
-                    ),
+                    same_id,
                     binary(
                         col_exact(label_col(CURRENT_BINDING)),
                         BinaryOp::Eq,

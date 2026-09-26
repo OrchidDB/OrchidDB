@@ -496,6 +496,7 @@ fn value_to_data_type(value: &Value) -> DataType {
 fn infer_expr_type(expr: &IrExpr) -> DataType {
     match expr {
         IrExpr::Lit(lit) => match lit {
+            crate::ir::expr::Lit::Scalar(value) => value.data_type(),
             crate::ir::expr::Lit::Null => DataType::Utf8,
             crate::ir::expr::Lit::Bool(_) => DataType::Boolean,
             crate::ir::expr::Lit::Int(_) => DataType::Int64,

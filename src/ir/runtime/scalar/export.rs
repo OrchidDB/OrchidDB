@@ -151,7 +151,7 @@ fn graphson(graph: &PropertyGraph, graphml: bool) -> IrResult<Vec<u8>> {
         for id in graph.node_ids(&label)? {
             let vertex = Value::Node {
                 label: label.clone(),
-                id,
+                id: id.clone(),
             };
             if graphml {
                 validate_graphml(graph, &vertex, &mut graphml_types)?;
@@ -172,19 +172,19 @@ fn graphson(graph: &PropertyGraph, graphml: bool) -> IrResult<Vec<u8>> {
             for incoming in [false, true] {
                 let mut edges = Map::new();
                 let adjacent = if incoming {
-                    graph.in_edges(&label, id, &[])
+                    graph.in_edges(&label, id.clone(), &[])
                 } else {
-                    graph.out_edges(&label, id, &[])
+                    graph.out_edges(&label, id.clone(), &[])
                 };
                 for (rel_type, edge_id, other_label, other_id) in adjacent {
                     let other = Value::Node {
                         label: other_label.clone(),
-                        id: other_id,
+                        id: other_id.clone(),
                     };
                     let (src_label, src_id, dst_label, dst_id) = if incoming {
-                        (other_label, other_id, label.clone(), id)
+                        (other_label, other_id, label.clone(), id.clone())
                     } else {
-                        (label.clone(), id, other_label, other_id)
+                        (label.clone(), id.clone(), other_label, other_id)
                     };
                     let edge = Value::Edge {
                         rel_type: rel_type.clone(),

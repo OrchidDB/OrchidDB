@@ -34,6 +34,9 @@ pub struct DagStats {
     pub duckdb_regions: usize,
     pub datafusion_operators: usize,
     pub physical_plan: String,
+    pub sql_queries: Vec<String>,
+    pub native_source_queries: Vec<String>,
+    pub native_source_rows: usize,
 }
 
 /// Execution resources owned by one graph engine, never shared between engines.
@@ -48,7 +51,7 @@ pub(crate) struct DagSession {
 }
 impl DagSession {
     pub(crate) fn new(timeout: Option<std::time::Duration>) -> Self {
-        let session = SessionContext::new_with_config(
+        let session = super::optimizer::session(
             SessionConfig::new().with_target_partitions(1),
         );
         // Removing the last constant grouping key changes empty-input
@@ -79,6 +82,14 @@ impl DagSession {
         // DuckDB still optimizes each generated region normally.
         Self { session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor: Arc::new(Mutex::new(executor)), external, optimize: false }
     }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn with_shared(executor: Arc<Mutex<sql::DuckDbExecutor>>, external: std::collections::BTreeSet<String>) -> Self {
+        Self { session: SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1)), executor, external, optimize: false }
+    }
+
+    #[cfg(feature = "duckdb")]
+    pub(crate) fn shared_executor(&self) -> Arc<Mutex<sql::DuckDbExecutor>> { self.executor.clone() }
 
     #[cfg(feature = "duckdb")]
     pub(crate) fn executor(&self) -> std::result::Result<std::sync::MutexGuard<'_,sql::DuckDbExecutor>,String> {
@@ -175,6 +186,7 @@ impl SqlEligibility {
         if let Some(reason) = self.reasons.get(&key) { return *reason; }
         let mut reason = match plan {
             LogicalPlan::Extension(_) => Some("residual extension"),
+            LogicalPlan::EmptyRelation(empty) if empty.produce_one_row => None,
             LogicalPlan::EmptyRelation(_) => Some("empty relation"),
             _ if plan.schema().fields().is_empty() => Some("zero-column relation"),
             _ => None,
@@ -253,6 +265,7 @@ fn partition<'a>(
                 }
                 let id = stats.duckdb_regions;
                 stats.duckdb_regions += 1;
+                stats.sql_queries.push(prepared.query.clone());
                 return Ok(LogicalPlan::Extension(Extension {
                     node: Arc::new(DuckDbRegion {
                         id,
@@ -361,13 +374,10 @@ impl ExecutionPlan for DuckDbExec {
                     .lock()
                     .map_err(|_| DataFusionError::Execution("DuckDB executor poisoned".into()))?;
                 let returned = stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
-                    || sql::execute_prepared(&mut *executor, &prepared))
+                    || executor.execute_prepared_arrow(&prepared))
                     .map_err(|e| DataFusionError::Execution(e.to_string()))?;
-                let arrays = returned.batch.columns().iter().zip(expected.fields())
-                    .map(|(array, field)| {
-                        if array.data_type() == field.data_type() { Ok(array.clone()) }
-                        else { arrow::compute::cast(array, field.data_type()) }
-                    })
+                let arrays = returned.columns().iter().zip(expected.fields())
+                    .map(|(array, field)| coerce_sql_array(array, field.data_type()))
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 RecordBatch::try_new(expected, arrays).map_err(DataFusionError::from)
             })
@@ -387,28 +397,19 @@ pub async fn execute(lowered: LoweredPlan) -> RelResult<(ReturnedBatches, DagSta
     execute_with_extensions(lowered, vec![], None, None).await
 }
 
-pub(crate) async fn execute_with_extensions(
-    lowered: LoweredPlan,
+/// Prepare nested and top-level regions with the same island placement rules.
+pub(crate) async fn prepare_with_extensions(
+    logical: &LogicalPlan,
     mut extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
-    timeout: Option<std::time::Duration>,
-    resources: Option<&DagSession>,
-) -> RelResult<(ReturnedBatches, DagStats)> {
-    let started = std::time::Instant::now();
-    let owned;
-    let resources = match resources {
-        Some(resources) => resources,
-        None => {
-            owned = DagSession::new(timeout);
-            &owned
-        }
-    };
+    resources: &DagSession,
+) -> RelResult<(Arc<dyn ExecutionPlan>, Arc<TaskContext>, DagStats)> {
     let session = &resources.session;
     // Optimize while relational scans and expressions remain visible, before
     // DuckDB placement turns each region into an opaque physical source.
     // One state snapshot per query keeps execution time and function metadata
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
-    let optimized = if resources.optimize { query_state.optimize(&lowered.plan)? } else { lowered.plan.clone() };
+    let optimized = if resources.optimize { query_state.optimize(logical)? } else { logical.clone() };
     let mut stats = DagStats::default();
     #[cfg(feature = "duckdb")]
     let plan = {
@@ -423,7 +424,7 @@ pub(crate) async fn execute_with_extensions(
         });
         optimized.clone()
     };
-    let prepared_at = std::time::Instant::now();
+
     #[cfg(feature = "duckdb")]
     extensions.push(Arc::new(RegionPlanner {
         executor: resources.executor.clone(),
@@ -435,9 +436,29 @@ pub(crate) async fn execute_with_extensions(
     stats.physical_plan = datafusion::physical_plan::displayable(physical.as_ref())
         .indent(true)
         .to_string();
+    Ok((physical, Arc::new(TaskContext::from(&query_state)), stats))
+}
+
+pub(crate) async fn execute_with_extensions(
+    lowered: LoweredPlan,
+    extensions: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+    timeout: Option<std::time::Duration>,
+    resources: Option<&DagSession>,
+) -> RelResult<(ReturnedBatches, DagStats)> {
+    let started = std::time::Instant::now();
+    let owned;
+    let resources = match resources {
+        Some(resources) => resources,
+        None => {
+            owned = DagSession::new(timeout);
+            &owned
+        }
+    };
+    let (physical, task, stats) = prepare_with_extensions(&lowered.plan, extensions, resources).await?;
+    let prepared_at = std::time::Instant::now();
     let planned_at = std::time::Instant::now();
     let schema = physical.schema();
-    let mut batches = datafusion::physical_plan::collect(physical, Arc::new(TaskContext::from(&query_state))).await?;
+    let mut batches = datafusion::physical_plan::collect(physical, task).await?;
     let batch = if batches.len() == 1 {
         // SQL regions and fused residual pipelines normally return one batch.
         // Preserve its buffers while applying the physical output schema.
@@ -470,4 +491,44 @@ pub(crate) async fn execute_with_extensions(
         },
         stats,
     ))
+}
+
+/// DuckDB assigns a physical integer type to untyped NULLs, including inside
+/// lists. Restore the logical Arrow type recursively without losing validity
+/// masks or offsets, and reject a non-null value where Null was expected.
+#[cfg(feature = "duckdb")]
+fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::datatypes::DataType) -> std::result::Result<arrow::array::ArrayRef, arrow::error::ArrowError> {
+    use arrow::array::{Array, make_array, new_null_array};
+    use arrow::datatypes::DataType;
+    if array.data_type() == target { return Ok(array.clone()); }
+    if target == &DataType::Null && array.null_count() == array.len() {
+        return Ok(new_null_array(target, array.len()));
+    }
+    let children = match (array.data_type(), target) {
+        (DataType::List(_), DataType::List(field)) |
+        (DataType::LargeList(_), DataType::LargeList(field)) => Some(vec![field.data_type()]),
+        (DataType::FixedSizeList(_, a), DataType::FixedSizeList(field, b)) if a == b => Some(vec![field.data_type()]),
+        (DataType::Struct(a), DataType::Struct(b)) if a.len() == b.len() => Some(b.iter().map(|f| f.data_type()).collect()),
+        _ => None,
+    };
+    if let Some(children) = children {
+        let data = array.to_data();
+        let converted = data.child_data().iter().zip(children)
+            .map(|(child, target)| coerce_sql_array(&make_array(child.clone()), target).map(|a| a.to_data()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        return Ok(make_array(data.into_builder().data_type(target.clone()).child_data(converted).build()?));
+    }
+    arrow::compute::cast_with_options(array, target, &arrow::compute::CastOptions { safe: false, ..Default::default() })
+}
+
+impl DagStats {
+    pub(crate) fn merge_execution(&mut self, nested: &Self) {
+        self.duckdb_regions += nested.duckdb_regions;
+        self.datafusion_operators += nested.datafusion_operators;
+        self.sql_queries.extend(nested.sql_queries.iter().cloned());
+        if !nested.physical_plan.is_empty() && !self.physical_plan.contains(&nested.physical_plan) {
+            self.physical_plan.push_str("\nExecuted subplan:\n");
+            self.physical_plan.push_str(&nested.physical_plan);
+        }
+    }
 }

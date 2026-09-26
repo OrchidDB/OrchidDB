@@ -66,9 +66,9 @@ pub(super) fn with_list_shadows(
             for row in 0..batch.num_rows() {
                 let (label, id) = (labels.value(row), ids.value(row));
                 column.push(if is_edge {
-                    graph.edge_property(label, id, property)
+                    graph.edge_property(label, id.clone().into(), property)
                 } else {
-                    graph.node_property(label, id, property)
+                    graph.node_property(label, id.clone().into(), property)
                 });
             }
             values[index].push(column);

@@ -186,6 +186,13 @@ mod tests {
     use super::normalize_cypher_extensions;
 
     #[test]
+    fn escaped_relationship_types_are_not_list_slices() {
+        for query in ["MATCH ()-[:`A:B`]->() RETURN 1", "MATCH ()-[r:`A:B`]->() RETURN r"] {
+            assert_eq!(normalize_cypher_extensions(query), query);
+        }
+    }
+
+    #[test]
     fn escaped_function_identifiers_survive_all_extension_passes() {
         for name in [
             "&&",

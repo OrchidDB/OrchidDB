@@ -19,6 +19,7 @@ pub(crate) fn cast_list_to_string(v: &Value) -> Value {
 
 fn display_for_as_string(v: &Value) -> String {
     match v {
+        Value::Scalar(v) => v.to_string(),
         Value::VertexProperty {key,value,..} => format!("vp[{key}->{}]",display_for_as_string(value)),
         Value::Property {key,value,..} => format!("p[{key}->{}]",display_for_as_string(value)),
         Value::CardinalityValue {cardinality,value} => format!("[{cardinality}, {}]", display_for_as_string(value)),
@@ -57,7 +58,7 @@ fn display_for_as_string(v: &Value) -> String {
         Value::Temporal(t) => t.to_string(),
         Value::DateTime(s) => s.clone(),
         Value::InternalId { table, offset } => format!("{table}:{offset}"),
-        Value::Node { label, id } => format!("str[v[{}]]", tinker_node_id(label, *id)),
+        Value::Node { label, id } => format!("str[v[{}]]", tinker_node_id(label, id.clone())),
         Value::Edge {
             rel_type,
             id,
@@ -68,10 +69,10 @@ fn display_for_as_string(v: &Value) -> String {
             ..
         } => format!(
             "str[e[{}][{}-{}->{}]]",
-            tinker_edge_id(rel_type, *id),
-            tinker_node_id(src_label, *src_id),
+            tinker_edge_id(rel_type, id.clone()),
+            tinker_node_id(src_label, src_id.clone()),
             rel_type,
-            tinker_node_id(dst_label, *dst_id)
+            tinker_node_id(dst_label, dst_id.clone())
         ),
         Value::List(items) | Value::Set(items) | Value::BulkSet(items) => {
             let parts = items
@@ -314,7 +315,11 @@ fn display_property_value(v: &Value) -> String {
     }
 }
 
-fn tinker_node_id(label: &str, id: i64) -> i64 {
+fn tinker_node_id(label: &str, key: crate::ir::ElementId) -> String {
+    let Some(id) = key.as_i64() else { return key.to_string(); };
+    tinker_node_integer(label, id).to_string()
+}
+fn tinker_node_integer(label: &str, id: i64) -> i64 {
     match (label, id) {
         ("person", 0) => 1,
         ("person", 1) => 2,
@@ -326,7 +331,11 @@ fn tinker_node_id(label: &str, id: i64) -> i64 {
     }
 }
 
-fn tinker_edge_id(rel_type: &str, id: i64) -> i64 {
+fn tinker_edge_id(rel_type: &str, key: crate::ir::ElementId) -> String {
+    let Some(id) = key.as_i64() else { return key.to_string(); };
+    tinker_edge_integer(rel_type, id).to_string()
+}
+fn tinker_edge_integer(rel_type: &str, id: i64) -> i64 {
     match (rel_type, id) {
         ("knows", 0) => 7,
         ("knows", 1) => 8,
@@ -943,7 +952,7 @@ pub(crate) fn cast_graph_string(v:&Value,graph:&crate::ir::catalog::PropertyGrap
     match v {
         Value::Null => Value::Null,
         Value::Node{..}=>Value::String(format!("v[{}]",display_for_as_string(&graph.element_public_id(v)))),
-        Value::Edge{rel_type,src_label,src_id,dst_label,dst_id,..}=>Value::String(format!("e[{}][{}-{}->{}]",display_for_as_string(&graph.element_public_id(v)),display_for_as_string(&graph.element_public_id(&Value::Node{label:src_label.clone(),id:*src_id})),rel_type,display_for_as_string(&graph.element_public_id(&Value::Node{label:dst_label.clone(),id:*dst_id})))),
+        Value::Edge{rel_type,src_label,src_id,dst_label,dst_id,..}=>Value::String(format!("e[{}][{}-{}->{}]",display_for_as_string(&graph.element_public_id(v)),display_for_as_string(&graph.element_public_id(&Value::Node{label:src_label.clone(),id:src_id.clone()})),rel_type,display_for_as_string(&graph.element_public_id(&Value::Node{label:dst_label.clone(),id:dst_id.clone()})))),
         _=>cast_to_string(v),
     }
 }

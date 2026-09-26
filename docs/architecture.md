@@ -14,7 +14,7 @@ Applications can pass `CompiledSql.sql` directly to a driver. The optional
 results, including cursors borrowing the session. It imposes neither Arrow nor
 row buffering. See [compiler API](compiler.md) for protocol and limitations.
 
-Mappings describe physical tables, signed integer identities, endpoints and
+Mappings describe physical tables, typed identities, endpoints and
 properties. Metadata must match the connection that executes the SQL. The caller
 owns schema discovery, transactions, connection leasing, extensions, UDF setup,
 result decoding, cancellation and caches. Compile-time function declarations
@@ -51,6 +51,14 @@ ordering, bag multiplicity, exact numeric types and observable evaluation counts
 [relational ownership map](../src/ir/rel/README.md) identify implementation seams.
 
 ## Runtime boundaries
+
+Managed and mapped graphs share one query runtime. `GraphEngine::mapped` uses
+caller-owned DuckDB tables; the `MappedGraphEngine` compatibility API delegates
+to the same executor. Element identities retain their scalar source types and
+writes target mapped columns. Mapped scans lower directly into SQL islands;
+residual kernels fetch only their referenced records and traversal frontiers.
+Schema binding never loads the mapped graph. See [unified graph engine](unified-graph-engine.md)
+for storage constraints, migration, and conformance evidence.
 
 The optional [managed runtime](runtime.md) executes a relational DAG, placing
 eligible regions in DuckDB and residual native operators in DataFusion. Explicit

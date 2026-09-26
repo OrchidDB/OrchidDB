@@ -72,7 +72,7 @@ fn index_numeric_and_symbolic_options_use_integer_keys() {
                 Value::Int(0),
                 Value::Node {
                     label: "software".into(),
-                    id: 0
+                    id: 0.into()
                 }
             )])]
         );
@@ -203,14 +203,14 @@ fn multi_key_values_preserve_types_order_and_path() {
             Value::Path(vec![
                 Value::Node {
                     label: "person".into(),
-                    id: 0
+                    id: 0.into()
                 },
                 Value::String("ana".into())
             ]),
             Value::Path(vec![
                 Value::Node {
                     label: "person".into(),
-                    id: 0
+                    id: 0.into()
                 },
                 Value::Int(29)
             ]),

@@ -4,7 +4,12 @@
 //! Queries lower to a relational DAG. DataFusion executes residual operators
 //! and schedules explicit DuckDB regions.
 
+mod mapped_storage;
+mod mapped_source;
+
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use crate::ir::rel::mapping::GraphMapping;
 use std::path::Path;
 use std::time::Duration;
 
@@ -50,6 +55,7 @@ pub struct QueryResult {
 /// DuckDB snapshot isolation; conflicting writes fail during persistence or commit.
 pub struct GraphEngine {
     storage: Connection,
+    mapping: Option<Arc<GraphMapping>>,
     database: Option<sql::SharedDatabase>,
     graph: PropertyGraph,
     loaded_revision: Option<i64>,
@@ -60,6 +66,28 @@ pub struct GraphEngine {
     sql_timeout: Option<Duration>,
     strict_executor: sql::DuckDbExecutor,
     dag_session: crate::ir::rel::dag::DagSession,
+}
+
+// Restore caller-owned resources even when an async query future is dropped.
+struct MappedConnectionLease<'a> {
+    target: &'a mut Connection,
+    executor: sql::DuckDbExecutor,
+}
+impl Drop for MappedConnectionLease<'_> {
+    fn drop(&mut self) {if let Some(connection)=self.executor.take_connection() {*self.target=connection;}}
+}
+struct MappedExecutorLease<'a> {
+    target: &'a mut sql::DuckDbExecutor,
+    shared: Arc<std::sync::Mutex<sql::DuckDbExecutor>>,
+    automatic: bool,
+    finished: bool,
+}
+impl Drop for MappedExecutorLease<'_> {
+    fn drop(&mut self) {
+        let mut executor=self.shared.lock().unwrap_or_else(|e|e.into_inner());
+        if self.automatic && !self.finished {let _=executor.rollback();}
+        *self.target=std::mem::take(&mut *executor);
+    }
 }
 
 // Discover pre-rename graph tables by their reserved schema and validate the
@@ -104,6 +132,20 @@ fn migrate_storage_namespace(storage: &Connection) -> EngineResult<()> {
 }
 
 impl GraphEngine {
+    /// Use caller-owned DuckDB tables with the common language executor.
+    pub fn mapped(storage: Connection, mapping: Arc<GraphMapping>) -> EngineResult<Self> {
+        mapped_storage::register(&storage)?;
+        let mut engine = Self {
+            storage, mapping: Some(mapping), database: None, graph: PropertyGraph::new(),
+            loaded_revision: None, in_transaction: false, failed_transaction: false,
+            read_mode: ReadMode::Hybrid, backend: RelBackend::new(), sql_timeout: None,
+            strict_executor: sql::DuckDbExecutor::new(),
+            dag_session: crate::ir::rel::dag::DagSession::new(None),
+        };
+        engine.refresh()?;
+        Ok(engine)
+    }
+
     pub fn open(path: impl AsRef<Path>) -> EngineResult<Self> {
         let (connection, database) = sql::open_shared(path.as_ref())?;
         let mut engine = Self::from_connection(connection)?;
@@ -135,12 +177,23 @@ impl GraphEngine {
                  CREATE TABLE IF NOT EXISTS __orchiddb_records (
                     kind INTEGER NOT NULL,
                     name VARCHAR NOT NULL,
-                    id BIGINT NOT NULL,
+                    id BLOB NOT NULL,
                     payload BLOB NOT NULL,
                     PRIMARY KEY(kind, name, id)
                  )",
                 )
                 .map_err(|e| e.to_string())?;
+            let key_type: String = storage.query_row("SELECT data_type FROM information_schema.columns WHERE table_name = '__orchiddb_records' AND column_name = 'id' AND table_schema = current_schema()", [], |row| row.get(0)).map_err(|e|e.to_string())?;
+            if key_type != "BLOB" {
+                let rows = {
+                    let mut stmt = storage.prepare("SELECT kind, name, id, payload FROM __orchiddb_records").map_err(|e|e.to_string())?;
+                    stmt.query_map([], |row| Ok((row.get::<_,i32>(0)?, row.get::<_,String>(1)?, row.get::<_,i64>(2)?, row.get::<_,Vec<u8>>(3)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+                };
+                storage.execute_batch("DROP TABLE __orchiddb_records; CREATE TABLE __orchiddb_records (kind INTEGER NOT NULL, name VARCHAR NOT NULL, id BLOB NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(kind,name,id))").map_err(|e|e.to_string())?;
+                for (kind,name,id,payload) in rows {
+                    storage.execute("INSERT INTO __orchiddb_records VALUES (?, ?, ?, ?)", params![kind,name,crate::ir::ElementId::from(id),payload]).map_err(|e|e.to_string())?;
+                }
+            }
             let initial = encode_graph(&PropertyGraph::new())?;
             storage.execute(
                 "INSERT INTO __orchiddb_state(singleton, format_version, payload, revision) VALUES (1, 2, ?, 0) ON CONFLICT DO NOTHING",
@@ -183,6 +236,7 @@ impl GraphEngine {
         }
         let mut engine = Self {
             storage,
+            mapping: None,
             database: None,
             graph: PropertyGraph::new(),
             loaded_revision: None,
@@ -291,6 +345,13 @@ impl GraphEngine {
     }
 
     fn refresh_snapshot(&mut self) -> EngineResult<()> {
+        if let Some(mapping) = &self.mapping {
+            let procedures = self.graph.procedures.clone();
+            self.graph = mapped_storage::metadata(&self.storage, mapping.clone())?;
+            self.graph.procedures = procedures;
+            return Ok(());
+        }
+
         let (version, revision): (i32, i64) = self
             .storage
             .query_row(
@@ -349,6 +410,14 @@ impl GraphEngine {
     }
 
     fn persist(&mut self) -> EngineResult<()> {
+        if let Some(mapping) = &self.mapping {
+            mapped_storage::persist(&self.storage, &self.graph, mapping)?;
+            let procedures = self.graph.procedures.clone();
+            self.graph = mapped_storage::metadata(&self.storage, mapping.clone())?;
+            self.graph.procedures = procedures;
+            return Ok(());
+        }
+
         let pending = self.graph.pending_changes();
         if pending.nodes.is_empty() && pending.edges.is_empty() {
             return Ok(());
@@ -417,6 +486,7 @@ impl GraphEngine {
     /// Compact persisted overlay records into one checkpoint. Joins the active
     /// transaction, or commits atomically when called outside a transaction.
     pub fn checkpoint(&mut self) -> EngineResult<()> {
+        if self.mapping.is_some() { return Ok(()); }
         if self.failed_transaction {
             return Err("transaction failed; roll it back".into());
         }
@@ -438,6 +508,7 @@ impl GraphEngine {
 
     /// Import an Arrow-backed graph atomically, replacing the managed graph.
     pub fn replace_graph(&mut self, graph: PropertyGraph) -> EngineResult<()> {
+        if self.mapping.is_some() { return Err("cannot replace a mapped schema with a managed graph".into()); }
         let automatic = !self.in_transaction;
         if automatic {
             self.begin()?;
@@ -478,13 +549,7 @@ impl GraphEngine {
         query: &str,
         parameters: &BTreeMap<String, Value>,
     ) -> EngineResult<QueryResult> {
-        let mut parsed = cypher::parser::parse_query(query).map_err(|e| e.to_string())?;
-        cypher::procedures::prepare(&mut parsed,self.procedure_catalog()).map_err(|e|e.to_string())?;
-        cypher::parameters::bind_parameters(&mut parsed, parameters)?;
-        cypher::procedures::prepare(&mut parsed,self.procedure_catalog()).map_err(|e|e.to_string())?;
-        let plan = cypher::planner::CypherPlanner::new()
-            .plan(&parsed)
-            .map_err(|e| e.to_string())?;
+        let plan = plan_cypher(query, parameters, self.procedure_catalog())?;
         self.execute_plan(&plan).await
     }
 
@@ -496,11 +561,7 @@ impl GraphEngine {
         &mut self, query: &str,
         bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>,
     ) -> EngineResult<QueryResult> {
-        let (source, values) = gremlin::callables::prepare(query, bindings).map_err(|e| e.to_string())?;
-        let parsed = gremlin::parse_traversal_with_bindings(&source, &values).map_err(|e| e.to_string())?;
-        let plan = gremlin::GremlinPlanner::new()
-            .plan(&parsed)
-            .map_err(|e| e.to_string())?;
+        let plan = plan_gremlin(query, bindings)?;
         self.execute_plan(&plan).await
     }
 
@@ -509,10 +570,7 @@ impl GraphEngine {
         query: &str,
         ontology: sparql::OntologyMapping,
     ) -> EngineResult<QueryResult> {
-        let plan = sparql::SparqlPlanner::default()
-            .with_ontology(ontology)
-            .plan_str(query)
-            .map_err(|e| e.to_string())?;
+        let plan = plan_sparql(query, ontology)?;
         self.execute_plan(&plan).await
     }
 
@@ -520,12 +578,7 @@ impl GraphEngine {
         // Long clause chains create deep logical DAGs. Give each synchronous
         // poll enough stack for lowering/optimizer recursion while retaining
         // the same async executor, session, and wakeup behavior.
-        let result = {
-            let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(
-                plan, &self.graph, self.sql_timeout, Some(&self.dag_session)));
-            futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
-                || std::future::Future::poll(execution.as_mut(), cx))).await
-        };
+        let result = execute_graph_dag(plan, &self.graph, self.sql_timeout, Some(&self.dag_session)).await;
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
             self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
@@ -541,6 +594,15 @@ impl GraphEngine {
     pub async fn execute_plan_with_diagnostics(&mut self, plan: &GraphPlan) -> Result<QueryResult, QueryExecutionError> {
         if self.failed_transaction {
             return Err("transaction failed; roll it back".into());
+        }
+        if let Some(mapping) = self.mapping.clone() {
+            let placeholder = Connection::open_in_memory().map_err(|e|e.to_string())?;
+            let storage = std::mem::replace(&mut self.storage, placeholder);
+            let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
+            if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
+            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout).await;
+            drop(lease);
+            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
         if contains_mutation(&plan.root) {
             let automatic = !self.in_transaction;
@@ -636,4 +698,75 @@ impl Drop for GraphEngine {
             let _ = self.storage.execute_batch("ROLLBACK");
         }
     }
+}
+
+/// Compatibility entry point sharing the runtime and storage adapter while
+/// retaining the caller's exact DuckDB connection and active transaction.
+pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan) -> EngineResult<ReturnedBatches> {
+    execute_mapped_dag(executor, mapping, plan, Default::default(), None).await.map(|(returned,_)|returned)
+}
+
+async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+    let automatic = !executor.in_transaction();
+    if automatic { executor.begin().map_err(|e|e.to_string())?; }
+    let shared=Arc::new(std::sync::Mutex::new(std::mem::take(executor)));
+    let mut lease=MappedExecutorLease {target:executor,shared:shared.clone(),automatic,finished:false};
+    let session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
+    let result = async {
+        let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
+        graph.procedures = procedures;
+        let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session)).await.map_err(|e|e.to_string())?;
+        if contains_mutation(&plan.root) {
+            // Populate only touched records before holding the SQL connection.
+            let pending=graph.pending_changes();
+            if let Some(source)=&graph.source {
+                for (name,id) in pending.nodes { source.exists(false,&name,&id); }
+                for (name,id) in pending.edges { source.exists(true,&name,&id); }
+            }
+            graph.check_source()?;
+            let mut executor=session.executor()?;
+            mapped_storage::persist(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping)?;
+        }
+        if let Some(source)=&graph.source {let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;}
+        Ok(result)
+    }.await;
+    drop(session);
+    lease.finished=true;
+    drop(lease);
+    if automatic {
+        if result.is_ok(){executor.commit().map_err(|e|e.to_string())?;} else {let _=executor.rollback();}
+    }
+    result
+}
+
+/// Shared frontend preparation for every DuckDB storage layout.
+pub(crate) fn plan_cypher(query: &str, parameters: &BTreeMap<String, Value>, catalog: &crate::ir::procedures::ProcedureCatalog) -> EngineResult<GraphPlan> {
+        let mut parsed = cypher::parser::parse_query(query).map_err(|e| e.to_string())?;
+        cypher::procedures::prepare(&mut parsed,catalog).map_err(|e|e.to_string())?;
+        cypher::parameters::bind_parameters(&mut parsed, parameters)?;
+        cypher::procedures::prepare(&mut parsed,catalog).map_err(|e|e.to_string())?;
+        cypher::planner::CypherPlanner::new()
+            .plan(&parsed)
+            .map_err(|e| e.to_string())
+}
+
+pub(crate) fn plan_gremlin(query: &str, bindings: &std::collections::HashMap<String, gremlin::GremlinBinding>) -> EngineResult<GraphPlan> {
+        let (source, values) = gremlin::callables::prepare(query, bindings).map_err(|e| e.to_string())?;
+        let parsed = gremlin::parse_traversal_with_bindings(&source, &values).map_err(|e| e.to_string())?;
+        gremlin::GremlinPlanner::new()
+            .plan(&parsed)
+            .map_err(|e| e.to_string())
+}
+
+pub(crate) fn plan_sparql(query: &str, ontology: sparql::OntologyMapping) -> EngineResult<GraphPlan> {
+        sparql::SparqlPlanner::default()
+            .with_ontology(ontology)
+            .plan_str(query)
+            .map_err(|e| e.to_string())
+}
+
+async fn execute_graph_dag(plan: &GraphPlan, graph: &PropertyGraph, timeout: Option<Duration>, session: Option<&crate::ir::rel::dag::DagSession>) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
+    let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(plan, graph, timeout, session));
+    futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
+        || std::future::Future::poll(execution.as_mut(), cx))).await
 }

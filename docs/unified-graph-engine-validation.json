@@ -1,0 +1,98 @@
+{
+  "verified_at": "2026-09-26T22:00:29.982479+00:00",
+  "base_commit": "834e44627d2378d1463691a05bcb01d2b14fadc6",
+  "working_tree": true,
+  "source_fingerprint": {
+    "sha256": "74fa00ef1afab775615aa7fff5190c8d4125559df04b8dc9234b09fffb057faf",
+    "algorithm": "SHA256 of sorted relative path + NUL + file SHA256 + newline for src/**/*.rs, jvm/src/main/java/**/*.java, root and conformance/runner Cargo.toml/Cargo.lock"
+  },
+  "binaries": {
+    "upstream": "5d0221930882434bfc5954bc42217b454fbb12a513e5ca2422cc3877c1022ae5",
+    "orchiddb-jvm-store": "c7c6086e19a4adf781c930f3badd9e96aed1f960bb8f9eefefc6d61e1c894ed0"
+  },
+  "suites": {
+    "opencypher": {
+      "started_at": "2026-09-26T21:50:46.726500+00:00",
+      "finished_at": "2026-09-26T21:56:38.167027+00:00",
+      "cases": 3897,
+      "outcomes": {
+        "pass": 3897
+      },
+      "changed_outcomes": 0,
+      "missing_cases": 0,
+      "changed_case_definitions": 0,
+      "case_hash_comparison": "Baseline normalized_case_sha256 when recorded; otherwise case_sha256",
+      "artifact": "target/sql-islands/orchiddb-opencypher.json",
+      "artifact_sha256": "3588fed37f261e9fed4da0cc2c03f38e71bace1750ded72594048eebb5878a7d"
+    },
+    "tinkerpop": {
+      "started_at": "2026-09-26T21:56:58.400160+00:00",
+      "finished_at": "2026-09-26T22:00:12.076551+00:00",
+      "cases": 1511,
+      "outcomes": {
+        "pass": 1511
+      },
+      "changed_outcomes": 0,
+      "missing_cases": 0,
+      "changed_case_definitions": 0,
+      "case_hash_comparison": "Baseline normalized_case_sha256 when recorded; otherwise case_sha256",
+      "artifact": "target/sql-islands/orchiddb-tinkerpop.json",
+      "artifact_sha256": "d4577775e7881b86c6cd61968d3846d55c558a0a725a6ee9a818cb1d7fa2809c"
+    },
+    "rdf": {
+      "started_at": "2026-09-26T21:50:47.903156+00:00",
+      "finished_at": "2026-09-26T21:51:45.635690+00:00",
+      "cases": 1125,
+      "outcomes": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "changed_outcomes": 0,
+      "missing_cases": 0,
+      "changed_case_definitions": 0,
+      "case_hash_comparison": "Baseline normalized_case_sha256 when recorded; otherwise case_sha256",
+      "artifact": "target/sql-islands/orchiddb-rdf.json",
+      "artifact_sha256": "6c3d7c5e4b5d66272c47c3151c1ecf4b563b6b36291e4b3c1f2358d373b2d148"
+    }
+  },
+  "local_checks": {
+    "unit_tests_passed": 195,
+    "focused_integration_tests_passed": 141,
+    "executed_plan_examples_passed": 9,
+    "jvm_tests_passed": 64,
+    "all_targets_compile": [
+      "default",
+      "duckdb"
+    ]
+  },
+  "plan_examples": {
+    "examples/mapped_execution_plans.rs": "bce1d97ba256d87179b52e1088c44bef8da149bace14735290307f153e9d4ab2",
+    "docs/mapped-execution-plans.md": "bccd06f42f91ce307d7a626c9d9d2a0c6cc65e26e9b1f4da420256225ffb4e54",
+    "docs/mapped-execution-plan-review.md": "108b3b7163c5c45335731b17fc1bedd2379c1ccb3f4c96152b6b14592ef7d413"
+  },
+  "local_check_logs": {
+    "local-tests.log": {
+      "artifact": "target/sql-islands/local-tests.log",
+      "sha256": "09b0df2850d63542bc7bb6435e0eda86a3075e3cf633d61c609b2ac27b606218"
+    },
+    "jvm-tests.log": {
+      "artifact": "target/sql-islands/jvm-tests.log",
+      "sha256": "9ddf3781b5e43a87b1d67caac2bc4b251f9ce8d77c509c8369129f4b0359fd55"
+    },
+    "check-duckdb.log": {
+      "artifact": "target/sql-islands/check-duckdb.log",
+      "sha256": "8f2e123934cb11ae3842af793228d0be8c43c8c1d0ea48de11e9763039d30c76"
+    },
+    "check-default.log": {
+      "artifact": "target/sql-islands/check-default.log",
+      "sha256": "3d2d29725af87d53918632b01b16e89d80296a4b7b2fd93065354c9c2443d92d"
+    }
+  },
+  "execution_notes": {
+    "tinkerpop": "One complete serial run with the unchanged 30-second query deadline; no case results merged across attempts.",
+    "opencypher": "One complete run after correcting nested Null Arrow conversion; earlier failing report retained separately.",
+    "previous_opencypher_artifact": "target/sql-islands/orchiddb-opencypher-before-null-fix.json",
+    "execution_plans": "Nine asserted mapped examples in docs/mapped-execution-plans.md; reproduced by examples/mapped_execution_plans.rs."
+  }
+}

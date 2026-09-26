@@ -54,40 +54,40 @@ pub(super) fn encode_edge_tables(edge_tables: &HashMap<String, Vec<EdgeTable>>) 
 }
 
 pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
+    let mut out = b"KEY2".to_vec();
 
     {
-        let mut keys: Vec<(String, i64)> = ov.inserted_nodes.keys().cloned().collect();
+        let mut keys: Vec<(String, ElementId)> = ov.inserted_nodes.keys().cloned().collect();
         keys.sort();
         let mut b = Vec::new();
         put_u64(&mut b, keys.len() as u64);
         for (label, id) in &keys {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
-            put_map(&mut b, &ov.inserted_nodes[&(label.clone(), *id)]);
+            put_id(&mut b, &id.clone());
+            put_map(&mut b, &ov.inserted_nodes[&(label.clone(), id.clone())]);
         }
         write_section(&mut out, OV_INSERTED_NODES, &b);
     }
     {
-        let mut keys: Vec<(String, i64)> = ov.node_property_overrides.keys().cloned().collect();
+        let mut keys: Vec<(String, ElementId)> = ov.node_property_overrides.keys().cloned().collect();
         keys.sort();
         let mut b = Vec::new();
         put_u64(&mut b, keys.len() as u64);
         for (label, id) in &keys {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
-            put_map(&mut b, &ov.node_property_overrides[&(label.clone(), *id)]);
+            put_id(&mut b, &id.clone());
+            put_map(&mut b, &ov.node_property_overrides[&(label.clone(), id.clone())]);
         }
         write_section(&mut out, OV_NODE_OVERRIDES, &b);
     }
     {
-        let mut items: Vec<&(String, i64)> = ov.deleted_nodes.iter().collect();
+        let mut items: Vec<&(String, ElementId)> = ov.deleted_nodes.iter().collect();
         items.sort();
         let mut b = Vec::new();
         put_u64(&mut b, items.len() as u64);
         for (label, id) in items {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
         }
         write_section(&mut out, OV_DELETED_NODES, &b);
     }
@@ -96,38 +96,38 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         put_u64(&mut b, ov.inserted_edges.len() as u64);
         for ((rel_type, id), edge) in &ov.inserted_edges {
             put_str(&mut b, rel_type);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
             put_str(&mut b, &edge.src_label);
-            put_i64(&mut b, edge.src_id);
+            put_id(&mut b, &edge.src_id);
             put_str(&mut b, &edge.dst_label);
-            put_i64(&mut b, edge.dst_id);
+            put_id(&mut b, &edge.dst_id);
             put_map(&mut b, &edge.properties);
         }
         write_section(&mut out, OV_INSERTED_EDGES, &b);
     }
     {
-        let mut keys: Vec<(String, i64)> = ov.edge_property_overrides.keys().cloned().collect();
+        let mut keys: Vec<(String, ElementId)> = ov.edge_property_overrides.keys().cloned().collect();
         keys.sort();
         let mut b = Vec::new();
         put_u64(&mut b, keys.len() as u64);
         for (rel_type, id) in &keys {
             put_str(&mut b, rel_type);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
             put_map(
                 &mut b,
-                &ov.edge_property_overrides[&(rel_type.clone(), *id)],
+                &ov.edge_property_overrides[&(rel_type.clone(), id.clone())],
             );
         }
         write_section(&mut out, OV_EDGE_OVERRIDES, &b);
     }
     {
-        let mut items: Vec<&(String, i64)> = ov.deleted_edges.iter().collect();
+        let mut items: Vec<&(String, ElementId)> = ov.deleted_edges.iter().collect();
         items.sort();
         let mut b = Vec::new();
         put_u64(&mut b, items.len() as u64);
         for (rel_type, id) in items {
             put_str(&mut b, rel_type);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
         }
         write_section(&mut out, OV_DELETED_EDGES, &b);
     }
@@ -160,58 +160,58 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
         write_section(&mut out, OV_EDGE_COUNTS, &b);
     }
     {
-        let mut keys: Vec<(String, i64)> = ov.inserted_out_adj.keys().cloned().collect();
+        let mut keys: Vec<(String, ElementId)> = ov.inserted_out_adj.keys().cloned().collect();
         keys.sort();
         let mut b = Vec::new();
         put_u64(&mut b, keys.len() as u64);
         for (label, id) in &keys {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
-            let adj = &ov.inserted_out_adj[&(label.clone(), *id)];
+            put_id(&mut b, &id.clone());
+            let adj = &ov.inserted_out_adj[&(label.clone(), id.clone())];
             put_u64(&mut b, adj.len() as u64);
             for (rel_type, row) in adj {
                 put_str(&mut b, rel_type);
-                put_i64(&mut b, *row);
+                put_id(&mut b, row);
             }
         }
         write_section(&mut out, OV_OUT_ADJ, &b);
     }
     {
-        let mut keys: Vec<(String, i64)> = ov.inserted_in_adj.keys().cloned().collect();
+        let mut keys: Vec<(String, ElementId)> = ov.inserted_in_adj.keys().cloned().collect();
         keys.sort();
         let mut b = Vec::new();
         put_u64(&mut b, keys.len() as u64);
         for (label, id) in &keys {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
-            let adj = &ov.inserted_in_adj[&(label.clone(), *id)];
+            put_id(&mut b, &id.clone());
+            let adj = &ov.inserted_in_adj[&(label.clone(), id.clone())];
             put_u64(&mut b, adj.len() as u64);
             for (rel_type, row) in adj {
                 put_str(&mut b, rel_type);
-                put_i64(&mut b, *row);
+                put_id(&mut b, row);
             }
         }
         write_section(&mut out, OV_IN_ADJ, &b);
     }
     {
-        let mut items: Vec<&(String, i64)> = ov.replaced_node_properties.iter().collect();
+        let mut items: Vec<&(String, ElementId)> = ov.replaced_node_properties.iter().collect();
         items.sort();
         let mut b = Vec::new();
         put_u64(&mut b, items.len() as u64);
         for (label, id) in items {
             put_str(&mut b, label);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
         }
         write_section(&mut out, OV_REPLACED_NODES, &b);
     }
     {
-        let mut items: Vec<&(String, i64)> = ov.replaced_edge_properties.iter().collect();
+        let mut items: Vec<&(String, ElementId)> = ov.replaced_edge_properties.iter().collect();
         items.sort();
         let mut b = Vec::new();
         put_u64(&mut b, items.len() as u64);
         for (rel_type, id) in items {
             put_str(&mut b, rel_type);
-            put_i64(&mut b, *id);
+            put_id(&mut b, &id.clone());
         }
         write_section(&mut out, OV_REPLACED_EDGES, &b);
     }
@@ -231,28 +231,28 @@ pub(super) fn encode_overlay(ov: &GraphOverlay) -> Result<Vec<u8>, String> {
     }
 
     let ids = Value::List(ov.cypher_ids.iter().map(|((edge, name, row), id)|
-        Value::List(vec![Value::Bool(*edge), Value::String(name.clone()), Value::Long(*row), Value::Long(*id)])).collect());
+        Value::List(vec![Value::Bool(*edge), Value::String(name.clone()), Value::Scalar(row.scalar().clone()), Value::Long(id.clone())])).collect());
     write_section(&mut out, 0x24, &binary::encode_value_bytes(&ids));
     let mut labels = Vec::new();
     put_u64(&mut labels, ov.node_label_sets.len() as u64);
     for ((storage, id), names) in &ov.node_label_sets {
         put_str(&mut labels, storage);
-        put_i64(&mut labels, *id);
+        put_id(&mut labels, id);
         put_str_list(&mut labels, &names.iter().cloned().collect::<Vec<_>>());
     }
     write_section(&mut out, 0x23, &labels);
     write_section(&mut out, 0x22, &binary::encode_value_bytes(&Value::Bool(ov.allow_null_property_values)));
     let nulls = Value::List(ov.edge_null_properties.iter().map(|((label, id), keys)| {
-        Value::List(vec![Value::String(label.clone()), Value::Long(*id),
+        Value::List(vec![Value::String(label.clone()), Value::Scalar(id.scalar().clone()),
             Value::List(keys.iter().cloned().map(Value::String).collect())])
     }).collect());
     write_section(&mut out, 0x21, &binary::encode_value_bytes(&nulls));
     let mut state = Vec::new();
     let mut keys = std::collections::BTreeSet::new();
     keys.extend(ov.vertex_properties.keys().cloned());
-    keys.extend(ov.public_ids.keys().filter(|(edge,_,_)| !edge).map(|(_,label,id)|(label.clone(),*id)));
-    for key in keys {state.push(Value::List(vec![Value::String(key.0.clone()),Value::Long(key.1),ov.native_node_state(&key)]));}
-    let edges = ov.public_ids.iter().filter(|((edge,_,_),_)|*edge).map(|((_,name,id),value)|Value::List(vec![Value::String(name.clone()),Value::Long(*id),value.clone()])).collect();
+    keys.extend(ov.public_ids.keys().filter(|(edge,_,_)| !edge).map(|(_,label,id)|(label.clone(),id.clone())));
+    for key in keys {state.push(Value::List(vec![Value::String(key.0.clone()),Value::Scalar(key.1.scalar().clone()),ov.native_node_state(&key)]));}
+    let edges = ov.public_ids.iter().filter(|((edge,_,_),_)|*edge).map(|((_,name,id),value)|Value::List(vec![Value::String(name.clone()),Value::Scalar(id.scalar().clone()),value.clone()])).collect();
     write_section(&mut out, 0x20, &binary::encode_value_bytes(&Value::List(vec![Value::Long(ov.next_property_id),Value::List(state),Value::List(edges)])));
     Ok(out)
 }
@@ -324,6 +324,8 @@ pub(super) fn parse_edge_tables(payload: &[u8]) -> Result<HashMap<String, Vec<Ed
 }
 
 pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
+    let typed = payload.starts_with(b"KEY2");
+    let payload = if typed { &payload[4..] } else { payload };
     let mut ov = GraphOverlay::default();
     let mut r = Reader::new(payload);
     while !r.is_empty() {
@@ -335,10 +337,10 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 let Value::List(records) = binary::decode_value_bytes(sub)? else { return Err("Invalid Cypher identities".into()); };
                 for record in records {
                     let Value::List(fields) = record else { return Err("Invalid Cypher identity".into()); };
-                    let [Value::Bool(edge), Value::String(name), Value::Long(row), Value::Long(id)] = fields.as_slice() else {
+                    let [Value::Bool(edge), Value::String(name), row, Value::Long(id)] = fields.as_slice() else {
                         return Err("Invalid Cypher identity fields".into());
                     };
-                    ov.cypher_ids.insert((*edge, name.clone(), *row), *id);
+                    ov.cypher_ids.insert((*edge, name.clone(), ElementId::try_from(row)?), id.clone());
                 }
                 continue;
             }
@@ -346,9 +348,9 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 let count = sr.count()?;
                 for _ in 0..count {
                     let storage = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let names = decode_str_list(&mut sr)?;
-                    ov.node_label_sets.insert((storage, id), names.into_iter().collect());
+                    ov.node_label_sets.insert((storage, id.clone().into()), names.into_iter().collect());
                 }
             }
             0x22 => {
@@ -364,14 +366,14 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 };
                 for edge in edges {
                     let Value::List(fields) = edge else { return Err("Invalid null edge property record".into()); };
-                    let [Value::String(label), Value::Long(id), Value::List(keys)] = fields.as_slice() else {
+                    let [Value::String(label), id, Value::List(keys)] = fields.as_slice() else {
                         return Err("Invalid null edge property fields".into());
                     };
                     let keys = keys.iter().map(|key| match key {
                         Value::String(key) => Ok(key.clone()),
                         _ => Err("Invalid null edge property key".to_string()),
                     }).collect::<Result<_, _>>()?;
-                    ov.edge_null_properties.insert((label.clone(), *id), keys);
+                    ov.edge_null_properties.insert((label.clone(), ElementId::try_from(id)?), keys);
                 }
                 continue;
             }
@@ -380,51 +382,51 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 let Value::List(fields) = value else {return Err("Invalid native property state".into())};
                 let [Value::Long(next),Value::List(nodes),Value::List(edges)] = fields.as_slice() else {return Err("Invalid native property state fields".into())};
                 ov.next_property_id = *next;
-                for node in nodes {let Value::List(fields)=node else{return Err("Invalid native node".into())};let [Value::String(label),Value::Long(id),state]=fields.as_slice() else{return Err("Invalid native node fields".into())};ov.restore_native_node_state((label.clone(),*id),state)?;}
-                for edge in edges {let Value::List(fields)=edge else{return Err("Invalid public edge".into())};let [Value::String(label),Value::Long(id),value]=fields.as_slice() else{return Err("Invalid public edge fields".into())};ov.public_ids.insert((true,label.clone(),*id),value.clone());}
+                for node in nodes {let Value::List(fields)=node else{return Err("Invalid native node".into())};let [Value::String(label),id,state]=fields.as_slice() else{return Err("Invalid native node fields".into())};ov.restore_native_node_state((label.clone(),ElementId::try_from(id)?),state)?;}
+                for edge in edges {let Value::List(fields)=edge else{return Err("Invalid public edge".into())};let [Value::String(label),id,value]=fields.as_slice() else{return Err("Invalid public edge fields".into())};ov.public_ids.insert((true,label.clone(),ElementId::try_from(id)?),value.clone());}
                 continue;
             }
             OV_INSERTED_NODES => {
                 let n = sr.count()?;
                 for _ in 0..n {
                     let label = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let props = decode_map(&mut sr)?;
-                    ov.inserted_nodes.insert((label, id), props);
+                    ov.inserted_nodes.insert((label, id.clone().into()), props);
                 }
             }
             OV_NODE_OVERRIDES => {
                 let n = sr.count()?;
                 for _ in 0..n {
                     let label = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let props = decode_map(&mut sr)?;
-                    ov.node_property_overrides.insert((label, id), props);
+                    ov.node_property_overrides.insert((label, id.clone().into()), props);
                 }
             }
             OV_DELETED_NODES => {
                 let n = sr.count()?;
                 for _ in 0..n {
-                    ov.deleted_nodes.insert((sr.str()?, sr.i64()?));
+                    ov.deleted_nodes.insert((sr.str()?, sr.element_id(typed)?));
                 }
             }
             OV_INSERTED_EDGES => {
                 let n = sr.count()?;
                 for _ in 0..n {
                     let rel_type = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let src_label = sr.str()?;
-                    let src_id = sr.i64()?;
+                    let src_id = sr.element_id(typed)?;
                     let dst_label = sr.str()?;
-                    let dst_id = sr.i64()?;
+                    let dst_id = sr.element_id(typed)?;
                     let properties = decode_map(&mut sr)?;
                     ov.inserted_edges.insert(
-                        (rel_type, id),
+                        (rel_type, id.clone().into()),
                         InsertedEdge {
                             src_label,
-                            src_id,
+                            src_id: src_id.clone().into(),
                             dst_label,
-                            dst_id,
+                            dst_id: dst_id.clone().into(),
                             properties,
                         },
                     );
@@ -434,15 +436,15 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 let n = sr.count()?;
                 for _ in 0..n {
                     let rel_type = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let props = decode_map(&mut sr)?;
-                    ov.edge_property_overrides.insert((rel_type, id), props);
+                    ov.edge_property_overrides.insert((rel_type, id.clone().into()), props);
                 }
             }
             OV_DELETED_EDGES => {
                 let n = sr.count()?;
                 for _ in 0..n {
-                    ov.deleted_edges.insert((sr.str()?, sr.i64()?));
+                    ov.deleted_edges.insert((sr.str()?, sr.element_id(typed)?));
                 }
             }
             OV_NODE_COUNTS => {
@@ -461,29 +463,29 @@ pub(super) fn parse_overlay(payload: &[u8]) -> Result<GraphOverlay, String> {
                 let n = sr.count()?;
                 for _ in 0..n {
                     let label = sr.str()?;
-                    let id = sr.i64()?;
+                    let id = sr.element_id(typed)?;
                     let m = sr.count()?;
                     let mut adj = Vec::with_capacity(m);
                     for _ in 0..m {
-                        adj.push((sr.str()?, sr.i64()?));
+                        adj.push((sr.str()?, sr.element_id(typed)?));
                     }
                     if tag == OV_OUT_ADJ {
-                        ov.inserted_out_adj.insert((label, id), adj);
+                        ov.inserted_out_adj.insert((label, id.clone().into()), adj);
                     } else {
-                        ov.inserted_in_adj.insert((label, id), adj);
+                        ov.inserted_in_adj.insert((label, id.clone().into()), adj);
                     }
                 }
             }
             OV_REPLACED_NODES => {
                 let n = sr.count()?;
                 for _ in 0..n {
-                    ov.replaced_node_properties.insert((sr.str()?, sr.i64()?));
+                    ov.replaced_node_properties.insert((sr.str()?, sr.element_id(typed)?));
                 }
             }
             OV_REPLACED_EDGES => {
                 let n = sr.count()?;
                 for _ in 0..n {
-                    ov.replaced_edge_properties.insert((sr.str()?, sr.i64()?));
+                    ov.replaced_edge_properties.insert((sr.str()?, sr.element_id(typed)?));
                 }
             }
             OV_INSERTED_NODE_KEYS => {

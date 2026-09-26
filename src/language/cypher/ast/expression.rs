@@ -92,6 +92,7 @@ pub struct ExistsSubquery {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
+    Scalar(datafusion::common::ScalarValue),
     Null,
     Bool(bool),
     Integer(String),

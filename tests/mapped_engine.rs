@@ -25,8 +25,8 @@ CREATE TABLE users (id BIGINT, name VARCHAR, age BIGINT);
 INSERT INTO users VALUES (1, 'alice', 30), (2, 'bob', 28), (3, 'carol', 41);
 CREATE TABLE orders (order_id BIGINT, user_id BIGINT, total DOUBLE);
 INSERT INTO orders VALUES (100, 1, 50.0), (101, 1, 120.0), (102, 2, 80.0), (103, 3, 500.0);
-CREATE TABLE follows (src BIGINT, dst BIGINT);
-INSERT INTO follows VALUES (1, 2), (1, 3), (2, 3);
+CREATE TABLE follows (edge_key VARCHAR PRIMARY KEY, src BIGINT, dst BIGINT);
+INSERT INTO follows VALUES ('a', 1, 2), ('b', 1, 3), ('c', 2, 3);
 "#;
 
 fn schema(fields: Vec<Field>) -> Arc<Schema> {
@@ -58,6 +58,7 @@ fn mapping() -> Arc<GraphMapping> {
         .register_table_schema(
             "follows",
             schema(vec![
+                Field::new("edge_key", DataType::Utf8, false),
                 Field::new("src", DataType::Int64, false),
                 Field::new("dst", DataType::Int64, false),
             ]),
@@ -78,7 +79,7 @@ fn mapping() -> Arc<GraphMapping> {
         )
         .map_edge(EdgeMapping::table(
             "FOLLOWS", "follows", "src", "dst", "Person", "Person",
-        ));
+        ).with_id("edge_key"));
     Arc::new(mapping)
 }
 
@@ -256,14 +257,14 @@ async fn explain_cypher_returns_generated_sql_referencing_user_tables() {
 }
 
 #[tokio::test]
-async fn unsupported_merge_is_rejected_and_data_is_untouched() {
+async fn merge_without_a_mapped_primary_key_is_rejected_and_data_is_untouched() {
     let mut engine = setup_engine().await;
     for query in [
         "MERGE (p:Person {name: 'dave'})",
     ] {
         let err = engine.cypher(query).await.expect_err(query);
         assert!(
-            err.contains("mutation"),
+            err.contains("primary key"),
             "expected a mutation rejection for `{query}`, got: {err}"
         );
     }
@@ -278,7 +279,7 @@ async fn unsupported_merge_is_rejected_and_data_is_untouched() {
 async fn schema_setup_is_visible_to_subsequent_queries() {
     let mut engine = engine();
     engine
-        .execute_sql("CREATE TABLE users (id BIGINT, name VARCHAR, age BIGINT)")
+        .execute_sql("CREATE TABLE users (id BIGINT, name VARCHAR, age BIGINT); CREATE TABLE orders(order_id BIGINT,user_id BIGINT,total DOUBLE); CREATE TABLE follows(edge_key VARCHAR,src BIGINT,dst BIGINT)")
         .unwrap();
     engine
         .execute_sql("INSERT INTO users VALUES (1, 'alice', 30), (2, 'bob', 28)")

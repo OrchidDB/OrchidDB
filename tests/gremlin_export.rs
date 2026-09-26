@@ -118,11 +118,11 @@ fn check(graph: &PropertyGraph, rich: bool, property_ids: bool) {
     assert_eq!(graph.node_ids("person").unwrap().len(), 1);
     let a = Value::Node {
         label: "person".into(),
-        id: graph.node_ids("person").unwrap()[0],
+        id: graph.node_ids("person").unwrap()[0].clone(),
     };
     let b = Value::Node {
         label: "software".into(),
-        id: graph.node_ids("software").unwrap()[0],
+        id: graph.node_ids("software").unwrap()[0].clone(),
     };
     assert_eq!(
         graph.element_public_id(&a),
@@ -141,11 +141,11 @@ fn check(graph: &PropertyGraph, rich: bool, property_ids: bool) {
             Value::String("age-record".into())
         );
     }
-    let edges = graph.out_edges("person", graph.node_ids("person").unwrap()[0], &[]);
+    let edges = graph.out_edges("person", graph.node_ids("person").unwrap()[0].clone(), &[]);
     assert_eq!(edges.len(), 1);
     assert_eq!(&edges[0].0, "created");
     assert!(
-        matches!(graph.edge_property("created",edges[0].1,"weight"),Value::Float32(v) if v==0.5)
+        matches!(graph.edge_property("created",edges[0].1.clone(),"weight"),Value::Float32(v) if v==0.5)
     );
     if rich {
         let tags = graph.properties(&a, &["tag".into()]);
@@ -220,7 +220,7 @@ fn writer_failures_preserve_destination_and_cleanup_staging() {
     assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 2);
     let a = Value::Node {
         label: "person".into(),
-        id: graph.node_ids("person").unwrap()[0],
+        id: graph.node_ids("person").unwrap()[0].clone(),
     };
     graph
         .set_vertex_property(
@@ -335,7 +335,7 @@ fn graphson_preserves_enabled_null_vertex_edge_and_meta_properties() {
     query(&restored, &file, ".read()").unwrap();
     let vertex = Value::Node {
         label: "n".into(),
-        id: restored.node_ids("n").unwrap()[0],
+        id: restored.node_ids("n").unwrap()[0].clone(),
     };
     let properties = restored.properties(&vertex, &[]);
     assert_eq!(properties.len(), 1);
@@ -345,11 +345,11 @@ fn graphson_preserves_enabled_null_vertex_edge_and_meta_properties() {
     assert_eq!(restored.properties(&properties[0], &[]).len(), 1);
     let edge = Value::Edge {
         rel_type: "loop".into(),
-        id: restored.edge_ids("loop")[0],
+        id: restored.edge_ids("loop")[0].clone(),
         src_label: "n".into(),
-        src_id: 0,
+        src_id: 0.into(),
         dst_label: "n".into(),
-        dst_id: 0,
+        dst_id: 0.into(),
         projected_properties: None,
     };
     assert!(
@@ -365,7 +365,7 @@ fn codec_failure_leaves_destination_and_removes_both_staging_files() {
     let graph = fixture(false);
     let vertex = Value::Node {
         label: "person".into(),
-        id: graph.node_ids("person").unwrap()[0],
+        id: graph.node_ids("person").unwrap()[0].clone(),
     };
     // A reserved GraphML label key is a real upstream writer error, after the
     // native snapshot has already been serialized and both files staged.
@@ -455,16 +455,16 @@ fn gryo_and_independent_graphson_reader_preserve_enabled_nulls() {
         query(&restored, &file, ".read()").unwrap();
         let vertex = Value::Node {
             label: "n".into(),
-            id: restored.node_ids("n").unwrap()[0],
+            id: restored.node_ids("n").unwrap()[0].clone(),
         };
         assert_eq!(restored.properties(&vertex, &[]).len(), 1);
         let edge = Value::Edge {
             rel_type: "loop".into(),
-            id: restored.edge_ids("loop")[0],
+            id: restored.edge_ids("loop")[0].clone(),
             src_label: "n".into(),
-            src_id: 0,
+            src_id: 0.into(),
             dst_label: "n".into(),
-            dst_id: 0,
+            dst_id: 0.into(),
             projected_properties: None,
         };
         assert_eq!(restored.properties(&edge, &[]).len(), 1);
@@ -478,7 +478,7 @@ fn graphml_rejects_mixed_scalar_types_for_one_key_without_replacing_output() {
     let graph = fixture(false);
     let vertex = Value::Node {
         label: "software".into(),
-        id: graph.node_ids("software").unwrap()[0],
+        id: graph.node_ids("software").unwrap()[0].clone(),
     };
     graph
         .set_vertex_property(
@@ -547,7 +547,7 @@ fn typed_float_nonfinite_values_survive_native_and_independent_readers() {
             query(&restored, file, ".read()").unwrap();
             let vertex = Value::Node {
                 label: "n".into(),
-                id: restored.node_ids("n").unwrap()[0],
+                id: restored.node_ids("n").unwrap()[0].clone(),
             };
             let property = |key: &str| {
                 let properties = restored.properties(&vertex, &[key.into()]);

@@ -10,18 +10,20 @@
 //! The wire format is versioned and length-delimited so corrupt or truncated
 //! input is rejected rather than silently mis-parsed.
 
+use crate::ir::ElementId;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
-use std::sync::Arc;
 
-use arrow::array::{Int64Array, RecordBatch};
+use arrow::array::RecordBatch;
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use bigdecimal::BigDecimal;
 use num_bigint::BigInt;
 
 use super::PropertyGraph;
-use super::{EdgeRef, EdgeRowLocation, EdgeTable, GraphOverlay, InsertedEdge, NodeTable};
+use super::{EdgeTable, GraphOverlay, InsertedEdge, NodeTable};
+#[cfg(test)]
+use super::{EdgeRef,EdgeRowLocation};
 use crate::ir::value::Value;
 
 const MAGIC: &[u8] = b"NGSP";
@@ -80,6 +82,8 @@ impl PropertyGraph {
             SEC_OVERLAY,
             &encode_overlay(&self.overlay.borrow())?,
         );
+        let keys = |values: &HashMap<String,Vec<ElementId>>| Value::Map(values.iter().map(|(name,ids)| (name.clone(), Value::List(ids.iter().map(|id|Value::Scalar(id.scalar().clone())).collect()))).collect());
+        write_section(&mut out, 7, &encode_value_bytes(&Value::List(vec![keys(&self.node_keys),keys(&self.edge_keys)])));
         Ok(out)
     }
 
@@ -112,13 +116,26 @@ impl PropertyGraph {
                 SEC_EDGES => graph.edges = parse_edges(payload)?,
                 SEC_EDGE_TABLES => graph.edge_tables = parse_edge_tables(payload)?,
                 SEC_OVERLAY => graph.overlay = super::SnapshotCell::new(parse_overlay(payload)?),
+                7 => {
+                    let Value::List(groups)=decode_value_bytes(payload)? else {return Err("invalid key section".into());};
+                    if groups.len()!=2 {return Err("invalid key groups".into());}
+                    let parse=|value: &Value| -> Result<HashMap<String,Vec<ElementId>>,String> {
+                        let Value::Map(map)=value else{return Err("invalid key map".into());};
+                        map.iter().map(|(name,values)| {
+                            let Value::List(values)=values else{return Err("invalid key list".into());};
+                            Ok((name.clone(),values.iter().map(ElementId::try_from).collect::<Result<Vec<_>,_>>()?))
+                        }).collect()
+                    };
+                    graph.node_keys=parse(&groups[0])?;
+                    graph.edge_keys=parse(&groups[1])?;
+                }
                 _ => return Err(format!("unknown snapshot section {tag}")),
             }
         }
-        if seen != (SEC_NODE_ORDER..=SEC_OVERLAY).collect() {
+        if !(SEC_NODE_ORDER..=SEC_OVERLAY).all(|tag|seen.contains(&tag)) {
             return Err("missing required graph snapshot section".into());
         }
-        graph.rebuild_edge_indices();
+        graph.rebuild_edge_indices()?;
         Ok(graph)
     }
 
@@ -126,60 +143,31 @@ impl PropertyGraph {
     /// `edge_row_counts`, `out_adj`, `in_adj`) from the grouped base tables.
     /// Mirrors the indexing performed by `add_edges` so row numbering and
     /// adjacency are identical to the original graph.
-    fn rebuild_edge_indices(&mut self) {
-        let mut edge_row_locations = HashMap::new();
-        self.edge_row_counts.clear();
-        let mut out_adj: HashMap<_, Vec<EdgeRef>> = HashMap::new();
-        let mut in_adj: HashMap<_, Vec<EdgeRef>> = HashMap::new();
-
-        let mut rel_types: Vec<String> = self.edge_tables.keys().cloned().collect();
-        rel_types.sort();
-        for rel_type in rel_types {
-            let tables = &self.edge_tables[&rel_type];
-            let mut base_row: i64 = 0;
-            for (table_index, table) in tables.iter().enumerate() {
-                let Some(src) = table.batch.column(0).as_any().downcast_ref::<Int64Array>() else {
-                    continue;
-                };
-                let Some(dst) = table.batch.column(1).as_any().downcast_ref::<Int64Array>() else {
-                    continue;
-                };
-                for row in 0..table.batch.num_rows() {
-                    let s = src.value(row);
-                    let d = dst.value(row);
-                    let global_row = base_row + row as i64;
-                    out_adj
-                        .entry((table.src_label.clone(), s, rel_type.clone()))
-                        .or_default()
-                        .push(EdgeRef {
-                            edge_row: global_row,
-                            other_label: table.dst_label.clone(),
-                            other_id: d,
-                        });
-                    in_adj
-                        .entry((table.dst_label.clone(), d, rel_type.clone()))
-                        .or_default()
-                        .push(EdgeRef {
-                            edge_row: global_row,
-                            other_label: table.src_label.clone(),
-                            other_id: s,
-                        });
-                    edge_row_locations.insert(
-                        (rel_type.clone(), global_row),
-                        EdgeRowLocation {
-                            table_index,
-                            local_row: row as i64,
-                        },
-                    );
-                }
-                base_row += table.batch.num_rows() as i64;
-            }
-            self.edge_row_counts.insert(rel_type.clone(), base_row);
+    fn rebuild_edge_indices(&mut self) -> Result<(),String> {
+        let nodes = self.nodes.values().cloned().collect::<Vec<_>>();
+        for table in nodes {
+            let ids=self.node_keys.remove(&table.label).unwrap_or_else(||(0..table.batch.num_rows()).map(|r|(r as i64).into()).collect());
+            self.add_keyed_nodes(table,ids).map_err(|e|e.to_string())?;
         }
-        self.edge_row_locations = Arc::new(edge_row_locations);
-        self.out_adj = Arc::new(out_adj);
-        self.in_adj = Arc::new(in_adj);
+        let edge_keys=std::mem::take(&mut self.edge_keys);
+        let tables=std::mem::take(&mut self.edge_tables);
+        self.edges.clear(); self.edge_row_counts.clear();
+        for (name,group) in tables {
+            let mut offset=0;
+            for table in group {
+                let count=table.batch.num_rows();
+                let ids=match edge_keys.get(&name) {
+                    Some(ids)=>ids.get(offset..offset+count).ok_or("invalid edge key count")?.to_vec(),
+                    None=>(offset..offset+count).map(|r|(r as i64).into()).collect(),
+                };
+                self.add_keyed_edges(table,ids).map_err(|e|e.to_string())?;
+                offset+=count;
+            }
+            if edge_keys.get(&name).is_some_and(|ids|ids.len()!=offset){return Err("invalid edge key count".into());}
+        }
+        Ok(())
     }
+
 }
 
 pub(crate) mod binary;

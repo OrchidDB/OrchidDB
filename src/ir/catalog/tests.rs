@@ -24,16 +24,16 @@ fn cloned_graph_shares_base_indexes_and_isolates_new_edges() {
     cloned
         .add_edges(edges_from_columns("R", "P", "P", vec![1], vec![0], vec![]))
         .unwrap();
-    assert!(original.out_edges("P", 1, &[]).is_empty());
-    assert!(original.in_edges("P", 0, &[]).is_empty());
+    assert!(original.out_edges("P", 1.into(), &[]).is_empty());
+    assert!(original.in_edges("P", 0.into(), &[]).is_empty());
     assert_eq!(original.edge_ids("R"), vec![0]);
     assert_eq!(
-        cloned.out_edges("P", 1, &[]),
-        vec![("R".into(), 1, "P".into(), 0)]
+        cloned.out_edges("P", 1.into(), &[]),
+        vec![("R".into(), 1.into(), "P".into(), 0.into())]
     );
     assert_eq!(
-        cloned.in_edges("P", 0, &[]),
-        vec![("R".into(), 1, "P".into(), 1)]
+        cloned.in_edges("P", 0.into(), &[]),
+        vec![("R".into(), 1.into(), "P".into(), 1.into())]
     );
     assert_eq!(cloned.edge_ids("R"), vec![0, 1]);
 }
@@ -46,8 +46,8 @@ fn property_lookup_falls_back_to_unique_case_insensitive_column() {
         vec![("ID", Arc::new(Int64Array::from(vec![7])) as ArrayRef)],
     ));
 
-    assert_eq!(graph.node_property("person", 0, "id"), Value::Int(7));
-    assert_eq!(graph.node_property("person", 0, "ID"), Value::Int(7));
+    assert_eq!(graph.node_property("person", 0.into(), "id"), Value::Int(7));
+    assert_eq!(graph.node_property("person", 0.into(), "ID"), Value::Int(7));
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn property_lookup_keeps_ambiguous_case_misses_null() {
         ],
     ));
 
-    assert_eq!(graph.node_property("person", 0, "Id"), Value::Null);
+    assert_eq!(graph.node_property("person", 0.into(), "Id"), Value::Null);
 }
 
 #[test]
@@ -73,11 +73,11 @@ fn insert_edge_rejects_unknown_endpoint_node() {
     ));
     let src = Value::Node {
         label: "P".into(),
-        id: 0,
+        id: 0.into(),
     };
     let dst = Value::Node {
         label: "P".into(),
-        id: 99,
+        id: 99.into(),
     };
     assert!(graph.insert_edge("R", &src, &dst, BTreeMap::new()).is_err());
 }
@@ -98,11 +98,11 @@ fn insert_edge_rejects_endpoint_label_mismatch() {
         .unwrap();
     let src = Value::Node {
         label: "B".into(),
-        id: 0,
+        id: 0.into(),
     };
     let dst = Value::Node {
         label: "B".into(),
-        id: 0,
+        id: 0.into(),
     };
     assert!(graph.insert_edge("R", &src, &dst, BTreeMap::new()).is_err());
 }
@@ -119,7 +119,7 @@ fn delete_node_with_incident_edge_errors_without_detach() {
         .unwrap();
     let a = Value::Node {
         label: "P".into(),
-        id: 0,
+        id: 0.into(),
     };
     assert!(graph.delete_value(&a, false).is_err());
     assert_eq!(graph.node_ids("P").unwrap(), vec![0, 1]);
@@ -138,7 +138,7 @@ fn detach_delete_removes_edges_and_repeat_is_idempotent() {
         .unwrap();
     let a = Value::Node {
         label: "P".into(),
-        id: 0,
+        id: 0.into(),
     };
     graph.delete_value(&a, true).unwrap();
     graph.delete_value(&a, true).unwrap();
@@ -152,7 +152,7 @@ fn null_property_is_not_tracked_as_a_key() {
     let mut graph = PropertyGraph::new();
     graph.insert_node("P", BTreeMap::from([("x".to_string(), Value::Null)]));
     assert!(graph.node_property_keys("P").is_empty());
-    assert_eq!(graph.node_property("P", 0, "x"), Value::Null);
+    assert_eq!(graph.node_property("P", 0.into(), "x"), Value::Null);
 }
 
 #[test]
@@ -172,8 +172,8 @@ fn set_property_to_null_shadows_base_table_value() {
     ));
     let n = Value::Node {
         label: "P".into(),
-        id: 0,
+        id: 0.into(),
     };
     graph.set_property(&n, "x", Value::Null).unwrap();
-    assert_eq!(graph.node_property("P", 0, "x"), Value::Null);
+    assert_eq!(graph.node_property("P", 0.into(), "x"), Value::Null);
 }

@@ -94,7 +94,7 @@ pub fn with_operator_table<T>(
     operation()
 }
 
-pub(super) fn selected_operator_table() -> Result<std::sync::Arc<dyn OperatorTable>> {
+pub(crate) fn selected_operator_table() -> Result<std::sync::Arc<dyn OperatorTable>> {
     if let Some(table) = ACTIVE_TABLE.with(|active| active.borrow().clone()) {
         return Ok(table);
     }

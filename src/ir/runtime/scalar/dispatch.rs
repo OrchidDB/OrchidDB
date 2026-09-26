@@ -36,6 +36,12 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    if !super::is_known_function(name) {
+        if let Some(result)=graph.source.as_ref().and_then(|source|source.function(name,&args)) {
+            return result.map_err(RuntimeError::Runtime);
+        }
+    }
+
     if name == "tinker_search" {
         return super::search::search(&args, graph);
     }
@@ -138,9 +144,9 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
         ("gremlin_math_bin", [Value::String(op), lhs, rhs]) => Ok(gremlin_math_bin(op, lhs, rhs)),
         ("tinker_degree_centrality", [Value::Node { label, id }, Value::String(direction)]) => {
             let edges = if direction == "OUT" {
-                graph.out_edges(label, *id, &[])
+                graph.out_edges(label, id.clone(), &[])
             } else {
-                graph.in_edges(label, *id, &[])
+                graph.in_edges(label, id.clone(), &[])
             };
             Ok(Value::Long(edges.len() as i64))
         }
@@ -274,7 +280,7 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
         ("any_property", [Value::Node { label, id }]) => {
             let mut combined = Vec::new();
             for key in graph.node_property_keys(label) {
-                let value = graph.node_property(label, *id, &key);
+                let value = graph.node_property(label, id.clone(), &key);
                 if !matches!(value, Value::Null) {
                     combined.push(value);
                 }
@@ -292,7 +298,7 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
         ("any_property", [Value::Edge { rel_type, id, .. }]) => {
             let mut combined = Vec::new();
             for key in graph.edge_property_keys(rel_type) {
-                let value = graph.edge_property(rel_type, *id, &key);
+                let value = graph.edge_property(rel_type, id.clone(), &key);
                 if !matches!(value, Value::Null) {
                     combined.push(value);
                 }
@@ -431,7 +437,7 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
             ],
         ) => Ok(Value::Node {
             label: src_label.clone(),
-            id: *src_id,
+            id: src_id.clone(),
         }),
         (
             "edge_dst",
@@ -442,7 +448,7 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
             ],
         ) => Ok(Value::Node {
             label: dst_label.clone(),
-            id: *dst_id,
+            id: dst_id.clone(),
         }),
         (
             "edge_both",
@@ -458,11 +464,11 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
         ) => Ok(Value::List(vec![
             Value::Node {
                 label: src_label.clone(),
-                id: *src_id,
+                id: src_id.clone(),
             },
             Value::Node {
                 label: dst_label.clone(),
-                id: *dst_id,
+                id: dst_id.clone(),
             },
         ])),
         // Endpoint projection on a non-edge — propagate the binding so

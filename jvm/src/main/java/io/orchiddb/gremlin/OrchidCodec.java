@@ -15,6 +15,7 @@ public final class OrchidCodec {
     public static Object encode(Object value) { return encode(value,null); }
     public static Object encode(Object value,OrchidGraph graph) {
         if(graph!=null) { Object runtime=graph.runtimeEncode(value); if(runtime!=null) return runtime; }
+        if (value instanceof OrchidScalar scalar) return fields("type","scalar","value",scalar.payload());
         if (value == null) return fields("type","null");
         if (value instanceof OrchidElement && (graph==null || ((OrchidElement)value).graph==graph)) return ((OrchidElement)value).record;
         if(value instanceof org.apache.tinkerpop.gremlin.structure.Vertex) return fields("type","vertex_ref","id",encodeReferenceId(((org.apache.tinkerpop.gremlin.structure.Vertex)value).id(),graph,"vertex"));
@@ -69,6 +70,7 @@ public final class OrchidCodec {
         Map<String,Object> record=(Map<String,Object>)raw;
         String type=(String)record.get("type"); Object value=record.get("value");
         switch(type) {
+            case "scalar": return new OrchidScalar((Map<String,Object>)value);
             case "null": return null;
             case "boolean": case "string": return value;
             case "byte": return Byte.valueOf(value.toString());

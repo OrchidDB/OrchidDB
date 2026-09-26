@@ -252,11 +252,11 @@ fn interpreter_node_identity_includes_label() {
                 rows: vec![
                     vec![Value::Node {
                         label: "P".into(),
-                        id: 0,
+                        id: 0.into(),
                     }],
                     vec![Value::Node {
                         label: "Q".into(),
-                        id: 0,
+                        id: 0.into(),
                     }],
                 ],
                 bulk: None,

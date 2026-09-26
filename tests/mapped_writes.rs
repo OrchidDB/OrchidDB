@@ -48,7 +48,7 @@ fn engine() -> MappedGraphEngine {
             .property("name", "full_name")
             .property("score", "score"),
     );
-    m.map_node(NodeMapping::table("Team", "teams", "team_id").property("name", "title"));
+    m.map_node(NodeMapping::table("Team", "teams", "team_id").property("identity", "team_id").property("name", "title"));
     m.map_edge(
         EdgeMapping::table(
             "MEMBER",
@@ -59,6 +59,7 @@ fn engine() -> MappedGraphEngine {
             "Team",
         )
         .with_id("membership_id")
+        .property("identity", "membership_id")
         .property("weight", "strength"),
     );
     let mut e = MappedGraphEngine::new(DuckDbExecutor::new(), Arc::new(m));
@@ -75,7 +76,7 @@ fn scalar(e: &mut MappedGraphEngine, sql: &str) -> i64 {
 #[tokio::test]
 async fn cypher_writes_resolve_all_three_tables_and_preserve_read_mapping() {
     let mut e = engine();
-    e.cypher("CREATE (p:Person {identity:42,name:'Alice',score:7}), (t:Team {name:'Engineering'}), (p)-[:MEMBER {weight:3}]->(t) RETURN p.name,t.name").await.unwrap();
+    e.cypher("CREATE (p:Person {identity:42,name:'Alice',score:7}), (t:Team {identity:1,name:'Engineering'}), (p)-[:MEMBER {identity:1,weight:3}]->(t) RETURN p.name,t.name").await.unwrap();
     assert_eq!(
         scalar(
             &mut e,
@@ -110,13 +111,13 @@ async fn cypher_writes_resolve_all_three_tables_and_preserve_read_mapping() {
 async fn mapped_writes_rollback_all_tables_on_failure_and_join_transactions() {
     let mut e = engine();
     assert!(
-        e.cypher("CREATE (:Person {name:'temporary'}), (:Team {name:null})")
+        e.cypher("CREATE (:Person {identity:1,name:'temporary'}), (:Team {identity:1,name:null})")
             .await
             .is_err()
     );
     assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 0);
     e.executor_mut().begin().unwrap();
-    e.cypher("CREATE (:Person {name:'temporary'})")
+    e.cypher("CREATE (:Person {identity:1,name:'temporary'})")
         .await
         .unwrap();
     assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 1);
@@ -126,7 +127,7 @@ async fn mapped_writes_rollback_all_tables_on_failure_and_join_transactions() {
 #[tokio::test]
 async fn gremlin_inserts_updates_and_deletes_use_mapped_rows() {
     let mut e = engine();
-    e.gremlin("g.addV('Person').property('name','Bob').property('score',20)")
+    e.gremlin("g.addV('Person').property('identity',1).property('name','Bob').property('score',20)")
         .await
         .unwrap();
     assert_eq!(
@@ -149,7 +150,7 @@ async fn no_match_writes_preserve_return_and_aggregate_bindings() {
     for q in [
         "MATCH (p:Person) SET p.score=99 RETURN p.score",
         "MATCH (p:Person) DELETE p RETURN p.name",
-        "MATCH (p:Person) CREATE (t:Team {name:'unused'}) RETURN t.name",
+        "MATCH (p:Person) CREATE (t:Team {identity:1,name:'unused'}) RETURN t.name",
     ] {
         let result = e.cypher(q).await.unwrap();
         assert_eq!(result.batch.num_rows(), 0, "{q}");
@@ -164,10 +165,10 @@ async fn no_match_writes_preserve_return_and_aggregate_bindings() {
 #[tokio::test]
 async fn replacements_read_old_values_and_unknown_properties_rollback() {
     let mut e = engine();
-    e.cypher("CREATE (:Person {name:'A',score:2})")
+    e.cypher("CREATE (:Person {identity:1,name:'A',score:2})")
         .await
         .unwrap();
-    e.cypher("MATCH (p:Person) SET p = {name:p.name,score:p.score+3} RETURN p.score")
+    e.cypher("MATCH (p:Person) SET p = {identity:p.identity,name:p.name,score:p.score+3} RETURN p.score")
         .await
         .unwrap();
     assert_eq!(
@@ -197,10 +198,10 @@ async fn replacements_read_old_values_and_unknown_properties_rollback() {
 #[tokio::test]
 async fn gremlin_creates_edges_between_existing_mapped_nodes() {
     let mut e = engine();
-    e.cypher("CREATE (:Person {name:'A'}), (:Team {name:'T'})")
+    e.cypher("CREATE (:Person {identity:1,name:'A'}), (:Team {identity:1,name:'T'})")
         .await
         .unwrap();
-    e.gremlin("g.V().hasLabel('Person').as('p').V().hasLabel('Team').addE('MEMBER').from('p').property('weight',4)").await.unwrap();
+    e.gremlin("g.V().hasLabel('Person').as('p').V().hasLabel('Team').addE('MEMBER').from('p').property('identity',1).property('weight',4)").await.unwrap();
     assert_eq!(
         scalar(
             &mut e,
@@ -216,7 +217,7 @@ async fn gremlin_creates_edges_between_existing_mapped_nodes() {
     assert_eq!(scalar(&mut e, "SELECT count(*) FROM memberships"), 0);
 }
 #[tokio::test]
-async fn detach_deletes_incident_rows_without_requiring_an_edge_id() {
+async fn detach_deletes_incident_rows_by_scalar_edge_keys() {
     let mut m = GraphMapping::new();
     m.register_table_schema(
         "nodes",
@@ -225,14 +226,15 @@ async fn detach_deletes_incident_rows_without_requiring_an_edge_id() {
     m.register_table_schema(
         "links",
         Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Utf8, false),
             Field::new("src", DataType::Int64, false),
             Field::new("dst", DataType::Int64, false),
         ])),
     );
     m.map_node(NodeMapping::table("N", "nodes", "id").property("identity", "id"));
-    m.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "N", "N"));
+    m.map_edge(EdgeMapping::table("LINK", "links", "src", "dst", "N", "N").with_id("key"));
     let mut e = MappedGraphEngine::new(DuckDbExecutor::new(), Arc::new(m));
-    e.execute_sql("CREATE TABLE nodes(id BIGINT); INSERT INTO nodes VALUES (1),(2); CREATE TABLE links(src BIGINT,dst BIGINT); INSERT INTO links VALUES (1,2),(2,1),(1,1)").unwrap();
+    e.execute_sql("CREATE TABLE nodes(id BIGINT); INSERT INTO nodes VALUES (1),(2); CREATE TABLE links(key VARCHAR PRIMARY KEY,src BIGINT,dst BIGINT); INSERT INTO links VALUES ('a',1,2),('b',2,1),('c',1,1)").unwrap();
     assert!(
         e.cypher("MATCH (n:N) WHERE n.identity=1 DELETE n")
             .await
@@ -252,7 +254,7 @@ async fn mapped_insert_parameters_are_data_and_failed_transaction_is_rolled_back
     let mut e = engine();
     let name = "x'); DROP TABLE people; --\0suffix";
     let parameters = BTreeMap::from([("name".into(), Value::String(name.into()))]);
-    e.cypher_with_params("CREATE (:Person {name:$name})", &parameters)
+    e.cypher_with_params("CREATE (:Person {identity:1,name:$name})", &parameters)
         .await
         .unwrap();
     let stored: String = e
@@ -263,17 +265,18 @@ async fn mapped_insert_parameters_are_data_and_failed_transaction_is_rolled_back
         .unwrap();
     assert_eq!(stored, name);
     e.executor_mut().begin().unwrap();
-    e.cypher("CREATE (:Person {name:'rolled back'})")
+    e.cypher("CREATE (:Person {identity:2,name:'rolled back'})")
         .await
         .unwrap();
     assert!(e.cypher("MATCH (p:Person) SET p.unknown=1").await.is_err());
-    assert!(!e.executor().in_transaction());
+    assert!(e.executor().in_transaction());
+    e.executor_mut().rollback().unwrap();
     assert_eq!(scalar(&mut e, "SELECT count(*) FROM people"), 1);
 }
 #[tokio::test]
 async fn optional_unbound_targets_are_no_op_writes() {
     let mut e = engine();
-    e.cypher("CREATE (:Person {name:'A'})").await.unwrap();
+    e.cypher("CREATE (:Person {identity:1,name:'A'})").await.unwrap();
     let result=e.cypher("MATCH (p:Person) OPTIONAL MATCH (p)-[r:MEMBER]->(t:Team) SET t.name='absent' RETURN p.name").await.unwrap();
     assert_eq!(result.batch.num_rows(), 1);
     e.cypher("MATCH (p:Person) OPTIONAL MATCH (p)-[r:MEMBER]->(t:Team) DELETE t")

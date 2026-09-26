@@ -10,6 +10,7 @@ pub type BindingId = String;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Lit {
+    Scalar(datafusion::common::ScalarValue),
     Null,
     Bool(bool),
     Int(i64),

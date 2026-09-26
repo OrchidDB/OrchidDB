@@ -288,7 +288,7 @@ pub(super) fn normalize_colon_slices(input: &str) -> String {
             }
             continue;
         }
-        if ch == '\'' || ch == '"' {
+        if matches!(ch, '\'' | '"' | '`') {
             quote = Some(ch);
             out.push(ch);
             index += ch.len_utf8();
@@ -333,7 +333,7 @@ pub(super) fn top_level_colon_slice(input: &str) -> Option<usize> {
             continue;
         }
         match ch {
-            '\'' | '"' => quote = Some(ch),
+            '\'' | '"' | '`' => quote = Some(ch),
             '(' => paren += 1,
             ')' => paren -= 1,
             '[' => bracket += 1,
@@ -357,7 +357,7 @@ pub(super) fn top_level_colon_slice(input: &str) -> Option<usize> {
     let right_starts_name = right
         .chars()
         .next()
-        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic());
+        .is_some_and(|ch| ch == '_' || ch == '`' || ch.is_ascii_alphabetic());
     if (left.is_empty()
         || left
             .chars()

@@ -67,7 +67,7 @@ fn roundtrip_full_graph() {
         n,
         Value::Node {
             label: "Person".into(),
-            id: 3
+            id: 3.into()
         }
     );
     let e = g
@@ -75,20 +75,20 @@ fn roundtrip_full_graph() {
             "LIKES",
             &Value::Node {
                 label: "Person".into(),
-                id: 3,
+                id: 3.into(),
             },
             &Value::Node {
                 label: "Person".into(),
-                id: 0,
+                id: 0.into(),
             },
             BTreeMap::from([("since".to_string(), Value::Int(2020))]),
         )
         .unwrap();
-    assert!(matches!(e, Value::Edge { id: 3, .. }));
+    assert!(matches!(e, Value::Edge { ref id, .. } if id.as_i64() == Some(3)));
     g.set_property(
         &Value::Node {
             label: "Person".into(),
-            id: 3,
+            id: 3.into(),
         },
         "age",
         Value::Int(27),
@@ -97,7 +97,7 @@ fn roundtrip_full_graph() {
     g.set_properties(
         &Value::Node {
             label: "Person".into(),
-            id: 0,
+            id: 0.into(),
         },
         BTreeMap::from([("extra".to_string(), Value::Bool(true))]),
         false,
@@ -106,7 +106,7 @@ fn roundtrip_full_graph() {
     g.set_properties(
         &Value::Node {
             label: "Person".into(),
-            id: 1,
+            id: 1.into(),
         },
         BTreeMap::from([("name".to_string(), Value::String("bobby".into()))]),
         true,
@@ -115,7 +115,7 @@ fn roundtrip_full_graph() {
     g.delete_value(
         &Value::Node {
             label: "Person".into(),
-            id: 2,
+            id: 2.into(),
         },
         true,
     )
@@ -123,11 +123,11 @@ fn roundtrip_full_graph() {
     g.delete_value(
         &Value::Edge {
             rel_type: "KNOWS".into(),
-            id: 0,
+            id: 0.into(),
             src_label: "Person".into(),
-            src_id: 2,
+            src_id: 2.into(),
             dst_label: "Person".into(),
-            dst_id: 0,
+            dst_id: 0.into(),
             projected_properties: None,
         },
         false,
@@ -149,9 +149,9 @@ fn roundtrip_full_graph() {
         g2.edge_rel_order().to_vec(),
         vec!["LIKES".to_string(), "KNOWS".to_string()]
     );
-    assert_eq!(g2.node_property("Person", 3, "age"), Value::Int(27));
+    assert_eq!(g2.node_property("Person", 3.into(), "age"), Value::Int(27));
     assert_eq!(
-        g2.node_property("Person", 1, "name"),
+        g2.node_property("Person", 1.into(), "name"),
         Value::String("bobby".into())
     );
     assert_eq!(g2.node_ids("Person").unwrap(), vec![0i64, 1, 3]);
@@ -165,7 +165,7 @@ fn roundtrip_full_graph() {
         n2,
         Value::Node {
             label: "Person".into(),
-            id: 4
+            id: 4.into()
         }
     );
     let e2 = g2
@@ -173,16 +173,16 @@ fn roundtrip_full_graph() {
             "LIKES",
             &Value::Node {
                 label: "Person".into(),
-                id: 4,
+                id: 4.into(),
             },
             &Value::Node {
                 label: "Person".into(),
-                id: 0,
+                id: 0.into(),
             },
             BTreeMap::new(),
         )
         .unwrap();
-    assert!(matches!(e2, Value::Edge { id: 4, .. }));
+    assert!(matches!(e2, Value::Edge { ref id, .. } if id.as_i64() == Some(4)));
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn roundtrip_preserves_field_metadata() {
     assert!(g.graph_deep_eq(&g2));
     // The metadata is what makes `array_value` read this as a DateTime.
     assert_eq!(
-        g2.node_property("Person", 0, "born"),
+        g2.node_property("Person", 0.into(), "born"),
         Value::DateTime("1990-01-01".into())
     );
 }
@@ -260,18 +260,18 @@ fn roundtrip_all_value_variants() {
         "node".to_string(),
         Value::Node {
             label: "X".to_string(),
-            id: 3,
+            id: 3.into(),
         },
     );
     props.insert(
         "edge".to_string(),
         Value::Edge {
             rel_type: "E".to_string(),
-            id: 1,
+            id: 1.into(),
             src_label: "X".to_string(),
-            src_id: 0,
+            src_id: 0.into(),
             dst_label: "X".to_string(),
-            dst_id: 3,
+            dst_id: 3.into(),
             projected_properties: Some(vec!["p".to_string()]),
         },
     );
@@ -288,7 +288,7 @@ fn roundtrip_all_value_variants() {
         Value::Path(vec![
             Value::Node {
                 label: "X".to_string(),
-                id: 0,
+                id: 0.into(),
             },
             Value::String("step".to_string()),
         ]),
@@ -300,8 +300,8 @@ fn roundtrip_all_value_variants() {
     let g2 = roundtrip(&g);
     assert!(g.graph_deep_eq(&g2));
 
-    let original = g.node_property("Rich", 0, "bigdecimal");
-    let restored = g2.node_property("Rich", 0, "bigdecimal");
+    let original = g.node_property("Rich", 0.into(), "bigdecimal");
+    let restored = g2.node_property("Rich", 0.into(), "bigdecimal");
     assert_eq!(original, restored);
     assert_eq!(
         restored,
@@ -328,12 +328,12 @@ fn roundtrip_multitype_edge_groups_preserve_endpoints() {
     let g2 = roundtrip(&g);
     assert!(g.graph_deep_eq(&g2));
     assert_eq!(
-        g2.edge_endpoints("T", 0),
-        Some(("A".to_string(), 0, "A".to_string(), 1))
+        g2.edge_endpoints("T", 0.into()),
+        Some(("A".to_string(), 0.into(), "A".to_string(), 1.into()))
     );
     assert_eq!(
-        g2.edge_endpoints("T", 1),
-        Some(("A".to_string(), 1, "B".to_string(), 0))
+        g2.edge_endpoints("T", 1.into()),
+        Some(("A".to_string(), 1.into(), "B".to_string(), 0.into()))
     );
     assert_eq!(g2.edge_ids("T"), vec![0i64, 1]);
 }
