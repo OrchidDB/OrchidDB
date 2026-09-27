@@ -29,7 +29,7 @@ Use the dependencies from [installation](installation.md#use-the-rust-library). 
 ```rust
 use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
-use orchiddb::ir::rel::mapping::{EdgeMapping, GraphMapping, NodeMapping};
+use orchiddb::ir::rel::mapping::{EdgeMapping, ForeignKeyEndpoint, GraphMapping, NodeMapping};
 use orchiddb::ir::rel::sql::DuckDbExecutor;
 use orchiddb::mapped_engine::MappedGraphEngine;
 
@@ -56,7 +56,7 @@ async fn main() -> Result<(), String> {
         .property("total", "total"));
     mapping.map_edge(EdgeMapping::table(
         "ORDERED", "orders", "user_id", "order_id", "Person", "Order"
-    ).with_id("order_id").property("total", "total"));
+    ).foreign_key(ForeignKeyEndpoint::Destination));
     mapping.map_edge(EdgeMapping::table(
         "FOLLOWS", "follows", "src", "dst", "Person", "Person"
     ));

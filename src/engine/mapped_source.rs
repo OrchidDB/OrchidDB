@@ -91,8 +91,11 @@ impl Source {
             vec![array],
         )
         .map_err(|e| e.to_string())?;
+        let edge_filter = endpoints.and_then(|m| m.foreign_key_columns())
+            .map(|(_, _, _, fk)| format!(" AND {} IS NOT NULL", quote(fk)))
+            .unwrap_or_default();
         let sql = format!(
-            "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?))",
+            "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
             source(src),
             quote(column.unwrap_or(key))
@@ -287,7 +290,11 @@ impl GraphSource for Source {
                 (&m.source, &m.id_column)
             };
             let mut executor = self.executor.lock().map_err(|e| e.to_string())?;
-            let sql = format!("SELECT {} FROM {}", quote(key), source(src));
+            let edge_filter = edge.then(|| self.mapping.edge(name)).flatten()
+                .and_then(|m| m.foreign_key_columns())
+                .map(|(_, _, _, fk)| format!(" WHERE {} IS NOT NULL", quote(fk)))
+                .unwrap_or_default();
+            let sql = format!("SELECT {} FROM {}{edge_filter}", quote(key), source(src));
             let ids = keys(
                 &query(executor.connection().map_err(|e| e.to_string())?, &sql)?,
                 0,

@@ -749,7 +749,12 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
             let pending=graph.pending_changes();
             if let Some(source)=&graph.source {
                 for (name,id) in pending.nodes { source.exists(false,&name,&id); }
-                for (name,id) in pending.edges { source.exists(true,&name,&id); }
+                for (name,id) in pending.edges {
+                    source.exists(true,&name,&id);
+                    if let Some((child, _, _, _)) = mapping.edge(&name).and_then(|m| m.foreign_key_columns()) {
+                        source.exists(false,child,&id);
+                    }
+                }
             }
             graph.check_source()?;
             let mut executor=session.executor()?;

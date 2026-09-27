@@ -59,6 +59,7 @@ pub(super) fn metadata(
     connection: &Connection,
     mapping: Arc<GraphMapping>,
 ) -> Result<PropertyGraph, String> {
+    mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
     let mut graph = PropertyGraph::new();
     for label in mapping.labels() {
         let m = mapping.node(&label).unwrap();
@@ -246,6 +247,200 @@ fn bind_batch(values: Vec<(String, ScalarValue)>) -> Result<RecordBatch, String>
         .collect::<Result<Vec<ArrayRef>, _>>()?;
     RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).map_err(|e| e.to_string())
 }
+// Write ownership is physical, not graph-shaped: a node and several FK edges
+// can all contribute columns to one row.
+type RowAddress = (String, String, ElementId);
+#[derive(Debug)]
+struct RowWrite {
+    existing: bool,
+    delete: bool,
+    values: BTreeMap<String, ScalarValue>,
+}
+fn merge_row(
+    rows: &mut BTreeMap<RowAddress, RowWrite>,
+    address: RowAddress,
+    existing: bool,
+    delete: bool,
+    values: BTreeMap<String, ScalarValue>,
+) -> Result<(), String> {
+    use std::collections::btree_map::Entry;
+    match rows.entry(address) {
+        Entry::Vacant(entry) => {
+            entry.insert(RowWrite {
+                existing,
+                delete,
+                values,
+            });
+        }
+        Entry::Occupied(mut entry) => {
+            let row = entry.get_mut();
+            if row.delete != delete || row.existing != existing {
+                return Err("incompatible graph mutations target the same physical row".into());
+            }
+            for (column, value) in values {
+                if row.values.get(&column).is_some_and(|old| old != &value) {
+                    return Err(format!(
+                        "conflicting assignments to physical column `{column}`"
+                    ));
+                }
+                row.values.insert(column, value);
+            }
+        }
+    }
+    Ok(())
+}
+
+// (child table, FK column, referenced table, referenced key column).
+type Reference = (String, String, String, String);
+fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
+    let mut refs = std::collections::BTreeSet::new();
+    for name in mapping.rel_types() {
+        let m = mapping.edge(&name).unwrap();
+        let MappedSource::Table(child_table) = &m.source else {
+            continue;
+        };
+        let endpoints = if let Some((_, _, parent, fk)) = m.foreign_key_columns() {
+            vec![(parent, fk)]
+        } else {
+            vec![
+                (m.src_label.as_str(), m.src_column.as_str()),
+                (m.dst_label.as_str(), m.dst_column.as_str()),
+            ]
+        };
+        for (label, column) in endpoints {
+            let parent = mapping
+                .node(label)
+                .ok_or_else(|| format!("unmapped endpoint `{label}`"))?;
+            if let MappedSource::Table(parent_table) = &parent.source {
+                refs.insert((
+                    child_table.clone(),
+                    column.to_owned(),
+                    parent_table.clone(),
+                    parent.id_column.clone(),
+                ));
+            }
+        }
+    }
+    Ok(refs.into_iter().collect())
+}
+
+/// Construct dependency waves before executing any SQL. This handles FK inserts,
+/// updates that release an old parent, and child-before-parent deletion. Cycles
+/// requiring deferred constraints are rejected rather than inserting NULL first.
+fn write_order(
+    connection: &Connection,
+    rows: &BTreeMap<RowAddress, RowWrite>,
+    refs: &[Reference],
+    schemas: &BTreeMap<String, Arc<Schema>>,
+) -> Result<Vec<Vec<RowAddress>>, String> {
+    use std::collections::BTreeSet;
+    let deleting_tables = rows.iter().filter(|(_, row)| row.delete)
+        .map(|((table, key, _), _)| (table.as_str(), key.as_str()))
+        .collect::<BTreeSet<_>>();
+    let mut dependencies = rows
+        .keys()
+        .map(|key| (key.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    for (address, row) in rows {
+        let (table_name, key_column, key) = address;
+        let relevant = refs
+            .iter()
+            .filter(|r| &r.0 == table_name)
+            .collect::<Vec<_>>();
+        let needs_old = row.existing && relevant.iter()
+            .any(|r| deleting_tables.contains(&(r.2.as_str(), r.3.as_str())));
+        let old = if needs_old {
+            let columns = relevant.iter().map(|r| quote(&r.1)).collect::<Vec<_>>();
+            let input = bind_batch(vec![(key_column.clone(), key.scalar().clone())])?;
+            let sql = format!(
+                "SELECT {} FROM {} WHERE {} IN (SELECT {} FROM __orchiddb_write_values(?, ?))",
+                columns.join(","),
+                table(table_name),
+                quote(key_column),
+                quote(key_column)
+            );
+            let mut statement = connection.prepare(&sql).map_err(|e| e.to_string())?;
+            let reader = statement
+                .query_arrow(arrow_recordbatch_to_query_params(input))
+                .map_err(|e| e.to_string())?;
+            let schema = reader.get_schema();
+            Some(
+                arrow::compute::concat_batches(&schema, &reader.collect::<Vec<_>>())
+                    .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
+        for (index, reference) in relevant.iter().enumerate() {
+            let (_, fk, parent_table, parent_key) = reference;
+            let old_value = match &old {
+                Some(batch) if batch.num_rows() == 1 => {
+                    ScalarValue::try_from_array(batch.column(index), 0)
+                        .map_err(|e| e.to_string())?
+                }
+                _ => ScalarValue::Null,
+            };
+            let new_value = if row.delete {
+                &ScalarValue::Null
+            } else {
+                row.values.get(fk).unwrap_or(&old_value)
+            };
+            let parent_address = |value: &ScalarValue| -> Result<Option<RowAddress>, String> {
+                if value.is_null() {
+                    return Ok(None);
+                }
+                let kind = schemas[parent_table]
+                    .field_with_name(parent_key)
+                    .map_err(|e| e.to_string())?
+                    .data_type();
+                Ok(Some((
+                    parent_table.clone(),
+                    parent_key.clone(),
+                    ElementId::new(value.cast_to(kind).map_err(|e| e.to_string())?)?,
+                )))
+            };
+            if let Some(parent) = parent_address(new_value)? {
+                if let Some(parent_row) = rows.get(&parent) {
+                    if parent_row.delete {
+                        return Err("cannot delete a parent still referenced by a child row".into());
+                    }
+                    if !parent_row.existing {
+                        dependencies.get_mut(address).unwrap().insert(parent);
+                    }
+                }
+            }
+            if let Some(parent) = parent_address(&old_value)? {
+                if rows.get(&parent).is_some_and(|r| r.delete) {
+                    dependencies
+                        .get_mut(&parent)
+                        .unwrap()
+                        .insert(address.clone());
+                }
+            }
+        }
+    }
+    let mut waves = Vec::new();
+    while !dependencies.is_empty() {
+        let ready = dependencies
+            .iter()
+            .filter(|(_, deps)| deps.is_empty())
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            return Err("cyclic mapped writes require deferred foreign-key constraints, which are not supported".into());
+        }
+        for key in &ready {
+            dependencies.remove(key);
+        }
+        let ready_set = ready.iter().cloned().collect::<BTreeSet<_>>();
+        for deps in dependencies.values_mut() {
+            deps.retain(|key| !ready_set.contains(key));
+        }
+        waves.push(ready);
+    }
+    Ok(waves)
+}
+
 pub(super) fn persist(
     connection: &Connection,
     graph: &PropertyGraph,
@@ -253,135 +448,192 @@ pub(super) fn persist(
 ) -> Result<(), String> {
     graph.validate_mapped_changes()?;
     let pending = graph.pending_changes();
-    let mut writes: Vec<(String, Vec<RecordBatch>)> = Vec::new();
-    let mut schemas = BTreeMap::new();
-    // Deletions precede inserts so source foreign keys see the same graph semantics.
-    for deleting in [true, false] {
-        for edge in if deleting {
-            [true, false]
-        } else {
-            [false, true]
-        } {
-            let touched = if edge { &pending.edges } else { &pending.nodes };
-            for (name, key) in touched {
-                let (mapped_source, id_column, props) = if edge {
-                    let m = mapping
-                        .edge(name)
-                        .ok_or_else(|| format!("unmapped relationship `{name}`"))?;
-                    (
-                        &m.source,
-                        m.id_column.as_ref().unwrap_or(&m.src_column),
-                        &m.properties,
-                    )
-                } else {
-                    let m = mapping
-                        .node(name)
-                        .ok_or_else(|| format!("unmapped label `{name}`"))?;
-                    (&m.source, &m.id_column, &m.properties)
-                };
-                let MappedSource::Table(table_name) = mapped_source else {
-                    return Err(format!("query-backed mapping `{name}` is read-only"));
-                };
-                let live = if edge {
-                    graph.live_edge_endpoints(name, key.clone()).is_some()
-                } else {
-                    graph.node_is_live(name, key.clone())
-                };
-                if deleting == live {
-                    continue;
-                }
-                let mut values = BTreeMap::from([(id_column.clone(), key.scalar().clone())]);
-                if live {
-                    for (property, column) in props {
-                        let value = if edge {
-                            graph.edge_property(name, key.clone(), property)
-                        } else {
-                            graph.node_property(name, key.clone(), property)
-                        };
-                        let scalar = value_scalar(&value)?;
-                        if column == id_column {
-                            continue;
-                        }
-                        values.insert(column.clone(), scalar);
+    let mut rows = BTreeMap::<RowAddress, RowWrite>::new();
+    for edge in [false, true] {
+        let touched = if edge { &pending.edges } else { &pending.nodes };
+        for (name, key) in touched {
+            let (mapped_source, id_column, props) = if edge {
+                let m = mapping
+                    .edge(name)
+                    .ok_or_else(|| format!("unmapped relationship `{name}`"))?;
+                (
+                    &m.source,
+                    m.id_column.as_ref().unwrap_or(&m.src_column),
+                    &m.properties,
+                )
+            } else {
+                let m = mapping
+                    .node(name)
+                    .ok_or_else(|| format!("unmapped label `{name}`"))?;
+                (&m.source, &m.id_column, &m.properties)
+            };
+            let MappedSource::Table(table_name) = mapped_source else {
+                return Err(format!("query-backed mapping `{name}` is read-only"));
+            };
+            let live = if edge {
+                graph.live_edge_endpoints(name, key.clone()).is_some()
+            } else {
+                graph.node_is_live(name, key.clone())
+            };
+            let mut values = BTreeMap::from([(id_column.clone(), key.scalar().clone())]);
+            if live {
+                for (property, column) in props {
+                    if column == id_column {
+                        continue;
                     }
-                    if edge {
-                        let m = mapping.edge(name).unwrap();
+                    let value = if edge {
+                        graph.edge_property(name, key.clone(), property)
+                    } else {
+                        graph.node_property(name, key.clone(), property)
+                    };
+                    values.insert(column.clone(), value_scalar(&value)?);
+                }
+            }
+            if edge {
+                let m = mapping.edge(name).unwrap();
+                if let Some((child, child_key, _, fk)) = m.foreign_key_columns() {
+                    // Removing a child already removes its FK edge. Removing an
+                    // edge alone never deletes the child row or its properties.
+                    if !graph.node_is_live(child, key.clone()) {
+                        continue;
+                    }
+                    let value = if live {
                         let (_, src, _, dst) = graph
                             .edge_endpoints(name, key.clone())
                             .ok_or("missing edge endpoints")?;
-                        values.insert(m.src_column.clone(), src.scalar().clone());
-                        values.insert(m.dst_column.clone(), dst.scalar().clone());
-                    }
+                        if m.foreign_key
+                            == Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source)
+                        {
+                            dst
+                        } else {
+                            src
+                        }
+                        .scalar()
+                        .clone()
+                    } else {
+                        ScalarValue::Null
+                    };
+                    values.insert(fk.to_owned(), value);
+                    merge_row(
+                        &mut rows,
+                        (table_name.clone(), child_key.to_owned(), key.clone()),
+                        graph.base_exists(false, child, key),
+                        false,
+                        values,
+                    )?;
+                    continue;
                 }
-                let target_schema = if let Some(schema) = schemas.get(table_name) {
-                    Arc::clone(schema)
-                } else {
-                    let schema = query(
-                        connection,
-                        &format!("SELECT * FROM {} WHERE false", table(table_name)),
-                    )?
-                    .schema();
-                    schemas.insert(table_name.clone(), schema.clone());
-                    schema
-                };
-                for (column, value) in &mut values {
-                    let kind = target_schema
-                        .field_with_name(column)
-                        .map_err(|e| e.to_string())?
-                        .data_type();
-                    *value = value.cast_to(kind).map_err(|e| e.to_string())?;
+                if live {
+                    let (_, src, _, dst) = graph
+                        .edge_endpoints(name, key.clone())
+                        .ok_or("missing edge endpoints")?;
+                    values.insert(m.src_column.clone(), src.scalar().clone());
+                    values.insert(m.dst_column.clone(), dst.scalar().clone());
                 }
-                let columns = values.keys().map(|c| quote(c)).collect::<Vec<_>>();
-                let batch = bind_batch(values.into_iter().collect())?;
-                let relation = "__orchiddb_write_values(?, ?)";
-                let target = table(table_name);
-                let predicate = format!(
-                    "target.{} = incoming.{}",
-                    quote(id_column),
-                    quote(id_column)
-                );
-                let existing = graph.base_exists(edge, name, key);
-                let sql = if !live {
-                    format!(
-                        "DELETE FROM {target} AS target USING {relation} AS incoming WHERE {predicate}"
-                    )
-                } else if existing {
-                    let assignments = columns
-                        .iter()
-                        .filter(|c| **c != quote(id_column))
-                        .map(|c| format!("{c}=incoming.{c}"))
-                        .collect::<Vec<_>>();
-                    if assignments.is_empty() {
-                        continue;
-                    }
-                    format!(
-                        "UPDATE {target} AS target SET {} FROM {relation} AS incoming WHERE {predicate}",
-                        assignments.join(",")
-                    )
-                } else {
-                    format!(
-                        "INSERT INTO {target} ({}) SELECT {} FROM {relation}",
-                        columns.join(","),
-                        columns.join(",")
-                    )
-                };
-                if let Some((_, batches)) =
-                    writes.iter_mut().find(|(statement, _)| statement == &sql)
-                {
-                    batches.push(batch);
-                } else {
-                    writes.push((sql, vec![batch]));
+            }
+            let existing = graph.base_exists(edge, name, key);
+            // A create-then-delete in one statement has no physical row.
+            if !live && !existing {
+                continue;
+            }
+            merge_row(
+                &mut rows,
+                (table_name.clone(), id_column.clone(), key.clone()),
+                existing,
+                !live,
+                values,
+            )?;
+        }
+    }
+    // Newly inserted child rows have no relationship unless one was explicitly
+    // created. This also prevents a database FK default from inventing an edge
+    // invisible to the statement's graph overlay.
+    for name in mapping.rel_types() {
+        let m = mapping.edge(&name).unwrap();
+        if let (MappedSource::Table(table_name), Some((_, child_key, _, fk))) =
+            (&m.source, m.foreign_key_columns())
+        {
+            for ((target, key_column, _), row) in &mut rows {
+                if target == table_name && key_column == child_key && !row.existing && !row.delete {
+                    row.values.entry(fk.to_owned()).or_insert(ScalarValue::Null);
                 }
             }
         }
     }
+    let refs = references(mapping)?;
+    let mut schemas = BTreeMap::new();
+    for table_name in rows.keys().map(|r| &r.0).chain(refs.iter().map(|r| &r.2)) {
+        if !schemas.contains_key(table_name) {
+            schemas.insert(
+                table_name.clone(),
+                query(
+                    connection,
+                    &format!("SELECT * FROM {} WHERE false", table(table_name)),
+                )?
+                .schema(),
+            );
+        }
+    }
+    for ((table_name, _, _), row) in &mut rows {
+        for (column, value) in &mut row.values {
+            let kind = schemas[table_name]
+                .field_with_name(column)
+                .map_err(|e| e.to_string())?
+                .data_type();
+            *value = value.cast_to(kind).map_err(|e| e.to_string())?;
+        }
+    }
     graph.check_source()?;
-    for (sql, batches) in writes {
-        let batch = arrow::compute::concat_batches(&batches[0].schema(), &batches)
-            .map_err(|e| e.to_string())?;
-        connection
-            .execute(&sql, arrow_recordbatch_to_query_params(batch))
-            .map_err(|e| e.to_string())?;
+    let waves = write_order(connection, &rows, &refs, &schemas)?;
+    for wave in waves {
+        let mut writes = BTreeMap::<String, Vec<RecordBatch>>::new();
+        for address in wave {
+            let (table_name, key_column, _) = &address;
+            let row = rows.remove(&address).unwrap();
+            let columns = row.values.keys().map(|c| quote(c)).collect::<Vec<_>>();
+            let relation = "__orchiddb_write_values(?, ?)";
+            let target = table(table_name);
+            let predicate = format!(
+                "target.{} = incoming.{}",
+                quote(key_column),
+                quote(key_column)
+            );
+            let sql = if row.delete {
+                format!(
+                    "DELETE FROM {target} AS target USING {relation} AS incoming WHERE {predicate}"
+                )
+            } else if row.existing {
+                let assignments = columns
+                    .iter()
+                    .filter(|c| **c != quote(key_column))
+                    .map(|c| format!("{c}=incoming.{c}"))
+                    .collect::<Vec<_>>();
+                if assignments.is_empty() {
+                    continue;
+                }
+                format!(
+                    "UPDATE {target} AS target SET {} FROM {relation} AS incoming WHERE {predicate}",
+                    assignments.join(",")
+                )
+            } else {
+                format!(
+                    "INSERT INTO {target} ({}) SELECT {} FROM {relation}",
+                    columns.join(","),
+                    columns.join(",")
+                )
+            };
+            writes
+                .entry(sql)
+                .or_default()
+                .push(bind_batch(row.values.into_iter().collect())?);
+        }
+        for (sql, batches) in writes {
+            let batch = arrow::compute::concat_batches(&batches[0].schema(), &batches)
+                .map_err(|e| e.to_string())?;
+            connection
+                .execute(&sql, arrow_recordbatch_to_query_params(batch))
+                .map_err(|e| e.to_string())?;
+        }
     }
     graph.clear_pending_changes();
     Ok(())

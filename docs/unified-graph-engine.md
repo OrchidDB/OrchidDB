@@ -182,3 +182,19 @@ The query-cost metric is deferred to follow-up work.
 
 Recursive compiler tests use `RUST_MIN_STACK=16777216`; the default test-thread
 stack is insufficient for some recursive DataFusion plans.
+
+### Foreign-key-backed relationships
+
+`EdgeMapping::foreign_key(ForeignKeyEndpoint::{Source,Destination})` explicitly
+selects the endpoint whose row owns the FK. Its primary key also identifies the
+edge. The runtime groups mutations by physical table and key, so child creation
+and its relationship become a single complete insert. Existing child links are
+updates; edge deletion clears the FK rather than deleting the row. Required
+constraints remain binding. NULL FKs are excluded from SQL and native edge reads.
+
+Write dependencies order parent insertion and child removal, preserving batching
+within each dependency wave. Reparenting is an edge deletion followed by creation
+in the same statement, persisted as one FK assignment. Column ownership must be
+unique: FK columns are relationship-owned, and node and edge properties may not
+alias the same non-key column. Cyclic writes requiring deferred constraints fail
+explicitly. See the website mapping reference for Rust and TOML examples.

@@ -453,7 +453,9 @@ impl PropertyGraph {
     ) -> Vec<(String, ElementId, String, ElementId)> {
         let mut out = self.source.as_ref().map(|s| s.neighbors(false, src_label, &src_id, rel_filter)).unwrap_or_default();
         let overlay = self.overlay.borrow();
-        out.retain(|(rel, id, label, node)| overlay.edge_is_live(rel, id.clone()) && !overlay.deleted_nodes.contains(&(label.clone(), node.clone())));
+        out.retain(|(rel, id, label, node)| overlay.edge_is_live(rel, id.clone())
+            && !overlay.inserted_edges.contains_key(&(rel.clone(), id.clone()))
+            && !overlay.deleted_nodes.contains(&(label.clone(), node.clone())));
         if overlay
             .deleted_nodes
             .contains(&(src_label.to_string(), src_id.clone()))
@@ -514,7 +516,9 @@ impl PropertyGraph {
     ) -> Vec<(String, ElementId, String, ElementId)> {
         let mut out = self.source.as_ref().map(|s| s.neighbors(true, dst_label, &dst_id, rel_filter)).unwrap_or_default();
         let overlay = self.overlay.borrow();
-        out.retain(|(rel, id, label, node)| overlay.edge_is_live(rel, id.clone()) && !overlay.deleted_nodes.contains(&(label.clone(), node.clone())));
+        out.retain(|(rel, id, label, node)| overlay.edge_is_live(rel, id.clone())
+            && !overlay.inserted_edges.contains_key(&(rel.clone(), id.clone()))
+            && !overlay.deleted_nodes.contains(&(label.clone(), node.clone())));
         if overlay
             .deleted_nodes
             .contains(&(dst_label.to_string(), dst_id.clone()))
@@ -712,7 +716,8 @@ impl PropertyGraph {
     pub fn edge_ids(&self, rel_type: &str) -> Vec<ElementId> {
         let overlay = self.overlay.borrow();
         let mut out = self.source.as_ref().map(|s| s.ids(true, rel_type)).unwrap_or_else(|| self.edge_keys.get(rel_type).cloned().unwrap_or_default());
-        out.retain(|id| overlay.edge_is_live(rel_type, id.clone()));
+        out.retain(|id| overlay.edge_is_live(rel_type, id.clone())
+            && !overlay.inserted_edges.contains_key(&(rel_type.to_owned(), id.clone())));
         out.extend(
             overlay
                 .inserted_edges

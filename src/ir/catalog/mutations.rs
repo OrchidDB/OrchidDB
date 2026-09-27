@@ -126,7 +126,37 @@ impl PropertyGraph {
             )));
         }
         let mut properties=self.mapped_insert_properties(true,&rel_type,properties)?;
-        let mapped_id = self.mapped_insert_key(true, &rel_type, &mut properties, supplied_key)?;
+        // An FK edge is identified by its child row. Graph callers supply the
+        // endpoints, not a second primary key for the relationship.
+        let child_id = self
+            .mapping
+            .as_ref()
+            .and_then(|m| m.edge(&rel_type))
+            .and_then(|m| m.foreign_key)
+            .map(|child| match child {
+                crate::ir::rel::mapping::ForeignKeyEndpoint::Source => &src_id,
+                crate::ir::rel::mapping::ForeignKeyEndpoint::Destination => &dst_id,
+            });
+        let derived_key = child_id.map(|id| Value::Scalar(id.scalar().clone()));
+        if let (Some(supplied), Some(child)) = (supplied_key, child_id) {
+            let supplied = ElementId::try_from(supplied).map_err(CatalogError::Schema)?;
+            if supplied
+                .scalar()
+                .cast_to(&child.scalar().data_type())
+                .map_err(|e| CatalogError::Schema(e.to_string()))?
+                != *child.scalar()
+            {
+                return Err(CatalogError::Schema(
+                    "foreign-key relationship identity must equal its child key".into(),
+                ));
+            }
+        }
+        let mapped_id = self.mapped_insert_key(
+            true,
+            &rel_type,
+            &mut properties,
+            derived_key.as_ref().or(supplied_key),
+        )?;
         let base = self
             .edge_row_counts
             .get(&rel_type)
@@ -146,6 +176,21 @@ impl PropertyGraph {
             .or_insert(0);
         let id = mapped_id.unwrap_or_else(|| ElementId::from(base + *counter));
         *counter += 1;
+        if child_id.is_some() && overlay.deleted_edges.remove(&(rel_type.clone(), id.clone())) {
+            // DELETE + CREATE replaces one FK slot. Only remove adjacency for
+            // that slot; ordinary inserts must not scan the accumulated batch.
+            let previous = overlay.inserted_edges.get(&(rel_type.clone(), id.clone()))
+                .map(|edge| ((edge.src_label.clone(), edge.src_id.clone()),
+                             (edge.dst_label.clone(), edge.dst_id.clone())));
+            if let Some((src, dst)) = previous {
+                if let Some(refs) = overlay.inserted_out_adj.get_mut(&src) {
+                    refs.retain(|(rel, key)| rel != &rel_type || key != &id);
+                }
+                if let Some(refs) = overlay.inserted_in_adj.get_mut(&dst) {
+                    refs.retain(|(rel, key)| rel != &rel_type || key != &id);
+                }
+            }
+        }
         overlay.cypher_ids.insert((true, rel_type.clone(), id.clone().into()), cypher_id);
         overlay.unassigned_public_ids.insert((true,rel_type.clone(),id.clone().into()));
         overlay

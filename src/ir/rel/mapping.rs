@@ -121,9 +121,18 @@ impl NodeMapping {
     }
 }
 
+/// Endpoint whose row owns a foreign-key-backed relationship.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForeignKeyEndpoint {
+    Source,
+    Destination,
+}
+
 /// Maps one edge type onto the user's schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeMapping {
+    /// When set, the edge is an FK on this endpoint's row, not an independent row.
+    pub foreign_key: Option<ForeignKeyEndpoint>,
     pub rel_type: String,
     pub source: MappedSource,
     /// Column holding the source-node id (matches the `src_label` node
@@ -186,6 +195,7 @@ impl EdgeMapping {
         dst_label: impl Into<String>,
     ) -> Self {
         Self {
+            foreign_key: None,
             rel_type: rel_type.into(),
             source,
             src_column: src_column.into(),
@@ -195,6 +205,36 @@ impl EdgeMapping {
             id_column: None,
             properties: BTreeMap::new(),
         }
+    }
+
+    /// Store the relationship on the selected endpoint's row. The other endpoint
+    /// column is the foreign key; the child primary key is also the edge identity.
+    /// No relationship table or independently generated edge id is needed.
+    pub fn foreign_key(mut self, child: ForeignKeyEndpoint) -> Self {
+        self.foreign_key = Some(child);
+        self.id_column = Some(match child {
+            ForeignKeyEndpoint::Source => self.src_column.clone(),
+            ForeignKeyEndpoint::Destination => self.dst_column.clone(),
+        });
+        self
+    }
+
+    /// (child label, child key column, parent label, FK column).
+    pub fn foreign_key_columns(&self) -> Option<(&str, &str, &str, &str)> {
+        self.foreign_key.map(|child| match child {
+            ForeignKeyEndpoint::Source => (
+                self.src_label.as_str(),
+                self.src_column.as_str(),
+                self.dst_label.as_str(),
+                self.dst_column.as_str(),
+            ),
+            ForeignKeyEndpoint::Destination => (
+                self.dst_label.as_str(),
+                self.dst_column.as_str(),
+                self.src_label.as_str(),
+                self.src_column.as_str(),
+            ),
+        })
     }
 
     /// Use `column` as the distinct edge id.
@@ -236,6 +276,109 @@ impl fmt::Debug for GraphMapping {
 impl GraphMapping {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validate row ownership before either compiling reads or executing writes.
+    pub fn validate_foreign_keys(&self) -> RelResult<()> {
+        let mut owners = BTreeSet::new();
+        for edge in self.edges.values() {
+            let Some((child_label, child_key, parent_label, fk)) = edge.foreign_key_columns()
+            else {
+                continue;
+            };
+            let invalid = |reason: &str| {
+                RelError::Unsupported(format!(
+                    "foreign-key relationship `{}`: {reason}",
+                    edge.rel_type
+                ))
+            };
+            let child = self
+                .node(child_label)
+                .ok_or_else(|| invalid("missing child node mapping"))?;
+            let parent = self
+                .node(parent_label)
+                .ok_or_else(|| invalid("missing parent node mapping"))?;
+            let MappedSource::Table(table) = &edge.source else {
+                return Err(invalid("requires a writable child table"));
+            };
+            if edge.source != child.source
+                || child.id_column != child_key
+                || edge.id_column.as_deref() != Some(child_key)
+                || child_key == fk
+            {
+                return Err(invalid(
+                    "source and edge identity must match the child table and primary key",
+                ));
+            }
+            if !matches!(parent.source, MappedSource::Table(_)) {
+                return Err(invalid("parent must be table-backed"));
+            }
+            if let (Some(child_table), MappedSource::Table(parent_table)) =
+                (self.tables.get(table), &parent.source)
+            {
+                if let Some(parent_table) = self.tables.get(parent_table) {
+                    let child_schema = child_table.schema();
+                    let parent_schema = parent_table.schema();
+                    let child_id = child_schema
+                        .field_with_name(child_key)
+                        .map_err(|_| invalid("missing child key column"))?;
+                    let foreign_key = child_schema
+                        .field_with_name(fk)
+                        .map_err(|_| invalid("missing foreign key column"))?;
+                    let parent_id = parent_schema
+                        .field_with_name(&parent.id_column)
+                        .map_err(|_| invalid("missing parent key column"))?;
+                    if !is_identity_type(child_id.data_type())
+                        || foreign_key.data_type() != parent_id.data_type()
+                    {
+                        return Err(invalid("FK type must match the parent's scalar key type"));
+                    }
+                }
+            }
+            if !owners.insert((table.clone(), fk.to_string())) {
+                return Err(invalid(
+                    "an FK column may have only one relationship mapping",
+                ));
+            }
+            if self.nodes.values().any(|node| node.source == edge.source && node.id_column != child_key) {
+                return Err(invalid("all node mappings of the child table must use the same primary key"));
+            }
+            // A column must have one graph write owner. Otherwise a node update
+            // could silently overwrite an edge update (or vice versa).
+            if self.nodes.values().any(|node| {
+                node.source == edge.source
+                    && node.properties.values().any(|column| {
+                        column == fk
+                            || (column != child_key
+                                && edge.properties.values().any(|c| c == column))
+                    })
+            }) || edge.properties.values().any(|column| column == fk)
+            {
+                return Err(invalid(
+                    "FK and relationship property columns cannot also be mapped as node properties; mutate the relationship instead",
+                ));
+            }
+            for other in self
+                .edges
+                .values()
+                .filter(|other| other.rel_type != edge.rel_type && other.source == edge.source)
+            {
+                if other.foreign_key.is_none() {
+                    return Err(invalid(
+                        "cannot share its child table with an independent edge-row mapping",
+                    ));
+                }
+                if other.properties.values().any(|column| {
+                    column != child_key
+                        && (column == fk || edge.properties.values().any(|c| c == column))
+                }) {
+                    return Err(invalid(
+                        "relationship property columns must have a single write owner",
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Supply engine-neutral constraints. The caller owns enforcement and revision validity.
@@ -567,7 +710,12 @@ pub(super) fn lower_mapped_rel_scan(
         let Some(edge) = mapping.edge(rel_type) else {
             continue;
         };
-        let plan = mapping.source_plan(&edge.source)?;
+        mapping.validate_foreign_keys()?;
+        let mut plan = mapping.source_plan(&edge.source)?;
+        if let Some((_, _, _, fk)) = edge.foreign_key_columns() {
+            let column = resolve_column(&plan, fk)?;
+            plan = LogicalPlanBuilder::from(plan).filter(col_exact(column).is_not_null())?.build()?;
+        }
         sources.push((edge, plan));
     }
 
@@ -996,6 +1144,13 @@ impl GraphMapping {
                         require_key(entries, "src_label", &at)?,
                         require_key(entries, "dst_label", &at)?,
                     );
+                    if let Some(child) = entries.get("foreign_key") {
+                        edge = edge.foreign_key(match child.as_str() {
+                            "src" => ForeignKeyEndpoint::Source,
+                            "dst" => ForeignKeyEndpoint::Destination,
+                            _ => return Err(RelError::Unsupported(format!("{at}.foreign_key must be src or dst"))),
+                        });
+                    }
                     if let Some(id) = entries.get("edge_id") {
                         edge.id_column = Some(id.clone());
                     }
@@ -1023,6 +1178,7 @@ impl GraphMapping {
                 }
             }
         }
+        mapping.validate_foreign_keys()?;
         Ok(mapping)
     }
 
@@ -1060,6 +1216,12 @@ impl GraphMapping {
             out.push_str(&format!("dst = {}\n", quote(&edge.dst_column)));
             out.push_str(&format!("src_label = {}\n", quote(&edge.src_label)));
             out.push_str(&format!("dst_label = {}\n", quote(&edge.dst_label)));
+            if let Some(child) = edge.foreign_key {
+                out.push_str(&format!("foreign_key = {}\n", quote(match child {
+                    ForeignKeyEndpoint::Source => "src",
+                    ForeignKeyEndpoint::Destination => "dst",
+                })));
+            }
             if let Some(id) = &edge.id_column {
                 out.push_str(&format!("edge_id = {}\n", quote(id)));
             }
