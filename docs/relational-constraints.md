@@ -173,15 +173,3 @@ containment. It also covers composite and nullable keys, duplicate occurrences,
 filtered targets, throwing projections, scope expiry, catalog/view invalidation,
 serialization, DuckDB extraction/validation, PostgreSQL SQL compilation, and an
 actual mapped Cypher query whose lens self-join disappears from the executed SQL.
-Final conformance preserved all 6,382 baseline passes: 3,897 openCypher, 1,511
-TinkerPop and 974 RDF. The 74 not-applicable and 77 skipped RDF cases are unchanged,
-as are every case definition and outcome. Local checks passed 360 Rust tests,
-64 JVM tests and four Python cost-report tests; default and DuckDB all-targets
-compilation passed. See the [validation record](relational-constraints-validation.json).
-
-Every conformance case retains [per-query costs](query-cost.md) for ranking lowering
-opportunities and comparing subsequent runs. Complete boundary-work coverage is
-available for 5,116 cases after correcting Gremlin attribution to exclude
-assertion-helper requests; elapsed-only and unexecuted cases are explicitly
-marked. This correction reuses recorded measurements and does not represent a
-new suite run. The existing execution-plan review and examples remain unchanged.

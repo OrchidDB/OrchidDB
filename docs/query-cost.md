@@ -60,9 +60,7 @@ scores. These are selected-query observations, not a new conformance run:
 | Nested grouping (Group:165) | 291,570 | 51,947 |
 
 The repeat checks also assert the exact large integer answers. Grouping still
-uses native map reducers after SQL compaction. The latest
-[release validation](release-conformance-validation.md) records complete suite
-results, query costs, and current timings.
+uses native map reducers after SQL compaction.
 
 ## Conformance reports
 

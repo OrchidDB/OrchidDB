@@ -78,44 +78,7 @@ structs internally. Every component must be non-null and scalar; nested collecti
 are rejected. Key order follows the mapping, not property iteration order. Existing managed snapshots and integer
 records are read and migrated; new typed encodings require the new reader.
 
-## Implementation sequence
-
-1. Establish baseline evidence and retain managed constructors and persistence.
-2. Introduce mapped storage adaptation and typed external identities without
-   changing managed query semantics. Version durable typed-key encodings and
-   migrate legacy integer-key records transactionally.
-3. Route mapped reads through the common DAG, including native operations, paths,
-   correlated branches, aggregation, callbacks, and repeats.
-4. Route mutations to mapped locations through transactional storage operations;
-   remove the independent mapped mutation interpreter.
-5. Expose mapped construction on `GraphEngine`; retain old API wrappers.
-6. Run both regression suites and the pinned full conformance suites. Compare
-   individual outcomes, not just aggregate pass counts.
-
-## Conformance gate
-
-Recorded pre-refactor evidence in `conformance/upstream-results`:
-
-| Suite | Pass | Other recorded outcomes |
-| --- | ---: | --- |
-| openCypher TCK | 3,897 | none |
-| TinkerPop | 1,511 | none |
-| SPARQL | 974 | 77 skipped, 74 not applicable |
-
-Preserving 100% means no previously passing scenario may regress, become skipped,
-or disappear. Do not change upstream assertions, normalize away failures, or merge
-passes from alternate executions. Preserve the SPARQL profile exclusions explicitly.
-Historical files establish a comparison baseline, not proof that new code passes.
-Write fresh results separately and record the tested revision/working tree.
-
-Mapped parity fixtures must exercise the common engine with an explicitly mapped
-schema, including scalar keys, query-backed reads, multiple hops, typed paths,
-Gremlin state/aggregation, transactions, rollback, defaults, external SQL changes,
-and direct verification of source-table mutations. A storage layout incapable of
-representing an upstream fixture must be reported as such, never counted as a
-conformance pass. Full managed conformance remains a required release gate.
-
-## Status
+## Mapped execution
 
 Both public entry points now use the shared DAG
 runtime and mapped writes use the source-table adapter. The standalone mapped
@@ -136,53 +99,6 @@ mapped columns are visible during the statement; omitted mapped values with
 volatile/function defaults are rejected until their evaluation can be preserved
 by the shared runtime. Unmapped source columns retain their SQL defaults and
 constraints. Primary-key default generation is not implemented.
-
-### Verification of the corrected execution path
-
-Verified on 2026-09-26 against the working-tree build after removing eager mapped
-materialization. Fresh full runs preserve all 6,382 previously passing upstream
-cases, with zero changed outcomes, missing cases, or changed case definitions:
-
-| Suite | Fresh result |
-| --- | --- |
-| openCypher TCK | 3,897 / 3,897 pass |
-| TinkerPop | 1,511 / 1,511 pass |
-| SPARQL | 974 pass; existing 77 skipped and 74 not applicable unchanged |
-
-The [verification record](unified-graph-engine-validation.json) identifies the
-source fingerprint, binaries, report hashes, and case-by-case comparison. Full
-reports and local-check logs are under `target/sql-islands/`. Each reported suite
-is one complete uninterrupted run; results are not combined across attempts.
-TinkerPop ran alone with its unchanged 30-second query deadline. The earlier
-openCypher report with nested-null Arrow conversion failures is retained
-separately; all 13 affected cases pass in the final complete run.
-
-Additional checks passed:
-
-- 195 unit tests and 141 focused integration tests, including all 48 mapped
-  engine tests, scalar-key matrices, typed Arrow boundaries, transaction and
-  persistence checks, recursive projection, SQL generation, and function binding.
-- 64 JVM tests, with no skips or failures.
-- All targets compile with and without the `duckdb` feature.
-- Nine asserted mapped execution examples, including substantial SQL/DataFusion
-  mixed execution and SQL islands inside lateral subplans. The saved
-  [review](mapped-execution-plan-review.md) documents their actual plans.
-
-Execution regressions use 10,000 source nodes, 9,999 edges, and an unrelated
-mapped view that throws if scanned. They check selective SQL reads, source-table
-writes, batched traversal frontiers, scalar identity restoration, cancellation,
-shortest paths, and named paths. JVM initialization has a separate regression
-for lazy, consistent property handles across transaction views. The examples
-assert exact results, SQL participation, bounded native fetches, no unrelated
-or unmapped-column reads, and direct source-table mutation visibility.
-
-Native kernels still retain query-dependent intermediate rows and traversal
-frontiers. This correction removes unconditional mapped-table materialization;
-it does not claim every graph operation streams or that every plan is optimal.
-The query-cost metric is deferred to follow-up work.
-
-Recursive compiler tests use `RUST_MIN_STACK=16777216`; the default test-thread
-stack is insufficient for some recursive DataFusion plans.
 
 ### Foreign-key-backed relationships
 
@@ -224,5 +140,3 @@ See `examples/composite_keys.rs` for Cypher and Gremlin usage.
 `tests/sql_compiler_composite_keys.rs` executes compiler-only joins against DuckDB
 with repeated IDs across tenants and partially NULL FKs. Scalar and heterogeneous
 identity regressions remain covered by `tests/sql_compiler_identities.rs`.
-See [composite-key validation](composite-key-validation.md) for current runtime,
-compiler, documentation, and sibling-client results.
