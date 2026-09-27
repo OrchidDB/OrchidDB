@@ -65,9 +65,10 @@ maps and transfers only six SQL rows, but its observed elapsed time was about
 1.62 seconds versus 0.92 seconds in the earlier evidence. The boundary score
 improvement is not a latency improvement; SQL planning/execution remains a
 follow-up for that query. These development-build timings are observations,
-not controlled benchmarks. Historical published reports keep
-their recorded outcomes and timings; helper-cost attribution was corrected from
-existing evidence without executing the suites again.
+not controlled benchmarks. Historical reports keep their recorded outcomes and timings. The latest
+[release validation](release-conformance-validation.md) reruns the full suites
+and publishes fresh costs and timings; comparisons use the prior evidence with
+corrected helper attribution.
 
 ## Conformance reports
 

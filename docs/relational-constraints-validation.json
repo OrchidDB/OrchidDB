@@ -200,5 +200,7 @@
   "binaries": {
     "upstream": "9084942229fcc16e1afa69ffb3100a868d4238b84c094f96f6644afbadedac6f",
     "orchiddb-jvm-store": "cbffb2d56b9b7680ac29b107073d28ff158f34befb560725afed2a6a38070d87"
-  }
+  },
+  "artifact_revision": "e3d2335249b209d56c09b0a9fdfbcf3685a25d9f",
+  "artifact_note": "Historical validation: artifact paths and SHA-256 values refer to artifact_revision. Current results are described by release-conformance-validation.json."
 }

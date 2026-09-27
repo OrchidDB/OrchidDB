@@ -3,7 +3,7 @@
 Compare Cypher with Neo4j Community and PuppyGraph, Gremlin with SQLg, PuppyGraph and JanusGraph, and SPARQL with Apache Jena.
 The recorded percentages describe the optional managed runtime and the tested interfaces. They do not establish full language conformance for the newer SQL compiler clients, which reject writes, remote SERVICE calls, and operations that cannot lower to SQL. See [compiler boundaries](sql-compiler.md#boundaries).
 
-OrchidDB results include the release conformance run: 6,379 passes and three RDF failures, with unchanged exclusions. The failures cover DISTINCT ordering with OFFSET/LIMIT, including an ordered subquery. Peer results retain their recorded source revisions. Current compiler and managed runtime
+OrchidDB results include the complete optimized release run: 6,382 passes, no failures, and unchanged exclusions. Peer results retain their recorded source revisions. Current compiler and managed runtime
 APIs reject SPARQL `SERVICE`, including `SERVICE SILENT`; OrchidDB does not issue
 remote SPARQL HTTP requests.
 
