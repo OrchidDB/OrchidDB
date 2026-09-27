@@ -7,6 +7,21 @@ from pathlib import Path
 def compact(report):
     result = {k: v for k, v in report.items() if k not in ('results', 'environment')}
     result['evidence_format'] = 'compact-v1'
+    if 'query_cost_summary' in result:
+        summary = dict(result['query_cost_summary'])
+        comparisons = summary.get('baseline_comparisons', [])
+        if comparisons and 'baseline_comparison_summary' not in summary:
+            improved = sorted((r for r in comparisons if r['delta'] < 0), key=lambda r: (r['delta'], r['id']))
+            regressed = sorted((r for r in comparisons if r['delta'] > 0), key=lambda r: (-r['delta'], r['id']))
+            summary['baseline_comparison_summary'] = {
+                'case_count': len(comparisons), 'improved': len(improved),
+                'regressed': len(regressed), 'unchanged': len(comparisons)-len(improved)-len(regressed),
+                'before_work_units': sum(r['before'] for r in comparisons),
+                'after_work_units': sum(r['after'] for r in comparisons),
+                'detail_limit_per_direction': 50,
+            }
+            summary['baseline_comparisons'] = regressed[:50] + improved[:50]
+        result['query_cost_summary'] = summary
     key = 'results' if 'results' in report else 'cases'
     if key not in report or not isinstance(report[key], list):
         return result

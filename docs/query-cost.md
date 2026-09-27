@@ -114,6 +114,8 @@ The published `conformance-report.html#query-cost` displays coverage and the 50
 highest-work scenarios per suite, with links to individual cases. Per-scenario
 cells show work and coverage. Published results contain compact summaries only;
 raw queries, fixture payloads and returned data stay in ignored `target/` files.
+Published baseline comparisons include aggregate totals and the 50 largest
+improvements and regressions; complete comparison details remain in local reports.
 CSV downloads include metric version, coverage, work units and request time.
 `query-cost-summary.json` exposes rankings and baseline comparisons. The report
 uses committed `conformance/upstream-results/orchiddb-*.json` evidence.
