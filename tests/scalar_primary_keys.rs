@@ -231,7 +231,7 @@ fn null_and_nested_columns_are_not_primary_keys() {
             .expect("non-scalar key must fail")
             .to_string();
         assert!(
-            error.contains("cannot be an element identity"),
+            error.contains("key component `key` is not scalar"),
             "{ty:?}: {error}"
         );
     }

@@ -167,7 +167,9 @@ impl<'a> LoweringContext<'a> {
         while let DataType::Dictionary(_, value_type) = data_type {
             data_type = value_type;
         }
-        let key = if matches!(data_type, DataType::Binary | DataType::LargeBinary
+        let key = if matches!(data_type, DataType::Struct(_)) {
+            identity_token_expr(key, data_type)
+        } else if matches!(data_type, DataType::Binary | DataType::LargeBinary
             | DataType::BinaryView | DataType::FixedSizeBinary(_)) {
             // Binary identities may contain arbitrary bytes, not UTF-8.
             datafusion::functions::encoding::expr_fn::encode(
@@ -343,7 +345,7 @@ impl<'a> LoweringContext<'a> {
             // Both orientations feed one union, so endpoints of different
             // identity types (e.g. text people, integer companies) share one.
             let endpoint = |name: String| match &endpoint_type {
-                Some(target) => Expr::Cast(Cast::new(Box::new(col_exact(name)), target.clone())),
+                Some(target) => cast_identity_expr(col_exact(name.clone()), &field_type(name).expect("endpoint column"), target),
                 None => col_exact(name),
             };
             projection.extend([

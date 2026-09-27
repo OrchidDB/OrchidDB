@@ -594,7 +594,7 @@ impl PropertyGraph {
             if let Ok(id)=ElementId::try_from(public_id) {
                 for name in if edge {self.rel_types()}else{self.labels()} {
                     let Some(kind)=self.key_types.get(&(edge,name.clone())) else {continue};
-                    if let Ok(key)=id.scalar().cast_to(kind).map_err(|e|e.to_string()).and_then(ElementId::new) {
+                    if let Ok(key)=id.cast_to(kind) {
                         addresses.push((edge,name,key));
                     }
                 }

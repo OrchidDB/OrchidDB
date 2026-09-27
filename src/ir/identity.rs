@@ -6,14 +6,103 @@ use std::{cmp::Ordering, fmt, sync::Arc};
 pub struct ElementId(Arc<ScalarValue>);
 
 impl ElementId {
+    /// A key is either one scalar or an ordered tuple of non-null scalars.
+    /// Struct field names are positional and canonical, independent of the
+    /// physical column names used by a particular mapping.
     pub fn new(value: ScalarValue) -> Result<Self, String> {
-        if value.is_null() || !super::rel::mapping::is_identity_type(&value.data_type()) {
+        use arrow::array::Array;
+        if let ScalarValue::Struct(array) = &value {
+            if array.len() != 1 || array.is_null(0) {
+                return Err("element identity cannot be null".into());
+            }
+            if is_identity_union(&value.data_type()) {
+                let values = array
+                    .columns()
+                    .iter()
+                    .map(|column| ScalarValue::try_from_array(column, 0).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut live = values.into_iter().filter(|v| !v.is_null());
+                let key = live.next().ok_or("null element identity")?;
+                if live.next().is_some() {
+                    return Err("ambiguous identity union".into());
+                }
+                return Self::new(key);
+            }
+            return Self::from_components(
+                array
+                    .columns()
+                    .iter()
+                    .map(|column| ScalarValue::try_from_array(column, 0).map_err(|e| e.to_string()))
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
+        if value.is_null() || !super::rel::mapping::is_scalar_identity_type(&value.data_type()) {
             return Err(format!(
-                "element identity requires a non-null scalar, got {}",
+                "element identity requires non-null scalar components, got {}",
                 value.data_type()
             ));
         }
         Ok(Self(Arc::new(value)))
+    }
+    pub fn from_components(values: Vec<ScalarValue>) -> Result<Self, String> {
+        use arrow::{array::StructArray, datatypes::Field};
+        if values.is_empty() {
+            return Err("element identity cannot be empty".into());
+        }
+        if values.len() == 1 {
+            return Self::new(values.into_iter().next().unwrap());
+        }
+        if values
+            .iter()
+            .any(|v| v.is_null() || !super::rel::mapping::is_scalar_identity_type(&v.data_type()))
+        {
+            return Err("composite identity components must be non-null scalars".into());
+        }
+        let fields = values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| Arc::new(Field::new(format!("k{i}"), v.data_type(), true)))
+            .collect::<Vec<_>>();
+        let arrays = values
+            .iter()
+            .map(|v| v.to_array().map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self(Arc::new(ScalarValue::Struct(Arc::new(
+            StructArray::new(fields.into(), arrays, None),
+        )))))
+    }
+    pub fn components(&self) -> Vec<ScalarValue> {
+        match self.scalar() {
+            ScalarValue::Struct(array) => array
+                .columns()
+                .iter()
+                .map(|column| {
+                    ScalarValue::try_from_array(column, 0).expect("validated key component")
+                })
+                .collect(),
+            value => vec![value.clone()],
+        }
+    }
+    /// Cast each component independently. Never flatten a tuple into text.
+    pub fn cast_to(&self, kind: &arrow::datatypes::DataType) -> Result<Self, String> {
+        use arrow::datatypes::DataType;
+        let values = self.components();
+        let types = match kind {
+            DataType::Struct(fields) if !is_identity_union(kind) => {
+                fields.iter().map(|f| f.data_type()).collect()
+            }
+            _ => vec![kind],
+        };
+        if values.len() != types.len() {
+            return Err("element identity arity does not match its mapping".into());
+        }
+        Self::from_components(
+            values
+                .into_iter()
+                .zip(types)
+                .map(|(v, t)| v.cast_to(t).map_err(|e| e.to_string()))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
     }
     pub fn scalar(&self) -> &ScalarValue {
         &self.0
@@ -80,6 +169,12 @@ impl ElementId {
     pub fn to_value(&self) -> super::Value {
         use super::Value;
         match self.scalar() {
+            ScalarValue::Struct(_) => Value::List(
+                self.components()
+                    .into_iter()
+                    .map(|v| Self::new(v).expect("validated component").to_value())
+                    .collect(),
+            ),
             ScalarValue::Boolean(Some(v)) => Value::Bool(*v),
             ScalarValue::Int8(Some(v)) => Value::Byte(*v),
             ScalarValue::Int16(Some(v)) => Value::Short(*v),
@@ -113,8 +208,28 @@ impl TryFrom<&super::Value> for ElementId {
     type Error = String;
     fn try_from(value: &super::Value) -> Result<Self, String> {
         use super::Value;
+        if let Value::List(parts) = value {
+            return Self::from_components(
+                parts
+                    .iter()
+                    .map(|part| {
+                        if matches!(part, Value::List(_)) {
+                            return Err("nested composite identities are not supported".into());
+                        }
+                        Self::try_from(part).and_then(|key| {
+                            if key.components().len() != 1 {
+                                return Err("nested composite identities are not supported".into());
+                            }
+                            Ok(key.scalar().clone())
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+        }
         Self::new(match value {
             Value::Scalar(v) => v.clone(),
+            Value::BigInt(v) | Value::UInt128(v) => ScalarValue::Utf8(Some(v.to_string())),
+            Value::BigDecimal(v) => ScalarValue::Utf8(Some(v.to_string())),
             Value::Int(v) | Value::Long(v) => ScalarValue::Int64(Some(*v)),
             Value::Byte(v) => ScalarValue::Int8(Some(*v)),
             Value::Short(v) => ScalarValue::Int16(Some(*v)),
@@ -192,4 +307,38 @@ impl PartialEq<i64> for ElementId {
     fn eq(&self, other: &i64) -> bool {
         self.as_i64() == Some(*other)
     }
+}
+
+/// Heterogeneous graph scans carry a typed, sparse union of identities. Each
+/// variant retains its original Arrow type; only the type name is fingerprinted.
+pub(crate) fn is_identity_union(kind: &arrow::datatypes::DataType) -> bool {
+    matches!(kind, arrow::datatypes::DataType::Struct(fields) if !fields.is_empty() &&
+        fields.iter().all(|f| f.name().starts_with("__orchid_key_")))
+}
+pub(crate) fn identity_variant(kind: &arrow::datatypes::DataType) -> String {
+    use sha2::{Digest, Sha256};
+    format!(
+        "__orchid_key_{:x}",
+        Sha256::digest(format!("{kind:?}").as_bytes())
+    )
+}
+pub(crate) fn identity_union_type(
+    types: impl IntoIterator<Item = arrow::datatypes::DataType>,
+) -> arrow::datatypes::DataType {
+    use arrow::datatypes::{DataType, Field};
+    let mut fields = std::collections::BTreeMap::new();
+    for kind in types {
+        if is_identity_union(&kind) {
+            let DataType::Struct(existing) = kind else {
+                unreachable!()
+            };
+            for field in &existing {
+                fields.insert(field.name().clone(), field.clone());
+            }
+        } else {
+            let name = identity_variant(&kind);
+            fields.insert(name.clone(), Arc::new(Field::new(name, kind, true)));
+        }
+    }
+    DataType::Struct(fields.into_values().collect::<Vec<_>>().into())
 }

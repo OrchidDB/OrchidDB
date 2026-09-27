@@ -515,7 +515,9 @@ impl LoweringVisitor {
                 Predicate::Compare {
                     op: CompareOp::Eq,
                     value,
-                } => {
+                } if !matches!(value, GValue::List(_) | GValue::Set(_)) => {
+                    // eq(tuple) compares one composite ID; the varargs hasId
+                    // overload alone expands collection arguments.
                     self.steps.push(Step::HasId { ids: vec![value] });
                     return;
                 }
@@ -609,7 +611,9 @@ impl LoweringVisitor {
                 Predicate::Compare {
                     op: CompareOp::Eq,
                     value,
-                } => {
+                } if !matches!(value, GValue::List(_) | GValue::Set(_)) => {
+                    // eq(tuple) compares one composite ID; the varargs hasId
+                    // overload alone expands collection arguments.
                     self.steps.push(Step::HasId { ids: vec![value] });
                     return;
                 }

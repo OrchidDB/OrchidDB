@@ -66,9 +66,11 @@ impl PropertyGraph {
             return None;
         }
         match value {
-            Value::Node { id, .. } | Value::Edge { id, .. } => {
-                Some(Value::Scalar(id.scalar().clone()))
-            }
+            Value::Node { id, .. } | Value::Edge { id, .. } => Some(if id.components().len() > 1 {
+                id.to_value()
+            } else {
+                Value::Scalar(id.scalar().clone())
+            }),
             _ => None,
         }
     }
@@ -98,32 +100,19 @@ impl PropertyGraph {
                 .ok_or_else(|| CatalogError::Schema(format!("unmapped label `{name}`")))?;
             (&m.id_column, &m.properties)
         };
-        let value = if let Some(value) = supplied {
-            value.clone()
+        let key = if let Some(value) = supplied {
+            ElementId::try_from(value).map_err(CatalogError::Schema)?
         } else {
-            let property = props
-                .iter()
-                .find_map(|(p, c)| (c == column).then_some(p))
-                .ok_or_else(|| {
-                    CatalogError::Schema(format!(
-                        "creation requires a property mapped to primary key `{column}`"
-                    ))
-                })?;
-            let value = properties.get(property).ok_or_else(|| {
-                CatalogError::Schema(format!(
-                    "creation requires primary key property `{property}`"
-                ))
-            })?;
-            value.clone()
+            let components = column.columns().iter().map(|column| {
+                let value = props.iter().find_map(|(property, c)| (c == column)
+                    .then(|| properties.get(property)).flatten())
+                    .ok_or_else(|| CatalogError::Schema(format!("creation requires a property mapped to primary key component `{column}`")))?;
+                let key = ElementId::try_from(value).map_err(CatalogError::Schema)?;
+                if key.components().len() != 1 { return Err(CatalogError::Schema("primary key components must be scalars".into())); }
+                Ok(key.scalar().clone())
+            }).collect::<CatalogResult<Vec<_>>>()?;
+            ElementId::from_components(components).map_err(CatalogError::Schema)?
         };
-        let key = match &value {
-            Value::BigInt(v) | Value::UInt128(v) => {
-                ElementId::new(ScalarValue::Utf8(Some(v.to_string())))
-            }
-            Value::BigDecimal(v) => ElementId::new(ScalarValue::Utf8(Some(v.to_string()))),
-            _ => ElementId::try_from(&value),
-        }
-        .map_err(CatalogError::Schema)?;
         let keys = if edge {
             self.edge_keys.get(name)
         } else {
@@ -135,15 +124,15 @@ impl PropertyGraph {
             .cloned()
             .or_else(|| keys.and_then(|v| v.first()).map(|v| v.scalar().data_type()));
         let key = if let Some(kind) = kind {
-            ElementId::new(
-                key.scalar()
-                    .cast_to(&kind)
-                    .map_err(|e| CatalogError::Schema(e.to_string()))?,
-            )
-            .map_err(CatalogError::Schema)?
+            key.cast_to(&kind).map_err(CatalogError::Schema)?
         } else {
             key
         };
+        if key.components().len() != column.len() {
+            return Err(CatalogError::Schema(
+                "supplied key arity does not match its mapping".into(),
+            ));
+        }
         let exists = if edge {
             self.live_edge_endpoints(name, key.clone()).is_some()
         } else {
@@ -154,11 +143,12 @@ impl PropertyGraph {
                 "duplicate primary key `{key}` for `{name}`"
             )));
         }
+        let components = column.values(&key).map_err(CatalogError::Schema)?;
         for (property, column_name) in props {
-            if column_name == column {
+            if let Some(value) = components.get(column_name) {
                 properties
                     .entry(property.clone())
-                    .or_insert_with(|| Value::Scalar(key.scalar().clone()));
+                    .or_insert_with(|| Value::Scalar(value.clone()));
             }
         }
         Ok(Some(key))
@@ -200,45 +190,47 @@ impl PropertyGraph {
                         return Err(format!("unmapped property `{name}.{key}`"));
                     }
                 }
-                if let Some((property, _)) = props.iter().find(|(_, column)| *column == key_column)
-                {
-                    let value = if edge {
-                        self.edge_property(name, id.clone(), property)
-                    } else {
-                        self.node_property(name, id.clone(), property)
-                    };
-                    let live = if edge {
-                        self.live_edge_endpoints(name, id.clone()).is_some()
-                    } else {
-                        self.node_is_live(name, id.clone())
-                    };
-                    if live && value == Value::Null {
-                        return Err("primary key cannot be removed".into());
-                    }
-                    if value != Value::Null {
-                        let actual = ElementId::try_from(&value)?
-                            .scalar()
-                            .cast_to(&id.scalar().data_type())
-                            .map_err(|e| e.to_string())?;
-                        if &actual != id.scalar() {
-                            return Err("primary key changes are not supported".into());
+                let key_values = key_column.values(id)?;
+                let live = if edge {
+                    self.live_edge_endpoints(name, id.clone()).is_some()
+                } else {
+                    self.node_is_live(name, id.clone())
+                };
+                for (property, column) in props {
+                    if let Some(expected) = key_values.get(column) {
+                        let value = if edge {
+                            self.edge_property(name, id.clone(), property)
+                        } else {
+                            self.node_property(name, id.clone(), property)
+                        };
+                        if value == Value::Null {
+                            if live {
+                                return Err("primary key components cannot be removed".into());
+                            }
+                        } else {
+                            let actual =
+                                ElementId::try_from(&value)?.cast_to(&expected.data_type())?;
+                            if actual.scalar() != expected {
+                                return Err("primary key changes are not supported".into());
+                            }
                         }
                     }
                 }
                 if edge {
                     let m = mapping.edge(name).unwrap();
                     if let Some((_, src, _, dst)) = self.live_edge_endpoints(name, id.clone()) {
-                        for (column, expected) in [(&m.src_column, src), (&m.dst_column, dst)] {
-                            if let Some((property, _)) = props.iter().find(|(_, c)| *c == column) {
-                                let value = self.edge_property(name, id.clone(), property);
-                                let value = ElementId::try_from(&value)?
-                                    .scalar()
-                                    .cast_to(&expected.scalar().data_type())
-                                    .map_err(|e| e.to_string())?;
-                                if &value != expected.scalar() {
-                                    return Err(
-                                        "mapped edge endpoint changes are not supported".into()
-                                    );
+                        for (columns, expected) in [(&m.src_column, src), (&m.dst_column, dst)] {
+                            let components = columns.values(&expected)?;
+                            for (property, column) in props {
+                                if let Some(expected) = components.get(column) {
+                                    let value = self.edge_property(name, id.clone(), property);
+                                    let actual = ElementId::try_from(&value)?
+                                        .cast_to(&expected.data_type())?;
+                                    if actual.scalar() != expected {
+                                        return Err(
+                                            "mapped edge endpoint changes are not supported".into(),
+                                        );
+                                    }
                                 }
                             }
                         }

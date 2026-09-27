@@ -251,10 +251,8 @@ pub(super) fn count_input_rows(plan: &LogicalPlan) -> Expr {
     if let Some(zero) = zero {
         return df_count(df_core::coalesce(vec![col_exact(field.name()), zero]));
     }
-    df_count(df_core::coalesce(vec![
-        cast_utf8(col_exact(field.name())),
-        lit(""),
-    ]))
+    // IS NULL itself is never null, even for tuple or nested columns.
+    df_count(col_exact(field.name()).is_null())
 }
 
 /// Preserve the original blob display text while ordering its `\\xNN`

@@ -116,8 +116,8 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             graph,
         ),
         ("gremlin.mutation.merge_validate", [current, criteria, updates, Value::Bool(edge)]) => {
-            validate(&entries(criteria)?, *edge, false)?;
-            validate(&entries(updates)?, *edge, true)?;
+            validate(&entries(criteria)?, *edge, false, graph.mapping.is_some())?;
+            validate(&entries(updates)?, *edge, true, graph.mapping.is_some())?;
             Ok(current.clone())
         }
         ("gremlin.mutation.merge_guard", [current, Value::Bool(edge)]) => {
@@ -146,7 +146,7 @@ pub(crate) fn call(name: &str, args: &[Value], graph: &PropertyGraph) -> IrResul
             ],
         ) => {
             let map = entries(updates)?;
-            validate(&map, matches!(element, Value::Edge { .. }), true)?;
+            validate(&map, matches!(element, Value::Edge { .. }), true, graph.mapping.is_some())?;
             for (key, value) in map {
                 let Value::String(key) = key else {
                     unreachable!()
@@ -285,7 +285,7 @@ fn public_key(key: &str) -> IrResult<()> {
     }
     Ok(())
 }
-fn validate(map: &[(Value, Value)], edge: bool, updates: bool) -> IrResult<()> {
+fn validate(map: &[(Value, Value)], edge: bool, updates: bool, composite: bool) -> IrResult<()> {
     for (key, value) in map {
         if let Value::CardinalityValue { cardinality, value } = value {
             if edge {
@@ -311,9 +311,10 @@ fn validate(map: &[(Value, Value)], edge: bool, updates: bool) -> IrResult<()> {
                 if matches!(value, Value::Null) {
                     return Err(error("merge() does not allow null Map values"));
                 }
-                if matches!(value, Value::List(_) | Value::Map(_)) {
+                if matches!(value, Value::Map(_)) || (!composite && matches!(value, Value::List(_))) {
                     return Err(error("Invalid element id"));
                 }
+                if composite { crate::ir::ElementId::try_from(value).map_err(error)?; }
             }
             Value::Direction(direction) if edge && matches!(direction.as_str(), "IN" | "OUT") => {
                 if matches!(value, Value::Null) {
@@ -365,7 +366,7 @@ pub(crate) fn matches(
 ) -> IrResult<bool> {
     let map = entries(criteria)?;
     let edge = matches!(element, Value::Edge { .. });
-    validate(&map, edge, false)?;
+    validate(&map, edge, false, graph.mapping.is_some())?;
     for (key, expected) in map {
         let actual = match key {
             Value::String(key) => {
@@ -438,8 +439,8 @@ fn merge_create(
 ) -> IrResult<Value> {
     let mut map = entries(criteria)?;
     let additions = entries(create)?;
-    validate(&map, edge, false)?;
-    validate(&additions, edge, false)?;
+    validate(&map, edge, false, graph.mapping.is_some())?;
+    validate(&additions, edge, false, graph.mapping.is_some())?;
     for (key, value) in additions {
         if let Some(previous) = lookup(&map, &key) {
             if previous != &value

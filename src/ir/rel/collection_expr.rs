@@ -321,7 +321,7 @@ impl<'a> LoweringContext<'a> {
                     false => concat_exprs(vec![
                         col_exact(label_col(binding)),
                         lit("#"),
-                        cast_utf8(col_exact(id_col(binding))),
+                        identity_text_expr(plan, id_col(binding)),
                     ]),
                 };
                 body.push(concat_exprs(vec![

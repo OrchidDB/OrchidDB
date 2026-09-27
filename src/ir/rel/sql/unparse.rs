@@ -61,6 +61,28 @@ pub(super) fn encode_expression_literals(
     dialect: SqlDialect,
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
+        // DF53 cannot unparse casts to Arrow structs or binary values. Keep
+        // their complete target type through the existing SQL cast adapter.
+        if dialect == SqlDialect::DuckDb {
+            let needs_adapter = |kind: &DataType| matches!(kind,
+                DataType::Struct(_) | DataType::Binary | DataType::LargeBinary
+                | DataType::BinaryView | DataType::FixedSizeBinary(_)
+                | DataType::Time32(_) | DataType::Time64(_));
+            if let Expr::Cast(cast) = &inner {
+                if needs_adapter(&cast.data_type) {
+                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast(
+                        *cast.expr.clone(), cast.data_type.clone(),
+                    )?));
+                }
+            }
+            if let Expr::Literal(value, _) = &inner {
+                if value.is_null() && needs_adapter(&value.data_type()) {
+                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast(
+                        lit(ScalarValue::Null), value.data_type(),
+                    )?));
+                }
+            }
+        }
         if let Expr::BinaryExpr(binary) = &inner {
             use datafusion::logical_expr::{Operator, ScalarUDF, Signature, Volatility, expr_fn::SimpleScalarUDF};
             let name = match binary.op {

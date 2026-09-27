@@ -50,7 +50,7 @@ impl Source {
         &self,
         edge: bool,
         name: &str,
-        column: Option<&str>,
+        column: Option<&KeyColumns>,
         ids: &[ElementId],
     ) -> Result<Vec<ElementId>, String> {
         if ids.is_empty() {
@@ -72,12 +72,12 @@ impl Source {
             };
             (&m.source, &m.id_column, &m.properties, None)
         };
-        let mut projection = vec![format!("{} AS __key", quote(key))];
+        let mut projection = vec![format!("{} AS __key", key.sql(None))];
         projection.extend(property_projection(props));
         if let Some(m) = endpoints {
             projection.extend([
-                format!("{} AS __src", quote(&m.src_column)),
-                format!("{} AS __dst", quote(&m.dst_column)),
+                format!("{} AS __src", m.src_column.sql(None)),
+                format!("{} AS __dst", m.dst_column.sql(None)),
             ]);
         }
         let array = ScalarValue::iter_to_array(ids.iter().map(|id| id.scalar().clone()))
@@ -92,13 +92,13 @@ impl Source {
         )
         .map_err(|e| e.to_string())?;
         let edge_filter = endpoints.and_then(|m| m.foreign_key_columns())
-            .map(|(_, _, _, fk)| format!(" AND {} IS NOT NULL", quote(fk)))
+            .map(|(_, _, _, fk)| format!(" AND {}", fk.present_sql()))
             .unwrap_or_default();
         let sql = format!(
             "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
             source(src),
-            quote(column.unwrap_or(key))
+            column.unwrap_or(key).sql(None)
         );
         let batch = {
             let mut executor = self.executor.lock().map_err(|e| e.to_string())?;
@@ -138,19 +138,11 @@ impl Source {
                 let index = props.len() + 1;
                 Some((
                     m.src_label.clone(),
-                    ElementId::new(
-                        ScalarValue::try_from_array(batch.column(index), row)
-                            .map_err(|e| e.to_string())?
-                            .cast_to(&self.key_types[&(false, m.src_label.clone())])
-                            .map_err(|e| e.to_string())?,
-                    )?,
+                    ElementId::new(ScalarValue::try_from_array(batch.column(index), row).map_err(|e| e.to_string())?)?
+                        .cast_to(&self.key_types[&(false, m.src_label.clone())])?,
                     m.dst_label.clone(),
-                    ElementId::new(
-                        ScalarValue::try_from_array(batch.column(index + 1), row)
-                            .map_err(|e| e.to_string())?
-                            .cast_to(&self.key_types[&(false, m.dst_label.clone())])
-                            .map_err(|e| e.to_string())?,
-                    )?,
+                    ElementId::new(ScalarValue::try_from_array(batch.column(index + 1), row).map_err(|e| e.to_string())?)?
+                        .cast_to(&self.key_types[&(false, m.dst_label.clone())])?,
                 ))
             } else {
                 None
@@ -292,9 +284,9 @@ impl GraphSource for Source {
             let mut executor = self.executor.lock().map_err(|e| e.to_string())?;
             let edge_filter = edge.then(|| self.mapping.edge(name)).flatten()
                 .and_then(|m| m.foreign_key_columns())
-                .map(|(_, _, _, fk)| format!(" WHERE {} IS NOT NULL", quote(fk)))
+                .map(|(_, _, _, fk)| format!(" WHERE {}", fk.present_sql()))
                 .unwrap_or_default();
-            let sql = format!("SELECT {} FROM {}{edge_filter}", quote(key), source(src));
+            let sql = format!("SELECT {} FROM {}{edge_filter}", key.sql(None), source(src));
             let ids = keys(
                 &query(executor.connection().map_err(|e| e.to_string())?, &sql)?,
                 0,

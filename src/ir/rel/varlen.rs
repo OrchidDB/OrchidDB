@@ -146,7 +146,7 @@ impl LoweringContext<'_> {
         let work_id = |plan: &LogicalPlan, name: String| -> Expr {
             match (&work_id_type, type_of(plan, name.clone())) {
                 (Some(target), Some(actual)) if &actual != target => {
-                    Expr::Cast(Cast::new(Box::new(col_exact(name)), target.clone()))
+                    cast_identity_expr(col_exact(name), &actual, target)
                 }
                 _ => col_exact(name),
             }

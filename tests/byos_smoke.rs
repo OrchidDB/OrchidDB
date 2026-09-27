@@ -428,6 +428,6 @@ fn mapping_round_trips_through_toml() {
     let vip = reparsed.node("Vip").expect("vip");
     assert_eq!(vip.source, MappedSource::Query(VIP_QUERY_SQL.into()));
     let ordered = reparsed.edge("ORDERED").expect("ordered");
-    assert_eq!(ordered.id_column.as_deref(), Some("order_id"));
+    assert_eq!(ordered.id_column.as_ref().map(|key| key.columns()), Some(["order_id".to_string()].as_slice()));
     assert_eq!(ordered.src_label, "Person");
 }

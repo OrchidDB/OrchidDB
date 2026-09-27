@@ -2,7 +2,7 @@
 pub(super) use crate::ir::{
     ElementId, Value,
     catalog::{EdgeTable, NodeTable, PropertyGraph},
-    rel::mapping::{GraphMapping, MappedSource},
+    rel::mapping::{GraphMapping, KeyColumns, MappedSource},
 };
 pub(super) use arrow::{
     array::{ArrayRef, RecordBatch},
@@ -63,7 +63,7 @@ pub(super) fn metadata(
     let mut graph = PropertyGraph::new();
     for label in mapping.labels() {
         let m = mapping.node(&label).unwrap();
-        let mut projection = vec![format!("{} AS __key", quote(&m.id_column))];
+        let mut projection = vec![format!("{} AS __key", m.id_column.sql(None))];
         projection.extend(property_projection(&m.properties));
         let batch = query(
             connection,
@@ -95,10 +95,10 @@ pub(super) fn metadata(
         let mut projection = vec![
             format!(
                 "{} AS __key",
-                quote(m.id_column.as_ref().unwrap_or(&m.src_column))
+                m.id_column.as_ref().unwrap_or(&m.src_column).sql(None)
             ),
-            format!("{} AS __src_id", quote(&m.src_column)),
-            format!("{} AS __dst_id", quote(&m.dst_column)),
+            format!("{} AS __src_id", m.src_column.sql(None)),
+            format!("{} AS __dst_id", m.dst_column.sql(None)),
         ];
         projection.extend(property_projection(&m.properties));
         let batch = query(
@@ -190,7 +190,7 @@ pub(super) fn metadata(
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| e.to_string())?;
             for (column, expression) in rows {
-                if &column == key {
+                if key.contains(&column) {
                     continue;
                 }
                 for (property, _) in props.iter().filter(|(_, c)| **c == column) {
@@ -247,9 +247,39 @@ fn bind_batch(values: Vec<(String, ScalarValue)>) -> Result<RecordBatch, String>
         .collect::<Result<Vec<ArrayRef>, _>>()?;
     RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).map_err(|e| e.to_string())
 }
+/// MATCH SIMPLE lets any nullable FK component disconnect the relationship.
+/// Preserve shared primary-key components and other required FK columns.
+fn nullable_fk_columns(
+    connection: &Connection,
+    name: &str,
+    fk: &KeyColumns,
+    key: &KeyColumns,
+) -> Result<Vec<String>, String> {
+    let reference = datafusion::common::TableReference::from(name);
+    let mut statement = connection.prepare("SELECT column_name, is_nullable FROM duckdb_columns() WHERE table_name = ? AND schema_name = coalesce(?, current_schema()) AND database_name = coalesce(?, current_database())").map_err(|e| e.to_string())?;
+    let columns = statement
+        .query_map(
+            duckdb::params![reference.table(), reference.schema(), reference.catalog()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let result = columns
+        .into_iter()
+        .filter_map(|(column, nullable)| {
+            (nullable && fk.contains(&column) && !key.contains(&column)).then_some(column)
+        })
+        .collect::<Vec<_>>();
+    if result.is_empty() {
+        return Err("cannot unlink relationship: its foreign key has no nullable non-primary-key component; replace the relationship or delete the child".into());
+    }
+    Ok(result)
+}
+
 // Write ownership is physical, not graph-shaped: a node and several FK edges
 // can all contribute columns to one row.
-type RowAddress = (String, String, ElementId);
+type RowAddress = (String, KeyColumns, ElementId);
 #[derive(Debug)]
 struct RowWrite {
     existing: bool,
@@ -291,7 +321,7 @@ fn merge_row(
 }
 
 // (child table, FK column, referenced table, referenced key column).
-type Reference = (String, String, String, String);
+type Reference = (String, KeyColumns, String, KeyColumns);
 fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
     let mut refs = std::collections::BTreeSet::new();
     for name in mapping.rel_types() {
@@ -303,8 +333,8 @@ fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
             vec![(parent, fk)]
         } else {
             vec![
-                (m.src_label.as_str(), m.src_column.as_str()),
-                (m.dst_label.as_str(), m.dst_column.as_str()),
+                (m.src_label.as_str(), &m.src_column),
+                (m.dst_label.as_str(), &m.dst_column),
             ]
         };
         for (label, column) in endpoints {
@@ -314,7 +344,7 @@ fn references(mapping: &GraphMapping) -> Result<Vec<Reference>, String> {
             if let MappedSource::Table(parent_table) = &parent.source {
                 refs.insert((
                     child_table.clone(),
-                    column.to_owned(),
+                    column.clone(),
                     parent_table.clone(),
                     parent.id_column.clone(),
                 ));
@@ -334,8 +364,10 @@ fn write_order(
     schemas: &BTreeMap<String, Arc<Schema>>,
 ) -> Result<Vec<Vec<RowAddress>>, String> {
     use std::collections::BTreeSet;
-    let deleting_tables = rows.iter().filter(|(_, row)| row.delete)
-        .map(|((table, key, _), _)| (table.as_str(), key.as_str()))
+    let deleting_tables = rows
+        .iter()
+        .filter(|(_, row)| row.delete)
+        .map(|((table, key, _), _)| (table.as_str(), key))
         .collect::<BTreeSet<_>>();
     let mut dependencies = rows
         .keys()
@@ -347,17 +379,19 @@ fn write_order(
             .iter()
             .filter(|r| &r.0 == table_name)
             .collect::<Vec<_>>();
-        let needs_old = row.existing && relevant.iter()
-            .any(|r| deleting_tables.contains(&(r.2.as_str(), r.3.as_str())));
+        let needs_old = row.existing
+            && relevant
+                .iter()
+                .any(|r| deleting_tables.contains(&(r.2.as_str(), &r.3)));
         let old = if needs_old {
-            let columns = relevant.iter().map(|r| quote(&r.1)).collect::<Vec<_>>();
-            let input = bind_batch(vec![(key_column.clone(), key.scalar().clone())])?;
+            let columns = relevant.iter().map(|r| r.1.sql(None)).collect::<Vec<_>>();
+            let input = bind_batch(key_column.values(key)?.into_iter().collect())?;
             let sql = format!(
                 "SELECT {} FROM {} WHERE {} IN (SELECT {} FROM __orchiddb_write_values(?, ?))",
                 columns.join(","),
                 table(table_name),
-                quote(key_column),
-                quote(key_column)
+                key_column.sql(None),
+                key_column.sql(None)
             );
             let mut statement = connection.prepare(&sql).map_err(|e| e.to_string())?;
             let reader = statement
@@ -380,26 +414,43 @@ fn write_order(
                 }
                 _ => ScalarValue::Null,
             };
-            let new_value = if row.delete {
-                &ScalarValue::Null
-            } else {
-                row.values.get(fk).unwrap_or(&old_value)
+            let components = |value: &ScalarValue| -> Result<Vec<ScalarValue>, String> {
+                match value {
+                    ScalarValue::Struct(array) => array
+                        .columns()
+                        .iter()
+                        .map(|column| {
+                            ScalarValue::try_from_array(column, 0).map_err(|e| e.to_string())
+                        })
+                        .collect(),
+                    value if fk.len() == 1 => Ok(vec![value.clone()]),
+                    _ if value.is_null() => Ok(vec![ScalarValue::Null; fk.len()]),
+                    _ => Err("foreign key result has wrong arity".into()),
+                }
             };
-            let parent_address = |value: &ScalarValue| -> Result<Option<RowAddress>, String> {
-                if value.is_null() {
+            let old_parts = components(&old_value)?;
+            let new_parts = if row.delete {
+                vec![ScalarValue::Null; fk.len()]
+            } else {
+                fk.columns()
+                    .iter()
+                    .zip(&old_parts)
+                    .map(|(column, old)| row.values.get(column).unwrap_or(old).clone())
+                    .collect()
+            };
+            let parent_address = |values: Vec<ScalarValue>| -> Result<Option<RowAddress>, String> {
+                // SQL MATCH SIMPLE: any null component means no relationship.
+                if values.iter().any(ScalarValue::is_null) {
                     return Ok(None);
                 }
-                let kind = schemas[parent_table]
-                    .field_with_name(parent_key)
-                    .map_err(|e| e.to_string())?
-                    .data_type();
+                let kind = parent_key.data_type(&schemas[parent_table])?;
                 Ok(Some((
                     parent_table.clone(),
                     parent_key.clone(),
-                    ElementId::new(value.cast_to(kind).map_err(|e| e.to_string())?)?,
+                    ElementId::from_components(values)?.cast_to(&kind)?,
                 )))
             };
-            if let Some(parent) = parent_address(new_value)? {
+            if let Some(parent) = parent_address(new_parts)? {
                 if let Some(parent_row) = rows.get(&parent) {
                     if parent_row.delete {
                         return Err("cannot delete a parent still referenced by a child row".into());
@@ -409,7 +460,7 @@ fn write_order(
                     }
                 }
             }
-            if let Some(parent) = parent_address(&old_value)? {
+            if let Some(parent) = parent_address(old_parts)? {
                 if rows.get(&parent).is_some_and(|r| r.delete) {
                     dependencies
                         .get_mut(&parent)
@@ -475,10 +526,10 @@ pub(super) fn persist(
             } else {
                 graph.node_is_live(name, key.clone())
             };
-            let mut values = BTreeMap::from([(id_column.clone(), key.scalar().clone())]);
+            let mut values = id_column.values(key)?;
             if live {
                 for (property, column) in props {
-                    if column == id_column {
+                    if id_column.contains(column) {
                         continue;
                     }
                     let value = if edge {
@@ -497,26 +548,33 @@ pub(super) fn persist(
                     if !graph.node_is_live(child, key.clone()) {
                         continue;
                     }
-                    let value = if live {
+                    if live {
                         let (_, src, _, dst) = graph
                             .edge_endpoints(name, key.clone())
                             .ok_or("missing edge endpoints")?;
-                        if m.foreign_key
+                        let parent = if m.foreign_key
                             == Some(crate::ir::rel::mapping::ForeignKeyEndpoint::Source)
                         {
                             dst
                         } else {
                             src
+                        };
+                        for (column, value) in fk.values(&parent)? {
+                            if values.get(&column).is_some_and(|old| old != &value) {
+                                return Err(format!(
+                                    "relationship conflicts with child key component `{column}`"
+                                ));
+                            }
+                            values.insert(column, value);
                         }
-                        .scalar()
-                        .clone()
                     } else {
-                        ScalarValue::Null
-                    };
-                    values.insert(fk.to_owned(), value);
+                        for column in nullable_fk_columns(connection, table_name, fk, child_key)? {
+                            values.insert(column, ScalarValue::Null);
+                        }
+                    }
                     merge_row(
                         &mut rows,
-                        (table_name.clone(), child_key.to_owned(), key.clone()),
+                        (table_name.clone(), child_key.clone(), key.clone()),
                         graph.base_exists(false, child, key),
                         false,
                         values,
@@ -527,8 +585,17 @@ pub(super) fn persist(
                     let (_, src, _, dst) = graph
                         .edge_endpoints(name, key.clone())
                         .ok_or("missing edge endpoints")?;
-                    values.insert(m.src_column.clone(), src.scalar().clone());
-                    values.insert(m.dst_column.clone(), dst.scalar().clone());
+                    for (column, value) in m
+                        .src_column
+                        .values(&src)?
+                        .into_iter()
+                        .chain(m.dst_column.values(&dst)?)
+                    {
+                        if values.get(&column).is_some_and(|old| old != &value) {
+                            return Err(format!("conflicting endpoint/key component `{column}`"));
+                        }
+                        values.insert(column, value);
+                    }
                 }
             }
             let existing = graph.base_exists(edge, name, key);
@@ -553,9 +620,23 @@ pub(super) fn persist(
         if let (MappedSource::Table(table_name), Some((_, child_key, _, fk))) =
             (&m.source, m.foreign_key_columns())
         {
-            for ((target, key_column, _), row) in &mut rows {
+            for ((target, key_column, id), row) in &mut rows {
                 if target == table_name && key_column == child_key && !row.existing && !row.delete {
-                    row.values.entry(fk.to_owned()).or_insert(ScalarValue::Null);
+                    for column in fk.columns() {
+                        row.values
+                            .entry(column.clone())
+                            .or_insert(ScalarValue::Null);
+                    }
+                    if fk
+                        .columns()
+                        .iter()
+                        .all(|c| row.values.get(c).is_some_and(|v| !v.is_null()))
+                        && !pending.edges.contains(&(name.clone(), id.clone()))
+                    {
+                        return Err(format!(
+                            "creation of this child requires an explicit `{name}` relationship in the same statement"
+                        ));
+                    }
                 }
             }
         }
@@ -593,11 +674,12 @@ pub(super) fn persist(
             let columns = row.values.keys().map(|c| quote(c)).collect::<Vec<_>>();
             let relation = "__orchiddb_write_values(?, ?)";
             let target = table(table_name);
-            let predicate = format!(
-                "target.{} = incoming.{}",
-                quote(key_column),
-                quote(key_column)
-            );
+            let predicate = key_column
+                .columns()
+                .iter()
+                .map(|column| format!("target.{} = incoming.{}", quote(column), quote(column)))
+                .collect::<Vec<_>>()
+                .join(" AND ");
             let sql = if row.delete {
                 format!(
                     "DELETE FROM {target} AS target USING {relation} AS incoming WHERE {predicate}"
@@ -605,7 +687,7 @@ pub(super) fn persist(
             } else if row.existing {
                 let assignments = columns
                     .iter()
-                    .filter(|c| **c != quote(key_column))
+                    .filter(|c| !key_column.columns().iter().any(|key| quote(key) == **c))
                     .map(|c| format!("{c}=incoming.{c}"))
                     .collect::<Vec<_>>();
                 if assignments.is_empty() {

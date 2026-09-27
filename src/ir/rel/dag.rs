@@ -432,7 +432,11 @@ pub(crate) async fn prepare_with_extensions(
     // consistent across logical and physical planning without repeated clones.
     let query_state = session.state();
     let (initial, mut proofs) = super::constraints::optimize(logical.clone())?;
-    let optimized = if resources.optimize { query_state.optimize(&initial)? } else { initial };
+    let optimized = if resources.optimize { query_state.optimize(&initial)? } else {
+        // Mapped SQL placement skips optional optimizer rewrites, but residual
+        // DataFusion operators still require type coercion and function analysis.
+        query_state.analyzer().execute_and_check(initial, query_state.config_options(), |_, _| {})?
+    };
     let (optimized, more) = super::constraints::optimize(optimized)?;
     proofs.extend(more);
     let mut stats = DagStats { constraint_proofs: proofs, ..Default::default() };

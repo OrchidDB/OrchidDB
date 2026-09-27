@@ -16,6 +16,19 @@ DuckDB is the tested execution target. Core also renders PostgreSQL SQL. ClickHo
 
 Parameters are specialized into SQL. Cache keys must include their values, schema, mappings, ontology, functions, and dialect. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. The compiler-only subset is narrower than the [managed runtime conformance results](conformance.md).
 
+## Composite keys in source builds
+
+The core compiler accepts ordered column arrays for node IDs, edge IDs, and
+endpoints; see [SQL compilation](sql-compiler.md) and the
+[composite mapping example](mapping-reference.md#composite-keys). Existing
+single-column mappings remain valid. Cypher and Gremlin endpoint joins preserve
+all components and exclude partially NULL foreign keys.
+
+Use a compiler built from the composite-key sources when sending column arrays.
+The published `0.1.0` packages and standalone example manifests select the
+released compiler. The runtime mutation example uses the optional DuckDB runtime;
+compiler-only clients continue to execute read queries on caller-owned engines.
+
 ## Rust
 
 [Repository and example](https://github.com/OrchidDB/OrchidDB-rust). Add the client to your application:

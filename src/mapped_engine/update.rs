@@ -97,7 +97,7 @@ impl MappedGraphEngine {
                 .properties
                 .get(&item.key)
                 .ok_or("unmapped update property")?;
-            if property == id || property == &mapped.src_column || property == &mapped.dst_column {
+            if id.contains(property) || mapped.src_column.contains(property) || mapped.dst_column.contains(property) {
                 return Err("SQL updates cannot change graph identifiers or edge endpoints".into());
             }
             (&mapped.source, id, property)
@@ -107,7 +107,7 @@ impl MappedGraphEngine {
                 .properties
                 .get(&item.key)
                 .ok_or("unmapped update property")?;
-            if property == &mapped.id_column {
+            if mapped.id_column.contains(property) {
                 return Err("SQL updates cannot change graph identifiers".into());
             }
             (&mapped.source, &mapped.id_column, property)

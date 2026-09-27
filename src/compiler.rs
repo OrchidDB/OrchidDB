@@ -9,7 +9,7 @@ use crate::ir::{
     },
     rel::{
         RelBackend, RelBackendOptions,
-        mapping::{EdgeMapping, GraphMapping, NodeMapping},
+        mapping::{EdgeMapping, ForeignKeyEndpoint, GraphMapping, KeyColumns, NodeMapping},
         sql::{SqlDialect, unparse},
     },
     value::Value,
@@ -69,18 +69,20 @@ fn yes() -> bool {
 pub struct Node {
     pub label: String,
     pub table: String,
-    pub id: String,
+    pub id: KeyColumns,
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
+    #[serde(default)]
+    pub foreign_key: Option<ForeignKeyEndpoint>,
     pub label: String,
     pub table: String,
-    pub id: String,
-    pub source: String,
-    pub target: String,
+    pub id: KeyColumns,
+    pub source: KeyColumns,
+    pub target: KeyColumns,
     pub source_label: String,
     pub target_label: String,
     #[serde(default)]
@@ -285,7 +287,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         if node.label.is_empty() || !labels.insert(&node.label) {
             return Err("empty or duplicate node label".into());
         }
-        check(&node.table, &node.id, true)?;
+        node.id.validate().map_err(|e| e.to_string())?;
+        for column in node.id.columns() { check(&node.table, column, true)?; }
         let mut n = NodeMapping::table(&node.label, &node.table, &node.id);
         for (p, c) in &node.properties {
             check(&node.table, c, false)?;
@@ -302,7 +305,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             return Err("edge endpoints must reference mapped node labels".into());
         }
         for c in [&edge.id, &edge.source, &edge.target] {
-            check(&edge.table, c, true)?;
+            c.validate().map_err(|e| e.to_string())?;
+            for column in c.columns() { check(&edge.table, column, true)?; }
         }
         let mut e = EdgeMapping::table(
             &edge.label,
@@ -313,12 +317,17 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             &edge.target_label,
         )
         .with_id(&edge.id);
+        if let Some(child) = edge.foreign_key {
+            e = e.foreign_key(child);
+            if e.id_column.as_ref() != Some(&edge.id) { return Err("foreign-key edge ID must match its child key".into()); }
+        }
         for (p, c) in &edge.properties {
             check(&edge.table, c, false)?;
             e = e.property(p, c);
         }
         mapping.map_edge(e);
     }
+    mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
     let mut registry = FunctionRegistry::new(Arc::new(DeclaredCatalog(request.dialect.clone())));
     for f in &request.functions {
         registry

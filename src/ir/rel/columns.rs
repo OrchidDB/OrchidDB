@@ -106,7 +106,10 @@ pub(super) fn existing_columns(plan: &LogicalPlan, excluded: &BTreeSet<String>) 
         .collect()
 }
 
-pub(super) fn existing_columns_by_name(plan: &LogicalPlan, excluded: &BTreeSet<String>) -> Vec<Expr> {
+pub(super) fn existing_columns_by_name(
+    plan: &LogicalPlan,
+    excluded: &BTreeSet<String>,
+) -> Vec<Expr> {
     plan.schema()
         .fields()
         .iter()
@@ -138,7 +141,10 @@ pub(super) fn existing_columns_excluding_binding(
         .collect()
 }
 
-pub(super) fn existing_columns_excluding_bindings(plan: &LogicalPlan, bindings: &[&str]) -> Vec<Expr> {
+pub(super) fn existing_columns_excluding_bindings(
+    plan: &LogicalPlan,
+    bindings: &[&str],
+) -> Vec<Expr> {
     plan.schema()
         .fields()
         .iter()
@@ -174,7 +180,11 @@ pub(super) fn is_binding_column(name: &str, binding: &str) -> bool {
         || name.starts_with(&format!("{binding}{PROP_MARKER}"))
 }
 
-pub(super) fn duplicate_binding_projection(plan: &LogicalPlan, from: &str, to: &str) -> RelResult<Vec<Expr>> {
+pub(super) fn duplicate_binding_projection(
+    plan: &LogicalPlan,
+    from: &str,
+    to: &str,
+) -> RelResult<Vec<Expr>> {
     let mut projections = existing_columns(plan, &BTreeSet::new());
     projections.extend(duplicate_binding_projection_only(plan, from, to)?);
     Ok(projections)
@@ -228,24 +238,145 @@ pub(super) fn binding_pair_eq(
     )
 }
 
-/// Shared type for two element identities, or `None` when they already
-/// match. Mapped labels keep their native id types and only multi-label
-/// unions widen them, so the sides of an endpoint join can differ: integers
-/// meet as `Int64` (or decimal when UInt64 is present), anything else as text. Label equality accompanies every
-/// identity comparison, so the text form cannot match across labels.
+/// Losslessly widen identity columns. A sparse typed struct keeps component
+/// boundaries and source types across heterogeneous labels.
 pub(super) fn common_identity_type(left: &DataType, right: &DataType) -> Option<DataType> {
     if left == right || left.is_null() || right.is_null() {
         return None;
     }
-    Some(if left.is_integer() && right.is_integer() {
-        if matches!(left, DataType::UInt64) || matches!(right, DataType::UInt64) {
-            DataType::Decimal128(20, 0)
+    Some(crate::ir::identity::identity_union_type([
+        left.clone(),
+        right.clone(),
+    ]))
+}
+
+pub(super) fn cast_identity_expr(value: Expr, actual: &DataType, target: &DataType) -> Expr {
+    use crate::ir::identity::{identity_variant, is_identity_union};
+    if actual == target {
+        return value;
+    }
+    if !is_identity_union(target) {
+        return Expr::Cast(Cast::new(Box::new(value), target.clone()));
+    }
+    let DataType::Struct(fields) = target else {
+        unreachable!()
+    };
+    let mut args = Vec::new();
+    for field in fields {
+        let part = if is_identity_union(actual) {
+            let DataType::Struct(existing) = actual else {
+                unreachable!()
+            };
+            if existing.iter().any(|f| f.name() == field.name()) {
+                df_core::get_field(value.clone(), field.name().as_str())
+            } else {
+                lit(ScalarValue::try_from(field.data_type()).expect("identity null type"))
+            }
+        } else if identity_variant(actual) == *field.name() {
+            value.clone()
         } else {
-            DataType::Int64
+            lit(ScalarValue::try_from(field.data_type()).expect("identity null type"))
+        };
+        args.extend([lit(field.name().clone()), part]);
+    }
+    Expr::Case(Case::new(
+        None,
+        vec![(
+            Box::new(value.is_not_null()),
+            Box::new(Expr::Cast(Cast::new(
+                Box::new(df_core::named_struct(args)),
+                target.clone(),
+            ))),
+        )],
+        Some(Box::new(lit(
+            ScalarValue::try_from(target).expect("identity union null")
+        ))),
+    ))
+}
+
+/// Injective, typed token for relationship-history membership. Component lengths
+/// preserve boundaries; values stay typed tuples everywhere else in the engine.
+pub(super) fn identity_token_expr(value: Expr, kind: &DataType) -> Expr {
+    use crate::ir::identity::{identity_variant, is_identity_union};
+    if let DataType::Struct(fields) = kind {
+        if is_identity_union(kind) {
+            let cases = fields
+                .iter()
+                .map(|field| {
+                    let part = df_core::get_field(value.clone(), field.name().as_str());
+                    (
+                        Box::new(part.clone().is_not_null()),
+                        Box::new(identity_token_expr(part, field.data_type())),
+                    )
+                })
+                .collect();
+            return Expr::Case(Case::new(
+                None,
+                cases,
+                Some(Box::new(lit(ScalarValue::Utf8(None)))),
+            ));
         }
-    } else {
-        DataType::Utf8
-    })
+        let mut parts = vec![lit(format!("tuple{}:", fields.len()))];
+        parts.extend(fields.iter().map(|field| {
+            identity_token_expr(
+                df_core::get_field(value.clone(), field.name().as_str()),
+                field.data_type(),
+            )
+        }));
+        return concat_exprs(parts);
+    }
+    let rendered = match kind {
+        DataType::Binary
+        | DataType::LargeBinary
+        | DataType::BinaryView
+        | DataType::FixedSizeBinary(_) => {
+            datafusion::functions::encoding::expr_fn::encode(value, lit("hex"))
+        }
+        _ => cast_utf8(value),
+    };
+    concat_exprs(vec![
+        lit(format!("{}:", identity_variant(kind))),
+        cast_utf8(df_unicode::character_length(rendered.clone())),
+        lit(":"),
+        rendered,
+    ])
+}
+
+/// Render the active original key, not the internal widening envelope.
+pub(super) fn identity_text_expr(plan: &LogicalPlan, name: String) -> Expr {
+    let value = col_exact(name.clone());
+    let Some(kind) = identity_type_in(&[plan], &name) else {
+        return cast_utf8(value);
+    };
+    if !crate::ir::identity::is_identity_union(&kind) {
+        return if matches!(kind, DataType::Struct(_)) {
+            identity_token_expr(value, &kind)
+        } else {
+            cast_utf8(value)
+        };
+    }
+    let DataType::Struct(fields) = kind else {
+        unreachable!()
+    };
+    let cases = fields
+        .iter()
+        .map(|field| {
+            let part = df_core::get_field(value.clone(), field.name().as_str());
+            (
+                Box::new(part.clone().is_not_null()),
+                Box::new(if matches!(field.data_type(), DataType::Struct(_)) {
+                    identity_token_expr(part, field.data_type())
+                } else {
+                    cast_utf8(part)
+                }),
+            )
+        })
+        .collect();
+    Expr::Case(Case::new(
+        None,
+        cases,
+        Some(Box::new(lit(ScalarValue::Utf8(None)))),
+    ))
 }
 
 fn identity_type_in(plans: &[&LogicalPlan], name: &str) -> Option<DataType> {
@@ -259,14 +390,22 @@ fn identity_type_in(plans: &[&LogicalPlan], name: &str) -> Option<DataType> {
 }
 
 /// Compare two identity columns found in `plans`, reconciling their types.
-pub(super) fn identity_compare(plans: &[&LogicalPlan], left: &str, op: BinaryOp, right: &str) -> Expr {
+pub(super) fn identity_compare(
+    plans: &[&LogicalPlan],
+    left: &str,
+    op: BinaryOp,
+    right: &str,
+) -> Expr {
     let (lhs, rhs) = (col_exact(left), col_exact(right));
-    match (identity_type_in(plans, left), identity_type_in(plans, right)) {
+    match (
+        identity_type_in(plans, left),
+        identity_type_in(plans, right),
+    ) {
         (Some(a), Some(b)) => match common_identity_type(&a, &b) {
             Some(target) => binary(
-                Expr::Cast(Cast::new(Box::new(lhs), target.clone())),
+                cast_identity_expr(lhs, &a, &target),
                 op,
-                Expr::Cast(Cast::new(Box::new(rhs), target)),
+                cast_identity_expr(rhs, &b, &target),
             ),
             None => binary(lhs, op, rhs),
         },

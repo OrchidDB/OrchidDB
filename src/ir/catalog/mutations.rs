@@ -140,12 +140,7 @@ impl PropertyGraph {
         let derived_key = child_id.map(|id| Value::Scalar(id.scalar().clone()));
         if let (Some(supplied), Some(child)) = (supplied_key, child_id) {
             let supplied = ElementId::try_from(supplied).map_err(CatalogError::Schema)?;
-            if supplied
-                .scalar()
-                .cast_to(&child.scalar().data_type())
-                .map_err(|e| CatalogError::Schema(e.to_string()))?
-                != *child.scalar()
-            {
+            if supplied.cast_to(&child.scalar().data_type()).map_err(CatalogError::Schema)? != *child {
                 return Err(CatalogError::Schema(
                     "foreign-key relationship identity must equal its child key".into(),
                 ));

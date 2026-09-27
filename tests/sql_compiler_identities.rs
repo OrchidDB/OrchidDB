@@ -308,3 +308,19 @@ async fn relationship_history_distinguishes_label_and_key_boundaries() {
     let name: String = con.query_row(&sql, [], |row|row.get(0)).unwrap();
     assert_eq!(name, "Cy");
 }
+
+#[tokio::test]
+async fn mixed_identity_filters_preserve_scalar_types_and_negation() {
+    assert_eq!(
+        run("gremlin", "g.V(1).values('name')").await,
+        rows(&[&["Acme"]])
+    );
+    assert_eq!(
+        run("gremlin", "g.V('p-ada', 'p-bob').values('name')").await,
+        rows(&[&["Ada"], &["Bob"]])
+    );
+    assert_eq!(
+        run("gremlin", "g.V().hasId(neq('p-ada')).values('name')").await,
+        rows(&[&["Acme"], &["Bob"], &["Cy"], &["Globex"], &["North"], &["One"]])
+    );
+}

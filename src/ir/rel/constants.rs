@@ -490,7 +490,7 @@ pub(super) fn gremlin_element_display_expr(plan: &LogicalPlan, binding: &str) ->
     };
     Ok(string_concat(
         string_concat(col_exact(label_col(binding)), lit("#")),
-        cast_utf8(col_exact(id_col(binding))),
+        identity_text_expr(plan, id_col(binding)),
     ))
 }
 

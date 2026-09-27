@@ -188,7 +188,7 @@ pub(crate) fn batch_to_bindings(
                     Value::Map(map)
                 }
                 Source::NodeCols(id, label) => {
-                    let id_value = column_value(*id, row)?;
+                    let id_is_null = batch.column(*id).is_null(row);
                     let label_value = column_value(*label, row)?;
                     match (key(*id,row), as_label(&label_value)) {
                         (Some(id), Some(label)) => Value::Node { label, id },
@@ -196,13 +196,12 @@ pub(crate) fn batch_to_bindings(
                         // encoding; anything else means the island did not
                         // produce the shape we expect, so decline the island
                         // rather than fabricate a binding.
-                        _ if matches!(id_value, Value::Null) => Value::Null,
+                        _ if id_is_null => Value::Null,
                         _ => return None,
                     }
                 }
                 Source::EdgeCols(src_id, src_label, dst_id, dst_label, id, label) => {
-                    let src_id_value = column_value(*src_id, row)?;
-                    if matches!(src_id_value, Value::Null) {
+                    if batch.column(*src_id).is_null(row) {
                         Value::Null
                     } else {
                         Value::Edge {

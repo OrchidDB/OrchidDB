@@ -410,7 +410,7 @@ impl<'a> LoweringContext<'a> {
                     lit("{_ID: "),
                     node_index(col_exact(label_col(binding))),
                     lit(":"),
-                    cast_utf8(col_exact(id_col(binding))),
+                    identity_text_expr(plan, id_col(binding)),
                     lit(", _LABEL: "),
                     col_exact(label_col(binding)),
                 ];
@@ -423,19 +423,19 @@ impl<'a> LoweringContext<'a> {
                     lit("("),
                     node_index(col_exact(src_label_col(binding))),
                     lit(":"),
-                    cast_utf8(col_exact(src_id_col(binding))),
+                    identity_text_expr(plan, src_id_col(binding)),
                     lit(")-{_LABEL: "),
                     col_exact(label_col(binding)),
                     lit(", _ID: "),
                     rel_index_case(col_exact(label_col(binding)), self.graph),
                     lit(":"),
-                    cast_utf8(col_exact(id_col(binding))),
+                    identity_text_expr(plan, id_col(binding)),
                 ];
                 property_segments(&mut parts);
                 parts.push(lit("}->("));
                 parts.push(node_index(col_exact(dst_label_col(binding))));
                 parts.push(lit(":"));
-                parts.push(cast_utf8(col_exact(dst_id_col(binding))));
+                parts.push(identity_text_expr(plan, dst_id_col(binding)));
                 parts.push(lit(")"));
                 Ok(concat_exprs(parts))
             }

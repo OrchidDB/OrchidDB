@@ -39,7 +39,7 @@ impl PropertyGraph {
             id: &mut ElementId,
         ) -> Result<(), String> {
             if let Some(kind) = graph.key_types.get(&(edge, name.into())) {
-                *id = ElementId::new(id.scalar().cast_to(kind).map_err(|e| e.to_string())?)?;
+                *id = id.cast_to(kind)?;
             }
             Ok(())
         }

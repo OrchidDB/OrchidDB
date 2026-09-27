@@ -51,14 +51,16 @@ let response = orchiddb::compiler::compile_json(request_json).await?;
 Table names use SQL identifier syntax, including quoted qualified identifiers.
 Bindings must quote individual identifier parts. Column/property names are
 literal strings. Schemas contain metadata only; no source data is passed into
-the compiler. Mapped identities may use any non-null scalar type, including booleans, integers,
-floats, strings, binary, decimals, dates, times, timestamps, durations and
-intervals. Floating-point keys follow the target engine's equality semantics. Each label keeps its column's native type, so joins on a label's key
-are not wrapped in casts. Where one scan unions labels whose key types differ,
-such as an unlabeled `MATCH (n)`, and that union is joined, the keys are
-compared as `BIGINT` (integers of different widths), `DECIMAL(20,0)`
-(when mixing uint64 with other integers), or as text. Label equality
-always accompanies the comparison, so equal text cannot match across labels.
+the compiler. Mapped identities may use a non-null scalar or an ordered tuple of
+non-null scalars: booleans, integers, floats, strings, binary, decimals, dates,
+times, timestamps, durations and intervals. Floating-point keys follow the target
+engine's equality semantics. Each label retains its native component types.
+Heterogeneous scans and joins use typed struct variants to preserve types and
+component boundaries; label equality accompanies identity comparisons.
+Node `id` and edge `id`, `source`, and `target` accept either a column-name string
+or an ordered array of column names, for example `"id": ["tenant", "id"]`.
+Endpoint columns correspond positionally to the referenced node key. Arrays must
+be nonempty with distinct column names; a one-column array is a scalar key.
 Bindings must ensure
 ID uniqueness/non-nullability and referential integrity in their actual data.
 Optional [supplied relational constraints](relational-constraints.md) make proven
@@ -68,7 +70,14 @@ Mapped identities do not require a physical primary-key index; supported
 index types depend on the target database.
 
 Optional `edges` describe label, table, id, source/target columns,
-source_label/target_label, and property-to-column mappings. Optional `functions`
+source_label/target_label, and property-to-column mappings. An FK-backed edge also
+sets `foreign_key` to `"src"` or `"dst"` (the endpoint whose row owns the FK), uses
+the child table, and supplies the child key as its `id`. Partially NULL FKs do not
+produce graph edges. These declarations describe reads; the standalone compiler
+is not a mutation engine. Gremlin tuple-ID projection may require the unified
+runtime's native operator rather than standalone SQL compilation.
+
+Optional `functions`
 describe language-facing name, SQL target, parameter type list, return type
 (`returns`), and `aggregate` flag. The caller installs real implementations in
 its engine. SPARQL's optional `ontology` maps classes, properties and directed

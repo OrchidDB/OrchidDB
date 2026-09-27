@@ -133,6 +133,10 @@ impl<'a> LoweringContext<'a> {
                 // with the per-label row id. Cypher's ID() result is the
                 // provider-qualified `table:offset` value below.
                 if self.language == Language::Gremlin {
+                    let kind = plan.schema().field_with_unqualified_name(&col)?.data_type();
+                    if matches!(kind, DataType::Struct(_)) {
+                        return Err(RelError::Unsupported("composite or heterogeneous source IDs require native typed values".into()));
+                    }
                     return Ok(col_exact(col));
                 }
                 // Kuzu's `ID()` yields an internal id that prints as
@@ -155,7 +159,7 @@ impl<'a> LoweringContext<'a> {
                 Ok(concat_exprs(vec![
                     table_index,
                     lit(":"),
-                    cast_utf8(col_exact(col)),
+                    identity_text_expr(plan, col),
                 ]))
             }
             IrExpr::Label(binding) => {
@@ -886,7 +890,9 @@ impl<'a> LoweringContext<'a> {
                 };
                 if equality {
                     let both_null = Expr::and(lhs.clone().is_null(), rhs.clone().is_null());
-                    let equal = Expr::or(both_null, datafusion::functions::core::expr_fn::coalesce(vec![binary(lhs, BinaryOp::Eq, rhs), lit(false)]));
+                    let comparison = binary(lhs, BinaryOp::Eq, rhs);
+                    let equal = Expr::or(both_null, Expr::Case(Case::new(None,
+                        vec![(Box::new(comparison), Box::new(lit(true)))], Some(Box::new(lit(false))))));
                     Ok(if op == "neq" { Expr::Not(Box::new(equal)) } else { equal })
                 } else { Ok(binary(lhs, operator, rhs)) }
             }
@@ -1297,6 +1303,46 @@ impl LoweringContext<'_> {
         op: BinaryOp,
         right: &IrExpr,
     ) -> RelResult<Expr> {
+        // Identity predicates compare native components, not the projected
+        // Gremlin value channel. A heterogeneous scan stores a sparse struct;
+        // compare only variants compatible with the supplied scalar value.
+        if self.language == Language::Gremlin && matches!(op, BinaryOp::Eq | BinaryOp::Neq) {
+            for (id, value) in [(left, right), (right, left)] {
+                fn identity_binding(expr: &IrExpr) -> Option<(&str, bool)> {
+                    match expr {
+                        IrExpr::Id(binding) => Some((binding, false)),
+                        IrExpr::Call { name, args } if name == "gremlin_id" => {
+                            match args.as_slice() {
+                                [IrExpr::Binding(binding)] => Some((binding, false)),
+                                _ => None,
+                            }
+                        }
+                        IrExpr::Call { name, args } if name == "cast_string" && args.len() == 1 =>
+                            identity_binding(&args[0]).map(|(binding, _)| (binding, true)),
+                        _ => None,
+                    }
+                }
+                let Some((binding, as_text)) = identity_binding(id) else { continue };
+                let column = id_col(binding);
+                let kind = plan.schema().field_with_unqualified_name(&column)?.data_type();
+                if !crate::ir::identity::is_identity_union(kind) { continue; }
+                let DataType::Struct(fields) = kind else { unreachable!() };
+                let rhs = self.lower_expr(plan, value)?;
+                let rt = rhs.get_type(plan.schema())?;
+                let text = |t: &DataType| matches!(t, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View);
+                let mut equal = lit(false);
+                for field in fields {
+                    let lt = field.data_type();
+                    if (as_text && !matches!(lt, DataType::Struct(_)))
+                        || lt == &rt || (lt.is_numeric() && rt.is_numeric()) || (text(lt) && text(&rt)) {
+                        let part = df_core::get_field(col_exact(&column), field.name().as_str());
+                        let compared = if as_text { cast_utf8(part.clone()) } else { part.clone() };
+                        equal = equal.or(part.is_not_null().and(compared.eq(rhs.clone())));
+                    }
+                }
+                return Ok(if op == BinaryOp::Neq { Expr::Not(Box::new(equal)) } else { equal });
+            }
+        }
         let lhs = self.lower_expr(plan, left)?;
         let rhs = self.lower_expr(plan, right)?;
         if self.language == Language::Gremlin && matches!(op, BinaryOp::Eq | BinaryOp::Neq) {

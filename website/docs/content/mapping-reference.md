@@ -158,31 +158,108 @@ foreign_key = "dst"
 ```
 
 `edge_id` is derived from the child endpoint and may be omitted. If supplied, it
-must be the child key column. `foreign_key = "src"` selects the source endpoint
+must be the complete ordered child key. `foreign_key = "src"` selects the source endpoint
 as the child.
 
-Deleting the relationship sets the FK to NULL, preserving the child row and its
-other columns. A required FK rejects this operation. To reparent a child, delete
+Deleting the relationship clears its nullable, non-primary-key FK components,
+preserving the child row, shared key components, and other required columns.
+An FK with no nullable non-key component rejects this operation. To reparent a child, delete
 the old relationship and create its replacement in the same statement; only the
 final FK value is written. Deleting the child removes its FK relationship with
 it (use the graph language's detach-delete operation where required). Deleting a
 parent does not implicitly delete its children; remaining database constraints
 apply.
 
-A nullable FK with no value produces no graph edge in either SQL scans or native
+An FK with any NULL component produces no graph edge in either SQL scans or native
 traversals. Newly created child rows without a relationship receive NULL for the
 FK, so a `NOT NULL` constraint fails; SQL defaults on that FK do not invent an
 implicit relationship. Required properties and links must be complete within a
 single statement, even in an explicit transaction.
 
-Column write ownership must be unambiguous. Do not also expose the FK as a node
-property, and do not map relationship property columns as node properties.
-Several FK relationships may share a child table if each owns different columns.
-The child and parent must be table-backed and use scalar keys with matching FK
-and parent-key types. Composite keys, query-backed writes, and cyclic writes
-requiring deferred constraints are not supported. Compatible rows are still
-batched, with dependencies ordered before referencing rows.
+Column write ownership must be unambiguous. Shared primary-key columns may appear
+in node properties and multiple FKs; they are immutable and all supplied values
+must agree. Other FK columns and relationship property columns must not also be
+node properties or owned by another relationship mapping.
+The child and parent must be table-backed; each ordered FK component must match
+its corresponding parent-key type. Query-backed writes and cyclic writes requiring
+deferred constraints are not supported. Compatible rows are batched with
+referenced rows inserted first. DuckDB constraints remain binding: in particular,
+updating an indexed FK column on a row referenced by another table can be rejected
+by DuckDB even when its primary key does not change. The engine propagates that
+error and rolls back; it does not disable constraints or rewrite unrelated rows.
 
-DuckDB currently rejects deleting a referenced parent in the same transaction
-that removes its child, even when the child is removed first. OrchidDB rolls
-back the failed statement; commit the child removal before deleting the parent.
+
+## Composite keys
+
+Use ordered column arrays for node IDs, edge IDs, and either endpoint:
+
+```rust,ignore
+mapping.map_node(NodeMapping::table("Customer", "customers", ["tenant", "id"])
+    .property("tenant", "tenant").property("id", "id").property("name", "name"));
+mapping.map_node(NodeMapping::table("Order", "orders", ["tenant", "id"])
+    .property("tenant", "tenant").property("id", "id").property("total", "total"));
+mapping.map_edge(EdgeMapping::table(
+    "HAS_ORDER", "orders", ["tenant", "customer_id"], ["tenant", "id"],
+    "Customer", "Order",
+).foreign_key(ForeignKeyEndpoint::Destination));
+```
+
+Here `orders(tenant, customer_id)` references `customers(tenant, id)`, while the
+order's own primary key is `(tenant, id)`. No relationship table is created. The
+shared tenant component cannot change when reparenting an existing order.
+
+```toml
+[node.Customer]
+table = "customers"
+id = ["tenant", "id"]
+[node.Customer.properties]
+tenant = "tenant"
+id = "id"
+name = "name"
+
+[node.Order]
+table = "orders"
+id = ["tenant", "id"]
+[node.Order.properties]
+tenant = "tenant"
+id = "id"
+total = "total"
+
+[edge.HAS_ORDER]
+table = "orders"
+src = ["tenant", "customer_id"]
+dst = ["tenant", "id"]
+src_label = "Customer"
+dst_label = "Order"
+foreign_key = "dst"
+```
+
+Columns match by position, not name. All primary-key components are required,
+non-null scalars; nested keys and duplicate/empty column lists are rejected.
+Existing scalar constructor arguments and serialized strings remain supported.
+Rust callers accessing mapping fields directly now receive `KeyColumns`; use
+`.columns()` to inspect the ordered names. Ordinary relationship tables can use
+`.with_id(["tenant", "edge_id"])` and composite endpoints too.
+
+Cypher supplies all key components through their declared property aliases:
+
+```cypher
+CREATE (:Customer {tenant:'acme', id:42, name:'Alice'})
+       -[:HAS_ORDER]->(:Order {tenant:'acme', id:101, total:29.95})
+```
+
+Gremlin accepts and returns composite IDs as ordered lists:
+
+```groovy
+g.addV('Customer').property(T.id, ['acme', 42]).property('name', 'Alice')
+g.V().hasLabel('Customer').hasId(eq(['acme', 42]))
+```
+
+Use `eq(tuple)` for one composite ID: Gremlin's ordinary `hasId(list)` overload
+expands the list as multiple candidate IDs. The runtime keeps component types and
+boundaries through joins, traversals, paths, and serialization. No implicit key
+generation is introduced. If a child's FK consists entirely of its primary-key
+columns, create its relationship explicitly in the same statement as the child.
+
+A complete runnable example is `examples/composite_keys.rs`:
+`cargo run --features duckdb --example composite_keys`.

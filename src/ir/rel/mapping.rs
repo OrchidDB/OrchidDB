@@ -3,7 +3,7 @@
 //! [`PropertyGraph`](crate::ir::catalog::PropertyGraph).
 //!
 //! A [`GraphMapping`] describes, for every node label and edge type, which
-//! user table (or SQL query) backs it, which column is the element id, and
+//! user table (or SQL query) backs it, which ordered columns form the element id, and
 //! how graph property names map onto source columns. When a mapping is
 //! installed on [`RelBackendOptions`](super::RelBackendOptions), the lowering
 //! resolves every scan through the mapping instead of the property-graph
@@ -71,15 +71,181 @@ pub enum MappedSource {
     Query(String),
 }
 
+/// Ordered physical columns forming an element key or relationship endpoint.
+/// A single string remains source-compatible with the scalar-key constructors.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeyColumns(Vec<String>);
+impl KeyColumns {
+    pub fn columns(&self) -> &[String] {
+        &self.0
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn contains(&self, column: &str) -> bool {
+        self.0.iter().any(|c| c == column)
+    }
+    pub fn validate(&self) -> RelResult<()> {
+        if self.0.is_empty()
+            || self.0.iter().any(String::is_empty)
+            || self.0.iter().collect::<BTreeSet<_>>().len() != self.0.len()
+        {
+            return Err(RelError::Unsupported(
+                "key columns must be nonempty, distinct, and ordered".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn data_type(&self, schema: &arrow::datatypes::Schema) -> Result<DataType, String> {
+        self.validate().map_err(|e| e.to_string())?;
+        let types = self
+            .0
+            .iter()
+            .map(|column| {
+                schema
+                    .field_with_name(column)
+                    .map(|f| f.data_type().clone())
+                    .map_err(|e| e.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if types.iter().any(|t| !is_scalar_identity_type(t)) {
+            return Err("key columns must each have a scalar identity type".into());
+        }
+        Ok(if types.len() == 1 {
+            types.into_iter().next().unwrap()
+        } else {
+            DataType::Struct(
+                types
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, t)| Arc::new(arrow::datatypes::Field::new(format!("k{i}"), t, true)))
+                    .collect::<Vec<_>>()
+                    .into(),
+            )
+        })
+    }
+    /// A typed SQL tuple. Field names are positional, not source column names.
+    pub(crate) fn sql(&self, qualifier: Option<&str>) -> String {
+        let columns = self
+            .0
+            .iter()
+            .map(|c| {
+                let quoted = format!("\"{}\"", c.replace('"', "\"\""));
+                qualifier.map_or(quoted.clone(), |q| format!("{q}.{quoted}"))
+            })
+            .collect::<Vec<_>>();
+        if columns.len() == 1 {
+            columns[0].clone()
+        } else {
+            format!(
+                "struct_pack({})",
+                columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| format!("k{i} := {c}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+    }
+    pub(crate) fn present_sql(&self) -> String {
+        self.0
+            .iter()
+            .map(|c| format!("\"{}\" IS NOT NULL", c.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    }
+    pub(crate) fn values(
+        &self,
+        key: &crate::ir::ElementId,
+    ) -> Result<BTreeMap<String, ScalarValue>, String> {
+        let values = key.components();
+        if values.len() != self.len() {
+            return Err("key component count does not match physical columns".into());
+        }
+        Ok(self.0.iter().cloned().zip(values).collect())
+    }
+    fn toml(&self) -> String {
+        if self.len() == 1 {
+            serde_json::to_string(&self.0[0]).unwrap()
+        } else {
+            serde_json::to_string(&self.0).unwrap()
+        }
+    }
+}
+impl From<&String> for KeyColumns {
+    fn from(column: &String) -> Self {
+        Self(vec![column.clone()])
+    }
+}
+impl From<&KeyColumns> for KeyColumns {
+    fn from(columns: &KeyColumns) -> Self {
+        columns.clone()
+    }
+}
+impl From<String> for KeyColumns {
+    fn from(column: String) -> Self {
+        Self(vec![column])
+    }
+}
+impl From<&str> for KeyColumns {
+    fn from(column: &str) -> Self {
+        Self(vec![column.into()])
+    }
+}
+impl<S: Into<String>, const N: usize> From<[S; N]> for KeyColumns {
+    fn from(columns: [S; N]) -> Self {
+        Self(columns.into_iter().map(Into::into).collect())
+    }
+}
+impl<S: Into<String>> From<Vec<S>> for KeyColumns {
+    fn from(columns: Vec<S>) -> Self {
+        Self(columns.into_iter().map(Into::into).collect())
+    }
+}
+impl std::fmt::Display for KeyColumns {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.toml())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for KeyColumns {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Input {
+            Column(String),
+            Columns(Vec<String>),
+        }
+        let key = match Input::deserialize(deserializer)? {
+            Input::Column(c) => Self::from(c),
+            Input::Columns(c) => Self::from(c),
+        };
+        key.validate().map_err(serde::de::Error::custom)?;
+        Ok(key)
+    }
+}
+impl serde::Serialize for KeyColumns {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.len() == 1 {
+            serializer.serialize_str(&self.0[0])
+        } else {
+            serde::Serialize::serialize(&self.0, serializer)
+        }
+    }
+}
+
 /// Maps one node label onto the user's schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeMapping {
     pub label: String,
     pub source: MappedSource,
-    /// Column holding the node id. Any non-null scalar type is accepted (see
-    /// [`is_identity_type`]) and keeps its source type; ids only need to be
-    /// unique within the label.
-    pub id_column: String,
+    /// Ordered columns holding the node id. Each component is a non-null scalar
+    /// and keeps its source type; the complete key must be unique within a label.
+    pub id_column: KeyColumns,
     /// Graph property name -> source column name.
     pub properties: BTreeMap<String, String>,
 }
@@ -88,7 +254,7 @@ impl NodeMapping {
     pub fn table(
         label: impl Into<String>,
         table: impl Into<String>,
-        id_column: impl Into<String>,
+        id_column: impl Into<KeyColumns>,
     ) -> Self {
         Self::new(label, MappedSource::Table(table.into()), id_column)
     }
@@ -96,7 +262,7 @@ impl NodeMapping {
     pub fn query(
         label: impl Into<String>,
         sql: impl Into<String>,
-        id_column: impl Into<String>,
+        id_column: impl Into<KeyColumns>,
     ) -> Self {
         Self::new(label, MappedSource::Query(sql.into()), id_column)
     }
@@ -104,7 +270,7 @@ impl NodeMapping {
     pub fn new(
         label: impl Into<String>,
         source: MappedSource,
-        id_column: impl Into<String>,
+        id_column: impl Into<KeyColumns>,
     ) -> Self {
         Self {
             label: label.into(),
@@ -122,9 +288,11 @@ impl NodeMapping {
 }
 
 /// Endpoint whose row owns a foreign-key-backed relationship.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ForeignKeyEndpoint {
+    #[serde(rename = "src")]
     Source,
+    #[serde(rename = "dst")]
     Destination,
 }
 
@@ -135,16 +303,16 @@ pub struct EdgeMapping {
     pub foreign_key: Option<ForeignKeyEndpoint>,
     pub rel_type: String,
     pub source: MappedSource,
-    /// Column holding the source-node id (matches the `src_label` node
+    /// Ordered columns holding the source-node id (matches the `src_label` node
     /// mapping's id values).
-    pub src_column: String,
-    /// Column holding the destination-node id.
-    pub dst_column: String,
+    pub src_column: KeyColumns,
+    /// Ordered columns holding the destination-node id.
+    pub dst_column: KeyColumns,
     pub src_label: String,
     pub dst_label: String,
-    /// Optional column holding a distinct edge id. Defaults to `src_column`;
+    /// Optional ordered columns holding a distinct edge id. Defaults to `src_column`;
     /// set it when parallel edges must stay distinguishable.
-    pub id_column: Option<String>,
+    pub id_column: Option<KeyColumns>,
     /// Graph property name -> source column name.
     pub properties: BTreeMap<String, String>,
 }
@@ -153,8 +321,8 @@ impl EdgeMapping {
     pub fn table(
         rel_type: impl Into<String>,
         table: impl Into<String>,
-        src_column: impl Into<String>,
-        dst_column: impl Into<String>,
+        src_column: impl Into<KeyColumns>,
+        dst_column: impl Into<KeyColumns>,
         src_label: impl Into<String>,
         dst_label: impl Into<String>,
     ) -> Self {
@@ -171,8 +339,8 @@ impl EdgeMapping {
     pub fn query(
         rel_type: impl Into<String>,
         sql: impl Into<String>,
-        src_column: impl Into<String>,
-        dst_column: impl Into<String>,
+        src_column: impl Into<KeyColumns>,
+        dst_column: impl Into<KeyColumns>,
         src_label: impl Into<String>,
         dst_label: impl Into<String>,
     ) -> Self {
@@ -189,8 +357,8 @@ impl EdgeMapping {
     pub fn new(
         rel_type: impl Into<String>,
         source: MappedSource,
-        src_column: impl Into<String>,
-        dst_column: impl Into<String>,
+        src_column: impl Into<KeyColumns>,
+        dst_column: impl Into<KeyColumns>,
         src_label: impl Into<String>,
         dst_label: impl Into<String>,
     ) -> Self {
@@ -220,25 +388,25 @@ impl EdgeMapping {
     }
 
     /// (child label, child key column, parent label, FK column).
-    pub fn foreign_key_columns(&self) -> Option<(&str, &str, &str, &str)> {
+    pub fn foreign_key_columns(&self) -> Option<(&str, &KeyColumns, &str, &KeyColumns)> {
         self.foreign_key.map(|child| match child {
             ForeignKeyEndpoint::Source => (
                 self.src_label.as_str(),
-                self.src_column.as_str(),
+                &self.src_column,
                 self.dst_label.as_str(),
-                self.dst_column.as_str(),
+                &self.dst_column,
             ),
             ForeignKeyEndpoint::Destination => (
                 self.dst_label.as_str(),
-                self.dst_column.as_str(),
+                &self.dst_column,
                 self.src_label.as_str(),
-                self.src_column.as_str(),
+                &self.src_column,
             ),
         })
     }
 
     /// Use `column` as the distinct edge id.
-    pub fn with_id(mut self, column: impl Into<String>) -> Self {
+    pub fn with_id(mut self, column: impl Into<KeyColumns>) -> Self {
         self.id_column = Some(column.into());
         self
     }
@@ -280,8 +448,28 @@ impl GraphMapping {
 
     /// Validate row ownership before either compiling reads or executing writes.
     pub fn validate_foreign_keys(&self) -> RelResult<()> {
-        let mut owners = BTreeSet::new();
+        for node in self.nodes.values() {
+            node.id_column.validate()?;
+        }
         for edge in self.edges.values() {
+            edge.src_column.validate()?;
+            edge.dst_column.validate()?;
+            if let Some(id) = &edge.id_column {
+                id.validate()?;
+            }
+            for (label, endpoint) in [
+                (&edge.src_label, &edge.src_column),
+                (&edge.dst_label, &edge.dst_column),
+            ] {
+                if let Some(node) = self.node(label) {
+                    if endpoint.len() != node.id_column.len() {
+                        return Err(RelError::Unsupported(format!(
+                            "relationship `{}` endpoint `{label}` has the wrong key arity",
+                            edge.rel_type
+                        )));
+                    }
+                }
+            }
             let Some((child_label, child_key, parent_label, fk)) = edge.foreign_key_columns()
             else {
                 continue;
@@ -294,68 +482,64 @@ impl GraphMapping {
             };
             let child = self
                 .node(child_label)
-                .ok_or_else(|| invalid("missing child node mapping"))?;
+                .ok_or_else(|| invalid("missing child mapping"))?;
             let parent = self
                 .node(parent_label)
-                .ok_or_else(|| invalid("missing parent node mapping"))?;
+                .ok_or_else(|| invalid("missing parent mapping"))?;
             let MappedSource::Table(table) = &edge.source else {
                 return Err(invalid("requires a writable child table"));
             };
             if edge.source != child.source
-                || child.id_column != child_key
-                || edge.id_column.as_deref() != Some(child_key)
-                || child_key == fk
+                || &child.id_column != child_key
+                || edge.id_column.as_ref() != Some(child_key)
             {
                 return Err(invalid(
                     "source and edge identity must match the child table and primary key",
                 ));
             }
-            if !matches!(parent.source, MappedSource::Table(_)) {
+            let MappedSource::Table(parent_table) = &parent.source else {
                 return Err(invalid("parent must be table-backed"));
-            }
-            if let (Some(child_table), MappedSource::Table(parent_table)) =
-                (self.tables.get(table), &parent.source)
+            };
+            if let (Some(child_provider), Some(parent_provider)) =
+                (self.tables.get(table), self.tables.get(parent_table))
             {
-                if let Some(parent_table) = self.tables.get(parent_table) {
-                    let child_schema = child_table.schema();
-                    let parent_schema = parent_table.schema();
-                    let child_id = child_schema
-                        .field_with_name(child_key)
-                        .map_err(|_| invalid("missing child key column"))?;
-                    let foreign_key = child_schema
-                        .field_with_name(fk)
-                        .map_err(|_| invalid("missing foreign key column"))?;
-                    let parent_id = parent_schema
-                        .field_with_name(&parent.id_column)
-                        .map_err(|_| invalid("missing parent key column"))?;
-                    if !is_identity_type(child_id.data_type())
-                        || foreign_key.data_type() != parent_id.data_type()
-                    {
-                        return Err(invalid("FK type must match the parent's scalar key type"));
-                    }
+                let schema = child_provider.schema();
+                child_key.data_type(&schema).map_err(|e| invalid(&e))?;
+                if fk.data_type(&schema).map_err(|e| invalid(&e))?
+                    != parent
+                        .id_column
+                        .data_type(&parent_provider.schema())
+                        .map_err(|e| invalid(&e))?
+                {
+                    return Err(invalid(
+                        "FK component types must match the parent key in declared order",
+                    ));
                 }
             }
-            if !owners.insert((table.clone(), fk.to_string())) {
-                return Err(invalid(
-                    "an FK column may have only one relationship mapping",
-                ));
-            }
-            if self.nodes.values().any(|node| node.source == edge.source && node.id_column != child_key) {
-                return Err(invalid("all node mappings of the child table must use the same primary key"));
-            }
-            // A column must have one graph write owner. Otherwise a node update
-            // could silently overwrite an edge update (or vice versa).
-            if self.nodes.values().any(|node| {
-                node.source == edge.source
-                    && node.properties.values().any(|column| {
-                        column == fk
-                            || (column != child_key
-                                && edge.properties.values().any(|c| c == column))
-                    })
-            }) || edge.properties.values().any(|column| column == fk)
+            if self
+                .nodes
+                .values()
+                .any(|node| node.source == edge.source && &node.id_column != child_key)
             {
                 return Err(invalid(
-                    "FK and relationship property columns cannot also be mapped as node properties; mutate the relationship instead",
+                    "all node mappings of the child table must use the same primary key",
+                ));
+            }
+            let owns = |column: &str| {
+                !child_key.contains(column)
+                    && (fk.contains(column) || edge.properties.values().any(|c| c == column))
+            };
+            if self
+                .nodes
+                .values()
+                .any(|node| node.source == edge.source && node.properties.values().any(|c| owns(c)))
+                || edge
+                    .properties
+                    .values()
+                    .any(|c| fk.contains(c) && !child_key.contains(c))
+            {
+                return Err(invalid(
+                    "FK and relationship property columns cannot also be mapped as node properties, except shared primary-key components",
                 ));
             }
             for other in self
@@ -363,17 +547,18 @@ impl GraphMapping {
                 .values()
                 .filter(|other| other.rel_type != edge.rel_type && other.source == edge.source)
             {
-                if other.foreign_key.is_none() {
+                let Some((_, other_key, _, other_fk)) = other.foreign_key_columns() else {
                     return Err(invalid(
                         "cannot share its child table with an independent edge-row mapping",
                     ));
-                }
-                if other.properties.values().any(|column| {
-                    column != child_key
-                        && (column == fk || edge.properties.values().any(|c| c == column))
-                }) {
+                };
+                if other_key != child_key
+                    || other_fk == fk
+                    || other_fk.columns().iter().any(|c| owns(c))
+                    || other.properties.values().any(|c| owns(c))
+                {
                     return Err(invalid(
-                        "relationship property columns must have a single write owner",
+                        "relationship columns must have one write owner; only primary-key components may be shared",
                     ));
                 }
             }
@@ -450,42 +635,66 @@ impl GraphMapping {
                 .index_of_column_by_name(None, name)
                 .ok_or_else(|| RelError::Unsupported(format!("missing endpoint {name}")))
         };
-        let src = index(&edge.src_column)?;
-        let dst = index(&edge.dst_column)?;
-        let exists = |index: usize, label: &str| -> RelResult<bool> {
+        let src = edge
+            .src_column
+            .columns()
+            .iter()
+            .map(|c| index(c))
+            .collect::<RelResult<Vec<_>>>()?;
+        let dst = edge
+            .dst_column
+            .columns()
+            .iter()
+            .map(|c| index(c))
+            .collect::<RelResult<Vec<_>>>()?;
+        let exists = |indices: &[usize], label: &str| -> RelResult<bool> {
             let node = self
                 .node(label)
                 .ok_or_else(|| RelError::Unsupported(format!("unknown endpoint label {label}")))?;
             let target = self.source_plan(&node.source)?;
             let t = analyze(&target);
-            let key = target
-                .schema()
-                .index_of_column_by_name(None, &node.id_column)
-                .ok_or_else(|| RelError::Unsupported("missing target identity".into()))?;
-            Ok(p.non_null.contains(&index)
-                && (p.foreign_keys.iter().any(|f| {
-                    f.columns == vec![index]
-                        && t.complete_sources.contains(&f.target)
-                        && t.origins
-                            .get(key)
-                            .and_then(|o| o.as_ref())
-                            .is_some_and(|o| {
-                                o.table == f.target && f.references == vec![o.column.clone()]
-                            })
-                }) || p
-                    .origins
-                    .get(index)
+            let keys = node
+                .id_column
+                .columns()
+                .iter()
+                .map(|name| {
+                    target
+                        .schema()
+                        .index_of_column_by_name(None, name)
+                        .ok_or_else(|| RelError::Unsupported("missing target identity".into()))
+                })
+                .collect::<RelResult<Vec<_>>>()?;
+            if keys.len() != indices.len() || !indices.iter().all(|i| p.non_null.contains(i)) {
+                return Ok(false);
+            }
+            let target_origins = keys
+                .iter()
+                .map(|i| t.origins.get(*i).and_then(|o| o.as_ref()))
+                .collect::<Option<Vec<_>>>();
+            let Some(target_origins) = target_origins else {
+                return Ok(false);
+            };
+            Ok(p.foreign_keys.iter().any(|f| {
+                f.columns == indices
+                    && t.complete_sources.contains(&f.target)
+                    && target_origins.iter().all(|o| o.table == f.target)
+                    && f.references
+                        == target_origins
+                            .iter()
+                            .map(|o| o.column.clone())
+                            .collect::<Vec<_>>()
+            }) || indices.iter().zip(&target_origins).all(|(i, target)| {
+                p.origins
+                    .get(*i)
                     .and_then(|o| o.as_ref())
-                    .is_some_and(|o| {
-                        t.complete_sources.contains(&o.table)
-                            && t.origins.get(key).and_then(|o| o.as_ref()) == Some(o)
-                    })))
+                    .is_some_and(|o| t.complete_sources.contains(&o.table) && o == *target)
+            }))
         };
         Ok(RelationshipMultiplicity {
-            at_most_one_outgoing: p.unique_on(&[src], false),
-            at_most_one_incoming: p.unique_on(&[dst], false),
-            source_endpoint_exists: exists(src, &edge.src_label)?,
-            target_endpoint_exists: exists(dst, &edge.dst_label)?,
+            at_most_one_outgoing: p.unique_on(&src, false),
+            at_most_one_incoming: p.unique_on(&dst, false),
+            source_endpoint_exists: exists(&src, &edge.src_label)?,
+            target_endpoint_exists: exists(&dst, &edge.dst_label)?,
         })
     }
 
@@ -713,8 +922,12 @@ pub(super) fn lower_mapped_rel_scan(
         mapping.validate_foreign_keys()?;
         let mut plan = mapping.source_plan(&edge.source)?;
         if let Some((_, _, _, fk)) = edge.foreign_key_columns() {
-            let column = resolve_column(&plan, fk)?;
-            plan = LogicalPlanBuilder::from(plan).filter(col_exact(column).is_not_null())?.build()?;
+            for column in fk.columns() {
+                let column = resolve_column(&plan, column)?;
+                plan = LogicalPlanBuilder::from(plan)
+                    .filter(col_exact(column).is_not_null())?
+                    .build()?;
+            }
         }
         sources.push((edge, plan));
     }
@@ -736,14 +949,16 @@ pub(super) fn lower_mapped_rel_scan(
     let mut branches = Vec::new();
     for (edge, plan) in sources {
         let what = format!("edge type `{}`", edge.rel_type);
-        let id_column = edge.id_column.as_deref().unwrap_or(&edge.src_column);
+        let id_column = edge.id_column.as_ref().unwrap_or(&edge.src_column);
         let mut exprs = vec![
             id_expr(&plan, id_column, &what)?.alias(id_col(binding)),
             lit(edge.rel_type.as_str()).alias(label_col(binding)),
             lit(edge.src_label.as_str()).alias(src_label_col(binding)),
-            id_expr(&plan, &edge.src_column, &what)?.alias(src_id_col(binding)),
+            endpoint_expr(mapping, &plan, &edge.src_column, &edge.src_label, &what)?
+                .alias(src_id_col(binding)),
             lit(edge.dst_label.as_str()).alias(dst_label_col(binding)),
-            id_expr(&plan, &edge.dst_column, &what)?.alias(dst_id_col(binding)),
+            endpoint_expr(mapping, &plan, &edge.dst_column, &edge.dst_label, &what)?
+                .alias(dst_id_col(binding)),
         ];
         exprs.extend(property_exprs(binding, &plan, &edge.properties, &defs)?);
         branches.push(LogicalPlanBuilder::from(plan).project(exprs)?.build()?);
@@ -816,14 +1031,52 @@ fn property_exprs(
 
 /// Reference an id column in its source type. Branches of multi-label scans
 /// are reconciled afterwards by [`union_all`].
-fn id_expr(plan: &LogicalPlan, column: &str, what: &str) -> RelResult<Expr> {
-    let data_type = source_column_type(plan, column, what)?;
-    if !is_identity_type(&data_type) {
-        return Err(RelError::Unsupported(format!(
-            "{what}: id column `{column}` has type {data_type:?}, which cannot be an element identity"
-        )));
+fn id_expr(plan: &LogicalPlan, columns: &KeyColumns, what: &str) -> RelResult<Expr> {
+    columns.validate()?;
+    let mut args = Vec::new();
+    let mut fields = Vec::new();
+    for (i, column) in columns.columns().iter().enumerate() {
+        let kind = source_column_type(plan, column, what)?;
+        if !is_scalar_identity_type(&kind) {
+            return Err(RelError::Unsupported(format!(
+                "{what}: key component `{column}` is not scalar"
+            )));
+        }
+        let value = col_exact(resolve_column(plan, column)?);
+        if columns.len() == 1 {
+            return Ok(value);
+        }
+        let name = format!("k{i}");
+        fields.push(Arc::new(arrow::datatypes::Field::new(&name, kind, true)));
+        args.extend([lit(name), value]);
     }
-    Ok(col_exact(resolve_column(plan, column)?))
+    Ok(Expr::Cast(Cast::new(
+        Box::new(datafusion::functions::core::expr_fn::named_struct(args)),
+        DataType::Struct(fields.into()),
+    )))
+}
+
+fn endpoint_expr(
+    mapping: &GraphMapping,
+    plan: &LogicalPlan,
+    columns: &KeyColumns,
+    label: &str,
+    what: &str,
+) -> RelResult<Expr> {
+    let node = mapping
+        .node(label)
+        .ok_or_else(|| RelError::Unsupported(format!("unmapped endpoint `{label}`")))?;
+    let parent = mapping.source_plan(&node.source)?;
+    let kind = node
+        .id_column
+        .data_type(parent.schema().as_arrow())
+        .map_err(RelError::Unsupported)?;
+    // Endpoint columns may have different source widths. Normalize each tuple
+    // to its node mapping before joins or heterogeneous identity widening.
+    Ok(Expr::Cast(Cast::new(
+        Box::new(id_expr(plan, columns, what)?),
+        kind,
+    )))
 }
 
 fn is_integer_type(data_type: &DataType) -> bool {
@@ -842,9 +1095,9 @@ fn is_integer_type(data_type: &DataType) -> bool {
 
 /// Non-null scalar key types. Equality follows the execution engine, including
 /// floating-point equality. Nested values are not scalar identities.
-pub(crate) fn is_identity_type(data_type: &DataType) -> bool {
+pub(crate) fn is_scalar_identity_type(data_type: &DataType) -> bool {
     if let DataType::Dictionary(_, value_type) = data_type {
-        return is_identity_type(value_type);
+        return is_scalar_identity_type(value_type);
     }
     is_integer_type(data_type)
         || matches!(
@@ -872,6 +1125,12 @@ pub(crate) fn is_identity_type(data_type: &DataType) -> bool {
                 | DataType::Duration(_)
                 | DataType::Interval(_)
         )
+}
+
+pub(crate) fn is_identity_type(kind: &DataType) -> bool {
+    is_scalar_identity_type(kind)
+        || matches!(kind, DataType::Struct(fields)
+        if fields.len() > 1 && fields.iter().all(|f| is_scalar_identity_type(f.data_type())))
 }
 
 fn source_column_type(plan: &LogicalPlan, column: &str, what: &str) -> RelResult<DataType> {
@@ -938,15 +1197,7 @@ fn union_all(mut branches: Vec<LogicalPlan>) -> RelResult<LogicalPlan> {
                 .map(|branch| branch.schema().field(index).data_type().clone())
                 .collect::<BTreeSet<_>>();
             if types.len() > 1 {
-                let target = if types.iter().all(is_integer_type) {
-                    if types.contains(&DataType::UInt64) {
-                        DataType::Decimal128(20, 0)
-                    } else {
-                        DataType::Int64
-                    }
-                } else {
-                    DataType::Utf8
-                };
+                let target = crate::ir::identity::identity_union_type(types.into_iter());
                 targets.insert(index, target);
             }
         }
@@ -963,8 +1214,12 @@ fn union_all(mut branches: Vec<LogicalPlan>) -> RelResult<LogicalPlan> {
                             let column = col_exact(field.name().clone());
                             match targets.get(&index) {
                                 Some(target) if field.data_type() != target => {
-                                    Expr::Cast(Cast::new(Box::new(column), target.clone()))
-                                        .alias(field.name())
+                                    super::columns::cast_identity_expr(
+                                        column,
+                                        field.data_type(),
+                                        target,
+                                    )
+                                    .alias(field.name())
                                 }
                                 _ => column,
                             }
@@ -1120,7 +1375,7 @@ impl GraphMapping {
                 }
                 [kind, name] if kind == "node" => {
                     let source = section_source(entries, &format!("node.{name}"))?;
-                    let id = require_key(entries, "id", &format!("node.{name}"))?;
+                    let id = require_columns(entries, "id", &format!("node.{name}"))?;
                     let mut node = NodeMapping::new(name.clone(), source, id);
                     if let Some(props) = sections.get(&vec![
                         "node".to_string(),
@@ -1128,7 +1383,8 @@ impl GraphMapping {
                         "properties".to_string(),
                     ]) {
                         for (property, column) in props {
-                            node.properties.insert(property.clone(), column.clone());
+                            node.properties
+                                .insert(property.clone(), column.string()?.to_owned());
                         }
                     }
                     mapping.map_node(node);
@@ -1139,20 +1395,24 @@ impl GraphMapping {
                     let mut edge = EdgeMapping::new(
                         name.clone(),
                         source,
-                        require_key(entries, "src", &at)?,
-                        require_key(entries, "dst", &at)?,
+                        require_columns(entries, "src", &at)?,
+                        require_columns(entries, "dst", &at)?,
                         require_key(entries, "src_label", &at)?,
                         require_key(entries, "dst_label", &at)?,
                     );
                     if let Some(child) = entries.get("foreign_key") {
-                        edge = edge.foreign_key(match child.as_str() {
+                        edge = edge.foreign_key(match child.string()? {
                             "src" => ForeignKeyEndpoint::Source,
                             "dst" => ForeignKeyEndpoint::Destination,
-                            _ => return Err(RelError::Unsupported(format!("{at}.foreign_key must be src or dst"))),
+                            _ => {
+                                return Err(RelError::Unsupported(format!(
+                                    "{at}.foreign_key must be src or dst"
+                                )));
+                            }
                         });
                     }
                     if let Some(id) = entries.get("edge_id") {
-                        edge.id_column = Some(id.clone());
+                        edge.id_column = Some(id.columns()?);
                     }
                     if let Some(props) = sections.get(&vec![
                         "edge".to_string(),
@@ -1160,7 +1420,8 @@ impl GraphMapping {
                         "properties".to_string(),
                     ]) {
                         for (property, column) in props {
-                            edge.properties.insert(property.clone(), column.clone());
+                            edge.properties
+                                .insert(property.clone(), column.string()?.to_owned());
                         }
                     }
                     mapping.map_edge(edge);
@@ -1199,7 +1460,7 @@ impl GraphMapping {
             out.push_str(&format!("[node.{label}]\n"));
             out.push_str(&source_line(&node.source));
             out.push('\n');
-            out.push_str(&format!("id = {}\n", quote(&node.id_column)));
+            out.push_str(&format!("id = {}\n", node.id_column.toml()));
             if !node.properties.is_empty() {
                 out.push_str(&format!("\n[node.{label}.properties]\n"));
                 for (property, column) in &node.properties {
@@ -1212,18 +1473,21 @@ impl GraphMapping {
             out.push_str(&format!("[edge.{rel_type}]\n"));
             out.push_str(&source_line(&edge.source));
             out.push('\n');
-            out.push_str(&format!("src = {}\n", quote(&edge.src_column)));
-            out.push_str(&format!("dst = {}\n", quote(&edge.dst_column)));
+            out.push_str(&format!("src = {}\n", edge.src_column.toml()));
+            out.push_str(&format!("dst = {}\n", edge.dst_column.toml()));
             out.push_str(&format!("src_label = {}\n", quote(&edge.src_label)));
             out.push_str(&format!("dst_label = {}\n", quote(&edge.dst_label)));
             if let Some(child) = edge.foreign_key {
-                out.push_str(&format!("foreign_key = {}\n", quote(match child {
-                    ForeignKeyEndpoint::Source => "src",
-                    ForeignKeyEndpoint::Destination => "dst",
-                })));
+                out.push_str(&format!(
+                    "foreign_key = {}\n",
+                    quote(match child {
+                        ForeignKeyEndpoint::Source => "src",
+                        ForeignKeyEndpoint::Destination => "dst",
+                    })
+                ));
             }
             if let Some(id) = &edge.id_column {
-                out.push_str(&format!("edge_id = {}\n", quote(id)));
+                out.push_str(&format!("edge_id = {}\n", id.toml()));
             }
             if !edge.properties.is_empty() {
                 out.push_str(&format!("\n[edge.{rel_type}.properties]\n"));
@@ -1243,27 +1507,56 @@ impl GraphMapping {
     }
 }
 
-fn section_source(entries: &BTreeMap<String, String>, at: &str) -> RelResult<MappedSource> {
+#[derive(Debug, Clone)]
+enum TomlValue {
+    String(String),
+    Columns(Vec<String>),
+}
+impl TomlValue {
+    fn string(&self) -> RelResult<&str> {
+        match self {
+            Self::String(s) => Ok(s),
+            _ => Err(RelError::Unsupported(
+                "expected a string, not a key-column array".into(),
+            )),
+        }
+    }
+    fn columns(&self) -> RelResult<KeyColumns> {
+        let key = match self {
+            Self::String(s) => KeyColumns::from(s.clone()),
+            Self::Columns(c) => KeyColumns::from(c.clone()),
+        };
+        key.validate()?;
+        Ok(key)
+    }
+}
+fn section_source(entries: &BTreeMap<String, TomlValue>, at: &str) -> RelResult<MappedSource> {
     match (entries.get("table"), entries.get("query")) {
-        (Some(table), None) => Ok(MappedSource::Table(table.clone())),
-        (None, Some(query)) => Ok(MappedSource::Query(query.clone())),
-        (Some(_), Some(_)) => Err(RelError::Unsupported(format!(
-            "[{at}] sets both `table` and `query`; pick one"
-        ))),
-        (None, None) => Err(RelError::Unsupported(format!(
-            "[{at}] needs a `table` or `query` key"
+        (Some(table), None) => Ok(MappedSource::Table(table.string()?.to_owned())),
+        (None, Some(query)) => Ok(MappedSource::Query(query.string()?.to_owned())),
+        _ => Err(RelError::Unsupported(format!(
+            "[{at}] requires exactly one of table or query"
         ))),
     }
 }
-
-fn require_key(entries: &BTreeMap<String, String>, key: &str, at: &str) -> RelResult<String> {
+fn require_key(entries: &BTreeMap<String, TomlValue>, key: &str, at: &str) -> RelResult<String> {
     entries
         .get(key)
-        .cloned()
-        .ok_or_else(|| RelError::Unsupported(format!("[{at}] is missing required key `{key}`")))
+        .ok_or_else(|| RelError::Unsupported(format!("[{at}] is missing required key `{key}`")))?
+        .string()
+        .map(str::to_owned)
 }
-
-type TomlSections = BTreeMap<Vec<String>, BTreeMap<String, String>>;
+fn require_columns(
+    entries: &BTreeMap<String, TomlValue>,
+    key: &str,
+    at: &str,
+) -> RelResult<KeyColumns> {
+    entries
+        .get(key)
+        .ok_or_else(|| RelError::Unsupported(format!("[{at}] is missing required key `{key}`")))?
+        .columns()
+}
+type TomlSections = BTreeMap<Vec<String>, BTreeMap<String, TomlValue>>;
 
 /// Parse the TOML subset: `[dotted.section]` headers and `key = "string"`
 /// entries. `#` comments and blank lines are ignored.
@@ -1300,8 +1593,42 @@ fn parse_toml_sections(input: &str) -> RelResult<TomlSections> {
             return Err(err("key outside any [section]".to_string()));
         };
         let key = key.trim().trim_matches('"').to_string();
-        let value = parse_toml_string(value.trim())
-            .map_err(|message| err(format!("value for `{key}`: {message}")))?;
+        let raw_value = value.trim();
+        let value = if raw_value.starts_with('[') {
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut end = None;
+            for (i, ch) in raw_value.char_indices() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' && quoted {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '"' {
+                    quoted = !quoted;
+                }
+                if ch == ']' && !quoted {
+                    end = Some(i + 1);
+                    break;
+                }
+            }
+            let end = end.ok_or_else(|| err("unterminated key-column array".into()))?;
+            let rest = raw_value[end..].trim();
+            if !rest.is_empty() && !rest.starts_with('#') {
+                return Err(err("unexpected content after key-column array".into()));
+            }
+            let columns: Vec<String> =
+                serde_json::from_str(&raw_value[..end]).map_err(|e| err(e.to_string()))?;
+            TomlValue::Columns(columns)
+        } else {
+            TomlValue::String(
+                parse_toml_string(raw_value)
+                    .map_err(|message| err(format!("value for `{key}`: {message}")))?,
+            )
+        };
         sections
             .get_mut(section)
             .expect("section exists")
@@ -1382,13 +1709,16 @@ total = "total"
         let mapping = GraphMapping::from_toml(toml).expect("parse");
         let person = mapping.node("Person").expect("person");
         assert_eq!(person.source, MappedSource::Table("customers".into()));
-        assert_eq!(person.id_column, "cust_id");
+        assert_eq!(person.id_column.columns(), &["cust_id"]);
         assert_eq!(person.properties.get("name").unwrap(), "full_name");
         let vip = mapping.node("Vip").expect("vip");
         assert!(matches!(vip.source, MappedSource::Query(_)));
         let ordered = mapping.edge("ORDERED").expect("ordered");
         assert_eq!(ordered.src_label, "Person");
-        assert_eq!(ordered.id_column.as_deref(), Some("order_id"));
+        assert_eq!(
+            ordered.id_column.as_ref().map(KeyColumns::columns),
+            Some(["order_id".to_string()].as_slice())
+        );
         assert_eq!(ordered.properties.get("total").unwrap(), "total");
 
         let reparsed = GraphMapping::from_toml(&mapping.to_toml()).expect("reparse");

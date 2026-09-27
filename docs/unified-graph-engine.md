@@ -23,7 +23,7 @@ Both layouts execute through the existing DataFusion relational DAG and native
 kernels, with SQL islands as the primary execution path. Preserve the managed implementation
 and its observable language behavior during migration.
 
-Node and edge identities are typed scalar source keys throughout the runtime,
+Node and edge identities are typed scalar or ordered composite source keys throughout the runtime,
 including adjacency, paths, equality, serialization, SQL joins, mutations, and
 result conversion. Do not remap source keys to synthetic integer identities.
 Arrow row positions may locate data, but are not graph identities. Identical keys
@@ -48,7 +48,7 @@ Native operators must see earlier writes in that statement, including database
 defaults where observable. Property assignments update mapped columns; deletions
 respect incident edges, mapping boundaries, and database constraints. Missing
 keys require a supplied key or a declared database generation policy, regardless
-of scalar type. Never use `MAX(id) + 1` or translate source keys to integer handles.
+of component types. Never use `MAX(id) + 1` or translate source keys to integer handles.
 Do not invent string keys or silently replace existing rows.
 
 Default and explicit transactions must preserve rollback behavior. Validate
@@ -73,8 +73,9 @@ property alias.
 `Value::Node` and `Value::Edge` IDs and endpoints now use `ElementId` instead of
 `i64`; callers constructing graph values must migrate accordingly. Scalar Arrow
 values are preserved by `Value::Scalar`. Use typed scalar parameters when a key
-needs a type or range that a language literal cannot express. Null and nested
-collection values are rejected as primary keys. Existing managed snapshots and integer
+needs a type or range that a language literal cannot express. Composite IDs use flat ordered lists at the language boundary and typed Arrow
+structs internally. Every component must be non-null and scalar; nested collections
+are rejected. Key order follows the mapping, not property iteration order. Existing managed snapshots and integer
 records are read and migrated; new typed encodings require the new reader.
 
 ## Implementation sequence
@@ -198,3 +199,30 @@ in the same statement, persisted as one FK assignment. Column ownership must be
 unique: FK columns are relationship-owned, and node and edge properties may not
 alias the same non-key column. Cyclic writes requiring deferred constraints fail
 explicitly. See the website mapping reference for Rust and TOML examples.
+
+
+## Composite key mappings
+
+`KeyColumns` accepts a string or an ordered array/vector, preserving existing
+scalar constructor calls. Node keys, explicit edge keys and both endpoint keys
+support multiple columns. TOML and compiler JSON use arrays for composite keys.
+`ElementId::from_components` and `ElementId::cast_to` preserve and normalize each
+component separately. Arrow IPC serialization carries the full typed tuple;
+heterogeneous relational scans use sparse typed structs, never concatenated keys.
+Traversal history uses length-delimited typed tokens solely for membership.
+
+Writes group by table and the complete ordered key, merge child properties with
+FK components, and match every key column in UPDATE/DELETE predicates. Dependency
+ordering uses full referenced keys. Shared child-PK/FK components are immutable
+and must agree with the selected parent. Any NULL FK component means no edge
+(SQL MATCH SIMPLE); unlink clears nullable non-key components only. Fully
+identifying child keys require their explicit relationship in the creating
+statement. DuckDB's immediate constraints, including its restrictions on updating
+indexed columns of referenced rows, remain binding.
+
+See `examples/composite_keys.rs` for Cypher and Gremlin usage.
+`tests/sql_compiler_composite_keys.rs` executes compiler-only joins against DuckDB
+with repeated IDs across tenants and partially NULL FKs. Scalar and heterogeneous
+identity regressions remain covered by `tests/sql_compiler_identities.rs`.
+See [composite-key validation](composite-key-validation.md) for current runtime,
+compiler, documentation, and sibling-client results.
