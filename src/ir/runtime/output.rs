@@ -456,7 +456,7 @@ pub(crate) fn expand_element(value: Value, graph: &PropertyGraph) -> Value {
 
 /// Versioned, tagged transport for values before display formatting. Strings
 /// remain strings even when they resemble the textual graph notation.
-fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Value {
+pub(crate) fn gremlin_typed_value(value: &Value, graph: &PropertyGraph) -> serde_json::Value {
     use serde_json::json;
     let tagged = |kind: &str, value: serde_json::Value| json!({"type": kind, "value": value});
     let id = |label: &str, row: crate::ir::ElementId, edge: bool| {

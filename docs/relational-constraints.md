@@ -181,5 +181,7 @@ compilation passed. See the [validation record](relational-constraints-validatio
 
 Every conformance case retains [per-query costs](query-cost.md) for ranking lowering
 opportunities and comparing subsequent runs. Complete boundary-work coverage is
-available for 5,131 cases; partial, elapsed-only and unexecuted cases are explicitly
-marked. The existing execution-plan review and examples remain unchanged.
+available for 5,116 cases after correcting Gremlin attribution to exclude
+assertion-helper requests; elapsed-only and unexecuted cases are explicitly
+marked. This correction reuses recorded measurements and does not represent a
+new suite run. The existing execution-plan review and examples remain unchanged.

@@ -13,6 +13,11 @@ impl<'a> LoweringContext<'a> {
         let input = self
             .lower_node(input)
             .map_err(|err| RelError::Unsupported(format!("GraphUnwind input: {err}")))?;
+        if let IrExpr::Call { name, args } = input_expr {
+            if name.eq_ignore_ascii_case("range") || name == "cypher_range" {
+                return self.lower_range_unwind(input, args, bind, outer);
+            }
+        }
         let Some(values) = constant_unwind_values(input_expr, outer)? else {
             return self.lower_unwind_dynamic(input, input_expr, bind, outer);
         };
@@ -336,15 +341,6 @@ impl<'a> LoweringContext<'a> {
         output: &str,
         input: &Node,
     ) -> RelResult<LoweredNode> {
-        // Quantifier SQL currently loses the earlier result binding when
-        // multiple quantified expressions share one projection. Preserve
-        // Cypher three-valued semantics in the runtime until that lowering
-        // can carry every correlated result faithfully.
-        if self.language == Language::Cypher {
-            return Err(RelError::Unsupported(
-                "Cypher quantifier requires runtime evaluation".into(),
-            ));
-        }
         let input = self.lower_node(input)?;
         let original_columns = output_fields(&input.plan);
         let suffix = self.scan_counter;
@@ -355,7 +351,6 @@ impl<'a> LoweringContext<'a> {
         let total = format!("__w_quantifier_total_{suffix}");
         let true_count = format!("__w_quantifier_true_{suffix}");
         let null_count = format!("__w_quantifier_unknown_{suffix}");
-        let result_row = format!("__w_quantifier_result_row_{suffix}");
 
         let list = self.lower_list_operand(&input.plan, input_expr)?;
         let list_type = list
@@ -376,19 +371,22 @@ impl<'a> LoweringContext<'a> {
         let numbered = LogicalPlanBuilder::from(input.plan.clone())
             .window(vec![row_number])?
             .build()?;
-        let list_length = datafusion::functions_nested::expr_fn::array_length(list.clone());
-        let mut base_projection = existing_columns(&numbered, &BTreeSet::new());
+        let mut list_projection = existing_columns(&numbered, &BTreeSet::new());
+        list_projection.push(list.alias(&list_col));
+        let listed = LogicalPlanBuilder::from(numbered).project(list_projection)?.build()?;
+        let listed = collections::unnest_scope(listed, format!("__w_sql_cte_quantifier_list_{suffix}"))?;
+        let list_length = datafusion::functions_nested::expr_fn::array_length(col_exact(&list_col));
+        let mut base_projection = existing_columns(&listed, &BTreeSet::new());
         base_projection.extend([
-            list.clone().alias(list_col.clone()),
-            list.is_null().alias(input_null.clone()),
+            col_exact(&list_col).is_null().alias(input_null.clone()),
             Expr::Cast(Cast::new(Box::new(list_length), DataType::Int64)).alias(total.clone()),
         ]);
-        let base = LogicalPlanBuilder::from(numbered)
-            .project(base_projection)?
-            .build()?;
+        let base = LogicalPlanBuilder::from(listed).project(base_projection)?.build()?;
 
-        let mut expanded_projection =
-            existing_columns(&base, &BTreeSet::from([item_binding.into()]));
+        let shadowed = original_columns.iter().any(|column| column == item_binding);
+        let outer_item = format!("__w_quantifier_outer_item_{suffix}");
+        let mut expanded_projection = existing_columns(&base, &BTreeSet::from([item_binding.into()]));
+        if shadowed { expanded_projection.push(col_exact(item_binding).alias(&outer_item)); }
         expanded_projection
             .push(collections::outer_list(col_exact(&list_col), &list_type)?.alias(item_binding));
         let mut options = datafusion::common::UnnestOptions::default();
@@ -407,6 +405,17 @@ impl<'a> LoweringContext<'a> {
         let expanded =
             collections::unnest_scope(expanded, format!("__w_sql_cte_quantifier_items_{suffix}"))?;
         let predicate = self.lower_expr(&expanded, predicate)?;
+        let predicate_col = format!("__w_quantifier_predicate_{suffix}");
+        let mut evaluated = existing_columns(&expanded, &BTreeSet::new());
+        // Empty/null lists have a synthetic outer-UNNEST row. Do not evaluate
+        // a possibly throwing or volatile predicate for that nonexistent item.
+        let predicate = Expr::Case(Case::new(None, vec![(
+            Box::new(binary(col_exact(&total), BinaryOp::Gt, lit(0_i64))), Box::new(predicate),
+        )], Some(Box::new(lit(ScalarValue::Boolean(None))))));
+        evaluated.push(predicate.alias(&predicate_col));
+        let expanded = LogicalPlanBuilder::from(expanded).project(evaluated)?.build()?;
+        let expanded = collections::unnest_scope(expanded, format!("__w_sql_cte_quantifier_predicate_{suffix}"))?;
+        let predicate = col_exact(&predicate_col);
         let has_item = binary(col_exact(&total), BinaryOp::Gt, lit(0_i64));
         let true_value = Expr::and(has_item.clone(), Expr::IsTrue(Box::new(predicate.clone())));
         let unknown_value = Expr::and(has_item, predicate.is_null());
@@ -417,13 +426,16 @@ impl<'a> LoweringContext<'a> {
                 Some(Box::new(lit(0_i64))),
             ))
         };
+        // Group the one expanded stream, retaining every original binding.
+        // Joining a cloned base back onto row_number() both reevaluated volatile
+        // inputs and lost aliases from preceding quantifiers in SQL emission.
+        let mut groups = original_columns.iter().map(|column| {
+            col_exact(if shadowed && column == item_binding { &outer_item } else { column })
+        }).collect::<Vec<_>>();
+        groups.extend([col_exact(&row_id), col_exact(&input_null), col_exact(&total)]);
         let reduced = LogicalPlanBuilder::from(expanded)
             .aggregate(
-                vec![
-                    col_exact(&row_id),
-                    col_exact(&input_null),
-                    col_exact(&total),
-                ],
+                groups,
                 vec![
                     df_sum(count_case(true_value)).alias(true_count.clone()),
                     df_sum(count_case(unknown_value)).alias(null_count.clone()),
@@ -509,31 +521,12 @@ impl<'a> LoweringContext<'a> {
                 Some(Box::new(null_bool)),
             )),
         };
-        let result = LogicalPlanBuilder::from(reduced)
-            .project(vec![
-                col_exact(&row_id).alias(result_row.clone()),
-                value.alias(output),
-            ])?
-            .build()?;
-        let joined = LogicalPlanBuilder::from(base)
-            .join_on(
-                result,
-                JoinType::Inner,
-                vec![binary(
-                    col_exact(&row_id),
-                    BinaryOp::Eq,
-                    col_exact(&result_row),
-                )],
-            )?
-            .build()?;
-        let mut final_projection = original_columns
-            .into_iter()
-            .map(col_exact)
-            .collect::<Vec<_>>();
-        final_projection.push(col_exact(output));
-        let plan = LogicalPlanBuilder::from(joined)
-            .project(final_projection)?
-            .build()?;
+        let mut final_projection = original_columns.into_iter().map(|column| {
+            if shadowed && column == item_binding { col_exact(&outer_item).alias(column) } else { col_exact(column) }
+        }).collect::<Vec<_>>();
+        final_projection.push(value.alias(output));
+        let reduced = collections::unnest_scope(reduced, format!("__w_sql_cte_quantifier_reduced_{suffix}"))?;
+        let plan = LogicalPlanBuilder::from(reduced).project(final_projection)?.build()?;
         Ok(input.with_plan(plan))
     }
 

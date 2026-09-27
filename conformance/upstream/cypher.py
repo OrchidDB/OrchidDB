@@ -92,6 +92,7 @@ def native_value(v):
  kind=v['type'];x=v.get('value')
  if kind=='cypher_temporal':return x['text']
  if kind=='null':return None
+ if kind=='scalar':return {'$scalar':x['scalar_key']}
  if kind=='internal_id':return {'$internal_id':{'table':x['table'],'offset':x['offset']}}
  if kind in ('boolean','string'):return x
  if kind in ('byte','uint8','short','uint16','int','uint32','long','uint64','uint128','bigint'):return int(x)
@@ -177,15 +178,25 @@ class Cypher:
    return result
  def snapshot(self):
   previous=getattr(self,'query_phase','fixture');self.query_phase='observation'
-  if self.engine=="puppygraph":return self.fixture.snapshot()
-  queries={'nodes':'MATCH (n) RETURN id(n)','relationships':'MATCH ()-[r]->() RETURN id(r)','labels':'MATCH (n) UNWIND labels(n) AS l RETURN DISTINCT l','node_properties':'MATCH (n) UNWIND keys(n) AS k RETURN id(n),k,n[k]','edge_properties':'MATCH ()-[r]->() UNWIND keys(r) AS k RETURN id(r),k,r[k]'}
-  result={}
-  for k,q in queries.items():
-   v=self.query(q)
-   if 'error' in v or 'adapter_error' in v:raise ValueError('Cannot observe TCK side effects: '+str(v))
-   result[k]=set(json.dumps(r,sort_keys=True) for r in v['rows'])
-  self.query_phase=previous
-  return result
+  try:
+   if self.engine=="puppygraph":return self.fixture.snapshot()
+   if self.engine=='orchiddb':
+    started=time.monotonic()
+    try:response=self.rust.send({'op':'cypher-snapshot'},timeout=20)
+    finally:self.query_costs.append({'query':'','operation':'cypher-snapshot','phase':'observation','cost':{'metric_version':1,'coverage':'elapsed_only','work_units':None,'request_elapsed_micros':int((time.monotonic()-started)*1000000),'reason':'state_snapshot'}})
+    if 'error' in response or 'native_snapshot' not in response:raise ValueError('Cannot observe TCK side effects: '+str(response))
+    snapshot=response['native_snapshot']
+    kinds={'nodes','relationships','labels','node_properties','edge_properties'}
+    if not isinstance(snapshot,dict) or set(snapshot)!=kinds or any(not isinstance(rows,list) for rows in snapshot.values()):raise ValueError('Malformed Cypher state snapshot')
+    return {kind:set(json.dumps([native_value(v) for v in row],sort_keys=True) for row in rows) for kind,rows in snapshot.items()}
+   queries={'nodes':'MATCH (n) RETURN id(n)','relationships':'MATCH ()-[r]->() RETURN id(r)','labels':'MATCH (n) UNWIND labels(n) AS l RETURN DISTINCT l','node_properties':'MATCH (n) UNWIND keys(n) AS k RETURN id(n),k,n[k]','edge_properties':'MATCH ()-[r]->() UNWIND keys(r) AS k RETURN id(r),k,r[k]'}
+   result={}
+   for k,q in queries.items():
+    v=self.query(q)
+    if 'error' in v or 'adapter_error' in v:raise ValueError('Cannot observe TCK side effects: '+str(v))
+    result[k]=set(json.dumps(r,sort_keys=True) for r in v['rows'])
+   return result
+  finally:self.query_phase=previous
  def run(self,case):
   self.query_costs=[];self.query_phase='fixture'
   steps=case['steps'];setup=[];params={};original=next(s['doc'] for s in steps if s['text']=='executing query:')
@@ -233,6 +244,7 @@ class Cypher:
     edges=[{'id':e[0],'label':e[1],'src':e[2],'dst':e[3],'properties':e[4]} for e in session.run('MATCH(a)-[r]->(b) RETURN id(r),type(r),id(a),id(b),properties(r)').values()]
    try:self.fixture.setup({'nodes':nodes,'edges':edges})
    except Exception as e:return {'status':'adapter-error','stage':'fixture-mapping','reason':str(e)}
+  observe_effects=any(s['text'] in ['no side effects','the side effects should be:'] for s in steps)
   assertions=[];actual=None;before=None;query_ms=[];wanted=None
   try:
    for s in steps:
@@ -240,7 +252,7 @@ class Cypher:
     if text.startswith('there exists a procedure'):continue
     if text in ['any graph','an empty graph','having executed:','parameters are:'] or re.fullmatch(r'the binary-tree-[12] graph',text):continue
     if text in ['executing query:','executing control query:']:
-     if text=='executing query:':before=self.snapshot()
+     if text=='executing query:' and observe_effects:before=self.snapshot()
      self.query_phase='query' if text=='executing query:' else 'control'
      start=time.monotonic();actual=self.query(s['doc'],params);query_ms.append(round((time.monotonic()-start)*1000,3));continue
     if 'should be raised' in text:

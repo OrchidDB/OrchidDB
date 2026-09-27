@@ -208,6 +208,7 @@ fn kernel(
             fuse_unary: matches!(name,
                 "Bind" | "Filter" | "Project" | "CurrentProject" | "Return" | "RetainBindings"
                 | "Expand" | "PathFilter" | "CorrelatedInput"
+                | "Unwind" | "Quantifier" | "ListComprehension"
                 | "NodeScan" | "RelScan" | "Values" | "OneRow" | "Empty"
             ),
         }),
@@ -472,9 +473,11 @@ pub async fn execute_rows_with_jvm(
     jvm: JvmExecution,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
+    let mut scope = jvm.scope();
     let local=graph.clone();
     let result=execute_rows_inner(plan, &local, jvm, None, None, false).await.map_err(|e|e.to_string())?;
     if !crate::ir::jvm::contains_computer(&plan.root) {graph.restore_execution_overlay(&local);}
+    scope.complete();
     Ok(result)
 }
 async fn execute_rows_inner(
@@ -1415,7 +1418,7 @@ pub async fn execute(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), String> {
-    execute_with_session(plan, graph, timeout, None).await.map_err(|e|e.to_string())
+    execute_with_session(plan, graph, timeout, None, Default::default()).await.map_err(|e|e.to_string())
 }
 
 pub(crate) async fn execute_with_session(
@@ -1423,11 +1426,14 @@ pub(crate) async fn execute_with_session(
     graph: &PropertyGraph,
     timeout: Option<std::time::Duration>,
     resources: Option<&super::dag::DagSession>,
+    jvm_workers: crate::ir::jvm::JvmWorkerPool,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), QueryExecutionError> {
     crate::ir::jvm::validate_computer_plan(&plan.root)?;
     let local = graph.clone();
     let started = std::time::Instant::now();
-    let (rows, mut stats) = execute_rows_inner(plan, &local, JvmExecution::default(), timeout, resources, true).await?;
+    let jvm = JvmExecution::for_query(jvm_workers);
+    let mut scope = jvm.scope();
+    let (rows, mut stats) = execute_rows_inner(plan, &local, jvm, timeout, resources, true).await?;
     let (fields, form) = match plan.root.as_ref() {
         Node::GraphReturn {
             fields,
@@ -1453,6 +1459,7 @@ pub(crate) async fn execute_with_session(
     if !crate::ir::jvm::contains_computer(&plan.root) { graph.restore_execution_overlay(&local); }
     stats.cost.result_rows = returned.batch.num_rows() as u64;
     stats.cost.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
+    scope.complete();
     Ok((returned, stats))
 }
 

@@ -18,13 +18,15 @@ pub(super) struct IslandMemo {
 pub(super) type SharedMemo = Arc<Mutex<IslandMemo>>;
 impl IslandMemo {
     pub fn new(root: &Node) -> SharedMemo {
-        fn visit(node: &Node, memo: &mut IslandMemo) -> (bool, GraphPlanStats) {
+        fn visit(node: &Node, memo: &mut IslandMemo) -> (bool, bool, GraphPlanStats) {
             let mut safe = crate::ir::analysis::node_effect(node)
                 == crate::ir::analysis::Effect::Pure
-                && !matches!(
-                    node,
-                    Node::GraphCorrelate { .. } | Node::GraphValues { bulk: Some(_), .. }
-                );
+                && !matches!(node, Node::GraphValues { bulk: Some(_), .. });
+            // Purity and closure are different: a correlated body is not a
+            // standalone SQL island, but its enclosing apply/repeat can be.
+            // Keep free correlation relative to each node, rather than the
+            // traversal context, so memo entries never capture an outer row.
+            let mut free_correlation = matches!(node, Node::GraphCorrelate { .. });
             let mut stats = GraphPlanStats {
                 nodes: 1,
                 depth: 1,
@@ -43,18 +45,27 @@ impl IslandMemo {
                     .filter(|i| i.alias.starts_with("__gremlin_select_history_"))
                     .count();
             }
-            for child in crate::ir::analysis::children(node) {
-                let (child_safe, child_stats) = visit(child, memo);
+            for (index, child) in crate::ir::analysis::children(node).into_iter().enumerate() {
+                let (child_safe, child_free, child_stats) = visit(child, memo);
                 safe &= child_safe;
+                let binds_child = index > 0
+                    && matches!(
+                        node,
+                        Node::GraphApply { .. }
+                            | Node::GraphRepeat { .. }
+                            | Node::GraphCoalesce { .. }
+                            | Node::GraphChoose { .. }
+                    );
+                free_correlation |= child_free && !binds_child;
                 stats.nodes += child_stats.nodes;
                 stats.depth = stats.depth.max(child_stats.depth + 1);
                 stats.bidirectional_expands += child_stats.bidirectional_expands;
                 stats.select_history_projects += child_stats.select_history_projects;
             }
             let key = node as *const Node as usize;
-            memo.safe.insert(key, safe);
+            memo.safe.insert(key, safe && !free_correlation);
             memo.stats.insert(key, stats);
-            (safe, stats)
+            (safe, free_correlation, stats)
         }
         let mut memo = Self::default();
         visit(root, &mut memo);
@@ -163,6 +174,50 @@ impl LoweringContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn correlation_is_only_closed_by_its_binding_operator() {
+        use crate::ir::plan::{ApplyKind, EmitMode, PathObjects};
+        let correlate = || Node::GraphCorrelate {
+            bindings: vec!["current".into()],
+        };
+        let apply = Node::GraphApply {
+            kind: ApplyKind::Semi,
+            correlation: vec!["current".into()],
+            outputs: vec![],
+            optional_missing: crate::ir::policy::OptionalMissing::Null,
+            left: Node::GraphOneRow.boxed(),
+            right: correlate().boxed(),
+        };
+        let memo = IslandMemo::new(&apply);
+        assert!(memo.lock().unwrap().safe(&apply));
+        let Node::GraphApply { right, .. } = &apply else {
+            unreachable!()
+        };
+        assert!(!memo.lock().unwrap().safe(right));
+        let mut repeat = Node::GraphRepeat {
+            loop_name: None,
+            times: Some(8),
+            emit: EmitMode::AfterLoop,
+            until_first: false,
+            until: None,
+            until_traversal: None,
+            path: None,
+            path_objects: PathObjects::VerticesOnly,
+            prefix_predicate: None,
+            prefix_traversal: None,
+            seed: Node::GraphOneRow.boxed(),
+            body: correlate().boxed(),
+        };
+        assert!(IslandMemo::new(&repeat).lock().unwrap().safe(&repeat));
+        // A nested repeat's seed still reads the enclosing row. It must not
+        // be cached or scheduled as a standalone island.
+        let Node::GraphRepeat { seed, .. } = &mut repeat else {
+            unreachable!()
+        };
+        *seed = correlate().boxed();
+        assert!(!IslandMemo::new(&repeat).lock().unwrap().safe(&repeat));
+    }
+
     #[tokio::test]
     async fn failed_parent_reuses_child_without_freezing_later_queries() {
         let root = Node::GraphProject {

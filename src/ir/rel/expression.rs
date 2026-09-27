@@ -3,6 +3,28 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    /// Counting an element only needs its presence marker. Rendering the
+    /// complete value would unnecessarily cross the graph runtime boundary.
+    pub(super) fn lower_count_operand(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if let IrExpr::Binding(binding) = expr {
+            if resolve_column_name(plan, binding).is_none() && has_binding_shape(plan, binding).is_some() {
+                return Ok(col_exact(id_col(binding)));
+            }
+        }
+        self.lower_expr(plan, expr)
+    }
+
+    pub(super) fn lower_distinct_count_operand(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        if let IrExpr::Binding(binding) = expr {
+            if resolve_column_name(plan, binding).is_none() && has_binding_shape(plan, binding).is_some() {
+                let id = col_exact(id_col(binding));
+                let key = df_core::named_struct(vec![lit("label"), col_exact(label_col(binding)), lit("id"), id.clone()]);
+                return Ok(Expr::Case(Case::new(None, vec![(Box::new(id.is_not_null()), Box::new(key))], None)));
+            }
+        }
+        self.lower_expr(plan, expr)
+    }
+
     pub(super) fn lower_expr(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
         if let IrExpr::Call { name, args } = expr
             && matches!(name.as_str(), "gremlin_string_length" | "gremlin_string_substring")
@@ -682,6 +704,9 @@ impl<'a> LoweringContext<'a> {
             IrExpr::Call { name, args }
                 if name == "select_key_or_binding_pop" && args.len() == 5 =>
             {
+                if let Some(value) = self.scalar_select_history(plan, args)? {
+                    return Ok(value);
+                }
                 if let IrExpr::Binding(label) = &args[1] {
                     self.check_select_pop(label, &args[4])?;
                 }

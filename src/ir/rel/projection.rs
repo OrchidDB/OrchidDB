@@ -39,12 +39,96 @@ impl<'a> LoweringContext<'a> {
         Ok(projections)
     }
 
+    /// Carry element-valued CASE results as identity/property columns. This
+    /// keeps match()'s "use an existing label, otherwise current" relational.
+    /// Mixed scalar/element or node/edge branches still require native values.
+    fn conditional_element_projection(
+        &self, plan: &LogicalPlan, alias: &str, expr: &IrExpr,
+    ) -> RelResult<Option<Vec<Expr>>> {
+        fn bindings<'a>(expr: &'a IrExpr, out: &mut Vec<&'a str>) -> bool {
+            match expr {
+                IrExpr::Binding(name) => { out.push(name); true }
+                IrExpr::Lit(Lit::Null) => true,
+                IrExpr::Case { arms, otherwise } => arms.iter().all(|(condition, e)|
+                    matches!(condition, IrExpr::IsBound(_) | IrExpr::Lit(Lit::Bool(_))) && bindings(e, out))
+                    && otherwise.as_deref().is_none_or(|e| bindings(e, out)),
+                _ => false,
+            }
+        }
+        let mut names = Vec::new();
+        if !bindings(expr, &mut names) { return Ok(None); }
+        let shapes = names.iter().filter_map(|name| has_binding_shape(plan, name)).collect::<Vec<_>>();
+        let Some(shape) = shapes.first() else { return Ok(None); };
+        if shapes.iter().any(|other| other != shape)
+            || names.iter().any(|name| has_exact_col(plan, name)) {
+            return Err(RelError::Unsupported("mixed conditional element kinds require native values".into()));
+        }
+        let mut columns = BTreeMap::new();
+        for name in &names {
+            if has_binding_shape(plan, name).is_some() {
+                for column in binding_column_names(plan, name)? {
+                    let suffix = column.strip_prefix(name).expect("binding prefix").to_owned();
+                    let data_type = plan.schema().field_with_unqualified_name(&column)?.data_type().clone();
+                    if let Some(previous) = columns.get(&suffix) {
+                        if previous != &data_type {
+                            return Err(RelError::Unsupported("conditional element columns have different types".into()));
+                        }
+                    }
+                    columns.insert(suffix, data_type);
+                }
+            }
+        }
+        fn component(ctx: &LoweringContext<'_>, plan: &LogicalPlan, expr: &IrExpr,
+            suffix: &str, data_type: &DataType) -> RelResult<Expr> {
+            let null = || -> RelResult<Expr> { Ok(lit(ScalarValue::try_from(data_type)?)) };
+            match expr {
+                IrExpr::Binding(name) => {
+                    let column = format!("{name}{suffix}");
+                    if has_exact_col(plan, &column) { Ok(col_exact(column)) } else { null() }
+                }
+                IrExpr::Case { arms, otherwise } => Ok(Expr::Case(Case::new(None,
+                    arms.iter().map(|(condition, value)| Ok((
+                        Box::new(ctx.lower_expr(plan, condition)?),
+                        Box::new(component(ctx, plan, value, suffix, data_type)?),
+                    ))).collect::<RelResult<Vec<_>>>()?,
+                    Some(Box::new(match otherwise.as_deref() {
+                        Some(value) => component(ctx, plan, value, suffix, data_type)?,
+                        None => null()?,
+                    })),
+                ))),
+                IrExpr::Lit(Lit::Null) => null(),
+                _ => unreachable!("conditional result checked"),
+            }
+        }
+        Ok(Some(columns.into_iter().map(|(suffix, data_type)| {
+            Ok(component(self, plan, expr, &suffix, &data_type)?.alias(format!("{alias}{suffix}")))
+        }).collect::<RelResult<Vec<_>>>()?))
+    }
+
     pub(super) fn project_item_exprs(
         &self,
         plan: &LogicalPlan,
         alias: &str,
         expr: &IrExpr,
     ) -> RelResult<Vec<Expr>> {
+        if self.language == Language::Gremlin
+            && alias.starts_with("__gremlin_select_history_")
+            && let IrExpr::Call { name, args } = expr
+            && name == "select_history_append"
+            && let [IrExpr::Binding(history), value] = args.as_slice()
+            && !matches!(value, IrExpr::Binding(binding) if has_binding_shape(plan, binding).is_some())
+        {
+            // Scalar history is an ordinary typed SQL list. A [NULL] entry
+            // records productive null separately from an absent label.
+            let value = self.lower_expr(plan, value)?;
+            let history = if has_exact_col(plan, history)
+                && matches!(plan_column_type(plan, history), Some(DataType::List(_) | DataType::LargeList(_))) {
+                datafusion::functions_nested::expr_fn::array_append(col_exact(history), value)
+            } else {
+                datafusion::functions_nested::expr_fn::make_array(vec![value])
+            };
+            return Ok(vec![history.alias(alias)]);
+        }
         if self.options.mapping.is_some() || self.options.tolerate_internal_path_state {
             // A label bound once is fully represented by its relational element
             // columns. Repeated labels still require real traverser history.
@@ -75,18 +159,8 @@ impl<'a> LoweringContext<'a> {
             return Ok(Vec::new());
         }
         if self.language == Language::Gremlin && matches!(expr, IrExpr::Case { .. }) {
-            fn has_element_result(expr: &IrExpr, plan: &LogicalPlan) -> bool {
-                match expr {
-                    IrExpr::Binding(binding) => has_binding_shape(plan, binding).is_some(),
-                    IrExpr::Case { arms, otherwise } => arms.iter().any(|(_, value)| has_element_result(value, plan))
-                        || otherwise.as_deref().is_some_and(|value| has_element_result(value, plan)),
-                    _ => false,
-                }
-            }
-            if has_element_result(expr, plan) {
-                return Err(RelError::Unsupported(
-                    "conditional Gremlin element projection requires native values".into(),
-                ));
+            if let Some(columns) = self.conditional_element_projection(plan, alias, expr)? {
+                return Ok(columns);
             }
         }
         if let IrExpr::Binding(binding) = expr {

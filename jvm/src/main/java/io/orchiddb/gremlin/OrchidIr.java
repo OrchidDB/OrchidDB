@@ -32,13 +32,27 @@ public final class OrchidIr {
         ObjectMapper mapper=new ObjectMapper();
         BufferedReader input=new BufferedReader(new InputStreamReader(System.in,StandardCharsets.UTF_8));
         GremlinGroovyScriptEngine engine=new GremlinGroovyScriptEngine();
+        long activeQuery=0;
         String line;
         while((line=input.readLine())!=null) {
+        Map<String,Object> frame=mapper.readValue(line,Map.class);
+        long query=((Number)frame.getOrDefault("query",0L)).longValue();
+        if("release".equals(frame.get("kind"))) {
+            if(activeQuery==query) {
+                // Reset clears script instances, global closures, bindings and
+                // the classloader that can retain graphs or application state.
+                engine.reset();
+                activeQuery=0;
+            }
+            line=null;
+            continue; // Control frames have no response in the row protocol.
+        }
+        if(activeQuery!=query) { engine.reset(); activeQuery=query; }
         Map<String,Object> response=new LinkedHashMap<>();
         response.put("kind","result");
         OrchidGraph borrowedGraph=null;
         try {
-            Map<String,Object> request=mapper.readValue(line,Map.class);
+            Map<String,Object> request=frame;
             OrchidGraph graph=OrchidGraph.forIr(input,protocol);
             borrowedGraph=graph;
             graph.tx().open(); // The surrounding IR execution owns this transaction.
@@ -106,6 +120,7 @@ public final class OrchidIr {
         if(borrowedGraph!=null) borrowedGraph.abortFamily();
         protocol.write((mapper.writeValueAsString(response)+"\n").getBytes(StandardCharsets.UTF_8));
         protocol.flush();
+        response.clear(); frame.clear(); borrowedGraph=null; line=null;
         } // The native executor owns worker lifetime and cancellation.
     }
 }

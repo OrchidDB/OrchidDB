@@ -197,7 +197,10 @@ where
                 Ok(extracted)
             }
         }
-        Step::SelectMulti(labels, pop) => lower_select_multi(input, labels, *pop, steps, lo, ctx),
+        Step::SelectMulti(labels, pop) => {
+            let selected = lower_select_multi(input, labels, *pop, steps, lo, ctx)?;
+            Ok(super::match_step::elide_map_for_consumer(selected, steps.peek().copied()))
+        },
         Step::SelectColumn(column) => Ok(lower_select_column(input, *column)),
 
         // ----- distinct / order / slice -----
@@ -376,7 +379,10 @@ where
 
         // ----- unsupported families (clean error) -----
         Step::Path => Ok(lower_path(input, steps, lo)),
-        Step::Match(patterns) => lower_match(input, patterns, lo, ctx),
+        Step::Match(patterns) => {
+            let matched = lower_match(input, patterns, lo, ctx)?;
+            Ok(super::match_step::elide_map_for_consumer(matched, steps.peek().copied()))
+        },
         Step::Project(labels) => lower_project(input, labels, steps, lo, ctx),
         Step::Loops(name) => Ok(Node::GraphCurrentProject {
             expr: crate::ir::expr::IrExpr::Binding(loop_binding_name(name)),

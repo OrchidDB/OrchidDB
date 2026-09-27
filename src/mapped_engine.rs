@@ -26,6 +26,7 @@ pub struct MappedGraphEngine {
     executor: DuckDbExecutor,
     mapping: Arc<GraphMapping>,
     operator_table: Option<Arc<dyn OperatorTable>>,
+    jvm_workers: crate::ir::jvm::JvmWorkerPool,
 }
 
 impl MappedGraphEngine {
@@ -34,6 +35,7 @@ impl MappedGraphEngine {
             executor,
             mapping,
             operator_table: None,
+            jvm_workers: Default::default(),
         }
     }
 
@@ -161,7 +163,7 @@ impl MappedGraphEngine {
     /// Lower a plan, prepare it against the executor's dialect, and execute it.
     async fn run_plan(&mut self, plan: &GraphPlan) -> Result<ReturnedBatches, String> {
         let table=self.operator_table.clone();
-        let mut execution=Box::pin(crate::engine::execute_mapped(&mut self.executor, self.mapping.clone(), plan));
+        let mut execution=Box::pin(crate::engine::execute_mapped(&mut self.executor, self.mapping.clone(), plan, self.jvm_workers.clone()));
         futures::future::poll_fn(|cx| {
             let mut poll=|| std::future::Future::poll(execution.as_mut(),cx);
             match &table {Some(table)=>with_operator_table(table.clone(),poll),None=>poll()}

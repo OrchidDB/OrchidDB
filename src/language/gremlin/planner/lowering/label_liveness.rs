@@ -116,7 +116,7 @@ fn visit(steps: &[Step], f: &mut impl FnMut(&Step)) {
     }
 }
 
-fn children(step: &Step) -> Vec<&[Step]> {
+pub(super) fn children(step: &Step) -> Vec<&[Step]> {
     let mut out = Vec::new();
     match step {
         Step::By(spec) => { if let Some(sub) = &spec.traversal { out.push(sub.as_slice()); } }

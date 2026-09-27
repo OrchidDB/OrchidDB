@@ -14,8 +14,11 @@ export ORCHIDDB_JAVA="$CONFORMANCE_JAVA"
 export CONFORMANCE_TINKERPOP_SOURCE="${CONFORMANCE_TINKERPOP_SOURCE:-${CONFORMANCE_UPSTREAM_CACHE:-$repo_root/conformance/upstream/cache}/tinkerpop}"
 result_path="${1:-$repo_root/target/conformance-datafusion/orchiddb-tinkerpop.json}"
 
-cargo build --bin orchiddb-jvm-store
-export ORCHIDDB_JVM_STORE="$(cd "$CARGO_TARGET_DIR" && pwd)/debug/orchiddb-jvm-store"
+bash conformance/build-orchiddb.sh
+output_profile="${CONFORMANCE_CARGO_PROFILE:-release}"
+if [[ "$output_profile" == dev ]]; then output_profile=debug; fi
+export ORCHIDDB_JVM_STORE="$(cd "$CARGO_TARGET_DIR" && pwd)/$output_profile/orchiddb-jvm-store"
+export CONFORMANCE_ORCHIDDB_BINARY="$(cd "$CARGO_TARGET_DIR" && pwd)/$output_profile/upstream"
 mvn -q -f jvm/pom.xml install -DskipTests dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
 mvn -q -f jvm-codecs/pom.xml install -DskipTests
 mvn -q -f conformance/adapters/sqlg/pom.xml package -DskipTests dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
@@ -31,6 +34,4 @@ cargo test --features duckdb --test engine --test engine_adversarial --test engi
   --test gremlin_group_finalization --test gremlin_shared_side_effects \
   --test gremlin_upstream_regressions --test relational_execution
 cargo test --features duckdb --test jvm_ir -- --include-ignored --test-threads=1
-cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
-export CONFORMANCE_ORCHIDDB_BINARY="$(cd "$CARGO_TARGET_DIR" && pwd)/debug/upstream"
 python3 conformance/upstream/run.py --engine orchiddb --suite tinkerpop --output "$result_path"

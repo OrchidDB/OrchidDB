@@ -141,6 +141,14 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     let Some(args) = args else {
         return Ok(());
     };
+    if args.len() == 2 && matches!(name.as_str(), "__orchiddb_is_not_distinct_from" | "__orchiddb_is_distinct_from") {
+        *expr = if name == "__orchiddb_is_not_distinct_from" {
+            ast::Expr::IsNotDistinctFrom(Box::new(args[0].clone()), Box::new(args[1].clone()))
+        } else {
+            ast::Expr::IsDistinctFrom(Box::new(args[0].clone()), Box::new(args[1].clone()))
+        };
+        return Ok(());
+    }
     if dialect != SqlDialect::DuckDb {
         if name.starts_with("__orchiddb_utf16_") {
             return Err(SqlError::Unsupported("UTF-16 string SQL is currently implemented for DuckDB".into()));

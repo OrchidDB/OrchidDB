@@ -466,7 +466,9 @@ pub async fn plan_tables_excluding(
         if let LogicalPlan::TableScan(scan) = node {
             let name = scan.table_name.to_string();
             let bare_name = scan.table_name.table();
-            if !cte_names.contains(&name)
+            let is_range = datafusion::datasource::source_as_provider(&scan.source).ok()
+                .is_some_and(|provider| provider.as_any().is::<super::range::IntegerRange>());
+            if !is_range && !cte_names.contains(&name)
                 && !cte_names.contains(bare_name)
                 && !external.contains(&name)
                 && !external.contains(bare_name)

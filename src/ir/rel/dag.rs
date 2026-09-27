@@ -282,7 +282,16 @@ fn partition<'a>(
             inputs.push(partition(input, stats, eligibility,external).await?);
         }
         stats.datafusion_operators += 1;
-        plan.with_new_exprs(plan.expressions(), inputs)
+        // DataFusion 53 reports UNNEST execution columns as expressions, but
+        // its with_new_exprs constructor expects an empty expression list.
+        // Partitioning replaces only children, keeping their schemas intact.
+        if let LogicalPlan::Unnest(unnest) = plan {
+            let mut unnest = unnest.clone();
+            unnest.input = Arc::new(inputs.remove(0));
+            Ok(LogicalPlan::Unnest(unnest))
+        } else {
+            plan.with_new_exprs(plan.expressions(), inputs)
+        }
     })
 }
 

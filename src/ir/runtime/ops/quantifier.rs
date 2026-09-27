@@ -1,7 +1,7 @@
 //! GraphQuantifier — all/any/none over list traversers.
 
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::expr::IrExpr;
+use crate::ir::expr::{IrExpr, Lit};
 use crate::ir::plan::QuantifierKind;
 use crate::ir::value::Value;
 
@@ -25,13 +25,26 @@ pub(crate) fn quantifier_op(
                 let mut matches_count = 0usize;
                 let mut null_count = 0usize;
                 let total = items.len();
-                for item in items {
+                // Literal predicates cannot observe the bound item. Preserve
+                // input evaluation (including volatile list comprehensions),
+                // but avoid cloning its entire row for every list element.
+                let literal = match predicate {
+                    IrExpr::Lit(Lit::Bool(value)) => Some(Some(*value)),
+                    IrExpr::Lit(Lit::Null) => Some(None),
+                    _ => None,
+                };
+                if let Some(value) = literal {
+                    matches_count = if value == Some(true) { total } else { 0 };
+                    null_count = if value.is_none() { total } else { 0 };
+                } else {
                     let mut item_row = row.clone();
-                    item_row.bindings.insert(item_binding.to_string(), item);
-                    match eval(predicate, &item_row, graph)? {
-                        Value::Bool(true) => matches_count += 1,
-                        Value::Null => null_count += 1,
-                        _ => {}
+                    for item in items {
+                        item_row.bindings.insert(item_binding.to_string(), item);
+                        match eval(predicate, &item_row, graph)? {
+                            Value::Bool(true) => matches_count += 1,
+                            Value::Null => null_count += 1,
+                            _ => {}
+                        }
                     }
                 }
                 let false_count = total.saturating_sub(matches_count + null_count);

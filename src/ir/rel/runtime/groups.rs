@@ -588,3 +588,63 @@ impl Compiler<'_> {
         })
     }
 }
+
+impl Compiler<'_> {
+    /// A current-only reducing child cannot distinguish equal group members.
+    /// Compact a SQL input before the Arrow boundary and preserve its bag
+    /// multiplicity as traverser bulk. This avoids shipping one row per edge
+    /// merely to compact those same vertices again inside group_map_op.
+    pub(super) fn compact_sql_group_input(
+        &self, input: LogicalPlan, key: &IrExpr, source: &Node,
+    ) -> Result<LogicalPlan> {
+        fn permits(node: &Node) -> bool {
+            if let Node::GraphProject { items, .. } = node {
+                if items.iter().any(|item| item.alias == "__sack"
+                    || (item.alias == "__bulk_enabled"
+                        && !matches!(item.expr, IrExpr::Lit(crate::ir::expr::Lit::Bool(true))))) {
+                    return false;
+                }
+            }
+            crate::ir::analysis::children(node).into_iter().all(permits)
+        }
+        if !permits(source) { return Ok(input); }
+        let IrExpr::Binding(key) = key else { return Ok(input); };
+        let LogicalPlan::Extension(extension) = &input else { return Ok(input); };
+        let Some(adapter) = extension.node.as_any().downcast_ref::<RowKernel>() else { return Ok(input); };
+        if adapter.name != "DecodeTraversers" || adapter.relational_input.is_none() || adapter.inputs.len() != 1 {
+            return Ok(input);
+        }
+        let relation = &adapter.inputs[0];
+        let retained = relation.schema().fields().iter().map(|field| field.name().clone())
+            .filter(|name| crate::ir::rel::is_binding_column(name, "current")
+                || crate::ir::rel::is_binding_column(name, key)
+                || matches!(name.as_str(), "__bulk_enabled" | "__gremlin_bulk_safe"))
+            .collect::<Vec<_>>();
+        if !retained.iter().any(|name| name == key)
+            || !retained.iter().any(|name| name == "current__id") {
+            return Ok(input);
+        }
+        const BULK: &str = "__group_input_bulk";
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::from(relation.clone())
+            .aggregate(retained.iter().map(crate::ir::rel::col_exact).collect::<Vec<_>>(),
+                vec![datafusion::functions_aggregate::expr_fn::count(datafusion::prelude::lit(1_i64)).alias(BULK)])?
+            .build()?;
+        let mut fields = retained;
+        fields.push(BULK.into());
+        let decoded = kernel("DecodeTraversers", vec![plan], |mut inputs, _| {
+            let mut rows = inputs.remove(0);
+            for row in &mut rows {
+                row.bulk = match row.bindings.remove(BULK) {
+                    Some(Value::Int(value) | Value::Long(value)) if value >= 0 => value as u64,
+                    Some(Value::UInt64(value)) => value,
+                    _ => return Err(RuntimeError::Runtime("SQL group multiplicity is not a non-negative integer".into())),
+                };
+            }
+            Ok(rows)
+        });
+        let LogicalPlan::Extension(extension) = decoded else { unreachable!() };
+        let mut adapter = extension.node.as_any().downcast_ref::<RowKernel>().unwrap().clone();
+        adapter.relational_input = Some(fields);
+        Ok(LogicalPlan::Extension(Extension { node: Arc::new(adapter) }))
+    }
+}

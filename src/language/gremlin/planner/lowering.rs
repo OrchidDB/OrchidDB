@@ -57,6 +57,7 @@ mod math;
 mod mutations;
 mod merge;
 mod path;
+mod path_elision;
 mod predicates;
 mod procedures;
 mod project;
@@ -101,7 +102,9 @@ pub fn lower_traversal(traversal: &Traversal) -> GremlinPlanResult<GraphPlan> {
         result_form: ResultForm::TraverserStream,
         input: node.boxed(),
     };
-    Ok(GraphPlan::new(policy, root))
+    let mut plan = GraphPlan::new(policy, root);
+    path_elision::elide_unobserved(&traversal.steps, &mut plan.root);
+    Ok(plan)
 }
 
 /// Drain leading source-self configuration steps into the `Lowerer`.

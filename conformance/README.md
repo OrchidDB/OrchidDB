@@ -55,14 +55,14 @@ python3.12 -m venv .venv-conformance
 pip install -r conformance/requirements.txt
 python conformance/upstream/fetch.py
 python conformance/upstream/catalog.py
-cargo build --bin orchiddb-jvm-store
-export ORCHIDDB_JVM_STORE="$PWD/target/debug/orchiddb-jvm-store"
+bash conformance/build-orchiddb.sh
+export ORCHIDDB_JVM_STORE="$PWD/target/release/orchiddb-jvm-store"
+export CONFORMANCE_ORCHIDDB_BINARY="$PWD/target/release/upstream"
 export CONFORMANCE_TINKERPOP_SOURCE="$PWD/conformance/upstream/cache/tinkerpop"
 mvn -q -f jvm-codecs/pom.xml install
 mvn -q -f jvm/pom.xml install dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
 export ORCHIDDB_JVM_CLASSPATH="$PWD/jvm/target/classes:$(cat jvm/target/classpath.txt)"
 mvn -q -f conformance/adapters/sqlg/pom.xml package dependency:build-classpath -Dmdep.outputFile=classpath.txt
-CARGO_TARGET_DIR="$PWD/target" cargo build --manifest-path conformance/runner/Cargo.toml --bin upstream
 docker compose -f conformance/compose.yml up -d
 python conformance/wait_ready.py
 # PostgreSQL address as seen from the PuppyGraph container:
@@ -83,6 +83,35 @@ Set `JAVA_HOME` to Java 21 for Maven; optionally set `CONFORMANCE_JAVA` to the
 Java executable. `CONFORMANCE_UPSTREAM_CACHE` overrides the upstream source
 cache. `fetch.py` checks the exact immutable revisions and unmodified upstream
 trees. Licenses and notices are in `upstream/licenses/`.
+
+`build-orchiddb.sh` only builds executables; it never starts conformance. It and
+`run-relational-gremlin.sh` default to the optimized `release` profile. Set
+`CONFORMANCE_CARGO_PROFILE=dev` for a development build and point the binary
+environment variables at `target/debug/` instead. `CARGO_TARGET_DIR` overrides
+the build directory. Direct Python invocations honor `CONFORMANCE_ORCHIDDB_BINARY`
+and `ORCHIDDB_JVM_STORE`; export the paths above to select the optimized binaries.
+
+### Reusing resources across distinct cases
+
+Cypher side-effect assertions use two exact native state snapshots instead of
+ten observation queries. Each snapshot includes element identities, labels, and
+property values; replacement and deletion checks retain the same set comparison.
+Cases without a side-effect assertion do not request a snapshot. Snapshot time
+is recorded as observation work, separate from the tested query's cost.
+
+The native Gremlin adapter caches immutable standard fixture payloads and the
+runner keeps isolated pristine graph checkpoints with preencoded storage payloads.
+Restoring them still writes the checkpoint and advances the storage revision;
+it avoids rebuilding and serializing the fixture. Subsequent cases send a small
+`fixture-reset` request, restoring the checkpoint even after writes. Null-property
+policies have separate cache keys; public IDs, property cardinality and metadata
+are preserved. Missing cache entries are errors, never permission to reuse the
+previous case's graph.
+
+Internal JVM compute workers are owned by the engine and start lazily. Distinct
+statements reuse the process with fresh execution controls and cleared Groovy
+state. Failed workers are discarded. These changes do not cache tested-query
+results or relax upstream assertions. RDF fixture loading is unchanged.
 
 ### Neo4j and Jena
 

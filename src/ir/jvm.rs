@@ -13,7 +13,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc,
 };
 use std::time::{Duration, Instant};
@@ -38,7 +38,7 @@ pub struct JvmOperation {
     pub mode: JvmMode,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JvmConfig {
     pub java: String,
     pub classpath: String,
@@ -61,7 +61,10 @@ pub struct JvmExecution {
     pub cancelled: Arc<AtomicBool>,
     pub deadline: Option<Instant>,
     pub worker: JvmWorkerPool,
+    /// Protocol scope; cloning an execution keeps nodes in the same statement.
+    pub query_id: u64,
 }
+static NEXT_QUERY_ID: AtomicU64 = AtomicU64::new(1);
 impl Default for JvmExecution {
     fn default() -> Self {
         Self {
@@ -69,10 +72,21 @@ impl Default for JvmExecution {
             cancelled: Arc::new(AtomicBool::new(false)),
             deadline: None,
             worker: Default::default(),
+            query_id: NEXT_QUERY_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
 }
 impl JvmExecution {
+    /// New statement controls around an engine-owned process pool. Cancellation
+    /// tokens and deadlines are never inherited from the previous statement.
+    pub(crate) fn for_query(worker: JvmWorkerPool) -> Self {
+        Self { worker, ..Self::default() }
+    }
+
+    pub(crate) fn scope(&self) -> JvmQueryScope {
+        JvmQueryScope { worker: self.worker.clone(), cancelled: self.cancelled.clone(), query_id: self.query_id, completed: false }
+    }
+
     pub fn check(&self) -> IrResult<()> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(error("execution cancelled"));
@@ -86,6 +100,33 @@ impl JvmExecution {
         Ok(())
     }
 }
+
+/// Cancels detached blocking work and releases Java query state on every exit,
+/// including errors in a later non-JVM operator and a dropped async future.
+pub(crate) struct JvmQueryScope {
+    worker: JvmWorkerPool,
+    cancelled: Arc<AtomicBool>,
+    query_id: u64,
+    completed: bool,
+}
+impl JvmQueryScope {
+    pub(crate) fn complete(&mut self) { self.completed = true; }
+}
+impl Drop for JvmQueryScope {
+    fn drop(&mut self) {
+        if !self.completed { self.cancelled.store(true, Ordering::Release); }
+        if let Ok(guard) = self.worker.0.try_lock() {
+            if let Some(worker) = guard.as_ref() {
+                if let Some(outgoing) = &worker.outgoing {
+                    // No response is sent for release frames. The writer's FIFO
+                    // orders cleanup before the next query, without blocking an
+                    // async drop on Java. A busy cancelled worker kills itself.
+                    let _ = outgoing.send(json!({"kind":"release","query":self.query_id}).to_string());
+                }
+            }
+        }
+    }
+}
 fn error(message: impl Into<String>) -> RuntimeError {
     RuntimeError::Runtime(message.into())
 }
@@ -95,11 +136,14 @@ pub fn contains_jvm(node: &Node) -> bool {
             .into_iter()
             .any(contains_jvm)
 }
-/// Query-scoped worker shared by correlated and sequential relational operators.
+/// Engine-owned worker, shared by sequential statements and their correlated
+/// operators. Only the process is retained; native stores and row bindings are
+/// created afresh for each invocation.
 #[derive(Debug, Clone, Default)]
 pub struct JvmWorkerPool(Arc<Mutex<Option<Worker>>>);
 #[derive(Debug)]
 struct Worker {
+    config: JvmConfig,
     child: Child,
     outgoing: Option<mpsc::Sender<String>>,
     received: Option<mpsc::Receiver<Result<Json, String>>>,
@@ -169,6 +213,7 @@ impl Worker {
             }
         });
         Ok(Self {
+            config: config.clone(),
             child,
             outgoing: Some(outgoing),
             received: Some(received),
@@ -228,7 +273,7 @@ pub(crate) fn execute(
             Ok(json!({"bindings":state,"bulk":row.bulk}))
         })
         .collect::<IrResult<_>>()?;
-    let request = json!({"script":operation.script,"mode":format!("{:?}",operation.mode),"rows":arguments,"traversers":traversers});
+    let request = json!({"query":execution.query_id,"script":operation.script,"mode":format!("{:?}",operation.mode),"rows":arguments,"traversers":traversers});
     let frame = serde_json::to_string(&request).map_err(|e| error(e.to_string()))?;
     if frame.len() as u64 > MAX_FRAME {
         return Err(error("JVM input frame exceeds 64 MiB"));
@@ -239,7 +284,22 @@ pub(crate) fn execute(
         .deadline
         .get_or_insert_with(|| Instant::now() + Duration::from_secs(30));
     let pool = execution.worker.0.clone();
-    let mut guard = pool.lock().map_err(|_| error("JVM worker lock poisoned"))?;
+    let mut guard = loop {
+        execution.check()?;
+        match pool.try_lock() {
+            Ok(guard) => break guard,
+            Err(std::sync::TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(10)),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                let mut guard = poisoned.into_inner();
+                guard.take();
+                pool.clear_poison();
+                break guard;
+            }
+        }
+    };
+    if guard.as_mut().is_some_and(|worker| worker.config != config || worker.child.try_wait().is_ok_and(|status| status.is_some())) {
+        guard.take();
+    }
     if guard.is_none() {
         *guard = Some(Worker::start(&config)?);
     }

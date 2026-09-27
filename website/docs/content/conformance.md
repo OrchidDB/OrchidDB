@@ -70,6 +70,9 @@ It measures work at execution boundaries, not internal database scans or all
 DataFusion operators. Partial costs are lower bounds; unmeasured work is shown
 explicitly. Fixture and observation queries are excluded from rankings.
 Costs do not change pass/fail outcomes or compare performance between products.
+Gremlin attribution version 2 excludes graph initializers, parameter lookups and
+assertion-helper requests. The published Gremlin costs were reclassified from
+the existing recorded requests without rerunning the suite.
 
 The first measured run provides a baseline. Use `--cost-baseline` with the local
 conformance runner to compare later runs with matching case definitions, query

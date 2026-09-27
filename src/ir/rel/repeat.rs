@@ -1,6 +1,12 @@
 //! `GraphRepeat` lowering.
 //!
-//! The primary lowering is a recursive CTE whose work table carries the
+//! Count-only fixed traversals use a sequence of weighted SQL frontier CTEs:
+//! each round groups identical carried states and sums their multiplicities.
+//! This keeps cyclic graph counts compact rather than enumerating every path.
+//! Runtime consumers that need traverser state retain the compact frontier
+//! kernel until SQL islands can return weighted traversers directly.
+//!
+//! The general relational lowering is a recursive CTE whose work table carries the
 //! repeat frontier: the element identity (`id`, `label`) of every binding the
 //! body's `GraphCorrelate` leaf consumes, any carried scalar bindings, the
 //! iteration count and — for `until` loops — whether the row has terminated.
@@ -82,7 +88,173 @@ enum StateCol {
 }
 
 impl LoweringContext<'_> {
+    /// A count consumer only observes multiplicity. Collapse each frontier by
+    /// carried state and propagate its weight through row-local expansions.
+    /// This is deliberately bounded relational algebra: ordinary recursive
+    /// UNION ALL would enumerate quadrillions of paths in modest cyclic graphs.
+    pub(super) fn lower_weighted_repeat_count(
+        &mut self,
+        group: &[ProjectionItem],
+        aggs: &[AggCall],
+        input: &Node,
+    ) -> RelResult<Option<LoweredNode>> {
+        if self.language != Language::Gremlin
+            || !group.is_empty()
+            || aggs.is_empty()
+            || aggs
+                .iter()
+                .any(|agg| agg.kind != AggKind::CountBulk || agg.arg.is_some() || agg.distinct)
+        {
+            return Ok(None);
+        }
+        // A terminal select map is payload only; keep its label-presence
+        // filters and selection computations, but do not serialize the map.
+        let mut input = input;
+        while let Node::GraphProject {
+            items,
+            input: inner,
+            ..
+        } = input
+        {
+            if !items.iter().all(|item| matches!(item.expr, IrExpr::Lit(_))) {
+                break;
+            }
+            input = inner;
+        }
+        let input = match input {
+            Node::GraphCurrentProject {
+                expr: IrExpr::Call { name, args },
+                input,
+                ..
+            } if name == "make_map"
+                && args.len() % 2 == 0
+                && args.chunks_exact(2).all(|pair| {
+                    matches!(&pair[0], IrExpr::Lit(crate::ir::expr::Lit::String(_)))
+                        && matches!(&pair[1], IrExpr::Binding(_))
+                }) =>
+            {
+                input.as_ref()
+            }
+            _ => input,
+        };
+        let Some(repeat) = weighted_repeat_source(input) else {
+            return Ok(None);
+        };
+        let Node::GraphRepeat {
+            seed,
+            body,
+            times: Some(times),
+            emit: EmitMode::AfterLoop,
+            until: None,
+            until_traversal: None,
+            prefix_predicate: None,
+            prefix_traversal: None,
+            path: None,
+            ..
+        } = repeat
+        else {
+            return Ok(None);
+        };
+        if *times > 64 || !weighted_body(body) {
+            return Ok(None);
+        }
+        let Some(bindings) = repeat_correlate_bindings(body) else {
+            return Ok(None);
+        };
+        let mut lowered = self.lower_node(seed)?;
+        let outer_keys = apply_correlation_key_columns(&lowered.plan);
+        self.scan_counter += 1;
+        let weight = format!("__apply_corr_key_repeat_weight_{}", self.scan_counter);
+        let mut fields = output_fields(&lowered.plan)
+            .iter()
+            .map(col_exact)
+            .collect::<Vec<_>>();
+        fields.push(lit(1_u64).alias(&weight));
+        let mut frontier = LogicalPlanBuilder::from(strip_root_sorts(lowered.plan.clone()))
+            .project(fields)?
+            .build()?;
+        for iteration in 0..=*times {
+            let fields = output_fields(&frontier)
+                .into_iter()
+                .filter(|field| {
+                    field != &weight
+                        && (outer_keys.contains(field)
+                            || bindings.iter().any(|binding| {
+                                field == binding || is_binding_column(field, binding)
+                            }))
+                })
+                .collect::<Vec<_>>();
+            let keys = fields.iter().map(col_exact).collect::<Vec<_>>();
+            frontier = LogicalPlanBuilder::from(frontier)
+                .aggregate(keys, vec![wide_weight_sum(&weight).alias(&weight)])?
+                .build()?;
+            let mut projection = fields.iter().map(col_exact).collect::<Vec<_>>();
+            projection.push(Expr::Cast(Cast::new(Box::new(col_exact(&weight)), DataType::UInt64)).alias(&weight));
+            frontier = LogicalPlanBuilder::from(frontier).project(projection)?.build()?;
+            self.scan_counter += 1;
+            frontier = LogicalPlanBuilder::from(frontier)
+                .alias(format!("__w_sql_cte_weighted_repeat_{}", self.scan_counter))?
+                .build()?;
+            if iteration == *times {
+                break;
+            }
+            let stepped = self.lower_with_correlate(frontier, body)?;
+            lowered.islands.merge(stepped.islands);
+            if !has_exact_col(&stepped.plan, &weight) {
+                return Err(RelError::Unsupported(
+                    "repeat body drops multiplicity".into(),
+                ));
+            }
+            frontier = stepped.plan;
+        }
+        if !std::ptr::eq(repeat, input) {
+            let mut suffix = input.clone();
+            replace_weighted_repeat(&mut suffix);
+            let stepped = self.lower_with_correlate(frontier, &suffix)?;
+            lowered.islands.merge(stepped.islands);
+            frontier = stepped.plan;
+        }
+        // SUM over an empty frontier is NULL; Gremlin count returns zero.
+        let total_column = format!("__repeat_total_{}", self.scan_counter);
+        let aggregated = LogicalPlanBuilder::from(frontier)
+            .aggregate(outer_keys.iter().map(col_exact).collect::<Vec<_>>(), vec![wide_weight_sum(&weight).alias(&total_column)])?.build()?;
+        let total = df_core::coalesce(vec![Expr::Cast(Cast::new(Box::new(col_exact(&total_column)), DataType::UInt64)), lit(0_u64)]);
+        // Native CountBulk checks u64 overflow and then exposes Java's signed
+        // long bits. Preserve that contract above i64::MAX as well.
+        let signed = case_when(
+            binary(total.clone(), BinaryOp::Gt, lit(i64::MAX as u64)),
+            binary(
+                Expr::Cast(Cast::new(
+                    Box::new(binary(total.clone(), BinaryOp::Sub, lit(1_u64 << 63))),
+                    DataType::Int64,
+                )),
+                BinaryOp::Add,
+                lit(i64::MIN),
+            ),
+            Expr::Cast(Cast::new(Box::new(total), DataType::Int64)),
+        );
+        let mut values = outer_keys.iter().map(col_exact).collect::<Vec<_>>();
+        values.extend(aggs.iter().map(|agg| signed.clone().alias(&agg.alias)));
+        let plan = LogicalPlanBuilder::from(aggregated).project(values)?.build()?;
+        let plan = gremlin::with_empty_count_defaults(
+            self.correlate_plan.as_ref(),
+            plan,
+            &outer_keys,
+            aggs,
+        )?;
+        Ok(Some(lowered.with_plan(plan)))
+    }
+
     pub(super) fn lower_repeat(&mut self, spec: RepeatSpec<'_>) -> RelResult<LoweredNode> {
+        if self.language == Language::Gremlin && !self.options.tolerate_internal_path_state {
+            // Runtime islands must preserve compact traverser multiplicity.
+            // Count-only consumers use the weighted lowering above. A bag CTE
+            // here can grow exponentially before a native consumer sees it.
+            return Err(RelError::Unsupported(
+                "GraphRepeat requires a weighted SQL consumer or the compact frontier kernel"
+                    .into(),
+            ));
+        }
         if spec.path.is_some() && !self.options.tolerate_internal_path_state {
             return Err(RelError::Unsupported("GraphRepeat with path".into()));
         }
@@ -162,17 +334,32 @@ impl LoweringContext<'_> {
 
         let mut seed_islands = seed.islands.clone();
         let seed_stop = if spec.until_first {
-            let mut fields = output_fields(&seed_input).iter().map(col_exact).collect::<Vec<_>>();
-            for column in &loop_columns { fields.push(lit(0_i64).alias(column)); }
-            seed_input = LogicalPlanBuilder::from(seed_input).project(fields)?.build()?;
+            let mut fields = output_fields(&seed_input)
+                .iter()
+                .map(col_exact)
+                .collect::<Vec<_>>();
+            for column in &loop_columns {
+                fields.push(lit(0_i64).alias(column));
+            }
+            seed_input = LogicalPlanBuilder::from(seed_input)
+                .project(fields)?
+                .build()?;
             if let Some(probe) = spec.until_traversal {
                 let (joined, matched) = self.probe_match(seed_input, probe, &mut seed_islands)?;
                 seed_input = joined;
                 Some(matched)
             } else if let Some(predicate) = spec.until {
-                Some(case_when(self.lower_expr(&seed_input, predicate)?, lit(true), lit(false)))
-            } else { None }
-        } else { None };
+                Some(case_when(
+                    self.lower_expr(&seed_input, predicate)?,
+                    lit(true),
+                    lit(false),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // At most two passes: the first discovers the types of bindings the
         // body introduces but the seed lacks (e.g. Gremlin's `__path`), the
@@ -336,11 +523,14 @@ impl LoweringContext<'_> {
         let emit_each = !matches!(spec.emit, EmitMode::AfterLoop);
         let depth = || col_exact(&depth_col);
         let structural = if emit_each {
-            (spec.prefix_predicate.is_none() && spec.prefix_traversal.is_none())
-                .then(|| {
-                    let advanced = binary(depth(), BinaryOp::Gte, lit(1_i64));
-                    if spec.until_first && has_until { Expr::or(advanced, col_exact(&stop_col)) } else { advanced }
-                })
+            (spec.prefix_predicate.is_none() && spec.prefix_traversal.is_none()).then(|| {
+                let advanced = binary(depth(), BinaryOp::Gte, lit(1_i64));
+                if spec.until_first && has_until {
+                    Expr::or(advanced, col_exact(&stop_col))
+                } else {
+                    advanced
+                }
+            })
         } else if has_until {
             Some(binary(col_exact(&stop_col), BinaryOp::Eq, lit(true)))
         } else if let Some(times) = spec.times {
@@ -421,7 +611,11 @@ impl LoweringContext<'_> {
                 ),
                 None => iteration_rows,
             };
-            let condition = if has_until { Expr::or(condition, col_exact(&stop_col)) } else { condition };
+            let condition = if has_until {
+                Expr::or(condition, col_exact(&stop_col))
+            } else {
+                condition
+            };
             output = LogicalPlanBuilder::from(output)
                 .filter(condition)?
                 .build()?;
@@ -876,7 +1070,12 @@ fn build_static_term(
     }
     projection.push(lit(0_i64).alias(depth_col));
     if let Some(stop_col) = stop_col {
-        projection.push(seed_stop.cloned().unwrap_or_else(|| lit(false)).alias(stop_col));
+        projection.push(
+            seed_stop
+                .cloned()
+                .unwrap_or_else(|| lit(false))
+                .alias(stop_col),
+        );
     }
     Ok(LogicalPlanBuilder::from(seed.clone())
         .project(projection)?
@@ -1089,4 +1288,93 @@ fn repeat_correlate_bindings(node: &Node) -> Option<Vec<String>> {
     node_children(node)
         .into_iter()
         .find_map(repeat_correlate_bindings)
+}
+
+/// Conservative semiring-linear body: projections only rename/carry bindings,
+/// and expansions multiply existing row weights. Barriers, volatile expressions,
+/// history, and iteration-dependent control remain in the frontier kernel.
+fn weighted_body(node: &Node) -> bool {
+    match node {
+        Node::GraphCorrelate { .. } => true,
+        Node::GraphExpand {
+            input,
+            length,
+            path: None,
+            history: None,
+            ..
+        } => length.min == 1 && length.max == Some(1) && weighted_body(input),
+        Node::GraphProject { input, items, .. } => {
+            items
+                .iter()
+                .all(|item| matches!(item.expr, IrExpr::Binding(_) | IrExpr::Lit(_)) && weight_stable_expr(&item.expr))
+                && weighted_body(input)
+        }
+        _ => false,
+    }
+}
+
+fn weighted_repeat_source(node: &Node) -> Option<&Node> {
+    match node {
+        Node::GraphRepeat { .. } => Some(node),
+        Node::GraphProject { input, items, .. }
+            if items.iter().all(|item| weight_stable_expr(&item.expr)) =>
+        {
+            weighted_repeat_source(input)
+        }
+        Node::GraphCurrentProject { input, expr, .. } if weight_stable_expr(expr) => {
+            weighted_repeat_source(input)
+        }
+        Node::GraphBind { input, expr, .. } if expr.as_ref().is_none_or(weight_stable_expr) => {
+            weighted_repeat_source(input)
+        }
+        Node::GraphFilter {
+            input, condition, ..
+        } if weight_stable_expr(condition) => weighted_repeat_source(input),
+        Node::GraphExpand {
+            input,
+            length,
+            path: None,
+            history: None,
+            ..
+        } if length.min == 1 && length.max == Some(1) => weighted_repeat_source(input),
+        _ => None,
+    }
+}
+fn replace_weighted_repeat(node: &mut Node) {
+    if matches!(node, Node::GraphRepeat { .. }) {
+        *node = Node::GraphCorrelate {
+            bindings: Vec::new(),
+        };
+    } else {
+        for child in crate::ir::analysis::children_mut(node) {
+            replace_weighted_repeat(child);
+        }
+    }
+}
+fn weight_stable_expr(expr: &IrExpr) -> bool {
+    match expr {
+        IrExpr::Binding(name) | IrExpr::IsBound(name) => name != LOOPS_BINDING && !name.starts_with("__loops:"),
+        IrExpr::Lit(_) | IrExpr::HasLabel { .. } => true,
+        IrExpr::Not(expr) | IrExpr::IsNull(expr) | IrExpr::IsNotNull(expr) => {
+            weight_stable_expr(expr)
+        }
+        IrExpr::Binary {
+            op: BinaryOp::And | BinaryOp::Or,
+            lhs,
+            rhs,
+        } => weight_stable_expr(lhs) && weight_stable_expr(rhs),
+        IrExpr::Call { name, args }
+            if matches!(name.as_str(), "select_key_or_binding_pop" | "map_has_key") =>
+        {
+            args.iter().all(weight_stable_expr)
+        }
+        _ => false,
+    }
+}
+
+fn wide_weight_sum(weight: &str) -> Expr {
+    // Accumulate wider than u64, then narrow in a separate projection. This
+    // both checks bulk overflow and keeps aggregate expressions canonical for
+    // DataFusion's common-subexpression extraction and the SQL unparser.
+    df_sum(Expr::Cast(Cast::new(Box::new(col_exact(weight)), DataType::Decimal128(38, 0))))
 }

@@ -331,6 +331,40 @@ pub(super) fn lower_where_traversal(
     lo: &mut Lowerer,
     ctx: &TraversalContext,
 ) -> GremlinPlanResult<Node> {
+    // match() emits a map, but anchored where() predicates navigate its
+    // labelled elements. Keep map assembly above those joins/filters so it
+    // does not split an otherwise relational island. For an absent anchor,
+    // the original map must make this child unproductive; prove that from
+    // its first navigation/property test and retain an explicit bound test.
+    if let Some(Step::As(anchor)) = sub.first() {
+        if let Node::GraphProject { mode, items, error_policy, input: prior } = &input {
+            if let [item] = items.as_slice()
+                && item.alias == CURRENT
+                && let IrExpr::Call { name, args } = &item.expr
+                && name == "make_map" && args.len() % 2 == 0
+                && args.chunks(2).all(|pair| matches!((&pair[0], &pair[1]),
+                    (IrExpr::Lit(crate::ir::expr::Lit::String(key)), IrExpr::Binding(binding)) if key == binding))
+            {
+                let keys = args.chunks(2).filter_map(|pair| if let IrExpr::Binding(binding) = &pair[1] { Some(binding.as_str()) } else { None }).collect::<Vec<_>>();
+                let anchored = keys.contains(&anchor.as_str());
+                let map_unproductive = match sub.get(1) {
+                    Some(Step::ExpandVertex { .. } | Step::ExpandEdge { .. } | Step::EndpointVertex { .. } | Step::HasLabel(_)) => true,
+                    Some(Step::Has { key, .. }) => !keys.contains(&key.as_str()),
+                    _ => false,
+                };
+                let pure = sub.iter().all(|step| matches!(step,
+                    Step::As(_) | Step::WhereAnchor(_) | Step::ExpandVertex { .. }
+                    | Step::ExpandEdge { .. } | Step::EndpointVertex { .. }
+                    | Step::Has { .. } | Step::HasLabel(_) | Step::Is { .. }
+                    | Step::Identity | Step::Values(_) | Step::Id | Step::Label));
+                if anchored && map_unproductive && pure {
+                    let filtered = Node::GraphFilter { condition: IrExpr::IsBound(anchor.clone()), input: prior.clone() };
+                    return Ok(Node::GraphProject { mode: *mode, items: items.clone(), error_policy: *error_policy,
+                        input: lower_where_traversal(filtered, sub, lo, ctx)?.boxed() });
+                }
+            }
+        }
+    }
     let sub = anchor_where_labels(sub);
     Ok(Node::GraphApply {
         kind: ApplyKind::Semi,

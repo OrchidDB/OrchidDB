@@ -425,3 +425,35 @@ mod scheduling_tests {
         );
     }
 }
+
+/// Count observes only multiplicity; label selects consume the bindings that
+/// make up a match map directly. Keep their productivity filters and all by()
+/// traversals, but avoid constructing a graph-valued map between SQL joins.
+pub(super) fn elide_map_for_consumer(node: Node, consumer: Option<&Step>) -> Node {
+    if matches!(consumer, Some(Step::Count))
+        && let Node::GraphCurrentProject { expr: IrExpr::Call { name, args }, input, .. } = &node
+        && name == "make_map" && args.len() % 2 == 0
+        && args.chunks(2).all(|pair| matches!((&pair[0], &pair[1]),
+            (IrExpr::Lit(Lit::String(_)), IrExpr::Binding(_))))
+    {
+        return *input.clone();
+    }
+    let Node::GraphProject { ref items, .. } = node else { return node; };
+    let [item] = items.as_slice() else { return node; };
+    let IrExpr::Call { name, args } = &item.expr else { return node; };
+    if item.alias != CURRENT || name != "make_map" || args.len() % 2 != 0 { return node; }
+    let pure = args.chunks(2).all(|pair| matches!((&pair[0], &pair[1]),
+        (IrExpr::Lit(Lit::String(_)), IrExpr::Binding(_))));
+    let direct_labels = args.chunks(2).filter_map(|pair| match (&pair[0], &pair[1]) {
+        (IrExpr::Lit(Lit::String(key)), IrExpr::Binding(binding)) if key == binding => Some(key),
+        _ => None,
+    }).collect::<Vec<_>>();
+    let elide = pure && match consumer {
+        Some(Step::Count) => true,
+        Some(Step::Select(label, _)) => direct_labels.contains(&label),
+        Some(Step::SelectMulti(labels, _)) => labels.iter().all(|label| direct_labels.contains(&label)),
+        _ => false,
+    };
+    if elide { let Node::GraphProject { input, .. } = node else { unreachable!() }; *input }
+    else { node }
+}

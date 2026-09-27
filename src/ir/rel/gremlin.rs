@@ -29,7 +29,42 @@ pub(super) fn keyed_apply_join(
     if key_cols.is_empty() || !key_cols.iter().all(|key| has_exact_col(&right, key)) {
         return Ok(None);
     }
-    let is_output = |name: &str| outputs.iter().any(|output| is_binding_column(name, output));
+    let retracted = |binding: &str| {
+        let history = format!("__gremlin_select_history_{binding}");
+        plan_column_type(&right, binding) == Some(DataType::Null)
+            && plan_column_type(&right, &history) == Some(DataType::Null)
+    };
+    let is_output = |name: &str| outputs.iter().any(|output|
+        is_binding_column(name, output)
+            && !(join_type == JoinType::Inner && output != "current" && retracted(output))
+            && (has_exact_col(&right, output) || has_binding_shape(&right, output).is_some()));
+    // Inner apply joins repeated user labels by value. A reducer can drop a
+    // declared label; in that case the outer binding remains in scope.
+    let mut compatibility = Vec::new();
+    if join_type == JoinType::Inner {
+        for output in outputs.iter().filter(|name| name.as_str() != "current" && !name.starts_with("__")) {
+            if retracted(output) { continue; }
+            let left_shape = has_binding_shape(&left, output);
+            let right_shape = has_binding_shape(&right, output);
+            if (left_shape.is_some() || has_exact_col(&left, output))
+                && (right_shape.is_some() || has_exact_col(&right, output))
+                && left_shape != right_shape {
+                return Err(RelError::Unsupported("inner apply has incompatible repeated binding shapes".into()));
+            }
+            let components = if has_binding_shape(&left, output).is_some()
+                && has_binding_shape(&right, output).is_some() {
+                vec![id_col(output), label_col(output)]
+            } else if has_exact_col(&left, output) && has_exact_col(&right, output) {
+                vec![output.clone()]
+            } else { Vec::new() };
+            for column in components {
+                let alias = unique_internal_alias(&left, cleanup,
+                    format!("__apply_compatible_{}", compatibility.len()));
+                cleanup.insert(alias.clone());
+                compatibility.push((column, alias));
+            }
+        }
+    }
     // Declared apply outputs are right-owned: the child's value replaces the
     // input's binding of the same name (e.g. `local(count())` replaces
     // `current`). Drop every left column of those bindings first.
@@ -40,9 +75,9 @@ pub(super) fn keyed_apply_join(
         .map(|field| field.name().clone())
         .filter(|name| key_cols.contains(name) || !is_output(name))
         .collect::<Vec<_>>();
-    let left = LogicalPlanBuilder::from(left)
-        .project(left_keep.iter().map(col_exact).collect::<Vec<_>>())?
-        .build()?;
+    let mut left_projection = left_keep.iter().map(col_exact).collect::<Vec<_>>();
+    left_projection.extend(compatibility.iter().map(|(column, alias)| col_exact(column).alias(alias)));
+    let left = LogicalPlanBuilder::from(left).project(left_projection)?.build()?;
     let left_names: BTreeSet<String> = left_keep.into_iter().collect();
     let right_outputs = right
         .schema()
@@ -55,9 +90,12 @@ pub(super) fn keyed_apply_join(
                 || (!left_names.contains(name) && !conflicts_with_left_binding(&left, name))
         })
         .collect::<Vec<_>>();
-    let (left_plan, right_plan, join_exprs, right_cleanup) =
+    let (left_plan, right_plan, mut join_exprs, right_cleanup) =
         prepare_apply_join_inputs(left, right, key_cols, &right_outputs)?;
     cleanup.extend(right_cleanup);
+    for (column, alias) in compatibility {
+        join_exprs.push(identity_compare(&[&left_plan, &right_plan], &alias, BinaryOp::Eq, &column));
+    }
     Ok(Some(
         LogicalPlanBuilder::from(left_plan)
             .join_on(right_plan, join_type, join_exprs)?
@@ -383,5 +421,32 @@ impl LoweringContext<'_> {
             )));
         }
         Ok(Some(duplicate_binding_projection_only(plan, label, alias)?))
+    }
+}
+
+impl LoweringContext<'_> {
+    /// SQL scalar histories retain productive NULL and all pop variants that
+    /// have a homogeneous result type. Mixed over multiple entries needs a
+    /// scalar-or-list runtime value and deliberately keeps a native boundary.
+    pub(super) fn scalar_select_history(&self, plan: &LogicalPlan, args: &[IrExpr]) -> RelResult<Option<Expr>> {
+        let [_, IrExpr::Binding(label), IrExpr::Binding(history), _, IrExpr::Lit(Lit::String(pop))] = args else { return Ok(None); };
+        // Last pop is exactly the current binding, including productive
+        // NULL; its separate presence filter already consults history.
+        if pop == "last" { return Ok(None); }
+        if !matches!(plan_column_type(plan, history), Some(DataType::List(_) | DataType::LargeList(_))) {
+            return Ok(None);
+        }
+        if plan.schema().field_with_unqualified_name(history)?.is_nullable() {
+            return Err(RelError::Unsupported("nullable select history may require map fallback".into()));
+        }
+        use datafusion::functions_nested::expr_fn::array_element;
+        let value = col_exact(history);
+        Ok(Some(match pop.as_str() {
+            "all" => value,
+            "last" => array_element(value, lit(-1_i64)),
+            "first" => array_element(value, lit(1_i64)),
+            "mixed" if self.gremlin_label_binds.get(label).copied().unwrap_or(0) <= 1 => array_element(value, lit(1_i64)),
+            _ => return Err(RelError::Unsupported("heterogeneous scalar/list select pop requires native values".into())),
+        }))
     }
 }

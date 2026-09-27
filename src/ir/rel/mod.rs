@@ -38,6 +38,7 @@ mod operators;
 use aggregates::*;
 mod branches;
 mod collection_operators;
+mod range;
 mod expansion;
 mod plan_walk;
 mod projection;

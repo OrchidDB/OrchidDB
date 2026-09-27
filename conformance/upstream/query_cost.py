@@ -1,11 +1,24 @@
 """Versioned observational cost reporting; never changes conformance outcomes."""
 import hashlib
 METRIC_VERSION = 1
+ATTRIBUTION_VERSION = 2
+
+def transport_phase(transport):
+    if transport.get('phase'):
+        return transport['phase']
+    step = transport.get('step')
+    if not step:
+        return 'query'  # Older non-Gherkin transports had no step metadata.
+    if step in ('the traversal of', 'iterated to list', 'iterated next'):
+        return 'query'
+    if step == 'the graph initializer of' or step.startswith('using the parameter '):
+        return 'fixture'
+    return 'observation'
 
 def collect(adapter, result):
     entries = list(getattr(adapter, 'query_costs', [])) if adapter else []
     if not entries:
-        entries = [{'query': t.get('query', ''), 'phase': 'query', 'step': t.get('step'),
+        entries = [{'query': t.get('query', ''), 'phase': transport_phase(t), 'step': t.get('step'),
                     'cost': t.get('query_cost')} for t in result.get('query_transports', [])]
     # Fixture construction and TCK side-effect observation are retained for
     # inspection, but must not dominate the tested query's ranking.
@@ -15,7 +28,8 @@ def collect(adapter, result):
                 and e['cost'].get('work_units') is not None]
     elapsed = sum(e['cost'].get('request_elapsed_micros', 0) for e in selected
                   if isinstance(e.get('cost'), dict))
-    return {'metric_version': METRIC_VERSION, 'queries': entries,
+    return {'metric_version': METRIC_VERSION, 'attribution_version': ATTRIBUTION_VERSION, 'queries': entries,
+            'helper_query_count': len(entries) - len(selected),
             'query_count': len(selected), 'measured_queries': len(measured),
             'coverage': ('unavailable' if result.get('status') in ('timeout','adapter-error','fail') else 'not_executed') if not selected else
                         'boundary_work' if len(measured) == len(selected) else
@@ -40,6 +54,8 @@ def summarize(results, threshold=100000, baseline=None):
         old = previous.get(row['id'], {})
         a, b = old.get('query_cost', {}), row.get('query_cost', {})
         if (a.get('metric_version') != METRIC_VERSION or b.get('metric_version') != METRIC_VERSION
+            or a.get('attribution_version', 1) != b.get('attribution_version', 1)
+            or 'queries' not in a or 'queries' not in b
             or a.get('coverage') != 'boundary_work' or b.get('coverage') != 'boundary_work'
             or a.get('work_units') is None or b.get('work_units') is None
             or old.get('case_sha256') != row.get('case_sha256') or signature(a) != signature(b)):

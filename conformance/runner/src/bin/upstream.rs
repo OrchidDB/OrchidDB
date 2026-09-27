@@ -1,5 +1,7 @@
 #[path = "../gremlin_bindings.rs"]
 mod gremlin_bindings;
+#[path = "../fixture_cache.rs"]
+mod fixture_cache;
 use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
@@ -138,13 +140,16 @@ async fn rdf(req:&Value)->Result<Value,String>{
 #[tokio::main]
 async fn main(){
  let mut engine=GraphEngine::in_memory().unwrap();engine.set_sql_timeout(std::time::Duration::from_secs(8));
+ let mut fixtures=fixture_cache::FixtureCache::default();
  for line in io::stdin().lock().lines(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
  let op=req["op"].as_str().unwrap_or("cypher");
  let request_started=std::time::Instant::now();
  let result:Result<Value,String>=match op{
- "fixture"=>fixture_graph(&req).and_then(|graph|engine.replace_graph(graph).map(|_|json!({"ok":true}))),
+ "fixture"=>fixture_graph(&req).and_then(|graph|fixtures.install(&mut engine,req["fixture_key"].as_str(),graph).map(|_|json!({"ok":true}))),
+ "fixture-reset"=>req["fixture_key"].as_str().ok_or_else(||"fixture_key is required".to_string()).and_then(|key|fixtures.reset(&mut engine,key)).map(|_|json!({"ok":true})),
  "reset"=>{let graph=PropertyGraph::new();graph.enable_null_property_values(req["allow_null_property_values"].as_bool().unwrap_or(false));engine.replace_graph(graph).map(|_|json!({"ok":true}))},
+ "cypher-snapshot"=>engine.cypher_state_snapshot().map(|snapshot|json!({"native_snapshot":snapshot})),
  "rdf"=>rdf(&req).await,
  "register-procedure"=>{
   use orchiddb::ir::procedures::{ProcedureField,ProcedureSignature,TableProcedure};

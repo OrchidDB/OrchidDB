@@ -278,7 +278,7 @@ async fn sql_prefix_then_datafusion_jvm_and_datafusion_suffix() {
         "only the prefix should execute in SQL: {stats:?}"
     );
     assert!(
-        stats.physical_plan.contains("JvmExec"),
+        stats.physical_plan.contains("JvmExec") || stats.physical_plan.contains("Pruned(Jvm)Exec"),
         "{}",
         stats.physical_plan
     );
@@ -576,4 +576,68 @@ async fn sack_supplier_split_and_update_are_relational_jvm_operators() {
     let failed=HashMap::from([("update".into(),GremlinBinding::Lambda("sack, vertex -> vertex.property('lost',true); throw new IllegalStateException('sack callback failed')".into()))]);
     assert!(engine.gremlin_with_bindings("g.withSack(1).V().sack(update)",&failed).await.is_err());
     assert_eq!(engine.gremlin("g.V().has('lost')").await.unwrap().returned.batch.num_rows(),0);
+}
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn engine_reuses_worker_but_clears_script_and_graph_bindings_between_queries() {
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
+    let first = plan(jvm(jvm(input(vec![Value::Long(1)]),
+        "def sameStatement() { 42L }; leakedGraph = graph; ProcessHandle.current().pid()", JvmMode::Map),
+        "assert sameStatement() == 42L; current", JvmMode::Map));
+    let result = engine.execute_plan(&first).await.unwrap();
+    let pid = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
+    engine.gremlin("g.addV('fresh')").await.unwrap();
+    let clean = plan(jvm(input(vec![Value::Long(2)]),
+        "assert !binding.hasVariable('leakedGraph'); try { sameStatement(); throw new AssertionError('function leaked') } catch (groovy.lang.MissingMethodException expected) {}; assert g.V().count().next() == 1L; ProcessHandle.current().pid()", JvmMode::Map));
+    let result = engine.execute_plan(&clean).await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), pid);
+    let failing = plan(jvm(input(vec![Value::Long(1)]),
+        "g.addV('leaked').iterate(); throw new IllegalStateException('expected failure')", JvmMode::Map));
+    assert!(engine.execute_plan(&failing).await.unwrap_err().contains("expected failure"));
+    let result = engine.execute_plan(&clean).await.unwrap();
+    let replacement = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
+    assert_ne!(replacement, pid, "failed worker must be discarded");
+    assert_eq!(engine.gremlin("g.V().count()").await.unwrap().returned.batch.num_rows(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires the production JVM classpath"]
+async fn dropping_query_cancels_worker_and_next_query_gets_fresh_controls() {
+    let mut engine = orchiddb::engine::GraphEngine::in_memory().unwrap();
+    let pid_query = plan(jvm(input(vec![Value::Long(1)]), "ProcessHandle.current().pid()", JvmMode::Map));
+    let result = engine.execute_plan(&pid_query).await.unwrap();
+    let pid = arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap();
+    let blocking = plan(jvm(input(vec![Value::Long(1)]),
+        "g.addV('cancelled').iterate(); while(true) { Thread.sleep(10) }; 0L", JvmMode::Map));
+    assert!(tokio::time::timeout(Duration::from_millis(300), engine.execute_plan(&blocking)).await.is_err());
+    // An interrupted caller-owned transaction is explicitly rolled back.
+    if engine.in_transaction() { engine.rollback().unwrap(); }
+    let result = engine.execute_plan(&pid_query).await.unwrap();
+    assert_ne!(arrow::util::display::array_value_to_string(result.returned.batch.column(0), 0).unwrap(), pid);
+    let empty = engine.gremlin("g.V().count()").await.unwrap();
+    assert_eq!(arrow::util::display::array_value_to_string(empty.returned.batch.column(0), 0).unwrap(), "0");
+}
+
+#[test]
+#[ignore = "requires the production JVM classpath"]
+fn shared_pool_restarts_when_configuration_changes_and_resets_deadlines() {
+    let pool = orchiddb::ir::jvm::JvmWorkerPool::default();
+    let graph = PropertyGraph::new();
+    let pid_query = plan(jvm(input(vec![Value::Long(1)]), "ProcessHandle.current().pid()", JvmMode::Map));
+    let mut first = execution(); first.worker = pool.clone();
+    let pid = execute_rows_with_jvm(&pid_query, &graph, first).unwrap()[0].get("current");
+    let mut next = execution(); next.worker = pool.clone();
+    assert_eq!(execute_rows_with_jvm(&pid_query, &graph, next).unwrap()[0].get("current"), pid);
+    let mut changed = execution(); changed.worker = pool.clone();
+    changed.config.as_mut().unwrap().classpath.push_str(":.");
+    let next_pid = execute_rows_with_jvm(&pid_query, &graph, changed.clone()).unwrap()[0].get("current");
+    assert_ne!(next_pid, pid);
+    let mut expired = execution(); expired.worker = pool.clone();
+    expired.config = changed.config.clone();
+    expired.deadline = Some(Instant::now() + Duration::from_millis(50));
+    let blocking = plan(jvm(input(vec![Value::Long(1)]), "Thread.sleep(5000); current", JvmMode::Map));
+    assert!(execute_rows_with_jvm(&blocking, &graph, expired).unwrap_err().contains("deadline"));
+    let mut fresh = execution(); fresh.worker = pool; fresh.config = changed.config;
+    assert_ne!(execute_rows_with_jvm(&pid_query, &graph, fresh).unwrap()[0].get("current"), next_pid);
 }

@@ -266,6 +266,108 @@ pub(crate) fn children(node: &Node) -> Vec<&Node> {
     }
 }
 
+/// Mutable traversal with the same exhaustive child coverage as `children`.
+pub(crate) fn children_mut(node: &mut Node) -> Vec<&mut Node> {
+    use Node::*;
+    match node {
+        GraphSideEffect { value_input, input, .. } => vec![input, value_input],
+        GraphGroupSideEffect { input, key_input, value, .. } => {
+            let mut nodes = vec![input.as_mut(), key_input.as_mut()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value { nodes.push(traversal); }
+            nodes
+        }
+        GraphGroupMap { input, value, .. } => {
+            let mut nodes = vec![input.as_mut()];
+            if let crate::ir::plan::GroupValue::Traversal { traversal, .. } = value { nodes.push(traversal); }
+            nodes
+        }
+        GraphMerge {
+            input,
+            match_arm,
+            create_arm,
+            ..
+        } => vec![input, match_arm, create_arm],
+        GraphReturn { input, .. }
+        | GraphConstructTriples { input, .. }
+        | GraphDescribe { input, .. }
+        | GraphAsk { input, .. }
+        | GraphBind { input, .. }
+        | GraphPathPattern { input, .. }
+        | GraphPathFilter { input, .. }
+        | GraphCreate { input, .. }
+        | GraphSetProperty { input, .. }
+        | GraphDelete { input, .. }
+        | GraphFilter { input, .. }
+        | GraphCurrentProject { input, .. }
+        | GraphJvm { input, .. }
+        | GraphAggregate { input, .. }
+        | GraphGroupCountSideEffect { input, .. }
+        | GraphReadSideEffect { input, .. }
+        | GraphCap { input, .. }
+        | GraphShortestPath { input, .. }
+        | GraphDistinct { input, .. }
+        | GraphSort { input, .. }
+        | GraphSample { input, .. }
+        | GraphSlice { input, .. }
+        | GraphSliceExpr { input, .. }
+        | GraphBarrier { input, .. }
+        | GraphUnwind { input, .. }
+        | GraphQuantifier { input, .. }
+        | GraphCollect { input, .. }
+        | GraphListComprehension { input, .. }
+        | GraphSelect { input, .. }
+        | GraphExpand { input, .. }
+        | GraphProject { input, .. } => vec![input],
+        GraphJoin { left, right, .. }
+        | GraphApply { left, right, .. }
+        | GraphUnion { left, right, .. }
+        | GraphSparqlMinus { left, right, .. } => vec![left, right],
+        GraphRepeat {
+            emit,
+            seed,
+            body,
+            until_traversal,
+            prefix_traversal,
+            ..
+        } => {
+            let mut out = vec![seed.as_mut(), body.as_mut()];
+            out.extend(until_traversal.iter_mut().map(|node| node.as_mut()));
+            out.extend(prefix_traversal.iter_mut().map(|node| node.as_mut()));
+            if let EmitMode::AfterEachIfTraversal(traversal) = emit {
+                out.push(traversal);
+            }
+            out
+        }
+        GraphCoalesce { input, arms, .. } => {
+            let mut out = vec![input.as_mut()];
+            out.extend(arms.iter_mut());
+            out
+        }
+        GraphChoose {
+            input,
+            arms,
+            default,
+            ..
+        } => {
+            let mut out = vec![input.as_mut()];
+            out.extend(arms.iter_mut().map(|arm| &mut arm.body));
+            out.extend(default.iter_mut().map(|node| node.as_mut()));
+            out
+        }
+        GraphProcedureCall { input, .. } => input.iter_mut().map(|node| node.as_mut()).collect(),
+        GraphExtension { inputs, .. } => inputs.iter_mut().collect(),
+        GraphNodeScan { .. }
+        | GraphRelScan { .. }
+        | GraphValues { .. }
+        | GraphOneRow
+        | GraphEmpty
+        | GraphCorrelate { .. }
+        | GraphSparqlTriplePattern { .. }
+        | GraphSparqlGraphNames { .. }
+        | GraphRdfPropertyPath { .. } => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

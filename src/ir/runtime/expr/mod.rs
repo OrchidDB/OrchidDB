@@ -21,6 +21,15 @@ use super::Row;
 use super::scalar::{eval_call, runtime_list};
 use super::{RuntimeError, IrResult};
 
+// Expression evaluation already owns its source value. Consume real lists
+// instead of cloning every nested item through the borrowed compatibility API.
+fn owned_runtime_list(source: Value) -> Result<Vec<Value>, Value> {
+    match source {
+        Value::List(items) | Value::BulkSet(items) | Value::Path(items) => Ok(items),
+        other => runtime_list(&other).ok_or(other),
+    }
+}
+
 pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> {
     match expr {
         IrExpr::Lit(lit) => Ok(match lit {
@@ -166,10 +175,10 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             map,
         } => {
             let source = eval(collection, row, graph)?;
-            let items = match runtime_list(&source) {
-                Some(items) => items,
-                None if matches!(source, Value::Null) => return Ok(Value::Null),
-                None => vec![source],
+            let items = match owned_runtime_list(source) {
+                Ok(items) => items,
+                Err(Value::Null) => return Ok(Value::Null),
+                Err(source) => vec![source],
             };
             let mut iter = items.into_iter();
             let Some(mut acc) = iter.next() else {
@@ -177,8 +186,8 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     "Cannot execute list_reduce on an empty list".to_string(),
                 ));
             };
+            let mut scratch = row.clone();
             for value in iter {
-                let mut scratch = row.clone();
                 scratch.bindings.insert(accumulator.clone(), acc);
                 scratch.bindings.insert(item.clone(), value);
                 acc = eval(map, &scratch, graph)?;
@@ -187,19 +196,24 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
         }
         IrExpr::ListTransform { list, item, map } => {
             let source = eval(list, row, graph)?;
-            let items = match runtime_list(&source) {
-                Some(items) => items,
-                None if matches!(source, Value::Null) => return Ok(Value::Null),
-                None => {
+            let items = match owned_runtime_list(source) {
+                Ok(items) => items,
+                Err(Value::Null) => return Ok(Value::Null),
+                Err(source) => {
                     return Err(RuntimeError::Type(format!(
                         "list_transform expects a list, got {}",
                         source.type_name()
                     )));
                 }
             };
+            if matches!(map.as_ref(), IrExpr::Binding(binding) if binding == item) {
+                return Ok(Value::List(items));
+            }
             let mut out = Vec::with_capacity(items.len());
+            // A lambda has one lexical environment. eval only borrows it;
+            // rebinding the item cannot affect the outer or nested scope.
+            let mut scratch = row.clone();
             for value in items {
-                let mut scratch = row.clone();
                 scratch.bindings.insert(item.clone(), value);
                 out.push(eval(map, &scratch, graph)?);
             }
@@ -211,10 +225,10 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             predicate,
         } => {
             let source = eval(list, row, graph)?;
-            let items = match runtime_list(&source) {
-                Some(items) => items,
-                None if matches!(source, Value::Null) => return Ok(Value::Null),
-                None => {
+            let items = match owned_runtime_list(source) {
+                Ok(items) => items,
+                Err(Value::Null) => return Ok(Value::Null),
+                Err(source) => {
                     return Err(RuntimeError::Type(format!(
                         "list_filter expects a list, got {}",
                         source.type_name()
@@ -222,11 +236,12 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                 }
             };
             let mut out = Vec::with_capacity(items.len());
+            let mut scratch = row.clone();
             for value in items {
-                let mut scratch = row.clone();
-                scratch.bindings.insert(item.clone(), value.clone());
+                scratch.bindings.insert(item.clone(), value);
+                // Evaluate once for each item, including volatile predicates.
                 match eval(predicate, &scratch, graph)? {
-                    Value::Bool(true) => out.push(value),
+                    Value::Bool(true) => out.push(scratch.bindings.remove(item).expect("bound list item")),
                     Value::Bool(false) | Value::Null => {}
                     other => {
                         return Err(RuntimeError::Type(format!(
@@ -418,4 +433,47 @@ mod tests {
         let value = eval(&expr, &row, &graph).unwrap();
         assert_eq!(value, Value::List(vec![Value::Int(2), Value::Int(2)]));
     }
+    #[test]
+    fn list_scratch_scope_is_local_and_volatile_maps_run_per_item() {
+        let row = Row::new().with("x", Value::Int(99));
+        let graph = empty_graph();
+        let identity = IrExpr::ListTransform {
+            list: Box::new(list_lit(vec![1, 2, 3])), item: "x".into(),
+            map: Box::new(IrExpr::Binding("x".into())),
+        };
+        assert_eq!(eval(&identity,&row,&graph).unwrap(), Value::List(vec![Value::Int(1),Value::Int(2),Value::Int(3)]));
+        assert_eq!(row.get("x"),Value::Int(99));
+        let volatile = IrExpr::ListTransform {
+            list: Box::new(list_lit(vec![1, 2, 3])), item: "x".into(),
+            map: Box::new(IrExpr::Call { name: "gen_random_uuid".into(), args: vec![] }),
+        };
+        let Value::List(values) = eval(&volatile,&row,&graph).unwrap() else { panic!("list result"); };
+        assert_eq!(values.len(),3);
+        assert_ne!(values[0],values[1]);
+        assert_ne!(values[1],values[2]);
+        let invalid = IrExpr::ListTransform {
+            list: Box::new(IrExpr::lit_int(3)), item: "x".into(),
+            map: Box::new(IrExpr::Binding("x".into())),
+        };
+        assert!(eval(&invalid,&row,&graph).is_err(),"identity mapping must still validate the source");
+    }
+
+    #[test]
+    fn nested_filters_do_not_leak_shadowed_bindings() {
+        let row = Row::new().with("x", Value::Int(99));
+        let inner = IrExpr::ListFilter {
+            list: Box::new(list_lit(vec![1,2])), item:"x".into(),
+            predicate:Box::new(IrExpr::Binary { op:BinaryOp::Eq, lhs:Box::new(IrExpr::Binding("x".into())), rhs:Box::new(IrExpr::lit_int(2)) }),
+        };
+        let expr = IrExpr::ListTransform {
+            list:Box::new(list_lit(vec![5,6])), item:"x".into(),
+            map:Box::new(IrExpr::List(vec![inner,IrExpr::Binding("x".into())])),
+        };
+        assert_eq!(eval(&expr,&row,&empty_graph()).unwrap(),Value::List(vec![
+            Value::List(vec![Value::List(vec![Value::Int(2)]),Value::Int(5)]),
+            Value::List(vec![Value::List(vec![Value::Int(2)]),Value::Int(6)]),
+        ]));
+        assert_eq!(row.get("x"),Value::Int(99));
+    }
+
 }

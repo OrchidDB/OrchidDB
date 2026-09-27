@@ -43,6 +43,23 @@ pub(super) fn encode_expression_literals(
     dialect: SqlDialect,
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
+        if let Expr::BinaryExpr(binary) = &inner {
+            use datafusion::logical_expr::{Operator, ScalarUDF, Signature, Volatility, expr_fn::SimpleScalarUDF};
+            let name = match binary.op {
+                Operator::IsNotDistinctFrom => Some("__orchiddb_is_not_distinct_from"),
+                Operator::IsDistinctFrom => Some("__orchiddb_is_distinct_from"),
+                _ => None,
+            };
+            if let Some(name) = name {
+                // SQL-only placeholder bypasses DF53's missing operator
+                // unparser. The AST adapter restores the exact operator,
+                // evaluating each operand once, including volatile operands.
+                let function = ScalarUDF::from(SimpleScalarUDF::new_with_signature(name,
+                    Signature::any(2, Volatility::Immutable), DataType::Boolean,
+                    Arc::new(|_| Err(DataFusionError::Internal("SQL-only comparison placeholder".into())))));
+                return Ok(Transformed::yes(function.call(vec![(*binary.left).clone(), (*binary.right).clone()])));
+            }
+        }
         match &inner {
             Expr::Literal(value, _) if value.is_null() && matches!(value.data_type(),
                 DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) => {

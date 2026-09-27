@@ -25,4 +25,25 @@ class QueryCostTests(unittest.TestCase):
     def test_no_execution_is_distinct_from_zero_measured_work(self):
         self.assertEqual(collect(None,{})['coverage'],'not_executed')
         self.assertEqual(collect(SimpleNamespace(query_costs=[self.entry(work=0)]),{})['work_units'],0)
+    def test_gremlin_assertion_helpers_and_fixture_queries_are_not_ranked(self):
+        transports = [
+            {'step': step, 'query': step, 'query_cost': self.entry(work=work)['cost']}
+            for step, work in [('the graph initializer of', 10000),
+                               ('using the parameter x defined as v[marko]', 100),
+                               ('the traversal of', 535),
+                               ('the result should be ordered', 14688)]]
+        cost = collect(None, {'query_transports': transports})
+        self.assertEqual(cost['work_units'], 535)
+        self.assertEqual(cost['query_count'], 1)
+        self.assertEqual(cost['helper_query_count'], 3)
+        self.assertEqual([e['phase'] for e in cost['queries']],
+                         ['fixture', 'fixture', 'query', 'observation'])
+    def test_cost_comparison_requires_matching_attribution_and_full_query_sequence(self):
+        cost = collect(SimpleNamespace(query_costs=[self.entry()]), {})
+        row = {'id': 'case', 'case_sha256': 'same', 'query_cost': cost}
+        for missing in ('attribution_version', 'queries'):
+            old = {**cost}
+            old.pop(missing)
+            self.assertEqual(summarize([row], baseline={'results': [
+                {**row, 'query_cost': old}]} )['baseline_comparisons'], [])
 if __name__=='__main__':unittest.main()

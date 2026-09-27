@@ -74,10 +74,17 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         let mut deps = referenced_ctes(&cte.term, &names);
         deps.remove(&cte.name);
         let term_sql = unparse_one(&cte.term, &unparser, dialect)?;
+        // Weighted frontiers and per-occurrence apply inputs are deliberate
+        // shared relations. Keep DuckDB/Postgres from repeatedly inlining
+        // their joins/windows into every correlated consumer.
+        let materialized = if cte.name.starts_with("__w_sql_cte_weighted_repeat_")
+            || cte.name.starts_with("__w_sql_cte_apply_row_") {
+            " MATERIALIZED"
+        } else { "" };
         pending.push((
             cte.name.clone(),
             deps,
-            format!("{} AS (\n  {term_sql}\n)", dialect.quote_ident(&cte.name)),
+            format!("{} AS{materialized} (\n  {term_sql}\n)", dialect.quote_ident(&cte.name)),
         ));
     }
     let mut definitions = Vec::with_capacity(pending.len());
@@ -125,14 +132,16 @@ fn unparse_one(
     let mut statement = unparser
         .plan_to_sql(plan)
         .map_err(|err| SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name())))?;
+    prepare_ranges(plan, &mut statement, dialect)?;
     super::functions::prepare_ast(&mut statement, dialect)?;
     restore_aggregate_ordering(plan, unparser, dialect, statement.to_string())
 }
 
 fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec<RecursiveCte>)> {
-    let mut plain_ctes = Vec::new();
-    let mut recursive_ctes = Vec::new();
+    let mut plain_ctes: Vec<PlainCte> = Vec::new();
+    let mut recursive_ctes: Vec<RecursiveCte> = Vec::new();
     let mut seen = BTreeSet::new();
+    let mut plain_versions = std::collections::BTreeMap::<String, Vec<usize>>::new();
     let transformed = plan.transform_up(|node| match node {
         LogicalPlan::RecursiveQuery(recursive) => {
             let schema = Arc::new(recursive.static_term.schema().as_arrow().clone());
@@ -144,7 +153,16 @@ fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec
                 Vec::new(),
                 None,
             )?;
-            if seen.insert(recursive.name.clone()) {
+            if !seen.insert(recursive.name.clone()) {
+                let same = recursive_ctes.iter().any(|existing| existing.name == recursive.name
+                    && existing.static_term == *recursive.static_term
+                    && existing.recursive_term == *recursive.recursive_term
+                    && existing.is_distinct == recursive.is_distinct);
+                if !same {
+                    return Err(datafusion::common::DataFusionError::Plan(format!(
+                        "conflicting definitions for recursive CTE {}", recursive.name)));
+                }
+            } else {
                 recursive_ctes.push(RecursiveCte {
                     name: recursive.name,
                     static_term: recursive.static_term.as_ref().clone(),
@@ -158,25 +176,118 @@ fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec
             if alias.alias.table().starts_with("__w_collect_unique")
                 || alias.alias.table().starts_with("__w_sql_cte_") =>
         {
-            let name = alias.alias.table().to_string();
+            let original = alias.alias.table().to_string();
+            // Optimizers may push different filters/projections into copies
+            // of one named boundary. A name alone is not semantic identity:
+            // reusing its first definition would silently discard predicates.
+            let reused = plain_versions.get(&original).into_iter().flatten()
+                .find(|&&index| plain_ctes[index].term == *alias.input)
+                .map(|&index| plain_ctes[index].name.clone());
+            let name = if let Some(name) = reused { name } else {
+                let mut name = original.clone();
+                let mut version = 0;
+                while !seen.insert(name.clone()) {
+                    version += 1;
+                    name = format!("{original}_variant_{version}");
+                }
+                plain_versions.entry(original.clone()).or_default().push(plain_ctes.len());
+                plain_ctes.push(PlainCte { name: name.clone(), term: alias.input.as_ref().clone() });
+                name
+            };
             let schema = Arc::new(alias.schema.as_arrow().clone());
             let work_table = Arc::new(CteWorkTable::new(&name, schema));
             let scan = TableScan::try_new(
-                name.clone(),
-                provider_as_source(work_table),
-                None,
-                Vec::new(),
-                None,
+                name.clone(), provider_as_source(work_table), None, Vec::new(), None,
             )?;
-            if seen.insert(name.clone()) {
-                plain_ctes.push(PlainCte {
-                    name,
-                    term: alias.input.as_ref().clone(),
-                });
-            }
-            Ok(Transformed::yes(LogicalPlan::TableScan(scan)))
+            let replacement = if name == original {
+                LogicalPlan::TableScan(scan)
+            } else {
+                datafusion::logical_expr::LogicalPlanBuilder::from(LogicalPlan::TableScan(scan))
+                    .alias(alias.alias)?.build()?
+            };
+            Ok(Transformed::yes(replacement))
         }
         other => Ok(Transformed::no(other)),
     })?;
     Ok((transformed.data, plain_ctes, recursive_ctes))
+}
+
+/// Replace only providers created by range lowering, never user table names.
+fn prepare_ranges(plan: &LogicalPlan, statement: &mut datafusion::sql::sqlparser::ast::Statement, dialect: SqlDialect) -> SqlResult<()> {
+    use datafusion::sql::sqlparser::{ast, dialect::GenericDialect, parser::Parser};
+    use std::{collections::BTreeMap, ops::ControlFlow};
+    let mut ranges = BTreeMap::new();
+    plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::TableScan(scan) = node {
+            if let Ok(provider) = datafusion::datasource::source_as_provider(&scan.source) {
+                if let Some(range) = provider.as_any().downcast_ref::<super::super::range::IntegerRange>() {
+                    let sql = format!("SELECT * FROM generate_series({}, {}, {}) AS {}({})", range.start, range.stop, range.step,
+                        dialect.quote_ident(scan.table_name.table()), dialect.quote_ident(&range.column));
+                    let mut parsed = Parser::parse_sql(&GenericDialect, &sql).map_err(|error| datafusion::common::DataFusionError::Plan(error.to_string()))?;
+                    if let ast::Statement::Query(query) = parsed.remove(0) {
+                        if let ast::SetExpr::Select(select) = *query.body {
+                            ranges.insert(scan.table_name.table().to_owned(), select.from[0].relation.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    struct Replace(BTreeMap<String, ast::TableFactor>);
+    impl ast::VisitorMut for Replace {
+        type Break = ();
+        fn post_visit_table_factor(&mut self, factor: &mut ast::TableFactor) -> ControlFlow<()> {
+            if let ast::TableFactor::Table { name, alias, .. } = factor {
+                if let Some(mut replacement) = self.0.get(&name.to_string().trim_matches('"').to_owned()).cloned() {
+                    if let (Some(alias), ast::TableFactor::Table { alias: target, .. }) = (alias, &mut replacement) {
+                        if let Some(target) = target { target.name = alias.name.clone(); }
+                    }
+                    *factor = replacement;
+                }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let _ = ast::VisitMut::visit(statement, &mut Replace(ranges));
+    Ok(())
+}
+
+#[cfg(all(test, feature = "duckdb"))]
+mod cte_tests {
+    use super::*;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::datasource::empty::EmptyTable;
+    use datafusion::logical_expr::LogicalPlanBuilder;
+    use datafusion::prelude::{col, lit};
+
+    #[test]
+    fn conflicting_named_ctes_keep_each_filter() {
+        let schema = Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, false)]));
+        let source = provider_as_source(Arc::new(EmptyTable::new(schema)));
+        let input = LogicalPlanBuilder::scan("numbers", source, None).unwrap().build().unwrap();
+        let branch = |n| LogicalPlanBuilder::from(input.clone())
+            .filter(col("n").eq(lit(n))).unwrap()
+            .alias("__w_sql_cte_shared").unwrap().build().unwrap();
+        let plan = LogicalPlanBuilder::from(branch(1_i64)).union(branch(2_i64)).unwrap().build().unwrap();
+        let sql = unparse_plan(plan, SqlDialect::DuckDb).unwrap();
+        let db = duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE numbers(n BIGINT); INSERT INTO numbers VALUES (1),(2),(3)").unwrap();
+        let mut statement = db.prepare(&sql).unwrap();
+        let mut values = statement.query_map([], |row| row.get::<_, i64>(0)).unwrap()
+            .collect::<duckdb::Result<Vec<_>>>().unwrap();
+        values.sort();
+        assert_eq!(values, vec![1, 2], "{sql}");
+    }
+
+    #[test]
+    fn identical_named_ctes_share_one_definition() {
+        let schema = Arc::new(Schema::new(vec![Field::new("n", DataType::Int64, false)]));
+        let source = provider_as_source(Arc::new(EmptyTable::new(schema)));
+        let input = LogicalPlanBuilder::scan("numbers", source, None).unwrap()
+            .alias("__w_sql_cte_shared").unwrap().build().unwrap();
+        let plan = LogicalPlanBuilder::from(input.clone()).union(input).unwrap().build().unwrap();
+        let (_, definitions, _) = extract_ctes(plan).unwrap();
+        assert_eq!(definitions.len(), 1);
+    }
 }

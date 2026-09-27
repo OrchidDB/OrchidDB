@@ -36,6 +36,7 @@ public class UpstreamGremlin {
  static boolean jvmProfile(){return "orchiddb-jvm".equals(backend)||"orchiddb-computer".equals(backend);}
  static class Bridge {
   Process process; BufferedReader output; BufferedWriter input; String engineInstance;
+  final FixtureSession fixtures=new FixtureSession();
   Bridge() throws Exception {
    var builder=new ProcessBuilder(System.getenv().getOrDefault("CONFORMANCE_PYTHON","python3"),"conformance/upstream/bridge.py",backend).redirectError(ProcessBuilder.Redirect.INHERIT);
    builder.environment().putIfAbsent("ORCHIDDB_GREMLIN_IO_JAVA",System.getProperty("java.home")+"/bin/java");
@@ -44,7 +45,10 @@ public class UpstreamGremlin {
    output=new BufferedReader(new InputStreamReader(process.getInputStream()));input=new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
   }
   synchronized JsonNode send(Object request) throws Exception {
-   input.write(json.writeValueAsString(request)+"\n");input.flush();String line=output.readLine();
+   return sendJson(json.writeValueAsString(request));
+  }
+  synchronized JsonNode sendJson(String request) throws Exception {
+   input.write(request+"\n");input.flush();String line=output.readLine();
    if(line==null)throw new IOException("Fixture bridge exited");
    JsonNode response=json.readTree(line);
    if(backend.equals("orchiddb") && response.has("engine_instance")) {
@@ -54,6 +58,53 @@ public class UpstreamGremlin {
    }
    return response;
   }
+ }
+ /** Cache bytes, never a mutable fixture graph or its elements. */
+ static final class FixturePayloadCache {
+  static final int CAPACITY=16;
+  private final LinkedHashMap<String,String> payloads=new LinkedHashMap<>(16,0.75f,true);
+  synchronized String payload(GraphData data,boolean allowNullPropertyValues) throws Exception {
+   String key=fixtureKey(data,allowNullPropertyValues);
+   String found=payloads.get(key);
+   if(found!=null)return found;
+   List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
+   try(TinkerGraph fixture=standardFixture(data)) {
+    fixture.vertices().forEachRemaining(v->nodes.add(fixtureNode(v,"orchiddb")));
+    fixture.edges().forEachRemaining(e->edges.add(fixtureEdge(e)));
+   }
+   String payload=json.writeValueAsString(Map.of("op","fixture","fixture_key",key,
+    "name",data==null?"empty":data.name().toLowerCase(Locale.ROOT),"nodes",nodes,"edges",edges,
+    "allow_null_property_values",allowNullPropertyValues));
+   payloads.put(key,payload);
+   if(payloads.size()>CAPACITY)payloads.remove(payloads.keySet().iterator().next());
+   return payload;
+  }
+ }
+ static final FixturePayloadCache orchidFixturePayloads=new FixturePayloadCache();
+ static String fixtureKey(GraphData data,boolean allowNullPropertyValues) {
+  return "tinkerpop-3.7.4:"+(data==null?"EMPTY":data.name())+":nulls="+allowNullPropertyValues;
+ }
+ @FunctionalInterface interface FixtureTransport { JsonNode send(String request) throws Exception; }
+ /** Registration belongs to one runner connection; reset must be acknowledged. */
+ static final class FixtureSession {
+  private final Set<String> registered=new HashSet<>();
+  void load(GraphData data,boolean allowNullPropertyValues,FixtureTransport transport) throws Exception {
+   String key=fixtureKey(data,allowNullPropertyValues);
+   String request=registered.contains(key)
+    ?json.writeValueAsString(Map.of("op","fixture-reset","fixture_key",key))
+    :orchidFixturePayloads.payload(data,allowNullPropertyValues);
+   JsonNode response=transport.send(request);
+   if(response.has("error"))throw new IOException("fixture-adapter: "+response.get("error").asText());
+   if(!response.path("ok").asBoolean(false))throw new IOException("fixture-adapter: missing successful fixture acknowledgement");
+   registered.add(key);
+  }
+ }
+ static TinkerGraph standardFixture(GraphData data) {
+  return switch(data==null?"EMPTY":data.name()) {
+   case "MODERN" -> TinkerFactory.createModern();case "CLASSIC" -> TinkerFactory.createClassic();
+   case "CREW" -> TinkerFactory.createTheCrew();case "SINK" -> TinkerFactory.createKitchenSink();
+   case "GRATEFUL" -> TinkerFactory.createGratefulDead();default -> {var c=new BaseConfiguration();c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER,"LONG");yield TinkerGraph.open(c);}
+  };
  }
  static Map<String,String> propertyTypes(Map<String,Object> props) {
   Map<String,String> types=new LinkedHashMap<>();props.forEach((key,value)->types.put(key,value.getClass().getSimpleName()));return types;
@@ -145,6 +196,11 @@ public class UpstreamGremlin {
   return new org.apache.tinkerpop.gremlin.structure.util.detached.DetachedProperty<>(
    value.get("key").asText(),nativeValue(value.get("value")),(Element)owner);
  }
+ static String costPhase(String step) {
+  if(step==null||step.isEmpty()||Set.of("the traversal of","iterated to list","iterated next").contains(step))return "query";
+  if(step.equals("the graph initializer of")||step.startsWith("using the parameter "))return "fixture";
+  return "observation";
+ }
  static Bridge bridge;
  // Rows already carry the engine's expanded multiplicity and ordered sequence.
  // InjectStep uses a TraverserSet and merges separated duplicates; applying it
@@ -180,11 +236,11 @@ public class UpstreamGremlin {
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
   public GraphTraversalSource getGraphTraversalSource(GraphData data) {
    try {
-    TinkerGraph fixture=switch(data==null?"EMPTY":data.name()) {
-     case "MODERN" -> TinkerFactory.createModern();case "CLASSIC" -> TinkerFactory.createClassic();
-     case "CREW" -> TinkerFactory.createTheCrew();case "SINK" -> TinkerFactory.createKitchenSink();
-     case "GRATEFUL" -> TinkerFactory.createGratefulDead();default -> {var c=new BaseConfiguration();c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER,"INTEGER");c.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER,"LONG");yield TinkerGraph.open(c);}
-    };
+    if(backend.equals("orchiddb")) {
+     bridge.fixtures.load(data,allowNullPropertyValues,bridge::sendJson);
+     return remoteSource();
+    }
+    TinkerGraph fixture=standardFixture(data);
     if(backend.equals("reference")){fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerTextSearchFactory(fixture));fixture.getServiceRegistry().registerService(new org.apache.tinkerpop.gremlin.tinkergraph.services.TinkerDegreeCentralityFactory(fixture));graph=fixture;return fixture.traversal();}
     if(jvmProfile()){
      graph=OrchidGraph.open();
@@ -231,7 +287,7 @@ public class UpstreamGremlin {
        var translator=new io.orchiddb.gremlin.OrchidBytecodeTranslator(callbacks);
        String script=GroovyTranslator.of("g", translator).translate(bytecode).getScript();
        var response=bridge.send(Map.of("op","gremlin","query",script,"bindings",translator.bindings));
-       queryTransports.add(Map.of("step",currentStep,"query",script,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"native_rows",response.hasNonNull("native_rows"),"query_cost",response.path("query_cost"),"error",response.path("error").asText("")));
+       queryTransports.add(Map.of("step",currentStep,"phase",costPhase(currentStep),"query",script,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"native_rows",response.hasNonNull("native_rows"),"query_cost",response.path("query_cost"),"error",response.path("error").asText("")));
        if(response.has("error"))throw new RemoteConnectionException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
        boolean nativeRows=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();for(var row:response.get(nativeRows?"native_rows":"typed_rows")){values.add(nativeRows?nativeValue(row.get(0)):typedValue(row.get(0)));}
        return CompletableFuture.completedFuture(orderedResults((List<E>)(List<?>)values));
@@ -371,7 +427,7 @@ public class UpstreamGremlin {
   String updated=(String)path.invoke(steps,script);boolean remote=hasInlineLambda(updated);
   Object traversal=scriptEngine(steps).eval(updated,bindings(steps,remote));
   if(!(traversal instanceof Traversal<?,?> result))throw new IllegalArgumentException("Script did not return a traversal");
-  context(steps).queryTransports.add(Map.of("step",context(steps).currentStep,"query",updated,"backend",backend,"submission",remote?"JVM remote bytecode":"JVM provider traversal","typed_parameters",true));
+  context(steps).queryTransports.add(Map.of("step",context(steps).currentStep,"phase",costPhase(context(steps).currentStep),"query",updated,"backend",backend,"submission",remote?"JVM remote bytecode":"JVM provider traversal","typed_parameters",true));
   return result;
  }
  static Object field(StepDefinition steps,String name)throws Exception{var f=StepDefinition.class.getDeclaredField(name);f.setAccessible(true);return f.get(steps);}
@@ -400,7 +456,7 @@ public class UpstreamGremlin {
   var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
   String updated=(String)path.invoke(def,script);
   JsonNode response=bridge.send(Map.of("op","gremlin","query",updated,"bindings",context(def).nativeBindings));
-  context(def).queryTransports.add(Map.of("step",context(def).currentStep,"query",updated,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"typed_parameters",true,"query_cost",response.path("query_cost")));
+  context(def).queryTransports.add(Map.of("step",context(def).currentStep,"phase",costPhase(context(def).currentStep),"query",updated,"backend",response.path("backend").asText(""),"engine_instance",response.path("engine_instance").asText(""),"typed_parameters",true,"query_cost",response.path("query_cost")));
   if(response.has("error"))throw new IllegalStateException((response.path("timeout").asBoolean()?"adapter-timeout: ":response.path("adapter_error").asBoolean()?"adapter-error: ":"")+response.get("error").asText());
   boolean typed=response.hasNonNull("native_rows");List<Object> values=new ArrayList<>();
   for(JsonNode row:response.get(typed?"native_rows":"typed_rows"))values.add(typed?nativeValue(row.get(0)):typedValue(row.get(0)));

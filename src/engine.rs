@@ -6,6 +6,10 @@
 
 mod mapped_storage;
 mod mapped_source;
+mod snapshot;
+mod checkpoint;
+pub use snapshot::CypherStateSnapshot;
+pub use checkpoint::ManagedGraphCheckpoint;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -66,6 +70,7 @@ pub struct GraphEngine {
     sql_timeout: Option<Duration>,
     strict_executor: sql::DuckDbExecutor,
     dag_session: crate::ir::rel::dag::DagSession,
+    jvm_workers: crate::ir::jvm::JvmWorkerPool,
 }
 
 // Restore caller-owned resources even when an async query future is dropped.
@@ -141,6 +146,7 @@ impl GraphEngine {
             read_mode: ReadMode::Hybrid, backend: RelBackend::new(), sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
             dag_session: crate::ir::rel::dag::DagSession::new(None),
+            jvm_workers: Default::default(),
         };
         engine.refresh()?;
         Ok(engine)
@@ -247,6 +253,7 @@ impl GraphEngine {
             sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
             dag_session: crate::ir::rel::dag::DagSession::new(None),
+            jvm_workers: Default::default(),
         };
         engine.refresh()?;
         Ok(engine)
@@ -457,6 +464,10 @@ impl GraphEngine {
 
     fn persist_checkpoint(&mut self) -> EngineResult<()> {
         let payload = encode_graph(&self.graph)?;
+        self.persist_checkpoint_payload(&payload)
+    }
+
+    fn persist_checkpoint_payload(&mut self, payload: &[u8]) -> EngineResult<()> {
         let result = (|| -> EngineResult<i64> {
             let revision = self.advance_revision()?;
             self.storage
@@ -508,6 +519,10 @@ impl GraphEngine {
 
     /// Import an Arrow-backed graph atomically, replacing the managed graph.
     pub fn replace_graph(&mut self, graph: PropertyGraph) -> EngineResult<()> {
+        self.replace_graph_with_payload(graph, None)
+    }
+
+    fn replace_graph_with_payload(&mut self, graph: PropertyGraph, payload: Option<&[u8]>) -> EngineResult<()> {
         if self.mapping.is_some() { return Err("cannot replace a mapped schema with a managed graph".into()); }
         let automatic = !self.in_transaction;
         if automatic {
@@ -517,7 +532,11 @@ impl GraphEngine {
             return Err("transaction failed; roll it back".into());
         }
         let previous = std::mem::replace(&mut self.graph, graph);
-        if let Err(error) = self.persist_checkpoint() {
+        let persisted = match payload {
+            Some(payload) => self.persist_checkpoint_payload(payload),
+            None => self.persist_checkpoint(),
+        };
+        if let Err(error) = persisted {
             self.graph = previous;
             if automatic {
                 let _ = self.rollback();
@@ -578,7 +597,7 @@ impl GraphEngine {
         // Long clause chains create deep logical DAGs. Give each synchronous
         // poll enough stack for lowering/optimizer recursion while retaining
         // the same async executor, session, and wakeup behavior.
-        let result = execute_graph_dag(plan, &self.graph, self.sql_timeout, Some(&self.dag_session)).await;
+        let result = execute_graph_dag(plan, &self.graph, self.sql_timeout, Some(&self.dag_session), self.jvm_workers.clone()).await;
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
             self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
@@ -600,7 +619,7 @@ impl GraphEngine {
             let storage = std::mem::replace(&mut self.storage, placeholder);
             let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
             if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
-            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout).await;
+            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone()).await;
             drop(lease);
             return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
@@ -711,11 +730,11 @@ impl Drop for GraphEngine {
 
 /// Compatibility entry point sharing the runtime and storage adapter while
 /// retaining the caller's exact DuckDB connection and active transaction.
-pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan) -> EngineResult<ReturnedBatches> {
-    execute_mapped_dag(executor, mapping, plan, Default::default(), None).await.map(|(returned,_)|returned)
+pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<ReturnedBatches> {
+    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers).await.map(|(returned,_)|returned)
 }
 
-async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
     let automatic = !executor.in_transaction();
     if automatic { executor.begin().map_err(|e|e.to_string())?; }
     let shared=Arc::new(std::sync::Mutex::new(std::mem::take(executor)));
@@ -724,7 +743,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
     let result = async {
         let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
         graph.procedures = procedures;
-        let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session)).await.map_err(|e|e.to_string())?;
+        let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await.map_err(|e|e.to_string())?;
         if contains_mutation(&plan.root) {
             // Populate only touched records before holding the SQL connection.
             let pending=graph.pending_changes();
@@ -774,8 +793,8 @@ pub(crate) fn plan_sparql(query: &str, ontology: sparql::OntologyMapping) -> Eng
             .map_err(|e| e.to_string())
 }
 
-async fn execute_graph_dag(plan: &GraphPlan, graph: &PropertyGraph, timeout: Option<Duration>, session: Option<&crate::ir::rel::dag::DagSession>) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
-    let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(plan, graph, timeout, session));
+async fn execute_graph_dag(plan: &GraphPlan, graph: &PropertyGraph, timeout: Option<Duration>, session: Option<&crate::ir::rel::dag::DagSession>, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), QueryExecutionError> {
+    let mut execution = Box::pin(crate::ir::rel::runtime::execute_with_session(plan, graph, timeout, session, jvm_workers));
     futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
         || std::future::Future::poll(execution.as_mut(), cx))).await
 }

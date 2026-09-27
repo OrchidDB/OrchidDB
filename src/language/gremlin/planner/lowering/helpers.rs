@@ -140,6 +140,46 @@ fn apply_by_spec_impl(
         None
     };
 
+    // A one-step by modulator is a scalar projection, not a per-row query.
+    // Read the actual property record list so duplicate/multi-properties and
+    // present-null properties retain first-result/productivity semantics.
+    if let Some(sub) = sub {
+        let (value, productive) = match sub {
+            [Step::Label] => (Some(IrExpr::Label(CURRENT.into())), None),
+            [Step::Id] => (Some(IrExpr::Call { name: "gremlin_id".into(),
+                args: vec![IrExpr::Binding(CURRENT.into())] }), None),
+            [Step::Values(keys)] if keys.len() == 1 && lo.subgraph_vertex_property_filter.is_none() => {
+                let values = IrExpr::Call { name: "requested_property_values".into(),
+                    args: vec![IrExpr::Binding(CURRENT.into()),
+                        IrExpr::List(keys.iter().map(IrExpr::lit_str).collect())] };
+                let productive = IrExpr::Binary { op: BinaryOp::Gt,
+                    lhs: Box::new(IrExpr::Call { name: "size".into(), args: vec![values.clone()] }),
+                    rhs: Box::new(IrExpr::Lit(crate::ir::expr::Lit::Int(0))) };
+                (Some(IrExpr::Call { name: "cypher_subscript".into(),
+                    args: vec![values, IrExpr::Lit(crate::ir::expr::Lit::Int(0))] }), Some(productive))
+            }
+            _ => (None, None),
+        };
+        if let Some(value) = value {
+            let productive = productive.or_else(|| Some(IrExpr::IsNotNull(Box::new(value.clone()))));
+            let mut input = input;
+            if !keep_unproductive {
+                if let Some(condition) = productive.clone() {
+                    input = Node::GraphFilter { condition, input: input.boxed() };
+                }
+            }
+            let probe = lo.fresh("by_key");
+            let mut items = vec![ProjectionItem { alias: probe.clone(), expr: value }];
+            if let Some(productivity) = productivity {
+                items.push(ProjectionItem { alias: productivity.into(),
+                    expr: productive.unwrap_or_else(|| IrExpr::lit_bool(true)) });
+            }
+            return Ok((Node::GraphProject { mode: ProjectMode::PreserveVisible, items,
+                error_policy: ProjectErrorPolicy::PropagateError, input: input.boxed() },
+                IrExpr::Binding(probe)));
+        }
+    }
+
     if let Some(sub) = sub {
         let probe = lo.fresh("by_key");
         let sub_node = Node::GraphSlice {

@@ -9,6 +9,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 STATUS = {'pass', 'fail', 'unsupported', 'skipped', 'not-applicable', 'adapter-error', 'timeout'}
 
+def compact_evidence(run, path):
+    evidence_format = run.get('evidence_format')
+    assert evidence_format in (None, 'compact-v1'), f'{path}: unknown evidence format'
+    return evidence_format == 'compact-v1'
+
+def validate_single_instance(run, path):
+    profile = run['execution_profile']
+    assert profile['single_instance_verified'] is True, path
+    recorded = profile['engine_instances']
+    assert isinstance(recorded, list) and len(recorded) == 1 and recorded[0], f'{path}: requires one engine instance'
+    if not compact_evidence(run, path):
+        instances = {r.get('engine_instance') for r in run['results']}
+        assert len(instances) == 1 and None not in instances, f'{path}: requires one engine instance'
+        assert recorded == sorted(instances), path
+
+def validate_costs(run, path):
+    from upstream.query_cost import summarize
+    summary = run.get('query_cost_summary')
+    for result in run['results']:
+        cost = result.get('query_cost')
+        if cost is None:
+            assert summary is None, f'{path}: missing case cost summary'
+            continue
+        assert cost['metric_version'] == 1, f'{path}: unknown cost metric'
+        for key in ('query_count', 'measured_queries', 'request_elapsed_micros'):
+            assert isinstance(cost[key], (int, float)) and cost[key] >= 0, f'{path}: invalid {key}'
+        assert cost['measured_queries'] <= cost['query_count'], f'{path}: invalid cost coverage'
+        assert cost['work_units'] is None or cost['work_units'] >= 0, f'{path}: negative query cost'
+        assert cost['coverage'] in {'boundary_work', 'partial', 'elapsed_only', 'not_executed', 'unavailable'}, f'{path}: unknown cost coverage'
+    if summary is not None:
+        expected = summarize(run['results'], summary['threshold'])
+        for key in ('metric_version', 'cases_with_work_measurements', 'expensive_queries', 'highest_work', 'highest_elapsed'):
+            assert summary[key] == expected[key], f'{path}: inconsistent cost summary {key}'
+
+
 def main():
     sys.path.insert(0, str(ROOT / 'upstream'))
     from java_assertions import counterpart, result_for
@@ -29,7 +64,9 @@ def main():
             expected = {key for key, case in cases.items() if case['suite'] == suite}
             if engine == 'orchiddb-computer' and run['coverage']['filtered']:
                 expected = {key for key in expected if '@GraphComputerOnly' in cases[key].get('tags', [])}
+            is_compact = compact_evidence(run, path)
             results = run['results']
+            validate_costs(run, path)
             assert run['engine'] == engine and run['suite'] == suite, path
             assert run['source'] == sources[suite], f'{path}: stale source'
             assert not run['coverage']['filtered'] or engine == 'orchiddb-computer', f'{path}: subset run'
@@ -37,7 +74,7 @@ def main():
             assert {r['id'] for r in results} == expected, f'{path}: case coverage'
             for result in results:
                 fingerprint = hashlib.sha256(json.dumps(cases[result['id']], sort_keys=True).encode()).hexdigest()
-                assert result.get('normalized_case_sha256', result['case_sha256']) == fingerprint, f'{path}: stale case {result["id"]}'
+                assert (result.get('normalized_case_sha256') or result.get('case_sha256')) == fingerprint, f'{path}: stale case {result["id"]}'
                 assert result['status'] in STATUS, f'{path}: unknown outcome'
                 assert result['elapsed_ms'] >= 0, f'{path}: negative time'
                 if result.get('assertion_source', {}).get('kind') == 'java-counterpart':
@@ -50,10 +87,7 @@ def main():
                     for key in ('status', 'elapsed_ms', 'assertion_source', 'assertion_engine'):
                         assert result[key] == verified[key], f'{path}: inconsistent Java evidence {key}'
             if engine == 'orchiddb' and suite == 'tinkerpop':
-                instances = {r.get('engine_instance') for r in results}
-                assert len(instances) == 1 and None not in instances, f'{path}: requires one engine instance'
-                assert run['execution_profile']['single_instance_verified'] is True, path
-                assert run['execution_profile']['engine_instances'] == sorted(instances), path
+                validate_single_instance(run, path)
                 assert all('java_run' not in r for r in results), f'{path}: separate execution evidence is not a product result'
                 for result in results:
                     assertion = result.get('java_assertion')
@@ -65,6 +99,8 @@ def main():
                         assert assertion[key] == mapping[source_key], f'{path}: original assertion pin mismatch'
                     if result['status'] == 'pass':
                         assert assertion['run_count'] == 1 and all(assertion[k] == 0 for k in ('failure_count', 'ignored_count', 'assumption_count')), f'{path}: unexecuted Java assertion counted as pass'
+                    if is_compact:
+                        continue
                     assert result['query_transports'], f'{path}: Java assertion did not use the engine'
                     assert all(q.get('engine_instance') == result['engine_instance'] for q in result['query_transports']), f'{path}: Java assertion changed engine instance'
             counts = Counter(r['status'] for r in results)
@@ -77,8 +113,12 @@ def main():
         path = (java_root / entry['file']).resolve()
         assert path.is_relative_to(java_root.resolve()), 'Java evidence path escapes its directory'
         report = json.loads(path.read_text())
+        compact_evidence(report, path)
         if 'cases' in report:
             counts = Counter(case['status'] for case in report['cases'])
+            assert set(counts) <= STATUS | {'error', 'skip'}, f'{path}: unknown Java outcome'
+            if 'counts' in report:
+                assert {k: v for k, v in counts.items() if v} == {k: v for k, v in report['counts'].items() if v}, f'{path}: inconsistent Java case counts'
             if entry['upstream_assertions']:
                 assert report['upstream_assertions_modified'] is False, path
                 assert all(case.get('source_sha256') for case in report['cases']), path

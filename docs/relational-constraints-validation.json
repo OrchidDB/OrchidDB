@@ -67,11 +67,11 @@
       "changed_case_definitions": 0,
       "artifact": "conformance/upstream-results/orchiddb-tinkerpop.json",
       "cost_coverage": {
-        "boundary_work": 1417,
-        "elapsed_only": 78,
-        "partial": 16
+        "boundary_work": 1402,
+        "elapsed_only": 94,
+        "not_executed": 15
       },
-      "cases_with_work_measurements": 1433,
+      "cases_with_work_measurements": 1402,
       "highest_work": [
         {
           "id": "tinkerpop:gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features/map/Graph.feature:60",
@@ -107,8 +107,13 @@
       "expensive_cases": 2,
       "full_local_artifact": "target/relational-constraints/orchiddb-tinkerpop.json",
       "full_local_sha256": "a78a7b7c4a14645d295d8219bdf3da248b37dc523ffa16dae15215c31110b36f",
-      "sha256": "fe70d2ba943f5dcd86e1e2f2946fc2c913c65acdfc81124776d9ce0f88b79ad3",
-      "evidence_format": "compact-v1"
+      "sha256": "5c8577b977d42304e9eff2c7f93bca73283783865d836ff1bb3b237a7e4e7b97",
+      "evidence_format": "compact-v1",
+      "published_cost_attribution": {
+        "version": 2,
+        "description": "Reclassified existing transport measurements by upstream step; fixture and assertion helpers excluded. No tests rerun.",
+        "source_sha256": "a78a7b7c4a14645d295d8219bdf3da248b37dc523ffa16dae15215c31110b36f"
+      }
     },
     "rdf": {
       "started_at": "2026-09-26T23:16:54.301521+00:00",

@@ -97,8 +97,9 @@ impl<'a> LoweringContext<'a> {
         // join would test existence globally rather than per input row.
         let per_row_identity = match kind {
             ApplyKind::Scalar | ApplyKind::Optional => true,
-            ApplyKind::Inner => gremlin::has_per_input_barrier(right),
-            ApplyKind::Semi | ApplyKind::Anti => key_cols.is_empty(),
+            ApplyKind::Inner => gremlin::has_per_input_barrier(right)
+                || (self.language == Language::Gremlin && !outputs.iter().any(|name| name == "current")),
+            ApplyKind::Semi | ApplyKind::Anti => key_cols.is_empty() || self.language == Language::Gremlin,
         };
         let left_plan = if per_row_identity && first_correlate_bindings(right).is_some() {
             let barrier_id = self.scan_counter;
@@ -187,7 +188,7 @@ impl<'a> LoweringContext<'a> {
                     } else {
                         left.plan.clone()
                     };
-                    let left_plan = if self.options.mapping.is_some() && self.language == Language::Gremlin {
+                    let left_plan = if self.language == Language::Gremlin {
                         let replaced = left_plan.schema().fields().iter()
                             .filter(|field| outputs.iter().any(|output| is_binding_column(field.name(), output)))
                             .map(|field|field.name().clone()).collect::<BTreeSet<_>>();

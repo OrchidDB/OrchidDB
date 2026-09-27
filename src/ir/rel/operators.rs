@@ -190,6 +190,9 @@ impl LoweringContext<'_> {
             GraphAggregate {
                 group, aggs, input, ..
             } => {
+                if let Some(lowered) = self.lower_weighted_repeat_count(group, aggs, input)? {
+                    return Ok(lowered);
+                }
                 if self.language == Language::Gremlin && aggs.iter().any(|agg| matches!(agg.kind, AggKind::CollectRows | AggKind::CollectTraversers | AggKind::Min | AggKind::Max | AggKind::Avg)) {
                     return Err(RelError::Unsupported("Gremlin aggregate requires native values and empty-stream semantics".into()));
                 }
@@ -255,7 +258,7 @@ impl LoweringContext<'_> {
                                 self.lower_engine_aggregate(&input.plan, agg)?
                             }
                             AggKind::CountRows | AggKind::CountBulk => match &agg.arg {
-                                Some(arg) => df_count(self.lower_expr(&input.plan, arg)?),
+                                Some(arg) => df_count(self.lower_count_operand(&input.plan, arg)?),
                                 None => count_input_rows(&input.plan),
                             },
                             AggKind::CountDistinct => {
@@ -265,7 +268,7 @@ impl LoweringContext<'_> {
                                     ));
                                 };
                                 datafusion::functions_aggregate::count::count_distinct(
-                                    self.lower_expr(&input.plan, arg)?,
+                                    self.lower_distinct_count_operand(&input.plan, arg)?,
                                 )
                             }
                             AggKind::CountIf => {

@@ -474,12 +474,16 @@ impl Compiler<'_> {
                 output,
                 input,
             } => {
+                let mut lowered_input = self.lower(input)?;
+                if matches!(value, crate::ir::plan::GroupValue::Traversal { bulk_current: true, .. }) {
+                    lowered_input = self.compact_sql_group_input(lowered_input, key, input)?;
+                }
                 let key = key.clone();
                 let value = self.group_value(value)?;
                 let output = output.clone();
                 Ok(kernel(
                     "GroupReduce",
-                    vec![self.lower(input)?],
+                    vec![lowered_input],
                     move |mut inputs, state| {
                         groups::group_map_op(
                             &key,

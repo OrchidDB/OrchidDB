@@ -35,7 +35,9 @@ def render_java_evidence(download):
 def cost_label(cost):
  if not cost:return 'Not recorded'
  work=cost.get('work_units');coverage=cost.get('coverage','unavailable')
- return (f'{work:,} work units · ' if work is not None else 'Work not measured · ')+coverage.replace('_',' ')
+ label=(f'{work:,} work units · ' if work is not None else 'Work not measured · ')+coverage.replace('_',' ')
+ helpers=cost.get('helper_query_count',0)
+ return label+(f' · {helpers:,} helper requests excluded' if helpers else '')
 
 def render_query_cost(runs,cases,get,download):
  html=['<details class="report-section" id="query-cost"><summary>OrchidDB query cost <span>Measured boundary work and expensive queries</span></summary><p>Version 1 work units count SQL output rows, native input/output rows, source rows, rounded-up SQL output KiB, and 100 units per SQL execution or source request. Published results omit raw query payloads and returned data. Full execution evidence stays local. This is a boundary-work proxy, not database scan cost or a cross-product benchmark. Fixture and observation queries are excluded from rankings. Partial measurements are lower bounds; missing measurements are never zero.</p>']
@@ -126,7 +128,7 @@ def render(out):
     html.append('<td data-product-column="'+p+'"><details data-evidence="'+evidence_url+'" data-case="'+e(c['id'])+'" data-product="'+p+'"><summary><span class="status '+status+'">'+e(LABELS[status])+'</span>'+timing+('<span class="query-cost">'+e(cost_label(r.get('query_cost')))+'</span>' if p=='orchiddb' else '')+'</summary>')
     if status!='not-run':html.append('<p><a href="/downloads/conformance/'+(p+'-'+suite)+'.json">Run summary JSON</a> · find '+e(c['id'])+'</p>')
     html.append('<a href="'+evidence_url+'">Feature evidence JSON</a><div class="evidence-content"></div></details></td>')
-    export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source'],r.get('query_cost',{}).get('metric_version',''),r.get('query_cost',{}).get('coverage',''),r.get('query_cost',{}).get('work_units'),r.get('query_cost',{}).get('request_elapsed_micros')])
+    export.append([c['id'],suite,c['name'],p,r.get('execution_profile',p),status,r.get('elapsed_ms',''),r.get('reason',r.get('error','')),c['source'],r.get('query_cost',{}).get('metric_version',''),r.get('query_cost',{}).get('coverage',''),r.get('query_cost',{}).get('work_units'),r.get('query_cost',{}).get('request_elapsed_micros'),r.get('query_cost',{}).get('attribution_version',''),r.get('query_cost',{}).get('helper_query_count','')])
    html.append('</tr>')
   html.append('</tbody></table></div></details></td></tr></tbody>')
  html.append('</table></div></section></div></div><div class="report-appendix"><details class="report-section" id="summary"><summary>Suite totals <span>All 6,533 upstream scenarios</span></summary>')
@@ -162,5 +164,5 @@ def render(out):
  for (p,s),d in runs.items():
   html.append('<details class="version-evidence"><summary>'+column_name(p,s)+' · '+SUITES[s]+' · '+e(d['finished_at'][:10])+'</summary>'+pretty({k:v for k,v in d.items() if k!='results'})+'<a href="/downloads/conformance/'+p+'-'+s+'.json">Run JSON</a></details>')
  html.append('</details></div>')
- buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source','cost_metric_version','cost_coverage','query_work_units','query_request_elapsed_micros']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
+ buf=io.StringIO();w=csv.writer(buf);w.writerow(['upstream_id','suite','scenario','product','execution_profile','status','scenario_wall_ms','diagnostic','upstream_source','cost_metric_version','cost_coverage','query_work_units','query_request_elapsed_micros','cost_attribution_version','helper_query_count']);w.writerows(export);(download/'upstream-comparison.csv').write_text(buf.getvalue())
  return '\n'.join(html),[(s,t) for s,t in [('summary','Suite results'),('query-cost','Query cost'),('cases','Upstream cases'),('java-provider','Java provider tests'),('capabilities','Capabilities'),('method','Method'),('versions','Versions')]]
