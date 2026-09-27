@@ -161,7 +161,19 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     match (name.as_str(), args.len()) {
         ("encode", 2) if matches!(&args[1],
             ast::Expr::Value(value) if value.value == ast::Value::SingleQuotedString("hex".into())) => {
-            *expr = template("lower(hex(__arg0))", &args[..1])?;
+            // Arrow casts text to raw UTF-8 bytes. DuckDB's CAST(text AS BLOB)
+            // instead parses backslash escapes and rejects non-ASCII text.
+            fn unnest(expr:&ast::Expr)->&ast::Expr {match expr {ast::Expr::Nested(inner)=>unnest(inner),_=>expr}}
+            let input=match unnest(&args[0]) {
+                ast::Expr::Cast {expr:inner,data_type,..} if data_type.to_string()=="BLOB" => {
+                    match unnest(inner) {
+                        ast::Expr::Cast {data_type,..} if data_type.to_string().starts_with("VARCHAR")=>template("encode(__arg0)",&[inner.as_ref().clone()])?,
+                        _=>args[0].clone(),
+                    }
+                }
+                _=>args[0].clone(),
+            };
+            *expr = template("lower(hex(__arg0))", &[input])?;
         }
         ("__orchiddb_utf16_length", 1) => {
             *expr = template(r"CAST(length(regexp_replace(__arg0, '[\x{10000}-\x{10FFFF}]', 'xx', 'g')) AS INTEGER)", &args)?;

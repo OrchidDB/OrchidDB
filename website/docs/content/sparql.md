@@ -1,12 +1,12 @@
 # SPARQL
 
-Query a graph with RDF vocabulary using an ontology mapping, or query existing RDF quad tables directly.
+Query application tables with RDF vocabulary through the common `GraphEngine`.
 
 ## Choose the data model
 
 For a property graph, define an `OntologyMapping` that maps class and predicate IRIs to graph labels and properties. Use it with `GraphEngine::sparql` or `MappedGraphEngine::sparql`.
 
-For existing RDF quad tables, define an `RdfDatasetMapping` and use `RdfGraphEngine::sparql`. The [RDF dataset guide](rdf.md) covers that workflow.
+For explicit column, identity, and named-graph mappings, add `RdfMapping` rules to `GraphMapping` and call `GraphEngine::sparql_query`. The [RDF guide](rdf.md) covers ordinary tables, composite foreign keys, and updates. On mapped engines, existing ontology builders translate to these same rules; patterns do not require an explicit type root.
 
 ## Define a vocabulary
 

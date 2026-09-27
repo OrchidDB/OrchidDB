@@ -123,8 +123,11 @@ impl MappedGraphEngine {
         query: &str,
         ontology: OntologyMapping,
     ) -> Result<ReturnedBatches, String> {
-        let plan = self.with_functions(|| crate::engine::plan_sparql(query, ontology))?;
-        self.run_plan(&plan).await
+        let mut mapping=(*self.mapping).clone();
+        ontology.apply_to(&mut mapping,"default")?;
+        let plan=crate::language::sparql::SparqlPlanner::new("default").plan_str(query).map_err(|e|e.to_string())?;
+        let result=crate::engine::execute_mapped(&mut self.executor,Arc::new(mapping),&plan,self.jvm_workers.clone()).await?;
+        crate::rdf_engine::legacy_columns(result)
     }
 
     /// Lower a Cypher read query and return the generated DuckDB SQL text.

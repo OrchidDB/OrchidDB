@@ -18,7 +18,7 @@ The [language clients](client-apis.md) compile mapped read queries to SQL withou
 | --- | --- | --- |
 | Managed graph | OrchidDB persists graph records in DuckDB. | `GraphEngine` |
 | Mapped property graph | Your tables or views provide nodes and relationships. | `MappedGraphEngine` |
-| Mapped RDF dataset | Your quad tables provide RDF statements. | `RdfGraphEngine` |
+| Mapped RDF vocabulary | Rules expose RDF terms over your application columns and keys. | `GraphEngine` |
 
 Mapped engines use the schemas registered in their mappings to plan queries, while DuckDB reads the source rows. Registering a schema describes the table to the planner.
 

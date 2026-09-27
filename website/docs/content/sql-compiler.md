@@ -138,3 +138,29 @@ cargo run --example compile_sql
 Resolve metadata and compile against the same session/schema version used for
 execution. The dialect check cannot distinguish two databases using the same
 SQL dialect; engine identity and routing belong to your application.
+
+## RDF rules in compiler requests
+
+SPARQL requests accept `rdf` rules and an optional `dataset` (default `default`).
+The same `tables`, `nodes`, and `edges` catalog can serve all three languages.
+For example, a rule over registered customer columns is:
+
+```json
+{"table":"customers",
+ "subject":{"kind":"template","prefix":"urn:customer:","columns":["tenant","id"]},
+ "predicate":{"kind":"constant","value":"https://example.com/name"},
+ "object":{"kind":"literal","column":"name"}}
+```
+
+Term kinds are `iri` (column), `template` (prefix and ordered columns), `blank`
+(scope and ordered columns), `literal` (column with optional datatype, language,
+or language_column), and `constant` (value with optional datatype or language).
+Rules may specify `graph` and `dataset`. Runtime writes additionally require
+`writable: true` and a complete `key` array. The compiler remains read-only.
+Existing `ontology` declarations translate into the same relational rules.
+
+Requests using `rdf` retain typed RDF output: each variable's lexical column is
+accompanied by `__rdf:term:kind:?variable`, `__rdf:term:datatype:?variable`, and
+`__rdf:term:language:?variable`. A null kind means unbound. `fields` lists the
+visible variable names. Legacy ontology requests retain their scalar result
+columns and native numeric types.

@@ -1,67 +1,123 @@
-//! SPARQL queries and mapped updates over existing DuckDB RDF tables.
+//! Typed RDF results and the compatibility facade for GraphEngine.
 //!
-//! `RdfGraphEngine` accepts an `RdfDatasetMapping` whose registered table
-//! providers describe the source schemas. The table names also exist in the
-//! supplied DuckDB executor. Queries use the general SPARQL planner, then
-//! lower quad scans through the mapping and execute SQL against those tables.
+//! RDF vocabulary resolves to application tables in the common mapping catalog.
+//! Language execution contexts borrow the engine's DAG session and never own
+//! a separate connection or transaction manager.
 
 use std::sync::Arc;
 
 use arrow::array::{Array, BooleanArray, StringArray};
 
 use crate::ir::catalog::PropertyGraph;
-use crate::ir::runtime::ReturnedBatches;
 use crate::ir::policy::ResultForm;
 use crate::ir::rel::rdf::{RdfDatasetMapping, binding_identity_columns};
 use crate::ir::rel::sql::{DuckDbExecutor, PreparedSql, SqlExecutor};
 use crate::ir::rel::{RelBackend, RelBackendOptions};
+use crate::ir::runtime::ReturnedBatches;
 use crate::language::sparql::SparqlPlanner;
 
+mod relational_update;
 mod scalar;
 mod update;
 
-/// Runs SPARQL queries and explicitly mapped updates against user-owned tables.
-/// The dataset name selects sources registered in `RdfDatasetMapping`.
+/// Compatibility facade. Execution and transactions belong to GraphEngine.
 pub struct RdfGraphEngine {
-    resources: crate::ir::rel::dag::DagSession,
+    engine: Result<crate::engine::GraphEngine, String>,
     mapping: Arc<RdfDatasetMapping>,
     dataset: String,
-    scalar_registered: bool,
     last_query_stats: Option<crate::ir::exec::ExecStats>,
 }
-
 impl RdfGraphEngine {
     pub fn new(
-        executor: DuckDbExecutor,
+        mut executor: DuckDbExecutor,
         mapping: Arc<RdfDatasetMapping>,
         dataset: impl Into<String>,
     ) -> Self {
+        let timeout = executor.query_timeout();
+        let engine = executor
+            .connection()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+            .and_then(|_| {
+                let connection = executor
+                    .take_connection()
+                    .ok_or("missing database connection")?;
+                crate::engine::GraphEngine::mapped(
+                    connection,
+                    Arc::new(
+                        crate::ir::rel::mapping::GraphMapping::new()
+                            .with_rdf_mapping((*mapping).clone()),
+                    ),
+                )
+            })
+            .map(|mut engine| {
+                if let Some(timeout) = timeout {
+                    engine.set_sql_timeout(timeout);
+                }
+                engine
+            });
         Self {
-            resources: crate::ir::rel::dag::DagSession::from_executor(executor,mapping.physical_table_names()),
+            engine,
             mapping,
             dataset: dataset.into(),
-            scalar_registered: false,
             last_query_stats: None,
         }
     }
-
-    pub fn last_query_stats(&self) -> Option<&crate::ir::exec::ExecStats> { self.last_query_stats.as_ref() }
-
     pub fn dataset(&self) -> &str {
         &self.dataset
     }
-
     pub fn mapping(&self) -> &RdfDatasetMapping {
         &self.mapping
     }
-
-    /// Return the executor after queries, for example to inspect the source
-    /// tables or continue using the same DuckDB session elsewhere.
-    pub fn into_executor(self) -> DuckDbExecutor {
-        self.resources.into_executor()
+    pub fn last_query_stats(&self) -> Option<&crate::ir::exec::ExecStats> {
+        self.last_query_stats.as_ref()
     }
+    pub fn into_executor(self) -> DuckDbExecutor {
+        self.engine
+            .expect("RDF engine initialization failed")
+            .into_executor()
+    }
+    pub async fn query(&mut self, query: &str) -> Result<SparqlResults, String> {
+        decode_results(&self.sparql(query).await?)
+    }
+    pub async fn sparql(&mut self, query: &str) -> Result<ReturnedBatches, String> {
+        let result = self
+            .engine
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .sparql_dataset(query, &self.dataset)
+            .await?;
+        self.last_query_stats = Some(result.stats);
+        Ok(result.returned)
+    }
+    pub async fn sql(&self, query: &str) -> Result<String, String> {
+        self.engine
+            .as_ref()
+            .map_err(|e| e.clone())?
+            .sparql_sql(query, &self.dataset)
+            .await
+    }
+    pub async fn update(&mut self, query: &str, base: Option<&str>) -> Result<(), String> {
+        self.engine
+            .as_mut()
+            .map_err(|e| e.clone())?
+            .sparql_update(query, &self.dataset, base)
+            .await
+    }
+}
 
-    fn executor(&self) -> Result<std::sync::MutexGuard<'_,DuckDbExecutor>,String> { self.resources.executor() }
+/// Borrowed language execution context, using the common engine's DAG session.
+pub(crate) struct RdfSession<'a> {
+    pub(crate) resources: &'a crate::ir::rel::dag::DagSession,
+    pub(crate) mapping: Arc<RdfDatasetMapping>,
+    pub(crate) dataset: String,
+    pub(crate) scalar_registered: bool,
+    pub(crate) last_query_stats: Option<crate::ir::exec::ExecStats>,
+}
+impl RdfSession<'_> {
+    fn executor(&self) -> Result<std::sync::MutexGuard<'_, DuckDbExecutor>, String> {
+        self.resources.executor()
+    }
 
     /// Run a query and decode its result as typed RDF terms: solution rows
     /// for SELECT, a boolean for ASK, and triples for CONSTRUCT.
@@ -75,26 +131,55 @@ impl RdfGraphEngine {
     /// datatype, and language columns of each field (see
     /// `binding_identity_columns`); [`RdfGraphEngine::query`] decodes them.
     pub async fn sparql(&mut self, query: &str) -> Result<ReturnedBatches, String> {
-        self.last_query_stats=None;
+        self.last_query_stats = None;
         let parsed = crate::language::sparql::parse_query(query).map_err(|e| e.to_string())?;
         self.sparql_parsed(&parsed).await
     }
 
-    async fn sparql_parsed(&mut self, query: &crate::spargebra::Query) -> Result<ReturnedBatches, String> {
+    async fn sparql_parsed(
+        &mut self,
+        query: &crate::spargebra::Query,
+    ) -> Result<ReturnedBatches, String> {
+        let plan = SparqlPlanner::new(&self.dataset)
+            .plan(query)
+            .map_err(|e| e.to_string())?;
+        let (output, stats) = self.execute_plan(&plan).await?;
+        self.last_query_stats = Some(stats.into());
+        Ok(output)
+    }
+    pub(crate) async fn execute_plan(
+        &mut self,
+        plan: &crate::ir::plan::GraphPlan,
+    ) -> Result<(ReturnedBatches, crate::ir::rel::dag::DagStats), String> {
         if !self.scalar_registered {
-            self.executor()?.connection().map_err(|error| error.to_string())?
+            self.executor()?
+                .connection()
+                .map_err(|error| error.to_string())?
                 .register_scalar_function::<scalar::SparqlScalar>("__orchiddb_sparql_scalar")
                 .map_err(|error| error.to_string())?;
             self.scalar_registered = true;
         }
-        let lowered = self.lower_query(query)?;
-        let mut execution = Box::pin(crate::ir::rel::dag::execute_with_extensions(lowered,vec![],None,Some(&self.resources)));
-        let (output,stats)=futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,
-            || std::future::Future::poll(execution.as_mut(),cx))).await
-            .map_err(|error|error.to_string())?;
+        let lowered = RelBackend::with_options(RelBackendOptions {
+            rdf_datasets: Some(self.mapping.clone()),
+            ..Default::default()
+        })
+        .lower(plan, &PropertyGraph::new())
+        .map_err(|e| e.to_string())?;
+        let mut execution = Box::pin(crate::ir::rel::dag::execute_with_extensions(
+            lowered,
+            vec![],
+            None,
+            Some(&self.resources),
+        ));
+        let (output, stats) = futures::future::poll_fn(|cx| {
+            stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
+                std::future::Future::poll(execution.as_mut(), cx)
+            })
+        })
+        .await
+        .map_err(|error| error.to_string())?;
         drop(execution);
-        self.last_query_stats=Some(stats.into());
-        Ok(output)
+        Ok((output, stats))
     }
 
     /// The DuckDB SQL that [`RdfGraphEngine::sparql`] would execute.
@@ -102,7 +187,7 @@ impl RdfGraphEngine {
         Ok(self.prepare(query).await?.query)
     }
 
-    async fn prepare(&self, query: &str) -> Result<PreparedSql, String> {
+    pub(crate) async fn prepare(&self, query: &str) -> Result<PreparedSql, String> {
         let parsed = crate::language::sparql::parse_query(query).map_err(|e| e.to_string())?;
         self.prepare_parsed(&parsed).await
     }
@@ -112,8 +197,12 @@ impl RdfGraphEngine {
         // Preserve the same session and async execution while allowing the
         // logical planner's synchronous recursion to use a larger stack.
         let mut preparation = Box::pin(self.prepare_inner(query));
-        futures::future::poll_fn(|cx| stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024,
-            || std::future::Future::poll(preparation.as_mut(), cx))).await
+        futures::future::poll_fn(|cx| {
+            stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
+                std::future::Future::poll(preparation.as_mut(), cx)
+            })
+        })
+        .await
     }
 
     async fn prepare_inner(&self, query: &crate::spargebra::Query) -> Result<PreparedSql, String> {
@@ -128,11 +217,19 @@ impl RdfGraphEngine {
         .map_err(|error| error.to_string())
     }
 
-    fn lower_query(&self, query: &crate::spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
-        stacker::maybe_grow(8 * 1024 * 1024,64 * 1024 * 1024,|| self.lower_query_inner(query))
+    pub(crate) fn lower_query(
+        &self,
+        query: &crate::spargebra::Query,
+    ) -> Result<crate::ir::rel::LoweredPlan, String> {
+        stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
+            self.lower_query_inner(query)
+        })
     }
 
-    fn lower_query_inner(&self, query: &crate::spargebra::Query) -> Result<crate::ir::rel::LoweredPlan,String> {
+    fn lower_query_inner(
+        &self,
+        query: &crate::spargebra::Query,
+    ) -> Result<crate::ir::rel::LoweredPlan, String> {
         let plan = SparqlPlanner::new(&self.dataset)
             .plan(query)
             .map_err(|error| error.to_string())?;
@@ -197,7 +294,7 @@ pub enum SparqlResults {
     Graph(Vec<[RdfTermValue; 3]>),
 }
 
-fn decode_results(output: &ReturnedBatches) -> Result<SparqlResults, String> {
+pub fn decode_results(output: &ReturnedBatches) -> Result<SparqlResults, String> {
     let batch = &output.batch;
     if output.result_form == ResultForm::Boolean {
         let column = batch
@@ -276,4 +373,57 @@ fn decode_results(output: &ReturnedBatches) -> Result<SparqlResults, String> {
         variables: output.fields.clone(),
         rows,
     })
+}
+
+/// Preserve the scalar Arrow layout of the older ontology entry points.
+pub(crate) fn legacy_columns(mut output: ReturnedBatches) -> Result<ReturnedBatches, String> {
+    if output.batch.num_columns() <= output.fields.len() || output.result_form != ResultForm::RowSet
+    {
+        return Ok(output);
+    }
+    if output.fields.is_empty() {
+        output.batch = output.batch.project(&[]).map_err(|e| e.to_string())?;
+        return Ok(output);
+    }
+    let mut fields = Vec::new();
+    let mut arrays = Vec::new();
+    for name in &output.fields {
+        let index = output
+            .batch
+            .schema()
+            .index_of(name)
+            .map_err(|e| e.to_string())?;
+        let mut array = output.batch.column(index).clone();
+        let dt = binding_identity_columns(name)[1].clone();
+        if let Ok(dt_index) = output.batch.schema().index_of(&dt) {
+            if let Some(values) = output
+                .batch
+                .column(dt_index)
+                .as_any()
+                .downcast_ref::<StringArray>()
+            {
+                let types = values
+                    .iter()
+                    .flatten()
+                    .collect::<std::collections::BTreeSet<_>>();
+                if types.len() == 1 {
+                    if let Some(kind) =
+                        crate::ir::rel::rdf_mapping::legacy_scalar_type(types.first().unwrap())
+                    {
+                        array = arrow::compute::cast(&array, &kind).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        fields.push(arrow::datatypes::Field::new(
+            name,
+            array.data_type().clone(),
+            true,
+        ));
+        arrays.push(array);
+    }
+    output.batch =
+        arrow::array::RecordBatch::try_new(Arc::new(arrow::datatypes::Schema::new(fields)), arrays)
+            .map_err(|e| e.to_string())?;
+    Ok(output)
 }

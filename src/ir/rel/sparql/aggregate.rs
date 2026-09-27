@@ -309,7 +309,7 @@ impl Lowerer<'_, '_> {
         }
         let plan = self.project(aggregated, columns)?;
         let plan = self.cte(plan)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars,
             keys: sol.keys,

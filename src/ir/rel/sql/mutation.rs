@@ -10,6 +10,21 @@ pub enum RowCondition {
 
 #[derive(Debug, Clone)]
 pub enum MappedMutation {
+    Upsert {
+        table: String,
+        key: Vec<(String, Option<String>)>,
+        values: Vec<(String, Option<String>)>,
+    },
+    Assign {
+        table: String,
+        values: Vec<(String, Option<String>)>,
+        conditions: Vec<RowCondition>,
+    },
+    Clear {
+        table: String,
+        columns: Vec<String>,
+        conditions: Vec<RowCondition>,
+    },
     InsertAbsent {
         table: String,
         values: Vec<(String, Option<String>)>,
@@ -32,6 +47,162 @@ impl MappedMutation {
                 .join(".")
         };
         let (sql, parameters) = match self {
+            Self::Upsert {
+                table: name,
+                key,
+                values,
+            } => {
+                if key.is_empty() {
+                    return Err("Mapped writes require a complete row key".into());
+                }
+                let predicates = key
+                    .iter()
+                    .map(|(c, _)| format!("{} IS NOT DISTINCT FROM ?", quote(c)))
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
+                let conn = executor.connection().map_err(|e| e.to_string())?;
+                let params = key.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+                let count: i64 = conn
+                    .query_row(
+                        &format!("SELECT count(*) FROM {} WHERE {predicates}", table(name)),
+                        duckdb::params_from_iter(params.clone()),
+                        |r| r.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                if count > 1 {
+                    return Err(format!("Declared RDF key is not unique in {name}"));
+                }
+                if count == 0 {
+                    let all = key.iter().chain(values).collect::<Vec<_>>();
+                    (
+                        format!(
+                            "INSERT INTO {} ({}) VALUES ({})",
+                            table(name),
+                            all.iter()
+                                .map(|(c, _)| quote(c))
+                                .collect::<Vec<_>>()
+                                .join(","),
+                            vec!["?"; all.len()].join(",")
+                        ),
+                        all.iter().map(|(_, v)| v.clone()).collect(),
+                    )
+                } else {
+                    if values.is_empty() {
+                        return Ok(());
+                    }
+                    for (column, value) in values {
+                        let sql = format!(
+                            "SELECT count(*) FROM {} WHERE {predicates} AND {} IS NOT NULL AND {} IS DISTINCT FROM ?",
+                            table(name),
+                            quote(column),
+                            quote(column)
+                        );
+                        let mismatch: i64 = conn
+                            .query_row(
+                                &sql,
+                                duckdb::params_from_iter(
+                                    params.iter().cloned().chain(std::iter::once(value.clone())),
+                                ),
+                                |r| r.get(0),
+                            )
+                            .map_err(|e| e.to_string())?;
+                        if mismatch > 0 {
+                            return Err(format!(
+                                "RDF insert would assign multiple values to {name}.{column}; delete the old value first"
+                            ));
+                        }
+                    }
+                    (
+                        format!(
+                            "UPDATE {} SET {} WHERE {predicates}",
+                            table(name),
+                            values
+                                .iter()
+                                .map(|(c, _)| format!("{} = ?", quote(c)))
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        ),
+                        values
+                            .iter()
+                            .map(|(_, v)| v.clone())
+                            .chain(params)
+                            .collect(),
+                    )
+                }
+            }
+            Self::Assign {
+                table: name,
+                values,
+                conditions,
+            } => {
+                let mut params = values.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+                let predicates = conditions
+                    .iter()
+                    .map(|c| match c {
+                        RowCondition::Equal(c, v) => {
+                            params.push(v.clone());
+                            format!("{} IS NOT DISTINCT FROM ?", quote(c))
+                        }
+                        RowCondition::NotNull(c) => format!("{} IS NOT NULL", quote(c)),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
+                (
+                    format!(
+                        "UPDATE {} SET {} WHERE {}",
+                        table(name),
+                        values
+                            .iter()
+                            .map(|(c, _)| format!("{} = ?", quote(c)))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        if predicates.is_empty() {
+                            "TRUE"
+                        } else {
+                            &predicates
+                        }
+                    ),
+                    params,
+                )
+            }
+            Self::Clear {
+                table: name,
+                columns,
+                conditions,
+            } => {
+                if columns.is_empty() {
+                    return Ok(());
+                }
+                let mut params = Vec::new();
+                let predicates = conditions
+                    .iter()
+                    .map(|c| match c {
+                        RowCondition::Equal(c, v) => {
+                            params.push(v.clone());
+                            format!("{} IS NOT DISTINCT FROM ?", quote(c))
+                        }
+                        RowCondition::NotNull(c) => format!("{} IS NOT NULL", quote(c)),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
+                (
+                    format!(
+                        "UPDATE {} SET {} WHERE {}",
+                        table(name),
+                        columns
+                            .iter()
+                            .map(|c| format!("{} = NULL", quote(c)))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        if predicates.is_empty() {
+                            "TRUE"
+                        } else {
+                            &predicates
+                        }
+                    ),
+                    params,
+                )
+            }
             Self::InsertAbsent {
                 table: name,
                 values,

@@ -53,8 +53,9 @@ mod gremlin_strings;
 pub mod mapping;
 pub mod constraints;
 pub mod rdf;
+pub mod rdf_mapping;
 mod repeat;
-mod sparql;
+pub(crate) mod sparql;
 pub mod sql;
 mod varlen;
 

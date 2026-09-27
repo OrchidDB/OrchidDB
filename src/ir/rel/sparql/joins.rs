@@ -32,7 +32,12 @@ impl Lowerer<'_, '_> {
             };
             let (l, r) = (Term::columns(var), right_term(var));
             if *left_certain && *right_certain {
-                conditions.push(l.same_term(&r));
+                match (left.native.get(var),right.native.get(var)) {
+                    (Some((a,lc)),Some((b,rc))) if a==b && lc.len()==rc.len()=>{
+                        conditions.extend(lc.iter().zip(rc).map(|(l,r)|col_exact(l).eq(col_exact(format!("{prefix}{r}")))));
+                    }
+                    _=>conditions.push(l.same_term(&r)),
+                }
             } else {
                 conditions.push(or_all(vec![
                     l.kind.clone().is_null(),
@@ -91,6 +96,20 @@ impl Lowerer<'_, '_> {
             projections.extend(term.aliased(&var));
             vars.insert(var, certain);
         }
+        let mut native=BTreeMap::new();
+        for (var,identity) in &left.native {
+            if left.vars.get(var)==Some(&true) {
+                projections.extend(identity.1.iter().map(col_exact));
+                native.insert(var.clone(),identity.clone());
+            }
+        }
+        for (var,(signature,columns)) in &right.native {
+            if !left.vars.contains_key(var) && !optional {
+                let aliases=columns.iter().map(|c|format!("{prefix}{c}")).collect::<Vec<_>>();
+                projections.extend(aliases.iter().map(col_exact));
+                native.insert(var.clone(),(signature.clone(),aliases));
+            }
+        }
         let mut keys = left.keys.clone();
         for key in &left.keys {
             projections.push(col_exact(key));
@@ -103,7 +122,7 @@ impl Lowerer<'_, '_> {
             projections.push(lit(1_i64).alias(self.fresh("row")));
         }
         let plan = self.project(plan, projections)?;
-        Ok(Sol {
+        Ok(Sol { native,
             plan,
             vars,
             keys,
@@ -133,7 +152,7 @@ impl Lowerer<'_, '_> {
         let mut keys = sol.keys.clone();
         keys.insert(key.clone());
         Ok((
-            Sol {
+            Sol { native: BTreeMap::new(),
                 plan,
                 vars: sol.vars,
                 keys,
@@ -239,7 +258,7 @@ impl Lowerer<'_, '_> {
             columns.push(lit(1_i64).alias(self.fresh("row")));
         }
         let plan = self.project(plan, columns)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars,
             keys,

@@ -1,98 +1,124 @@
-# RDF datasets
+# RDF over application tables
 
-Map RDF statements in DuckDB tables to a named dataset and query them with SPARQL.
+Use `GraphEngine` for Cypher, Gremlin, and SPARQL over the same application tables.
+Add RDF vocabulary to `GraphMapping`: each rule describes a subject, predicate,
+object, and optional graph. SPARQL patterns resolve to scans and joins of those
+sources. OrchidDB does not create or populate a triple store.
 
-## Describe a quad source
+## Map columns and composite identities
 
-An IRI quad source has subject, predicate, and object columns containing IRI strings. An optional graph column selects the default or a named graph.
-
-```sql
-CREATE TABLE user_quads (
-  graph VARCHAR, subject VARCHAR, predicate VARCHAR, object VARCHAR
-);
-INSERT INTO user_quads VALUES
-  (NULL, 'https://example.com/alice', 'https://example.com/knows', 'https://example.com/bob'),
-  (NULL, 'https://example.com/bob', 'https://example.com/knows', 'https://example.com/cara');
-```
-
-A null graph value denotes the default graph. A graph IRI denotes a named graph. If the source has no graph column, its rows belong to the default graph.
-
-## Build the RDF engine
-
-Add `duckdb = { version = "1.10502.0", features = ["bundled"] }` to the application dependencies for this connection example, alongside the [base dependencies](installation.md#use-the-rust-library).
+Given `customers(tenant BIGINT, id BIGINT, name VARCHAR)`, register its schema and
+map its name column:
 
 ```rust
 use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
-use orchiddb::ir::rel::mapping::schema_only_provider;
-use orchiddb::ir::rel::rdf::{IriQuadSource, RdfDatasetMapping};
-use orchiddb::ir::rel::sql::DuckDbExecutor;
-use orchiddb::rdf_engine::RdfGraphEngine;
+use orchiddb::engine::GraphEngine;
+use orchiddb::ir::rel::mapping::{GraphMapping, NodeMapping, schema_only_provider};
+use orchiddb::ir::rel::rdf_mapping::{RdfMapping, RdfTermMapping as Term};
 
-let connection = duckdb::Connection::open("rdf.duckdb")
-    .map_err(|error| error.to_string())?;
-// The user_quads table above must exist in this database.
-let schema = Arc::new(Schema::new(vec![
-    Field::new("graph", DataType::Utf8, true),
-    Field::new("subject", DataType::Utf8, false),
-    Field::new("predicate", DataType::Utf8, false),
-    Field::new("object", DataType::Utf8, false),
-]));
-let mut mapping = RdfDatasetMapping::new();
-mapping.register_table("user_quads", schema_only_provider(schema))
-    .map_iri_quads("people", IriQuadSource::table(
-        "user_quads", "subject", "predicate", "object"
-    ).graph_column("graph"));
-let mut graph = RdfGraphEngine::new(
-    DuckDbExecutor::from_connection(connection), Arc::new(mapping), "people"
-);
-let result = graph.sparql(
-    "PREFIX ex: <https://example.com/> \
-     SELECT ?friend WHERE { ex:alice ex:knows ?friend . }"
+let connection = duckdb::Connection::open("application.duckdb")
+    .map_err(|e| e.to_string())?;
+let mut mapping = GraphMapping::new();
+mapping.register_table("customers", schema_only_provider(Arc::new(Schema::new(vec![
+    Field::new("tenant", DataType::Int64, false),
+    Field::new("id", DataType::Int64, false),
+    Field::new("name", DataType::Utf8, true),
+]))));
+mapping.map_node(NodeMapping::table("Customer", "customers", ["tenant", "id"])
+    .property("name", "name"));
+mapping.map_rdf(RdfMapping::table(
+    "customers", Term::template("urn:customer:", ["tenant", "id"]),
+    "https://example.com/name", Term::literal("name"),
+).writable(["tenant", "id"]));
+let mut graph = GraphEngine::mapped(connection, Arc::new(mapping))?;
+let result = graph.sparql_query(
+    "SELECT ?name WHERE { ?customer <https://example.com/name> ?name }",
+    "default",
 ).await?;
 ```
 
-The dataset name `people` selects the sources registered under that name. The returned friend is `https://example.com/bob`.
+`Term::iri(column)` reads existing IRIs. `Term::template(prefix, columns)` encodes
+ordered key components as UTF-8 hexadecimal separated by `/`: tenant `1`, id `7`
+become `urn:customer:31/37`. Binary key columns use their original bytes. The encoding is reversible and escapes separators.
+A null component emits no statement. Blank-node templates add a declared scope.
 
-## Join triple patterns
+Literal rules infer RDF datatypes from registered column types. Use the `Literal`
+variant to specify a datatype, constant language, or language column. Language
+tags are normalized to lowercase. Native numeric columns expose their stored
+value; a text column can preserve an original lexical spelling.
+
+## Map relationships
+
+An orders table can expose a composite foreign key directly:
+
+```rust
+mapping.map_rdf(RdfMapping::table(
+    "orders", Term::template("urn:customer:", ["tenant", "customer_id"]),
+    "https://example.com/hasOrder", Term::template("urn:order:", ["tenant", "id"]),
+).writable(["tenant", "id"]));
+mapping.map_rdf(RdfMapping::table(
+    "orders", Term::template("urn:order:", ["tenant", "id"]),
+    "https://example.com/total", Term::literal("total"),
+));
+```
+
+Register the orders schema and these rules before constructing the engine.
+Partial-null foreign keys emit no relationship. Independent edge tables work the
+same way: map their source and destination key columns. Registered SQL views can
+provide joins or computed read projections.
 
 ```sparql
 PREFIX ex: <https://example.com/>
-SELECT ?friend WHERE {
-  ex:alice ex:knows ?middle .
-  ?middle ex:knows ?friend .
+SELECT ?name ?total WHERE {
+  ?customer ex:name ?name ; ex:hasOrder ?order .
+  ?order ex:total ?total .
+  FILTER(?total > 100)
 }
 ```
 
-The shared `?middle` binding joins the two patterns and returns cara. A variable predicate, such as `ex:alice ?predicate ?object`, can inspect several relationship predicates from the same source.
+No type assertion is required. Constant predicates prune unrelated mappings.
+Compatible composite identity mappings retain native key columns for joins.
+Variable predicates enumerate applicable rules. Overlapping statements are
+removed at graph boundaries; query solution multiplicity follows SPARQL.
 
 ## Default and named graphs
 
-To query a named graph, store its IRI in the graph column and select it with `GRAPH`:
+Rules without a graph belong to the default graph. Add
+`.graph(Term::constant("urn:team"))` or `.graph(Term::iri("graph_iri"))` for named
+graphs. A null mapped graph expression emits no statement. `GRAPH ?g`, `FROM`, and
+`FROM NAMED` use the same rules. An explicit named-graph registry preserves empty
+graphs; configure it through `RdfDatasetMapping::map_writable_named_graphs` and
+attach it with `GraphMapping::with_rdf_mapping` before adding further RDF rules.
 
-```sparql
-PREFIX ex: <https://example.com/>
-SELECT ?subject ?object WHERE {
-  GRAPH ex:team { ?subject ex:knows ?object . }
-}
-```
+## Updates and transactions
 
-Use `GRAPH ?graph` to bind the graph name. `FROM` chooses graphs to merge into the query's default graph; `FROM NAMED` selects named graphs available to `GRAPH` patterns.
+Call `graph.sparql_update(update, "default", None).await?`. Writable rules declare
+a complete physical row key. Subject and object identities determine key/FK
+values; property inserts for a new subject combine into one row insertion.
+Deleting a property clears its column, deleting an FK relationship unlinks its
+non-key columns, and deleting an all-key edge or class assertion deletes its row.
+`DELETE/INSERT` replaces values in a single row transition, including required
+columns. Defaults and database constraints still apply.
 
-```sparql
-PREFIX ex: <https://example.com/>
-SELECT ?subject ?object
-FROM ex:team
-WHERE { ?subject ex:knows ?object . }
-```
+A scalar column cannot represent two different simultaneous RDF values. To
+replace a value, delete the old statement and insert the new one in the same
+request. Ambiguous targets, missing key components, and constraint failures abort
+the request. No fallback storage is created.
 
-## Combine sources
+`begin`, `commit`, and `rollback` cover all three query languages. SPARQL writes
+are immediately visible to Cypher and Gremlin on that connection. A failed
+explicit transaction must be rolled back. Automatic transactions roll back on
+errors or cancellation.
 
-Register each physical table and call `map_iri_quads` repeatedly with the same dataset name. The dataset then includes each mapped source. This can expose several application-owned tables through one SPARQL entry point.
+## Inspect execution and results
 
-SPARQL `SERVICE`, including `SERVICE SILENT`, is unsupported. Combining mapped
-tables within a dataset does not issue remote SPARQL HTTP requests.
+`sparql_query` returns typed `SparqlResults`: SELECT solutions, an ASK boolean, or
+CONSTRUCT triples. `sparql_dataset` returns Arrow batches and execution statistics.
+`sparql_sql` shows generated SQL. `into_executor` returns the connection for
+further relational work.
 
-## Keep using the connection
-
-After querying, `graph.into_executor()` returns the DuckDB executor. Use it to continue relational work in the same session. `graph.mapping()` and `graph.dataset()` expose the configuration while the engine is active.
+Application-owned quad tables remain a supported source shape. Existing
+`RdfDatasetMapping` configurations attach through
+`GraphMapping::new().with_rdf_mapping(mapping)`. The old `RdfGraphEngine` API is a
+compatibility facade delegating to `GraphEngine`; it owns no separate executor.

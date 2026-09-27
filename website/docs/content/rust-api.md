@@ -52,24 +52,25 @@ Import from `orchiddb::mapped_engine`. Construct with `MappedGraphEngine::new(ex
 
 Read methods return `Result<ReturnedBatches, String>`. The [mapped tutorial](mapped-graphs.md) demonstrates source schema registration and engine construction.
 
-## RdfGraphEngine
-
-Import from `orchiddb::rdf_engine`. Construct with `RdfGraphEngine::new(executor, Arc::new(mapping), dataset_name)`.
+## SPARQL on GraphEngine
 
 | Method | Purpose |
 | --- | --- |
-| `sparql(query).await` | Query the selected RDF dataset. |
-| `dataset()` | Return the configured dataset name. |
-| `mapping()` | Inspect the RDF dataset mapping. |
-| `into_executor()` | Consume the engine and recover its DuckDB executor. |
+| `sparql_query(query, dataset).await` | Return typed SELECT, ASK, or CONSTRUCT results. |
+| `sparql_dataset(query, dataset).await` | Return Arrow batches and execution statistics. |
+| `sparql_update(query, dataset, base).await` | Apply mapped row updates in the shared transaction. |
+| `sparql_sql(query, dataset).await` | Inspect generated SQL. |
+| `into_executor()` | Recover the same DuckDB connection. |
 
-The [RDF dataset guide](rdf.md) shows table registration and graph-column configuration.
+`RdfGraphEngine` remains a delegating compatibility facade. New applications use
+`GraphEngine::mapped` with RDF rules on `GraphMapping`. See [RDF mappings](rdf.md).
 
 ## Data and mapping types
 
 | Module | Types |
 | --- | --- |
 | `ir::rel::mapping` | `GraphMapping`, `NodeMapping`, `EdgeMapping`, `MappedSource` |
+| `ir::rel::rdf_mapping` | `RdfMapping`, `RdfTermMapping` |
 | `ir::rel::rdf` | `RdfDatasetMapping`, `IriQuadSource` |
 | `language::sparql` | `OntologyMapping`, `ClassMapping`, `PredicateMapping` |
 | `ir::runtime` | `ReturnedBatches` |

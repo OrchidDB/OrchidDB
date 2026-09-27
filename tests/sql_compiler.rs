@@ -117,3 +117,17 @@ async fn every_declared_scalar_type_can_be_a_primary_key() {
         }
     }
 }
+
+#[tokio::test]
+async fn rdf_rules_compile_without_an_ontology_or_type_root() {
+    let request=json!({"version":1,"dialect":"duckdb","language":"sparql","query":"SELECT ?name WHERE {?s <urn:name> ?name}","tables":[{"name":"customers","columns":[{"name":"tenant","data_type":"int64"},{"name":"id","data_type":"int64"},{"name":"name","data_type":"string"}]}],"rdf":[{"table":"customers","subject":{"kind":"template","prefix":"urn:c:","columns":["tenant","id"]},"predicate":{"kind":"constant","value":"urn:name"},"object":{"kind":"literal","column":"name"}}]});
+    let result=compile(request).await.unwrap();
+    assert!(result["sql"].as_str().unwrap().contains("customers"));
+    assert_eq!(result["fields"],json!(["?name"]));
+}
+
+#[tokio::test]
+async fn legacy_sparql_constant_retains_its_native_numeric_type() {
+    let result=compile(json!({"version":1,"dialect":"duckdb","language":"sparql","query":"SELECT (42 AS ?answer) WHERE {}","tables":[]})).await.unwrap();
+    assert!(result["sql"].as_str().unwrap().contains("BIGINT"),"{}",result["sql"]);
+}

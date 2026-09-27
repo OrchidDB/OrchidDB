@@ -2,6 +2,7 @@
 //!
 //! Schemas and function signatures come from the caller. No connection, catalog
 //! discovery, DDL, data copying, or SQL execution happens in this module.
+pub use crate::ir::rel::rdf_mapping::{RdfMapping, RdfTermMapping};
 use crate::ir::{
     catalog::PropertyGraph,
     functions::{
@@ -35,7 +36,12 @@ pub struct CompileRequest {
     #[serde(default)]
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub tables: Vec<Table>,
+    #[serde(default)]
     pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub rdf: Vec<RdfMapping>,
+    #[serde(default = "default_rdf_dataset")]
+    pub dataset: String,
     #[serde(default)]
     pub edges: Vec<Edge>,
     #[serde(default)]
@@ -60,6 +66,9 @@ pub struct Column {
     pub data_type: String,
     #[serde(default = "yes")]
     pub nullable: bool,
+}
+fn default_rdf_dataset() -> String {
+    "default".into()
 }
 fn yes() -> bool {
     true
@@ -265,8 +274,10 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         mapping.register_table_schema(&table.name, schema.clone());
         schemas.insert(table.name.clone(), schema);
     }
-    mapping.set_constraints(request.constraints.clone()).set_constraint_scope(request.constraint_scope.clone());
-    mapping.validate_constraints().map_err(|e|e.to_string())?;
+    mapping
+        .set_constraints(request.constraints.clone())
+        .set_constraint_scope(request.constraint_scope.clone());
+    mapping.validate_constraints().map_err(|e| e.to_string())?;
     let check = |table: &str, column: &str, id: bool| -> Result<(), String> {
         let schema = schemas
             .get(table)
@@ -288,7 +299,9 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             return Err("empty or duplicate node label".into());
         }
         node.id.validate().map_err(|e| e.to_string())?;
-        for column in node.id.columns() { check(&node.table, column, true)?; }
+        for column in node.id.columns() {
+            check(&node.table, column, true)?;
+        }
         let mut n = NodeMapping::table(&node.label, &node.table, &node.id);
         for (p, c) in &node.properties {
             check(&node.table, c, false)?;
@@ -306,7 +319,9 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         }
         for c in [&edge.id, &edge.source, &edge.target] {
             c.validate().map_err(|e| e.to_string())?;
-            for column in c.columns() { check(&edge.table, column, true)?; }
+            for column in c.columns() {
+                check(&edge.table, column, true)?;
+            }
         }
         let mut e = EdgeMapping::table(
             &edge.label,
@@ -319,7 +334,9 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         .with_id(&edge.id);
         if let Some(child) = edge.foreign_key {
             e = e.foreign_key(child);
-            if e.id_column.as_ref() != Some(&edge.id) { return Err("foreign-key edge ID must match its child key".into()); }
+            if e.id_column.as_ref() != Some(&edge.id) {
+                return Err("foreign-key edge ID must match its child key".into());
+            }
         }
         for (p, c) in &edge.properties {
             check(&edge.table, c, false)?;
@@ -352,6 +369,29 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         .iter()
         .map(|(k, v)| Ok((k.clone(), parameter(v)?)))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
+    for rule in &request.rdf {
+        mapping.map_rdf(rule.clone());
+    }
+    let mut o = crate::language::sparql::OntologyMapping::new();
+    for c in &request.ontology.classes {
+        o = match &c.identity {
+            Some(id) => o.class_with_identity(&c.iri, &c.label, id),
+            None => o.class(&c.iri, &c.label),
+        };
+    }
+    for p in &request.ontology.properties {
+        o = o.property(&p.iri, &p.label, &p.property);
+    }
+    for r in &request.ontology.relationships {
+        o = o.relationship_between(
+            &r.iri,
+            &r.label,
+            crate::ir::plan::Direction::Out,
+            &r.source_label,
+            &r.target_label,
+        );
+    }
+    o.apply_to(&mut mapping, &request.dataset)?;
     let mapping = Arc::new(mapping);
     let mut lowered = with_operator_table(Arc::new(registry), || -> Result<_, String> {
         let plan = match request.language.as_str() {
@@ -377,27 +417,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
                 if !parameters.is_empty() {
                     return Err("bindings are currently supported only for Cypher".into());
                 }
-                let mut o = crate::language::sparql::OntologyMapping::new();
-                for c in &request.ontology.classes {
-                    o = match &c.identity {
-                        Some(id) => o.class_with_identity(&c.iri, &c.label, id),
-                        None => o.class(&c.iri, &c.label),
-                    };
-                }
-                for p in &request.ontology.properties {
-                    o = o.property(&p.iri, &p.label, &p.property);
-                }
-                for r in &request.ontology.relationships {
-                    o = o.relationship_between(
-                        &r.iri,
-                        &r.label,
-                        crate::ir::plan::Direction::Out,
-                        &r.source_label,
-                        &r.target_label,
-                    );
-                }
-                crate::language::sparql::SparqlPlanner::new("mapped")
-                    .with_ontology(o)
+                crate::language::sparql::SparqlPlanner::new(&request.dataset)
                     .plan_str(&request.query)
                     .map_err(|e| e.to_string())?
             }
@@ -410,6 +430,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         .map_err(|e| e.to_string())?;
         RelBackend::with_options(RelBackendOptions {
             mapping: Some(mapping.clone()),
+            rdf_datasets: Some(Arc::new(mapping.rdf_mapping())),
             ..Default::default()
         })
         .lower(&plan, &PropertyGraph::new())
@@ -443,8 +464,48 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         }
         Ok(TreeNodeRecursion::Continue)
     }).map_err(|e| e.to_string())?;
-    let (optimized, constraint_proofs) = crate::ir::rel::constraints::optimize(lowered.plan.clone()).map_err(|e|e.to_string())?;
+    let (optimized, constraint_proofs) =
+        crate::ir::rel::constraints::optimize(lowered.plan.clone()).map_err(|e| e.to_string())?;
     lowered.plan = optimized;
+    if request.language == "sparql"
+        && request.rdf.is_empty()
+        && !lowered.fields.is_empty()
+        && lowered.plan.schema().fields().len() > lowered.fields.len()
+    {
+        let legacy_types = lowered
+            .fields
+            .iter()
+            .filter_map(|name| {
+                let dt = crate::ir::rel::rdf::binding_identity_columns(name)[1].clone();
+                let iri = constant_string_column(&lowered.plan, &dt)?;
+                Some((
+                    name.clone(),
+                    crate::ir::rel::rdf_mapping::legacy_scalar_type(&iri)?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        // Preserve the legacy compiler's visible-column result contract.
+        lowered.plan = datafusion::logical_expr::LogicalPlanBuilder::from(lowered.plan)
+            .project(
+                lowered
+                    .fields
+                    .iter()
+                    .map(|name| {
+                        let value = Expr::Column(datafusion::common::Column::from_name(name));
+                        match legacy_types.get(name) {
+                            Some(kind) => Expr::Cast(datafusion::logical_expr::Cast::new(
+                                Box::new(value),
+                                kind.clone(),
+                            ))
+                            .alias(name),
+                            None => value,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .and_then(|p| p.build())
+            .map_err(|e| e.to_string())?;
+    }
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
         version: 1,
@@ -459,4 +520,37 @@ pub async fn compile_json(input: &str) -> Result<String, String> {
     let request =
         serde_json::from_str(input).map_err(|e| format!("invalid compiler request: {e}"))?;
     serde_json::to_string(&compile(request).await?).map_err(|e| e.to_string())
+}
+
+fn constant_string_column(plan: &LogicalPlan, name: &str) -> Option<String> {
+    fn expression(expr: &Expr, input: &LogicalPlan) -> Option<String> {
+        match expr {
+            Expr::Alias(alias) => expression(&alias.expr, input),
+            Expr::Literal(datafusion::common::ScalarValue::Utf8(Some(value)), _) => {
+                Some(value.clone())
+            }
+            Expr::Column(column) => constant_string_column(input, &column.name),
+            _ => None,
+        }
+    }
+    if let LogicalPlan::Projection(projection) = plan {
+        let index = projection
+            .schema
+            .fields()
+            .iter()
+            .position(|field| field.name() == name)?;
+        return expression(&projection.expr[index], &projection.input);
+    }
+    let inputs = plan
+        .inputs()
+        .into_iter()
+        .filter(|input| input.schema().has_column_with_unqualified_name(name))
+        .collect::<Vec<_>>();
+    let mut values = inputs
+        .iter()
+        .map(|input| constant_string_column(input, name));
+    let first = values.next()??;
+    values
+        .all(|value| value.as_ref() == Some(&first))
+        .then_some(first)
 }

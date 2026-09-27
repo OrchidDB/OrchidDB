@@ -86,6 +86,8 @@ impl DuckDbExecutor {
         }
     }
 
+    pub(crate) fn query_timeout(&self) -> Option<Duration> { self.timeout }
+
     /// Configure time budgets without replacing an existing database session.
     pub fn set_timeouts(&mut self, query_timeout: Duration, setup_timeout: Duration) {
         self.timeout = Some(query_timeout);

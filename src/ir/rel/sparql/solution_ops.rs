@@ -33,7 +33,7 @@ impl Lowerer<'_, '_> {
             let certain = self.never_errors(&sol, &item.expr);
             let mut vars = sol.vars.clone();
             vars.remove(&item.alias);
-            let mut next = Sol {
+            let mut next = Sol { native: BTreeMap::new(),
                 plan: env.plan.clone(),
                 vars,
                 keys: sol.keys.clone(),
@@ -99,7 +99,7 @@ impl Lowerer<'_, '_> {
             columns.push(lit(1_i64).alias(self.fresh("row")));
         }
         let plan = self.project(env.plan, columns)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars,
             keys: BTreeSet::new(),
@@ -182,7 +182,7 @@ impl Lowerer<'_, '_> {
         }
         columns.push(col_exact(&ord));
         let plan = self.window_projection(plan, columns)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars: sol.vars,
             keys: sol.keys,
@@ -221,7 +221,7 @@ impl Lowerer<'_, '_> {
                 (var, certain)
             })
             .collect();
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars,
             keys,
@@ -339,7 +339,7 @@ impl Lowerer<'_, '_> {
             columns.extend(var_columns(var).into_iter().map(col_exact));
         }
         let plan = self.project(lowered.plan, columns)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan,
             vars,
             keys: BTreeSet::new(),

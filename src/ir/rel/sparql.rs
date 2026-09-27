@@ -82,7 +82,7 @@ fn xsd(local: &str) -> String {
 
 /// Whether the typed SPARQL lowering owns this plan. Plans produced with an
 /// ontology mapping contain property-graph scans and keep the generic path.
-pub(super) fn handles(plan: &GraphPlan) -> bool {
+pub(crate) fn handles(plan: &GraphPlan) -> bool {
     fn property_graph(node: &Node) -> bool {
         matches!(
             node,
@@ -476,6 +476,7 @@ fn integer_lexical(value: Expr) -> Expr {
 /// A relation of SPARQL solutions.
 #[derive(Clone, Debug)]
 struct Sol {
+    native: BTreeMap<String,(String,Vec<String>)>,
     plan: LogicalPlan,
     /// Variables present as columns; the flag is true when always bound.
     vars: BTreeMap<String, bool>,
@@ -491,6 +492,7 @@ impl Sol {
         for var in self.vars.keys() {
             out.extend(var_columns(var).into_iter().map(col_exact));
         }
+        out.extend(self.native.values().flat_map(|(_,cols)|cols.iter()).map(col_exact));
         out.extend(self.keys.iter().map(col_exact));
         if let Some(ord) = &self.ord {
             out.push(col_exact(ord));
@@ -506,6 +508,7 @@ impl Sol {
         for var in self.vars.keys() {
             out.extend(var_columns(var));
         }
+        out.extend(self.native.values().flat_map(|(_,cols)|cols.iter()).cloned());
         out.extend(self.keys.iter().cloned());
         out.extend(self.ord.iter().cloned());
         out
@@ -682,7 +685,7 @@ impl Lowerer<'_, '_> {
                     }
                     _ => vec![lit(1_i64).alias(self.fresh("graph"))],
                 };
-                let sol = Sol { plan: self.project(plan, columns)?, vars,
+                let sol = Sol { native: BTreeMap::new(), plan: self.project(plan, columns)?, vars,
                     keys: BTreeSet::new(), ord: None };
                 for name in sol.vars.keys().filter(|name| name.starts_with("__sq_graph_scope_")) {
                     self.graph_domains.insert(name.clone(), sol.clone());
@@ -847,7 +850,7 @@ impl Lowerer<'_, '_> {
 
     fn one_row(&mut self) -> RelResult<Sol> {
         let lowered = self.ctx.lower_node(&Node::GraphOneRow)?;
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan: lowered.plan,
             vars: BTreeMap::new(),
             keys: BTreeSet::new(),
@@ -868,7 +871,8 @@ impl Lowerer<'_, '_> {
             names,
             identity,
             typed,
-        } = quad_source(self.ctx, dataset, graph_scope)?;
+            native,
+        } = super::rdf::quad_source_filtered(self.ctx, dataset, graph_scope, match predicate { RdfTerm::Iri(p)=>Some(p),_=>None })?;
         if !typed
             && [subject, predicate, object]
                 .iter()
@@ -953,8 +957,17 @@ impl Lowerer<'_, '_> {
         if projections.is_empty() {
             projections.push(lit(1_i64).alias(self.fresh("match")));
         }
+        let mut native_bindings=BTreeMap::new();
+        for (variable,role) in &first_role {
+            if let Some((signature,columns))=native.get(role) {
+                let aliases=columns.iter().map(|column|format!("{variable}:{column}")).collect::<Vec<_>>();
+                for (column,alias) in columns.iter().zip(&aliases) {projections.push(col_exact(column).alias(alias));}
+                native_bindings.insert(variable.clone(),(signature.clone(),aliases));
+            }
+        }
         let plan = self.project(plan, projections)?;
         Ok(Sol {
+            native:native_bindings,
             plan,
             vars,
             keys: BTreeSet::new(),

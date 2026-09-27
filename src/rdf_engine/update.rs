@@ -1,6 +1,6 @@
 //! SPARQL update orchestration. WHERE regions use the normal Graph IR -> SQL
 //! IR planner. Instantiated effects target only explicitly writable mappings.
-use super::{RdfGraphEngine, RdfTermValue, SparqlResults};
+use super::{RdfSession, RdfTermValue, SparqlResults};
 use crate::ir::rel::rdf::IriQuadSource;
 use crate::ir::rel::sql::mutation::{MappedMutation, RowCondition};
 use crate::spargebra::algebra::GraphTarget;
@@ -121,29 +121,13 @@ fn mapped_values(
     Ok(values)
 }
 
-impl RdfGraphEngine {
+impl RdfSession<'_> {
     /// Execute an atomic update request against existing writable mappings.
     /// No table or column is created implicitly.
     pub async fn update(&mut self, source: &str, base: Option<&str>) -> Result<()> {
         let update =
             crate::language::sparql::parse_update(source, base).map_err(|e| e.to_string())?;
-        self.executor()?
-            .connection()
-            .map_err(|e| e.to_string())?
-            .execute_batch("BEGIN TRANSACTION")
-            .map_err(|e| e.to_string())?;
-        let outcome = self.apply_operations(update).await;
-        let mut executor = self.executor()?;
-        let connection = executor.connection().map_err(|e| e.to_string())?;
-        match outcome {
-            Ok(()) => connection
-                .execute_batch("COMMIT")
-                .map_err(|e| e.to_string()),
-            Err(error) => {
-                let _ = connection.execute_batch("ROLLBACK");
-                Err(error)
-            }
-        }
+        self.apply_operations(update).await
     }
 
     fn graph_effect(&self, graph: String, insert: bool) -> Result<MappedMutation> {
@@ -173,6 +157,41 @@ impl RdfGraphEngine {
         let RdfTermValue::Iri(predicate) = &triple[1] else {
             return Err("Predicate must be an IRI".into());
         };
+        let mut relational = Vec::new();
+        for rule in self
+            .mapping
+            .relational
+            .iter()
+            .filter(|r| r.dataset == self.dataset)
+        {
+            if let Some(values) =
+                super::relational_update::inverse(rule, &graph, &triple, &self.mapping)?
+            {
+                relational.push((rule, values));
+            }
+        }
+        if !relational.is_empty() {
+            let quad_targets = self
+                .mapping
+                .dataset_sources(&self.dataset)
+                .iter()
+                .filter(|source| {
+                    (graph.is_none() || source.graph_column.is_some())
+                        && source.predicate_iri.as_ref().is_none_or(|p| p == predicate)
+                })
+                .count();
+            if relational.len() + quad_targets != 1 {
+                return Err(format!("Ambiguous RDF write for predicate {predicate}"));
+            }
+            let (rule, values) = relational.pop().unwrap();
+            let mut effects = super::relational_update::effects(rule, values, insert)?;
+            if insert && self.mapping.writable_graph_table(&self.dataset).is_some() {
+                if let Some(graph) = graph {
+                    effects.insert(0, self.graph_effect(graph, true)?);
+                }
+            }
+            return Ok(effects);
+        }
         let targets = self
             .mapping
             .dataset_sources(&self.dataset)
@@ -271,7 +290,9 @@ impl RdfGraphEngine {
                     // Update WHERE has no outer SELECT projection. Export all
                     // in-scope bindings, including those outside a subselect.
                     let mut variables = std::collections::BTreeSet::new();
-                    pattern.on_in_scope_variable(|variable| { variables.insert(variable.clone()); });
+                    pattern.on_in_scope_variable(|variable| {
+                        variables.insert(variable.clone());
+                    });
                     let query = Query::Select {
                         dataset: using,
                         pattern: crate::spargebra::algebra::GraphPattern::Project {
@@ -342,6 +363,10 @@ impl RdfGraphEngine {
                     }
                 }
             }
+            let mut effects = super::relational_update::coalesce(effects)?;
+            if !self.mapping.relational.is_empty() {
+                super::relational_update::order(&mut effects, &mut *self.executor()?)?;
+            }
             for effect in effects {
                 effect.execute(&mut *self.executor()?)?;
             }
@@ -396,6 +421,33 @@ impl RdfGraphEngine {
                 table: source.table.clone(),
                 conditions,
             });
+        }
+        // Read through the same rule resolver, then invert each visible statement.
+        if self
+            .mapping
+            .relational
+            .iter()
+            .any(|r| r.dataset == self.dataset)
+        {
+            let mut graphs = Vec::new();
+            if matches!(graph, GraphTarget::DefaultGraph | GraphTarget::AllGraphs) {
+                graphs.push(None);
+            }
+            graphs.extend(names.iter().filter(|name|matches!(graph,GraphTarget::AllGraphs|GraphTarget::NamedGraphs)||matches!(graph,GraphTarget::NamedNode(n) if n.as_str()==name.as_str())).cloned().map(Some));
+            for name in graphs {
+                let query = match &name {
+                    None => "SELECT ?s ?p ?o WHERE {?s ?p ?o}".into(),
+                    Some(g) => format!("SELECT ?s ?p ?o WHERE {{ GRAPH <{g}> {{?s ?p ?o}} }}"),
+                };
+                if let SparqlResults::Solutions { rows, .. } = self.query(&query).await? {
+                    for row in rows {
+                        let terms: Vec<_> = row.into_iter().flatten().collect();
+                        if let Ok(triple) = terms.try_into() {
+                            effects.extend(self.quad_effects(name.clone(), triple, false)?);
+                        }
+                    }
+                }
+            }
         }
         if drop {
             for name in names {

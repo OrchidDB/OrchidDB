@@ -70,7 +70,7 @@ impl Lowerer<'_, '_> {
             })
             .collect();
         columns.extend(keys.iter().map(col_exact));
-        Ok(Sol {
+        Ok(Sol { native: BTreeMap::new(),
             plan: LogicalPlanBuilder::from(plan).project(columns)?.build()?,
             vars,
             keys,
@@ -236,7 +236,7 @@ impl Lowerer<'_, '_> {
             }
             RdfPathExpr::ZeroOrMore(inner) | RdfPathExpr::OneOrMore(inner) => {
                 let edge = self.path_relation(source, inner, identity)?;
-                let edge = Sol {
+                let edge = Sol { native: BTreeMap::new(),
                     plan: self.cte(edge.plan.clone())?,
                     ..edge
                 };
@@ -255,7 +255,7 @@ impl Lowerer<'_, '_> {
                 ));
                 let scan =
                     LogicalPlanBuilder::scan(&name, provider_as_source(table), None)?.build()?;
-                let work = Sol {
+                let work = Sol { native: BTreeMap::new(),
                     plan: scan,
                     ..seed.clone()
                 };
@@ -264,7 +264,7 @@ impl Lowerer<'_, '_> {
                 let plan = LogicalPlanBuilder::from(seed.plan)
                     .to_recursive_query(name, recursive.plan, true)?
                     .build()?;
-                Ok(Sol { plan, ..seed })
+                Ok(Sol { native: BTreeMap::new(), plan, ..seed })
             }
         }
     }
@@ -388,7 +388,7 @@ impl Lowerer<'_, '_> {
             let column = self.fresh("path_match");
             let mut columns = vec![lit(1_i64).alias(column)];
             columns.extend(sol.keys.iter().map(col_exact));
-            Sol {
+            Sol { native: BTreeMap::new(),
                 plan: self.project(plan, columns)?,
                 vars: BTreeMap::new(),
                 keys: sol.keys,

@@ -5,11 +5,13 @@
 //! and schedules explicit DuckDB regions.
 
 mod mapped_storage;
+mod rdf;
 mod mapped_source;
 mod snapshot;
 mod checkpoint;
 pub use snapshot::CypherStateSnapshot;
 pub use checkpoint::ManagedGraphCheckpoint;
+pub use crate::rdf_engine::{RdfTermValue, SparqlResults};
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -139,10 +141,13 @@ fn migrate_storage_namespace(storage: &Connection) -> EngineResult<()> {
 impl GraphEngine {
     /// Use caller-owned DuckDB tables with the common language executor.
     pub fn mapped(storage: Connection, mapping: Arc<GraphMapping>) -> EngineResult<Self> {
+        let mut executor=sql::DuckDbExecutor::from_connection(storage);
+        let in_transaction=executor.in_transaction();
+        let storage=executor.take_connection().ok_or("missing mapped connection")?;
         mapped_storage::register(&storage)?;
         let mut engine = Self {
             storage, mapping: Some(mapping), database: None, graph: PropertyGraph::new(),
-            loaded_revision: None, in_transaction: false, failed_transaction: false,
+            loaded_revision: None, in_transaction, failed_transaction: false,
             read_mode: ReadMode::Hybrid, backend: RelBackend::new(), sql_timeout: None,
             strict_executor: sql::DuckDbExecutor::new(),
             dag_session: crate::ir::rel::dag::DagSession::new(None),
@@ -589,6 +594,13 @@ impl GraphEngine {
         query: &str,
         ontology: sparql::OntologyMapping,
     ) -> EngineResult<QueryResult> {
+        if let Some(mapping)=&self.mapping {
+            let mut mapping=(**mapping).clone();
+            ontology.apply_to(&mut mapping,"default")?;
+            let mut result=self.run_rdf(query,"default",None,false,Some(Arc::new(mapping.rdf_mapping()))).await?.ok_or("missing SPARQL result")?;
+            result.returned=crate::rdf_engine::legacy_columns(result.returned)?;
+            return Ok(result);
+        }
         let plan = plan_sparql(query, ontology)?;
         self.execute_plan(&plan).await
     }
@@ -619,7 +631,9 @@ impl GraphEngine {
             let storage = std::mem::replace(&mut self.storage, placeholder);
             let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
             if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
+            if self.in_transaction {self.failed_transaction=true;}
             let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone()).await;
+            if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
             return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
@@ -741,6 +755,11 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
     let mut lease=MappedExecutorLease {target:executor,shared:shared.clone(),automatic,finished:false};
     let session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
     let result = async {
+        let rdf=mapping.rdf_mapping();
+        if crate::ir::rel::sparql::handles(plan) {
+            let mut context=crate::rdf_engine::RdfSession {resources:&session,mapping:Arc::new(rdf),dataset:"default".into(),scalar_registered:false,last_query_stats:None};
+            return context.execute_plan(plan).await;
+        }
         let mut graph = mapped_source::attach(session.shared_executor(), mapping.clone())?;
         graph.procedures = procedures;
         let mut result = execute_graph_dag(plan, &graph, timeout, Some(&session), jvm_workers).await.map_err(|e|e.to_string())?;

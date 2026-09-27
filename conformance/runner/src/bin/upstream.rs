@@ -6,8 +6,8 @@ use std::{io::{self,BufRead,Write},sync::Arc,collections::BTreeMap};
 use arrow::{array::*,datatypes::{DataType,Field,Schema}};
 use datafusion::datasource::MemTable;
 use orchiddb::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value as GValue,
- ir::rel::{rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},sql::DuckDbExecutor},
- rdf_engine::{RdfGraphEngine,RdfTermValue,SparqlResults}};
+ ir::rel::rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},
+ rdf_engine::{RdfTermValue,SparqlResults}};
 use serde_json::{Value,json};
 fn cell(a:&dyn Array,i:usize)->Value {
  if a.is_null(i){return Value::Null}
@@ -117,24 +117,26 @@ async fn rdf(req:&Value)->Result<Value,String>{
  let values=row.as_array().ok_or("quad row must be array")?.iter().map(|v|v.as_str().map(str::to_string)).collect::<Vec<_>>();
  conn.execute("INSERT INTO terms VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",duckdb::params_from_iter(values)).map_err(|e|e.to_string())?;
  }}
- let mut executor=DuckDbExecutor::from_connection(conn);executor.set_timeouts(std::time::Duration::from_secs(8),std::time::Duration::from_secs(8));
- let mut engine=RdfGraphEngine::new(executor,Arc::new(mapping),"default");
+ let mut engine=GraphEngine::mapped(conn,Arc::new(orchiddb::ir::rel::mapping::GraphMapping::new().with_rdf_mapping(mapping)))?;
+ engine.set_sql_timeout(std::time::Duration::from_secs(8));
  if req["update"].as_bool().unwrap_or(false) {
-  engine.update(req["query"].as_str().unwrap_or(""),req["base"].as_str()).await?;
-  let SparqlResults::Solutions{rows,..}=engine.query("SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }").await? else {return Err("Expected updated dataset rows".into())};
+  engine.sparql_update(req["query"].as_str().unwrap_or(""),"default",req["base"].as_str()).await?;
+  let SparqlResults::Solutions{rows,..}=engine.sparql_query("SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }","default").await? else {return Err("Expected updated dataset rows".into())};
   let quads=rows.into_iter().map(|row|row.into_iter().map(|v|v.map(term)).collect::<Vec<_>>()).collect::<Vec<_>>();
-  let SparqlResults::Solutions{rows,..}=engine.query("SELECT ?g WHERE { GRAPH ?g {} }").await? else {return Err("Expected updated graph names".into())};
+  let SparqlResults::Solutions{rows,..}=engine.sparql_query("SELECT ?g WHERE { GRAPH ?g {} }","default").await? else {return Err("Expected updated graph names".into())};
   let names=rows.into_iter().filter_map(|row|match row.into_iter().next().flatten(){Some(RdfTermValue::Iri(v))=>Some(v),_=>None}).collect::<Vec<_>>();
   return Ok(json!({"quads":quads,"named_graphs":names}));
  }
- let result=engine.query(req["query"].as_str().unwrap_or("")).await?;
+ let output=engine.sparql_dataset(req["query"].as_str().unwrap_or(""),"default").await?;
+ let stats=output.stats;
+ let result=orchiddb::rdf_engine::decode_results(&output.returned)?;
  let response:Result<Value,String>=match result {
  SparqlResults::Boolean(v)=>Ok(json!({"boolean":v})),
  SparqlResults::Solutions{variables,rows}=>Ok(json!({"variables":variables.iter().map(|s|s.trim_start_matches('?')).collect::<Vec<_>>(),"rows":rows.into_iter().map(|r|r.into_iter().map(|v|v.map(term)).collect::<Vec<_>>()).collect::<Vec<_>>()})),
  SparqlResults::Graph(rows)=>Ok(json!({"graph":rows.into_iter().map(|r|r.into_iter().map(term).collect::<Vec<_>>()).collect::<Vec<_>>()}))
  };
  let mut output=response?;
- output["query_cost"]=engine.last_query_stats().ok_or("missing RDF execution stats")?.cost.report();
+ output["query_cost"]=stats.cost.report();
  Ok(output)
 }
 #[tokio::main]

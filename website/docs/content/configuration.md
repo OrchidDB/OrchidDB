@@ -15,7 +15,7 @@ Configure engine execution, Cargo features, and development checks for a reprodu
 | SQL read policy | `set_read_mode(ReadMode::SqlOnly)` | Require complete SQL read execution. |
 | SQL timeout | `set_sql_timeout(Duration)` | Bound individual DuckDB SQL queries and setup. |
 | Mapping | `MappedGraphEngine::new(executor, mapping)` | Use the application's source schemas and graph vocabulary. |
-| RDF dataset | `RdfGraphEngine::new(executor, mapping, name)` | Choose a configured quad dataset. |
+| RDF dataset | `GraphMapping::map_rdf(rule)` | Add RDF vocabulary over registered application tables. |
 
 Keep configuration near engine construction so applications can see the persistence and execution policy in one place.
 

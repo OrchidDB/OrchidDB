@@ -133,6 +133,7 @@ impl IriQuadSource {
 /// `sql::prepare_with_external`.
 #[derive(Default, Clone)]
 pub struct RdfDatasetMapping {
+    pub(crate) relational: Vec<super::rdf_mapping::RdfMapping>,
     sources: BTreeMap<String, Vec<IriQuadSource>>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     graph_tables: BTreeMap<String, (String, String)>,
@@ -149,6 +150,13 @@ impl fmt::Debug for RdfDatasetMapping {
 }
 
 impl RdfDatasetMapping {
+    pub fn map_relational(&mut self, rule: super::rdf_mapping::RdfMapping) -> &mut Self {
+        self.sources.entry(rule.dataset.clone()).or_default(); self.relational.push(rule); self
+    }
+    pub(crate) fn extend_tables(&mut self,tables:&BTreeMap<String,Arc<dyn TableProvider>>) {self.tables.extend(tables.clone());}
+    pub(crate) fn registered_tables(&self)->BTreeMap<String,Arc<dyn TableProvider>> {self.tables.clone()}
+    pub fn is_empty(&self)->bool {self.sources.is_empty() && self.relational.is_empty()}
+
     pub(crate) fn dataset_sources(&self, dataset: &str) -> &[IriQuadSource] {
         self.sources.get(dataset).map(Vec::as_slice).unwrap_or_default()
     }
@@ -204,7 +212,9 @@ impl RdfDatasetMapping {
     /// This preserves graph identity even when a named graph has no triples.
     pub fn map_named_graphs(&mut self, dataset: impl Into<String>, table: impl Into<String>,
         column: impl Into<String>) -> &mut Self {
-        self.graph_tables.insert(dataset.into(), (table.into(), column.into()));
+        let dataset=dataset.into();
+        self.sources.entry(dataset.clone()).or_default();
+        self.graph_tables.insert(dataset, (table.into(), column.into()));
         self
     }
 
@@ -329,6 +339,7 @@ pub(super) struct QuadSource {
     pub(super) identity: [[String; 3]; 4],
     /// Whether any source carries typed term metadata.
     pub(super) typed: bool,
+    pub(super) native: BTreeMap<usize,(String,Vec<String>)>,
 }
 
 pub(super) fn quad_source(
@@ -336,6 +347,10 @@ pub(super) fn quad_source(
     dataset: &str,
     graph_scope: &RdfGraphScope,
 ) -> RelResult<QuadSource> {
+    quad_source_filtered(ctx,dataset,graph_scope,None)
+}
+
+pub(super) fn quad_source_filtered(ctx: &mut LoweringContext<'_>, dataset: &str, graph_scope: &RdfGraphScope, predicate: Option<&str>) -> RelResult<QuadSource> {
     if let RdfGraphScope::NamedGraph(term) = graph_scope {
         if !matches!(term, RdfTerm::Iri(_)) {
             return Err(RelError::Unsupported(format!(
@@ -357,12 +372,7 @@ pub(super) fn quad_source(
         .sources
         .get(dataset)
         .ok_or_else(|| RelError::Unsupported(format!("RDF dataset `{dataset}` is not mapped")))?;
-    if sources.is_empty() {
-        return Err(RelError::Unsupported(format!(
-            "RDF dataset `{dataset}` has no quad sources"
-        )));
-    }
-    let typed_dataset = sources.iter().any(|source| source.typed_terms.is_some());
+    let typed_dataset = sources.is_empty() || !mapping.relational.is_empty() || sources.iter().any(|source| source.typed_terms.is_some());
     ctx.rdf_typed_terms_used |= typed_dataset;
 
     let scan_id = ctx.scan_counter;
@@ -373,7 +383,10 @@ pub(super) fn quad_source(
         ["kind", "datatype", "language"].map(|part| format!("__w_rdf_{scan_id}_term_{role}_{part}"))
     });
     let mut branches = Vec::with_capacity(sources.len());
+    let mut native=BTreeMap::new();
+    let relational_count=mapping.relational.iter().filter(|r|r.dataset==dataset && !predicate.is_some_and(|p|r.predicate.predicate_iri().is_some_and(|iri|iri!=p))).count();
     for source in sources {
+        if predicate.is_some_and(|p| source.predicate_iri.as_ref().is_some_and(|iri| iri != p)) {continue;}
         let source_plan = mapping.source_plan(source)?;
         let graph = match &source.graph_column {
             Some(column) => iri_column(&source_plan, column)?,
@@ -426,6 +439,34 @@ pub(super) fn quad_source(
                 .build()?,
         );
     }
+    for rule in mapping.relational.iter().filter(|r| r.dataset == dataset) {
+        if predicate.is_some_and(|p| rule.predicate.predicate_iri().is_some_and(|iri| iri != p)) {continue;}
+        let provider = mapping.tables.get(&rule.table).ok_or_else(|| RelError::Unsupported(format!("RDF source table {} is not registered",rule.table)))?;
+        let plan=match provider.get_logical_plan() {Some(plan)=>plan.into_owned(),None=>LogicalPlanBuilder::scan(rule.table.clone(),provider_as_source(provider.clone()),None)?.build()?};
+        let mut projected=rule.project(plan.clone(),&names,&identity_names)?;
+        if sources.is_empty() && relational_count==1 {
+            if let datafusion::logical_expr::LogicalPlan::Projection(projection)=&projected {
+                let mut expressions=projection.expr.clone();
+                for (role,term) in [(1,&rule.subject),(3,&rule.object)] {
+                    use super::rdf_mapping::RdfTermMapping;
+                    if let RdfTermMapping::Template{prefix,columns}|RdfTermMapping::Blank{scope:prefix,columns}=term {
+                        let types=columns.iter().map(|c|plan.schema().field_with_unqualified_name(c).map(|f|f.data_type().clone())).collect::<Result<Vec<_>,_>>()?;
+                        if types.iter().all(|t|matches!(t,arrow::datatypes::DataType::Int8|arrow::datatypes::DataType::Int16|arrow::datatypes::DataType::Int32|arrow::datatypes::DataType::Int64|arrow::datatypes::DataType::UInt8|arrow::datatypes::DataType::UInt16|arrow::datatypes::DataType::UInt32|arrow::datatypes::DataType::UInt64|arrow::datatypes::DataType::Utf8|arrow::datatypes::DataType::Boolean)) {
+                            let mut aliases=Vec::new();
+                            for (i,column) in columns.iter().enumerate() {let name=format!("{}_native_{i}",names[role]);expressions.push(col_exact(column).alias(&name));aliases.push(name);}
+                            native.insert(role,(format!("{}:{prefix:?}:{types:?}",matches!(term,RdfTermMapping::Blank{..})),aliases));
+                        }
+                    }
+                }
+                projected=LogicalPlanBuilder::from(projection.input.as_ref().clone()).project(expressions)?.build()?;
+            }
+        }
+        branches.push(projected);
+    }
+    if branches.is_empty() {
+        let expressions=names.iter().chain(identity_names.iter().flatten()).map(|n|lit(ScalarValue::Utf8(None)).alias(n)).collect::<Vec<_>>();
+        branches.push(LogicalPlanBuilder::empty(false).project(expressions)?.build()?);
+    }
     let mut source = branches.remove(0);
     for branch in branches {
         source = LogicalPlanBuilder::from(source)
@@ -466,13 +507,15 @@ pub(super) fn quad_source(
     }
     // RDF graphs are sets. Deduplicate before the join so equal input
     // solution mappings retain their correct multiplicity.
-    source = LogicalPlanBuilder::from(source).distinct()?.build()?;
+    let keys=source.schema().columns().into_iter().map(datafusion::logical_expr::Expr::Column).collect::<Vec<_>>();
+    source = LogicalPlanBuilder::from(source).aggregate(keys,Vec::<datafusion::logical_expr::Expr>::new())?.build()?;
 
     Ok(QuadSource {
         plan: source,
         names,
         identity: identity_names,
         typed: typed_dataset,
+        native,
     })
 }
 
@@ -504,7 +547,7 @@ pub(super) fn named_graphs(ctx: &mut LoweringContext<'_>, dataset: &str,
         RdfGraphScope::DatasetNamedGraphVariable { allowed, .. } => graph_in(&name, allowed),
         _ => return Err(RelError::Unsupported("named graph enumeration requires a named graph scope".into())),
     };
-    Ok((LogicalPlanBuilder::from(plan).filter(filter)?.distinct()?.build()?, name))
+    Ok((LogicalPlanBuilder::from(plan).filter(filter)?.aggregate(vec![col_exact(&name)],Vec::<datafusion::logical_expr::Expr>::new())?.build()?, name))
 }
 
 pub(super) fn lower_iri_quad_pattern(
@@ -521,7 +564,8 @@ pub(super) fn lower_iri_quad_pattern(
         names,
         identity: identity_names,
         typed: typed_dataset,
-    } = quad_source(ctx, dataset, graph_scope)?;
+        native: _,
+    } = quad_source_filtered(ctx, dataset, graph_scope, match predicate { RdfTerm::Iri(p)=>Some(p),_=>None })?;
     if !typed_dataset
         && [subject, predicate, object]
             .iter()

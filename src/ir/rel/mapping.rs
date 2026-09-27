@@ -423,6 +423,7 @@ impl EdgeMapping {
 /// against.
 #[derive(Default, Clone)]
 pub struct GraphMapping {
+    pub(crate) rdf: super::rdf::RdfDatasetMapping,
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
@@ -442,6 +443,17 @@ impl fmt::Debug for GraphMapping {
 }
 
 impl GraphMapping {
+    /// Declare RDF vocabulary over a source already in this graph catalog.
+    pub fn map_rdf(&mut self, rule: super::rdf_mapping::RdfMapping) -> &mut Self {
+        self.rdf.map_relational(rule); self
+    }
+    pub fn rdf_mapping(&self) -> super::rdf::RdfDatasetMapping {
+        let mut rdf = self.rdf.clone();
+        rdf.extend_tables(&self.tables); rdf
+    }
+    pub fn with_rdf_mapping(mut self, rdf: super::rdf::RdfDatasetMapping) -> Self {
+        self.tables.extend(rdf.registered_tables()); self.rdf = rdf; self
+    }
     pub fn new() -> Self {
         Self::default()
     }
