@@ -173,11 +173,7 @@ impl LoweringContext<'_> {
             source,
             target,
             TargetMode::BindNew,
-            if existing {
-                &LabelExpr::Any
-            } else {
-                target_labels
-            },
+            target_labels,
             rel_binding.as_ref(),
             rel_types,
             *dir,

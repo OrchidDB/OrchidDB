@@ -189,8 +189,9 @@ and contribute no primary-suite passes or failures.
 Each result includes a stable upstream ID, case hash, outcome, elapsed time,
 and available actual output/diagnostic. The catalog preserves original steps,
 expectations and pinned source links. Runs record source revisions, runtime
-information and engine version or OrchidDB binary hash. The OrchidDB run is a
-local working-tree build, not a release benchmark.
+information and engine version or OrchidDB binary hash. OrchidDB conformance
+builds default to the optimized release profile. These are local scenario
+measurements, not controlled cross-product benchmarks.
 
 Outcomes: `pass`, `fail`, `unsupported`, `skipped`, `not-applicable`,
 `adapter-error`, `timeout`. The page additionally detects missing/stale evidence.

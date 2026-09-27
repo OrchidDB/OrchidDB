@@ -34,6 +34,9 @@ impl LoweringContext<'_> {
         history: Option<&str>,
     ) -> RelResult<LoweredNode> {
         let mut input = self.lower_node(input)?;
+        if target_mode == TargetMode::Existing {
+            input = self.restrict_existing_target(input, target, target_labels)?;
+        }
         if let Some(history) = history {
             if !has_exact_col(&input.plan, history) {
                 let mut projection = existing_columns(&input.plan, &BTreeSet::new());

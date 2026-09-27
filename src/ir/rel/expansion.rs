@@ -20,6 +20,32 @@ impl<'a> LoweringContext<'a> {
         Ok(LabelExpr::AnyOf(allowed.into_iter().filter(|label| endpoints.contains(label)).collect()))
     }
 
+    /// Bound endpoints still have to satisfy labels written in the pattern.
+    /// Reuse the node scan contract so multi-label managed nodes and mapped
+    /// schemas have the same semantics as newly bound endpoints.
+    pub(super) fn restrict_existing_target(
+        &mut self,
+        mut input: LoweredNode,
+        target: &str,
+        labels: &LabelExpr,
+    ) -> RelResult<LoweredNode> {
+        if matches!(labels, LabelExpr::Any) { return Ok(input); }
+        let binding = format!("__w_target_labels_{}", self.scan_counter);
+        self.scan_counter += 1;
+        let allowed = self.lower_node_scan(&binding, labels)?;
+        let conditions = vec![
+            identity_compare(&[&input.plan, &allowed.plan], &id_col(target), BinaryOp::Eq, &id_col(&binding)),
+            binary(col_exact(label_col(target)), BinaryOp::Eq, col_exact(label_col(&binding))),
+        ];
+        input.plan = LogicalPlanBuilder::from(input.plan)
+            .join_on(allowed.plan, JoinType::LeftSemi, conditions)?.build()?;
+        let columns = input.plan.schema().fields().iter()
+            .map(|field| col_exact(field.name()).alias(field.name())).collect::<Vec<_>>();
+        input.plan = LogicalPlanBuilder::from(input.plan).project(columns)?.build()?;
+        input.islands.merge(allowed.islands);
+        Ok(input)
+    }
+
     pub(super) fn lower_bind(
         &mut self,
         bind: &str,
@@ -80,6 +106,9 @@ impl<'a> LoweringContext<'a> {
             return Err(RelError::Unsupported("Observed Gremlin paths require native traverser values".into()));
         }
         let input = self.lower_node(input)?;
+        let input = if target_mode == TargetMode::Existing {
+            self.restrict_existing_target(input, target, target_labels)?
+        } else { input };
         if has_binding_shape(&input.plan, source).is_none() {
             return Err(RelError::Unsupported(format!(
                 "expand source `{source}` is not an element binding"

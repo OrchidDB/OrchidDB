@@ -498,13 +498,16 @@ pub(super) fn with_apply_correlation_keys(
 pub(super) fn right_apply_output_columns(right: &LogicalPlan, outputs: &[String]) -> RelResult<Vec<String>> {
     let mut out = Vec::new();
     for output in outputs {
-        if output.starts_with("__") && !output.starts_with("__rdf:term:") {
-            continue;
-        }
         if has_exact_col(right, output) {
             out.push(output.clone());
         } else if has_binding_shape(right, output).is_some() {
             out.extend(binding_column_names(right, output)?);
+        } else if output == "__path" || output == "__path_labels"
+            || output.starts_with("__gremlin_select_history_") {
+            // Unobserved Gremlin bookkeeping may be omitted by path lowering.
+            // Other internal names are real declared outputs: in particular,
+            // Cypher pattern booleans and lists must cross the apply boundary.
+            continue;
         } else {
             return Err(RelError::Unsupported(format!(
                 "apply output `{output}` is not available relationally"

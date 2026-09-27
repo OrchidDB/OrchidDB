@@ -143,6 +143,38 @@ fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec
     let mut seen = BTreeSet::new();
     let mut plain_versions = std::collections::BTreeMap::<String, Vec<usize>>::new();
     let transformed = plan.transform_up(|node| match node {
+        LogicalPlan::Unnest(mut unnest) => {
+            // Optimizers can push scalar consumers into the named alias that
+            // originally fenced UNNEST. Fence the actual row-expanding node
+            // after optimization, before the unparser can merge its SELECT
+            // into a filter or substitute UNNEST inside a scalar expression.
+            if !matches!(unnest.input.as_ref(), LogicalPlan::Projection(_)) {
+                let columns = unnest.input.schema().columns().into_iter()
+                    .map(datafusion::logical_expr::Expr::Column).collect();
+                unnest.input = Arc::new(LogicalPlan::Projection(
+                    datafusion::logical_expr::logical_plan::Projection::try_new(columns, unnest.input)?));
+            }
+            let term = LogicalPlan::Unnest(unnest);
+            let columns = term.schema().fields().iter()
+                .map(|field| datafusion::logical_expr::Expr::Column(
+                    datafusion::common::Column::new_unqualified(field.name()))).collect();
+            let term = LogicalPlan::Projection(
+                datafusion::logical_expr::logical_plan::Projection::try_new(columns, Arc::new(term))?);
+            hoist_operator(term, "unnest", &mut plain_ctes, &mut seen)
+        }
+        LogicalPlan::Window(window) if window.window_expr.iter().any(|expr|
+            expr.schema_name().to_string().starts_with("__apply_corr_key_row")) => {
+            // Copies of an apply boundary can acquire distinct QUALIFY or
+            // projection consumers. Their unordered ROW_NUMBER identities
+            // must still come from one shared evaluation of the frontier.
+            let term = LogicalPlan::Window(window);
+            let columns = term.schema().fields().iter()
+                .map(|field| datafusion::logical_expr::Expr::Column(
+                    datafusion::common::Column::new_unqualified(field.name()))).collect();
+            let term = LogicalPlan::Projection(
+                datafusion::logical_expr::logical_plan::Projection::try_new(columns, Arc::new(term))?);
+            hoist_operator(term, "apply_row_window", &mut plain_ctes, &mut seen)
+        }
         LogicalPlan::RecursiveQuery(recursive) => {
             let schema = Arc::new(recursive.static_term.schema().as_arrow().clone());
             let work_table = Arc::new(CteWorkTable::new(&recursive.name, schema));
@@ -210,6 +242,30 @@ fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec
         other => Ok(Transformed::no(other)),
     })?;
     Ok((transformed.data, plain_ctes, recursive_ctes))
+}
+
+fn hoist_operator(
+    term: LogicalPlan,
+    kind: &str,
+    plain_ctes: &mut Vec<PlainCte>,
+    seen: &mut BTreeSet<String>,
+) -> datafusion::common::Result<Transformed<LogicalPlan>> {
+    let prefix = format!("__w_sql_cte_{kind}_operator_");
+    let reused = plain_ctes.iter().find(|cte| cte.name.starts_with(&prefix) && cte.term == term);
+    let name = if let Some(cte) = reused { cte.name.clone() } else {
+        let mut index = plain_ctes.len();
+        let name = loop {
+            let candidate = format!("{prefix}{index}");
+            if seen.insert(candidate.clone()) { break candidate; }
+            index += 1;
+        };
+        plain_ctes.push(PlainCte { name: name.clone(), term: term.clone() });
+        name
+    };
+    let schema = Arc::new(term.schema().as_arrow().clone());
+    let work_table = Arc::new(CteWorkTable::new(&name, schema));
+    let scan = TableScan::try_new(name, provider_as_source(work_table), None, Vec::new(), None)?;
+    Ok(Transformed::yes(LogicalPlan::TableScan(scan)))
 }
 
 /// Replace only providers created by range lowering, never user table names.

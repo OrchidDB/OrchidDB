@@ -1366,6 +1366,11 @@ pub(super) fn values_batch(
 }
 
 pub(super) fn infer_value_type(values: &[&Value]) -> RelResult<DataType> {
+    // An empty/all-null VALUES relation contributes no concrete type to a
+    // union. Treating it as text coerces numeric traversers to strings.
+    if values.iter().all(|value| matches!(value, Value::Null)) {
+        return Ok(DataType::Null);
+    }
     if values.iter().any(|v|crate::ir::temporal::contains_temporal(v)) {
         return Err(RelError::Unsupported("Typed temporal values require a residual kernel".into()));
     }
@@ -1483,6 +1488,7 @@ pub(super) fn values_array<'a>(
     data_type: &DataType,
 ) -> RelResult<ArrayRef> {
     match data_type {
+        DataType::Null => Ok(arrow::array::new_null_array(&DataType::Null, values.count())),
         DataType::Int8
         | DataType::Int16
         | DataType::Int32

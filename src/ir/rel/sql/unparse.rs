@@ -9,11 +9,27 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
+    let plan = preserve_limit_output(plan)?;
     let plan = strip_column_qualifiers(plan)
         .map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?;
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = recursive::unparse_plan(plan, dialect)?;
     Ok(apply_identifier_repairs(sql, &repairs))
+}
+
+/// LIMIT creates a SELECT scope in the upstream unparser. Without an explicit
+/// projection, a join's left input projection can become that scope's entire
+/// output, silently dropping columns supplied by the right input.
+fn preserve_limit_output(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
+    Ok(plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::Limit(mut limit) = node else { return Ok(Transformed::no(node)); };
+        if !matches!(limit.input.as_ref(), LogicalPlan::Projection(_)) {
+            let columns = limit.input.schema().columns().into_iter().map(Expr::Column).collect();
+            limit.input = Arc::new(LogicalPlan::Projection(
+                datafusion::logical_expr::Projection::try_new(columns, limit.input)?));
+        }
+        Ok(Transformed::yes(LogicalPlan::Limit(limit)))
+    })?.data)
 }
 
 /// Rewrite literals whose unparsed text would not mean the same value.

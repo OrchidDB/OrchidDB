@@ -71,9 +71,18 @@ pub(super) fn elide_unobserved(steps: &[Step], root: &mut Node) {
         match node {
             Node::GraphExpand { path, .. } | Node::GraphRepeat { path, .. } => { *path = None; }
             Node::GraphProject { items, input, .. } => {
+                // Frontier compaction uses the history register's presence
+                // to distinguish step labels from compiler temporaries.
+                // Keep a null registration after eliding the history values;
+                // last-pop reads the binding itself, and historical pops are
+                // excluded by the proof above.
+                for item in items.iter_mut() {
+                    if item.alias.starts_with("__gremlin_select_history_") && dead(&item.alias, histories) {
+                        item.expr = crate::ir::expr::IrExpr::Lit(crate::ir::expr::Lit::Null);
+                    }
+                }
                 items.retain(|item| !dead(&item.alias, histories)
-                    || (item.alias.starts_with("__gremlin_select_history_")
-                        && matches!(item.expr, crate::ir::expr::IrExpr::Lit(crate::ir::expr::Lit::Null))));
+                    || item.alias.starts_with("__gremlin_select_history_"));
                 if items.is_empty() { *node = *std::mem::replace(input, Box::new(Node::GraphEmpty)); }
             }
             Node::GraphCorrelate { bindings } => bindings.retain(|name| !dead(name, histories)),
