@@ -78,3 +78,53 @@ async fn public_engine_queries_external_quads_without_changing_source() {
         .unwrap();
     assert_eq!(rows, 3);
 }
+
+#[tokio::test]
+async fn distinct_order_is_preserved_before_limit_and_offset() {
+    let connection = duckdb::Connection::open_in_memory().unwrap();
+    connection.execute_batch("CREATE TABLE ordered_quads (s VARCHAR, p VARCHAR, o VARCHAR); INSERT INTO ordered_quads VALUES ('urn:a','urn:value','urn:3'), ('urn:b','urn:value','urn:1'), ('urn:c','urn:value','urn:4'), ('urn:d','urn:value','urn:0'), ('urn:e','urn:value','urn:2'), ('urn:f','urn:value','urn:1')").unwrap();
+    let schema = Arc::new(Schema::new(
+        ["s", "p", "o"]
+            .map(|name| Field::new(name, DataType::Utf8, false))
+            .to_vec(),
+    ));
+    let mut mapping = RdfDatasetMapping::new();
+    mapping
+        .register_table("ordered_quads", schema_only_provider(schema))
+        .map_iri_quads(
+            "ordered",
+            IriQuadSource::table("ordered_quads", "s", "p", "o"),
+        );
+    let mut engine = RdfGraphEngine::new(
+        DuckDbExecutor::from_connection(connection),
+        Arc::new(mapping),
+        "ordered",
+    );
+    for (query, expected) in [
+        (
+            "SELECT DISTINCT ?v WHERE { [] <urn:value> ?v } ORDER BY ?v OFFSET 2",
+            vec!["urn:2", "urn:3", "urn:4"],
+        ),
+        (
+            "SELECT DISTINCT ?v WHERE { [] <urn:value> ?v } ORDER BY ?v OFFSET 2 LIMIT 5",
+            vec!["urn:2", "urn:3", "urn:4"],
+        ),
+        (
+            "SELECT ?v WHERE { { SELECT DISTINCT ?v WHERE { [] <urn:value> ?v } ORDER BY ?v LIMIT 2 } } ORDER BY ?v",
+            vec!["urn:0", "urn:1"],
+        ),
+    ] {
+        let result = engine.sparql(query).await.unwrap();
+        let values = result
+            .batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(
+            values.iter().map(Option::unwrap).collect::<Vec<_>>(),
+            expected,
+            "{query}"
+        );
+    }
+}

@@ -19,11 +19,13 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
 
 /// LIMIT creates a SELECT scope in the upstream unparser. Without an explicit
 /// projection, a join's left input projection can become that scope's entire
-/// output, silently dropping columns supplied by the right input.
+/// output, silently dropping columns supplied by the right input. Only joins
+/// need this repair: wrapping DISTINCT would separate its ORDER BY from LIMIT
+/// and let duplicate elimination reorder rows before slicing.
 fn preserve_limit_output(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
     Ok(plan.transform_up_with_subqueries(|node| {
         let LogicalPlan::Limit(mut limit) = node else { return Ok(Transformed::no(node)); };
-        if !matches!(limit.input.as_ref(), LogicalPlan::Projection(_)) {
+        if matches!(limit.input.as_ref(), LogicalPlan::Join(_)) {
             let columns = limit.input.schema().columns().into_iter().map(Expr::Column).collect();
             limit.input = Arc::new(LogicalPlan::Projection(
                 datafusion::logical_expr::Projection::try_new(columns, limit.input)?));
