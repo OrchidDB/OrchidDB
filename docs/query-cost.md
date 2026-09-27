@@ -60,15 +60,9 @@ scores. These are selected-query observations, not a new conformance run:
 | Nested grouping (Group:165) | 291,570 | 51,947 |
 
 The repeat checks also assert the exact large integer answers. Grouping still
-uses native map reducers after SQL compaction. Match:560 returns its exact six
-maps and transfers only six SQL rows, but its observed elapsed time was about
-1.62 seconds versus 0.92 seconds in the earlier evidence. The boundary score
-improvement is not a latency improvement; SQL planning/execution remains a
-follow-up for that query. These development-build timings are observations,
-not controlled benchmarks. Historical reports keep their recorded outcomes and timings. The latest
-[release validation](release-conformance-validation.md) reruns the full suites
-and publishes fresh costs and timings; comparisons use the prior evidence with
-corrected helper attribution.
+uses native map reducers after SQL compaction. The latest
+[release validation](release-conformance-validation.md) records complete suite
+results, query costs, and current timings.
 
 ## Conformance reports
 

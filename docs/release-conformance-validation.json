@@ -19,11 +19,6 @@
         "median_case_ms": 2.139,
         "sum_case_ms": 17430.206
       },
-      "baseline_timings": {
-        "mean_case_ms": 91.97882294072363,
-        "median_case_ms": 85.946,
-        "sum_case_ms": 358441.473
-      },
       "full_local_artifact": "target/conformance-release/orchiddb-opencypher.json",
       "full_local_sha256": "9be9cb5e5a423f58a71c9a323becd941d79abff497caf7f5c1f831fd1d40ad73",
       "artifact": "conformance/upstream-results/orchiddb-opencypher.json",
@@ -54,11 +49,6 @@
         "mean_case_ms": 20.750348183322302,
         "median_case_ms": 6.497167,
         "sum_case_ms": 31353.776105
-      },
-      "baseline_timings": {
-        "mean_case_ms": 128.2408154659166,
-        "median_case_ms": 28.4065,
-        "sum_case_ms": 193771.872169
       },
       "full_local_artifact": "target/conformance-release/orchiddb-tinkerpop.json",
       "full_local_sha256": "306196c080392b2c6714c2c38150af9ad85980af3e1527b89f93866ce93f2211",
@@ -94,11 +84,6 @@
         "median_case_ms": 8.2685,
         "sum_case_ms": 9289.324
       },
-      "baseline_timings": {
-        "mean_case_ms": 60.515924024640654,
-        "median_case_ms": 52.903999999999996,
-        "sum_case_ms": 58942.51
-      },
       "full_local_artifact": "target/conformance-release/orchiddb-rdf.json",
       "full_local_sha256": "9d0af4833f9c70f232def7e85c2ae93381f58b0cad38f297b050525057d55f3a",
       "artifact": "conformance/upstream-results/orchiddb-rdf.json",
@@ -127,7 +112,6 @@
     "All three suites use the same release binary; Gremlin uses one uninterrupted engine instance.",
     "One execution per upstream scenario; fixture checkpoints and JVM reuse do not cache tested-query results.",
     "RDF received no harness optimization in this change; it was rerun to check shared engine changes.",
-    "Timings compare local historical development-build evidence with the current release build and harness; they do not isolate individual optimization effects.",
     "Only compact evidence is committed; full query payloads remain under ignored target/."
   ]
 }
