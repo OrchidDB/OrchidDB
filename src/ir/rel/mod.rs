@@ -333,7 +333,7 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
     let ctx = optimizer::session(config);
     let (plan, _) = constraints::optimize(lowered.plan)?;
-    let plan = representation::select(plan)?.plan;
+    let plan = statistics::optimize(representation::select(plan)?.plan)?.0;
     let df = ctx.execute_logical_plan(plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {
@@ -553,3 +553,5 @@ pub(crate) fn is_language_function(name: &str) -> bool {
             "cast" | "date_part" | "date_trunc" | "map" | "make_map" | "list_slice" | "range"
         )
 }
+
+pub mod statistics;

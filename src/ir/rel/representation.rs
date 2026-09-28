@@ -282,12 +282,45 @@ pub struct SelectedPlan {
     pub plan: LogicalPlan,
     pub layout_selections: Vec<LayoutDecision>,
     pub representation_selections: Vec<RepresentationDecision>,
+    pub access_decisions: Vec<super::statistics::OptimizerDecision>,
 }
 /// Shared resolution for compilation, SQL preparation, and DAG execution.
 pub fn select(plan: LogicalPlan) -> Result<SelectedPlan> {
-    stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || select_inner(plan, 0))
+    stacker::maybe_grow(8 * 1024 * 1024, 32 * 1024 * 1024, || select_connected(plan))
 }
-fn select_inner(plan: LogicalPlan, depth: usize) -> Result<SelectedPlan> {
+fn select_connected(plan: LogicalPlan) -> Result<SelectedPlan> {
+    let baseline=select_inner(plan.clone(),0)?;
+    // Normal queries without a generated catalog retain the existing path.
+    if super::statistics::explain(&baseline.plan).is_empty(){return Ok(baseline);}
+    let score=|mut s:SelectedPlan| -> Result<(SelectedPlan,Option<f64>)> {
+        let (p,decisions)=super::statistics::optimize(s.plan)?;
+        s.plan=p;s.access_decisions=decisions;
+        // Whole-plan search must retain supplied partition/file costs too.
+        let cost=estimate(&s,None)?.estimated_cost.map(|c|c as f64);
+        Ok((s,cost))
+    };
+    let (mut best,Some(mut best_cost))=score(baseline)? else{return select_inner(plan,0);};
+    let original_cost=best_cost;let original=best.representation_selections.iter().map(|r|r.representation.clone()).collect::<Vec<_>>();
+    let mut counts=Vec::new();
+    plan.apply_with_subqueries(|p| {if let LogicalPlan::TableScan(s)=p {if let Some(p)=provider(&source_as_provider(&s.source)?){counts.push(p.definition.representations.len());}}Ok(TreeNodeRecursion::Continue)})?;
+    let mut forced=BTreeMap::new();let mut evaluations=0;
+    // Bounded coordinate search across occurrences, scoring each complete connected
+    // plan after neighbor restrictions and join ordering, not isolated scan cost.
+    for _ in 0..2 {for (occurrence,count) in counts.iter().enumerate(){
+        let mut chosen=None;
+        for candidate in 0..*count {if evaluations>=32{break;}evaluations+=1;
+            let mut choices=forced.clone();choices.insert(occurrence,candidate);
+            let selected=select_forced(plan.clone(),0,&choices)?;
+            let (selected,cost)=score(selected)?;
+            if let Some(cost)=cost {if cost<best_cost {best_cost=cost;best=selected;chosen=Some(candidate);}}
+        }
+        if let Some(c)=chosen{forced.insert(occurrence,c);}
+    }}
+    if best_cost<original_cost {best.access_decisions.push(super::statistics::OptimizerDecision{optimization:"connected_representation_selection".into(),before:original,after:best.representation_selections.iter().map(|r|r.representation.clone()).collect(),estimated_work_before:original_cost,estimated_work_after:best_cost,reason:format!("whole connected plan cost after neighbor restrictions and join ordering; {evaluations} candidates considered")});}
+    Ok(best)
+}
+fn select_inner(plan:LogicalPlan,depth:usize)->Result<SelectedPlan>{select_forced(plan,depth,&BTreeMap::new())}
+fn select_forced(plan: LogicalPlan, depth: usize, forced: &BTreeMap<usize,usize>) -> Result<SelectedPlan> {
     if depth > 64 {
         return Err(invalid("representation dependency depth exceeds 64"));
     }
@@ -305,6 +338,7 @@ fn select_inner(plan: LogicalPlan, depth: usize) -> Result<SelectedPlan> {
     } else {
         plan
     };
+    let mut occurrence=0usize;
     let plan = plan
         .transform_up_with_subqueries(|node| {
             let LogicalPlan::TableScan(scan) = &node else {
@@ -363,7 +397,9 @@ fn select_inner(plan: LogicalPlan, depth: usize) -> Result<SelectedPlan> {
                     }
                 }
             }
-            candidates[best].reason = if candidates[default].estimate.estimated_cost.is_none() {
+            if let Some(choice)=forced.get(&occurrence) {if alternatives.get(*choice).is_some_and(Option::is_some){best=*choice;}}
+            occurrence+=1;
+            candidates[best].reason = if forced.contains_key(&(occurrence-1)) {"selected by connected-plan search"} else if candidates[default].estimate.estimated_cost.is_none() {
                 "selected default; unknown default cost"
             } else {
                 "selected lowest estimated cost; default wins ties"
@@ -403,6 +439,7 @@ fn select_inner(plan: LogicalPlan, depth: usize) -> Result<SelectedPlan> {
         plan,
         layout_selections: layout_choices,
         representation_selections: choices,
+        access_decisions: Vec::new(),
     })
 }
 fn estimate(selected: &SelectedPlan, average: Option<f64>) -> Result<RepresentationEstimate> {
@@ -423,8 +460,31 @@ fn estimate(selected: &SelectedPlan, average: Option<f64>) -> Result<Representat
             .into_iter()
             .try_fold(0_u64, |n, v| v.map(|v| n.saturating_add(v)))
     };
-    if scans != selected.layout_selections.len() {
-        return Ok(RepresentationEstimate::default());
+    let mut generated = super::statistics::estimate(&selected.plan);
+    // Retain manifest pruning and file-open cost when generated distributions
+    // also describe these scans. Sample extrema never become partition bounds.
+    let mut manifest_adjustment = 0.0;
+    selected.plan.apply_with_subqueries(|p| {
+        if let LogicalPlan::TableScan(scan) = p {
+            if let Some(layout) = selected.layout_selections.iter().find(|l|l.table==scan.table_name.to_string() && l.estimated_files.is_some()) {
+                if let (Some(pruned), Some(full)) = (layout.estimated_bytes, super::statistics::estimate(p).estimated_scan_bytes) {
+                    let delta = pruned as f64 - full;
+                    generated.estimated_scan_bytes = generated.estimated_scan_bytes.map(|b|(b+delta).max(0.0));
+                    manifest_adjustment += delta + layout.estimated_files.unwrap_or(0) as f64 * 65536.0;
+                }
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    })?;
+    generated.estimated_work = generated.estimated_work.map(|w|(w+manifest_adjustment).max(0.0));
+    if generated.estimated_work.is_some() || scans != selected.layout_selections.len() {
+        return Ok(RepresentationEstimate {
+            estimated_bytes: generated.estimated_scan_bytes.map(|v|v.ceil() as u64),
+            estimated_files: None,
+            estimated_input_rows: generated.estimated_input_rows.map(|v|v.ceil() as u64),
+            estimated_expanded_rows: generated.estimated_expanded_rows.map(|v|v.ceil() as u64),
+            estimated_cost: generated.estimated_work.map(|v|v.ceil() as u64),
+        });
     }
     let bytes = sum(selected
         .layout_selections

@@ -28,7 +28,7 @@ class Page(HTMLParser):
                 self.links.append(attrs[key])
 
 
-pages = {p.resolve(): Page(p) for p in OUT.glob('*.html')}
+pages = {p.resolve(): Page(p) for p in OUT.rglob('*.html')}
 count = 0
 for path, page in pages.items():
     assert page.lang, f'Missing language: {path}'

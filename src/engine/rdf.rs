@@ -135,6 +135,9 @@ impl GraphEngine {
             result
         };
         lease.finished = result.is_ok();
+        drop(lease);
+        drop(connection);
+        if update && result.is_ok() { self.invalidate_statistics(); }
         if result.is_ok() {
             self.failed_transaction = false;
         }

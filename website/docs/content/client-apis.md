@@ -1,6 +1,6 @@
 # Client APIs
 
-Map your existing tables, compile a Cypher, Gremlin, or mapped SPARQL read query to SQL, then consume native Arrow batches from your own engine. The compiler receives schema and mapping metadata, not your data. Clients do not bundle DuckDB.
+Map your existing tables, compile a Cypher, Gremlin, or mapped SPARQL read query to SQL, then consume native Arrow batches from your own engine. Normal compilation receives schema and mapping metadata. Explicit statistics generation additionally sends bounded source samples to the shared statistics builder. Clients do not bundle DuckDB.
 
 Version 0.1.0 is published on crates.io, PyPI, npm, Maven Central, and Hex, with C++ binaries on GitHub Releases. See the [package links and installation commands](installation.md#published-packages). Each repository includes working source examples; packaged native compilers currently target macOS ARM64.
 
@@ -14,7 +14,7 @@ Version 0.1.0 is published on crates.io, PyPI, npm, Maven Central, and Hex, with
 
 DuckDB is the tested execution target. Core also renders PostgreSQL SQL. ClickHouse execution and cross-engine federation are not implemented. The engine adapter boundary allows other backends without transferring ownership of connections to the compiler.
 
-Parameters are specialized into SQL. Cache keys must include their values, schema, node/edge/RDF mappings, collection definitions, physical layouts and partition metadata, ontology, functions, and dialect. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. Generated SQL must fit the target dialect. Consult the [recorded conformance results](conformance.md) for the exact APIs and revisions tested.
+Parameters are specialized into SQL. Cache keys must include their values, schema, node/edge/RDF mappings, collection definitions, physical layouts and partition metadata, ontology, functions, dialect, and installed statistics revision. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. Generated SQL must fit the target dialect. Consult the [recorded conformance results](conformance.md) for the exact APIs and revisions tested.
 
 ## Composite keys in source builds
 
@@ -27,7 +27,7 @@ all components and exclude partially NULL foreign keys.
 Use a compiler built from the composite-key sources when sending column arrays.
 The published `0.1.0` packages and standalone example manifests select the
 released compiler. Use a matching source revision for new request fields such as `rdf`,
-`logical_sources`, `collection_sources`, and `representation_sources`; older packaged compilers may reject
+`logical_sources`, `collection_sources`, `representation_sources`, and `statistics`; older packaged compilers may reject
 them. API availability is determined by the loaded library revision.
 
 ## Rust
@@ -162,3 +162,10 @@ The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples
 The [CLI](cli.md) bundles DuckDB and loads its official Iceberg extension by default. Embedded clients leave catalog, credentials, extensions, and SQL views to the application. Map a view over `iceberg_scan` like any other table.
 
 Arrow avoids per-cell row-object conversion at the interface. It does not guarantee zero-copy, bounded memory, streaming database execution, or cancellation support for every driver. See [Arrow results](results.md) for lifetime rules and `GraphEngine` result containers.
+
+## Optional generated statistics
+
+[Generate statistics once](statistics.md) to collect bounded source summaries and
+automatically use the cached snapshot for source selection, cardinality estimates
+and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
+client/engine ownership, plan diagnostics and partial coverage.

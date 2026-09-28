@@ -379,6 +379,12 @@ Supported descriptors: `identity`, `bucket` with `buckets`, `truncate` with `wid
 
 Cost is estimated surviving bytes plus delete bytes plus 64 KiB per surviving file. Equal costs retain the default layout. Missing statistics are unknown, not zero; a default with unknown statistics is retained. An empty partition list describes a known empty layout. Statistics must summarize all files in that layout. The engine does not discover Iceberg metadata or scan data to construct these summaries; supply them from the caller's catalog or manifest integration.
 
+[Optional generated statistics](statistics.md) can supply source row/byte costs
+when a layout has no partition summaries. File counts remain unknown; when not
+all candidates supply file counts, layout comparison uses bytes consistently.
+Collected sample extrema never become partition bounds. Generation is explicit
+and does not discover Iceberg manifests.
+
 Optional `generation` fields on the logical source and layouts exclude layouts whose generation differs. Optional layout `snapshot` strings are included in diagnostics. Omit both for ordinary catalogs; declaring alternatives asserts that they contain equivalent rows, including duplicate multiplicity. Snapshot strings are metadata provenance and do not issue snapshot-pinning SQL.
 
 TOML round trips the descriptors as JSON in `[logical_sources]` / `catalog`, following the existing constraint-catalog convention. Register physical providers after parsing the TOML to bind the sources. Runtime scalar-key lookups use the same selector. Logical sources are read-only in mapped graph persistence; update physical tables and refresh their declarations/statistics separately.

@@ -20,6 +20,7 @@ paths working and contain the contracts that need coordination.
 | Catalog mutation semantics | `src/ir/catalog/mutations.rs` | Graph and overlay data structures stay in `catalog.rs`; read paths remain there. Catalog, DML, mutation-visibility tests. |
 | Arrow property decoding / fixture table construction | `src/ir/catalog/values.rs`, `builders.rs` | Existing public catalog entry points remain reexported. Catalog and typed-property tests. |
 | Snapshot format and persistence | `src/ir/catalog/snapshot/` | `binary.rs` owns value tags and codecs; `sections.rs` keeps graph-section encoders/decoders together. Envelope version and graph reconstruction stay in `snapshot.rs`. Snapshot and storage-integrity tests. |
+| Optional statistics and cost-based source selection | `src/ir/rel/statistics/`, `layout.rs`, `representation.rs` | Shared coordinator, Arrow/row protocol, snapshots, estimator and optimizer; clients only drive bounded requests. `statistics_generation` plus source/constraint/engine regressions. |
 | Explain formatting | `src/ir/plan/explain.rs` | Node definitions stay together in `plan.rs`; planner/explain tests. |
 
 ## Assigning work

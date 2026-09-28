@@ -34,6 +34,12 @@ impl SqlSession for Session {
 fn query() -> CompiledSql {
     CompiledSql {
         constraint_proofs: vec![],
+        logical_plan: String::new(),
+        layout_selections: vec![],
+        representation_selections: vec![],
+        plan_estimates: vec![],
+        statistics_usage: None,
+        optimizer_decisions: vec![],
         version: 1,
         dialect: "duckdb".into(),
         sql: "SELECT 42".into(),

@@ -247,9 +247,14 @@ impl LayoutProvider {
                                 f.saturating_add(p.files),
                             )
                         })
+                }).or_else(|| {
+                    let stats = super::statistics::statistics_provider(self.providers.get(&layout.table)?)?;
+                    stats.source.estimated_bytes.map(|b| (b.ceil() as u64, 0))
                 })
             })
             .collect();
+        // File counts are comparable only when every eligible candidate supplies them.
+        let compare_files = self.definition.layouts.iter().all(|l| l.partitions.is_some());
         let default = self
             .definition
             .layouts
@@ -261,7 +266,7 @@ impl LayoutProvider {
         if estimates[default].is_some() {
             for (i, estimate) in estimates.iter().enumerate() {
                 if let (Some((b, f)), Some((bb, bf))) = (estimate, estimates[best]) {
-                    let cost = u128::from(*b) + u128::from(*f) * 64 * 1024;
+                    let cost = u128::from(*b) + u128::from(*f) * if compare_files { 64 * 1024 } else { 0 };
                     let best_cost = u128::from(bb) + u128::from(bf) * 64 * 1024;
                     if cost < best_cost {
                         best = i;
@@ -281,12 +286,14 @@ impl LayoutProvider {
                     "stale generation"
                 } else if e.is_none() {
                     "unknown statistics"
+                } else if l.partitions.is_none() {
+                    "collected source estimate; partition/file costs unavailable"
                 } else {
                     "eligible"
                 }
                 .into(),
                 estimated_bytes: e.map(|e| e.0),
-                estimated_files: e.map(|e| e.1),
+                estimated_files: e.filter(|_| l.partitions.is_some()).map(|e| e.1),
             })
             .collect();
         (
@@ -297,9 +304,9 @@ impl LayoutProvider {
                 generation: self.definition.generation.clone(),
                 snapshot: layout.snapshot.clone(),
                 estimated_bytes: estimates[best].map(|e| e.0),
-                estimated_files: estimates[best].map(|e| e.1),
+                estimated_files: estimates[best].filter(|_| layout.partitions.is_some()).map(|e| e.1),
                 estimated_rows: layout.partitions.as_ref().and_then(|parts| parts.iter().filter(|p| !filters.iter().any(|f| impossible(f,p,&self.schema,layout.specs.iter().find(|s|s.spec_id==p.spec_id))))
-                    .try_fold(0_u64,|n,p|p.rows.map(|r|n.saturating_add(r)))),
+                    .try_fold(0_u64,|n,p|p.rows.map(|r|n.saturating_add(r)))).or_else(|| super::statistics::statistics_provider(self.providers.get(&layout.table)?).and_then(|s|s.source.estimated_rows.map(|n|n.ceil() as u64))),
                 partition_specs: layout.specs.clone(),
                 candidates,
             },

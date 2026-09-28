@@ -2495,8 +2495,10 @@ version = "0.1.0"
 dependencies = [
  "antlr4rust",
  "arrow",
+ "arrow-json",
  "arrow-select",
  "async-trait",
+ "base64",
  "bigdecimal",
  "chrono",
  "chrono-tz",

@@ -623,7 +623,7 @@ pub async fn prepare_with_external(
     external: &BTreeSet<String>,
 ) -> SqlResult<PreparedSql> {
     let mut lowered = lowered.clone();
-    lowered.plan = super::representation::select(lowered.plan)?.plan;
+    lowered.plan = super::statistics::optimize(super::representation::select(lowered.plan)?.plan)?.0;
     let query = unparse(&lowered, dialect)?;
     let tables = plan_tables_excluding(&lowered.plan, external).await?;
     Ok(PreparedSql {

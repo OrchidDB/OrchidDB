@@ -17,6 +17,14 @@
 - [Transactions and storage](transactions.md)
 - [Update mapped tables](updates.md)
 
+# Statistics
+
+- [Overview](statistics.md)
+- [When to use statistics](statistics/when-to-use.md)
+- [Generating statistics](statistics/generation.md)
+- [How statistics change planning](statistics/optimization.md)
+- [Reusing statistics](statistics/snapshots.md)
+
 # Query languages
 
 - [Cypher](cypher.md)

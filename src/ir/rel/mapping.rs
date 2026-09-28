@@ -428,6 +428,7 @@ pub struct GraphMapping {
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
     representation_sources: BTreeMap<String, super::representation::RepresentationSource>,
+    statistics: Option<Arc<super::statistics::StatisticsSnapshot>>,
     collection_sources: BTreeMap<String, super::collection_source::CollectionSource>,
     logical_sources: BTreeMap<String, super::layout::LogicalSource>,
     constraints: super::constraints::ConstraintCatalog,
@@ -844,8 +845,55 @@ impl GraphMapping {
         self.refresh_derived();
         Ok(self)
     }
+    /// Portable metadata for explicit statistics generation; only registered sources are included.
+    pub fn statistics_request(&self) -> RelResult<serde_json::Value> {
+        use serde_json::json;
+        let mut tables=Vec::new();
+        for (name,p) in &self.tables {
+            if self.logical_sources.contains_key(name) || self.collection_sources.contains_key(name) || self.representation_sources.contains_key(name) || p.get_logical_plan().is_some() {continue;}
+            let columns=p.schema().fields().iter().map(|f|Ok(json!({"name":f.name(),"data_type":super::statistics::type_name(f.data_type()).map_err(RelError::Unsupported)?,"nullable":f.is_nullable()}))).collect::<RelResult<Vec<_>>>()?;
+            tables.push(json!({"name":name,"columns":columns}));
+        }
+        let nodes=self.nodes.values().filter_map(|m|if let MappedSource::Table(table)=&m.source{Some(json!({"label":m.label,"table":table,"id":m.id_column.columns(),"properties":m.properties}))}else{None}).collect::<Vec<_>>();
+        let edges=self.edges.values().filter_map(|m|if let MappedSource::Table(table)=&m.source{Some(json!({"label":m.rel_type,"table":table,"source":m.src_column.columns(),"target":m.dst_column.columns(),"source_label":m.src_label,"target_label":m.dst_label,"properties":m.properties}))}else{None}).collect::<Vec<_>>();
+        Ok(json!({"version":1,"dialect":"duckdb","language":"cypher","query":"RETURN 1", "tables":tables,"nodes":nodes,"edges":edges,"rdf":self.rdf.relational,"logical_sources":self.logical_sources.values().collect::<Vec<_>>(),"collection_sources":self.collection_sources.values().collect::<Vec<_>>(),"representation_sources":self.representation_sources.values().collect::<Vec<_>>()}))
+    }
+    /// Install optional generated estimates; no data access or constraint discovery.
+    pub fn set_statistics(&mut self, snapshot: Arc<super::statistics::StatisticsSnapshot>) -> RelResult<&mut Self> {
+        snapshot.validate_estimates().map_err(RelError::Unsupported)?;
+        self.clear_statistics();
+        for (name, stats) in &snapshot.sources {
+            if let Some(p) = self.tables.get(name).cloned() {
+                if super::statistics::schema_fingerprint(p.schema().as_ref()) == stats.schema {
+                    self.tables.insert(name.clone(), super::statistics::StatisticsProvider::wrap(p, snapshot.clone(), name.clone()));
+                }
+            }
+        }
+        self.statistics = Some(snapshot);
+        self.refresh_statistics_sources();
+        Ok(self)
+    }
+    pub fn statistics(&self) -> Option<&Arc<super::statistics::StatisticsSnapshot>> { self.statistics.as_ref() }
+    pub fn clear_statistics(&mut self) {
+        self.statistics = None;
+        for p in self.tables.values_mut() {
+            if let Some(stats) = p.as_any().downcast_ref::<super::statistics::StatisticsProvider>() { *p = stats.inner.clone(); }
+        }
+        self.refresh_statistics_sources();
+    }
+    fn refresh_statistics_sources(&mut self) {
+        for source in self.logical_sources.values() {
+            if let Ok(provider) = super::layout::LayoutProvider::try_new(source.clone(), &self.tables) {self.tables.insert(source.name.clone(), Arc::new(provider));}
+        }
+        self.refresh_derived();
+    }
     pub fn representation_source(&self, name: &str) -> Option<&super::representation::RepresentationSource> {
         self.representation_sources.get(name)
+    }
+    pub(crate) fn source_access_cost(&self, source:&MappedSource, keys:&KeyColumns)->Option<(f64,f64,f64,f64)> {
+        self.statistics()?;
+        let selected=super::representation::select(self.source_plan(source).ok()?).ok()?;
+        super::statistics::source_access_cost(&selected.plan,keys.columns())
     }
     pub(crate) fn derived_source_sql(&self, source: &MappedSource, filters: &[Expr]) -> RelResult<Option<String>> {
         match source {

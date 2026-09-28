@@ -96,6 +96,10 @@ sources. Replacing a provider rebuilds dependent definitions.
 Filters are pushed into each alternative before comparing its scans. Parent-key
 filters can prune the parent scan below an expansion; element filters remain
 after expansion. Column aliases translate predicates into physical column names.
+With a generated snapshot, connected search also compares whole-plan costs after
+join ordering and legal neighbor-key restrictions. A selective neighbor can add a
+parent semijoin before collection expansion; the original binding join remains.
+`optimizer_decisions` reports the connected choice and its total estimated work.
 Each self-join occurrence can choose a different representation. Residual
 predicates remain in the plan; selection does not move a limit ahead of them.
 
@@ -144,11 +148,17 @@ candidate, including each input of a join. If an input is a logical layout sourc
 put its statistics on that source: representation selection composes with layout
 selection instead of duplicating metadata.
 
-The cost is estimated surviving bytes (including delete bytes), plus 65,536 per
-file, plus eight per estimated expanded row. Expanded rows are estimated only
-for one list expansion without a join, when both input row counts and
-`average_list_length` are supplied. Missing cardinality remains unknown. This is
-a scan/expansion heuristic, not a join CPU model or measured execution time.
+Without a generated snapshot, cost uses supplied surviving bytes (including delete
+bytes), plus 65,536 per file, plus eight per estimated expanded row. In that mode,
+expanded rows need one list expansion without a join, supplied input row counts
+and `average_list_length`.
+
+With [generated statistics](statistics.md), the shared estimator supplies source,
+filter, join, grouping and expansion costs. Collected list lengths can replace a
+manual average; generated source costs allow candidates without manifest metrics
+to compete. Supplied manifest pruning and file costs still contribute where
+available. Unknown components stay visible. These are planning heuristics, not
+measured execution time.
 Unknown scan costs retain the declared default if its cost is unknown; otherwise
 only candidates with known costs compete. The default wins cost ties.
 
@@ -192,3 +202,10 @@ unregistered views, compensate partial materializations, roll up different
 aggregate groupings, create/refresh tables, or import Iceberg manifests. Existing
 SQL dialect and collection-type restrictions still apply. Include definitions,
 generations, schemas, statistics, and parameter values in plan cache keys.
+
+## Optional generated statistics
+
+[Generate statistics once](statistics.md) to collect bounded source summaries and
+automatically use the cached snapshot for source selection, cardinality estimates
+and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
+client/engine ownership, plan diagnostics and partial coverage.

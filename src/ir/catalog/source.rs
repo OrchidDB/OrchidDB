@@ -21,6 +21,7 @@ pub(crate) trait GraphSource: std::fmt::Debug + Send + Sync {
         types: &[String],
     ) -> Vec<Neighbor>;
     fn prefetch(&self, values: &[Value]);
+    fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision>{Vec::new()}
     fn stats(&self) -> (usize, Vec<String>);
     fn check(&self) -> Result<(), String>;
 }

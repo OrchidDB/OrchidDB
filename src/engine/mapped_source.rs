@@ -10,9 +10,16 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
 fn lookup_filters(columns: &KeyColumns, ids: &[ElementId]) -> Vec<datafusion::logical_expr::Expr> {
-    if columns.len() != 1 { return vec![]; }
-    vec![datafusion::logical_expr::Expr::Column(datafusion::common::Column::from_name(&columns.columns()[0]))
-        .in_list(ids.iter().map(|id| datafusion::logical_expr::Expr::Literal(id.scalar().clone(), None)).collect(), false)]
+    if columns.len()==1 {return vec![datafusion::logical_expr::Expr::Column(datafusion::common::Column::from_name(&columns.columns()[0])).in_list(ids.iter().map(|id|datafusion::logical_expr::Expr::Literal(id.scalar().clone(),None)).collect(),false)];}
+    let mut tuples=Vec::new();
+    for id in ids {
+        let components=id.components();
+        if components.len()!=columns.len(){continue;}
+        if let Some(e)=columns.columns().iter().zip(components).map(|(name,value)|datafusion::logical_expr::Expr::Column(datafusion::common::Column::from_name(name)).eq(datafusion::logical_expr::Expr::Literal(value,None))).reduce(|a,b|a.and(b)){tuples.push(e);}
+    }
+    // Balance tuple predicates so large frontiers do not create deep expression trees.
+    while tuples.len()>1 {tuples=tuples.chunks(2).map(|pair|if pair.len()==2 {pair[0].clone().or(pair[1].clone())}else{pair[0].clone()}).collect();}
+    tuples
 }
 
 type Address = (bool, String, ElementId);
@@ -29,6 +36,10 @@ struct Cache {
     error: Option<String>,
     rows: usize,
     queries: Vec<String>,
+    complete_sources: BTreeSet<(bool,String)>,
+    attempted_scans: BTreeSet<(bool,String)>,
+    source_order: HashMap<(bool, String), Vec<ElementId>>,
+    access_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
 }
 pub(super) struct Source {
     executor: Arc<Mutex<DuckDbExecutor>>,
@@ -52,12 +63,56 @@ impl Source {
             }
         }
     }
-    fn fetch(
+    fn cached_keys(&self,edge:bool,name:&str,column:Option<&KeyColumns>,ids:&[ElementId])->Option<Vec<ElementId>> {
+        let cache=self.cache.lock().unwrap();
+        if !cache.complete_sources.contains(&(edge,name.to_string())){return None;}
+        let wanted=ids.iter().collect::<BTreeSet<_>>();
+        Some(cache.source_order.get(&(edge,name.to_string()))?.iter().filter_map(|id| {
+            let record=cache.records.get(&(edge,name.to_string(),id.clone()))?.as_ref()?;
+            let owner=if let Some(column)=column {
+                let mapping=self.mapping.edge(name)?;let (_,src,_,dst)=record.endpoints.as_ref()?;
+                if column.columns()==mapping.src_column.columns(){src}else{dst}
+            }else{id};
+            wanted.contains(owner).then(||id.clone())
+        }).collect())
+    }
+    fn scan_cost(&self,edge:bool,name:&str,column:Option<&KeyColumns>,count:usize)->Option<(f64,f64)> {
+        let snapshot=self.mapping.statistics()?;
+        let (source,key)=if edge {let m=self.mapping.edge(name)?;(&m.source,column.unwrap_or(m.id_column.as_ref().unwrap_or(&m.src_column)))}else{let m=self.mapping.node(name)?;(&m.source,&m.id_column)};
+        let direct=if let MappedSource::Table(table)=source {snapshot.sources.get(table).and_then(|stats| {
+            let ndv=if key.len()==1 {stats.columns.get(&key.columns()[0]).map(|c|c.estimated_distinct.unwrap_or(c.sample_distinct as f64))}else{stats.groups.iter().find(|g|g.columns==key.columns()).map(|g|g.sample_distinct as f64)}?;
+            let rows=stats.estimated_rows?;let bytes=stats.estimated_bytes?;Some((rows,bytes,ndv,bytes+8.0*rows))
+        })}else{None};
+        let (rows,bytes,ndv,work)=direct.or_else(||self.mapping.source_access_cost(source,key))?;
+        if rows>65536.0||bytes>16.0*1024.0*1024.0||rows<=0.0{return None;}
+        let fraction=(count as f64/ndv.max(1.0)).min(1.0);
+        let lookup=(count.div_ceil(1024) as f64)*work+fraction*bytes;
+        let scan=bytes+work;
+        (scan<=lookup && (count>1024 || fraction>=0.75)).then_some((lookup,scan))
+    }
+    fn fetch(&self,edge:bool,name:&str,column:Option<&KeyColumns>,ids:&[ElementId])->Result<Vec<ElementId>,String>{
+        if let Some(keys)=self.cached_keys(edge,name,column,ids){return Ok(keys);}
+        self.fetch_read(edge,name,column,ids,false)
+    }
+    fn maybe_scan(&self,edge:bool,name:&str,column:Option<&KeyColumns>,ids:&[ElementId])->Result<bool,String>{
+        if self.cached_keys(edge,name,column,ids).is_some(){return Ok(true);}
+        if self.cache.lock().unwrap().attempted_scans.contains(&(edge,name.into())){return Ok(false);}
+        let Some((lookup,scan))=self.scan_cost(edge,name,column,ids.len())else{return Ok(false);};
+        self.cache.lock().unwrap().attempted_scans.insert((edge,name.into()));
+        self.fetch_read(edge,name,column,ids,true)?;
+        let complete=self.cache.lock().unwrap().complete_sources.contains(&(edge,name.into()));
+        self.cache.lock().unwrap().access_decisions.push(crate::ir::rel::statistics::OptimizerDecision{
+            optimization:"native_frontier_access".into(),before:vec!["batched_lookup".into()],after:vec![if complete{"bounded_scan_cache"}else{"batched_lookup_after_scan_cap"}.into()],estimated_work_before:lookup,estimated_work_after:scan,
+            reason:format!("source {name}; {} distinct frontier tuples; full-source scan model without assuming an index; actual scan capped at 65536 rows/16 MiB; statement-local cache",ids.len())});
+        Ok(complete)
+    }
+    fn fetch_read(
         &self,
         edge: bool,
         name: &str,
         column: Option<&KeyColumns>,
         ids: &[ElementId],
+        scan: bool,
     ) -> Result<Vec<ElementId>, String> {
         if ids.is_empty() {
             return Ok(vec![]);
@@ -100,22 +155,24 @@ impl Source {
         let edge_filter = endpoints.and_then(|m| m.foreign_key_columns())
             .map(|(_, _, _, fk)| format!(" AND {}", fk.present_sql()))
             .unwrap_or_default();
-        let sql = format!(
+        let sql = if scan {format!("SELECT {} FROM {} WHERE true{edge_filter} LIMIT 65537",projection.join(","),resolved_source(&self.mapping,src,&[])?) } else {format!(
             "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
             resolved_source(&self.mapping, src, &lookup_filters(column.unwrap_or(key), ids))?,
             column.unwrap_or(key).sql(None)
-        );
+        )};
         let batch = {
             let mut executor = self.executor.lock().map_err(|e| e.to_string())?;
             let connection = executor.connection().map_err(|e| e.to_string())?;
             let mut stmt = connection.prepare(&sql).map_err(|e| e.to_string())?;
-            let reader = stmt
-                .query_arrow(arrow_recordbatch_to_query_params(input))
-                .map_err(|e| e.to_string())?;
+            let reader = if scan {stmt.query_arrow([])}else{stmt.query_arrow(arrow_recordbatch_to_query_params(input))}.map_err(|e|e.to_string())?;
             let schema = reader.get_schema();
-            arrow::compute::concat_batches(&schema, &reader.collect::<Vec<_>>())
-                .map_err(|e| e.to_string())?
+            let mut batches=Vec::new();let mut rows=0;let mut bytes=0;
+            for batch in reader {rows+=batch.num_rows();bytes+=batch.get_array_memory_size();
+                if scan&&(rows>65536||bytes>16*1024*1024){let mut cache=self.cache.lock().unwrap();cache.rows+=rows;cache.queries.push(sql.clone());return Ok(vec![]);}
+                batches.push(batch);
+            }
+            arrow::compute::concat_batches(&schema,&batches).map_err(|e| e.to_string())?
         };
         let keys = keys(&batch, 0)?;
         if keys.iter().collect::<BTreeSet<_>>().len() != keys.len() {
@@ -124,6 +181,7 @@ impl Source {
         let mut cache = self.cache.lock().unwrap();
         cache.rows += batch.num_rows();
         cache.queries.push(sql);
+        if scan {cache.complete_sources.insert((edge,name.into()));cache.source_order.insert((edge,name.into()),keys.clone());}
         if column.is_none() {
             for id in ids {
                 cache.records.insert((edge, name.into(), id.clone()), None);
@@ -175,8 +233,11 @@ impl Source {
                 .cloned()
                 .collect::<BTreeSet<_>>()
         };
+        let missing=missing.into_iter().collect::<Vec<_>>();
+        if missing.is_empty(){return Ok(());}
+        if self.maybe_scan(edge,name,None,&missing)?{return Ok(());}
         // Bound parameter batches; typed keys never become generated SQL text.
-        for chunk in missing.into_iter().collect::<Vec<_>>().chunks(1024) {
+        for chunk in missing.chunks(1024) {
             self.fetch(edge, name, None, chunk)?;
         }
         Ok(())
@@ -333,7 +394,9 @@ impl GraphSource for Source {
                         .map(|(_, id)| id.clone())
                         .collect::<BTreeSet<_>>()
                 };
-                for chunk in missing.into_iter().collect::<Vec<_>>().chunks(1024) {
+                let missing=missing.into_iter().collect::<Vec<_>>();
+                if !missing.is_empty(){self.maybe_scan(true,&rel,Some(if incoming{&m.dst_column}else{&m.src_column}),&missing)?;}
+                for chunk in missing.chunks(1024) {
                     let keys = self.fetch(
                         true,
                         &rel,
@@ -438,6 +501,7 @@ impl GraphSource for Source {
             self.attempt(|| self.records(edge, &name, &ids.into_iter().collect::<Vec<_>>()));
         }
     }
+    fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision>{self.cache.lock().unwrap().access_decisions.clone()}
     fn stats(&self) -> (usize, Vec<String>) {
         let cache = self.cache.lock().unwrap();
         (cache.rows, cache.queries.clone())
@@ -488,6 +552,7 @@ pub(super) fn attach(
                 );
             }
         }
+        if let Some(snapshot)=mapping.statistics() {resolved.set_statistics(snapshot.clone()).map_err(|e|e.to_string())?;}
         graph = mapped_storage::metadata(connection, Arc::new(resolved))?;
     }
     graph.source = Some(Arc::new(Source {
@@ -503,6 +568,69 @@ pub(super) fn attach(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn statistics_choose_dense_scan_and_sparse_lookup() {
+        for (statistics, count, expected_queries, derived) in [(false,3000,3,false),(true,3000,1,false),(true,2,1,false),(true,3000,1,true)] {
+            let db=duckdb::Connection::open_in_memory().unwrap();
+            db.execute_batch("CREATE TABLE people AS SELECT i::BIGINT id, 'name-'||i AS name FROM range(5000) t(i)").unwrap();
+            let mut mapping=GraphMapping::new();
+            mapping.register_table_schema("people",Arc::new(Schema::new(vec![Field::new("id",arrow::datatypes::DataType::Int64,true),Field::new("name",arrow::datatypes::DataType::Utf8,true)])));
+            mapping.map_node(if derived {crate::ir::rel::mapping::NodeMapping::query("Person","SELECT id,name FROM people","id").property("name","name")}else{crate::ir::rel::mapping::NodeMapping::table("Person","people","id").property("name","name")});
+            if statistics {let snapshot=crate::ir::rel::statistics::generate_duckdb(&db,mapping.statistics_request().unwrap()).unwrap();mapping.set_statistics(Arc::new(snapshot)).unwrap();}
+            let graph=attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap();
+            let source=graph.source.unwrap();
+            let values=(0..count).map(|i|Value::Node{label:"Person".into(),id:ElementId::new(ScalarValue::Int64(Some(i))).unwrap()}).collect::<Vec<_>>();
+            source.prefetch(&values);source.check().unwrap();
+            assert_eq!(source.stats().1.len(),expected_queries,"{:?}",source.stats());
+            assert_eq!(source.access_decisions().len(),usize::from(statistics&&count>1024));
+            for i in [0,count-1] {assert_eq!(source.property(false,"Person",&ElementId::new(ScalarValue::Int64(Some(i))).unwrap(),"name"),Value::String(format!("name-{i}")));}
+            source.prefetch(&values);assert_eq!(source.stats().1.len(),expected_queries);
+        }
+    }
+
+    #[test]
+    fn stale_statistics_scan_cap_falls_back_once() {
+        let db=duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE people AS SELECT i::BIGINT id FROM range(5000) t(i)").unwrap();
+        let mut mapping=GraphMapping::new();
+        mapping.register_table_schema("people",Arc::new(Schema::new(vec![Field::new("id",arrow::datatypes::DataType::Int64,true)])));
+        mapping.map_node(crate::ir::rel::mapping::NodeMapping::table("Person","people","id"));
+        let snapshot=crate::ir::rel::statistics::generate_duckdb(&db,mapping.statistics_request().unwrap()).unwrap();
+        mapping.set_statistics(Arc::new(snapshot)).unwrap();
+        db.execute_batch("INSERT INTO people SELECT i FROM range(5000,70000) t(i)").unwrap();
+        let graph=attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap();
+        let source=graph.source.unwrap();
+        let values=|start| (start..start+3000).map(|i|Value::Node{label:"Person".into(),id:ElementId::new(ScalarValue::Int64(Some(i))).unwrap()}).collect::<Vec<_>>();
+        source.prefetch(&values(0));source.check().unwrap();
+        assert_eq!(source.stats().1.len(),4);
+        assert_eq!(source.access_decisions()[0].after,vec!["batched_lookup_after_scan_cap"]);
+        source.prefetch(&values(5000));source.check().unwrap();
+        assert_eq!(source.stats().1.len(),7,"a capped scan must not be retried");
+        assert!(source.exists(false,"Person",&ElementId::new(ScalarValue::Int64(Some(7999))).unwrap()));
+    }
+
+    #[test]
+    fn dense_adjacency_scan_preserves_parallel_edges_and_direction() {
+        let db=duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE people AS SELECT i::BIGINT id FROM range(5000) t(i); CREATE TABLE links AS SELECT i::BIGINT id,(i/2)::BIGINT src,((i/2+1)%5000)::BIGINT dst FROM range(10000) t(i)").unwrap();
+        let mut mapping=GraphMapping::new();
+        for (table,columns) in [("people",vec!["id"]),("links",vec!["id","src","dst"])] {
+            mapping.register_table_schema(table,Arc::new(Schema::new(columns.into_iter().map(|c|Field::new(c,arrow::datatypes::DataType::Int64,true)).collect::<Vec<_>>())));
+        }
+        mapping.map_node(crate::ir::rel::mapping::NodeMapping::table("Person","people","id"));
+        let mut edge=crate::ir::rel::mapping::EdgeMapping::table("LINK","links","src","dst","Person","Person");edge.id_column=Some("id".into());mapping.map_edge(edge);
+        let snapshot=crate::ir::rel::statistics::generate_duckdb(&db,mapping.statistics_request().unwrap()).unwrap();mapping.set_statistics(Arc::new(snapshot)).unwrap();
+        let graph=attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap();let source=graph.source.unwrap();
+        let id=|i|ElementId::new(ScalarValue::Int64(Some(i))).unwrap();
+        let nodes=(0..3000).map(|i|("Person".into(),id(i))).collect::<Vec<_>>();
+        source.prefetch_neighbors(false,&nodes,&["LINK".into()]);source.check().unwrap();assert_eq!(source.stats().1.len(),1);
+        let outgoing=source.neighbors(false,"Person",&id(10),&["LINK".into()]);
+        assert!(outgoing.len()>=2,"parallel edges were lost: {outgoing:?}");
+        source.prefetch_neighbors(true,&nodes,&["LINK".into()]);source.check().unwrap();assert_eq!(source.stats().1.len(),1);
+        assert!(!source.neighbors(true,"Person",&id(11),&["LINK".into()]).is_empty());
+        assert_eq!(outgoing,source.neighbors(false,"Person",&id(10),&["LINK".into()]));
+    }
 
     #[test]
     fn jvm_views_allocate_property_handles_lazily_and_consistently() {

@@ -26,10 +26,12 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompileRequest {
     pub version: u32,
+    #[serde(default)]
+    pub statistics: Option<std::sync::Arc<crate::ir::rel::statistics::StatisticsSnapshot>>,
     pub dialect: String,
     pub language: String,
     pub query: String,
@@ -59,13 +61,13 @@ pub struct CompileRequest {
     #[serde(default)]
     pub constraint_scope: Option<String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Column {
     pub name: String,
@@ -79,7 +81,7 @@ fn default_rdf_dataset() -> String {
 fn yes() -> bool {
     true
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Node {
     pub label: String,
@@ -88,7 +90,7 @@ pub struct Node {
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
     #[serde(default)]
@@ -103,7 +105,7 @@ pub struct Edge {
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Function {
     pub name: String,
@@ -113,7 +115,7 @@ pub struct Function {
     #[serde(default)]
     pub aggregate: bool,
 }
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ontology {
     #[serde(default)]
@@ -123,21 +125,21 @@ pub struct Ontology {
     #[serde(default)]
     pub relationships: Vec<OntologyRelationship>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OntologyClass {
     pub iri: String,
     pub label: String,
     pub identity: Option<String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OntologyProperty {
     pub iri: String,
     pub label: String,
     pub property: String,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OntologyRelationship {
     pub iri: String,
@@ -155,6 +157,9 @@ pub struct CompiledSql {
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
     pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
     pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
+    pub plan_estimates: Vec<crate::ir::rel::statistics::PlanEstimate>,
+    pub statistics_usage: Option<String>,
+    pub optimizer_decisions: Vec<crate::ir::rel::statistics::OptimizerDecision>,
 }
 
 /// Supported schema types are explicit. Unknown JDBC/extension types must be
@@ -321,6 +326,11 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             return Err(format!("cannot bind derived sources: {}", errors.join("; ")));
         }
     }
+    if let Some(statistics)=&request.statistics {
+        let metadata=serde_json::json!({"tables":request.tables,"logical_sources":request.logical_sources,"collection_sources":request.collection_sources,"representation_sources":request.representation_sources});
+        if crate::ir::rel::statistics::mapping_fingerprint(&metadata)!=statistics.mapping { return Err("statistics snapshot mapping mismatch; regenerate or clear statistics".into()); }
+    }
+    if let Some(statistics) = &request.statistics { mapping.set_statistics(statistics.clone()).map_err(|e|e.to_string())?; }
     mapping
         .set_constraints(request.constraints.clone())
         .set_constraint_scope(request.constraint_scope.clone());
@@ -554,7 +564,9 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .map_err(|e| e.to_string())?;
     }
     let selected = crate::ir::rel::representation::select(lowered.plan).map_err(|e| e.to_string())?;
-    lowered.plan = selected.plan;
+    let (optimized, mut optimizer_decisions)=crate::ir::rel::statistics::optimize(selected.plan).map_err(|e|e.to_string())?;
+    optimizer_decisions.extend(selected.access_decisions);
+    lowered.plan = optimized;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
         version: 1,
@@ -565,12 +577,16 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         constraint_proofs,
         layout_selections: selected.layout_selections,
         representation_selections: selected.representation_selections,
+        plan_estimates: crate::ir::rel::statistics::explain(&lowered.plan),
+        statistics_usage: request.statistics.as_ref().map(|s|s.revision.clone()),
+        optimizer_decisions,
     })
 }
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
-    let request =
+    let request: CompileRequest =
         serde_json::from_str(input).map_err(|e| format!("invalid compiler request: {e}"))?;
+    if let Some(snapshot)=&request.statistics {snapshot.validate()?;}
     serde_json::to_string(&compile(request).await?).map_err(|e| e.to_string())
 }
 

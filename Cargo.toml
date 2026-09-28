@@ -41,6 +41,7 @@ futures = "0.3"
 antlr4rust = "0.5.2"
 stacker = "0.1.24"
 arrow = { version = "58.2.0", default-features = false, features = ["ipc"] }
+arrow-json = "58.2.0"
 arrow-select = "58.2.0"
 bigdecimal = "0.4"
 # SQL compilation and in-memory execution do not need DataFusion file readers.
@@ -59,7 +60,8 @@ oxsdatatypes = "0.2.2"
 postgres = { version = "0.19", optional = true }
 regex = "1"
 sha2 = "0.10"
-serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 oxilangtag = "0.1"
 oxrdf = "=0.3.4"

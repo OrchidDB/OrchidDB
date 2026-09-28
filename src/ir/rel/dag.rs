@@ -40,6 +40,8 @@ pub struct DagStats {
     pub constraint_proofs: Vec<super::constraints::RewriteProof>,
     pub layout_selections: Vec<super::layout::LayoutDecision>,
     pub representation_selections: Vec<super::representation::RepresentationDecision>,
+    pub plan_estimates: Vec<super::statistics::PlanEstimate>,
+    pub optimizer_decisions: Vec<super::statistics::OptimizerDecision>,
     pub sql_queries: Vec<String>,
     pub native_source_queries: Vec<String>,
     pub native_source_rows: usize,
@@ -444,8 +446,9 @@ pub(crate) async fn prepare_with_extensions(
     let (optimized, more) = super::constraints::optimize(optimized)?;
     proofs.extend(more);
     let selected = super::representation::select(optimized)?;
-    let optimized = selected.plan;
-    let mut stats = DagStats { constraint_proofs: proofs, layout_selections: selected.layout_selections, representation_selections: selected.representation_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
+    let (optimized, mut optimizer_decisions) = super::statistics::optimize(selected.plan)?;
+    optimizer_decisions.extend(selected.access_decisions);
+    let mut stats = DagStats { optimizer_decisions, plan_estimates: super::statistics::explain(&optimized), constraint_proofs: proofs, layout_selections: selected.layout_selections, representation_selections: selected.representation_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
@@ -567,6 +570,8 @@ impl DagStats {
         self.constraint_proofs.extend(nested.constraint_proofs.iter().cloned());
         self.layout_selections.extend(nested.layout_selections.iter().cloned());
         self.representation_selections.extend(nested.representation_selections.iter().cloned());
+        self.plan_estimates.extend(nested.plan_estimates.iter().cloned());
+        self.optimizer_decisions.extend(nested.optimizer_decisions.iter().cloned());
         if !nested.logical_plan.is_empty() {
             self.logical_plan.push_str("\nExecuted subplan:\n");
             self.logical_plan.push_str(&nested.logical_plan);

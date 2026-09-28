@@ -157,6 +157,36 @@ impl GraphEngine {
         Ok(engine)
     }
 
+    /// Generate bounded statistics once and automatically use them for later plans.
+    pub fn generate_statistics(&mut self) -> EngineResult<crate::ir::rel::statistics::StatisticsSnapshot> {
+        let mapping=self.mapping.as_ref().ok_or("statistics generation requires a mapped graph")?;
+        let request=mapping.statistics_request().map_err(|e|e.to_string())?;
+        let snapshot=crate::ir::rel::statistics::generate_duckdb(&self.storage,request)?;
+        self.set_statistics(snapshot.clone())?;
+        Ok(snapshot)
+    }
+    pub fn set_statistics(&mut self, snapshot: crate::ir::rel::statistics::StatisticsSnapshot) -> EngineResult<()> {
+        let mapping=self.mapping.as_ref().ok_or("statistics require a mapped graph")?;
+        let mut mapping=(**mapping).clone();mapping.set_statistics(Arc::new(snapshot)).map_err(|e|e.to_string())?;
+        self.mapping=Some(Arc::new(mapping));self.refresh_snapshot()
+    }
+    pub fn clear_statistics(&mut self) -> EngineResult<()> {
+        if let Some(mapping)=&self.mapping {let mut mapping=(**mapping).clone();mapping.clear_statistics();self.mapping=Some(Arc::new(mapping));self.refresh_snapshot()?;}
+        Ok(())
+    }
+    fn invalidate_statistics(&mut self) {
+        if let Some(mapping) = &self.mapping {
+            if mapping.statistics().is_some() {
+                let mut mapping = (**mapping).clone();
+                mapping.clear_statistics();
+                self.mapping = Some(Arc::new(mapping));
+            }
+        }
+    }
+    pub fn statistics(&self) -> Option<&Arc<crate::ir::rel::statistics::StatisticsSnapshot>> {
+        self.mapping.as_ref().and_then(|m|m.statistics())
+    }
+
     pub fn open(path: impl AsRef<Path>) -> EngineResult<Self> {
         let (connection, database) = sql::open_shared(path.as_ref())?;
         let mut engine = Self::from_connection(connection)?;
@@ -306,6 +336,7 @@ impl GraphEngine {
             return Err(error.to_string());
         }
         self.in_transaction = false;
+        self.invalidate_statistics();
         Ok(())
     }
 
@@ -321,6 +352,7 @@ impl GraphEngine {
         self.in_transaction = false;
         self.failed_transaction = false;
         self.loaded_revision = None;
+        self.invalidate_statistics();
         self.refresh()
     }
 
@@ -635,6 +667,7 @@ impl GraphEngine {
             let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone()).await;
             if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
+            if result.is_ok() && contains_mutation(&plan.root) { self.invalidate_statistics(); }
             return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
         if contains_mutation(&plan.root) {
@@ -779,7 +812,7 @@ async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<Gra
             let mut executor=session.executor()?;
             mapped_storage::persist(executor.connection().map_err(|e|e.to_string())?,&graph,&mapping)?;
         }
-        if let Some(source)=&graph.source {let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;}
+        if let Some(source)=&graph.source {let (rows,queries)=source.stats();result.1.native_source_rows=rows;result.1.native_source_queries=queries;result.1.optimizer_decisions.extend(source.access_decisions());}
         Ok(result)
     }.await;
     drop(session);

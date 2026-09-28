@@ -10,6 +10,18 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
 
 pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = crate::ir::rel::representation::select(plan)?.plan;
+    // Generated-statistics providers accept only inexact pushdown: the parent
+    // residual is authoritative. Do not emit duplicate scan hints under aliases
+    // (DF53 can reintroduce the hidden physical qualifier inside RDF CASEs).
+    let plan = plan.transform_up_with_subqueries(|node| {
+        let LogicalPlan::TableScan(mut scan) = node else { return Ok(Transformed::no(node)); };
+        if crate::ir::rel::statistics::statistics_provider(&datafusion::datasource::source_as_provider(&scan.source)?).is_some() && !scan.filters.is_empty() {
+            scan.filters.clear();
+            scan.fetch = None;
+            return Ok(Transformed::yes(LogicalPlan::TableScan(scan)));
+        }
+        Ok(Transformed::no(LogicalPlan::TableScan(scan)))
+    })?.data;
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;

@@ -98,3 +98,10 @@ Language planners produce `GraphPlan` values. `RelBackend` handles relational lo
 Graph IR is retained for planning and inspection. It has no standalone recursive interpreter, and execution errors do not trigger an interpreter fallback. SPARQL `SERVICE`, including `SERVICE SILENT`, is unsupported; no remote SPARQL HTTP calls are made.
 
 Use the engine APIs for application workflows. Use these lower-level types when integrating a custom planner or execution target. See the [Rust API](rust-api.md#planning-and-execution-apis) for the module map.
+
+## Optional generated statistics
+
+[Generate statistics once](statistics.md) to collect bounded source summaries and
+automatically use the cached snapshot for source selection, cardinality estimates
+and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
+client/engine ownership, plan diagnostics and partial coverage.
