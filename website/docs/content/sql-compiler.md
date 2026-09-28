@@ -1,4 +1,4 @@
-# SQL compiler and caller-owned engines
+# SQL generation and execution
 
 `orchiddb::compiler` is the database-free entry point for clients that own their
 SQL engine. It parses Cypher, Gremlin or mapped SPARQL, lowers through Graph IR
@@ -71,8 +71,8 @@ Optional `edges` describe label, table, id, source/target columns,
 source_label/target_label, and property-to-column mappings. An FK-backed edge also
 sets `foreign_key` to `"src"` or `"dst"` (the endpoint whose row owns the FK), uses
 the child table, and supplies the child key as its `id`. Partially NULL FKs do not
-produce graph edges. These declarations describe reads; the standalone compiler
-is not a mutation engine. Gremlin tuple-ID projection may require the unified
+produce graph edges. These declarations describe reads in this API; `compile` does not execute
+mutations. Gremlin tuple-ID projection may require the unified
 runtime's native operator rather than standalone SQL compilation.
 
 Optional `functions`
@@ -132,8 +132,8 @@ The API specializes SQL to typed Cypher parameter values. It does not return
 JDBC placeholders. Bindings must treat generated SQL as potentially sensitive
 and include parameters, schema, ontology, function declarations, mappings, and
 dialect in their plan cache keys. Gremlin/SPARQL parameter bindings are not yet
-implemented. Do not treat the full runtime's language conformance as coverage
-of the standalone SQL subset.
+implemented. Conformance evidence applies to its recorded API and revision; SQL emission
+must also fit the target dialect.
 
 Writes, opaque extensions, and unlowerable operations fail. SPARQL `SERVICE`,
 including `SERVICE SILENT`, is unsupported in both compiler and managed runtime;

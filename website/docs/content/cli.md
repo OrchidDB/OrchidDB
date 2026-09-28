@@ -63,4 +63,4 @@ Map that view in your request. Actual storage access requires your own credentia
 
 ## Managed runtime CLI
 
-Core retains a separate legacy binary behind `--features duckdb`, used by some managed graph examples. Its mutation/query flags are different. The standalone CLI described here supports the SQL compiler's read subset, not the managed runtime's full conformance scope.
+Core retains a separate legacy binary behind `--features duckdb`, used by some managed graph examples. Its mutation/query flags are different. The CLI described here executes generated read SQL; it does not expose graph mutations. Match command usage and conformance evidence to the executable revision.

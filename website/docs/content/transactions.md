@@ -1,8 +1,5 @@
 # Transactions and storage
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Group graph changes, control commit boundaries, and maintain a persistent managed graph.
 
 ## Explicit transactions
@@ -47,26 +44,36 @@ A checkpoint participates in an active transaction, so a rollback also rolls bac
 
 ## Mapped engine transactions
 
-For property updates over existing tables, control the DuckDB executor transaction:
+`GraphEngine::mapped` uses the same `begin`, `commit`, and `rollback` API for
+Cypher, Gremlin, and SPARQL. All statements share one DuckDB connection. Reads
+see earlier writes from any of these languages in the transaction.
 
 ```rust
-graph.executor_mut().begin().map_err(|error| error.to_string())?;
-let changed = graph.cypher_update(
-    "MATCH (p:Person) WHERE p.age >= 30 SET p.age = p.age + 1"
+graph.begin()?;
+let changed = graph.cypher(
+    "MATCH (p:Person) WHERE p.age >= 30 SET p.age = p.age + 1 RETURN p.age"
 ).await;
 match changed {
-    Ok(count) => {
-        graph.executor_mut().commit().map_err(|error| error.to_string())?;
-        println!("updated {count} rows");
+    Ok(result) => {
+        graph.commit()?;
+        println!("returned {} rows", result.returned.batch.num_rows());
     }
     Err(error) => {
-        graph.executor_mut().rollback().map_err(|error| error.to_string())?;
+        graph.rollback()?;
         return Err(error);
     }
 }
 ```
 
-The `graph` variable in this example is a `MappedGraphEngine`. Outside an explicit executor transaction, an update commits atomically.
+Outside an explicit transaction, mapped statements commit atomically or roll
+back on failure/cancellation. A failed mapped execution inside an explicit
+transaction marks it failed; call `rollback` before continuing. Do not assume
+that only the failing statement was undone and then commit earlier work.
+
+Existing `MappedGraphEngine` callers retain `executor_mut().begin()`, `commit()`,
+and `rollback()` on the compatibility facade. These are not methods on
+`GraphEngine`. For typed RDF reads use `sparql_query`; for updates use
+`sparql_update(update, dataset, base)`. Neither needs a second RDF engine.
 
 ## Back up a graph file
 

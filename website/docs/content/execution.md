@@ -1,8 +1,5 @@
 # Execution and plans
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Inspect Graph IR and generated SQL, choose a read policy, and understand execution statistics.
 
 ## Managed read policies
@@ -18,7 +15,7 @@ let result = graph.cypher(
 ).await?;
 ```
 
-SQL-only mode enforces the chosen execution contract. Mapped property-graph and RDF reads execute against their DuckDB source tables through SQL lowering.
+`SqlOnly` applies to managed-storage reads. Mapped execution currently uses the shared DAG path regardless of this setting; it lowers source reads to SQL islands and schedules remaining operators through DataFusion. RDF dataset queries use the same mapped execution path.
 
 ## Inspect Graph IR
 
@@ -46,7 +43,7 @@ println!("{}", orchiddb::ir::explain(&plan));
 
 ## Inspect generated SQL
 
-For a mapped engine, `explain_cypher` returns the DuckDB read SQL:
+For SQL inspection without execution, use `compiler::compile` or `compile_json` and inspect `CompiledSql.sql` and `logical_plan`. The existing `MappedGraphEngine` compatibility facade also offers `explain_cypher` (the following snippet uses that facade):
 
 ```rust
 let sql = graph.explain_cypher(
@@ -60,7 +57,7 @@ Graph property names resolve to the physical columns in your mapping. Use this o
 
 ## Execution metadata
 
-Managed query results identify their backend:
+`GraphEngine` query results identify their backend for managed or mapped storage:
 
 | Backend | Execution |
 | --- | --- |
@@ -68,7 +65,20 @@ Managed query results identify their backend:
 | `ExecutionBackend::Hybrid` | DuckDB SQL regions and DataFusion operators were combined. |
 | `ExecutionBackend::DataFusion` | The relational DAG executed through DataFusion. |
 
-`ExecStats` records `datafusion_ops`, `islands`, `island_rows`, `residual_ops`, and `declined`. Log these alongside an application query name when analyzing execution. SQL island rows are intermediate execution rows; use the result batch for the number of returned rows.
+`ExecStats` records `datafusion_ops`, `islands`, `island_rows`, `sql_queries`,
+`native_source_queries`, `native_source_rows`, and `cost`. It also exposes
+`logical_plan`, `physical_plan`, `constraint_proofs`, and `layout_selections`.
+Use `fully_pushed_down()` to inspect whether all recorded query operators were
+delegated to SQL. Backend labels alone do not establish that.
+
+Logical plans show selected physical tables and collection `Unnest` operators.
+Layout estimates describe parent-table bytes/files; they are not measured I/O or
+expanded collection cardinalities. SQL island rows are intermediate rows; use
+the result batch for the number of returned rows.
+
+For RDF, `sparql_dataset` returns these statistics in `QueryResult.stats`.
+`sparql_query` decodes typed terms and does not return the stats wrapper.
+`sparql_sql(query, dataset)` produces SQL without executing the query.
 
 ## SQL timeout
 

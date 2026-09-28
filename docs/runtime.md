@@ -1,8 +1,10 @@
-# Optional managed runtime
+# Query execution runtime
 
-Enable Cargo feature `duckdb` to use this runtime. It is separate from the default SQL-only compiler.
+Enable Cargo feature `duckdb` to execute through `GraphEngine`. SQL generation
+and execution share the same language planners and relational lowering; the
+feature supplies the DuckDB driver and runtime APIs.
 
-The managed `GraphEngine` lowers each query before execution:
+`GraphEngine` lowers queries over managed or mapped storage before execution:
 
 ```text
 language parser and planner
@@ -170,3 +172,9 @@ Scalar source keys remain typed identities throughout execution. The legacy
 `MappedGraphEngine` API delegates to this same runtime. See the
 [unified graph engine design](unified-graph-engine.md) for the contract and
 verification results.
+
+RDF mappings on `GraphMapping` use the same connection and transaction owner.
+`GraphEngine::sparql_dataset` returns Arrow results with execution statistics;
+`sparql_query` decodes typed RDF results. `RdfGraphEngine` is a compatibility
+facade, and its session context borrows runtime resources. See the
+[RDF guide](../website/docs/content/rdf.md) for query/update APIs.

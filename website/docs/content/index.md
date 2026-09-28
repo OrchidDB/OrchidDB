@@ -24,7 +24,7 @@ orchiddb --version
 | Query tables you already own | [Map existing tables](mapped-graphs.md) |
 | Create and persist a graph | [Managed graphs](managed-graphs.md) |
 | Query with an RDF vocabulary | [SPARQL](sparql.md) |
-| Connect existing quad tables | [RDF datasets](rdf.md) |
+| Map application columns or quad tables to RDF | [RDF datasets](rdf.md) |
 | Embed the engine in Rust | [Rust API](rust-api.md) |
 | Explore language integrations | [Client APIs](client-apis.md) |
 
@@ -46,7 +46,7 @@ g.V().hasLabel('Person').has('name', 'alice')
   .out('FOLLOWS').values('name').order()
 ```
 
-SPARQL uses an ontology mapping to connect a vocabulary to the graph:
+SPARQL uses RDF rules over application columns or an ontology mapping over graph labels:
 
 ```sparql
 PREFIX ex: <https://example.com/>
@@ -57,11 +57,11 @@ SELECT ?name WHERE {
 ORDER BY ?name
 ```
 
-The language frontends produce a shared Graph IR. Compiler-only clients lower supported reads to SQL and return the plan to your application. The optional managed runtime can also execute remaining stages itself. Read [SQL compilation](sql-compiler.md) for the client boundary and [core concepts](concepts.md) for the runtime model.
+The language frontends produce a shared Graph IR and relational plan. Execution uses SQL regions and native operators as supported by the selected API. Read [SQL compilation](sql-compiler.md) to inspect or execute generated SQL, and [core concepts](concepts.md) for the shared execution model.
 
 ## Follow a learning path
 
-Begin with [installation](installation.md), run the [quickstart](quickstart.md), then choose a [client example](client-apis.md). The separate [mapped graph tutorial](mapped-graphs.md) covers core runtime APIs using a customer/order dataset.
+Begin with [installation](installation.md), run the [quickstart](quickstart.md), then choose a [client example](client-apis.md). The [mapped graph tutorial](mapped-graphs.md) demonstrates `GraphEngine` using a customer/order dataset.
 
 For application integration, continue with [typed parameters](parameters.md), [Arrow results](results.md), and [transactions](transactions.md). The [CLI reference](cli.md), [mapping reference](mapping-reference.md), and [Rust API](rust-api.md) provide the details to keep nearby while coding.
 

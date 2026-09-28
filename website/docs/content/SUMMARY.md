@@ -14,7 +14,7 @@
 - [Views and SQL sources](views.md)
 - [Managed graphs](managed-graphs.md)
 - [Transactions and storage](transactions.md)
-- [Update properties](updates.md)
+- [Update mapped tables](updates.md)
 
 # Query languages
 
@@ -22,14 +22,14 @@
 - [Gremlin](gremlin.md)
 - [SPARQL](sparql.md)
 - [Ontology mappings](ontology.md)
-- [RDF datasets](rdf.md)
+- [RDF over application tables](rdf.md)
 
 # Integrate
 
 - [Parameters and values](parameters.md)
 - [Arrow results](results.md)
 - [Execution and plans](execution.md)
-- [SQL compiler and caller-owned engines](sql-compiler.md)
+- [SQL generation and execution](sql-compiler.md)
 - [Client APIs](client-apis.md)
 - [Rust API](rust-api.md)
 - [CLI reference](cli.md)

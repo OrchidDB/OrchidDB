@@ -1,8 +1,5 @@
 # Configuration
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Configure engine execution, Cargo features, and development checks for a reproducible integration.
 
 ## Engine settings
@@ -14,7 +11,7 @@ Configure engine execution, Cargo features, and development checks for a reprodu
 | Read policy | `set_read_mode(ReadMode::Hybrid)` | Execute a DataFusion relational DAG with eligible DuckDB SQL regions. |
 | SQL read policy | `set_read_mode(ReadMode::SqlOnly)` | Require complete SQL read execution. |
 | SQL timeout | `set_sql_timeout(Duration)` | Bound individual DuckDB SQL queries and setup. |
-| Mapping | `MappedGraphEngine::new(executor, mapping)` | Use the application's source schemas and graph vocabulary. |
+| Mapping | `GraphEngine::mapped(connection, mapping)` | Use the application's source schemas and graph vocabulary. |
 | RDF dataset | `GraphMapping::map_rdf(rule)` | Add RDF vocabulary over registered application tables. |
 
 Keep configuration near engine construction so applications can see the persistence and execution policy in one place.
@@ -23,15 +20,15 @@ Keep configuration near engine construction so applications can see the persiste
 
 | Variable | Purpose |
 | --- | --- |
-| `ORCHIDDB_EXECUTION_MAX_STEPS` | Set the operation budget for managed DataFusion execution, including loops. |
+| `ORCHIDDB_EXECUTION_MAX_STEPS` | Set the operation budget for DataFusion execution, including loops. |
 | `GRAPH_PG_URL` | Connection URL for PostgreSQL executor entry points that load configuration from the environment. |
 | `RUST_MIN_STACK` | Rust thread stack size; the repository's integration CI uses `16777216`. |
 
-Treat database connection URLs as application secrets. The managed and mapped DuckDB engines are configured through their constructors and setters.
+Treat database connection URLs as application secrets. The managed and mapped DuckDB storage modes are configured through their constructors and setters.
 
 ## Build features
 
-The default library build has no database driver. Enable the optional `duckdb` feature for managed execution. It includes the bundled executor and the high-level engine APIs. The `postgres` feature includes the PostgreSQL SQL executor.
+The default library build has no database driver. Enable the optional `duckdb` feature for `GraphEngine` execution. It includes the bundled executor and the high-level engine APIs. The `postgres` feature includes the PostgreSQL SQL executor.
 
 ```sh
 cargo build --locked
@@ -45,7 +42,7 @@ cargo check --locked --no-default-features --lib
 cargo fmt --all -- --check
 cargo test --locked --lib --bins
 RUST_MIN_STACK=16777216 cargo test --locked --features duckdb \
-  --test engine --test mapped_engine --test rdf_engine
+  --test engine --test unified_mapped_engine --test rdf_relational --test rdf_engine
 ```
 
 See the repository's `docs/verification.md` for local validation and conformance reproduction.

@@ -70,4 +70,4 @@ Keep the graph mapping aligned with the view's real schema, and omit `--no-icebe
 
 Choose [Rust, Java, Python, JavaScript/TypeScript, Elixir, or C++](client-apis.md). These clients compile the same graph-language requests but leave engine configuration and execution to your application. Results use Arrow batches.
 
-For graph persistence and mutations owned by OrchidDB, see the separate [managed runtime](managed-graphs.md). Its capabilities and APIs differ from compiler-only clients.
+For persisted graph records, see [managed graphs](managed-graphs.md). For reads and writes over existing tables through the shared engine, see [mapped graphs](mapped-graphs.md).

@@ -1,154 +1,16 @@
-# SQL compiler and caller-owned engines
+# SQL generation API
 
-`orchiddb::compiler` is the database-free entry point for clients that own their
-SQL engine. It parses Cypher, Gremlin or mapped SPARQL, lowers through Graph IR
-and relational IR, and returns SQL plus output field names. It never opens a
-connection, registers functions, mutates a schema, or executes a SQL statement.
+The maintained protocol and examples are in the [SQL API reference](../website/docs/content/sql-compiler.md).
+It covers `compile`/`compile_json`, typed schemas, graph and RDF rules, logical
+physical-layout sources, collection tables, parameters, functions, result fields,
+and SQL execution through application-owned sessions.
 
-```toml
-[dependencies]
-orchiddb = { path = "../orchiddb" }
-```
+SQL generation is a stage of OrchidDB's shared planning pipeline. The API emits
+SQL without opening connections or moving rows; execution and transaction ownership
+follow the API/session the application uses. `GraphEngine` executes through the
+shared relational DAG for Cypher, Gremlin, and SPARQL.
 
-The [Java binding](https://github.com/OrchidDB/OrchidDB-java) uses the same compiler.
-Its JNI library uses this configuration: DuckDB and `libduckdb-sys` are absent
-from the native dependency graph. Existing managed engine/CLI builds retain
-their optional `duckdb` feature; it must now be enabled explicitly.
-
-## Versioned request
-
-`compile(CompileRequest)` is the typed Rust API. `compile_json(&str)` provides
-the same API for language bindings. Both return errors before client execution.
-The JSON protocol is version 1; unknown fields and unsupported versions fail.
-
-```json
-{
-  "version": 1,
-  "dialect": "duckdb",
-  "language": "cypher",
-  "query": "MATCH (p:Person) WHERE p.name=$name RETURN p.name AS name",
-  "parameters": {"name": "Ada"},
-  "tables": [{
-    "name": "\"people\"",
-    "columns": [
-      {"name": "id", "data_type": "int64", "nullable": false},
-      {"name": "name", "data_type": "string", "nullable": true}
-    ]
-  }],
-  "nodes": [{
-    "label": "Person", "table": "\"people\"", "id": "id",
-    "properties": {"name": "name"}
-  }]
-}
-```
-
-```rust,ignore
-let response = orchiddb::compiler::compile_json(request_json).await?;
-// Response contains version, dialect, sql, fields, constraint_proofs.
-// The client decides whether, where and how to execute that SQL.
-```
-
-Table names use SQL identifier syntax, including quoted qualified identifiers.
-Bindings must quote individual identifier parts. Column/property names are
-literal strings. Schemas contain metadata only; no source data is passed into
-the compiler. Mapped identities may use a non-null scalar or an ordered tuple of
-non-null scalars: booleans, integers, floats, strings, binary, decimals, dates,
-times, timestamps, durations and intervals. Floating-point keys follow the target
-engine's equality semantics. Each label retains its native component types.
-Heterogeneous scans and joins use typed struct variants to preserve types and
-component boundaries; label equality accompanies identity comparisons.
-Node `id` and edge `id`, `source`, and `target` accept either a column-name string
-or an ordered array of column names, for example `"id": ["tenant", "id"]`.
-Endpoint columns correspond positionally to the referenced node key. Arrays must
-be nonempty with distinct column names; a one-column array is a scalar key.
-Bindings must ensure
-ID uniqueness/non-nullability and referential integrity in their actual data.
-Optional [supplied relational constraints](relational-constraints.md) make proven
-keys, non-nullability, dependencies and endpoint integrity available to the planner.
-The compiler does not discover or validate source data automatically.
-Mapped identities do not require a physical primary-key index; supported
-index types depend on the target database.
-
-Optional `edges` describe label, table, id, source/target columns,
-source_label/target_label, and property-to-column mappings. An FK-backed edge also
-sets `foreign_key` to `"src"` or `"dst"` (the endpoint whose row owns the FK), uses
-the child table, and supplies the child key as its `id`. Partially NULL FKs do not
-produce graph edges. These declarations describe reads; the standalone compiler
-is not a mutation engine. Gremlin tuple-ID projection may require the unified
-runtime's native operator rather than standalone SQL compilation.
-
-Optional `functions`
-describe language-facing name, SQL target, parameter type list, return type
-(`returns`), and `aggregate` flag. The caller installs real implementations in
-its engine. SPARQL's optional `ontology` maps classes, properties and directed
-relationships; see the public request structs for the complete contract.
-
-Supported schema types are boolean, int8/int16/int32/int64,
-uint8/uint16/uint32/uint64, float32/float64, string, binary, date, time and
-duration (microseconds), interval (month/day/nanosecond),
-timestamp (microseconds, no timezone), and
-`decimal:precision:scale` with precision up to 38. Unsupported source types
-require a caller-owned cast/view. Unsupported SQL dialects fail explicitly;
-DuckDB and PostgreSQL rendering are currently implemented.
-
-## Boundaries
-
-The API specializes SQL to typed Cypher parameter values. It does not return
-JDBC placeholders. Bindings must treat generated SQL as potentially sensitive
-and include parameters, schema, ontology, function declarations, mappings, and
-dialect in their plan cache keys. Gremlin/SPARQL parameter bindings are not yet
-implemented. Do not treat the full runtime's language conformance as coverage
-of the standalone SQL subset.
-
-Writes, opaque extensions, and unlowerable operations fail. SPARQL `SERVICE`,
-including `SERVICE SILENT`, is unsupported in both compiler and managed runtime;
-OrchidDB does not make remote SPARQL HTTP requests. Internal table materializations
-are rejected by inspecting the logical plan before unparsing; they are never collected or executed. Constant seed
-rows in mapped plans are emitted as SQL expressions instead of private tables.
-
-Source-to-engine routing belongs to the client. Today's Java binding requires
-one engine per graph, while keeping engine IDs on every mapped source and plan.
-A future federated coordinator can split Graph IR into source-specific fragments
-and use the compiler for each engine without changing connection ownership.
-
-Regression tests: `cargo test --test sql_compiler --test execution`.
-
-## Caller-owned data flow
-
-You can execute `CompiledSql.sql` directly. For a common adapter boundary,
-implement `execution::SqlSession`: declare a dialect, a driver error type, and a
-native Arrow `RecordBatchReader` result type that can borrow the session. Its async `query` method executes the
-SQL; `execution::execute` first rejects protocol/dialect mismatches. It performs
-no schema discovery, setup statements, data copying, buffering or commits.
-Futures may stay on the calling thread; `Send` and background scheduling are not
-required. Your adapter controls streaming errors, cancellation and drop cleanup.
-
-The [DuckDB application example](../examples/duckdb-client/) declares its own
-driver dependency and implements the interface with a borrowed connection and
-native Arrow reader. It registers a SQL function, queries uncommitted caller data,
-and verifies caller rollback afterward:
-
-```sh
-cargo run --manifest-path examples/duckdb-client/Cargo.toml
-```
-
-For SQL output alone, with no DuckDB build:
-
-```sh
-cargo run --example compile_sql
-```
-
-Resolve metadata and compile against the same session/schema version used for
-execution. The dialect check cannot distinguish two databases using the same
-SQL dialect; engine identity and routing belong to your application.
-
-### Arrow execution boundary
-
-`SqlSession::Output` implements Arrow 58 `RecordBatchReader`: schema plus an iterator
-of `Result<RecordBatch, ArrowError>`. Drivers export native batches; OrchidDB does
-not convert cells into rows or collect the result. Retaining a Rust batch retains
-its reference-counted buffers across reader advancement and drop. Dropping the
-reader releases the session borrow. Connections, transaction policy, cancellation,
-and extensions remain application-owned. Batch transport does not promise that
-a particular database streams query execution. The DuckDB example uses its native
-`query_arrow` API, which may materialize execution inside DuckDB.
+Runnable examples: [SQL generation](../examples/compile_sql.rs),
+[application-owned DuckDB session](../examples/duckdb-client/),
+[physical layouts](../examples/partition_layout_plans.rs), and
+[collection tables](../examples/collection_table_plans.rs).

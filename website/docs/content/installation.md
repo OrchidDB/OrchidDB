@@ -104,15 +104,19 @@ See [SQL compilation](sql-compiler.md). For application integration, prefer the 
 
 <a id="use-the-rust-library"></a>
 
-## Optional managed Rust runtime
+## Rust GraphEngine
 
-The older managed engine APIs remain available in core. Their tutorials use an explicit `duckdb` feature and have different capabilities from compiler-only clients:
+The optional `GraphEngine` runtime supports managed storage and mapped application
+tables through one engine, including RDF reads and updates. The API tutorials describe the current core checkout. New RDF catalog,
+composite-key, physical-layout, and collection-source APIs require a matching
+source build; the published 0.1.0 binaries may bundle an earlier core revision. Their dependencies use an explicit `duckdb` feature:
 
 ```toml
 [dependencies]
 orchiddb = { path = "../orchiddb", features = ["duckdb"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 arrow = "58.2.0"
+duckdb = { version = "1.10502.0", features = ["bundled"] }
 ```
 
 Run its separate example from the core checkout:
@@ -124,7 +128,7 @@ cargo run --locked --features duckdb --example managed_graph
 | Core feature | Purpose |
 | --- | --- |
 | default (empty) | SQL compiler without database drivers |
-| `duckdb` | Managed engine APIs, bundled executor, and legacy managed CLI |
+| `duckdb` | Unified managed/mapped runtime APIs, bundled executor, and legacy core CLI |
 | `postgres` | Lower-level PostgreSQL executor; not a federated client |
 
 The standalone CLI instructions above refer to `OrchidDB-cli`, not the legacy core binary.

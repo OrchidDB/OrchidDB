@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
 use orchiddb::ir::rel::mapping::{EdgeMapping, ForeignKeyEndpoint, GraphMapping, NodeMapping};
-use orchiddb::ir::rel::sql::DuckDbExecutor;
-use orchiddb::mapped_engine::MappedGraphEngine;
+use orchiddb::engine::GraphEngine;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -22,7 +21,7 @@ async fn main() -> Result<(), String> {
         Field::new("dst", DataType::Int64, false),
     ])));
     mapping.map_node(NodeMapping::table("Person", "users", "id")
-        .property("name", "name").property("age", "age"));
+        .property("id", "id").property("name", "name").property("age", "age"));
     mapping.map_node(NodeMapping::table("Order", "orders", "order_id")
         .property("total", "total"));
     mapping.map_edge(EdgeMapping::table(
@@ -32,16 +31,15 @@ async fn main() -> Result<(), String> {
         "FOLLOWS", "follows", "src", "dst", "Person", "Person"
     ));
 
-    let mut graph = MappedGraphEngine::new(
-        DuckDbExecutor::new(), Arc::new(mapping)
-    );
-    graph.execute_sql(include_str!("../schema.sql"))?;
+    let connection = duckdb::Connection::open_in_memory().map_err(|e| e.to_string())?;
+    connection.execute_batch(include_str!("../schema.sql")).map_err(|e| e.to_string())?;
+    let mut graph = GraphEngine::mapped(connection, Arc::new(mapping))?;
     let result = graph.cypher(
         "MATCH (p:Person)-[:ORDERED]->(o:Order) WHERE o.total > 100.0 \
          RETURN p.name, o.total ORDER BY o.total"
     ).await?;
-    for row in 0..result.batch.num_rows() {
-        let values = result.batch.columns().iter().map(|column|
+    for row in 0..result.returned.batch.num_rows() {
+        let values = result.returned.batch.columns().iter().map(|column|
             arrow::util::display::array_value_to_string(column, row)
                 .map_err(|error| error.to_string())
         ).collect::<Result<Vec<_>, _>>()?;

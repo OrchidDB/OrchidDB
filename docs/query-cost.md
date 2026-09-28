@@ -5,7 +5,8 @@ SQL output rows and Arrow array memory bytes, native graph-kernel calls and row
 visits, demand-driven source requests/rows, final Arrow result rows and elapsed time.
 Cached physical subplans count every execution; counters reset per query.
 Decode-only kernels are excluded from native row visits. SQL-only mode and RDF
-read queries are measured too (`RdfGraphEngine::last_query_stats`).
+read queries are measured too (`GraphEngine::sparql_dataset(...).await?.stats`;
+existing RDF facade callers can use `RdfGraphEngine::last_query_stats`).
 
 The version 1 score is:
 

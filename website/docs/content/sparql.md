@@ -4,7 +4,7 @@ Query application tables with RDF vocabulary through the common `GraphEngine`.
 
 ## Choose the data model
 
-For a property graph, define an `OntologyMapping` that maps class and predicate IRIs to graph labels and properties. Use it with `GraphEngine::sparql` or `MappedGraphEngine::sparql`.
+For a property graph, define an `OntologyMapping` that maps class and predicate IRIs to graph labels and properties. Use it with `GraphEngine::sparql`. The older `MappedGraphEngine::sparql` method remains available on the compatibility facade.
 
 For explicit column, identity, and named-graph mappings, add `RdfMapping` rules to `GraphMapping` and call `GraphEngine::sparql_query`. The [RDF guide](rdf.md) covers ordinary tables, composite foreign keys, and updates. On mapped engines, existing ontology builders translate to these same rules; patterns do not require an explicit type root.
 
@@ -51,7 +51,7 @@ let result = graph.sparql(
 ).await?;
 ```
 
-`result.batch` contains Arrow data, and `result.fields` contains output binding names.
+`result.returned.batch` contains Arrow data, and `result.returned.fields` contains output binding names. The ontology convenience method returns legacy scalar columns. For typed RDF terms, use `sparql_query(query, dataset)`; for Arrow RDF term metadata and execution statistics, use `sparql_dataset(query, dataset)`.
 
 ## Join relationships
 

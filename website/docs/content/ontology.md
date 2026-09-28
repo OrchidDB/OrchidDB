@@ -80,3 +80,13 @@ Pass the same ontology to managed or mapped graph SPARQL methods. This allows ap
 | `relationship_between(iri, type, direction, domain, range)` | Also specify endpoint labels. |
 | `class_for_iri(iri)` / `class_for_label(label)` | Inspect a class mapping. |
 | `predicate_for_iri(iri)` | Inspect a predicate mapping. |
+
+## Shared RDF catalog
+
+For mapped storage, `GraphEngine::sparql(query, ontology)` translates ontology
+builders into the same relational RDF rules used by `GraphMapping::map_rdf`.
+To install those rules in a named dataset before engine construction, call
+`ontology.apply_to(&mut mapping, "default")?`, then use `sparql_query` or
+`sparql_dataset`. Query patterns need not start with an explicit type assertion.
+An ontology is optional when rules already map RDF terms directly to columns.
+See [RDF mappings](rdf.md) for composite identities and writable row rules.

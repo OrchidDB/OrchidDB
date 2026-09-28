@@ -1,8 +1,5 @@
 # Map existing tables
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Expose existing DuckDB tables as a graph, then query them with Cypher and Gremlin.
 
 ## The relational dataset
@@ -30,8 +27,7 @@ Use the dependencies from [installation](installation.md#use-the-rust-library). 
 use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
 use orchiddb::ir::rel::mapping::{EdgeMapping, ForeignKeyEndpoint, GraphMapping, NodeMapping};
-use orchiddb::ir::rel::sql::DuckDbExecutor;
-use orchiddb::mapped_engine::MappedGraphEngine;
+use orchiddb::engine::GraphEngine;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -51,7 +47,7 @@ async fn main() -> Result<(), String> {
         Field::new("dst", DataType::Int64, false),
     ])));
     mapping.map_node(NodeMapping::table("Person", "users", "id")
-        .property("name", "name").property("age", "age"));
+        .property("id", "id").property("name", "name").property("age", "age"));
     mapping.map_node(NodeMapping::table("Order", "orders", "order_id")
         .property("total", "total"));
     mapping.map_edge(EdgeMapping::table(
@@ -61,16 +57,15 @@ async fn main() -> Result<(), String> {
         "FOLLOWS", "follows", "src", "dst", "Person", "Person"
     ));
 
-    let mut graph = MappedGraphEngine::new(
-        DuckDbExecutor::new(), Arc::new(mapping)
-    );
-    graph.execute_sql(include_str!("../schema.sql"))?;
+    let connection = duckdb::Connection::open_in_memory().map_err(|e| e.to_string())?;
+    connection.execute_batch(include_str!("../schema.sql")).map_err(|e| e.to_string())?;
+    let mut graph = GraphEngine::mapped(connection, Arc::new(mapping))?;
     let result = graph.cypher(
         "MATCH (p:Person)-[:ORDERED]->(o:Order) WHERE o.total > 100.0 \
          RETURN p.name, o.total ORDER BY o.total"
     ).await?;
-    for row in 0..result.batch.num_rows() {
-        let values = result.batch.columns().iter().map(|column|
+    for row in 0..result.returned.batch.num_rows() {
+        let values = result.returned.batch.columns().iter().map(|column|
             arrow::util::display::array_value_to_string(column, row)
                 .map_err(|error| error.to_string())
         ).collect::<Result<Vec<_>, _>>()?;
@@ -91,15 +86,15 @@ Download the [complete Rust example](/downloads/mapped_graph.rs) to use with the
 
 ## Open an existing database
 
-For a database that already contains these tables, construct the executor from its file and pass it to the engine. Register the same schemas and mappings, then query immediately:
+For a database that already contains these tables, open its connection and pass it to the engine. Register the same schemas and mappings, then query immediately:
 
 ```rust
-let executor = DuckDbExecutor::open("warehouse.duckdb")
+let connection = duckdb::Connection::open("warehouse.duckdb")
     .map_err(|error| error.to_string())?;
-let mut graph = MappedGraphEngine::new(executor, Arc::new(mapping));
+let mut graph = GraphEngine::mapped(connection, Arc::new(mapping))?;
 ```
 
-The mapping describes the source schema; the executor holds the connection to its rows. Use matching table names and Arrow types on both sides.
+The mapping describes the source schema; the engine owns the connection to its rows. Use matching table names and Arrow types on both sides.
 
 ## Traverse with Gremlin
 
@@ -116,3 +111,11 @@ Alice follows bob and carol.
 ## Write through the mapping
 
 Use `cypher` and `gremlin` to insert, update, and delete rows in the same mapped tables. Node labels select node tables; relationship types select relationship tables and endpoint columns. See [mapped writes](updates.md) for examples, identity rules, and transaction behavior.
+
+## Share the engine with RDF
+
+Add `RdfMapping` rules to the same `GraphMapping` before constructing the engine.
+Use `sparql_query` for typed RDF results or `sparql_dataset` for Arrow results and
+statistics. All languages share the connection and transaction methods. See
+[RDF over application tables](rdf.md). `MappedGraphEngine` remains a compatibility
+facade; new applications use `GraphEngine::mapped`.

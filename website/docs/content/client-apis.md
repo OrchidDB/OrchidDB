@@ -14,7 +14,7 @@ Version 0.1.0 is published on crates.io, PyPI, npm, Maven Central, and Hex, with
 
 DuckDB is the tested execution target. Core also renders PostgreSQL SQL. ClickHouse execution and cross-engine federation are not implemented. The engine adapter boundary allows other backends without transferring ownership of connections to the compiler.
 
-Parameters are specialized into SQL. Cache keys must include their values, schema, mappings, ontology, functions, and dialect. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. The compiler-only subset is narrower than the [managed runtime conformance results](conformance.md).
+Parameters are specialized into SQL. Cache keys must include their values, schema, node/edge/RDF mappings, collection definitions, physical layouts and partition metadata, ontology, functions, and dialect. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. Generated SQL must fit the target dialect. Consult the [recorded conformance results](conformance.md) for the exact APIs and revisions tested.
 
 ## Composite keys in source builds
 
@@ -26,8 +26,9 @@ all components and exclude partially NULL foreign keys.
 
 Use a compiler built from the composite-key sources when sending column arrays.
 The published `0.1.0` packages and standalone example manifests select the
-released compiler. The runtime mutation example uses the optional DuckDB runtime;
-compiler-only clients continue to execute read queries on caller-owned engines.
+released compiler. Use a matching source revision for new request fields such as `rdf`,
+`logical_sources`, and `collection_sources`; older packaged compilers may reject
+them. API availability is determined by the loaded library revision.
 
 ## Rust
 
@@ -160,4 +161,4 @@ The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples
 
 The [CLI](cli.md) bundles DuckDB and loads its official Iceberg extension by default. Embedded clients leave catalog, credentials, extensions, and SQL views to the application. Map a view over `iceberg_scan` like any other table.
 
-Arrow avoids per-cell row-object conversion at the interface. It does not guarantee zero-copy, bounded memory, streaming database execution, or cancellation support for every driver. See [Arrow results](results.md) for lifetime rules and the optional managed runtime's result containers.
+Arrow avoids per-cell row-object conversion at the interface. It does not guarantee zero-copy, bounded memory, streaming database execution, or cancellation support for every driver. See [Arrow results](results.md) for lifetime rules and `GraphEngine` result containers.

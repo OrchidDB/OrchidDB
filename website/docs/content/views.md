@@ -1,8 +1,5 @@
 # Views and SQL sources
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Use SQL views and query-backed labels to shape a graph over existing relational data.
 
 ## Map a physical view
@@ -77,7 +74,7 @@ Map `graph_customers` to `Person` using `id` and `name`. The same mapping can th
 
 ## Inspect the generated query
 
-Call `MappedGraphEngine::explain_cypher` to inspect how graph properties, filters, and relationships refer to the source SQL:
+Use the [SQL API](sql-compiler.md) to inspect generated SQL and logical plans without execution. Existing callers of the `MappedGraphEngine` compatibility facade can also call `explain_cypher` to inspect how graph properties, filters, and relationships refer to the source SQL:
 
 ```rust
 let sql = graph.explain_cypher(

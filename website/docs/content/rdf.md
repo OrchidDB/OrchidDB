@@ -3,7 +3,13 @@
 Use `GraphEngine` for Cypher, Gremlin, and SPARQL over the same application tables.
 Add RDF vocabulary to `GraphMapping`: each rule describes a subject, predicate,
 object, and optional graph. SPARQL patterns resolve to scans and joins of those
-sources. OrchidDB does not create or populate a triple store.
+sources. OrchidDB does not create or populate a triple store. An ontology or explicit
+`rdf:type` root is not required for direct column mappings.
+
+The [complete Rust example](/downloads/rdf_graph.rs) creates a small application
+table, queries typed RDF terms, updates through SPARQL, reads the change through
+Cypher in the same transaction, and rolls it back. Use the dependencies in
+[installation](installation.md#use-the-rust-library).
 
 ## Map columns and composite identities
 
@@ -114,7 +120,8 @@ errors or cancellation.
 ## Inspect execution and results
 
 `sparql_query` returns typed `SparqlResults`: SELECT solutions, an ASK boolean, or
-CONSTRUCT triples. `sparql_dataset` returns Arrow batches and execution statistics.
+CONSTRUCT/DESCRIBE graph triples. `sparql_dataset` returns `QueryResult`, with
+Arrow data in `returned.batch` and execution statistics in `stats`.
 `sparql_sql` shows generated SQL. `into_executor` returns the connection for
 further relational work.
 
@@ -122,3 +129,46 @@ Application-owned quad tables remain a supported source shape. Existing
 `RdfDatasetMapping` configurations attach through
 `GraphMapping::new().with_rdf_mapping(mapping)`. The old `RdfGraphEngine` API is a
 compatibility facade delegating to `GraphEngine`; it owns no separate executor.
+
+## Migration from RDF-specific engine construction
+
+New code constructs `GraphEngine::mapped(connection, Arc::new(mapping))` once.
+`GraphEngine` re-exports `SparqlResults` and `RdfTermValue`; callers do not need an
+RDF-specific engine to decode terms. Existing facades retain their signatures:
+
+| Existing RDF facade | Shared GraphEngine API |
+| --- | --- |
+| `query(query)` | `sparql_query(query, dataset)` |
+| `sparql(query)` | `sparql_dataset(query, dataset)`; access `returned` for batches |
+| `sql(query)` | `sparql_sql(query, dataset)` |
+| `update(update, base)` | `sparql_update(update, dataset, base)` |
+| `last_query_stats()` | `sparql_dataset(...).await?.stats` |
+| `into_executor()` | `into_executor()` |
+
+The dataset argument selects a declared dataset (usually `"default"`); it is
+separate from named graphs selected by `GRAPH`. `sparql_query` returns typed terms
+without the statistics wrapper. `sparql_dataset` exposes the logical/physical
+plans, generated SQL, and physical table choices. The ontology convenience method
+`sparql(query, ontology)` continues to return legacy scalar columns.
+
+## Logical sources and collections
+
+RDF rules can reference the same partition-layout logical sources and expanded
+collection tables as node and edge mappings. Register physical providers first,
+then layout definitions, then collection sources. RDF filters participate in
+physical layout selection; collection parent filters may push beneath `Unnest`,
+while element filters remain after expansion. Null mapped terms emit no statement;
+duplicate statements are removed at RDF graph boundaries.
+
+Use these derived sources for reads. Writable RDF rules should reference the
+physical row owner and supply a complete key; declaring a derived mapping
+writable does not make its expansion or layout alternatives writable. See
+[collection mappings](mapping-reference.md#collection-columns-as-logical-tables)
+and [physical layouts](mapping-reference.md#physical-layout-alternatives).
+
+## Execution boundary
+
+SPARQL uses the shared relational DAG and DuckDB transaction owner. It does not
+create another connection for RDF queries or updates. Remote `SERVICE`, including
+`SERVICE SILENT`, is unsupported. Native maps/JSON are not implicitly RDF sources;
+use explicit columns, term rules, or supported collection mappings.

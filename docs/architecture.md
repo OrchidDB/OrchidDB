@@ -54,13 +54,16 @@ ordering, bag multiplicity, exact numeric types and observable evaluation counts
 
 Managed and mapped graphs share one query runtime. `GraphEngine::mapped` uses
 caller-owned DuckDB tables; the `MappedGraphEngine` compatibility API delegates
-to the same executor. Element identities retain their scalar source types and
+to the same executor. `RdfGraphEngine` also delegates to `GraphEngine`; RDF query
+and update sessions borrow the shared connection and transaction owner. A
+`GraphMapping` contains node, edge, and RDF rules together. Element identities
+retain their scalar or ordered composite source types and
 writes target mapped columns. Mapped scans lower directly into SQL islands;
 residual kernels fetch only their referenced records and traversal frontiers.
 Schema binding never loads the mapped graph. See [unified graph engine](unified-graph-engine.md)
 for storage constraints, migration, and conformance evidence.
 
-The optional [managed runtime](runtime.md) executes a relational DAG, placing
+The [query runtime](runtime.md) executes a relational DAG, placing
 eligible regions in DuckDB and residual native operators in DataFusion. Explicit
 JVM operators use the [native JVM provider](jvm.md). These capabilities support
 broader language behavior than a standalone SQL statement can express. Graph IR
@@ -93,3 +96,17 @@ argument/result types are explicit in compiler requests. Runtime callbacks and
 unknown/volatile functions must not be silently treated as movable SQL expressions.
 Add regressions for nulls, overload resolution and evaluation counts when changing
 function lowering. Runtime-specific function APIs remain documented in rustdoc.
+
+## Derived sources and plan visibility
+
+`GraphMapping::register_logical_source` declares equivalent physical table layouts;
+selection uses caller-supplied partition statistics and pushed predicates.
+`register_collection_source` exposes one native list as a read-only relation with
+explicit parent columns and scalar element/struct-field projections. Collection
+parent scans participate in layout selection; element predicates do not become
+parent partition predicates. These sources are shared by graph and RDF mappings.
+
+`CompiledSql` includes `logical_plan`, `layout_selections`, and `constraint_proofs`.
+`QueryResult.stats` also exposes the physical DAG, SQL island queries, and native
+source queries/rows. Estimates describe scans, not measured storage I/O or collection
+expansion cardinality. See the [mapping reference](../website/docs/content/mapping-reference.md).

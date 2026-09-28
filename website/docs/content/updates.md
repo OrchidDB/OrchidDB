@@ -1,113 +1,107 @@
-# Update properties
+# Update mapped tables
 
-Create, update, and delete graph elements in the physical tables declared by your mapping. Cypher and Gremlin use the same labels, relationship types, identity columns, and property columns for reads and writes.
+Use `GraphEngine::mapped` to read and write application tables with Cypher,
+Gremlin, and SPARQL. All languages use the same mapping catalog, DuckDB
+connection, and transaction owner.
 
 ## Create mapped rows
 
+Declare every writable property, including a property alias for keys supplied
+through Cypher. For example, add `.property("id", "id")` to the tutorial's
+`Person` mapping:
+
 ```rust
 graph.cypher(
-    "CREATE (p:Person {name:'dave', age:29}) RETURN p.name"
+    "CREATE (p:Person {id:4, name:'dave', age:29}) RETURN p.name"
 ).await?;
 ```
 
-With `Person` mapped to `users`, this inserts into `users`. Creating a relationship inserts into its mapped relationship table and fills its source and destination columns from the bound nodes. A statement may write several mapped tables in one transaction.
+Mapped keys must be supplied explicitly. Scalar and ordered composite keys are
+supported; there is no automatic integer allocation or primary-key default
+generation. For Gremlin, `T.id` supplies the mapped key without requiring a
+property alias:
 
-Graph property names resolve to their configured physical columns. Omitted properties use the table's SQL defaults. Supply an integer ID through a property mapped to the identity column, or let the engine allocate the next integer within the transaction. DuckDB enforces column types and constraints.
+```rust
+graph.gremlin("g.addV('Person').property(T.id,4).property('name','dave').property('age',29)").await?;
+```
+
+These are alternative ways to create the same row; do not execute both against
+the same existing key. Every composite-key component must be non-null. Identity
+remains qualified by the mapped label or relationship type.
+
+Constant defaults on omitted mapped columns are visible during the statement.
+Volatile/function defaults on omitted mapped values are currently rejected.
+Unmapped source columns retain their database defaults and constraints. Unknown
+properties are not stored in supplemental columns or overflow tables.
 
 ## Update and return values
 
 ```rust
 let result = graph.cypher(
-    "MATCH (p:Person) WHERE p.name='dave' \
+    "MATCH (p:Person) WHERE p.id=4 \
      SET p.age=p.age+1, p.name='David' RETURN p.name,p.age"
 ).await?;
+println!("{} rows", result.returned.batch.num_rows());
 ```
 
-Use `SET p += {...}` to assign several properties or `SET p = {...}` to replace the mapped property values. Replacement clears omitted writable property columns to SQL `NULL`; identity and endpoint columns are preserved.
+Use `cypher_with_params` to bind values. `SET p += {...}` assigns properties;
+`SET p = {...}` clears omitted writable mapped properties to SQL NULL. Identity
+and endpoint columns remain protected. Primary keys are immutable. Scalar and
+composite keys use the same typed identity rules.
 
-## Delete mapped rows
+## Relationships and deletion
+
+Independent edge-row mappings need explicit edge IDs for writes. Their endpoint
+columns match node keys in declared order. An FK-backed relationship instead
+uses its child row's key as the edge identity: creating a child and its required
+relationship becomes one complete row insertion. Deleting that relationship
+clears its nullable non-key FK components; it does not delete the child row.
+See [FK-backed relationships](mapping-reference.md#writable-one-to-many-relationships).
 
 ```cypher
-MATCH (:Person)-[r:FOLLOWS]->(:Person)
-DELETE r
+MATCH (p:Person {id:4})
+DETACH DELETE p
 ```
 
-Node deletion checks mapped incident relationships. Use `DETACH DELETE p` to remove those relationships with the node. Relationship rows are deleted before node rows, and SQL constraints remain in force.
+Node deletion checks mapped incident relationships. Database constraints still
+apply. Properties must have one write owner: the tutorial's `total` belongs to
+`Order`, so update `o.total`, not an unmapped `ORDERED.total` edge property.
 
-## Write with Gremlin
-
-```rust
-graph.gremlin("g.addV('Person').property('name','dave').property('age',29)").await?;
-graph.gremlin("g.V().hasLabel('Person').has('name','dave').property('age',30)").await?;
-graph.gremlin("g.V().hasLabel('Person').has('name','dave').drop()").await?;
+```cypher
+MATCH (:Person)-[:ORDERED]->(o:Order)
+WHERE o.total > 100.0
+SET o.total = o.total + 10.0
+RETURN o.total
 ```
 
-Mapped properties address scalar columns. Relationship creation uses the configured endpoint labels and columns. Every write target must have a table-backed mapping; relationship creation, property updates, and direct relationship deletion use its explicit ID column.
+## RDF updates
+
+Add writable `RdfMapping` rules with complete physical keys, then call
+`sparql_update(update, "default", None)`. RDF inserts and deletes translate to
+mapped row transitions; they do not populate a separate triple store. A scalar
+property replacement requires deleting the old RDF value and inserting the new
+one in the same request. See [RDF updates](rdf.md#updates-and-transactions).
+
+Query-backed mappings, partition-layout logical sources, and collection-backed
+node/edge mappings are read-only. Updates must target writable physical rows.
+No write is redirected to managed storage when a mapping cannot represent it.
 
 ## Transactions
 
-Each mutation statement starts and commits a transaction when the connection has no active transaction. Within an explicit executor transaction, successful statements leave that transaction open for the caller. An error during mutation execution rolls back the active transaction, including earlier changes in that transaction. See [transactions](transactions.md#mapped-engine-transactions).
+`begin`, `commit`, and `rollback` on `GraphEngine` cover all three languages.
+Statements outside an explicit transaction commit atomically; a failed mapped
+execution within an explicit transaction requires rollback before further work.
+See [mapped transactions](transactions.md#mapped-engine-transactions).
 
-Identity columns must be unique, non-null integers. Writes preserve identity and relationship endpoint columns; property changes address only declared writable columns.
+## Compatibility APIs
 
-## Update a node property
+`MappedGraphEngine::cypher_update` and `cypher_update_with_params` remain for
+callers needing an affected-row count. They accept one property assignment over
+a mapped target, without RETURN, CREATE, DELETE, MERGE, or map replacement. They
+execute through the shared runtime, not a separate direct-SQL update engine.
+Use `GraphEngine::cypher` for multiple assignments and returned values.
 
-Use `MappedGraphEngine::cypher_update` for an assignment over matched rows:
-
-```rust
-let changed = graph.cypher_update(
-    "MATCH (p:Person) WHERE p.age >= 30 SET p.age = p.age + 1"
-).await?;
-println!("updated {changed} rows");
-```
-
-The engine compiles the match and assigned value into a native DuckDB update. It returns the affected-row count. DuckDB enforces the destination column's type and constraints.
-
-## Bind an update value
-
-```rust
-use std::collections::BTreeMap;
-use orchiddb::ir::Value;
-
-let params = BTreeMap::from([
-    ("name".into(), Value::String("alice".into())),
-    ("age".into(), Value::Int(31)),
-]);
-let changed = graph.cypher_update_with_params(
-    "MATCH (p:Person) WHERE p.name = $name SET p.age = $age",
-    &params,
-).await?;
-```
-
-The parameter values enter the parsed query as typed data. See [parameters and values](parameters.md) for the same pattern in read queries.
-
-## Prepare the mapping
-
-Use a table-backed node mapping with a known label and a unique, non-null ID column. Map the property to a writable physical column. The affected-row-count `cypher_update` API assigns one property per statement. Use `cypher` for multiple assignments and returned values.
-
-For relationship updates, give the table-backed edge mapping an explicit ID using `.with_id(...)`. Its source and destination columns continue to identify the endpoints.
-
-## Update a relationship property
-
-The tutorial's `ORDERED` mapping exposes `total` and identifies each relationship with `order_id`:
-
-```cypher
-MATCH (:Person)-[r:ORDERED]->(:Order)
-WHERE r.total > 100.0
-SET r.total = r.total + 10.0
-```
-
-Execute the statement with `cypher_update`, then run a separate `cypher` query to read the new values.
-
-## Combine graph and relational work
-
-Use `execute_sql` when an operation is naturally expressed as SQL. It executes against the mapped engine's DuckDB connection:
-
-```rust
-graph.execute_sql("UPDATE users SET age = 30 WHERE id = 1")?;
-let result = graph.cypher(
-    "MATCH (p:Person) WHERE p.name = 'alice' RETURN p.age"
-).await?;
-```
-
-Keep identity and endpoint management in your relational data model. The graph mapping continues to resolve the same columns after property updates.
+The compatibility facade also retains `execute_sql` and `executor_mut`.
+`GraphEngine` owns its connection: perform relational setup before passing the
+connection to `GraphEngine::mapped`, or consume the engine with `into_executor`
+to recover it for subsequent SQL work.

@@ -137,6 +137,20 @@ statement. DuckDB's immediate constraints, including its restrictions on updatin
 indexed columns of referenced rows, remain binding.
 
 See `examples/composite_keys.rs` for Cypher and Gremlin usage.
-`tests/sql_compiler_composite_keys.rs` executes compiler-only joins against DuckDB
+`tests/sql_compiler_composite_keys.rs` executes SQL-generated joins against DuckDB
 with repeated IDs across tenants and partially NULL FKs. Scalar and heterogeneous
 identity regressions remain covered by `tests/sql_compiler_identities.rs`.
+
+## RDF integration
+
+`GraphMapping::map_rdf` adds term rules over application columns to the same catalog
+as node and edge mappings. `with_rdf_mapping` also accepts existing quad-source
+catalogs. `GraphEngine::sparql_dataset` returns `QueryResult`, `sparql_query`
+returns decoded `SparqlResults`, and `sparql_update` applies writable mapped row
+transitions. All three languages share connection and transaction ownership.
+`RdfGraphEngine` remains a compatibility facade; `RdfSession` is a borrowed
+execution context, not an independent engine. Ontology builders over mapped
+storage translate into these same rules.
+
+See the [RDF guide](../website/docs/content/rdf.md) for term templates, datasets,
+null and duplicate handling, update limitations, and migration signatures.

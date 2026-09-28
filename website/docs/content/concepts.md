@@ -8,16 +8,16 @@ A node has an identity, labels, and properties. A relationship connects a source
 
 In a mapped graph, these concepts come from your schema. A node's identity can be a table's primary key. Relationship endpoints can be foreign-key columns. Properties can use graph names different from their physical column names.
 
-## Compiler clients and runtime APIs
+## Query execution
 
-The [language clients](client-apis.md) compile mapped read queries to SQL without opening a database. Applications execute the SQL on their own engine and consume Arrow batches. These clients do not use the engine types below.
+OrchidDB uses one mapping catalog and shared language planning. The [language clients](client-apis.md) execute queries through application-provided database sessions. The [SQL API](sql-compiler.md) exposes generated SQL when applications need it directly. `GraphEngine` owns a DuckDB connection and executes the shared relational DAG, with either managed or mapped storage.
 
 ## Managed and mapped data
 
 | Model | Data ownership | Entry point |
 | --- | --- | --- |
 | Managed graph | OrchidDB persists graph records in DuckDB. | `GraphEngine` |
-| Mapped property graph | Your tables or views provide nodes and relationships. | `MappedGraphEngine` |
+| Mapped property graph | Your tables or views provide nodes and relationships. | `GraphEngine::mapped` |
 | Mapped RDF vocabulary | Rules expose RDF terms over your application columns and keys. | `GraphEngine` |
 
 Mapped engines use the schemas registered in their mappings to plan queries, while DuckDB reads the source rows. Registering a schema describes the table to the planner.
@@ -40,7 +40,7 @@ Conceptually, this becomes a scan of `Person` nodes, a filter for `p.name`, an o
 
 Graph IR gives the languages a common planning layer, so relational lowering and SQL generation can be shared instead of implemented separately for every language and SQL dialect. Keeping graph operations and their rules explicit also lets later stages preserve graph identity, duplicate results, and path constraints when translating them into relational operations.
 
-Graph IR is lowered before execution. [Compiler clients](sql-compiler.md) return SQL for supported reads and reject queries that cannot be fully lowered. The optional managed runtime executes the lowered DataFusion plan with eligible SQL regions in DuckDB and remaining native kernels. Graph IR itself is not interpreted at runtime. The [execution guide](execution.md#inspect-graph-ir) shows how to inspect it.
+Graph IR is lowered before execution. The [SQL API](sql-compiler.md) returns SQL for supported reads and rejects queries that cannot be fully lowered. `GraphEngine` executes the lowered DataFusion plan with eligible SQL regions in DuckDB and remaining native kernels. Graph IR itself is not interpreted at runtime. The [execution guide](execution.md#inspect-graph-ir) shows how to inspect it.
 
 ## SQL islands
 
@@ -64,7 +64,10 @@ Arrow results
 
 An ontology mapping associates RDF class and predicate IRIs with graph labels, properties, and relationship types. A graph mapping then associates those concepts with physical tables and columns. This lets SPARQL use the same property graph as Cypher and Gremlin.
 
-When your source is already RDF, use an [RDF dataset mapping](rdf.md) to connect quad tables directly.
+Alternatively, add `RdfMapping` rules directly to the same `GraphMapping` to expose
+application columns and composite keys as RDF terms. An ontology is optional.
+Existing quad tables remain supported through `RdfDatasetMapping`. Both use the
+same engine and transaction owner; see [RDF over application tables](rdf.md).
 
 ## Identity and ordering
 

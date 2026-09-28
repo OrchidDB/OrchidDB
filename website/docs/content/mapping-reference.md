@@ -1,8 +1,5 @@
 # Mapping reference
 
-This chapter documents the optional core runtime APIs. For compiler-only clients with caller-owned engines, start with [Client APIs](client-apis.md) and [SQL compilation](sql-compiler.md).
-
-
 Define graph labels, relationship types, identities, and properties with Rust builders or TOML.
 
 ## Node mappings
@@ -326,3 +323,61 @@ Run `cargo run --example collection_table_plans` for a complete mapping and the 
 - Writes through collection-backed node/edge mappings are rejected. Update the containing physical row through its owner instead.
 - DataFusion and DuckDB execution are tested. Other dialects depend on existing UNNEST support; no additional portability claim is made. Runtime DuckDB metadata lookups use the parent's unfiltered layout choice; query planning can choose using pushed parent filters.
 - Layout byte/file estimates describe the parent scan, not the expanded row count. There is no new estimate for collection length or element selectivity.
+
+## Physical layout alternatives
+
+The merged engine accepts several equivalent physical tables under one logical table name. Node, edge, RDF, and query-backed mappings refer to that logical name. The selector simplifies expressions, pushes predicates through relational projections, and chooses a physical table independently for each scan. Self-joins can select different layouts.
+
+Register physical providers first, then call `GraphMapping::register_logical_source`. The SQL compiler accepts the same descriptors in its optional `logical_sources` array. Existing mappings need no changes. The logical source's schema comes from `default_table`; alternatives must have the same column names, order, types and nullability. Use caller-owned views to normalize different physical schemas.
+
+```json
+{
+  "name": "events",
+  "default_table": "events_by_id",
+  "layouts": [
+    {
+      "table": "events_by_id",
+      "specs": [{"spec_id": 0, "fields": []}],
+      "partitions": [{"spec_id": 0, "bytes": 2000000, "files": 20}]
+    },
+    {
+      "table": "events_by_region",
+      "specs": [{
+        "spec_id": 0,
+        "fields": [{
+          "source_column": "region",
+          "source_id": 2,
+          "field_id": 1000,
+          "transform": {"kind": "identity"}
+        }]
+      }],
+      "partitions": [
+        {"spec_id": 0, "bytes": 1000000, "files": 10, "values": {"1000": "east"}},
+        {"spec_id": 0, "bytes": 1000000, "files": 10, "values": {"1000": "west"}}
+      ]
+    }
+  ]
+}
+```
+
+A filter `region = 'east'` selects `events_by_region`. The logical plan contains `TableScan: events_by_region`, and the emitted SQL uses that table. All original predicates remain effective; metadata chooses a table rather than filtering the returned rows itself.
+
+`CompiledSql`, `DagStats`, and `ExecStats` expose `layout_selections`. Each decision includes the logical source, selected physical table, estimated bytes/files, selected partition specs, and candidate estimates/rejection reasons. `logical_plan` shows the resolved plan alongside the existing physical plan and execution measurements. Nested DAG statistics retain their layout decisions. Estimates describe planned scans, not measured Iceberg I/O.
+
+### Partition metadata
+
+Each partition summary has a `spec_id`, `bytes`, `files`, optional `delete_bytes`, optional transformed `values` keyed by partition field ID, and optional inclusive source-column `bounds`:
+
+```json
+{"spec_id": 0, "bytes": 1000, "files": 1, "bounds": {"event_id": {"min": "10", "max": "99"}}}
+```
+
+Values and bounds are scalar text, parsed using the source or transform output type. JSON null partition values represent nulls. Temporal transform outputs are integer offsets from 1970; bucket outputs are integer bucket IDs. Descriptors retain source IDs and partition field IDs. Each summary uses its own spec, including after partition evolution.
+
+Supported descriptors: `identity`, `bucket` with `buckets`, `truncate` with `width`, `year`, `month`, `day`, `hour`, `void`, and `unknown` with `name`. Bucket hashing follows [Iceberg's hash requirements](https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements). Unsupported type/transform combinations contribute no pruning estimate. Comparisons, literal IN lists, conjunctions and disjunctions participate in estimation; unknown expressions retain their partitions.
+
+Cost is estimated surviving bytes plus delete bytes plus 64 KiB per surviving file. Equal costs retain the default layout. Missing statistics are unknown, not zero; a default with unknown statistics is retained. An empty partition list describes a known empty layout. Statistics must summarize all files in that layout. The engine does not discover Iceberg metadata or scan data to construct these summaries; supply them from the caller's catalog or manifest integration.
+
+Optional `generation` fields on the logical source and layouts exclude layouts whose generation differs. Optional layout `snapshot` strings are included in diagnostics. Omit both for ordinary catalogs; declaring alternatives asserts that they contain equivalent rows, including duplicate multiplicity. Snapshot strings are metadata provenance and do not issue snapshot-pinning SQL.
+
+TOML round trips the descriptors as JSON in `[logical_sources]` / `catalog`, following the existing constraint-catalog convention. Register physical providers after parsing the TOML to bind the sources. Runtime scalar-key lookups use the same selector. Logical sources are read-only in mapped graph persistence; update physical tables and refresh their declarations/statistics separately.

@@ -60,10 +60,12 @@ dependency.
 Each compilation targets one engine. Multiple connections can be routed by the
 application; cross-engine joins and ClickHouse SQL are not implemented.
 
-## Optional managed runtime and CLI
+## Shared graph execution
 
-The existing managed engine and CLI remain available with an explicit feature.
-This feature bundles DuckDB and supports broader execution than standalone SQL.
+Enable `duckdb` to use `GraphEngine` with either managed graph records or
+application tables via `GraphEngine::mapped`. Cypher, Gremlin, and RDF queries
+and updates share the mapping catalog, connection, and transaction owner.
+`MappedGraphEngine` and `RdfGraphEngine` remain compatibility facades.
 Graph IR is lowered to a DataFusion relational execution plan, with eligible SQL
 regions running in DuckDB. There is no standalone Graph IR interpreter or
 interpreter fallback.
@@ -73,7 +75,9 @@ cargo run --features duckdb --example managed_graph
 cargo run --features duckdb --bin orchiddb -- --query 'RETURN 1 AS value'
 ```
 
-See the [managed runtime](docs/runtime.md), [native JVM provider](docs/jvm.md),
+See [RDF mappings](website/docs/content/rdf.md),
+[logical tables and collections](website/docs/content/mapping-reference.md),
+the [query runtime](docs/runtime.md), [native JVM provider](docs/jvm.md),
 and [release packaging guide](scripts/release/README.md).
 
 ## Development

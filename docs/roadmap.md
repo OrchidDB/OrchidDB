@@ -26,9 +26,11 @@ relevant query before opening work.
   plans, shared aggregates/windows and repeated subplans with null/error/effect
   equivalence tests. Temporal ASOF specialization needs actual query semantics,
   not merely timestamp columns. Retain the existing performance evidence files.
-- Managed writes still use a native graph overlay and persisted records. Extending
-  write-through to external mappings needs explicit mutation lowering and shared
-  transaction ownership; the managed runtime does not imply general mapped writes.
+- Managed and mapped writes now share the execution runtime and transaction owner,
+  including RDF row updates. Extend supported storage capabilities deliberately:
+  mapped primary-key generation, volatile mapped defaults, and cyclic writes
+  requiring deferred constraints remain unsupported. Collection expansions and
+  physical-layout logical sources are read-only.
 
 Detailed historical reasoning remains in Git history before this cleanup:
 [374977f](https://github.com/OrchidDB/OrchidDB/tree/374977f985869f795ef628e2e37c566dafefe19a/docs).

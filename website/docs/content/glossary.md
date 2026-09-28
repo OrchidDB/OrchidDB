@@ -25,6 +25,9 @@ A compact reference for the terms used throughout OrchidDB's documentation.
 | Query-backed mapping | A graph source defined by a SQL query. |
 | Schema provider | Table metadata used by the relational planner. |
 | Ontology mapping | The association of RDF vocabulary with graph labels, properties, and relationships. |
+| RDF mapping | A rule exposing subject, predicate, object, and optional graph terms over source columns. |
+| Logical source | A named relation backed by equivalent physical layouts selected using partition metadata. |
+| Collection source | A named, read-only relation expanding one native list column. |
 | Quad source | A relational representation of RDF subject, predicate, object, and graph. |
 
 ## Execution terms
