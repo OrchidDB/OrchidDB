@@ -1,54 +1,15 @@
 //! Protect the positional layout shared by a recursive query and its work table.
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
+use datafusion::common::tree_node::Transformed;
 use datafusion::error::Result;
 use datafusion::execution::session_state::SessionStateBuilder;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::{SessionConfig, SessionContext};
 
-#[derive(Debug)]
-struct RecursiveProjectionGuard {
-    inner: Arc<dyn OptimizerRule + Send + Sync>,
-}
-
-impl OptimizerRule for RecursiveProjectionGuard {
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
-
-    fn supports_rewrite(&self) -> bool {
-        true
-    }
-
-    fn rewrite(
-        &self,
-        plan: LogicalPlan,
-        config: &dyn OptimizerConfig,
-    ) -> Result<Transformed<LogicalPlan>> {
-        let mut recursive = false;
-        plan.apply_with_subqueries(|node| {
-            if matches!(node, LogicalPlan::RecursiveQuery(_)) {
-                recursive = true;
-                Ok(TreeNodeRecursion::Stop)
-            } else {
-                Ok(TreeNodeRecursion::Continue)
-            }
-        })?;
-        if recursive {
-            // DataFusion 53 prunes the recursive terms without remapping the
-            // CteWorkTable's original schema/projection indices. The next
-            // iteration then reads the wrong columns (or an out-of-range index).
-            // Keep this one rule off recursive plans until those layouts are
-            // updated together. All other rules and non-recursive plans retain
-            // their usual optimization.
-            Ok(Transformed::no(plan))
-        } else {
-            self.inner.rewrite(plan, config)
-        }
-    }
-}
+mod recursive_projection;
+use recursive_projection::RecursiveProjection;
 
 /// Upstream's DISTINCT rule treats some fan-out FDs as row uniqueness.
 /// Use the stronger proof model for plans carrying supplied constraints.
@@ -105,7 +66,7 @@ pub(super) fn session(config: SessionConfig) -> SessionContext {
         .iter()
         .map(|rule| {
             if rule.name() == "optimize_projections" {
-                Arc::new(RecursiveProjectionGuard {
+                Arc::new(RecursiveProjection {
                     inner: rule.clone(),
                 }) as Arc<dyn OptimizerRule + Send + Sync>
             } else if rule.name() == "replace_distinct_aggregate" {
