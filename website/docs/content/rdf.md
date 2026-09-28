@@ -172,3 +172,12 @@ SPARQL uses the shared relational DAG and DuckDB transaction owner. It does not
 create another connection for RDF queries or updates. Remote `SERVICE`, including
 `SERVICE SILENT`, is unsupported. Native maps/JSON are not implicitly RDF sources;
 use explicit columns, term rules, or supported collection mappings.
+
+## Equivalent source representations
+
+RDF rules can use a [representation source](representations.md) as their table.
+The shared relational optimizer can then choose a collection expansion, a SQL
+derivation, or an equivalent materialized table. `sparql_dataset` exposes the
+choice in `stats.representation_selections`; RDF term construction and graph
+semantics remain above that choice. Representation sources are read-only even
+if an RDF rule declares itself writable.

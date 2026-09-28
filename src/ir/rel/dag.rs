@@ -39,6 +39,7 @@ pub struct DagStats {
     pub logical_plan: String,
     pub constraint_proofs: Vec<super::constraints::RewriteProof>,
     pub layout_selections: Vec<super::layout::LayoutDecision>,
+    pub representation_selections: Vec<super::representation::RepresentationDecision>,
     pub sql_queries: Vec<String>,
     pub native_source_queries: Vec<String>,
     pub native_source_rows: usize,
@@ -442,8 +443,9 @@ pub(crate) async fn prepare_with_extensions(
     };
     let (optimized, more) = super::constraints::optimize(optimized)?;
     proofs.extend(more);
-    let (optimized, layout_selections) = super::layout::select(optimized)?;
-    let mut stats = DagStats { constraint_proofs: proofs, layout_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
+    let selected = super::representation::select(optimized)?;
+    let optimized = selected.plan;
+    let mut stats = DagStats { constraint_proofs: proofs, layout_selections: selected.layout_selections, representation_selections: selected.representation_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
@@ -564,6 +566,7 @@ impl DagStats {
         self.cost.add_work(&nested.cost);
         self.constraint_proofs.extend(nested.constraint_proofs.iter().cloned());
         self.layout_selections.extend(nested.layout_selections.iter().cloned());
+        self.representation_selections.extend(nested.representation_selections.iter().cloned());
         if !nested.logical_plan.is_empty() {
             self.logical_plan.push_str("\nExecuted subplan:\n");
             self.logical_plan.push_str(&nested.logical_plan);

@@ -17,6 +17,7 @@ pub struct ExecStats {
     pub logical_plan: String,
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
     pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
+    pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
     /// Operators scheduled by the DataFusion relational DAG.
     pub datafusion_ops: usize,
     /// Regions delegated to DuckDB.
@@ -352,6 +353,7 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             logical_plan: stats.logical_plan,
             constraint_proofs: stats.constraint_proofs,
             layout_selections: stats.layout_selections,
+            representation_selections: stats.representation_selections,
             islands: stats.duckdb_regions,
             datafusion_ops: stats.datafusion_operators,
             sql_queries: stats.sql_queries,

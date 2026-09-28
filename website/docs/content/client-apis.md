@@ -27,7 +27,7 @@ all components and exclude partially NULL foreign keys.
 Use a compiler built from the composite-key sources when sending column arrays.
 The published `0.1.0` packages and standalone example manifests select the
 released compiler. Use a matching source revision for new request fields such as `rdf`,
-`logical_sources`, and `collection_sources`; older packaged compilers may reject
+`logical_sources`, `collection_sources`, and `representation_sources`; older packaged compilers may reject
 them. API availability is determined by the loaded library revision.
 
 ## Rust

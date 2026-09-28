@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "dialect": "duckdb",
+  "language": "cypher",
+  "query": "MATCH (i:Item) WHERE i.order_id = 1 RETURN i.sku",
+  "tables": [
+    {
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "int64"
+        },
+        {
+          "name": "customer_id",
+          "data_type": "int64"
+        },
+        {
+          "name": "items",
+          "data_type": "list:struct:{\"item_id\":\"int64\",\"sku\":\"string\",\"quantity\":\"int64\"}"
+        }
+      ]
+    },
+    {
+      "name": "flat",
+      "columns": [
+        {
+          "name": "oid",
+          "data_type": "int64"
+        },
+        {
+          "name": "line",
+          "data_type": "int64"
+        },
+        {
+          "name": "product",
+          "data_type": "string"
+        },
+        {
+          "name": "qty",
+          "data_type": "int64"
+        }
+      ]
+    }
+  ],
+  "collection_sources": [
+    {
+      "name": "expanded_items",
+      "table": "orders",
+      "column": "items",
+      "parent_columns": {
+        "order_id": "id"
+      },
+      "fields": {
+        "item_id": "item_id",
+        "sku": "sku",
+        "quantity": "quantity"
+      }
+    }
+  ],
+  "representation_sources": [
+    {
+      "name": "items",
+      "default_representation": "nested",
+      "representations": [
+        {
+          "name": "nested",
+          "source": {
+            "kind": "table",
+            "name": "expanded_items"
+          },
+          "average_list_length": 2,
+          "statistics": [
+            {
+              "table": "orders",
+              "specs": [
+                {
+                  "spec_id": 0,
+                  "fields": []
+                }
+              ],
+              "partitions": [
+                {
+                  "spec_id": 0,
+                  "bytes": 1000,
+                  "files": 1,
+                  "rows": 10,
+                  "bounds": {
+                    "id": {
+                      "min": "1",
+                      "max": "49"
+                    }
+                  }
+                },
+                {
+                  "spec_id": 0,
+                  "bytes": 99000,
+                  "files": 1,
+                  "rows": 10,
+                  "bounds": {
+                    "id": {
+                      "min": "50",
+                      "max": "99"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "flat_sku",
+          "source": {
+            "kind": "table",
+            "name": "flat"
+          },
+          "columns": {
+            "order_id": "oid",
+            "item_id": "line",
+            "sku": "product",
+            "quantity": "qty"
+          },
+          "statistics": [
+            {
+              "table": "flat",
+              "specs": [
+                {
+                  "spec_id": 0,
+                  "fields": []
+                }
+              ],
+              "partitions": [
+                {
+                  "spec_id": 0,
+                  "bytes": 10000,
+                  "files": 1,
+                  "rows": 10,
+                  "bounds": {
+                    "product": {
+                      "min": "a",
+                      "max": "m"
+                    }
+                  }
+                },
+                {
+                  "spec_id": 0,
+                  "bytes": 10000,
+                  "files": 1,
+                  "rows": 10,
+                  "bounds": {
+                    "product": {
+                      "min": "n",
+                      "max": "z"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "label": "Item",
+      "table": "items",
+      "id": [
+        "order_id",
+        "item_id"
+      ],
+      "properties": {
+        "order_id": "order_id",
+        "sku": "sku",
+        "quantity": "quantity"
+      }
+    }
+  ]
+}

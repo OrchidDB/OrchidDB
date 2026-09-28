@@ -119,12 +119,24 @@ For a full struct-list mapping, identity rules, and limitations, see
 [collection columns as logical tables](mapping-reference.md#collection-columns-as-logical-tables).
 
 The compiler registers physical schemas, then optional `logical_sources`
-(physical-layout alternatives), then collection sources. Parent filters can guide
+(physical-layout alternatives), then collection and representation sources in
+dependency order. Parent filters can guide
 layout selection below `UNNEST`; element filters apply after expansion.
 `logical_plan` exposes the expansion and `layout_selections` reports physical
 choices and parent-scan byte/file estimates. Those estimates do not describe
 expanded row counts. Include collection and layout definitions and their metadata
 in plan cache keys. These definitions do not enable writes.
+
+## Equivalent derived and materialized inputs
+
+The optional `representation_sources` array registers multiple complete,
+equivalent inputs for one mapped relation. Inputs can be named tables/collections
+or SQL queries, including joins and grouped summaries. The optimizer chooses per
+occurrence after pushing filters, and exposes its decisions in
+`representation_selections`, alongside `layout_selections` and `logical_plan`.
+The shared engine uses the same selection and exposes it in execution statistics.
+See [equivalent representations](representations.md) for the descriptor, cost
+model, generation rules, and a runnable mapping/plan example.
 
 ## Boundaries
 

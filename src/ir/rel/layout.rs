@@ -78,6 +78,8 @@ pub struct PartitionStatistics {
     pub files: u64,
     #[serde(default)]
     pub delete_bytes: u64,
+    #[serde(default)]
+    pub rows: Option<u64>,
     /// Transformed partition values keyed by partition field ID; null is JSON null.
     #[serde(default)]
     pub values: BTreeMap<i32, Option<String>>,
@@ -101,6 +103,7 @@ pub struct LayoutDecision {
     pub snapshot: String,
     pub estimated_bytes: Option<u64>,
     pub estimated_files: Option<u64>,
+    pub estimated_rows: Option<u64>,
     pub partition_specs: Vec<PartitionSpec>,
     pub candidates: Vec<LayoutCandidate>,
 }
@@ -121,6 +124,17 @@ fn invalid(message: impl Into<String>) -> DataFusionError {
     DataFusionError::Plan(message.into())
 }
 impl LayoutProvider {
+    /// Attach cost metadata to one physical scan without introducing a public alias.
+    pub(crate) fn for_statistics(layout: TableLayout, providers: &BTreeMap<String, Arc<dyn TableProvider>>) -> Result<Self> {
+        let name = layout.table.clone();
+        let mut provider = Self::try_new(LogicalSource {
+            name: format!("__scan_statistics_{name}"), generation: layout.generation.clone(),
+            default_table: name.clone(), layouts: vec![layout],
+        }, providers)?;
+        provider.definition.name = name;
+        Ok(provider)
+    }
+
     pub(crate) fn try_new(
         definition: LogicalSource,
         providers: &BTreeMap<String, Arc<dyn TableProvider>>,
@@ -284,6 +298,8 @@ impl LayoutProvider {
                 snapshot: layout.snapshot.clone(),
                 estimated_bytes: estimates[best].map(|e| e.0),
                 estimated_files: estimates[best].map(|e| e.1),
+                estimated_rows: layout.partitions.as_ref().and_then(|parts| parts.iter().filter(|p| !filters.iter().any(|f| impossible(f,p,&self.schema,layout.specs.iter().find(|s|s.spec_id==p.spec_id))))
+                    .try_fold(0_u64,|n,p|p.rows.map(|r|n.saturating_add(r)))),
                 partition_specs: layout.specs.clone(),
                 candidates,
             },
@@ -550,7 +566,7 @@ impl TableProvider for LayoutProvider {
         ))
     }
 }
-fn layout_provider(provider: &Arc<dyn TableProvider>) -> Option<&LayoutProvider> {
+pub(crate) fn layout_provider(provider: &Arc<dyn TableProvider>) -> Option<&LayoutProvider> {
     if let Some(p) = provider.as_any().downcast_ref::<LayoutProvider>() {
         return Some(p);
     }
@@ -561,6 +577,21 @@ fn layout_provider(provider: &Arc<dyn TableProvider>) -> Option<&LayoutProvider>
         return layout_provider(&p.inner);
     }
     None
+}
+pub(crate) fn push_filters(plan: LogicalPlan) -> Result<LogicalPlan> {
+    use datafusion::optimizer::{
+        Optimizer, OptimizerContext, push_down_filter::PushDownFilter,
+        simplify_expressions::SimplifyExpressions,
+    };
+    Optimizer::with_rules(vec![
+        Arc::new(SimplifyExpressions::new()),
+        Arc::new(PushDownFilter::new()),
+    ])
+    .optimize(
+        plan,
+        &OptimizerContext::new().with_skip_failing_rules(false),
+        |_, _| {},
+    )
 }
 /// Resolve each scan independently, including scans inside expression subqueries.
 /// Filter pushdown runs only on plans containing logical sources.
@@ -580,19 +611,7 @@ fn select_inner(plan: LogicalPlan) -> Result<(LogicalPlan, Vec<LayoutDecision>)>
     if !found {
         return Ok((plan, vec![]));
     }
-    use datafusion::optimizer::{
-        Optimizer, OptimizerContext, push_down_filter::PushDownFilter,
-        simplify_expressions::SimplifyExpressions,
-    };
-    let plan = Optimizer::with_rules(vec![
-        Arc::new(SimplifyExpressions::new()),
-        Arc::new(PushDownFilter::new()),
-    ])
-    .optimize(
-        plan,
-        &OptimizerContext::new().with_skip_failing_rules(false),
-        |_, _| {},
-    )?;
+    let plan = push_filters(plan)?;
     let mut decisions = Vec::new();
     let plan = plan
         .transform_up_with_subqueries(|node| {

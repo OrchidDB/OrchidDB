@@ -11,6 +11,7 @@
 
 - [Map existing tables](mapped-graphs.md)
 - [Mapping reference](mapping-reference.md)
+- [Equivalent representations](representations.md)
 - [Views and SQL sources](views.md)
 - [Managed graphs](managed-graphs.md)
 - [Transactions and storage](transactions.md)

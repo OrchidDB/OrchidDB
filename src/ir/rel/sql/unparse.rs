@@ -5,7 +5,11 @@ use super::*;
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let (plan, _) = crate::ir::rel::layout::select(lowered.plan.clone())?;
+    unparse_plan(lowered.plan.clone(), dialect)
+}
+
+pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
+    let plan = crate::ir::rel::representation::select(plan)?.plan;
     let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
@@ -366,8 +370,15 @@ pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, 
             }
         }
         let unique = |name: &str| counts.get(name).copied().unwrap_or(0) <= 1;
+        // Aggregate/projection expression names are referenced by parent nodes.
+        // Removing a qualifier inside sum(t.x) must not rename its output.
+        let preserve_names = matches!(
+            node,
+            LogicalPlan::Aggregate(_) | LogicalPlan::Projection(_) | LogicalPlan::Window(_)
+        );
         let rewritten = node.map_expressions(|expr| {
-            expr.transform_up(|inner| {
+            let name = expr.qualified_name().1;
+            let rewritten = expr.transform_up(|inner| {
                 if let Expr::Column(column) = &inner
                     && column.relation.is_some()
                     && unique(&column.name)
@@ -377,6 +388,13 @@ pub(super) fn strip_column_qualifiers(plan: LogicalPlan) -> Result<LogicalPlan, 
                     ))));
                 }
                 Ok(Transformed::no(inner))
+            })?;
+            rewritten.map_data(|expr| {
+                Ok(if preserve_names && expr.qualified_name().1 != name {
+                    expr.alias(name)
+                } else {
+                    expr
+                })
             })
         })?;
         if rewritten.transformed {

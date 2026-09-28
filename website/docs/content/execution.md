@@ -67,7 +67,9 @@ Graph property names resolve to the physical columns in your mapping. Use this o
 
 `ExecStats` records `datafusion_ops`, `islands`, `island_rows`, `sql_queries`,
 `native_source_queries`, `native_source_rows`, and `cost`. It also exposes
-`logical_plan`, `physical_plan`, `constraint_proofs`, and `layout_selections`.
+`logical_plan`, `physical_plan`, `constraint_proofs`, `layout_selections`, and
+`representation_selections`. The latter records the chosen derived or materialized
+input, candidate costs, and decision reasons; see [equivalent representations](representations.md).
 Use `fully_pushed_down()` to inspect whether all recorded query operators were
 delegated to SQL. Backend labels alone do not establish that.
 

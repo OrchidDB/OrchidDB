@@ -363,6 +363,20 @@ impl RdfSession<'_> {
                     }
                 }
             }
+            // Check every target before ordering or executing any effect, including
+            // quad mappings and named-graph registries marked writable.
+            for effect in &effects {
+                let (MappedMutation::Upsert { table, .. }
+                    | MappedMutation::Assign { table, .. }
+                    | MappedMutation::Clear { table, .. }
+                    | MappedMutation::InsertAbsent { table, .. }
+                    | MappedMutation::Delete { table, .. }) = effect;
+                if self.mapping.registered_tables().get(table).is_some_and(|p| {
+                    crate::ir::rel::representation::provider(p).is_some()
+                }) {
+                    return Err(format!("representation source `{table}` is read-only"));
+                }
+            }
             let mut effects = super::relational_update::coalesce(effects)?;
             if !self.mapping.relational.is_empty() {
                 super::relational_update::order(&mut effects, &mut *self.executor()?)?;

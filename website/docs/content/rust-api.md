@@ -30,6 +30,9 @@ Import from `orchiddb::engine`. Cypher, Gremlin, ontology SPARQL, and `sparql_da
 | `set_sql_timeout(duration)` | Set the DuckDB SQL timeout. |
 
 `QueryResult` contains `returned: ReturnedBatches`, `backend: ExecutionBackend`, and `stats: ExecStats`.
+`stats.logical_plan`, `stats.layout_selections`, and `stats.representation_selections`
+show the chosen inputs. See [equivalent representations](representations.md) for
+registering alternative collection, SQL, and materialized sources.
 
 ## MappedGraphEngine compatibility facade
 
@@ -70,6 +73,7 @@ Read methods return `Result<ReturnedBatches, String>`. The [mapped tutorial](map
 | `ir::rel::mapping` | `GraphMapping`, `NodeMapping`, `EdgeMapping`, `MappedSource` |
 | `ir::rel::layout` | `LogicalSource`, `TableLayout`, `PartitionSpec`, `PartitionStatistics` |
 | `ir::rel::collection_source` | `CollectionSource` |
+| `ir::rel::representation` | `RepresentationSource`, `Representation`, `RepresentationInput`, `RepresentationDecision` |
 | `ir::rel::rdf_mapping` | `RdfMapping`, `RdfTermMapping` |
 | `ir::rel::rdf` | `RdfDatasetMapping`, `IriQuadSource` |
 | `language::sparql` | `OntologyMapping`, `ClassMapping`, `PredicateMapping` |

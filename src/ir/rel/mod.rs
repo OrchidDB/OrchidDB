@@ -10,6 +10,7 @@
 pub mod dag;
 pub mod layout;
 pub mod collection_source;
+pub mod representation;
 pub mod runtime;
 mod island_planner;
 mod optimizer;
@@ -332,7 +333,7 @@ pub async fn execute_lowered(lowered: LoweredPlan) -> RelResult<ReturnedBatches>
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
     let ctx = optimizer::session(config);
     let (plan, _) = constraints::optimize(lowered.plan)?;
-    let (plan, _) = layout::select(plan)?;
+    let plan = representation::select(plan)?.plan;
     let df = ctx.execute_logical_plan(plan).await?;
     let batches = df.collect().await?;
     let batch = if batches.is_empty() {

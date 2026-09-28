@@ -46,6 +46,7 @@ EdgeMapping::table(
 | `register_table(name, provider)` | Register a DataFusion table provider. |
 | `register_view(name, sql)` | Register a SQL-defined view in the mapping. |
 | `register_logical_source(source)` | Choose among equivalent physical table layouts. |
+| `register_representation_source(source)` | Choose among equivalent derived relations and materialized tables. |
 | `register_collection_source(source)` | Expand a list column as a named read-only relation. |
 | `map_node(mapping)` | Add a label mapping. |
 | `map_edge(mapping)` | Add a relationship mapping. |
@@ -297,7 +298,7 @@ The compiler's existing string schema declarations accept `list:string`, `list:i
 mapping.register_collection_source(collection_source)?;
 ```
 
-The type is `orchiddb::ir::rel::collection_source::CollectionSource`. Register the parent schemas/providers first, followed by partition-layout sources, then collection sources. A collection's parent can be a physical table or a logical source with equivalent physical layouts. Replacing a parent provider refreshes dependent collection schemas; incompatible replacements leave the collection unbound instead of retaining stale data.
+The type is `orchiddb::ir::rel::collection_source::CollectionSource`. Register the parent schemas/providers first, followed by partition-layout sources, then collection sources. A collection's parent can be a physical table, a logical source with equivalent physical layouts, or a representation source exposing a supported list column. Register each dependency before its dependent source. Replacing a parent provider refreshes dependent collection schemas; incompatible replacements leave the collection unbound instead of retaining stale data.
 
 TOML round-trips definitions in `[collection_sources]` with `catalog` holding a JSON array string, like the layout catalog. Register physical providers after loading TOML.
 
@@ -362,7 +363,7 @@ Register physical providers first, then call `GraphMapping::register_logical_sou
 
 A filter `region = 'east'` selects `events_by_region`. The logical plan contains `TableScan: events_by_region`, and the emitted SQL uses that table. All original predicates remain effective; metadata chooses a table rather than filtering the returned rows itself.
 
-`CompiledSql`, `DagStats`, and `ExecStats` expose `layout_selections`. Each decision includes the logical source, selected physical table, estimated bytes/files, selected partition specs, and candidate estimates/rejection reasons. `logical_plan` shows the resolved plan alongside the existing physical plan and execution measurements. Nested DAG statistics retain their layout decisions. Estimates describe planned scans, not measured Iceberg I/O.
+`CompiledSql`, `DagStats`, and `ExecStats` expose `layout_selections`. Each decision includes the logical source, selected physical table, estimated bytes/files/rows, selected partition specs, and candidate estimates/rejection reasons. `logical_plan` shows the resolved plan alongside the existing physical plan and execution measurements. Nested DAG statistics retain their layout decisions. Estimates describe planned scans, not measured Iceberg I/O.
 
 ### Partition metadata
 
@@ -381,3 +382,13 @@ Cost is estimated surviving bytes plus delete bytes plus 64 KiB per surviving fi
 Optional `generation` fields on the logical source and layouts exclude layouts whose generation differs. Optional layout `snapshot` strings are included in diagnostics. Omit both for ordinary catalogs; declaring alternatives asserts that they contain equivalent rows, including duplicate multiplicity. Snapshot strings are metadata provenance and do not issue snapshot-pinning SQL.
 
 TOML round trips the descriptors as JSON in `[logical_sources]` / `catalog`, following the existing constraint-catalog convention. Register physical providers after parsing the TOML to bind the sources. Runtime scalar-key lookups use the same selector. Logical sources are read-only in mapped graph persistence; update physical tables and refresh their declarations/statistics separately.
+
+## Equivalent derived and materialized relations
+
+Use `GraphMapping::register_representation_source` to register a collection
+expansion, a SQL join or grouped definition, and equivalent materialized tables
+under one canonical relation name. Node, edge, RDF, and query-backed mappings can
+refer to that name. Predicates guide per-occurrence selection; execution and
+compiler statistics expose the selected representation and candidate estimates.
+See [equivalent representations](representations.md) for complete descriptors,
+examples, persistence, and the equivalence contract. These sources are read-only.

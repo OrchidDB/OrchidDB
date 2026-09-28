@@ -103,7 +103,7 @@ impl Source {
         let sql = format!(
             "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
-            resolved_source(&self.mapping, src, &lookup_filters(column.unwrap_or(key), ids)),
+            resolved_source(&self.mapping, src, &lookup_filters(column.unwrap_or(key), ids))?,
             column.unwrap_or(key).sql(None)
         );
         let batch = {
@@ -292,7 +292,7 @@ impl GraphSource for Source {
                 .and_then(|m| m.foreign_key_columns())
                 .map(|(_, _, _, fk)| format!(" WHERE {}", fk.present_sql()))
                 .unwrap_or_default();
-            let sql = format!("SELECT {} FROM {}{edge_filter}", key.sql(None), resolved_source(&self.mapping, src, &[]));
+            let sql = format!("SELECT {} FROM {}{edge_filter}", key.sql(None), resolved_source(&self.mapping, src, &[])?);
             let ids = keys(
                 &query(executor.connection().map_err(|e| e.to_string())?, &sql)?,
                 0,
@@ -464,7 +464,7 @@ pub(super) fn attach(
         // explicitly registered dependencies.
         for name in mapping.labels() {
             if let MappedSource::Table(t) = &mapping.node(&name).unwrap().source {
-                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() { continue; }
+                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() || mapping.representation_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(
@@ -477,7 +477,7 @@ pub(super) fn attach(
         }
         for name in mapping.rel_types() {
             if let MappedSource::Table(t) = &mapping.edge(&name).unwrap().source {
-                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() { continue; }
+                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() || mapping.representation_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(

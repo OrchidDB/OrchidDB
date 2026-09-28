@@ -37,6 +37,8 @@ pub struct CompileRequest {
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub tables: Vec<Table>,
     #[serde(default)]
+    pub representation_sources: Vec<crate::ir::rel::representation::RepresentationSource>,
+    #[serde(default)]
     pub collection_sources: Vec<crate::ir::rel::collection_source::CollectionSource>,
     #[serde(default)]
     pub logical_sources: Vec<crate::ir::rel::layout::LogicalSource>,
@@ -152,6 +154,7 @@ pub struct CompiledSql {
     pub fields: Vec<String>,
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
     pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
+    pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
 }
 
 /// Supported schema types are explicit. Unknown JDBC/extension types must be
@@ -295,10 +298,28 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         mapping.register_logical_source(source.clone()).map_err(|e| e.to_string())?;
         schemas.insert(source.name.clone(), schema);
     }
-    for source in &request.collection_sources {
-        if schemas.contains_key(&source.name) { return Err(format!("duplicate table or collection source `{}`", source.name)); }
-        mapping.register_collection_source(source.clone()).map_err(|e| e.to_string())?;
-        schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap());
+    // Derived definitions can refer to each other; bind in dependency order.
+    let mut names = schemas.keys().cloned().collect::<std::collections::BTreeSet<_>>();
+    for name in request.collection_sources.iter().map(|s| &s.name)
+        .chain(request.representation_sources.iter().map(|s| &s.name)) {
+        if !names.insert(name.clone()) { return Err(format!("duplicate source `{name}`")); }
+    }
+    let mut collections = request.collection_sources.iter().collect::<Vec<_>>();
+    let mut representations = request.representation_sources.iter().collect::<Vec<_>>();
+    while !collections.is_empty() || !representations.is_empty() {
+        let before = collections.len() + representations.len();
+        let mut errors = Vec::new();
+        collections.retain(|source| match mapping.register_collection_source((*source).clone()) {
+            Ok(_) => { schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap()); false }
+            Err(e) => { errors.push(format!("{}: {e}", source.name)); true }
+        });
+        representations.retain(|source| match mapping.register_representation_source((*source).clone()) {
+            Ok(_) => { schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap()); false }
+            Err(e) => { errors.push(format!("{}: {e}", source.name)); true }
+        });
+        if before == collections.len() + representations.len() {
+            return Err(format!("cannot bind derived sources: {}", errors.join("; ")));
+        }
     }
     mapping
         .set_constraints(request.constraints.clone())
@@ -532,8 +553,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .and_then(|p| p.build())
             .map_err(|e| e.to_string())?;
     }
-    let (selected, layout_selections) = crate::ir::rel::layout::select(lowered.plan).map_err(|e| e.to_string())?;
-    lowered.plan = selected;
+    let selected = crate::ir::rel::representation::select(lowered.plan).map_err(|e| e.to_string())?;
+    lowered.plan = selected.plan;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
         version: 1,
@@ -542,7 +563,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         logical_plan: lowered.plan.display_indent().to_string(),
         fields: lowered.fields,
         constraint_proofs,
-        layout_selections,
+        layout_selections: selected.layout_selections,
+        representation_selections: selected.representation_selections,
     })
 }
 

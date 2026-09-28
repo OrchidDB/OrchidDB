@@ -20,9 +20,6 @@ pub struct CollectionSource {
     #[serde(default)]
     pub fields: BTreeMap<String, String>,
 }
-fn quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\"\""))
-}
 impl CollectionSource {
     pub(crate) fn plan(
         &self,
@@ -137,39 +134,5 @@ impl CollectionSource {
             }
         }
         Ok(())
-    }
-    /// A derived relation: parent rows repeat once for each list element.
-    pub(crate) fn sql(&self, table: &str) -> String {
-        let table = datafusion::common::TableReference::from(table)
-            .to_vec()
-            .iter()
-            .map(|s| quote(s))
-            .collect::<Vec<_>>()
-            .join(".");
-        let parents = self.parent_columns.values().collect::<BTreeSet<_>>();
-        let mut element = "__element".to_string();
-        while parents.iter().any(|c| c.as_str() == element) {
-            element.push('_');
-        }
-        let element = quote(&element);
-        let mut inner = parents.into_iter().map(|c| quote(c)).collect::<Vec<_>>();
-        inner.push(format!("UNNEST({}) AS {element}", quote(&self.column)));
-        let mut outer = self
-            .parent_columns
-            .iter()
-            .map(|(alias, c)| format!("{} AS {}", quote(c), quote(alias)))
-            .collect::<Vec<_>>();
-        if let Some(name) = &self.element {
-            outer.push(format!("{element} AS {}", quote(name)));
-        }
-        for (name, field) in &self.fields {
-            let literal = field.replace('\'', "''");
-            outer.push(format!("{element}['{literal}'] AS {}", quote(name)));
-        }
-        format!(
-            "SELECT {} FROM (SELECT {} FROM {table}) AS \"__collection_items\"",
-            outer.join(", "),
-            inner.join(", ")
-        )
     }
 }

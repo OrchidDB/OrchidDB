@@ -27,6 +27,7 @@ mod literals;
 use literals::*;
 mod unparse;
 pub use unparse::unparse;
+pub(crate) use unparse::unparse_plan;
 use unparse::*;
 
 #[cfg(feature = "duckdb")]
@@ -622,7 +623,7 @@ pub async fn prepare_with_external(
     external: &BTreeSet<String>,
 ) -> SqlResult<PreparedSql> {
     let mut lowered = lowered.clone();
-    lowered.plan = super::layout::select(lowered.plan)?.0;
+    lowered.plan = super::representation::select(lowered.plan)?.plan;
     let query = unparse(&lowered, dialect)?;
     let tables = plan_tables_excluding(&lowered.plan, external).await?;
     Ok(PreparedSql {

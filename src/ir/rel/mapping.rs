@@ -427,6 +427,7 @@ pub struct GraphMapping {
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
+    representation_sources: BTreeMap<String, super::representation::RepresentationSource>,
     collection_sources: BTreeMap<String, super::collection_source::CollectionSource>,
     logical_sources: BTreeMap<String, super::layout::LogicalSource>,
     constraints: super::constraints::ConstraintCatalog,
@@ -452,7 +453,7 @@ impl GraphMapping {
     pub fn rdf_mapping(&self) -> super::rdf::RdfDatasetMapping {
         let mut rdf = self.rdf.clone();
         let mut tables = self.tables.clone();
-        for name in self.collection_sources.keys() {
+        for name in self.collection_sources.keys().chain(self.representation_sources.keys()) {
             match self.constrained_provider(name) {
                 Ok(provider) => { tables.insert(name.clone(), provider); }
                 Err(_) => { tables.remove(name); }
@@ -620,7 +621,9 @@ impl GraphMapping {
             .ok_or_else(|| DataFusionError::Plan(format!("unknown mapped table {name}")))?;
         // Rebind view definitions against the current supplied catalog, so a
         // replacement catalog cannot leave old proofs captured inside a view.
-        let p = if let Some(source) = self.collection_sources.get(name) {
+        let p = if let Some(source) = self.representation_sources.get(name) {
+            self.build_representation(source).map_err(|e| DataFusionError::Plan(e.to_string()))?.0
+        } else if let Some(source) = self.collection_sources.get(name) {
             let parent = self.source_plan(&MappedSource::Table(source.table.clone()))
                 .map_err(|e| DataFusionError::Plan(e.to_string()))?;
             Arc::new(ViewTable::new(source.plan(parent).map_err(|e| DataFusionError::Plan(e.to_string()))?, None)) as Arc<dyn TableProvider>
@@ -752,6 +755,7 @@ impl GraphMapping {
         self.view_dependencies.remove(&name);
         self.logical_sources.remove(&name);
         self.collection_sources.remove(&name);
+        self.representation_sources.remove(&name);
         self.tables.insert(name, provider);
         // TOML catalogs bind once their physical schemas/providers are supplied.
         // Incomplete or invalid declarations remain unbound.
@@ -762,18 +766,115 @@ impl GraphMapping {
                 self.tables.remove(name);
             }
         }
-        self.refresh_collections();
+        self.refresh_derived();
         self
     }
 
-    fn refresh_collections(&mut self) {
-        for definition in self.collection_sources.values().cloned().collect::<Vec<_>>() {
-            self.tables.remove(&definition.name);
-            let _ = self.bind_collection(&definition);
+    fn refresh_derived(&mut self) {
+        // Binding schemas must not validate facts against a half-built catalog.
+        // constrained_provider attaches the current facts when a source is used.
+        let constraints = std::mem::take(&mut self.constraints);
+        let collections = self.collection_sources.values().cloned().collect::<Vec<_>>();
+        let representations = self.representation_sources.values().cloned().collect::<Vec<_>>();
+        for name in self.collection_sources.keys().chain(self.representation_sources.keys()) { self.tables.remove(name); }
+        // Bind a dependency DAG, independent of TOML declaration ordering.
+        for _ in 0..collections.len() + representations.len() {
+            let before = self.tables.len();
+            for source in &collections {
+                if !self.tables.contains_key(&source.name) { let _ = self.bind_collection(source); }
+            }
+            for source in &representations {
+                if !self.tables.contains_key(&source.name) {
+                    if let Ok((provider, dependencies)) = self.build_representation(source) {
+                        self.tables.insert(source.name.clone(), provider);
+                        self.view_dependencies.insert(source.name.clone(), dependencies);
+                    }
+                }
+            }
+            if self.tables.len() == before { break; }
         }
+        self.constraints = constraints;
+    }
+
+    fn check_source_cycle(&self, name: &str, dependencies: &BTreeSet<String>) -> RelResult<()> {
+        let mut pending = dependencies.iter().cloned().collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        while let Some(dependency) = pending.pop() {
+            if dependency == name { return Err(RelError::Unsupported(format!("cyclic mapped source {name}"))); }
+            if seen.insert(dependency.clone()) {
+                pending.extend(self.view_dependencies.get(&dependency).into_iter().flatten().cloned());
+            }
+        }
+        Ok(())
+    }
+
+    fn build_representation(&self, source: &super::representation::RepresentationSource) -> RelResult<(Arc<dyn TableProvider>, BTreeSet<String>)> {
+        use super::representation::{RepresentationInput, RepresentationProvider};
+        let mut plans = Vec::new();
+        let mut dependencies = BTreeSet::new();
+        for candidate in &source.representations {
+            // Check named dependencies before resolving their providers, including replacements.
+            let (plan, inputs) = match &candidate.source {
+                RepresentationInput::Table {name} => {
+                    let inputs = BTreeSet::from([name.clone()]);
+                    self.check_source_cycle(&source.name, &inputs)?;
+                    (self.source_plan(&MappedSource::Table(name.clone()))?, inputs)
+                }
+                RepresentationInput::Query {sql} => {
+                    let (plan, inputs) = self.plan_sql_with_dependencies(sql)?;
+                    self.check_source_cycle(&source.name, &inputs)?;
+                    (plan, inputs)
+                }
+            };
+            dependencies.extend(inputs);
+            plans.push(plan);
+        }
+        Ok((Arc::new(RepresentationProvider::try_new(source.clone(), plans, &self.tables)?), dependencies))
+    }
+
+    /// Register equivalent derived relations and materializations under one name.
+    pub fn register_representation_source(&mut self, source: super::representation::RepresentationSource) -> RelResult<&mut Self> {
+        if self.tables.contains_key(&source.name) && !self.representation_sources.contains_key(&source.name) {
+            return Err(RelError::Unsupported(format!("representation name `{}` is already registered", source.name)));
+        }
+        let (provider, dependencies) = self.build_representation(&source)?;
+        self.tables.insert(source.name.clone(), provider);
+        self.view_dependencies.insert(source.name.clone(), dependencies);
+        self.representation_sources.insert(source.name.clone(), source);
+        self.refresh_derived();
+        Ok(self)
+    }
+    pub fn representation_source(&self, name: &str) -> Option<&super::representation::RepresentationSource> {
+        self.representation_sources.get(name)
+    }
+    pub(crate) fn derived_source_sql(&self, source: &MappedSource, filters: &[Expr]) -> RelResult<Option<String>> {
+        match source {
+            MappedSource::Table(name) if !self.representation_sources.contains_key(name) && !self.collection_sources.contains_key(name) => return Ok(None),
+            MappedSource::Query(_) if self.representation_sources.is_empty() && self.collection_sources.is_empty() => return Ok(None),
+            MappedSource::Query(sql) => {
+                // Database-owned queries need no registered schema. Replan only
+                // queries that reference catalog-defined derived relations.
+                use datafusion::sql::sqlparser::{ast::visit_relations, dialect::GenericDialect, parser::Parser};
+                let statements = Parser::parse_sql(&GenericDialect {}, sql)
+                    .map_err(|e| RelError::Unsupported(format!("mapping query parse: {e}")))?;
+                let derived = visit_relations(&statements, |name| {
+                    let name = name.0.iter().filter_map(|p| p.as_ident().map(|i| i.value.clone())).collect::<Vec<_>>().join(".");
+                    if self.representation_sources.contains_key(&name) || self.collection_sources.contains_key(&name) {
+                        std::ops::ControlFlow::Break(())
+                    } else { std::ops::ControlFlow::Continue(()) }
+                });
+                if derived.is_continue() { return Ok(None); }
+            }
+            _ => (),
+        }
+        let mut plan = LogicalPlanBuilder::from(self.source_plan(source)?);
+        for filter in filters { plan = plan.filter(filter.clone())?; }
+        Ok(Some(super::sql::unparse_plan(plan.build()?, super::sql::SqlDialect::DuckDb)
+            .map_err(|e| RelError::Unsupported(e.to_string()))?))
     }
 
     fn bind_collection(&mut self, source: &super::collection_source::CollectionSource) -> RelResult<()> {
+        self.check_source_cycle(&source.name, &BTreeSet::from([source.table.clone()]))?;
         if self.collection_sources.contains_key(&source.table) {
             return Err(RelError::Unsupported("nested collection sources are not supported".into()));
         }
@@ -795,6 +896,7 @@ impl GraphMapping {
         }
         self.bind_collection(&source)?;
         self.collection_sources.insert(source.name.clone(), source);
+        self.refresh_derived();
         Ok(self)
     }
     pub fn collection_source(&self, name: &str) -> Option<&super::collection_source::CollectionSource> {
@@ -805,7 +907,8 @@ impl GraphMapping {
     }
     /// DuckDB runtime derived query; predicates still apply to the expanded rows.
     pub fn collection_sql(&self, name: &str) -> Option<String> {
-        self.collection_sources.get(name).map(|s| s.sql(&self.resolve_table(&s.table, &[])))
+        if !self.collection_sources.contains_key(name) { return None; }
+        self.derived_source_sql(&MappedSource::Table(name.into()), &[]).ok().flatten()
     }
 
     /// Register equivalent physical tables under a logical table name. Node,
@@ -817,8 +920,9 @@ impl GraphMapping {
         }
         let provider = super::layout::LayoutProvider::try_new(source.clone(), &self.tables)?;
         self.logical_sources.insert(name.clone(), source);
+        self.view_dependencies.insert(name.clone(), self.logical_sources[&name].layouts.iter().map(|l|l.table.clone()).collect());
         self.tables.insert(name, Arc::new(provider));
-        self.refresh_collections();
+        self.refresh_derived();
         Ok(self)
     }
 
@@ -1474,6 +1578,16 @@ impl GraphMapping {
         let mut mapping = GraphMapping::new();
         for (path, entries) in &sections {
             match path.as_slice() {
+                [kind] if kind == "representation_sources" => {
+                    let json = require_key(entries, "catalog", "representation_sources")?;
+                    let sources: Vec<super::representation::RepresentationSource> = serde_json::from_str(&json)
+                        .map_err(|e| RelError::Unsupported(format!("representation source catalog: {e}")))?;
+                    for source in sources {
+                        if mapping.representation_sources.insert(source.name.clone(), source).is_some() {
+                            return Err(RelError::Unsupported("duplicate representation source".into()));
+                        }
+                    }
+                }
                 [kind] if kind == "collection_sources" => {
                     let json = require_key(entries, "catalog", "collection_sources")?;
                     let sources: Vec<super::collection_source::CollectionSource> = serde_json::from_str(&json)
@@ -1623,6 +1737,10 @@ impl GraphMapping {
                 }
             }
             out.push('\n');
+        }
+        if !self.representation_sources.is_empty() {
+            out.push_str(&format!("[representation_sources]\ncatalog = {}\n",
+                quote(&serde_json::to_string(&self.representation_sources.values().collect::<Vec<_>>()).expect("serializable representations"))));
         }
         if !self.collection_sources.is_empty() {
             out.push_str(&format!("[collection_sources]\ncatalog = {}\n",
