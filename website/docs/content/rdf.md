@@ -181,10 +181,3 @@ derivation, or an equivalent materialized table. `sparql_dataset` exposes the
 choice in `stats.representation_selections`; RDF term construction and graph
 semantics remain above that choice. Representation sources are read-only even
 if an RDF rule declares itself writable.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

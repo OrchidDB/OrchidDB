@@ -130,11 +130,10 @@ Optional generated statistics add `plan_estimates` and `optimizer_decisions` to
 plan/execution diagnostics. Their estimated work score is a different cost model
 used to compare legal source alternatives and pure predicate order. Do not compare
 it numerically with measured `QueryCost.work_units` or report it as a runtime
-speedup. See the [statistics guide](../website/docs/content/statistics.md).
+speedup. See the [planning overview](../website/docs/content/execution.md#planner-and-executor-boundaries).
 
 Generated statistics also drive connected inner-join ordering and build-side
 costing, whole-plan representation selection, and parent semijoins before
 collection expansion. Native mapped access chooses bounded scan caching or typed
 batched lookup from actual frontier cardinality. Decisions are exposed through
 `optimizer_decisions`; estimates and measured execution costs remain distinct.
-See [statistics](../website/docs/content/statistics.md) for bounds and examples.

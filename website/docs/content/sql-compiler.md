@@ -214,10 +214,3 @@ accompanied by `__rdf:term:kind:?variable`, `__rdf:term:datatype:?variable`, and
 `__rdf:term:language:?variable`. A null kind means unbound. `fields` lists the
 visible variable names. Legacy ontology requests retain their scalar result
 columns and native numeric types.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

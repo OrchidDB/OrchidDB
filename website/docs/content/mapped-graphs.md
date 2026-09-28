@@ -119,10 +119,3 @@ Use `sparql_query` for typed RDF results or `sparql_dataset` for Arrow results a
 statistics. All languages share the connection and transaction methods. See
 [RDF over application tables](rdf.md). `MappedGraphEngine` remains a compatibility
 facade; new applications use `GraphEngine::mapped`.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

@@ -111,10 +111,3 @@ Open `target/doc/orchiddb/index.html` in a browser. Enable optional features in 
 ## Error handling
 
 Engine methods use `Result` so the application can handle failures at each boundary. Add application context when logging a failure, preserve the engine's error message, and roll back an explicit transaction before retrying conflicting work. See [transactions](transactions.md) for the control flow.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

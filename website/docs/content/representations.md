@@ -153,7 +153,7 @@ bytes), plus 65,536 per file, plus eight per estimated expanded row. In that mod
 expanded rows need one list expansion without a join, supplied input row counts
 and `average_list_length`.
 
-With [generated statistics](statistics.md), the shared estimator supplies source,
+With [generated statistics](execution.md#planner-and-executor-boundaries), the shared estimator supplies source,
 filter, join, grouping and expansion costs. Collected list lengths can replace a
 manual average; generated source costs allow candidates without manifest metrics
 to compete. Supplied manifest pruning and file costs still contribute where
@@ -202,10 +202,3 @@ unregistered views, compensate partial materializations, roll up different
 aggregate groupings, create/refresh tables, or import Iceberg manifests. Existing
 SQL dialect and collection-type restrictions still apply. Include definitions,
 generations, schemas, statistics, and parameter values in plan cache keys.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

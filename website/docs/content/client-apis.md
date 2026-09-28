@@ -162,10 +162,3 @@ The [DuckDB adapter](https://github.com/OrchidDB/OrchidDB-cpp/blob/main/examples
 The [CLI](cli.md) bundles DuckDB and loads its official Iceberg extension by default. Embedded clients leave catalog, credentials, extensions, and SQL views to the application. Map a view over `iceberg_scan` like any other table.
 
 Arrow avoids per-cell row-object conversion at the interface. It does not guarantee zero-copy, bounded memory, streaming database execution, or cancellation support for every driver. See [Arrow results](results.md) for lifetime rules and `GraphEngine` result containers.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.

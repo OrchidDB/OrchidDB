@@ -64,10 +64,3 @@ Map that view in your request. Actual storage access requires your own credentia
 ## Managed runtime CLI
 
 Core retains a separate legacy binary behind `--features duckdb`, used by some managed graph examples. Its mutation/query flags are different. The CLI described here executes generated read SQL; it does not expose graph mutations. Match command usage and conformance evidence to the executable revision.
-
-## Optional generated statistics
-
-[Generate statistics once](statistics.md) to collect bounded source summaries and
-automatically use the cached snapshot for source selection, cardinality estimates
-and supported filter ordering in Cypher, Gremlin and SPARQL. The guide covers
-client/engine ownership, plan diagnostics and partial coverage.
