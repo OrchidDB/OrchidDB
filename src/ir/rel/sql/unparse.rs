@@ -5,7 +5,8 @@ use super::*;
 /// Unparse a lowered plan to dialect-specific SQL text. Constructs the
 /// unparser cannot express surface as [`SqlError::Unsupported`].
 pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let plan = expand_sort_fetch(lowered.plan.clone())?;
+    let (plan, _) = crate::ir::rel::layout::select(lowered.plan.clone())?;
+    let plan = expand_sort_fetch(plan)?;
     let plan = strip_constant_sorts(plan)?;
     let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;

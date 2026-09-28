@@ -37,6 +37,8 @@ pub struct CompileRequest {
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub tables: Vec<Table>,
     #[serde(default)]
+    pub logical_sources: Vec<crate::ir::rel::layout::LogicalSource>,
+    #[serde(default)]
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub rdf: Vec<RdfMapping>,
@@ -144,8 +146,10 @@ pub struct CompiledSql {
     pub version: u32,
     pub dialect: String,
     pub sql: String,
+    pub logical_plan: String,
     pub fields: Vec<String>,
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
+    pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
 }
 
 /// Supported schema types are explicit. Unknown JDBC/extension types must be
@@ -273,6 +277,15 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         let schema = Arc::new(Schema::new(fields));
         mapping.register_table_schema(&table.name, schema.clone());
         schemas.insert(table.name.clone(), schema);
+    }
+    for source in &request.logical_sources {
+        if schemas.contains_key(&source.name) {
+            return Err(format!("duplicate table or logical source `{}`", source.name));
+        }
+        let schema = schemas.get(&source.default_table).cloned()
+            .ok_or_else(|| format!("unregistered default table `{}`", source.default_table))?;
+        mapping.register_logical_source(source.clone()).map_err(|e| e.to_string())?;
+        schemas.insert(source.name.clone(), schema);
     }
     mapping
         .set_constraints(request.constraints.clone())
@@ -506,13 +519,17 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .and_then(|p| p.build())
             .map_err(|e| e.to_string())?;
     }
+    let (selected, layout_selections) = crate::ir::rel::layout::select(lowered.plan).map_err(|e| e.to_string())?;
+    lowered.plan = selected;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
         version: 1,
         dialect: request.dialect,
         sql,
+        logical_plan: lowered.plan.display_indent().to_string(),
         fields: lowered.fields,
         constraint_proofs,
+        layout_selections,
     })
 }
 

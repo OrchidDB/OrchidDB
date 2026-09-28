@@ -7,7 +7,7 @@ mod properties;
 mod provider;
 mod rewrite;
 pub use properties::{PlanProperties, analyze};
-pub(crate) use provider::bind;
+pub(crate) use provider::{bind, ConstrainedProvider};
 pub use rewrite::{ConstraintOptimizer, RewriteProof, optimize};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

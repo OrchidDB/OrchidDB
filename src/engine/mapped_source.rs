@@ -9,6 +9,12 @@ use crate::ir::rel::sql::DuckDbExecutor;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
+fn lookup_filters(columns: &KeyColumns, ids: &[ElementId]) -> Vec<datafusion::logical_expr::Expr> {
+    if columns.len() != 1 { return vec![]; }
+    vec![datafusion::logical_expr::Expr::Column(datafusion::common::Column::from_name(&columns.columns()[0]))
+        .in_list(ids.iter().map(|id| datafusion::logical_expr::Expr::Literal(id.scalar().clone(), None)).collect(), false)]
+}
+
 type Address = (bool, String, ElementId);
 #[derive(Clone, Debug)]
 struct Record {
@@ -97,7 +103,7 @@ impl Source {
         let sql = format!(
             "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
-            source(src),
+            resolved_source(&self.mapping, src, &lookup_filters(column.unwrap_or(key), ids)),
             column.unwrap_or(key).sql(None)
         );
         let batch = {
@@ -286,7 +292,7 @@ impl GraphSource for Source {
                 .and_then(|m| m.foreign_key_columns())
                 .map(|(_, _, _, fk)| format!(" WHERE {}", fk.present_sql()))
                 .unwrap_or_default();
-            let sql = format!("SELECT {} FROM {}{edge_filter}", key.sql(None), source(src));
+            let sql = format!("SELECT {} FROM {}{edge_filter}", key.sql(None), resolved_source(&self.mapping, src, &[]));
             let ids = keys(
                 &query(executor.connection().map_err(|e| e.to_string())?, &sql)?,
                 0,
@@ -458,6 +464,7 @@ pub(super) fn attach(
         // explicitly registered dependencies.
         for name in mapping.labels() {
             if let MappedSource::Table(t) = &mapping.node(&name).unwrap().source {
+                if mapping.logical_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(
@@ -470,6 +477,7 @@ pub(super) fn attach(
         }
         for name in mapping.rel_types() {
             if let MappedSource::Table(t) = &mapping.edge(&name).unwrap().source {
+                if mapping.logical_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(

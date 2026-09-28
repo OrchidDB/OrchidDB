@@ -32,6 +32,12 @@ pub(super) fn source(source: &MappedSource) -> String {
         MappedSource::Query(sql) => format!("({sql})"),
     }
 }
+pub(super) fn resolved_source(mapping: &GraphMapping, src: &MappedSource, filters: &[datafusion::logical_expr::Expr]) -> String {
+    match src {
+        MappedSource::Table(name) => table(&mapping.resolve_table(name, filters)),
+        MappedSource::Query(_) => source(src),
+    }
+}
 pub(super) fn query(connection: &Connection, sql: &str) -> Result<RecordBatch, String> {
     let mut statement = connection.prepare(sql).map_err(|e| e.to_string())?;
     let result = statement.query_arrow([]).map_err(|e| e.to_string())?;
@@ -70,7 +76,7 @@ pub(super) fn metadata(
             &format!(
                 "SELECT {} FROM {} WHERE false",
                 projection.join(","),
-                source(&m.source)
+                resolved_source(&mapping, &m.source, &[])
             ),
         )?;
         graph
@@ -106,7 +112,7 @@ pub(super) fn metadata(
             &format!(
                 "SELECT {} FROM {} WHERE false",
                 projection.join(","),
-                source(&m.source)
+                resolved_source(&mapping, &m.source, &[])
             ),
         )?;
         graph.key_types.insert(
@@ -521,6 +527,9 @@ pub(super) fn persist(
             let MappedSource::Table(table_name) = mapped_source else {
                 return Err(format!("query-backed mapping `{name}` is read-only"));
             };
+            if mapping.logical_source(table_name).is_some() {
+                return Err(format!("logical source `{table_name}` is read-only; write to its physical table and refresh layout statistics"));
+            }
             let live = if edge {
                 graph.live_edge_endpoints(name, key.clone()).is_some()
             } else {

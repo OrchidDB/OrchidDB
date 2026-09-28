@@ -427,6 +427,7 @@ pub struct GraphMapping {
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
+    logical_sources: BTreeMap<String, super::layout::LogicalSource>,
     constraints: super::constraints::ConstraintCatalog,
     constraint_scope: Option<String>,
     view_dependencies: BTreeMap<String, BTreeSet<String>>,
@@ -733,8 +734,41 @@ impl GraphMapping {
     ) -> &mut Self {
         let name = name.into();
         self.view_dependencies.remove(&name);
+        self.logical_sources.remove(&name);
         self.tables.insert(name, provider);
+        // TOML catalogs bind once their physical schemas/providers are supplied.
+        // Incomplete or invalid declarations remain unbound.
+        for (name, definition) in &self.logical_sources {
+            if let Ok(provider) = super::layout::LayoutProvider::try_new(definition.clone(), &self.tables) {
+                self.tables.insert(name.clone(), Arc::new(provider));
+            } else {
+                self.tables.remove(name);
+            }
+        }
         self
+    }
+
+    /// Register equivalent physical tables under a logical table name. Node,
+    /// edge, RDF and SQL mappings can all refer to this name.
+    pub fn register_logical_source(&mut self, source: super::layout::LogicalSource) -> RelResult<&mut Self> {
+        let name = source.name.clone();
+        if self.tables.contains_key(&name) && !self.logical_sources.contains_key(&name) {
+            return Err(RelError::Unsupported(format!("logical source name `{name}` is already registered")));
+        }
+        let provider = super::layout::LayoutProvider::try_new(source.clone(), &self.tables)?;
+        self.logical_sources.insert(name.clone(), source);
+        self.tables.insert(name, Arc::new(provider));
+        Ok(self)
+    }
+
+    pub fn logical_source(&self, name: &str) -> Option<&super::layout::LogicalSource> {
+        self.logical_sources.get(name)
+    }
+
+    /// Resolve a runtime lookup using the same cost model as logical scans.
+    pub fn resolve_table(&self, name: &str, filters: &[Expr]) -> String {
+        self.tables.get(name).and_then(|p| p.as_any().downcast_ref::<super::layout::LayoutProvider>())
+            .map(|p| p.choose(filters).0.table.clone()).unwrap_or_else(|| name.into())
     }
 
     /// Register `name` as a SQL-defined view over previously registered
@@ -1379,6 +1413,16 @@ impl GraphMapping {
         let mut mapping = GraphMapping::new();
         for (path, entries) in &sections {
             match path.as_slice() {
+                [kind] if kind == "logical_sources" => {
+                    let json = require_key(entries, "catalog", "logical_sources")?;
+                    let sources: Vec<super::layout::LogicalSource> = serde_json::from_str(&json)
+                        .map_err(|e| RelError::Unsupported(format!("logical source catalog: {e}")))?;
+                    for source in sources {
+                        if mapping.logical_sources.insert(source.name.clone(), source).is_some() {
+                            return Err(RelError::Unsupported("duplicate logical source".into()));
+                        }
+                    }
+                }
                 [kind] if kind == "constraints" => {
                     let json = require_key(entries, "catalog", "constraints")?;
                     mapping.constraints = serde_json::from_str(&json)
@@ -1508,6 +1552,10 @@ impl GraphMapping {
                 }
             }
             out.push('\n');
+        }
+        if !self.logical_sources.is_empty() {
+            out.push_str(&format!("[logical_sources]\ncatalog = {}\n",
+                quote(&serde_json::to_string(&self.logical_sources.values().collect::<Vec<_>>()).expect("serializable layouts"))));
         }
         if !self.constraints.tables.is_empty() || !self.constraints.revision.is_empty() {
             out.push_str(&format!(

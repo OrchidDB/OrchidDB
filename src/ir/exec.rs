@@ -13,7 +13,10 @@ pub struct ExecStats {
     pub cost: crate::ir::QueryCost,
     /// Physical DAG scheduled for this execution, including SQL island boundaries.
     pub physical_plan: String,
+    /// Optimized logical plan with physical table selections applied.
+    pub logical_plan: String,
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
+    pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
     /// Operators scheduled by the DataFusion relational DAG.
     pub datafusion_ops: usize,
     /// Regions delegated to DuckDB.
@@ -346,7 +349,9 @@ impl From<crate::ir::rel::dag::DagStats> for ExecStats {
             island_rows: cost.sql_output_rows.min(usize::MAX as u64) as usize,
             cost,
             physical_plan: stats.physical_plan,
+            logical_plan: stats.logical_plan,
             constraint_proofs: stats.constraint_proofs,
+            layout_selections: stats.layout_selections,
             islands: stats.duckdb_regions,
             datafusion_ops: stats.datafusion_operators,
             sql_queries: stats.sql_queries,

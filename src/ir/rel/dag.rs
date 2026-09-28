@@ -35,7 +35,10 @@ pub struct DagStats {
     pub duckdb_regions: usize,
     pub datafusion_operators: usize,
     pub physical_plan: String,
+    /// Optimized logical plan with physical table selections applied.
+    pub logical_plan: String,
     pub constraint_proofs: Vec<super::constraints::RewriteProof>,
+    pub layout_selections: Vec<super::layout::LayoutDecision>,
     pub sql_queries: Vec<String>,
     pub native_source_queries: Vec<String>,
     pub native_source_rows: usize,
@@ -439,7 +442,8 @@ pub(crate) async fn prepare_with_extensions(
     };
     let (optimized, more) = super::constraints::optimize(optimized)?;
     proofs.extend(more);
-    let mut stats = DagStats { constraint_proofs: proofs, ..Default::default() };
+    let (optimized, layout_selections) = super::layout::select(optimized)?;
+    let mut stats = DagStats { constraint_proofs: proofs, layout_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
         let mut eligibility = SqlEligibility::default();
@@ -559,6 +563,11 @@ impl DagStats {
     pub(crate) fn merge_execution(&mut self, nested: &Self) {
         self.cost.add_work(&nested.cost);
         self.constraint_proofs.extend(nested.constraint_proofs.iter().cloned());
+        self.layout_selections.extend(nested.layout_selections.iter().cloned());
+        if !nested.logical_plan.is_empty() {
+            self.logical_plan.push_str("\nExecuted subplan:\n");
+            self.logical_plan.push_str(&nested.logical_plan);
+        }
         self.duckdb_regions += nested.duckdb_regions;
         self.datafusion_operators += nested.datafusion_operators;
         self.sql_queries.extend(nested.sql_queries.iter().cloned());

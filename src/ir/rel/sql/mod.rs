@@ -621,7 +621,9 @@ pub async fn prepare_with_external(
     dialect: SqlDialect,
     external: &BTreeSet<String>,
 ) -> SqlResult<PreparedSql> {
-    let query = unparse(lowered, dialect)?;
+    let mut lowered = lowered.clone();
+    lowered.plan = super::layout::select(lowered.plan)?.0;
+    let query = unparse(&lowered, dialect)?;
     let tables = plan_tables_excluding(&lowered.plan, external).await?;
     Ok(PreparedSql {
         dialect,
