@@ -48,6 +48,8 @@ EdgeMapping::table(
 | `register_table_schema(name, schema)` | Register schema metadata for SQL planning. |
 | `register_table(name, provider)` | Register a DataFusion table provider. |
 | `register_view(name, sql)` | Register a SQL-defined view in the mapping. |
+| `register_logical_source(source)` | Choose among equivalent physical table layouts. |
+| `register_collection_source(source)` | Expand a list column as a named read-only relation. |
 | `map_node(mapping)` | Add a label mapping. |
 | `map_edge(mapping)` | Add a relationship mapping. |
 | `labels()` / `rel_types()` | Inspect the mapped vocabulary. |
@@ -263,3 +265,64 @@ columns, create its relationship explicitly in the same statement as the child.
 
 A complete runnable example is `examples/composite_keys.rs`:
 `cargo run --features duckdb --example composite_keys`.
+
+## Collection columns as logical tables
+
+A collection source expands one native list column into a named, read-only relation. It is an inline logical plan, so no database view needs to be created. Node, edge, RDF, and query-backed mappings can reference its name.
+
+### Mapping example
+
+For `orders(id BIGINT, items STRUCT(item_id BIGINT, sku VARCHAR, quantity BIGINT)[])`:
+
+```json
+{
+  "collection_sources": [{
+    "name": "order_items",
+    "table": "orders",
+    "column": "items",
+    "parent_columns": {"order_id": "id"},
+    "fields": {"item_id": "item_id", "sku": "sku", "quantity": "quantity"}
+  }],
+  "nodes": [{
+    "label": "Item",
+    "table": "order_items",
+    "id": ["order_id", "item_id"],
+    "properties": {"order_id": "order_id", "sku": "sku", "quantity": "quantity"}
+  }]
+}
+```
+
+The parent column and field maps are **output alias → source column/field**. For a scalar list, replace `fields` with `"element": "value"`. Supply exactly one of `element` or nonempty `fields`.
+
+The compiler's existing string schema declarations accept `list:string`, `list:int64`, and `list:struct:{"item_id":"int64","sku":"string","quantity":"int64"}`. The JSON object after `struct:` maps field names to recursive type strings. The Rust API accepts Arrow List, LargeList, or FixedSizeList providers directly.
+
+```rust
+mapping.register_collection_source(collection_source)?;
+```
+
+The type is `orchiddb::ir::rel::collection_source::CollectionSource`. Register the parent schemas/providers first, followed by partition-layout sources, then collection sources. A collection's parent can be a physical table or a logical source with equivalent physical layouts. Replacing a parent provider refreshes dependent collection schemas; incompatible replacements leave the collection unbound instead of retaining stale data.
+
+TOML round-trips definitions in `[collection_sources]` with `catalog` holding a JSON array string, like the layout catalog. Register physical providers after loading TOML.
+
+### Plans and partition selection
+
+```cypher
+MATCH (i:Item)
+WHERE i.order_id = 42 AND i.quantity > 1
+RETURN i.sku, i.quantity
+```
+
+The plan contains the parent scan, list projection, `Unnest`, field projection, and remaining filters. These appear in `CompiledSql.logical_plan` and execution `stats.logical_plan`. Physical-layout choices remain in `layout_selections`. A parent filter such as `order_id = 42` can push beneath expansion and choose a partitioned parent table. An element filter such as `quantity > 1` applies after expansion and does not prune parent partitions using scalar element statistics.
+
+Run `cargo run --example collection_table_plans` for a complete mapping and the actual generated logical plan and SQL. The [runnable example](https://github.com/OrchidDB/OrchidDB/blob/main/examples/collection_table_plans.rs) supplies a complete compiler request.
+
+### Semantics and limits
+
+- Null and empty lists produce zero rows. Null list elements produce a row with null element values. Graph identities with null components are excluded by the existing graph mapping rules.
+- Parent columns repeat for each element. Duplicates remain relational duplicates; RDF applies its usual triple-set semantics. Result order is unspecified without ORDER BY.
+- Explicit child keys are required for graph identity. Use a stable element key, often combined with the parent key. A parent key alone is not a child identity. Repeated values that duplicate a declared graph key are rejected when whole elements are materialized; they require a distinct child key even though relational projections retain duplicate rows. List positions are not synthesized as identities.
+- One collection is expanded per definition. No zipped arrays, implicit Cartesian expansion, nested collection sources, native maps, JSON/text coercion, or outer expansion. Parent columns and exposed struct fields must be scalar. Registered logical views cannot be collection parents; a caller-owned database view may be registered as a physical schema.
+- Define physical layout alternatives on the parent tables. Parent-table uniqueness and row counts are not child-table facts. Collection-level supplied constraints are not consumed by the optimizer in this version; parent constraints remain within the input plan.
+- Writes through collection-backed node/edge mappings are rejected. Update the containing physical row through its owner instead.
+- DataFusion and DuckDB execution are tested. Other dialects depend on existing UNNEST support; no additional portability claim is made. Runtime DuckDB metadata lookups use the parent's unfiltered layout choice; query planning can choose using pushed parent filters.
+- Layout byte/file estimates describe the parent scan, not the expanded row count. There is no new estimate for collection length or element selectivity.

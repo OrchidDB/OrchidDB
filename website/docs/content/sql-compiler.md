@@ -44,7 +44,8 @@ The JSON protocol is version 1; unknown fields and unsupported versions fail.
 
 ```rust,ignore
 let response = orchiddb::compiler::compile_json(request_json).await?;
-// Response contains version, dialect, sql, fields.
+// Response contains version, dialect, sql, fields, logical_plan,
+// constraint_proofs, and layout_selections.
 // The client decides whether, where and how to execute that SQL.
 ```
 
@@ -84,9 +85,46 @@ Supported schema types are boolean, int8/int16/int32/int64,
 uint8/uint16/uint32/uint64, float32/float64, string, binary, date, time and
 duration (microseconds), interval (month/day/nanosecond),
 timestamp (microseconds, no timezone), and
-`decimal:precision:scale` with precision up to 38. Unsupported source types
+`decimal:precision:scale` with precision up to 38. Native list and struct schema
+declarations use `list:<element-type>` and `struct:<JSON field-to-type object>`,
+for example `list:string` or `list:struct:{"sku":"string","quantity":"int64"}`.
+These type strings recurse; collection mappings expose one list level and scalar
+struct fields. Unsupported source types
 require a caller-owned cast/view. Unsupported SQL dialects fail explicitly;
 DuckDB and PostgreSQL rendering are currently implemented.
+
+## Collection-backed logical tables
+
+The optional `collection_sources` array defines named relations by expanding a
+native list column. Each definition supplies `name`, parent `table`, list
+`column`, optional `parent_columns` (output alias to parent column), and either
+`element` (a scalar element's output name) or `fields` (output alias to struct
+field). Node, edge, and RDF mappings reference the resulting relation by name.
+
+```json
+{
+  "collection_sources": [{
+    "name": "person_tags",
+    "table": "people",
+    "column": "tags",
+    "parent_columns": {"person_id": "id"},
+    "element": "tag"
+  }]
+}
+```
+
+This is a request fragment; declare `people.id` and `people.tags` in `tables`,
+using `list:string` for the tags column. No database view is created or required.
+For a full struct-list mapping, identity rules, and limitations, see
+[collection columns as logical tables](mapping-reference.md#collection-columns-as-logical-tables).
+
+The compiler registers physical schemas, then optional `logical_sources`
+(physical-layout alternatives), then collection sources. Parent filters can guide
+layout selection below `UNNEST`; element filters apply after expansion.
+`logical_plan` exposes the expansion and `layout_selections` reports physical
+choices and parent-scan byte/file estimates. Those estimates do not describe
+expanded row counts. Include collection and layout definitions and their metadata
+in plan cache keys. These definitions do not enable writes.
 
 ## Boundaries
 

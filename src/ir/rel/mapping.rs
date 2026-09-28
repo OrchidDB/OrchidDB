@@ -427,6 +427,7 @@ pub struct GraphMapping {
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
+    collection_sources: BTreeMap<String, super::collection_source::CollectionSource>,
     logical_sources: BTreeMap<String, super::layout::LogicalSource>,
     constraints: super::constraints::ConstraintCatalog,
     constraint_scope: Option<String>,
@@ -450,7 +451,14 @@ impl GraphMapping {
     }
     pub fn rdf_mapping(&self) -> super::rdf::RdfDatasetMapping {
         let mut rdf = self.rdf.clone();
-        rdf.extend_tables(&self.tables); rdf
+        let mut tables = self.tables.clone();
+        for name in self.collection_sources.keys() {
+            match self.constrained_provider(name) {
+                Ok(provider) => { tables.insert(name.clone(), provider); }
+                Err(_) => { tables.remove(name); }
+            }
+        }
+        rdf.extend_tables(&tables); rdf
     }
     pub fn with_rdf_mapping(mut self, rdf: super::rdf::RdfDatasetMapping) -> Self {
         self.tables.extend(rdf.registered_tables()); self.rdf = rdf; self
@@ -612,7 +620,11 @@ impl GraphMapping {
             .ok_or_else(|| DataFusionError::Plan(format!("unknown mapped table {name}")))?;
         // Rebind view definitions against the current supplied catalog, so a
         // replacement catalog cannot leave old proofs captured inside a view.
-        let p = if p.get_logical_plan().is_some() {
+        let p = if let Some(source) = self.collection_sources.get(name) {
+            let parent = self.source_plan(&MappedSource::Table(source.table.clone()))
+                .map_err(|e| DataFusionError::Plan(e.to_string()))?;
+            Arc::new(ViewTable::new(source.plan(parent).map_err(|e| DataFusionError::Plan(e.to_string()))?, None)) as Arc<dyn TableProvider>
+        } else if p.get_logical_plan().is_some() {
             if let Some(sql) = p.get_table_definition() {
                 Arc::new(ViewTable::new(
                     self.plan_sql(sql)
@@ -625,6 +637,10 @@ impl GraphMapping {
         } else {
             p.clone()
         };
+        // Collection relations must inline; a constraint wrapper would hide
+        // the expansion behind a table name that does not exist externally.
+        // Facts on the parent are still attached inside the expanded plan.
+        if self.collection_sources.contains_key(name) { return Ok(p); }
         super::constraints::bind(name, p, &self.constraints, self.constraint_scope.as_deref())
     }
     /// Plan a relational query against the supplied mapping schemas and constraints.
@@ -735,6 +751,7 @@ impl GraphMapping {
         let name = name.into();
         self.view_dependencies.remove(&name);
         self.logical_sources.remove(&name);
+        self.collection_sources.remove(&name);
         self.tables.insert(name, provider);
         // TOML catalogs bind once their physical schemas/providers are supplied.
         // Incomplete or invalid declarations remain unbound.
@@ -745,7 +762,50 @@ impl GraphMapping {
                 self.tables.remove(name);
             }
         }
+        self.refresh_collections();
         self
+    }
+
+    fn refresh_collections(&mut self) {
+        for definition in self.collection_sources.values().cloned().collect::<Vec<_>>() {
+            self.tables.remove(&definition.name);
+            let _ = self.bind_collection(&definition);
+        }
+    }
+
+    fn bind_collection(&mut self, source: &super::collection_source::CollectionSource) -> RelResult<()> {
+        if self.collection_sources.contains_key(&source.table) {
+            return Err(RelError::Unsupported("nested collection sources are not supported".into()));
+        }
+        let provider = self.tables.get(&source.table).ok_or_else(|| RelError::Unsupported(format!("unregistered collection parent `{}`", source.table)))?;
+        if provider.get_logical_plan().is_some() {
+            return Err(RelError::Unsupported("collection parents must be physical tables or logical layout sources".into()));
+        }
+        source.validate(&provider.schema())?;
+        let plan = source.plan(self.source_plan(&MappedSource::Table(source.table.clone()))?)?;
+        self.view_dependencies.insert(source.name.clone(), BTreeSet::from([source.table.clone()]));
+        self.tables.insert(source.name.clone(), Arc::new(ViewTable::new(plan, None)));
+        Ok(())
+    }
+
+    /// Expand one list column as a named read-only relation.
+    pub fn register_collection_source(&mut self, source: super::collection_source::CollectionSource) -> RelResult<&mut Self> {
+        if self.tables.contains_key(&source.name) && !self.collection_sources.contains_key(&source.name) {
+            return Err(RelError::Unsupported(format!("collection source name `{}` is already registered", source.name)));
+        }
+        self.bind_collection(&source)?;
+        self.collection_sources.insert(source.name.clone(), source);
+        Ok(self)
+    }
+    pub fn collection_source(&self, name: &str) -> Option<&super::collection_source::CollectionSource> {
+        self.collection_sources.get(name)
+    }
+    pub fn table_schema(&self, name: &str) -> Option<arrow::datatypes::SchemaRef> {
+        self.tables.get(name).map(|p| p.schema())
+    }
+    /// DuckDB runtime derived query; predicates still apply to the expanded rows.
+    pub fn collection_sql(&self, name: &str) -> Option<String> {
+        self.collection_sources.get(name).map(|s| s.sql(&self.resolve_table(&s.table, &[])))
     }
 
     /// Register equivalent physical tables under a logical table name. Node,
@@ -758,6 +818,7 @@ impl GraphMapping {
         let provider = super::layout::LayoutProvider::try_new(source.clone(), &self.tables)?;
         self.logical_sources.insert(name.clone(), source);
         self.tables.insert(name, Arc::new(provider));
+        self.refresh_collections();
         Ok(self)
     }
 
@@ -1413,6 +1474,16 @@ impl GraphMapping {
         let mut mapping = GraphMapping::new();
         for (path, entries) in &sections {
             match path.as_slice() {
+                [kind] if kind == "collection_sources" => {
+                    let json = require_key(entries, "catalog", "collection_sources")?;
+                    let sources: Vec<super::collection_source::CollectionSource> = serde_json::from_str(&json)
+                        .map_err(|e| RelError::Unsupported(format!("collection source catalog: {e}")))?;
+                    for source in sources {
+                        if mapping.collection_sources.insert(source.name.clone(), source).is_some() {
+                            return Err(RelError::Unsupported("duplicate collection source".into()));
+                        }
+                    }
+                }
                 [kind] if kind == "logical_sources" => {
                     let json = require_key(entries, "catalog", "logical_sources")?;
                     let sources: Vec<super::layout::LogicalSource> = serde_json::from_str(&json)
@@ -1552,6 +1623,10 @@ impl GraphMapping {
                 }
             }
             out.push('\n');
+        }
+        if !self.collection_sources.is_empty() {
+            out.push_str(&format!("[collection_sources]\ncatalog = {}\n",
+                quote(&serde_json::to_string(&self.collection_sources.values().collect::<Vec<_>>()).expect("serializable collections"))));
         }
         if !self.logical_sources.is_empty() {
             out.push_str(&format!("[logical_sources]\ncatalog = {}\n",

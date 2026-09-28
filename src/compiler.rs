@@ -37,6 +37,8 @@ pub struct CompileRequest {
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub tables: Vec<Table>,
     #[serde(default)]
+    pub collection_sources: Vec<crate::ir::rel::collection_source::CollectionSource>,
+    #[serde(default)]
     pub logical_sources: Vec<crate::ir::rel::layout::LogicalSource>,
     #[serde(default)]
     pub nodes: Vec<Node>,
@@ -174,6 +176,12 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "duration" => DataType::Duration(TimeUnit::Microsecond),
         "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
+        _ if value.starts_with("list:") => DataType::List(Arc::new(Field::new("item", data_type(&value[5..])?, true))),
+        _ if value.starts_with("struct:") => {
+            let fields: BTreeMap<String, String> = serde_json::from_str(&value[7..]).map_err(|e| format!("invalid struct type: {e}"))?;
+            if fields.is_empty() || fields.keys().any(String::is_empty) { return Err("struct requires named fields".into()); }
+            DataType::Struct(fields.into_iter().map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true)))).collect::<Result<Vec<_>, String>>()?.into())
+        }
         _ if value.starts_with("decimal:") => {
             let parts: Vec<_> = value.split(':').collect();
             if parts.len() != 3 {
@@ -286,6 +294,11 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .ok_or_else(|| format!("unregistered default table `{}`", source.default_table))?;
         mapping.register_logical_source(source.clone()).map_err(|e| e.to_string())?;
         schemas.insert(source.name.clone(), schema);
+    }
+    for source in &request.collection_sources {
+        if schemas.contains_key(&source.name) { return Err(format!("duplicate table or collection source `{}`", source.name)); }
+        mapping.register_collection_source(source.clone()).map_err(|e| e.to_string())?;
+        schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap());
     }
     mapping
         .set_constraints(request.constraints.clone())

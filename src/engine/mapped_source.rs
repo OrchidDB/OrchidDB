@@ -464,7 +464,7 @@ pub(super) fn attach(
         // explicitly registered dependencies.
         for name in mapping.labels() {
             if let MappedSource::Table(t) = &mapping.node(&name).unwrap().source {
-                if mapping.logical_source(t).is_some() { continue; }
+                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(
@@ -477,7 +477,7 @@ pub(super) fn attach(
         }
         for name in mapping.rel_types() {
             if let MappedSource::Table(t) = &mapping.edge(&name).unwrap().source {
-                if mapping.logical_source(t).is_some() { continue; }
+                if mapping.logical_source(t).is_some() || mapping.collection_source(t).is_some() { continue; }
                 resolved.register_table_schema(
                     t,
                     query(

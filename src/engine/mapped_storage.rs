@@ -34,7 +34,7 @@ pub(super) fn source(source: &MappedSource) -> String {
 }
 pub(super) fn resolved_source(mapping: &GraphMapping, src: &MappedSource, filters: &[datafusion::logical_expr::Expr]) -> String {
     match src {
-        MappedSource::Table(name) => table(&mapping.resolve_table(name, filters)),
+        MappedSource::Table(name) => mapping.collection_sql(name).map(|sql| format!("({sql})")).unwrap_or_else(|| table(&mapping.resolve_table(name, filters))),
         MappedSource::Query(_) => source(src),
     }
 }
@@ -527,6 +527,9 @@ pub(super) fn persist(
             let MappedSource::Table(table_name) = mapped_source else {
                 return Err(format!("query-backed mapping `{name}` is read-only"));
             };
+            if mapping.collection_source(table_name).is_some() {
+                return Err(format!("collection source `{table_name}` is read-only"));
+            }
             if mapping.logical_source(table_name).is_some() {
                 return Err(format!("logical source `{table_name}` is read-only; write to its physical table and refresh layout statistics"));
             }

@@ -9,6 +9,7 @@
 
 pub mod dag;
 pub mod layout;
+pub mod collection_source;
 pub mod runtime;
 mod island_planner;
 mod optimizer;
