@@ -175,7 +175,7 @@ use explicit columns, term rules, or supported collection mappings.
 
 ## Equivalent source representations
 
-RDF rules can use a [representation source](representations.md) as their table.
+RDF rules can use a [representation source](mapping-reference.md#equivalent-derived-and-materialized-relations) as their table.
 The shared relational optimizer can then choose a collection expansion, a SQL
 derivation, or an equivalent materialized table. `sparql_dataset` exposes the
 choice in `stats.representation_selections`; RDF term construction and graph

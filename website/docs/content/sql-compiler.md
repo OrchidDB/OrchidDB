@@ -135,8 +135,6 @@ or SQL queries, including joins and grouped summaries. The optimizer chooses per
 occurrence after pushing filters, and exposes its decisions in
 `representation_selections`, alongside `layout_selections` and `logical_plan`.
 The shared engine uses the same selection and exposes it in execution statistics.
-See [equivalent representations](representations.md) for the descriptor, cost
-model, generation rules, and a runnable mapping/plan example.
 
 ## Boundaries
 

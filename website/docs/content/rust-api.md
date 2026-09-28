@@ -31,8 +31,7 @@ Import from `orchiddb::engine`. Cypher, Gremlin, ontology SPARQL, and `sparql_da
 
 `QueryResult` contains `returned: ReturnedBatches`, `backend: ExecutionBackend`, and `stats: ExecStats`.
 `stats.logical_plan`, `stats.layout_selections`, and `stats.representation_selections`
-show the chosen inputs. See [equivalent representations](representations.md) for
-registering alternative collection, SQL, and materialized sources.
+show the chosen inputs.
 
 ## MappedGraphEngine compatibility facade
 

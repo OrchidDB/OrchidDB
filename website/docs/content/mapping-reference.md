@@ -396,5 +396,4 @@ expansion, a SQL join or grouped definition, and equivalent materialized tables
 under one canonical relation name. Node, edge, RDF, and query-backed mappings can
 refer to that name. Predicates guide per-occurrence selection; execution and
 compiler statistics expose the selected representation and candidate estimates.
-See [equivalent representations](representations.md) for complete descriptors,
-examples, persistence, and the equivalence contract. These sources are read-only.
+These sources are read-only.
