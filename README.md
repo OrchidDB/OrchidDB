@@ -99,7 +99,7 @@ sources are intentional repository contents.
 
 See [LICENSE.md](LICENSE.md) for the applicable terms.
 
-[Optional one-time statistics](website/docs/content/execution.md#planner-and-executor-boundaries) let the shared
+[Optional one-time statistics](website/docs/content/statistics.md) let the shared
 optimizer choose cheaper equivalent sources and order supported pure filters.
 Clients generate and cache a bounded snapshot; queries reuse it automatically.
 Run `cargo run --features duckdb --example statistics_plans` for mappings, before/after

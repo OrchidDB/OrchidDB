@@ -114,7 +114,7 @@ also exposes the physical DAG, SQL island queries, and native source queries/row
 Generated estimates cover operator cardinality, collection expansion and work;
 they remain separate from measured storage I/O. See the
 [mapping reference](../website/docs/content/mapping-reference.md) and
-[planning overview](../website/docs/content/execution.md#planner-and-executor-boundaries).
+[statistics overview](../website/docs/content/statistics.md).
 
 The `ir::rel::statistics` module owns one-time bounded acquisition requests,
 summaries, immutable snapshots, catalog handles and shared estimation. Clients

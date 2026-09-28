@@ -15,7 +15,7 @@ Runnable examples: [SQL generation](../examples/compile_sql.rs),
 [physical layouts](../examples/partition_layout_plans.rs), and
 [collection tables](../examples/collection_table_plans.rs).
 
-Optional [generated statistics](../website/docs/content/execution.md#planner-and-executor-boundaries) are collected
+Optional [generated statistics](../website/docs/content/statistics.md) are collected
 explicitly through a separate shared protocol. Compile can use an inline snapshot
 or retained catalog handle without database access. [The statistics example](../examples/statistics_plans.rs)
 shows cheaper exact plans in all three graph languages and the emitted diagnostics.

@@ -379,7 +379,7 @@ Supported descriptors: `identity`, `bucket` with `buckets`, `truncate` with `wid
 
 Cost is estimated surviving bytes plus delete bytes plus 64 KiB per surviving file. Equal costs retain the default layout. Missing statistics are unknown, not zero; a default with unknown statistics is retained. An empty partition list describes a known empty layout. Statistics must summarize all files in that layout. The engine does not discover Iceberg metadata or scan data to construct these summaries; supply them from the caller's catalog or manifest integration.
 
-[Optional generated statistics](execution.md#planner-and-executor-boundaries) can supply source row/byte costs
+[Optional generated statistics](statistics.md) can supply source row/byte costs
 when a layout has no partition summaries. File counts remain unknown; when not
 all candidates supply file counts, layout comparison uses bytes consistently.
 Collected sample extrema never become partition bounds. Generation is explicit

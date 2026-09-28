@@ -95,8 +95,6 @@ This setting applies to individual DuckDB queries and setup work. Treat the SQL 
 
 Language planners produce `GraphPlan` values. `RelBackend` handles relational lowering; SQL preparation turns the lowered plan into a dialect-specific program. `SqlExecutor` supplies the SQL execution boundary. Managed execution compiles to a DataFusion relational DAG with explicit DuckDB regions and native kernels.
 
-Optional statistics help OrchidDB choose physical representations, order joins and filters, filter collection parents before expansion, and choose between native scans and key lookups. Generate a snapshot once and reuse it across Cypher, Gremlin and SPARQL, refreshing it as the data changes. Statistics are most useful with alternative representations, large joins, external sources such as Iceberg, and repeated traversals. Skip collection for simple queries with one obvious source and a database that already plans them well. Keep the database’s optimizer enabled; it can refine the SQL OrchidDB produces.
-
 Graph IR is retained for planning and inspection. It has no standalone recursive interpreter, and execution errors do not trigger an interpreter fallback. SPARQL `SERVICE`, including `SERVICE SILENT`, is unsupported; no remote SPARQL HTTP calls are made.
 
 Use the engine APIs for application workflows. Use these lower-level types when integrating a custom planner or execution target. See the [Rust API](rust-api.md#planning-and-execution-apis) for the module map.

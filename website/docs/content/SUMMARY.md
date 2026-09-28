@@ -11,6 +11,7 @@
 
 - [Map existing tables](mapped-graphs.md)
 - [Mapping reference](mapping-reference.md)
+- [Statistics](statistics.md)
 - [Views and SQL sources](views.md)
 - [Managed graphs](managed-graphs.md)
 - [Transactions and storage](transactions.md)
