@@ -389,11 +389,59 @@ Optional `generation` fields on the logical source and layouts exclude layouts w
 
 TOML round trips the descriptors as JSON in `[logical_sources]` / `catalog`, following the existing constraint-catalog convention. Register physical providers after parsing the TOML to bind the sources. Runtime scalar-key lookups use the same selector. Logical sources are read-only in mapped graph persistence; update physical tables and refresh their declarations/statistics separately.
 
-## Equivalent derived and materialized relations
+## Map multiple sources to one table
 
-Use `GraphMapping::register_representation_source` to register a collection
-expansion, a SQL join or grouped definition, and equivalent materialized tables
-under one canonical relation name. Node, edge, RDF, and query-backed mappings can
-refer to that name. Predicates guide per-occurrence selection; execution and
-compiler statistics expose the selected representation and candidate estimates.
-These sources are read-only.
+Use `representation_sources` when the same rows are available in different forms,
+such as a collection and a flat table. Map the graph label to their shared name.
+For tables that differ only in partitioning, use [physical layout alternatives](#physical-layout-alternatives).
+
+This example uses `order_items` from the collection mapping above and a physical
+`order_items_flat(oid, line, product, qty)` table:
+
+```json
+{
+  "representation_sources": [{
+    "name": "items",
+    "default_representation": "nested",
+    "representations": [
+      {
+        "name": "nested",
+        "source": {"kind": "table", "name": "order_items"}
+      },
+      {
+        "name": "flat",
+        "source": {"kind": "table", "name": "order_items_flat"},
+        "columns": {"order_id": "oid", "item_id": "line",
+                    "sku": "product", "quantity": "qty"}
+      }
+    ]
+  }],
+  "nodes": [{
+    "label": "Item", "table": "items", "id": ["order_id", "item_id"],
+    "properties": {"order_id": "order_id", "sku": "sku", "quantity": "quantity"}
+  }]
+}
+```
+
+`columns` maps shared column names to source columns; omit it when the names
+already match. Each source must return the same rows, including duplicates,
+with matching column names and types. Queries use `Item`; OrchidDB chooses
+which source to read using the query filters and available statistics.
+`default_representation` names the source to use when costs are unknown.
+
+For a SQL definition, replace `source` with
+`{"kind": "query", "sql": "SELECT oid AS order_id, line AS item_id, product AS sku, qty AS quantity FROM order_items_flat"}`.
+The query can include joins or grouping. Register a stored copy of its results
+as another source with the same output columns.
+
+Register physical schemas and collection sources first. In Rust, use
+`GraphMapping::register_representation_source`; TOML stores the JSON array in
+`[representation_sources]` under `catalog`. Node, edge and RDF mappings can all
+use the shared name. These mappings are read-only; update their underlying data.
+
+Optional `generation` strings on the shared source and each alternative identify
+matching versions of the data. Set them together when refreshing sources; the
+default must match. Optional `statistics` on each alternative uses the
+[partition metadata](#partition-metadata) format, with a `table` field identifying
+each input. For collections, `average_list_length` supplies the average number
+of elements per parent when generated statistics are unavailable.
