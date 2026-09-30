@@ -93,6 +93,26 @@ struct fields. Unsupported source types
 require a caller-owned cast/view. Unsupported SQL dialects fail explicitly;
 DuckDB and PostgreSQL rendering are currently implemented.
 
+## Permission filtering
+
+The JSON protocol can filter mapped nodes against an application-owned flat grants relation. A top-level `authorization` identifies the current subject. Each node `permission_scopes` entry names the node source column to compare and a grants relation with its resource type and permission. The compiler emits the membership filter at the node scan, before graph traversal. Multiple scopes combine with OR, which supports direct object grants alongside project or tenant grants.
+
+```json
+{
+  "authorization": {"subject_type":"user", "subject_id":"alice"},
+  "nodes": [{
+    "label":"Document", "table":"documents", "id":"id",
+    "properties":{"title":"title", "project_id":"project_id"},
+    "permission_scopes":[
+      {"resource_column":"id", "relation":{"table":"effective_grants", "resource_type":"document", "permission":"view"}},
+      {"resource_column":"project_id", "relation":{"table":"effective_grants", "resource_type":"project", "permission":"view"}}
+    ]
+  }]
+}
+```
+
+Include the grants source and all its columns in `tables`. Flat relation column names default to `resource_type`, `resource_rel`, `resource_id`, `subject_type`, `subject_rel`, and `subject_id`; callers can override every column name. Scope columns must exist on their mapped node. Requests with protected nodes and no principal fail closed. The relation must already contain effective grants for the principal, including any group or nested-set resolution. The compiler and clients do not connect to or synchronize a permission system.
+
 ## Collection-backed logical tables
 
 The optional `collection_sources` array defines named relations by expanding a

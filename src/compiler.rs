@@ -36,6 +36,8 @@ pub struct CompileRequest {
     pub language: String,
     pub query: String,
     #[serde(default)]
+    pub authorization: Option<Authorization>,
+    #[serde(default)]
     pub parameters: BTreeMap<String, serde_json::Value>,
     pub tables: Vec<Table>,
     #[serde(default)]
@@ -86,9 +88,117 @@ fn yes() -> bool {
 pub struct Node {
     pub label: String,
     pub table: String,
+    /// Optional SQL-only filtered source, while `table` keeps the mapped base source
+    /// available for schema validation and identity checking.
+    #[serde(default)]
+    pub source_query: Option<String>,
+    #[serde(default)]
+    pub permission_scopes: Vec<PermissionScope>,
     pub id: KeyColumns,
     #[serde(default)]
     pub properties: BTreeMap<String, String>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Authorization {
+    pub subject_type: String,
+    pub subject_id: String,
+}
+impl Authorization {
+    pub fn new(subject_type: impl Into<String>, subject_id: impl Into<String>) -> Self {
+        Self {
+            subject_type: subject_type.into(),
+            subject_id: subject_id.into(),
+        }
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionScope {
+    pub resource_column: String,
+    pub relation: PermissionRelation,
+}
+impl PermissionScope {
+    pub fn new(resource_column: impl Into<String>, relation: PermissionRelation) -> Self {
+        Self {
+            resource_column: resource_column.into(),
+            relation,
+        }
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionRelation {
+    pub table: String,
+    pub resource_type: String,
+    pub permission: String,
+    #[serde(default = "default_resource_type_column")]
+    pub resource_type_column: String,
+    #[serde(default = "default_permission_column")]
+    pub permission_column: String,
+    #[serde(default = "default_resource_id_column")]
+    pub resource_id_column: String,
+    #[serde(default = "default_subject_type_column")]
+    pub subject_type_column: String,
+    #[serde(default = "default_subject_relation_column")]
+    pub subject_relation_column: String,
+    #[serde(default = "default_subject_id_column")]
+    pub subject_id_column: String,
+}
+impl PermissionRelation {
+    pub fn flat(
+        table: impl Into<String>,
+        resource_type: impl Into<String>,
+        permission: impl Into<String>,
+    ) -> Self {
+        Self {
+            table: table.into(),
+            resource_type: resource_type.into(),
+            permission: permission.into(),
+            resource_type_column: default_resource_type_column(),
+            permission_column: default_permission_column(),
+            resource_id_column: default_resource_id_column(),
+            subject_type_column: default_subject_type_column(),
+            subject_relation_column: default_subject_relation_column(),
+            subject_id_column: default_subject_id_column(),
+        }
+    }
+
+    pub fn with_columns(
+        mut self,
+        resource_type: impl Into<String>,
+        permission: impl Into<String>,
+        resource_id: impl Into<String>,
+        subject_type: impl Into<String>,
+        subject_relation: impl Into<String>,
+        subject_id: impl Into<String>,
+    ) -> Self {
+        self.resource_type_column = resource_type.into();
+        self.permission_column = permission.into();
+        self.resource_id_column = resource_id.into();
+        self.subject_type_column = subject_type.into();
+        self.subject_relation_column = subject_relation.into();
+        self.subject_id_column = subject_id.into();
+        self
+    }
+}
+fn default_resource_type_column() -> String {
+    "resource_type".into()
+}
+fn default_permission_column() -> String {
+    "resource_rel".into()
+}
+fn default_resource_id_column() -> String {
+    "resource_id".into()
+}
+fn default_subject_type_column() -> String {
+    "subject_type".into()
+}
+fn default_subject_relation_column() -> String {
+    "subject_rel".into()
+}
+fn default_subject_id_column() -> String {
+    "subject_id".into()
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -184,11 +294,22 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "duration" => DataType::Duration(TimeUnit::Microsecond),
         "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
-        _ if value.starts_with("list:") => DataType::List(Arc::new(Field::new("item", data_type(&value[5..])?, true))),
+        _ if value.starts_with("list:") => {
+            DataType::List(Arc::new(Field::new("item", data_type(&value[5..])?, true)))
+        }
         _ if value.starts_with("struct:") => {
-            let fields: BTreeMap<String, String> = serde_json::from_str(&value[7..]).map_err(|e| format!("invalid struct type: {e}"))?;
-            if fields.is_empty() || fields.keys().any(String::is_empty) { return Err("struct requires named fields".into()); }
-            DataType::Struct(fields.into_iter().map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true)))).collect::<Result<Vec<_>, String>>()?.into())
+            let fields: BTreeMap<String, String> = serde_json::from_str(&value[7..])
+                .map_err(|e| format!("invalid struct type: {e}"))?;
+            if fields.is_empty() || fields.keys().any(String::is_empty) {
+                return Err("struct requires named fields".into());
+            }
+            DataType::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true))))
+                    .collect::<Result<Vec<_>, String>>()?
+                    .into(),
+            )
         }
         _ if value.starts_with("decimal:") => {
             let parts: Vec<_> = value.split(':').collect();
@@ -292,45 +413,103 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .collect::<Result<Vec<_>, String>>()?;
         let schema = Arc::new(Schema::new(fields));
         mapping.register_table_schema(&table.name, schema.clone());
+        // Java source mappings carry dialect-quoted identifiers so they can safely
+        // address arbitrary catalogs/schemas. SQL inside a mapped query parses those
+        // identifiers to their unquoted TableReference spelling; register that alias
+        // as well so the nested query resolves to the same schema-only provider.
+        if let Some(normalized) = unquote_table_reference(&table.name) {
+            if normalized != table.name {
+                mapping.register_table_schema(normalized, schema.clone());
+            }
+        }
         schemas.insert(table.name.clone(), schema);
     }
     for source in &request.logical_sources {
         if schemas.contains_key(&source.name) {
-            return Err(format!("duplicate table or logical source `{}`", source.name));
+            return Err(format!(
+                "duplicate table or logical source `{}`",
+                source.name
+            ));
         }
-        let schema = schemas.get(&source.default_table).cloned()
+        let schema = schemas
+            .get(&source.default_table)
+            .cloned()
             .ok_or_else(|| format!("unregistered default table `{}`", source.default_table))?;
-        mapping.register_logical_source(source.clone()).map_err(|e| e.to_string())?;
+        mapping
+            .register_logical_source(source.clone())
+            .map_err(|e| e.to_string())?;
         schemas.insert(source.name.clone(), schema);
     }
     // Derived definitions can refer to each other; bind in dependency order.
-    let mut names = schemas.keys().cloned().collect::<std::collections::BTreeSet<_>>();
-    for name in request.collection_sources.iter().map(|s| &s.name)
-        .chain(request.representation_sources.iter().map(|s| &s.name)) {
-        if !names.insert(name.clone()) { return Err(format!("duplicate source `{name}`")); }
+    let mut names = schemas
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    for name in request
+        .collection_sources
+        .iter()
+        .map(|s| &s.name)
+        .chain(request.representation_sources.iter().map(|s| &s.name))
+    {
+        if !names.insert(name.clone()) {
+            return Err(format!("duplicate source `{name}`"));
+        }
     }
     let mut collections = request.collection_sources.iter().collect::<Vec<_>>();
     let mut representations = request.representation_sources.iter().collect::<Vec<_>>();
     while !collections.is_empty() || !representations.is_empty() {
         let before = collections.len() + representations.len();
         let mut errors = Vec::new();
-        collections.retain(|source| match mapping.register_collection_source((*source).clone()) {
-            Ok(_) => { schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap()); false }
-            Err(e) => { errors.push(format!("{}: {e}", source.name)); true }
-        });
-        representations.retain(|source| match mapping.register_representation_source((*source).clone()) {
-            Ok(_) => { schemas.insert(source.name.clone(), mapping.table_schema(&source.name).unwrap()); false }
-            Err(e) => { errors.push(format!("{}: {e}", source.name)); true }
+        collections.retain(
+            |source| match mapping.register_collection_source((*source).clone()) {
+                Ok(_) => {
+                    schemas.insert(
+                        source.name.clone(),
+                        mapping.table_schema(&source.name).unwrap(),
+                    );
+                    false
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {e}", source.name));
+                    true
+                }
+            },
+        );
+        representations.retain(|source| {
+            match mapping.register_representation_source((*source).clone()) {
+                Ok(_) => {
+                    schemas.insert(
+                        source.name.clone(),
+                        mapping.table_schema(&source.name).unwrap(),
+                    );
+                    false
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {e}", source.name));
+                    true
+                }
+            }
         });
         if before == collections.len() + representations.len() {
-            return Err(format!("cannot bind derived sources: {}", errors.join("; ")));
+            return Err(format!(
+                "cannot bind derived sources: {}",
+                errors.join("; ")
+            ));
         }
     }
-    if let Some(statistics)=&request.statistics {
-        let metadata=serde_json::json!({"tables":request.tables,"logical_sources":request.logical_sources,"collection_sources":request.collection_sources,"representation_sources":request.representation_sources});
-        if crate::ir::rel::statistics::mapping_fingerprint(&metadata)!=statistics.mapping { return Err("statistics snapshot mapping mismatch; regenerate or clear statistics".into()); }
+    if let Some(statistics) = &request.statistics {
+        let metadata = serde_json::json!({"tables":request.tables,"logical_sources":request.logical_sources,"collection_sources":request.collection_sources,"representation_sources":request.representation_sources});
+        if crate::ir::rel::statistics::mapping_fingerprint(&metadata) != statistics.mapping {
+            return Err(
+                "statistics snapshot mapping mismatch; regenerate or clear statistics".into(),
+            );
+        }
     }
-    if let Some(statistics) = &request.statistics { mapping.set_statistics(statistics.clone()).map_err(|e|e.to_string())?; }
+    if let Some(statistics) = &request.statistics {
+        mapping
+            .set_statistics(statistics.clone())
+            .map_err(|e| e.to_string())?;
+    }
     mapping
         .set_constraints(request.constraints.clone())
         .set_constraint_scope(request.constraint_scope.clone());
@@ -359,7 +538,55 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         for column in node.id.columns() {
             check(&node.table, column, true)?;
         }
-        let mut n = NodeMapping::table(&node.label, &node.table, &node.id);
+        let generated_permission_query = if node.permission_scopes.is_empty() {
+            None
+        } else {
+            let principal = request
+                .authorization
+                .as_ref()
+                .ok_or("query requires a principal because a node has permission scopes")?;
+            let mut filters = Vec::new();
+            for (index, scope) in node.permission_scopes.iter().enumerate() {
+                check(&node.table, &scope.resource_column, false)?;
+                let relation = &scope.relation;
+                let permission_schema = schemas.get(&relation.table).ok_or_else(|| {
+                    format!(
+                        "unregistered permission relation table `{}`",
+                        relation.table
+                    )
+                })?;
+                for column in [
+                    &relation.resource_type_column,
+                    &relation.permission_column,
+                    &relation.resource_id_column,
+                    &relation.subject_type_column,
+                    &relation.subject_relation_column,
+                    &relation.subject_id_column,
+                ] {
+                    permission_schema.field_with_name(column).map_err(|_| {
+                        format!(
+                            "missing permission relation column `{}.{column}`",
+                            relation.table
+                        )
+                    })?;
+                }
+                filters.push(permission_scope_filter(
+                    dialect, node, scope, principal, index, &schemas,
+                )?);
+            }
+            let base = node.source_query.as_deref().unwrap_or(&node.table);
+            Some(format!(
+                "SELECT n.* FROM {base} AS n WHERE ({})",
+                filters.join(" OR ")
+            ))
+        };
+        let mut n = match generated_permission_query
+            .as_deref()
+            .or(node.source_query.as_deref())
+        {
+            Some(sql) => NodeMapping::query(&node.label, sql, &node.id),
+            None => NodeMapping::table(&node.label, &node.table, &node.id),
+        };
         for (p, c) in &node.properties {
             check(&node.table, c, false)?;
             n = n.property(p, c);
@@ -563,8 +790,10 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .and_then(|p| p.build())
             .map_err(|e| e.to_string())?;
     }
-    let selected = crate::ir::rel::representation::select(lowered.plan).map_err(|e| e.to_string())?;
-    let (optimized, mut optimizer_decisions)=crate::ir::rel::statistics::optimize(selected.plan).map_err(|e|e.to_string())?;
+    let selected =
+        crate::ir::rel::representation::select(lowered.plan).map_err(|e| e.to_string())?;
+    let (optimized, mut optimizer_decisions) =
+        crate::ir::rel::statistics::optimize(selected.plan).map_err(|e| e.to_string())?;
     optimizer_decisions.extend(selected.access_decisions);
     lowered.plan = optimized;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
@@ -578,15 +807,116 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         layout_selections: selected.layout_selections,
         representation_selections: selected.representation_selections,
         plan_estimates: crate::ir::rel::statistics::explain(&lowered.plan),
-        statistics_usage: request.statistics.as_ref().map(|s|s.revision.clone()),
+        statistics_usage: request.statistics.as_ref().map(|s| s.revision.clone()),
         optimizer_decisions,
     })
+}
+
+fn permission_scope_filter(
+    dialect: SqlDialect,
+    node: &Node,
+    scope: &PermissionScope,
+    principal: &Authorization,
+    index: usize,
+    schemas: &BTreeMap<String, Arc<Schema>>,
+) -> Result<String, String> {
+    let q = |identifier: &str| dialect.quote_ident(identifier);
+    let g = format!("p{index}");
+    let relation = &scope.relation;
+    let resource_id = format!("{g}.{}", q(&relation.resource_id_column));
+    let subject_id = format!("'{}'", principal.subject_id.replace('\'', "''"));
+    let mut conditions = vec![
+        format!(
+            "{g}.{} = '{}'",
+            q(&relation.resource_type_column),
+            relation.resource_type.replace('\'', "''")
+        ),
+        format!(
+            "{g}.{} = '{}'",
+            q(&relation.permission_column),
+            relation.permission.replace('\'', "''")
+        ),
+        format!(
+            "{g}.{} = '{}'",
+            q(&relation.subject_type_column),
+            principal.subject_type.replace('\'', "''")
+        ),
+        format!("{g}.{} = ''", q(&relation.subject_relation_column)),
+        format!("{g}.{} = {subject_id}", q(&relation.subject_id_column)),
+    ];
+    let source_id = format!("n.{}", q(&scope.resource_column));
+    let data_type = schemas[&node.table]
+        .field_with_name(&scope.resource_column)
+        .map_err(|_| {
+            format!(
+                "missing node resource column `{}.{}`",
+                node.table, scope.resource_column
+            )
+        })?
+        .data_type();
+    let integer_type = if dialect == SqlDialect::DuckDb {
+        match data_type {
+            DataType::Int8 => Some("TINYINT"),
+            DataType::Int16 => Some("SMALLINT"),
+            DataType::Int32 => Some("INTEGER"),
+            DataType::Int64 => Some("BIGINT"),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let selected_id = if let Some(integer_type) = integer_type {
+        let cast = format!("TRY_CAST({resource_id} AS {integer_type})");
+        conditions.push(format!("{cast} IS NOT NULL"));
+        conditions.push(format!(
+            "CAST({cast} AS VARCHAR) = CAST({resource_id} AS VARCHAR)"
+        ));
+        cast
+    } else {
+        conditions.push(format!("CAST({source_id} AS VARCHAR) IN (SELECT CAST({resource_id} AS VARCHAR) FROM {} AS {g} WHERE {})", relation.table, conditions.join(" AND ")));
+        return Ok(conditions.pop().expect("membership filter was added"));
+    };
+    Ok(format!(
+        "{source_id} IN (SELECT {selected_id} FROM {} AS {g} WHERE {})",
+        relation.table,
+        conditions.join(" AND ")
+    ))
+}
+
+fn unquote_table_reference(value: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    let mut chars = value.chars().peekable();
+    let mut quoted = false;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if quoted && chars.peek() == Some(&'"') => {
+                chars.next();
+                part.push('"');
+            }
+            '"' => quoted = !quoted,
+            '.' if !quoted => {
+                if part.is_empty() {
+                    return None;
+                }
+                parts.push(std::mem::take(&mut part));
+            }
+            _ => part.push(ch),
+        }
+    }
+    if quoted || part.is_empty() {
+        return None;
+    }
+    parts.push(part);
+    Some(parts.join("."))
 }
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
     let request: CompileRequest =
         serde_json::from_str(input).map_err(|e| format!("invalid compiler request: {e}"))?;
-    if let Some(snapshot)=&request.statistics {snapshot.validate()?;}
+    if let Some(snapshot) = &request.statistics {
+        snapshot.validate()?;
+    }
     serde_json::to_string(&compile(request).await?).map_err(|e| e.to_string())
 }
 
