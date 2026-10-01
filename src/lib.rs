@@ -9,6 +9,7 @@
 pub mod spargebra;
 pub mod compiler;
 pub mod execution;
+pub mod federation;
 pub mod grammar;
 pub mod ir;
 pub mod language;

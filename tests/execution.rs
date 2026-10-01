@@ -33,6 +33,8 @@ impl SqlSession for Session {
 }
 fn query() -> CompiledSql {
     CompiledSql {
+        execution_engine: None,
+        transfers: vec![],
         constraint_proofs: vec![],
         logical_plan: String::new(),
         layout_selections: vec![],
@@ -43,6 +45,7 @@ fn query() -> CompiledSql {
         version: 1,
         dialect: "duckdb".into(),
         sql: "SELECT 42".into(),
+        field_types: vec![],
         fields: vec!["answer".into()],
     }
 }

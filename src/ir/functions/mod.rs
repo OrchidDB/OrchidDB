@@ -12,10 +12,13 @@ pub use mappings::FunctionRegistry;
 mod duckdb;
 mod typed_cast;
 mod types;
+pub(crate) use types::{postgres_type, sql_type as duckdb_type};
 pub use call::{ENGINE_FUNCTION_PREFIX, native_aggregate, native_scalar};
 #[cfg(feature = "duckdb")]
 pub use duckdb::DuckDbCatalog;
-pub(crate) use typed_cast::{ENGINE_CAST_FUNCTION, typed_argument_cast};
+pub(crate) use typed_cast::{
+    ENGINE_CAST_FUNCTION, typed_argument_cast, typed_argument_cast_for_engine,
+};
 
 use arrow::datatypes::DataType;
 use datafusion::common::{DFSchema, Result};

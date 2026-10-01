@@ -32,10 +32,11 @@ struct PlainCte {
 }
 
 pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
-    let (main, plain_ctes, recursive_ctes) = extract_ctes(plan)?;
+    let repair_scopes = dialect == SqlDialect::Postgres || super::unparse::has_rdf_source(&plan);
+    let (main, plain_ctes, recursive_ctes) = extract_ctes(plan, repair_scopes)?;
     let unparser_dialect = dialect.unparser_dialect();
     let unparser = Unparser::new(unparser_dialect.as_ref());
-    let main_sql = unparse_one(&main, &unparser, dialect)?;
+    let main_sql = unparse_one(&main, &unparser, dialect, repair_scopes)?;
     if plain_ctes.is_empty() && recursive_ctes.is_empty() {
         return Ok(dialect.fixup_query(main_sql));
     }
@@ -54,8 +55,8 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         let mut deps = referenced_ctes(&cte.static_term, &names);
         deps.extend(referenced_ctes(&cte.recursive_term, &names));
         deps.remove(&cte.name);
-        let static_sql = unparse_one(&cte.static_term, &unparser, dialect)?;
-        let recursive_sql = unparse_one(&cte.recursive_term, &unparser, dialect)?;
+        let static_sql = unparse_one(&cte.static_term, &unparser, dialect, repair_scopes)?;
+        let recursive_sql = unparse_one(&cte.recursive_term, &unparser, dialect, repair_scopes)?;
         let union = if cte.is_distinct {
             "UNION"
         } else {
@@ -73,7 +74,7 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     for cte in plain_ctes {
         let mut deps = referenced_ctes(&cte.term, &names);
         deps.remove(&cte.name);
-        let term_sql = unparse_one(&cte.term, &unparser, dialect)?;
+        let term_sql = unparse_one(&cte.term, &unparser, dialect, repair_scopes)?;
         // Weighted frontiers and per-occurrence apply inputs are deliberate
         // shared relations. Keep DuckDB/Postgres from repeatedly inlining
         // their joins/windows into every correlated consumer.
@@ -128,21 +129,60 @@ fn unparse_one(
     plan: &LogicalPlan,
     unparser: &Unparser<'_>,
     dialect: SqlDialect,
+    repair_scopes: bool,
 ) -> SqlResult<String> {
     let mut statement = unparser
         .plan_to_sql(plan)
         .map_err(|err| SqlError::Unsupported(format!("unparser ({}): {err}", dialect.name())))?;
+    if repair_scopes {
+        if let datafusion::sql::sqlparser::ast::Statement::Query(query) = &mut statement {
+            if let datafusion::sql::sqlparser::ast::SetExpr::Select(select) = query.body.as_mut() {
+                if select.projection.len() == plan.schema().fields().len() {
+                    for (item, field) in select.projection.iter_mut().zip(plan.schema().fields()) {
+                        if let datafusion::sql::sqlparser::ast::SelectItem::UnnamedExpr(expr) = item
+                        {
+                            *item = datafusion::sql::sqlparser::ast::SelectItem::ExprWithAlias {
+                                expr: expr.clone(),
+                                alias: match expr {
+                                    datafusion::sql::sqlparser::ast::Expr::Identifier(id) => id.clone(),
+                                    datafusion::sql::sqlparser::ast::Expr::CompoundIdentifier(ids) => ids.last().unwrap().clone(),
+                                    _ => datafusion::sql::sqlparser::ast::Ident::with_quote('"', field.name()),
+                                },
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
     prepare_ranges(plan, &mut statement, dialect)?;
-    super::functions::prepare_ast(&mut statement, dialect)?;
+    super::functions::prepare_scoped_ast(&mut statement, dialect, repair_scopes)?;
     restore_aggregate_ordering(plan, unparser, dialect, statement.to_string())
 }
 
-fn extract_ctes(plan: LogicalPlan) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec<RecursiveCte>)> {
+fn extract_ctes(plan: LogicalPlan, repair_scopes: bool) -> SqlResult<(LogicalPlan, Vec<PlainCte>, Vec<RecursiveCte>)> {
     let mut plain_ctes: Vec<PlainCte> = Vec::new();
     let mut recursive_ctes: Vec<RecursiveCte> = Vec::new();
     let mut seen = BTreeSet::new();
     let mut plain_versions = std::collections::BTreeMap::<String, Vec<usize>>::new();
     let transformed = plan.transform_up(|node| match node {
+        LogicalPlan::SubqueryAlias(mut alias)
+            if repair_scopes && matches!(alias.input.as_ref(), LogicalPlan::Filter(_))
+                && !alias.alias.table().starts_with("__w_sql_cte_") =>
+        {
+            // DF can inline a filter's predicate without changing its table
+            // qualifier to the surrounding alias. Keep that predicate scoped.
+            alias.input = Arc::new(
+                hoist_operator(
+                    alias.input.as_ref().clone(),
+                    "filtered_source",
+                    &mut plain_ctes,
+                    &mut seen,
+                )?
+                .data,
+            );
+            Ok(Transformed::yes(LogicalPlan::SubqueryAlias(alias)))
+        }
         LogicalPlan::Unnest(mut unnest) => {
             // Optimizers can push scalar consumers into the named alias that
             // originally fenced UNNEST. Fence the actual row-expanding node
@@ -343,7 +383,7 @@ mod cte_tests {
         let input = LogicalPlanBuilder::scan("numbers", source, None).unwrap()
             .alias("__w_sql_cte_shared").unwrap().build().unwrap();
         let plan = LogicalPlanBuilder::from(input.clone()).union(input).unwrap().build().unwrap();
-        let (_, definitions, _) = extract_ctes(plan).unwrap();
+        let (_, definitions, _) = extract_ctes(plan, false).unwrap();
         assert_eq!(definitions.len(), 1);
     }
 }

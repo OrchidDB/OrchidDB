@@ -36,7 +36,18 @@ impl ScalarUDFImpl for DeclaredCast {
     }
 }
 pub(crate) fn typed_argument_cast(expr: Expr, data_type: DataType) -> Result<Expr> {
-    let sql_type = super::types::sql_type(&data_type)?;
+    typed_argument_cast_for_engine(expr, data_type, "duckdb")
+}
+pub(crate) fn typed_argument_cast_for_engine(
+    expr: Expr,
+    data_type: DataType,
+    engine: &str,
+) -> Result<Expr> {
+    let sql_type = if engine == "postgres" {
+        super::types::postgres_type(&data_type)?
+    } else {
+        super::types::sql_type(&data_type)?
+    };
     Ok(ScalarUDF::new_from_impl(DeclaredCast {
         data_type,
         signature: Signature::any(2, Volatility::Volatile),

@@ -10,6 +10,7 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
 
 pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = crate::ir::rel::representation::select(plan)?.plan;
+    let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
     // residual is authoritative. Do not emit duplicate scan hints under aliases
     // (DF53 can reintroduce the hidden physical qualifier inside RDF CASEs).
@@ -27,8 +28,9 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = preserve_limit_output(plan)?;
-    let plan = strip_column_qualifiers(plan)
-        .map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?;
+    let plan = if dialect == SqlDialect::DuckDb && !has_rdf_source(&plan) {
+        strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
+    } else { plan };
     let repairs = identifier_quote_repairs(&plan, dialect)?;
     let sql = recursive::unparse_plan(plan, dialect)?;
     Ok(apply_identifier_repairs(sql, &repairs))
@@ -78,24 +80,35 @@ pub(super) fn encode_expression_literals(
     dialect: SqlDialect,
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
+        if let Expr::Literal(value, _) = &inner {
+            if dialect == SqlDialect::Postgres && value.is_null() && value.data_type() != DataType::Null {
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    lit(ScalarValue::Null), value.data_type(), dialect.name(),
+                )?));
+            }
+        }
         // DF53 cannot unparse casts to Arrow structs or binary values. Keep
         // their complete target type through the existing SQL cast adapter.
-        if dialect == SqlDialect::DuckDb {
-            let needs_adapter = |kind: &DataType| matches!(kind,
+        {
+            let needs_adapter = |kind: &DataType| {
+                matches!(kind,
                 DataType::Struct(_) | DataType::Binary | DataType::LargeBinary
                 | DataType::BinaryView | DataType::FixedSizeBinary(_)
-                | DataType::Time32(_) | DataType::Time64(_));
+                | DataType::Time32(_) | DataType::Time64(_))
+            };
             if let Expr::Cast(cast) = &inner {
                 if needs_adapter(&cast.data_type) {
-                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast(
+                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                         *cast.expr.clone(), cast.data_type.clone(),
+                            dialect.name(),
                     )?));
                 }
             }
             if let Expr::Literal(value, _) = &inner {
                 if value.is_null() && needs_adapter(&value.data_type()) {
-                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast(
+                    return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                         lit(ScalarValue::Null), value.data_type(),
+                            dialect.name(),
                     )?));
                 }
             }
@@ -118,11 +131,16 @@ pub(super) fn encode_expression_literals(
             }
         }
         match &inner {
+            Expr::Literal(value, _) if dialect == SqlDialect::Postgres && matches!(value.data_type(), DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) if *f.data_type() != DataType::Null) =>
+            {
+                // Preserve both empty-array type and null-array validity.
+                let expression = if value.is_null() { lit(ScalarValue::Null) } else { inner.clone() };
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    expression, value.data_type(), dialect.name(),
+                )?));
+            }
             Expr::Literal(value, _) if value.is_null() && matches!(value.data_type(),
                 DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) => {
-                // The upstream unparser reads list offsets without checking
-                // validity, rendering a typed null list as []. Preserve both
-                // the null value and the type at the SQL boundary.
                 return Ok(Transformed::yes(Expr::Cast(datafusion::logical_expr::Cast::new(
                     Box::new(lit(ScalarValue::Null)), value.data_type(),
                 ))));
@@ -484,4 +502,17 @@ fn expand_sort_fetch(plan: LogicalPlan) -> SqlResult<LogicalPlan> {
         boundary += 1;
         Ok(Transformed::yes(plan))
     })?.data)
+}
+
+// Ontology relationship mappings contain joins whose source namespaces must
+// survive until the SQL AST exposes the final derived-table scopes.
+pub(super) fn has_rdf_source(plan: &LogicalPlan) -> bool {
+    let mut found = false;
+    let _ = plan.apply_with_subqueries(|node| {
+        if let LogicalPlan::SubqueryAlias(alias) = node {
+            found |= alias.alias.table().starts_with("__w_sql_cte_rdf_source_");
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
 }

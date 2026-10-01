@@ -3,6 +3,9 @@
 An embedded graph query engine written in Rust. Compile Cypher, Gremlin and
 SPARQL over mapped tables to SQL, then run it with your own database connection.
 
+Use [PostgreSQL, DuckDB, or both](docs/sql-engines.md) through JSON-configured
+SQL islands and caller-owned connections. Mixed execution creates no tables.
+
 [Documentation](https://docs.orchiddb.com/) · [Website](https://orchiddb.com/) ·
 [Java client](https://github.com/OrchidDB/OrchidDB-java) ·
 [Examples](examples/) · [Conformance](https://docs.orchiddb.com/conformance.html)

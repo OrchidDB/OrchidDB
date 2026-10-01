@@ -229,13 +229,98 @@ impl ScalarUDFImpl for DuckDbFunction {
 
     fn invoke_with_args(
         &self,
-        _args: ScalarFunctionArgs,
+        args: ScalarFunctionArgs,
     ) -> datafusion::common::Result<ColumnarValue> {
-        Err(DataFusionError::NotImplemented(format!(
-            "`{}` is evaluated by DuckDB; execute this SPARQL plan through the DuckDB SQL backend",
-            self.name
-        )))
+        #[cfg(feature = "duckdb")]
+        if self.name == "__orchiddb_sparql_scalar" {
+            use arrow::array::{Array, StringArray};
+            let columns = args.args.iter().map(|arg| {
+                let array = arg.clone().into_array(args.number_rows)?;
+                Ok(arrow::compute::cast(&array, &DataType::Utf8)?)
+            }).collect::<datafusion::common::Result<Vec<_>>>()?;
+            let strings = columns.iter().map(|c| c.as_any().downcast_ref::<StringArray>().unwrap()).collect::<Vec<_>>();
+            let values = (0..args.number_rows).map(|row| {
+                if strings.len() != 5 || strings.iter().any(|c| c.is_null(row)) { return None; }
+                crate::rdf_engine::scalar::evaluate(strings[0].value(row), strings[1].value(row), strings[2].value(row), strings[3].value(row), strings[4].value(row))
+            }).collect::<Vec<_>>();
+            return Ok(ColumnarValue::Array(Arc::new(StringArray::from(values))));
+        }
+        if matches!(self.name.as_str(), "regexp_full_match" | "regexp_extract" | "hex" | "sha1") {
+            let columns = args.args.iter().map(|v| v.clone().into_array(args.number_rows)).collect::<datafusion::common::Result<Vec<_>>>()?;
+            let mut values = Vec::with_capacity(args.number_rows);
+            for row in 0..args.number_rows {
+                let cells = columns.iter().map(|c| ScalarValue::try_from_array(c, row)).collect::<datafusion::common::Result<Vec<_>>>()?;
+                if cells.iter().any(ScalarValue::is_null) { values.push(ScalarValue::try_from(&self.return_type)?); continue; }
+                let text = cells[0].to_string();
+                let value = if self.name == "sha1" {
+                    use sha1::Digest;
+                    ScalarValue::Utf8(Some(format!("{:x}", sha1::Sha1::digest(text.as_bytes()))))
+                } else if self.name == "hex" {
+                    ScalarValue::Utf8(Some(text.as_bytes().iter().map(|b| format!("{b:02X}")).collect()))
+                } else {
+                    let pattern = cells[1].to_string();
+                    let pattern = if self.name == "regexp_full_match" { format!("\\A(?:{pattern})\\z") } else { pattern };
+                    let regex = regex::Regex::new(&pattern).map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                    if self.name == "regexp_full_match" { ScalarValue::Boolean(Some(regex.is_match(&text))) }
+                    else {
+                        let group = cells.get(2).and_then(|c| c.to_string().parse::<usize>().ok()).unwrap_or(0);
+                        ScalarValue::Utf8(Some(regex.captures(&text).and_then(|c| c.get(group).map(|v| v.as_str().to_owned())).unwrap_or_default()))
+                    }
+                };
+                values.push(value);
+            }
+            let array = if values.is_empty() { arrow::array::new_empty_array(&self.return_type) } else { ScalarValue::iter_to_array(values)? };
+            return Ok(ColumnarValue::Array(array));
+        }
+        if self.name == "coalesce" {
+            let columns = args.args.iter().map(|v| v.clone().into_array(args.number_rows)).collect::<datafusion::common::Result<Vec<_>>>()?;
+            let mut values = Vec::with_capacity(args.number_rows);
+            for row in 0..args.number_rows {
+                let mut value = ScalarValue::try_from(&self.return_type)?;
+                for column in &columns {
+                    if !column.is_null(row) {
+                        value = ScalarValue::try_from_array(column, row)?.cast_to(&self.return_type)?;
+                        break;
+                    }
+                }
+                values.push(value);
+            }
+            let array = if values.is_empty() { arrow::array::new_empty_array(&self.return_type) } else { ScalarValue::iter_to_array(values)? };
+            return Ok(ColumnarValue::Array(array));
+        }
+        let name = match self.name.as_str() {
+            "list_extract" => "array_element",
+            "regexp_matches" => "regexp_like",
+            "length" => "character_length",
+            name => name,
+        };
+        let functions = datafusion::functions::all_default_functions().into_iter()
+            .chain(datafusion::functions_nested::all_default_nested_functions());
+        if let Some(function) = functions.into_iter().find(|f| f.name() == name || f.aliases().iter().any(|alias| alias == name)) {
+            let mut args = args;
+            let scalar_arguments = args.args.iter().map(|v| match v { ColumnarValue::Scalar(v) => Some(v), _ => None }).collect::<Vec<_>>();
+            args.return_field = function.return_field_from_args(datafusion::logical_expr::ReturnFieldArgs { arg_fields: &args.arg_fields, scalar_arguments: &scalar_arguments })?;
+            let number_rows = args.number_rows;
+            let value = function.invoke_with_args(args)?;
+            if matches!(name, "sha1" | "sha256" | "sha384" | "sha512") {
+                let array = value.into_array(number_rows)?;
+                let values = (0..number_rows).map(|i| {
+                    match ScalarValue::try_from_array(&array, i)? {
+                        ScalarValue::Binary(bytes) | ScalarValue::LargeBinary(bytes) => Ok(bytes.map(|bytes| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())),
+                        value if value.is_null() => Ok(None),
+                        _ => Err(DataFusionError::Execution("Invalid SHA output type".into())),
+                    }
+                }).collect::<datafusion::common::Result<Vec<_>>>()?;
+                return Ok(ColumnarValue::Array(Arc::new(StringArray::from(values))));
+            }
+            return match value {
+                ColumnarValue::Scalar(value) => Ok(ColumnarValue::Scalar(value.cast_to(&self.return_type)?)),
+                ColumnarValue::Array(value) => Ok(ColumnarValue::Array(arrow::compute::cast(&value, &self.return_type)?)),
+            };
+        }
+        Err(DataFusionError::NotImplemented(format!("SQL function `{}` has no residual kernel", self.name)))
     }
+
 }
 
 fn duck(name: &str, args: Vec<Expr>, return_type: DataType) -> Expr {

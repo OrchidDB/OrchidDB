@@ -805,6 +805,43 @@ impl<'a> LoweringContext<'a> {
             IrExpr::Call { name, args } if name == "cypher_subscript" && args.len() == 2 => {
                 self.lower_cypher_subscript(plan, &args[0], &args[1])
             }
+            IrExpr::Call { name, args } if name == "cypher_coalesce" => {
+                let lowered = args
+                    .iter()
+                    .map(|arg| self.lower_expr(plan, arg))
+                    .collect::<RelResult<Vec<_>>>()?;
+                let types = lowered
+                    .iter()
+                    .map(|e| e.get_type(plan.schema()))
+                    .collect::<datafusion::common::Result<Vec<_>>>()?;
+                let concrete = types
+                    .iter()
+                    .filter(|ty| **ty != DataType::Null)
+                    .collect::<Vec<_>>();
+                if concrete.windows(2).any(|pair| pair[0] != pair[1]) {
+                    return Err(RelError::Unsupported(
+                        "Heterogeneous Cypher coalesce requires native runtime types".into(),
+                    ));
+                }
+                Ok(df_core::coalesce(lowered))
+            }
+            IrExpr::Call { name, args } if name == "cypher_convert.tostring" && args.len() == 1 => {
+                let value = self.lower_expr(plan, &args[0])?;
+                let ty = value.get_type(plan.schema())?;
+                if !matches!(
+                    ty,
+                    DataType::Boolean
+                        | DataType::Int8
+                        | DataType::Int16
+                        | DataType::Int32
+                        | DataType::Int64
+                        | DataType::Utf8
+                        | DataType::Null
+                ) {
+                    return Err(RelError::Unsupported(format!("Cypher toString for {ty}")));
+                }
+                Ok(value.cast_to(&DataType::Utf8, plan.schema())?)
+            }
             IrExpr::Call { name, args } if name == "cypher_in" && args.len() == 2 => {
                 match &args[1] {
                     IrExpr::Lit(Lit::Null) => Ok(lit(ScalarValue::Boolean(None))),
@@ -826,7 +863,27 @@ impl<'a> LoweringContext<'a> {
                         }
                         Ok(result)
                     }
-                    _ => Err(RelError::Unsupported("Cypher IN over a dynamic collection requires runtime values".into())),
+                    _ if matches!(&args[0], IrExpr::Lit(_) | IrExpr::Binding(_) | IrExpr::Property { .. })
+                        && matches!(&args[1], IrExpr::Binding(_) | IrExpr::Property { .. }) => {
+                        let list = self.lower_native_list(plan, &args[1])?;
+                        let value = self.lower_expr(plan, &args[0])?;
+                        let DataType::List(element) = list.get_type(plan.schema())? else {
+                            return Err(RelError::Unsupported("Cypher IN requires a native SQL list".into()));
+                        };
+                        let value_type = value.get_type(plan.schema())?;
+                        if value_type != DataType::Null && value_type != *element.data_type() {
+                            return Err(RelError::Unsupported("Heterogeneous Cypher IN requires native comparison semantics".into()));
+                        }
+                        let position = datafusion::functions_nested::expr_fn::array_position(list.clone(), value.clone(), lit(1_i64));
+                        let null_position = datafusion::functions_nested::expr_fn::array_position(list.clone(), lit(ScalarValue::Null), lit(1_i64));
+                        let empty = datafusion::functions_nested::expr_fn::array_length(list.clone()).eq(lit(0_u64));
+                        Ok(datafusion::logical_expr::when(empty, lit(false))
+                            .when(list.is_null().or(value.clone().is_null()), lit(ScalarValue::Boolean(None)))
+                            .when(position.is_not_null(), lit(true))
+                            .when(null_position.is_not_null(), lit(ScalarValue::Boolean(None)))
+                            .otherwise(lit(false))?)
+                    }
+                    _ => Err(RelError::Unsupported("Cypher IN with computed operands requires single-evaluation runtime semantics".into())),
                 }
             }
             IrExpr::Call { name, args } if name.starts_with("cypher_") && args.len() == 2 => {

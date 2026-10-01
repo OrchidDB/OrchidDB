@@ -33,6 +33,10 @@ pub struct CompileRequest {
     #[serde(default)]
     pub statistics: Option<std::sync::Arc<crate::ir::rel::statistics::StatisticsSnapshot>>,
     pub dialect: String,
+    #[serde(default)]
+    pub engines: BTreeMap<String, crate::federation::Engine>,
+    #[serde(default)]
+    pub execution_engine: Option<String>,
     pub language: String,
     pub query: String,
     #[serde(default)]
@@ -67,6 +71,8 @@ pub struct CompileRequest {
 #[serde(deny_unknown_fields)]
 pub struct Table {
     pub name: String,
+    #[serde(default)]
+    pub engine: Option<String>,
     pub columns: Vec<Column>,
 }
 #[derive(Debug, Deserialize, Serialize)]
@@ -263,7 +269,10 @@ pub struct CompiledSql {
     pub dialect: String,
     pub sql: String,
     pub logical_plan: String,
+    pub execution_engine: Option<String>,
+    pub transfers: Vec<crate::federation::Transfer>,
     pub fields: Vec<String>,
+    pub field_types: Vec<Option<String>>,
     pub constraint_proofs: Vec<crate::ir::rel::constraints::RewriteProof>,
     pub layout_selections: Vec<crate::ir::rel::layout::LayoutDecision>,
     pub representation_selections: Vec<crate::ir::rel::representation::RepresentationDecision>,
@@ -276,6 +285,7 @@ pub struct CompiledSql {
 /// cast in a caller-owned view, never silently interpreted as strings.
 pub fn data_type(value: &str) -> Result<DataType, String> {
     Ok(match value {
+        "null" => DataType::Null,
         "boolean" => DataType::Boolean,
         "int8" => DataType::Int8,
         "int16" => DataType::Int16,
@@ -394,6 +404,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         "postgres" => SqlDialect::Postgres,
         other => return Err(format!("unsupported SQL dialect `{other}`")),
     };
+    crate::federation::validate(&request)?;
     let mut mapping = GraphMapping::new();
     let mut schemas = BTreeMap::new();
     for table in &request.tables {
@@ -796,13 +807,30 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         crate::ir::rel::statistics::optimize(selected.plan).map_err(|e| e.to_string())?;
     optimizer_decisions.extend(selected.access_decisions);
     lowered.plan = optimized;
+    if !request.engines.is_empty() {
+        // Preserve source aliases and explicit graph scope barriers. General
+        // common-subexpression elimination can erase those SQL scopes.
+        use datafusion::optimizer::{Optimizer, OptimizerContext};
+        let optimizer = Optimizer::with_rules(vec![
+            Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()),
+            Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
+        ]);
+        lowered.plan = optimizer
+            .optimize(lowered.plan, &OptimizerContext::new(), |_, _| {})
+            .map_err(|e| e.to_string())?;
+    }
+    let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
+    lowered.plan = plan;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
     Ok(CompiledSql {
+        execution_engine: request.execution_engine,
+        transfers,
         version: 1,
         dialect: request.dialect,
         sql,
         logical_plan: lowered.plan.display_indent().to_string(),
         fields: lowered.fields,
+        field_types: lowered.plan.schema().fields().iter().map(|f| crate::federation::type_name(f.data_type()).ok()).collect(),
         constraint_proofs,
         layout_selections: selected.layout_selections,
         representation_selections: selected.representation_selections,
@@ -912,6 +940,13 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 }
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
+    let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    if command.get("op").and_then(serde_json::Value::as_str) == Some("bind") {
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+            crate::federation::bind_command(command)
+        )).map_err(|_| "invalid exchange data; no SQL was executed".to_string())?
+            .map(|v| v.to_string());
+    }
     let request: CompileRequest =
         serde_json::from_str(input).map_err(|e| format!("invalid compiler request: {e}"))?;
     if let Some(snapshot) = &request.statistics {

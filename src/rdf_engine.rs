@@ -11,13 +11,13 @@ use arrow::array::{Array, BooleanArray, StringArray};
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::policy::ResultForm;
 use crate::ir::rel::rdf::{RdfDatasetMapping, binding_identity_columns};
-use crate::ir::rel::sql::{DuckDbExecutor, PreparedSql, SqlExecutor};
+use crate::ir::rel::sql::{DuckDbExecutor, PreparedSql, SqlExecutor, SqlDialect};
 use crate::ir::rel::{RelBackend, RelBackendOptions};
 use crate::ir::runtime::ReturnedBatches;
 use crate::language::sparql::SparqlPlanner;
 
 mod relational_update;
-mod scalar;
+pub(crate) mod scalar;
 mod update;
 
 /// Compatibility facade. Execution and transactions belong to GraphEngine.
@@ -159,8 +159,27 @@ impl RdfSession<'_> {
                 .map_err(|error| error.to_string())?;
             self.scalar_registered = true;
         }
+        let mapping = if self.resources.region_session.is_some() {
+            let mut mapping = (*self.mapping).clone();
+            let mut tables = std::collections::BTreeMap::new();
+            for (name, _) in mapping.registered_tables() {
+                let sql = format!("SELECT * FROM {}", SqlDialect::DuckDb.quote_ident(&name));
+                let batch = {
+                    let mut executor = self.executor()?;
+                    let connection = executor.connection().map_err(|e| e.to_string())?;
+                    let mut statement = connection.prepare(&sql).map_err(|e| e.to_string())?;
+                    let reader = statement.query_arrow([]).map_err(|e| e.to_string())?;
+                    let schema = reader.get_schema();
+                    arrow::compute::concat_batches(&schema, &reader.collect::<Vec<_>>()).map_err(|e| e.to_string())?
+                };
+                let provider: Arc<dyn datafusion::datasource::TableProvider> = Arc::new(datafusion::datasource::MemTable::try_new(batch.schema(), vec![vec![batch]]).map_err(|e| e.to_string())?);
+                tables.insert(name, provider);
+            }
+            mapping.extend_tables(&tables);
+            Arc::new(mapping)
+        } else { self.mapping.clone() };
         let lowered = RelBackend::with_options(RelBackendOptions {
-            rdf_datasets: Some(self.mapping.clone()),
+            rdf_datasets: Some(mapping),
             ..Default::default()
         })
         .lower(plan, &PropertyGraph::new())

@@ -20,6 +20,40 @@
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 mod functions;
+mod postgres_functions;
+mod postgres_lists;
+pub mod region;
+pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDialect) -> SqlResult<String> {
+    let target = match dialect {
+        SqlDialect::DuckDb => crate::ir::functions::duckdb_type(&ty)?,
+        SqlDialect::Postgres => crate::ir::functions::postgres_type(&ty)?,
+    };
+    let literal = if value.is_null() { "NULL".into() } else {
+        match value {
+            ScalarValue::List(array) => {
+                let items = array.value(0);
+                let mut values = Vec::new();
+                for i in 0..items.len() {
+                    let cell = exchange_literal(ScalarValue::try_from_array(items.as_ref(), i)?, items.data_type().clone(), dialect)?;
+                    values.push(if dialect == SqlDialect::Postgres && postgres_lists::nested(&ty) { format!("to_jsonb({cell})") } else { cell });
+                }
+                format!("{}[{}]", if dialect == SqlDialect::Postgres {"ARRAY"} else {""}, values.join(", "))
+            }
+            ScalarValue::Binary(Some(bytes)) => {
+                let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+                match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')") }
+            }
+            value => {
+                let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect)?.data;
+                let sql_dialect = dialect.unparser_dialect();
+                let mut expression = datafusion::sql::unparser::Unparser::new(sql_dialect.as_ref()).expr_to_sql(&encoded)?;
+                functions::prepare_ast(&mut expression, dialect)?;
+                expression.to_string()
+            }
+        }
+    };
+    Ok(format!("CAST({literal} AS {target})"))
+}
 pub(crate) use functions::expression_sql;
 mod rows;
 use rows::*;
@@ -318,6 +352,10 @@ pub struct PreparedSql {
     pub fields: Vec<String>,
     pub result_form: ResultForm,
     schema: SchemaRef,
+}
+
+impl PreparedSql {
+    pub(crate) fn output_schema(&self) -> SchemaRef { self.schema.clone() }
 }
 
 /// A SQL engine that can apply setup statements and run a query, returning

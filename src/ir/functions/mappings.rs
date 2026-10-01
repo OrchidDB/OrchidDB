@@ -216,7 +216,11 @@ impl OperatorTable for FunctionRegistry {
         let (parameters, _) = mapping.declared_signature(name, &args, schema)?;
         args.into_iter()
             .zip(parameters)
-            .map(|(arg, expected)| super::typed_argument_cast(arg, expected.clone()))
+            .map(|(arg, expected)| {
+                super::typed_cast::typed_argument_cast_for_engine(arg, expected.clone(),
+                    self.engine(),
+                )
+            })
             .collect()
     }
     fn overloads(&self, name: &str) -> &[FunctionOverload] {

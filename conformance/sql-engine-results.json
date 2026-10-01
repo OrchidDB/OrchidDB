@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "validated_at": "2026-10-01T16:23:18.523475+00:00",
+  "profile": "Original upstream assertions; selected SQL engine plus existing DataFusion residual kernels",
+  "matrix_command": "python conformance/upstream/engine_matrix.py",
+  "results": [
+    {
+      "engine": "postgres",
+      "suite": "opencypher",
+      "counts": {
+        "pass": 3897
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/postgres-opencypher.json",
+      "report_sha256": "e76d62a32a0ec041c824829874afdac70586b1b381236d95c744b7bdcc0e4b15",
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "sql_regions": {
+        "duckdb": 0,
+        "postgres": 1774
+      },
+      "catalog_case_hashes_sha256": "ba02146d5f2381fac9ffad20321fefcd86f1f3105948383987fb3fd5b0291aae",
+      "excluded_reasons": {}
+    },
+    {
+      "engine": "postgres",
+      "suite": "tinkerpop",
+      "counts": {
+        "pass": 1511
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/postgres-tinkerpop.json",
+      "report_sha256": "6214b122776493936d59c7e7ed2ced4c4b8ef5bb46164f6cdfe4ce1cd1fa50e3",
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "sql_regions": {
+        "duckdb": 0,
+        "postgres": 4832
+      },
+      "catalog_case_hashes_sha256": "f83a7d61e32b73bda6843b00f036a201f5583fa269a77fff84d94a52c302e122",
+      "excluded_reasons": {}
+    },
+    {
+      "engine": "postgres",
+      "suite": "rdf",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/postgres-rdf.json",
+      "report_sha256": "12f6e532f5ce10d59a7f453d951c1510b31d81fd78926f1ddceeab24a0bd45a6",
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "sql_regions": {
+        "duckdb": 0,
+        "postgres": 518
+      },
+      "catalog_case_hashes_sha256": "5bde44c4788c7fc5f721698a5127c729ae5277ffe8780a95e8f8370ef37e3a89",
+      "excluded_reasons": {
+        "This case tests an HTTP protocol or wire serializer; the compared OrchidDB API is embedded": 71,
+        "Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms": 3,
+        "Upstream entailment profile requires a separately configured reasoning dataset": 70,
+        "Upstream federated SERVICE fixture endpoint is not installed locally": 7
+      }
+    },
+    {
+      "engine": "duckdb",
+      "suite": "opencypher",
+      "counts": {
+        "pass": 3897
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/duckdb-opencypher.json",
+      "report_sha256": "8f35e9d43afd44091ed10a82ff67da35eea47149ced8ff56fbdb2c40269d527b",
+      "source": {
+        "url": "https://github.com/opencypher/openCypher.git",
+        "revision": "677cbafabb8c3c5eed458fd3b1ec0daec8d67d23",
+        "version": "2024.3",
+        "directory": "tck/features",
+        "license": "Apache-2.0"
+      },
+      "sql_regions": {
+        "duckdb": 1774,
+        "postgres": 0
+      },
+      "catalog_case_hashes_sha256": "ba02146d5f2381fac9ffad20321fefcd86f1f3105948383987fb3fd5b0291aae",
+      "excluded_reasons": {}
+    },
+    {
+      "engine": "duckdb",
+      "suite": "tinkerpop",
+      "counts": {
+        "pass": 1511
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/duckdb-tinkerpop.json",
+      "report_sha256": "6a53120a828cd5b17a87ca021f60ee2e8609097dee61927e6881f5deda1099f9",
+      "source": {
+        "url": "https://github.com/apache/tinkerpop.git",
+        "revision": "fa698ba2aba8967dcd17eb61cb13648b934fab5b",
+        "version": "3.7.4",
+        "directory": "gremlin-test/src/main/resources/org/apache/tinkerpop/gremlin/test/features",
+        "license": "Apache-2.0"
+      },
+      "sql_regions": {
+        "duckdb": 4868,
+        "postgres": 0
+      },
+      "catalog_case_hashes_sha256": "f83a7d61e32b73bda6843b00f036a201f5583fa269a77fff84d94a52c302e122",
+      "excluded_reasons": {}
+    },
+    {
+      "engine": "duckdb",
+      "suite": "rdf",
+      "counts": {
+        "pass": 974,
+        "not-applicable": 74,
+        "skipped": 77
+      },
+      "full_catalog": true,
+      "other_engine_regions": 0,
+      "success": true,
+      "report": "target/conformance/sql-engines/duckdb-rdf.json",
+      "report_sha256": "6760a2b22ebf1d83e3ef23f11830040da7474e9fa52a6a32d13c48f90e0064d7",
+      "source": {
+        "url": "https://github.com/w3c/rdf-tests.git",
+        "revision": "369a90d1a60c021b746df2e411da0ff36258a758",
+        "version": "SPARQL 1.0 and 1.1; pinned repository revision",
+        "directory": "sparql",
+        "license": "See upstream LICENSE.md"
+      },
+      "sql_regions": {
+        "duckdb": 513,
+        "postgres": 0
+      },
+      "catalog_case_hashes_sha256": "5bde44c4788c7fc5f721698a5127c729ae5277ffe8780a95e8f8370ef37e3a89",
+      "excluded_reasons": {
+        "This case tests an HTTP protocol or wire serializer; the compared OrchidDB API is embedded": 71,
+        "Upstream case asserts TSV/CSV wire serialization; embedded adapter exposes RDF terms": 3,
+        "Upstream entailment profile requires a separately configured reasoning dataset": 70,
+        "Upstream federated SERVICE fixture endpoint is not installed locally": 7
+      }
+    }
+  ]
+}

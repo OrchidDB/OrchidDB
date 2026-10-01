@@ -100,10 +100,11 @@ impl GraphEngine {
             automatic,
             finished: false,
         };
-        let resources = crate::ir::rel::dag::DagSession::with_shared(
+        let mut resources = crate::ir::rel::dag::DagSession::with_shared(
             shared.clone(),
             mapping.physical_table_names(),
         );
+        resources.region_session = self.dag_session.region_session.clone();
         let mut context = RdfSession {
             resources: &resources,
             mapping,

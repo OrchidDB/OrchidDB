@@ -443,6 +443,14 @@ pub(super) fn quad_source_filtered(ctx: &mut LoweringContext<'_>, dataset: &str,
         if predicate.is_some_and(|p| rule.predicate.predicate_iri().is_some_and(|iri| iri != p)) {continue;}
         let provider = mapping.tables.get(&rule.table).ok_or_else(|| RelError::Unsupported(format!("RDF source table {} is not registered",rule.table)))?;
         let plan=match provider.get_logical_plan() {Some(plan)=>plan.into_owned(),None=>LogicalPlanBuilder::scan(rule.table.clone(),provider_as_source(provider.clone()),None)?.build()?};
+        // Preserve the relational source's output namespace when the SQL
+        // unparser inlines joins used by ontology relationship mappings.
+        let plan = LogicalPlanBuilder::from(plan)
+            .alias(format!(
+                "__w_sql_cte_rdf_source_{scan_id}_{}",
+                branches.len()
+            ))?
+            .build()?;
         let mut projected=rule.project(plan.clone(),&names,&identity_names)?;
         if sources.is_empty() && relational_count==1 {
             if let datafusion::logical_expr::LogicalPlan::Projection(projection)=&projected {

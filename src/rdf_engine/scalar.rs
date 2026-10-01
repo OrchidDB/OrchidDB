@@ -114,7 +114,7 @@ fn replacement(source: &str) -> Option<String> {
     Some(out)
 }
 
-fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str) -> Option<String> {
+pub(crate) fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str) -> Option<String> {
     Some(match op {
         "resolve_iri" => {
             if argument.is_empty() {

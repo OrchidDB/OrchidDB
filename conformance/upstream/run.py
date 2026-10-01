@@ -42,7 +42,7 @@ def execution_profile(engine):
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='orchiddb' else 'provider default',
-         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by DuckDB and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
+         'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))['dialect']+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
          'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('ORCHIDDB_JVM_STORE',str(REPO/'target/debug/orchiddb-jvm-store')))
@@ -157,6 +157,10 @@ def main():
   build['jvm_classpath']=classpath_identity(os.environ['ORCHIDDB_JVM_CLASSPATH'])
   build['adapter_classpath']=classpath_identity(adapter.classpath)
   build['java']=subprocess.check_output([os.environ.get('ORCHIDDB_JAVA','java'),'-version'],stderr=subprocess.STDOUT,text=True).strip()
+ if args.engine=='orchiddb':
+  sql_config=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))
+  build['sql_engine']=sql_config['dialect']
+  if sql_config['dialect']=='postgres':build['sql_session_options']={'statement_timeout_ms':8000,'jit':False}
  build['captured_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
  build['capture_phase']='before-scenarios'
  try:

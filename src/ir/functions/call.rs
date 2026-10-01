@@ -20,7 +20,7 @@ struct EngineCall {
 }
 
 fn execution_error() -> DataFusionError {
-    DataFusionError::NotImplemented("engine function requires the DuckDB SQL backend".into())
+    DataFusionError::NotImplemented("engine function requires its SQL backend".into())
 }
 
 impl ScalarUDFImpl for EngineCall {
@@ -65,7 +65,7 @@ fn bind(
     args: &[Expr],
     schema: &DFSchema,
 ) -> Result<EngineCall> {
-    if catalog.engine() != "duckdb" {
+    if !matches!(catalog.engine(), "duckdb" | "postgres") {
         return Err(DataFusionError::NotImplemented(format!(
             "function SQL adapter for engine `{}`",
             catalog.engine()

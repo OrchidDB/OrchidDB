@@ -91,6 +91,23 @@ environment variables at `target/debug/` instead. `CARGO_TARGET_DIR` overrides
 the build directory. Direct Python invocations honor `CONFORMANCE_ORCHIDDB_BINARY`
 and `ORCHIDDB_JVM_STORE`; export the paths above to select the optimized binaries.
 
+### Independent DuckDB and PostgreSQL execution
+
+After the local setup above, run all three languages on both SQL engines:
+
+```sh
+export ORCHIDDB_TEST_PG_URL='host=localhost dbname=postgres'
+python conformance/upstream/engine_matrix.py
+```
+
+Reports are written separately under `target/conformance/sql-engines/`.
+The matrix requires full catalog coverage and no failed applicable cases on
+**each** backend. Region counters verify that a PostgreSQL run does not delegate
+SQL regions to DuckDB. The existing DataFusion residual operators remain part of
+both execution profiles. PostgreSQL SQL regions bind inputs using read-only CTEs;
+they create no tables or views. Existing managed fixture storage is unchanged.
+Use `--engine postgres` or `--suite rdf` to select a complete backend or language.
+
 ### Reusing resources across distinct cases
 
 Cypher side-effect assertions use two exact native state snapshots instead of
@@ -256,3 +273,12 @@ python conformance/run.py --engine janusgraph --suite tinkerpop
 ```
 
 Backend reference: https://docs.janusgraph.org/storage-backend/inmemorybackend/
+
+## SQL engine conformance
+
+PostgreSQL and DuckDB SQL compilation have a separate profile that reuses the
+original TCK empty-graph read assertions, plus a dynamic Cypher/Gremlin/SPARQL
+matrix with tables split between real PostgreSQL and DuckDB sessions. See
+[SQL engines](../docs/sql-engines.md) for configuration and commands. These runs
+record unsupported SQL-only cases; they do not replace the managed executor's
+full language report.

@@ -303,7 +303,15 @@ impl GraphEngine {
     pub fn set_sql_timeout(&mut self, timeout: Duration) {
         self.sql_timeout = Some(timeout);
         self.strict_executor = sql::DuckDbExecutor::with_timeout(timeout);
+        let region_session = self.dag_session.region_session.clone();
         self.dag_session = crate::ir::rel::dag::DagSession::new(Some(timeout));
+        self.dag_session.region_session = region_session;
+    }
+
+    /// Select the SQL session used by regions of the common execution DAG.
+    /// The session receives read queries with bound inputs, never DDL.
+    pub fn set_sql_region_session(&mut self, session: Box<dyn sql::region::RegionSession>) {
+        self.dag_session.region_session = Some(Arc::new(std::sync::Mutex::new(session)));
     }
 
     pub fn in_transaction(&self) -> bool {
@@ -644,7 +652,9 @@ impl GraphEngine {
         let result = execute_graph_dag(plan, &self.graph, self.sql_timeout, Some(&self.dag_session), self.jvm_workers.clone()).await;
         if result.is_err() {
             // Interruptions or failed SQL must not poison the next query.
+            let region_session = self.dag_session.region_session.clone();
             self.dag_session = crate::ir::rel::dag::DagSession::new(self.sql_timeout);
+            self.dag_session.region_session = region_session;
         }
         result
     }
@@ -664,11 +674,11 @@ impl GraphEngine {
             let mut lease=MappedConnectionLease {target:&mut self.storage,executor:sql::DuckDbExecutor::from_connection(storage)};
             if let Some(timeout)=self.sql_timeout {lease.executor.set_timeouts(timeout,timeout);}
             if self.in_transaction {self.failed_transaction=true;}
-            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone()).await;
+            let result = execute_mapped_dag(&mut lease.executor, mapping, plan, self.graph.procedures.clone(), self.sql_timeout, self.jvm_workers.clone(), self.dag_session.region_session.clone()).await;
             if result.is_ok() {self.failed_transaction=false;}
             drop(lease);
             if result.is_ok() && contains_mutation(&plan.root) { self.invalidate_statistics(); }
-            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
+            return result.map(|(returned, stats)| QueryResult {returned, backend: if stats.duckdb_regions + stats.postgres_regions > 0 {ExecutionBackend::Hybrid} else {ExecutionBackend::DataFusion}, stats: stats.into()}).map_err(Into::into);
         }
         if contains_mutation(&plan.root) {
             let automatic = !self.in_transaction;
@@ -700,7 +710,7 @@ impl GraphEngine {
             }
             return Ok(QueryResult {
                 returned,
-                backend: if dag_stats.duckdb_regions > 0 {
+                backend: if dag_stats.duckdb_regions + dag_stats.postgres_regions > 0 {
                     ExecutionBackend::Hybrid
                 } else {
                     ExecutionBackend::DataFusion
@@ -778,15 +788,16 @@ impl Drop for GraphEngine {
 /// Compatibility entry point sharing the runtime and storage adapter while
 /// retaining the caller's exact DuckDB connection and active transaction.
 pub(crate) async fn execute_mapped(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<ReturnedBatches> {
-    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers).await.map(|(returned,_)|returned)
+    execute_mapped_dag(executor, mapping, plan, Default::default(), None, jvm_workers, None).await.map(|(returned,_)|returned)
 }
 
-async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
+async fn execute_mapped_dag(executor: &mut sql::DuckDbExecutor, mapping: Arc<GraphMapping>, plan: &GraphPlan, procedures: Arc<crate::ir::procedures::ProcedureCatalog>, timeout: Option<Duration>, jvm_workers: crate::ir::jvm::JvmWorkerPool, region_session: Option<sql::region::SharedRegionSession>) -> EngineResult<(ReturnedBatches, crate::ir::rel::dag::DagStats)> {
     let automatic = !executor.in_transaction();
     if automatic { executor.begin().map_err(|e|e.to_string())?; }
     let shared=Arc::new(std::sync::Mutex::new(std::mem::take(executor)));
     let mut lease=MappedExecutorLease {target:executor,shared:shared.clone(),automatic,finished:false};
-    let session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
+    let mut session = crate::ir::rel::dag::DagSession::with_shared(shared, mapping.physical_table_names());
+    session.region_session = region_session;
     let result = async {
         let rdf=mapping.rdf_mapping();
         if crate::ir::rel::sparql::handles(plan) {

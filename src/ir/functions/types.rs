@@ -2,7 +2,7 @@
 use arrow::datatypes::{DataType, TimeUnit};
 use datafusion::common::{DataFusionError, Result};
 
-pub(super) fn sql_type(data_type: &DataType) -> Result<String> {
+pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
     Ok(match data_type {
         DataType::Null => "INTEGER".into(),
         DataType::Boolean => "BOOLEAN".into(),
@@ -113,4 +113,31 @@ pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
         _ => return Ok(format!("CAST(NULL AS {})", sql_type(data_type)?)),
     };
     Ok(format!("cast_to_type(NULL, {reference})"))
+}
+
+/// PostgreSQL has no unsigned integer or anonymous struct SQL argument types.
+pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
+    Ok(match data_type {
+        DataType::Int8 | DataType::UInt8 => "SMALLINT".into(),
+        DataType::UInt16 => "INTEGER".into(),
+        DataType::UInt32 => "BIGINT".into(),
+        DataType::UInt64 => "NUMERIC(20,0)".into(),
+        DataType::Float16 | DataType::Float32 => "REAL".into(),
+        DataType::Float64 => "DOUBLE PRECISION".into(),
+        DataType::Binary
+        | DataType::LargeBinary
+        | DataType::BinaryView
+        | DataType::FixedSizeBinary(_) => "BYTEA".into(),
+        DataType::Timestamp(_, None) => "TIMESTAMP".into(),
+        DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) => {
+            if matches!(f.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) { "JSONB[]".into() }
+            else { format!("{}[]", postgres_type(f.data_type())?) }
+        }
+        DataType::Struct(_) | DataType::Map(_, _) => {
+            return Err(DataFusionError::NotImplemented(format!(
+                "PostgreSQL anonymous argument type {data_type}"
+            )));
+        }
+        _ => sql_type(data_type)?,
+    })
 }

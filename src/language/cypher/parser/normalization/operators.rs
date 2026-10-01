@@ -466,7 +466,7 @@ pub(super) fn normalize_regex_match_operator(input: &str) -> String {
 
 pub(super) fn predicate_lhs_start(prefix: &str) -> usize {
     let lower = prefix.to_ascii_lowercase();
-    [" where ", " and ", " or ", "("]
+    [" where ", " and ", " or ", " return ", " with ", "("]
         .iter()
         .filter_map(|needle| lower.rfind(needle).map(|idx| idx + needle.len()))
         .max()
@@ -508,10 +508,12 @@ pub(super) fn is_clause_boundary(input: &str) -> bool {
     if !input.starts_with(char::is_whitespace) { return false; }
     let lower = input.trim_start().to_ascii_lowercase();
     [
-        "return", "with", "and", "or", "order", "limit", "skip",
+        "return", "with", "and", "or", "order", "limit", "skip", "as",
     ]
     .iter()
-    .any(|needle| lower.strip_prefix(needle).is_some_and(|rest| rest.starts_with(char::is_whitespace)))
+    .any(|needle| {
+        lower.strip_prefix(needle).is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    })
 }
 
 pub(super) fn find_operator_outside_quotes(input: &str, operator: &str) -> Option<usize> {

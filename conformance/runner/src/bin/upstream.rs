@@ -9,6 +9,21 @@ use orchiddb::{engine::GraphEngine,ir::catalog::PropertyGraph,ir::value::Value a
  ir::rel::rdf::{RdfDatasetMapping,IriQuadSource,RdfTermColumns},
  rdf_engine::{RdfTermValue,SparqlResults}};
 use serde_json::{Value,json};
+fn configure_sql_engine(engine: &mut GraphEngine) -> Result<(), String> {
+ let Some(config) = std::env::var("ORCHIDDB_SQL_ENGINE_JSON").ok() else { return Ok(()); };
+ let config: Value = serde_json::from_str(&config).map_err(|e| format!("Invalid SQL engine JSON: {e}"))?;
+ match config["dialect"].as_str() {
+  Some("duckdb") => Ok(()),
+  Some("postgres") => {
+   let url = config["connection"].as_str().ok_or("PostgreSQL connection is required")?;
+   let url = url.to_owned();
+   let client = std::thread::spawn(move || { let mut config: postgres::Config = url.parse()?; config.options("-c statement_timeout=8000 -c jit=off"); config.connect(postgres::NoTls) }).join().map_err(|_| "PostgreSQL connection worker failed")?.map_err(|e| e.to_string())?;
+   engine.set_sql_region_session(Box::new(orchiddb::ir::rel::sql::region::PostgresRegionSession::new(client)));
+   Ok(())
+  },
+  _ => Err("Unsupported SQL engine dialect".into()),
+ }
+}
 fn cell(a:&dyn Array,i:usize)->Value {
  if a.is_null(i){return Value::Null}
  macro_rules! val{($t:ty)=>{json!(a.as_any().downcast_ref::<$t>().unwrap().value(i))}}
@@ -119,6 +134,7 @@ async fn rdf(req:&Value)->Result<Value,String>{
  }}
  let mut engine=GraphEngine::mapped(conn,Arc::new(orchiddb::ir::rel::mapping::GraphMapping::new().with_rdf_mapping(mapping)))?;
  engine.set_sql_timeout(std::time::Duration::from_secs(8));
+ configure_sql_engine(&mut engine)?;
  if req["update"].as_bool().unwrap_or(false) {
   engine.sparql_update(req["query"].as_str().unwrap_or(""),"default",req["base"].as_str()).await?;
   let SparqlResults::Solutions{rows,..}=engine.sparql_query("SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }","default").await? else {return Err("Expected updated dataset rows".into())};
@@ -137,11 +153,13 @@ async fn rdf(req:&Value)->Result<Value,String>{
  };
  let mut output=response?;
  output["query_cost"]=stats.cost.report();
+ output["sql_regions"]=json!({"duckdb":stats.duckdb_regions,"postgres":stats.postgres_regions});
  Ok(output)
 }
 #[tokio::main]
 async fn main(){
  let mut engine=GraphEngine::in_memory().unwrap();engine.set_sql_timeout(std::time::Duration::from_secs(8));
+ configure_sql_engine(&mut engine).expect("SQL engine configuration");
  let mut fixtures=fixture_cache::FixtureCache::default();
  for line in io::stdin().lock().lines(){
  let req:Value=match serde_json::from_str(&line.unwrap()){Ok(v)=>v,Err(e)=>{println!("{}",json!({"error":e.to_string()}));continue}};
@@ -176,11 +194,12 @@ async fn main(){
   }),
   Err((message,detail))=>{classification=detail;Err(message)}
  }};
- r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
+ r.map(|r|{let b=r.returned.batch;json!({"native_rows":b.schema().metadata().get(&format!("orchiddb.{}.typed_rows.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"native_columns":b.schema().metadata().get(&format!("orchiddb.{}.typed_columns.v1",op)).and_then(|v|serde_json::from_str::<Value>(v).ok()),"columns":b.schema().fields().iter().map(|f|f.name()).collect::<Vec<_>>(),"rows":(0..b.num_rows()).map(|i|b.columns().iter().map(|a|cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>(),"typed_rows":if op=="gremlin"{json!((0..b.num_rows()).map(|i|b.columns().iter().map(|a|typed_cell(a.as_ref(),i)).collect::<Vec<_>>()).collect::<Vec<_>>())}else{Value::Null},"sql_regions":{"duckdb":r.stats.duckdb_regions,"postgres":r.stats.postgres_regions},"query_cost":r.stats.cost.report(),"backend":format!("{:?}",r.backend)})}).or_else(|error|Ok(json!({"error":error,"classification":classification})))
  }};
  let mut output=result.unwrap_or_else(|e|json!({"error":e}));
  if matches!(op,"cypher"|"gremlin"|"rdf"|"sparql-syntax") {
   if output.get("query_cost").is_none() {output["query_cost"]=json!({"metric_version":1,"coverage":"elapsed_only","work_units":null,"reason":if op=="sparql-syntax"{"syntax_only"}else if output.get("error").is_some(){"query_error"}else{"non_dag_update"}});}
+  if let Some(regions) = output.get("sql_regions").cloned() { output["query_cost"]["sql_regions"] = regions; }
   output["query_cost"]["request_elapsed_micros"]=json!(request_started.elapsed().as_micros().min(u64::MAX as u128) as u64);
  }
  output["engine_instance"]=json!(std::process::id().to_string());println!("{output}");io::stdout().flush().unwrap();

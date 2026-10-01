@@ -44,6 +44,8 @@ pub enum ExecutionError<E> {
     },
     #[error("SQL execution: {0}")]
     Driver(E),
+    #[error("query requires federated execution")]
+    Federation,
 }
 
 /// Validate the compiler protocol and dialect before handing SQL to a session.
@@ -61,6 +63,9 @@ pub async fn execute<'session, S: SqlSession>(
             query: query.dialect.clone(),
             session: session.dialect().name(),
         });
+    }
+    if !query.transfers.is_empty() {
+        return Err(ExecutionError::Federation);
     }
     session.query(query).await.map_err(ExecutionError::Driver)
 }
