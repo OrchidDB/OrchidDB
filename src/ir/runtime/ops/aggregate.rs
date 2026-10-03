@@ -19,6 +19,16 @@ pub(crate) fn aggregate_op(
     rows: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    aggregate_op_with_cypher_equivalence(group, aggs, rows, graph, false)
+}
+
+pub(crate) fn aggregate_op_with_cypher_equivalence(
+    group: &[ProjectionItem],
+    aggs: &[AggCall],
+    rows: Vec<Row>,
+    graph: &PropertyGraph,
+    cypher_equivalence: bool,
+) -> IrResult<Vec<Row>> {
     if aggs.iter().any(|agg| agg.kind == AggKind::EngineFunction) {
         return Err(RuntimeError::Unsupported(
             "engine aggregate functions require relational execution".into(),
@@ -31,7 +41,21 @@ pub(crate) fn aggregate_op(
         for item in group {
             key_values.push(eval(&item.expr, &row, graph)?);
         }
-        let key_bytes = encode_key(&key_values);
+        let key_bytes = if cypher_equivalence {
+            key_values
+                .iter()
+                .map(super::distinct::encode_cypher_equivalence)
+                .flat_map(|value| {
+                    (value.len() as u64)
+                        .to_be_bytes()
+                        .into_iter()
+                        .chain(value)
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        } else {
+            encode_key(&key_values)
+        };
         groups
             .entry(key_bytes)
             .or_insert_with(|| (key_values, Vec::new()))
@@ -76,7 +100,12 @@ pub(crate) fn aggregate_op(
             row.bindings.insert(item.alias.clone(), value);
         }
         for agg in aggs {
-            let value = compute_aggregate(agg, &group_rows, graph)?;
+            let value = compute_aggregate_with_cypher_equivalence(
+                agg,
+                &group_rows,
+                graph,
+                cypher_equivalence,
+            )?;
             row.bindings.insert(agg.alias.clone(), value);
         }
         out.push(row);
@@ -114,6 +143,22 @@ pub(crate) fn compute_aggregate(
     rows: &[Row],
     graph: &PropertyGraph,
 ) -> IrResult<Value> {
+    compute_aggregate_with_cypher_equivalence(agg, rows, graph, false)
+}
+
+fn compute_aggregate_with_cypher_equivalence(
+    agg: &AggCall,
+    rows: &[Row],
+    graph: &PropertyGraph,
+    cypher_equivalence: bool,
+) -> IrResult<Value> {
+    let value_key = |value: &Value| {
+        if cypher_equivalence {
+            super::distinct::encode_cypher_equivalence(value)
+        } else {
+            encode_value(value)
+        }
+    };
     match agg.kind {
         AggKind::EngineFunction => Err(RuntimeError::Unsupported(
             "engine aggregate functions require relational execution".into(),
@@ -152,7 +197,7 @@ pub(crate) fn compute_aggregate(
                 if matches!(v, Value::Null) {
                     continue;
                 }
-                if seen.insert(encode_value(&v)) {
+                if seen.insert(value_key(&v)) {
                     count += 1;
                 }
             }
@@ -167,7 +212,7 @@ pub(crate) fn compute_aggregate(
             let mut count = 0i64;
             for row in rows {
                 let value = eval(expr, row, graph)?;
-                if agg.distinct && !seen.insert(encode_value(&value)) {
+                if agg.distinct && !seen.insert(value_key(&value)) {
                     continue;
                 }
                 if aggregate_truthy(&value) {
@@ -192,7 +237,9 @@ pub(crate) fn compute_aggregate(
             let mut have_bigint = false;
             let mut have_decimal = false;
             let mut have_float = false;
-            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
+            for (value, weight) in
+                aggregate_weighted_values(expr, rows, graph, agg.distinct, cypher_equivalence)?
+            {
                 match value {
                     Value::Byte(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
                     Value::Short(n) => int_sum = add_weighted_integer(int_sum, n as i64, weight)?,
@@ -243,7 +290,9 @@ pub(crate) fn compute_aggregate(
                 .ok_or_else(|| RuntimeError::Type("avg requires an argument".into()))?;
             let mut sum = 0.0_f64;
             let mut count = 0_u64;
-            for (value, weight) in aggregate_weighted_values(expr, rows, graph, agg.distinct)? {
+            for (value, weight) in
+                aggregate_weighted_values(expr, rows, graph, agg.distinct, cypher_equivalence)?
+            {
                 match value {
                     Value::Byte(n) => {
                         sum += n as f64 * weight as f64;
@@ -310,7 +359,7 @@ pub(crate) fn compute_aggregate(
                 }
             }
             let mut current: Option<Value> = None;
-            for v in aggregate_values(expr, rows, graph, agg.distinct)? {
+            for v in aggregate_values(expr, rows, graph, agg.distinct, cypher_equivalence)? {
                 current = match current.take() {
                     None => Some(v),
                     Some(existing) => {
@@ -341,7 +390,8 @@ pub(crate) fn compute_aggregate(
                 .arg
                 .as_ref()
                 .ok_or_else(|| RuntimeError::Type("stDev requires an argument".into()))?;
-            let values = numeric_aggregate_values(expr, rows, graph, agg.distinct)?;
+            let values =
+                numeric_aggregate_values(expr, rows, graph, agg.distinct, cypher_equivalence)?;
             Ok(Value::Float(stddev(&values, agg.kind == AggKind::StDev)))
         }
         AggKind::PercentileCont | AggKind::PercentileDisc => {
@@ -361,7 +411,13 @@ pub(crate) fn compute_aggregate(
             let Some(percentile) = percentile_value(percentile_expr, rows, graph)? else {
                 return Ok(Value::Null);
             };
-            let mut values = numeric_aggregate_values(value_expr, rows, graph, agg.distinct)?;
+            let mut values = numeric_aggregate_values(
+                value_expr,
+                rows,
+                graph,
+                agg.distinct,
+                cypher_equivalence,
+            )?;
             if values.is_empty() {
                 return Ok(Value::Null);
             }
@@ -395,7 +451,7 @@ pub(crate) fn compute_aggregate(
                 {
                     continue;
                 }
-                if agg.distinct && !seen.insert(encode_value(&v)) {
+                if agg.distinct && !seen.insert(value_key(&v)) {
                     continue;
                 }
                 if matches!(agg.kind, AggKind::CollectTraversers) {
@@ -436,8 +492,9 @@ fn aggregate_values(
     rows: &[Row],
     graph: &PropertyGraph,
     distinct: bool,
+    cypher_equivalence: bool,
 ) -> IrResult<Vec<Value>> {
-    Ok(aggregate_weighted_values(expr, rows, graph, distinct)?
+    Ok(aggregate_weighted_values(expr, rows, graph, distinct, cypher_equivalence)?
         .into_iter()
         .map(|(value, _)| value)
         .collect())
@@ -449,6 +506,7 @@ fn aggregate_weighted_values(
     rows: &[Row],
     graph: &PropertyGraph,
     distinct: bool,
+    cypher_equivalence: bool,
 ) -> IrResult<Vec<(Value, u64)>> {
     let mut values = Vec::new();
     let mut seen = BTreeSet::new();
@@ -460,7 +518,13 @@ fn aggregate_weighted_values(
         if matches!(value, Value::Null) {
             continue;
         }
-        if distinct && !seen.insert(encode_value(&value)) {
+        if distinct
+            && !seen.insert(if cypher_equivalence {
+                super::distinct::encode_cypher_equivalence(&value)
+            } else {
+                encode_value(&value)
+            })
+        {
             continue;
         }
         values.push((value, if distinct { 1 } else { row.bulk }));
@@ -494,8 +558,9 @@ fn numeric_aggregate_values(
     rows: &[Row],
     graph: &PropertyGraph,
     distinct: bool,
+    cypher_equivalence: bool,
 ) -> IrResult<Vec<f64>> {
-    aggregate_values(expr, rows, graph, distinct).map(|values| {
+    aggregate_values(expr, rows, graph, distinct, cypher_equivalence).map(|values| {
         values
             .into_iter()
             .filter_map(|value| numeric_f64(&value))

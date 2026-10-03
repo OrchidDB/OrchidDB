@@ -439,8 +439,13 @@ struct Compiler<'a> {
 }
 impl Compiler<'_> {
     fn lower(&self, node: &Node) -> Result<LogicalPlan> {
-        if self.sql
-            && self.islands.lock().unwrap().safe(node)
+        let can_lower_sql = self.sql && {
+            let islands = self.islands.lock().unwrap();
+            islands.safe(node)
+                && !(self.policy.language == crate::ir::policy::Language::Cypher
+                    && islands.requires_cypher_equality(node))
+        };
+        if can_lower_sql
             && !matches!(
                 node,
                 Node::GraphReturn { .. }
@@ -610,10 +615,14 @@ impl Compiler<'_> {
     fn lower_scalar_kernel(&self, node: &Node) -> Result<LogicalPlan> {
         use crate::ir::runtime::ops::*;
         use crate::ir::runtime::ops::{
-            aggregate::aggregate_op,
+            aggregate::{aggregate_op, aggregate_op_with_cypher_equivalence},
             barrier::barrier_op,
             collect::collect_op,
-            distinct::{distinct_op, row_signature},
+            distinct::{
+                distinct_op, distinct_op_with_seen, row_signature,
+                row_signature_with_cypher_equivalence,
+                distinct_op_with_seen_and_cypher_equivalence,
+            },
             expand::{bind_op, expand_op},
             join::join_op,
             list_comprehension::list_comprehension_op,
@@ -903,6 +912,8 @@ impl Compiler<'_> {
             } => {
                 let group = group.clone();
                 let aggs = aggs.clone();
+                let cypher_equivalence =
+                    self.policy.language == crate::ir::policy::Language::Cypher;
                 Ok(kernel(
                     "Aggregate",
                     vec![self.lower(input)?],
@@ -913,7 +924,13 @@ impl Compiler<'_> {
                         let aggs = &aggs;
                         {
                             let rows = inputs.remove(0);
-                            aggregate_op(group, aggs, rows, graph)
+                            if cypher_equivalence {
+                                aggregate_op_with_cypher_equivalence(
+                                    group, aggs, rows, graph, true,
+                                )
+                            } else {
+                                aggregate_op(group, aggs, rows, graph)
+                            }
                         }
                     },
                 ))
@@ -923,6 +940,8 @@ impl Compiler<'_> {
             } => {
                 let keys = keys.clone();
                 let mode = mode.clone();
+                let cypher_equivalence =
+                    self.policy.language == crate::ir::policy::Language::Cypher;
                 Ok(kernel(
                     "Distinct",
                     vec![self.lower(input)?],
@@ -934,9 +953,22 @@ impl Compiler<'_> {
                         {
                             let rows = inputs.remove(0);
                             if let Some(seen) = ctx.next_distinct_seen() {
-                                distinct::distinct_op_with_seen(keys, *mode, rows, seen)
+                                if cypher_equivalence {
+                                    distinct_op_with_seen_and_cypher_equivalence(
+                                        keys, *mode, rows, seen, true,
+                                    )
+                                } else {
+                                    distinct_op_with_seen(keys, *mode, rows, seen)
+                                }
                             } else {
-                                distinct_op(keys, *mode, rows)
+                                if cypher_equivalence {
+                                    let mut seen = BTreeSet::new();
+                                    distinct_op_with_seen_and_cypher_equivalence(
+                                        keys, *mode, rows, &mut seen, true,
+                                    )
+                                } else {
+                                    distinct_op(keys, *mode, rows)
+                                }
                             }
                         }
                     },
@@ -1022,6 +1054,8 @@ impl Compiler<'_> {
                 all, left, right, ..
             } => {
                 let all = all.clone();
+                let cypher_equivalence =
+                    self.policy.language == crate::ir::policy::Language::Cypher;
                 Ok(kernel(
                     "Union",
                     vec![self.lower(left)?, self.lower(right)?],
@@ -1036,7 +1070,11 @@ impl Compiler<'_> {
                             if !all {
                                 let mut seen = BTreeSet::new();
                                 l.retain(|row| {
-                                    let key = row_signature(row);
+                                    let key = if cypher_equivalence {
+                                        row_signature_with_cypher_equivalence(row)
+                                    } else {
+                                        row_signature(row)
+                                    };
                                     seen.insert(key)
                                 });
                             }

@@ -9,6 +9,7 @@ use std::{
 #[derive(Debug, Default)]
 pub(super) struct IslandMemo {
     safe: BTreeMap<usize, bool>,
+    cypher_equality_fences: std::collections::BTreeSet<usize>,
     stats: BTreeMap<usize, GraphPlanStats>,
     lowered: BTreeMap<(usize, BTreeMap<String, usize>), Option<LoweredNode>>,
     next_scan: usize,
@@ -69,6 +70,38 @@ impl IslandMemo {
         }
         let mut memo = Self::default();
         visit(root, &mut memo);
+        // Keep operators whose key semantics differ from SQL grouping and
+        // DISTINCT in the native runtime, along with every parent that would
+        // otherwise absorb them into one SQL island.
+        let mut pending = vec![(root, false)];
+        while let Some((node, visited)) = pending.pop() {
+            let key = node as *const Node as usize;
+            let children = crate::ir::analysis::children(node);
+            if visited {
+                let local_fence = match node {
+                    Node::GraphDistinct { .. } => true,
+                    Node::GraphUnion { all, .. } => !all,
+                    Node::GraphAggregate { group, aggs, .. } => {
+                        !group.is_empty()
+                            || aggs.iter().any(|agg| {
+                                agg.distinct || agg.kind == crate::ir::expr::AggKind::CountDistinct
+                            })
+                    }
+                    _ => false,
+                };
+                if local_fence
+                    || children.iter().any(|child| {
+                        memo.cypher_equality_fences
+                            .contains(&(*child as *const Node as usize))
+                    })
+                {
+                    memo.cypher_equality_fences.insert(key);
+                }
+            } else {
+                pending.push((node, true));
+                pending.extend(children.into_iter().map(|child| (child, false)));
+            }
+        }
         Arc::new(Mutex::new(memo))
     }
     pub fn safe(&self, node: &Node) -> bool {
@@ -76,6 +109,10 @@ impl IslandMemo {
             .get(&(node as *const Node as usize))
             .copied()
             .unwrap_or(false)
+    }
+    pub fn requires_cypher_equality(&self, node: &Node) -> bool {
+        self.cypher_equality_fences
+            .contains(&(node as *const Node as usize))
     }
 }
 impl RelBackend {

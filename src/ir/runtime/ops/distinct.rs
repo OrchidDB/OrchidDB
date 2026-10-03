@@ -185,6 +185,93 @@ pub(crate) fn encode_value(v: &Value) -> Vec<u8> {
     buf
 }
 
+/// Cypher `DISTINCT`, grouping and UNION use value equivalence: numeric
+/// widths are ignored and that equivalence applies recursively to lists/maps.
+/// Gremlin deliberately keeps its native boxed-type identity in `encode_value`.
+pub(crate) fn encode_cypher_equivalence(value: &Value) -> Vec<u8> {
+    use bigdecimal::{BigDecimal, FromPrimitive};
+
+    fn framed(tag: u8, parts: impl IntoIterator<Item = Vec<u8>>) -> Vec<u8> {
+        let mut result = vec![tag];
+        for part in parts {
+            result.extend_from_slice(&(part.len() as u64).to_be_bytes());
+            result.extend(part);
+        }
+        result
+    }
+    fn number(value: &Value) -> Option<Vec<u8>> {
+        let decimal = match value {
+            Value::Byte(v) => Some(BigDecimal::from(*v)),
+            Value::UInt8(v) => Some(BigDecimal::from(*v)),
+            Value::Short(v) => Some(BigDecimal::from(*v)),
+            Value::UInt16(v) => Some(BigDecimal::from(*v)),
+            Value::Int(v) | Value::Long(v) => Some(BigDecimal::from(*v)),
+            Value::UInt32(v) => Some(BigDecimal::from(*v)),
+            Value::UInt64(v) => Some(BigDecimal::from(*v)),
+            Value::BigInt(v) | Value::UInt128(v) => Some(BigDecimal::from(v.clone())),
+            Value::BigDecimal(v) => Some(v.clone()),
+            Value::Float32(v) if v.is_nan() => return Some(b"NaN".to_vec()),
+            Value::Float(v) if v.is_nan() => return Some(b"NaN".to_vec()),
+            Value::Float32(v) if v.is_infinite() => {
+                return Some(if v.is_sign_negative() {
+                    b"-Infinity".to_vec()
+                } else {
+                    b"Infinity".to_vec()
+                });
+            }
+            Value::Float(v) if v.is_infinite() => {
+                return Some(if v.is_sign_negative() {
+                    b"-Infinity".to_vec()
+                } else {
+                    b"Infinity".to_vec()
+                });
+            }
+            Value::Float32(v) => BigDecimal::from_f32(*v),
+            Value::Float(v) => BigDecimal::from_f64(*v),
+            _ => None,
+        }?;
+        Some(framed(1, [decimal.normalized().to_string().into_bytes()]))
+    }
+
+    if let Value::Scalar(scalar) = value
+        && let Some(value) = crate::ir::value::scalar_semantic_value(scalar)
+    {
+        return encode_cypher_equivalence(&value);
+    }
+    if let Some(number) = number(value) {
+        return number;
+    }
+    match value {
+        Value::Null => vec![0],
+        Value::Bool(value) => framed(2, [vec![u8::from(*value)]]),
+        Value::List(values) | Value::Path(values) => framed(
+            if matches!(value, Value::List(_)) {
+                3
+            } else {
+                4
+            },
+            values.iter().map(encode_cypher_equivalence),
+        ),
+        Value::Map(values) => {
+            let mut entries = values
+                .iter()
+                .filter(|(key, _)| !key.starts_with("__"))
+                .map(|(key, value)| {
+                    framed(
+                        5,
+                        [key.as_bytes().to_vec(), encode_cypher_equivalence(value)],
+                    )
+                })
+                .collect::<Vec<_>>();
+            entries.sort();
+            framed(6, entries)
+        }
+        // Keep type and value boundaries unambiguous for strings, graph
+        // identities and other values outside Cypher's recursive containers.
+        other => framed(255, [encode_value(other)]),
+    }
+}
+
 pub(crate) fn distinct_op(
     keys: &[String],
     mode: DistinctMode,
@@ -200,17 +287,40 @@ pub(crate) fn distinct_op_with_seen(
     rows: Vec<Row>,
     seen: &mut BTreeSet<Vec<u8>>,
 ) -> IrResult<Vec<Row>> {
+    distinct_op_with_seen_and_cypher_equivalence(keys, mode, rows, seen, false)
+}
+
+pub(crate) fn distinct_op_with_seen_and_cypher_equivalence(
+    keys: &[String],
+    mode: DistinctMode,
+    rows: Vec<Row>,
+    seen: &mut BTreeSet<Vec<u8>>,
+    cypher_equivalence: bool,
+) -> IrResult<Vec<Row>> {
     let mut out = Vec::new();
     for mut row in rows {
         let signature: Vec<u8> = if keys.is_empty() {
-            row_signature(&row)
+            if cypher_equivalence {
+                row_signature_with_cypher_equivalence(&row)
+            } else {
+                row_signature(&row)
+            }
         } else {
             keys.iter()
                 .flat_map(|k| {
                     let v = row.bindings.get(k).cloned().unwrap_or(Value::Null);
-                    let mut bytes = encode_value(&v);
-                    bytes.push(0);
-                    bytes
+                    if cypher_equivalence {
+                        let encoded = encode_cypher_equivalence(&v);
+                        (encoded.len() as u64)
+                            .to_be_bytes()
+                            .into_iter()
+                            .chain(encoded)
+                            .collect()
+                    } else {
+                        let mut bytes = encode_value(&v);
+                        bytes.push(0);
+                        bytes
+                    }
                 })
                 .collect()
         };
@@ -233,6 +343,18 @@ pub(crate) fn row_signature(row: &Row) -> Vec<u8> {
         sig.push(0xff);
     }
     sig
+}
+
+pub(crate) fn row_signature_with_cypher_equivalence(row: &Row) -> Vec<u8> {
+    let mut signature = Vec::new();
+    for (key, value) in &row.bindings {
+        signature.extend_from_slice(&(key.len() as u64).to_be_bytes());
+        signature.extend_from_slice(key.as_bytes());
+        let encoded = encode_cypher_equivalence(value);
+        signature.extend_from_slice(&(encoded.len() as u64).to_be_bytes());
+        signature.extend(encoded);
+    }
+    signature
 }
 
 #[cfg(test)]
@@ -267,6 +389,50 @@ mod typed_map_tests {
                 "a".into(),
                 Value::Int(1)
             )])))
+        );
+    }
+}
+
+#[cfg(test)]
+mod cypher_equivalence_tests {
+    use super::*;
+
+    #[test]
+    fn canonicalizes_numeric_widths_and_recursive_values() {
+        let one = Value::Int(1);
+        let one_float = Value::Float(1.0);
+        assert_eq!(
+            encode_cypher_equivalence(&one),
+            encode_cypher_equivalence(&one_float)
+        );
+        assert_ne!(encode_value(&one), encode_value(&one_float));
+        assert_eq!(
+            encode_cypher_equivalence(&Value::List(vec![one.clone()])),
+            encode_cypher_equivalence(&Value::List(vec![one_float.clone()]))
+        );
+        assert_eq!(
+            encode_cypher_equivalence(&Value::Map(std::collections::BTreeMap::from([(
+                "n".into(),
+                one,
+            )]))),
+            encode_cypher_equivalence(&Value::Map(std::collections::BTreeMap::from([(
+                "n".into(),
+                one_float,
+            )])))
+        );
+        assert_eq!(
+            encode_cypher_equivalence(&Value::Float(-0.0)),
+            encode_cypher_equivalence(&Value::Int(0))
+        );
+    }
+
+    #[test]
+    fn canonicalizes_nan_payloads() {
+        let left = Value::Float(f64::from_bits(0x7ff8_0000_0000_0001));
+        let right = Value::Float(f64::from_bits(0x7ff8_0000_0000_0002));
+        assert_eq!(
+            encode_cypher_equivalence(&left),
+            encode_cypher_equivalence(&right)
         );
     }
 }
