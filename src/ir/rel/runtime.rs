@@ -19,7 +19,7 @@ use arrow::{
 };
 use async_trait::async_trait;
 use datafusion::{
-    common::{DFSchemaRef, DataFusionError, Result},
+    common::{DFSchemaRef, DataFusionError, Result, tree_node::{TreeNode, Transformed}},
     execution::{TaskContext, context::SessionState},
     logical_expr::{
         Expr, Extension, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
@@ -31,6 +31,8 @@ use datafusion::{
         SendableRecordBatchStream,
         execution_plan::{Boundedness, EmissionType},
         stream::RecordBatchStreamAdapter,
+        limit::{GlobalLimitExec, LocalLimitExec},
+        sorts::sort::SortExec,
     },
     physical_planner::{ExtensionPlanner, PhysicalPlanner},
 };
@@ -267,7 +269,25 @@ impl ExtensionPlanner for KernelPlanner {
         // still present, including when another row kernel consumes it.
         let physical_inputs = physical_inputs.iter().map(|input| {
             if kernel.relational_input.is_some() {
-                OutputRequirements::new_add_mode().optimize(input.clone(), session.config_options())
+                // DataFusion 53's sort pushdown can discard a TopK fetch when
+                // a window/filter already supplies the requested ordering.
+                // Preserve a real limit while it rewrites sorts. The later
+                // LimitPushdown rule can fold it back into a remaining sort.
+                let input = input.clone().transform_up(|plan| {
+                    if let Some(sort) = plan.as_any().downcast_ref::<SortExec>()
+                        && let Some(fetch) = sort.fetch()
+                    {
+                        let input = Arc::new(sort.with_fetch(None));
+                        let limit: Arc<dyn ExecutionPlan> = if sort.preserve_partitioning() {
+                            Arc::new(LocalLimitExec::new(input, fetch))
+                        } else {
+                            Arc::new(GlobalLimitExec::new(input, 0, Some(fetch)))
+                        };
+                        return Ok(Transformed::yes(limit));
+                    }
+                    Ok(Transformed::no(plan))
+                })?.data;
+                OutputRequirements::new_add_mode().optimize(input, session.config_options())
             } else {
                 Ok(input.clone())
             }

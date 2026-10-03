@@ -40,6 +40,32 @@ async fn rows(query: &str) -> Result<Vec<String>, String> {
 }
 
 #[tokio::test]
+async fn distinct_top_k_keeps_limits_when_window_order_already_satisfies_sort() {
+    for direction in ["ASC", "DESC"] {
+        let sorted = if direction == "ASC" {
+            [1, 3, 5]
+        } else {
+            [5, 3, 1]
+        };
+        for skip in 0..=3 {
+            for limit in 0..=4 {
+                let query = format!(
+                    "UNWIND [5,1,3,1,5,3] AS x WITH DISTINCT x ORDER BY x {direction} \
+                     SKIP {skip} LIMIT {limit} RETURN x"
+                );
+                let expected = sorted
+                    .iter()
+                    .skip(skip)
+                    .take(limit)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                assert_eq!(rows(&query).await.unwrap(), expected, "{query}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn projection_scope_and_aggregation_matrix() {
     let cases: &[(&str, &[&str])] = &[
         ("WITH 1 AS x WITH x + 1 AS x RETURN x", &["2"]),
