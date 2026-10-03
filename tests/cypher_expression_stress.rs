@@ -222,3 +222,119 @@ async fn case_regressions_compile_to_both_sql_dialects() {
         std::fs::write(path, serde_json::to_vec_pretty(&exported).unwrap()).unwrap();
     }
 }
+
+async fn typed_rows(query: &str) -> serde_json::Value {
+    let ast = parse_query(query).unwrap();
+    let plan = CypherPlanner::new().plan(&ast).unwrap();
+    let (result, _) = orchiddb::ir::rel::runtime::execute(&plan, &PropertyGraph::new(), None)
+        .await
+        .unwrap_or_else(|error| panic!("{query}: {error}"));
+    let mut rows: serde_json::Value =
+        serde_json::from_str(&result.batch.schema().metadata()["orchiddb.cypher.typed_rows.v1"])
+            .unwrap();
+    fn normalize_integer_width(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields.get("type").and_then(|v| v.as_str()) == Some("long") {
+                    fields.insert("type".into(), "int".into());
+                }
+                for value in fields.values_mut() {
+                    normalize_integer_width(value);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    normalize_integer_width(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    normalize_integer_width(&mut rows);
+    rows
+}
+
+#[tokio::test]
+async fn case_preserves_branch_types_without_sql_coercion() {
+    use serde_json::json;
+    let integer = json!({"type":"int", "value":9007199254740993_i64});
+    let string = json!({"type":"string", "value":"text"});
+    let boolean = json!({"type":"boolean", "value":true});
+    let float = json!({"type":"double", "value":"0"});
+    let null = json!({"type":"null", "value":null});
+    for (left, right, expected_left, expected_right) in [
+        (
+            "9007199254740993",
+            "'text'",
+            integer.clone(),
+            string.clone(),
+        ),
+        ("9007199254740993", "true", integer.clone(), boolean),
+        ("9007199254740993", "0.0", integer.clone(), float),
+        ("9007199254740993", "null", integer.clone(), null),
+        (
+            "[9007199254740993]",
+            "['text']",
+            json!({"type":"list","value":[integer.clone()]}),
+            json!({"type":"list","value":[string]}),
+        ),
+    ] {
+        for condition in ["WHEN flag", "flag WHEN true"] {
+            for tail in ["RETURN value", "WITH value RETURN value"] {
+                let query = format!(
+                    "UNWIND [true,false] AS flag WITH CASE {condition} THEN {left} ELSE {right} END AS value {tail}"
+                );
+                assert_eq!(
+                    typed_rows(&query).await,
+                    json!([[expected_left], [expected_right]]),
+                    "{query}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn mixed_integer_float_comparisons_do_not_round_integer_variables() {
+    for (integer, float, expected) in [
+        (
+            9007199254740993_i64,
+            "9007199254740992.0",
+            [false, true, false, false, true, true],
+        ),
+        (
+            -9007199254740993_i64,
+            "-9007199254740992.0",
+            [false, true, true, true, false, false],
+        ),
+        (
+            i64::MAX,
+            "9223372036854775808.0",
+            [false, true, true, true, false, false],
+        ),
+        (
+            i64::MIN,
+            "-9223372036854775808.0",
+            [true, false, false, true, false, true],
+        ),
+        (1, "1.0", [true, false, false, true, false, true]),
+    ] {
+        let operators = ["=", "<>", "<", "<=", ">", ">="];
+        for (op, expected) in operators.into_iter().zip(expected) {
+            // Literal folding and relational variable evaluation must agree.
+            for query in [
+                format!("RETURN {integer} {op} {float} AS result"),
+                format!("UNWIND [{integer}] AS x RETURN x {op} {float} AS result"),
+                format!("UNWIND [{float}] AS x RETURN {integer} {op} x AS result"),
+            ] {
+                assert_eq!(
+                    rows(&query).await,
+                    vec![vec![expected.to_string()]],
+                    "{query}"
+                );
+            }
+        }
+    }
+    assert_eq!(rows("UNWIND [9007199254740993] AS x RETURN x IN [9007199254740992.0], CASE x WHEN 9007199254740992.0 THEN 1 ELSE 2 END").await,
+        vec![vec!["false", "2"]]);
+}

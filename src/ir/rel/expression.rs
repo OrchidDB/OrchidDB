@@ -243,6 +243,28 @@ impl<'a> LoweringContext<'a> {
                         .map(|expr| *expr)
                         .unwrap_or_else(|| lit(ScalarValue::Null)));
                 }
+                if self.language == Language::Cypher {
+                    // Cypher returns the selected value without changing its
+                    // type. SQL CASE instead coerces every branch to a common
+                    // type, which can stringify integers, round them to floats,
+                    // or reject otherwise valid heterogeneous collections.
+                    let mut branch_type = None;
+                    for branch in when_then_expr.iter().map(|(_, value)| value)
+                        .chain(else_expr.iter())
+                    {
+                        if matches!(branch.as_ref(), Expr::Literal(value, _) if value.is_null()) {
+                            continue;
+                        }
+                        let kind = branch.get_type(plan.schema())?;
+                        if kind == DataType::Null { continue; }
+                        if branch_type.as_ref().is_some_and(|previous| previous != &kind) {
+                            return Err(RelError::Unsupported(
+                                "Heterogeneous Cypher CASE requires native runtime types".into(),
+                            ));
+                        }
+                        branch_type = Some(kind);
+                    }
+                }
                 Ok(Expr::Case(Case::new(None, when_then_expr, else_expr)))
             }
             IrExpr::Call { name, args } if name == "path_or_self" => {
@@ -916,6 +938,14 @@ impl<'a> LoweringContext<'a> {
                 let rhs = self.lower_expr(plan, &args[1])?;
                 let lt = lhs.get_type(plan.schema())?;
                 let rt = rhs.get_type(plan.schema())?;
+                if lt != rt && lt.is_numeric() && rt.is_numeric() {
+                    // SQL numeric promotion can round an integer before it is
+                    // compared with a float (notably beyond 2^53). Native
+                    // Cypher comparison preserves the exact operand values.
+                    return Err(RelError::Unsupported(
+                        "Mixed Cypher numeric comparison requires lossless runtime values".into(),
+                    ));
+                }
                 if lt != rt && !(lt.is_numeric() && rt.is_numeric())
                     && lt != DataType::Null && rt != DataType::Null {
                     return Err(RelError::Unsupported("Cypher comparisons must not coerce unrelated operand types".into()));
