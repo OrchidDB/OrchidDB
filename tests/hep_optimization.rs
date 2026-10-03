@@ -75,6 +75,7 @@ fn each_operator_is_its_own_user_defined_logical_node() {
         vec![
             "GraphReturn",
             "GraphFilter",
+            "GraphProject",
             "GraphSort",
             "GraphBind",
             "GraphNodeScan"

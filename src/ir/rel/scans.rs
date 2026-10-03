@@ -317,7 +317,7 @@ impl<'a> LoweringContext<'a> {
                 if defs.contains_key(&key) {
                     continue;
                 }
-                let data_type = infer_element_property_type(self.graph, false, label, &key);
+                let data_type = infer_element_property_type(self.graph, false, label, &key, self.language)?;
                 defs.insert(
                     key.clone(),
                     PropertyDef {
@@ -464,7 +464,7 @@ impl<'a> LoweringContext<'a> {
                 if defs.contains_key(&key) {
                     continue;
                 }
-                let data_type = infer_element_property_type(self.graph, true, rel_type, &key);
+                let data_type = infer_element_property_type(self.graph, true, rel_type, &key, self.language)?;
                 defs.insert(
                     key.clone(),
                     PropertyDef {
@@ -1238,7 +1238,8 @@ pub(super) fn infer_element_property_type(
     is_edge: bool,
     element: &str,
     name: &str,
-) -> DataType {
+    language: Language,
+) -> RelResult<DataType> {
     let ids: Vec<crate::ir::ElementId> = if is_edge {
         graph.edge_ids(element)
     } else {
@@ -1248,7 +1249,15 @@ pub(super) fn infer_element_property_type(
     for id in ids {
         values.push(element_property_value(graph, is_edge, element, id, name));
     }
-    infer_property_data_type(&values)
+    if language == Language::Gremlin
+        && homogeneous_scalar_type(values.iter()).is_none()
+        && values.iter().any(|value| !matches!(value, Value::Null))
+    {
+        return Err(RelError::Unsupported(
+            "Heterogeneous Gremlin properties require native runtime types".into(),
+        ));
+    }
+    Ok(infer_property_data_type(&values))
 }
 
 // Retain the actual scalar widths when every non-null value agrees.

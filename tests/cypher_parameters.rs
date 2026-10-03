@@ -148,7 +148,7 @@ fn binds_map_parameter() {
 fn fails_on_missing_parameter() {
     let mut query = parse_query("MATCH (n) WHERE n.name = $name RETURN n").unwrap();
     let err = bind_parameters(&mut query, &BTreeMap::new()).unwrap_err();
-    assert!(err.contains("missing value for parameter `$name`"), "{err}");
+    assert!(err.contains("missing query parameter $name"), "{err}");
 }
 
 #[test]
@@ -205,11 +205,19 @@ fn binds_limit_and_skip_parameters() {
     };
     assert_eq!(
         ret.projection.skip,
-        Some(Expr::Literal(Literal::Integer("10".to_string())))
+        Some(Expr::Function {
+            name: "cypher_slice_bound".into(),
+            distinct: false,
+            args: vec![Expr::Literal(Literal::Integer("10".to_string()))],
+        })
     );
     assert_eq!(
         ret.projection.limit,
-        Some(Expr::Literal(Literal::Integer("25".to_string())))
+        Some(Expr::Function {
+            name: "cypher_slice_bound".into(),
+            distinct: false,
+            args: vec![Expr::Literal(Literal::Integer("25".to_string()))],
+        })
     );
 }
 

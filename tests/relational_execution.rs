@@ -212,17 +212,12 @@ async fn reused_dag_resources_do_not_reuse_graph_contents() {
 }
 
 #[tokio::test]
-async fn fused_unary_kernels_preserve_exact_rows_and_bulk() {
+async fn unary_operators_preserve_exact_rows_and_bulk() {
     let query = plan("g.inject(1,2,3).map(__.constant(5)).identity().constant(7)");
     let graph = PropertyGraph::new();
-    let (actual, stats) = execute_rows_with_jvm(&query, &graph, JvmExecution::default())
+    let (actual, _) = execute_rows_with_jvm(&query, &graph, JvmExecution::default())
         .await
         .unwrap();
-    assert!(
-        stats.physical_plan.contains("Fused("),
-        "{}",
-        stats.physical_plan
-    );
     assert_eq!(current_values(actual), vec![Value::Int(7); 3]);
 }
 

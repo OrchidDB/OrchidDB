@@ -501,7 +501,10 @@ fn merge_create(
             props.clone(),
         )?
     } else {
-        graph.try_insert_node(name, props.clone())?
+        graph.try_insert_node(
+            name,
+            vertex_properties.iter().map(|(key, value, _)| (key.clone(), value.clone())).collect(),
+        )?
     };
     if edge {
         for (key, value) in props {

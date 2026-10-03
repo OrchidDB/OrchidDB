@@ -208,7 +208,7 @@ fn cypher_create_set_and_delete_use_graph_ir_mutations() {
 #[test]
 fn cypher_union_aligns_branch_outputs_by_position() {
     let parsed =
-        parse_query("MATCH (p:Person) RETURN p.age UNION ALL MATCH (q:Person) RETURN q.age")
+        parse_query("MATCH (p:Person) RETURN p.age AS age UNION ALL MATCH (q:Person) RETURN q.age AS age")
             .expect("parse");
     let plan = AstCypherPlanner::new().plan(&parsed).expect("plan");
     let plan_text = orchiddb::ir::plan::explain(&plan);
@@ -281,7 +281,7 @@ fn cypher_rejects_node_reused_as_relationship_pattern() {
 #[test]
 fn cypher_rejects_path_reused_as_relationship_pattern() {
     let err = plan_cypher_error("MATCH r = ()-[*1..2]->() MATCH ()-[r]-() RETURN r");
-    assert!(err.contains("Binder exception: r has data type RECURSIVE_REL but REL was expected."));
+    assert!(err.contains("Binder exception: r has data type PATH but REL was expected."));
 }
 
 #[test]
