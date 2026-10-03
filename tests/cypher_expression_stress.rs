@@ -338,3 +338,44 @@ async fn mixed_integer_float_comparisons_do_not_round_integer_variables() {
     assert_eq!(rows("UNWIND [9007199254740993] AS x RETURN x IN [9007199254740992.0], CASE x WHEN 9007199254740992.0 THEN 1 ELSE 2 END").await,
         vec![vec!["false", "2"]]);
 }
+
+#[tokio::test]
+async fn scientific_literals_accept_explicit_positive_exponents() {
+    for (literal, expected) in [
+        ("1e+3", "1000.0"),
+        ("1E+0", "1.0"),
+        ("1.25e+3", "1250.0"),
+        ("-1.25e+3", "-1250.0"),
+        (".5e+2", "50.0"),
+        ("0e+0", "0.0"),
+        ("1e-2", "0.01"),
+    ] {
+        assert_eq!(
+            rows(&format!("RETURN {literal} AS value")).await,
+            vec![vec![expected]],
+            "{literal}"
+        );
+    }
+    let tokens = orchiddb::language::cypher::parser::tokenize("RETURN 1.25e+3 AS n").unwrap();
+    assert!(
+        tokens
+            .iter()
+            .any(|token| token.symbolic_name == Some("ExponentDecimalReal")
+                && token.text == "1.25e+3")
+    );
+    for literal in ["1e+", "1e++2", "1e+-2", "1e+ 3", ".e+3", "1e+2tail"] {
+        assert!(
+            parse_query(&format!("RETURN {literal}")).is_err(),
+            "{literal}"
+        );
+    }
+    assert_eq!(
+        rows("WITH '1e+3' AS `1e+3` RETURN `1e+3`").await,
+        vec![vec!["1e+3"]]
+    );
+    assert_eq!(
+        rows("WITH 3 AS x1e RETURN x1e + + 2").await,
+        vec![vec!["5"]]
+    );
+    assert_eq!(rows("RETURN 1e+2 + + 3").await, vec![vec!["103.0"]]);
+}

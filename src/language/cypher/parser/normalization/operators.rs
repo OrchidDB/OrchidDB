@@ -33,7 +33,7 @@ pub(super) fn normalize_spaced_unary_signs(input: &str) -> String {
                 out.push(ch);
                 idx += 1;
             }
-            '+' | '-' if unary_sign_context(&out) => {
+            '+' | '-' if unary_sign_context(&out) && !exponent_sign_context(&out) => {
                 let mut minus_count = 0usize;
                 let mut next_idx = idx;
                 loop {
@@ -66,6 +66,22 @@ pub(super) fn normalize_spaced_unary_signs(input: &str) -> String {
         }
     }
     out
+}
+
+// A sign after a numeric exponent marker belongs to the literal, not a unary
+// expression. Leave malformed sign sequences intact for the lexer to reject:
+// collapsing `1e++2` to `1e+2` would silently accept invalid input.
+fn exponent_sign_context(prefix: &str) -> bool {
+    let prefix = prefix.trim_end_matches(|ch: char| ch.is_whitespace() || matches!(ch, '+' | '-'));
+    let Some(mantissa_prefix) = prefix.strip_suffix(['e', 'E']) else { return false };
+    let start = mantissa_prefix.char_indices().rev()
+        .take_while(|(_, ch)| ch.is_ascii_digit() || *ch == '.')
+        .last().map(|(index, _)| index).unwrap_or(mantissa_prefix.len());
+    let mantissa = &mantissa_prefix[start..];
+    !mantissa.is_empty()
+        && mantissa.ends_with(|ch: char| ch.is_ascii_digit())
+        && mantissa.bytes().filter(|ch| *ch == b'.').count() <= 1
+        && mantissa_prefix[..start].chars().next_back().is_none_or(|ch| !is_ident_continue(ch))
 }
 
 pub(super) fn unary_sign_context(prefix: &str) -> bool {
