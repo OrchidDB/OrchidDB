@@ -343,11 +343,11 @@ pub fn lower_expr(lowerer: &Lowerer, expr: &Expr) -> CypherPlanResult<IrExpr> {
                     .iter()
                     .map(|(when, then)| {
                         let condition = if let Some(case_expr) = &case_expr {
-                            IrExpr::Binary {
-                                op: IrBinaryOp::Eq,
-                                lhs: Box::new(case_expr.clone()),
-                                rhs: Box::new(lower_expr(lowerer, when)?),
-                            }
+                            lower_cypher_binary_expr(
+                                BinaryOp::Eq,
+                                case_expr.clone(),
+                                lower_expr(lowerer, when)?,
+                            )
                         } else {
                             lower_expr(lowerer, when)?
                         };

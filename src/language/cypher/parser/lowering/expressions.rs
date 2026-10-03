@@ -699,7 +699,7 @@ pub(crate) fn lower_literal_expr(
     if let Some(string) = ctx.StringLiteral() {
         return Ok(Expr::Literal(Literal::String(unquote_string(
             &string.get_text(),
-        ))));
+        )?)));
     }
     if let Some(list) = ctx.oC_ListLiteral() {
         return Ok(Expr::List(
@@ -828,7 +828,7 @@ fn parse_error<T: std::fmt::Display>(kind: &str, text: &str, err: T) -> CypherPa
     CypherParseError::Parse(format!("invalid {kind} literal `{text}`: {err}"))
 }
 
-fn unquote_string(text: &str) -> String {
+fn unquote_string(text: &str) -> Result<String> {
     let trimmed = text.trim();
     let body = trimmed
         .strip_prefix(['\'', '"'])
@@ -864,11 +864,10 @@ fn unquote_string(text: &str) -> String {
                         result.push_str(&hex);
                     }
                     'u' | 'U' => {
-                        if let Some(ch) = read_unicode_escape(&mut chars) {
-                            result.push(ch);
-                            continue;
-                        }
-                        result.push(next);
+                        result.push(
+                            read_unicode_escape(&mut chars, if next == 'u' { 4 } else { 8 })
+                                .ok_or(CypherParseError::InvalidUnicodeLiteral)?,
+                        );
                     }
                     other => result.push(other),
                 }
@@ -877,34 +876,35 @@ fn unquote_string(text: &str) -> String {
             result.push(ch);
         }
     }
-    result
+    Ok(result)
 }
 
-fn read_unicode_escape(chars: &mut std::str::Chars<'_>) -> Option<char> {
-    for width in [8, 4] {
-        let mut probe = chars.clone();
-        let mut hex = String::new();
-        let mut complete = true;
-        for _ in 0..width {
-            let Some(digit) = probe.next() else {
-                complete = false;
-                break;
-            };
-            if !digit.is_ascii_hexdigit() {
-                complete = false;
-                break;
-            }
-            hex.push(digit);
-        }
-        if !complete {
-            continue;
-        }
-        if let Ok(value) = u32::from_str_radix(&hex, 16) {
-            if let Some(ch) = char::from_u32(value) {
-                *chars = probe;
-                return Some(ch);
-            }
-        }
+fn read_unicode_escape(chars: &mut std::str::Chars<'_>, width: usize) -> Option<char> {
+    let mut probe = chars.clone();
+    let hex: String = probe.by_ref().take(width).collect();
+    if hex.len() != width || !hex.chars().all(|digit| digit.is_ascii_hexdigit()) {
+        return None;
     }
-    None
+    let value = u32::from_str_radix(&hex, 16).ok()?;
+    // Rust strings contain Unicode scalar values, so combine UTF-16 surrogate
+    // pairs before converting either half to a char. Unpaired surrogates fail.
+    let value = if width == 4 && (0xD800..=0xDBFF).contains(&value) {
+        if probe.next() != Some('\\') || probe.next() != Some('u') {
+            return None;
+        }
+        let low: String = probe.by_ref().take(4).collect();
+        if low.len() != 4 || !low.chars().all(|digit| digit.is_ascii_hexdigit()) {
+            return None;
+        }
+        let low = u32::from_str_radix(&low, 16).ok()?;
+        if !(0xDC00..=0xDFFF).contains(&low) {
+            return None;
+        }
+        0x10000 + ((value - 0xD800) << 10) + low - 0xDC00
+    } else {
+        value
+    };
+    let ch = char::from_u32(value)?;
+    *chars = probe;
+    Some(ch)
 }

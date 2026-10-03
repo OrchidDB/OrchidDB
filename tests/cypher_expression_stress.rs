@@ -1,0 +1,224 @@
+//! Deterministic expression stress cases, evaluated locally without DuckDB builds.
+use orchiddb::ir::catalog::PropertyGraph;
+use orchiddb::language::cypher::{parser::parse_query, planner::CypherPlanner};
+
+async fn rows(query: &str) -> Vec<Vec<String>> {
+    let ast = parse_query(query).unwrap_or_else(|e| panic!("{query}: {e}"));
+    let plan = CypherPlanner::new()
+        .plan(&ast)
+        .unwrap_or_else(|e| panic!("{query}: {e}"));
+    let (result, _) = orchiddb::ir::rel::runtime::execute(&plan, &PropertyGraph::new(), None)
+        .await
+        .unwrap_or_else(|e| panic!("{query}: {e}"));
+    (0..result.batch.num_rows())
+        .map(|row| {
+            result
+                .batch
+                .columns()
+                .iter()
+                .map(|column| arrow::util::display::array_value_to_string(column, row).unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn arithmetic_collections_and_three_valued_logic() {
+    for (expression, expected) in [
+        ("CASE WHEN true THEN 1 ELSE 2 END", "1"),
+        ("CASE 2 WHEN 1 THEN 3 WHEN 2 THEN 4 END", "4"),
+        ("CASE WHEN false THEN 1 END IS NULL", "true"),
+        ("-9223372036854775808", "-9223372036854775808"),
+        ("0x7fffffffffffffff", "9223372036854775807"),
+        ("0o77", "63"),
+        ("2 ^ 3 ^ 2", "64.0"),
+        ("-2 ^ 2", "4.0"),
+        ("1 + 2 * 3", "7"),
+        ("7 / 2", "3"),
+        ("-7 % 3", "-1"),
+        ("[1,2,3][-1]", "3"),
+        ("[1,2,3][null] IS NULL", "true"),
+        ("[1,2,3][1..null] IS NULL", "true"),
+        ("[x IN [1,2,3] WHERE x > 1 | x * 2]", "[4,6]"),
+        ("any(x IN [null,1] WHERE x = 2)", ""),
+        ("all(x IN [] WHERE false)", "true"),
+        ("single(x IN [1,null] WHERE x=1)", ""),
+        ("null IN []", "false"),
+        ("1 IN [null,2]", ""),
+        ("coalesce(null, null, 3)", "3"),
+        ("head([]) IS NULL", "true"),
+        ("last([]) IS NULL", "true"),
+        ("size('aé😀')", "3"),
+        ("substring('aé😀',1,2)", "é😀"),
+        ("reverse('aé😀')", "😀éa"),
+        ("{a: 1, b: [2,3]}.b[1]", "3"),
+        ("{a: 1}['a']", "1"),
+        ("[1, null] = [1, null]", ""),
+        ("null AND false", "false"),
+        ("null OR true", "true"),
+        ("null XOR true", ""),
+        ("NOT null", ""),
+    ] {
+        let query = format!("RETURN {expression} AS value");
+        assert_eq!(rows(&query).await, vec![vec![expected]], "{query}");
+    }
+}
+
+#[tokio::test]
+async fn generated_parameter_arithmetic_and_nested_collections() {
+    use orchiddb::ir::value::Value;
+    use orchiddb::language::cypher::parameters::bind_parameters;
+    use std::collections::BTreeMap;
+
+    let query = "WITH $a AS a, $b AS b RETURN (a + b) * (a - b) AS arithmetic, \
+                 CASE a WHEN b THEN 1 ELSE 0 END AS equal, \
+                 [x IN [a,b] | x * x][1] AS square";
+    for a in -4..=4 {
+        for b in -4..=4 {
+            let mut ast = parse_query(query).unwrap();
+            bind_parameters(
+                &mut ast,
+                &BTreeMap::from([
+                    ("a".to_string(), Value::Int(a)),
+                    ("b".to_string(), Value::Int(b)),
+                ]),
+            )
+            .unwrap();
+            let plan = CypherPlanner::new().plan(&ast).unwrap();
+            let (result, _) =
+                orchiddb::ir::rel::runtime::execute(&plan, &PropertyGraph::new(), None)
+                    .await
+                    .unwrap_or_else(|error| panic!("a={a}, b={b}: {error}"));
+            assert_eq!(result.batch.num_rows(), 1);
+            let actual = result
+                .batch
+                .columns()
+                .iter()
+                .map(|column| arrow::util::display::array_value_to_string(column, 0).unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual,
+                [
+                    ((a + b) * (a - b)).to_string(),
+                    i64::from(a == b).to_string(),
+                    (b * b).to_string()
+                ],
+                "a={a}, b={b}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn simple_case_uses_cypher_equality_in_scalar_and_aggregate_projections() {
+    for (left, right, expected) in [
+        ("null", "null", "2"),
+        ("1", "null", "2"),
+        ("null", "1", "2"),
+        ("[1,null]", "[1,null]", "2"),
+        ("{a:null}", "{a:null}", "2"),
+        ("1", "1.0", "1"),
+        ("[1,2]", "[1.0,2.0]", "1"),
+        ("{a:1}", "{a:1.0}", "1"),
+        ("'1'", "1", "2"),
+    ] {
+        for prefix in ["", "UNWIND [1,2] AS n "] {
+            let then = if prefix.is_empty() { "1" } else { "count(*)" };
+            let otherwise = if prefix.is_empty() {
+                "2"
+            } else {
+                "count(*) + 1"
+            };
+            let query = format!(
+                "{prefix}RETURN CASE {left} WHEN {right} THEN {then} ELSE {otherwise} END AS result"
+            );
+            let expected = if prefix.is_empty() {
+                expected
+            } else if expected == "1" {
+                "2"
+            } else {
+                "3"
+            };
+            assert_eq!(rows(&query).await, vec![vec![expected]], "{query}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn unicode_escape_width_and_surrogate_pairs_preserve_values() {
+    for (literal, expected) in [
+        (r"'\u0041'", "A"),
+        (r"'\uD83D\uDE00'", "😀"),
+        (r"'\U0001F600'", "😀"),
+        (r"'\u0001F600'", "\u{1}F600"),
+        (r"'\uD800\uDC00'", "𐀀"),
+        (r"'\uDBFF\uDFFF'", "\u{10ffff}"),
+        (r"'a\uD83D\uDE00z'", "a😀z"),
+        (r"'\\uD83D\\uDE00'", r"\uD83D\uDE00"),
+    ] {
+        let query = format!("RETURN {literal} AS value");
+        assert_eq!(rows(&query).await, vec![vec![expected]], "{query}");
+    }
+    for literal in [
+        r"'\uD800'",
+        r"'\uDC00'",
+        r"'\uD800\u0041'",
+        r"'\U00110000'",
+        r"'\U0000D800'",
+    ] {
+        let error = parse_query(&format!("RETURN {literal}")).unwrap_err();
+        assert_eq!(
+            error.classification(),
+            Some(("SyntaxError", "InvalidUnicodeLiteral")),
+            "{literal}: {error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn case_regressions_compile_to_both_sql_dialects() {
+    let mut exported = Vec::new();
+    for dialect in ["duckdb", "postgres"] {
+        for (query, expected) in [
+            ("RETURN CASE null WHEN null THEN 1 ELSE 2 END AS result", 2),
+            (
+                "RETURN CASE [1,null] WHEN [1,null] THEN 1 ELSE 2 END AS result",
+                2,
+            ),
+            (
+                "RETURN CASE {a:null} WHEN {a:null} THEN 1 ELSE 2 END AS result",
+                2,
+            ),
+            (
+                "MATCH (n:Number) RETURN CASE null WHEN null THEN count(*) ELSE count(*) + 1 END AS result",
+                3,
+            ),
+            (
+                "MATCH (n:Number) RETURN CASE WHEN null THEN count(*) ELSE count(*) + 1 END AS result",
+                3,
+            ),
+        ] {
+            let request = serde_json::json!({"version": 1, "dialect": dialect, "language": "cypher", "query": query, "tables": [{"name":"expression_numbers","columns":[{"name":"id","data_type":"int64"}]}], "nodes": [{"label":"Number","table":"expression_numbers","id":"id"}], "edges": []});
+            let compiled = orchiddb::compiler::compile_json(&request.to_string())
+                .await
+                .unwrap_or_else(|e| panic!("{dialect}: {query}: {e}"));
+            let compiled: serde_json::Value = serde_json::from_str(&compiled).unwrap();
+            let sql = compiled["sql"].as_str().unwrap();
+            assert!(!sql.is_empty());
+            if dialect == "postgres" && query.starts_with("MATCH") {
+                assert!(
+                    sql.contains("AS BOOLEAN"),
+                    "null CASE condition lost its boolean type: {sql}"
+                );
+                assert!(
+                    !sql.contains("AS VARCHAR"),
+                    "null CASE condition became a string: {sql}"
+                );
+            }
+            exported.push(serde_json::json!({"dialect":dialect,"query":query,"sql":compiled["sql"],"expected":expected}));
+        }
+    }
+    if let Ok(path) = std::env::var("ORCHIDDB_EXPRESSION_SQL_EXPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&exported).unwrap()).unwrap();
+    }
+}

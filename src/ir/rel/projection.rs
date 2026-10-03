@@ -88,7 +88,7 @@ impl<'a> LoweringContext<'a> {
                 }
                 IrExpr::Case { arms, otherwise } => Ok(Expr::Case(Case::new(None,
                     arms.iter().map(|(condition, value)| Ok((
-                        Box::new(ctx.lower_expr(plan, condition)?),
+                        Box::new(ctx.lower_case_condition(plan, condition)?),
                         Box::new(component(ctx, plan, value, suffix, data_type)?),
                     ))).collect::<RelResult<Vec<_>>>()?,
                     Some(Box::new(match otherwise.as_deref() {

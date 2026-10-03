@@ -24,9 +24,10 @@ use datafusion::{
     logical_expr::{
         Expr, Extension, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
     },
-    physical_expr::EquivalenceProperties,
+    physical_expr::{EquivalenceProperties, OrderingRequirements},
+    physical_optimizer::{PhysicalOptimizerRule, output_requirements::OutputRequirements},
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+        DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, ExecutionPlanProperties, Partitioning, PlanProperties,
         SendableRecordBatchStream,
         execution_plan::{Boundedness, EmissionType},
         stream::RecordBatchStreamAdapter,
@@ -255,11 +256,22 @@ impl ExtensionPlanner for KernelPlanner {
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
         physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session: &SessionState,
+        session: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let Some(kernel) = node.as_any().downcast_ref::<RowKernel>() else {
             return Ok(None);
         };
+        // SQL islands may project away ORDER BY keys before decoding. Their
+        // output ordering then cannot be named in the boundary schema. Give
+        // each island its own output requirement while the physical sort is
+        // still present, including when another row kernel consumes it.
+        let physical_inputs = physical_inputs.iter().map(|input| {
+            if kernel.relational_input.is_some() {
+                OutputRequirements::new_add_mode().optimize(input.clone(), session.config_options())
+            } else {
+                Ok(input.clone())
+            }
+        }).collect::<Result<Vec<_>>>()?;
         let properties = Arc::new(PlanProperties::new(
             EquivalenceProperties::new(schema()),
             Partitioning::UnknownPartitioning(1),
@@ -269,6 +281,13 @@ impl ExtensionPlanner for KernelPlanner {
         Ok(Some(Arc::new(KernelExec {
             kernel: kernel.clone(),
             inputs: physical_inputs.to_vec(),
+            // Row kernels consume ordered rows, including when relational
+            // values are decoded into opaque traverser bindings. Snapshot
+            // each input requirement before physical optimization: otherwise
+            // DataFusion can remove a user ORDER BY below this boundary.
+            input_ordering: physical_inputs.iter().map(|input| {
+                input.output_ordering().cloned().map(OrderingRequirements::from)
+            }).collect(),
             state: self.state.clone(),
             properties,
         })))
@@ -278,6 +297,7 @@ impl ExtensionPlanner for KernelPlanner {
 struct KernelExec {
     kernel: RowKernel,
     inputs: Vec<Arc<dyn ExecutionPlan>>,
+    input_ordering: Vec<Option<OrderingRequirements>>,
     state: Arc<Mutex<State>>,
     properties: Arc<PlanProperties>,
 }
@@ -299,6 +319,15 @@ impl ExecutionPlan for KernelExec {
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         self.inputs.iter().collect()
     }
+    fn required_input_ordering(&self) -> Vec<Option<OrderingRequirements>> {
+        self.input_ordering.clone()
+    }
+    fn maintains_input_order(&self) -> Vec<bool> {
+        vec![self.kernel.relational_input.is_some(); self.inputs.len()]
+    }
+    fn required_input_distribution(&self) -> Vec<Distribution> {
+        vec![Distribution::SinglePartition; self.inputs.len()]
+    }
     fn with_new_children(
         self: Arc<Self>,
         inputs: Vec<Arc<dyn ExecutionPlan>>,
@@ -309,6 +338,7 @@ impl ExecutionPlan for KernelExec {
         Ok(Arc::new(Self {
             kernel: self.kernel.clone(),
             inputs,
+            input_ordering: self.input_ordering.clone(),
             state: self.state.clone(),
             properties: self.properties.clone(),
         }))

@@ -12,7 +12,7 @@ use super::scope::{
     pattern_binding_names, remove_local_exists_bindings, validate_expression_scope,
 };
 use super::{
-    AggCall, AggKind, BTreeSet, CypherPlanError, CypherPlanResult, CypherTraversalKind, Expr,
+    AggCall, AggKind, BTreeSet, BinaryOp, CypherPlanError, CypherPlanResult, CypherTraversalKind, Expr,
     IrBinaryOp, IrExpr, Lit, Lowerer, Node, PatternPart, ProjectErrorPolicy, ProjectMode,
     ProjectionBody, ProjectionItem, SortKey, UnaryOp, invalid_order_scope,
     order_expr_after_cardinality_projection, sort_key,
@@ -1039,11 +1039,7 @@ pub(super) fn rewrite_aggregate_projection(
             for (when, then) in arms {
                 let when = rewrite_aggregate_projection(lowerer, when, rewrite, None)?;
                 let condition = if let Some(case_expr) = &case_expr {
-                    IrExpr::Binary {
-                        op: IrBinaryOp::Eq,
-                        lhs: Box::new(case_expr.clone()),
-                        rhs: Box::new(when),
-                    }
+                    lower_cypher_binary_expr(BinaryOp::Eq, case_expr.clone(), when)
                 } else {
                     when
                 };

@@ -3,6 +3,18 @@
 use super::*;
 
 impl<'a> LoweringContext<'a> {
+    /// A folded null has no intrinsic type. CASE predicates require BOOLEAN;
+    /// retaining the generic string-null representation emits invalid SQL on
+    /// engines such as PostgreSQL that do not coerce VARCHAR to a predicate.
+    pub(super) fn lower_case_condition(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
+        let lowered = self.lower_expr(plan, expr)?;
+        if matches!(&lowered, Expr::Literal(value, _) if value.is_null()) {
+            Ok(lit(ScalarValue::Boolean(None)))
+        } else {
+            Ok(lowered)
+        }
+    }
+
     /// Counting an element only needs its presence marker. Rendering the
     /// complete value would unnecessarily cross the graph runtime boundary.
     pub(super) fn lower_count_operand(&self, plan: &LogicalPlan, expr: &IrExpr) -> RelResult<Expr> {
@@ -217,7 +229,7 @@ impl<'a> LoweringContext<'a> {
                         if !has_exact_col(plan, binding) && has_binding_shape(plan, binding).is_none()))
                     .map(|(when, then)| {
                         Ok((
-                            Box::new(self.lower_expr(plan, when)?),
+                            Box::new(self.lower_case_condition(plan, when)?),
                             Box::new(self.lower_expr(plan, then)?),
                         ))
                     })
