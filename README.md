@@ -60,8 +60,12 @@ not install plugins or copy source tables in this path.
 cursor, a SQL function, and transaction ownership. DuckDB is that application’s
 dependency.
 
-Each compilation targets one engine. Multiple connections can be routed by the
-application; cross-engine joins and ClickHouse SQL are not implemented.
+For cross-engine reads, register named DuckDB and Postgres sessions and assign
+tables to their owning engines. The compiler emits source SQL islands and a final
+query; `federation::execute` binds source results into that query as typed SQL
+values. Transfers are buffered. Connections and transactions remain caller-owned;
+no distributed snapshot or transaction is provided. See
+[mixed SQL engines](docs/sql-engines.md). ClickHouse SQL is not implemented.
 
 ## Shared graph execution
 

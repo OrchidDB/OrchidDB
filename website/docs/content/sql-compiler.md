@@ -160,9 +160,9 @@ The shared engine uses the same selection and exposes it in execution statistics
 
 The API specializes SQL to typed Cypher parameter values. It does not return
 JDBC placeholders. Bindings must treat generated SQL as potentially sensitive
-and include parameters, schema, ontology, function declarations, mappings, and
-dialect in their plan cache keys. Gremlin/SPARQL parameter bindings are not yet
-implemented. Conformance evidence applies to its recorded API and revision; SQL emission
+and include parameters, schema, ontology, function declarations, mappings,
+dialect, engine routing, authorization principal, and permission scopes in their
+plan cache keys. Gremlin/SPARQL parameter bindings are not yet implemented. Conformance evidence applies to its recorded API and revision; SQL emission
 must also fit the target dialect.
 
 Writes, opaque extensions, and unlowerable operations fail. SPARQL `SERVICE`,
@@ -171,16 +171,34 @@ OrchidDB does not make remote SPARQL HTTP requests. Internal table materializati
 are rejected by inspecting the logical plan before unparsing; they are never collected or executed. Constant seed
 rows in mapped plans are emitted as SQL expressions instead of private tables.
 
-Source-to-engine routing belongs to the client. Today's Java binding requires
-one engine per graph, while keeping engine IDs on every mapped source and plan.
-A future federated coordinator can split Graph IR into source-specific fragments
-and use the compiler for each engine without changing connection ownership.
+Regression tests: `cargo test --test sql_compiler --test execution --test federation`.
 
-Regression tests: `cargo test --test sql_compiler --test execution`.
+## Cross-engine reads
+
+Current source builds accept an `engines` registry, an `execution_engine`, and
+an `engine` on each table. Engine IDs name caller-owned connections; supported
+dialects are `duckdb` and `postgres`. Tables without an engine use the execution
+engine, whose dialect must match the request.
+
+The compiler pushes eligible source subtrees into SQL islands, including filters,
+projections, same-engine joins, and aggregates. Cross-engine joins execute on the
+selected execution engine. `CompiledSql.transfers` describes each source query
+and its typed result columns.
+
+Use a federation helper, such as Rust's `federation::execute` or Java's
+`FederatedQuery.query`, to execute these plans. It buffers source results and
+binds them as typed common table expressions in the final query. It creates no
+tables or views. Large transfers increase memory use and SQL statement size.
+Connections keep their own snapshots and transaction policy; this read interface
+provides no distributed writes or snapshot.
+
+See the [mixed-engine request and client APIs](https://github.com/OrchidDB/OrchidDB/blob/main/docs/sql-engines.md)
+for a complete configuration.
 
 ## Caller-owned data flow
 
-You can execute `CompiledSql.sql` directly. For a common adapter boundary,
+For a plan without transfers, you can execute `CompiledSql.sql` directly.
+For a common adapter boundary,
 implement `execution::SqlSession`: declare a dialect, a driver error type, and a
 result type implementing Arrow `RecordBatchReader` that can borrow the session. Its async `query` method executes the
 SQL; `execution::execute` first rejects protocol/dialect mismatches. It performs

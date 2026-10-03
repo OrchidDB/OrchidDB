@@ -9,12 +9,17 @@ Version 0.1.0 is published on crates.io, PyPI, npm, Maven Central, and Hex, with
 1. Your application opens/configures the database, plugins, UDFs, transactions, and caches.
 2. Supply table schemas and graph mappings to the version-1 compiler.
 3. Compile a supported read query into SQL and output field names.
-4. Execute against one compatible engine and consume its Arrow result.
+4. Execute through a compatible engine or federation helper and consume its result.
 5. Release result resources; the connection remains yours.
 
-DuckDB is the tested execution target. Core also renders PostgreSQL SQL. ClickHouse execution and cross-engine federation are not implemented. The engine adapter boundary allows other backends without transferring ownership of connections to the compiler.
+Current source builds support DuckDB, Postgres, and cross-engine reads through
+caller-owned connections. The compiler emits source SQL islands and a final query
+for the selected execution engine. Federation helpers buffer source results and
+bind them as typed SQL values; they create no database tables and provide no
+distributed snapshot or transaction. See [cross-engine reads](sql-compiler.md#cross-engine-reads).
+ClickHouse SQL is not implemented.
 
-Parameters are specialized into SQL. Cache keys must include their values, schema, node/edge/RDF mappings, collection definitions, physical layouts and partition metadata, ontology, functions, dialect, and installed statistics revision. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. Generated SQL must fit the target dialect. Consult the [recorded conformance results](conformance.md) for the exact APIs and revisions tested.
+Parameters are specialized into SQL. Cache keys must include their values, schema, node/edge/RDF mappings, collection definitions, physical layouts and partition metadata, ontology, functions, dialect, engine routing, authorization principal and permission scopes, and installed statistics revision. Recompile after these change. Gremlin/SPARQL parameter bindings are not implemented. Generated SQL must fit the target dialect. Consult the [recorded conformance results](conformance.md) for the exact APIs and revisions tested.
 
 ## Composite keys in source builds
 
@@ -85,6 +90,11 @@ For a complete application example, see [ArrowBatches.java](https://github.com/O
 `JdbcEngine.withArrow` takes your JDBC connection, Arrow allocator, and driver export callback. `Graph.queryArrow` returns an `ArrowResult`. Java vectors are borrowed: consume them before advancing or closing the result. Copy/transfer data explicitly if it must outlive that scope. Your parent allocator and connection remain caller-owned.
 
 Java requires an Arrow-compatible JVM setup, including `--add-opens=java.base/java.nio=ALL-UNNAMED`; the example launcher handles it. Supply your own JDBC driver and Arrow memory implementation as described in the Arrow guide; DuckDB JDBC is test-only in the client repository. The optional `com.orchiddb:orchiddb-gremlin:0.1.0` dependency adds fluent TinkerPop traversal integration; other clients accept Gremlin text.
+
+Current Java sources also expose `PermissionRelation`, `NodeMapping.protectWith`,
+and `Authorization` for [permission filtering](sql-compiler.md#permission-filtering).
+Applications supply effective grants from their chosen permission system;
+OrchidDB applies them before traversal and projection.
 
 ## Python
 

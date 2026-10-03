@@ -5,7 +5,7 @@
 `compiler::compile` accepts query text, schema metadata, graph mappings, typed
 parameters and function declarations. Language frontends parse and validate
 Cypher, Gremlin and SPARQL, lower to Graph IR, and then to a DataFusion logical
-plan. The SQL unparser emits DuckDB or PostgreSQL SQL. The compiler does not
+plan. The SQL unparser emits DuckDB or Postgres SQL. The compiler does not
 connect to a database, discover schemas, register UDFs, move rows or execute SQL.
 DataFusion remains a planning dependency; this is not yet a minimal parser-only crate.
 
@@ -82,12 +82,28 @@ contract has no setup statements or implicit transaction changes.
 
 ## Multiple engines
 
-SQL dialect selection is independent of connection ownership. Today each compiled
-query targets one engine. A caller can keep several sessions and route independent
-queries to them. PostgreSQL SQL rendering is available; ClickHouse rendering and
-cross-engine joins are not implemented. Federation will need a coordinator for
-capability checks, fragments, exchanges, type conversion and transaction policy;
-a session interface alone does not provide those semantics.
+SQL dialect selection is independent of connection ownership. Compile requests
+can assign tables to named DuckDB or Postgres engines and select an execution
+engine. The planner assigns closed SQL islands to their source engines and emits
+typed transfers. Cross-engine joins run on the selected execution engine.
+
+`federation::execute` and client coordinators query caller-owned sessions and bind
+transferred rows into the final statement. Transfers are buffered; this path
+provides neither streaming exchanges nor distributed snapshots or transactions.
+ClickHouse rendering is not implemented. See [SQL engines](sql-engines.md) for
+the protocol, adapters, and execution constraints.
+
+## Permission filtering
+
+The compile request's `authorization` and node `permission_scopes` filter node
+sources against caller-owned effective grants before traversal and projection.
+Scopes combine with OR; membership filters preserve row multiplicity even when
+grants repeat. Protected mappings require a principal.
+
+Applications choose the permission system and supply resolved grants, including
+group membership. The compiler does not connect to or synchronize that system.
+See the [permission protocol](../website/docs/content/sql-compiler.md) and Java's
+`PermissionRelation`, `protectWith`, and `Authorization` helpers.
 
 ## Functions
 

@@ -3,7 +3,10 @@
 The maintained protocol and examples are in the [SQL API reference](../website/docs/content/sql-compiler.md).
 It covers `compile`/`compile_json`, typed schemas, graph and RDF rules, logical
 physical-layout sources, collection tables, parameters, functions, result fields,
-and SQL execution through application-owned sessions.
+permission filtering, and SQL execution through application-owned sessions.
+For queries spanning named connections, see [SQL engines](sql-engines.md): the
+compiled result includes source SQL islands and typed transfers for a coordinator
+to execute.
 
 SQL generation is a stage of OrchidDB's shared planning pipeline. The API emits
 SQL without opening connections or moving rows; execution and transaction ownership

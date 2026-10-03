@@ -8,11 +8,13 @@ relevant query before opening work.
   Writes and opaque/residual operations currently fail. SPARQL SERVICE is
   unsupported across compiler and managed execution.
   Extend coverage with expected-result comparisons against caller-owned databases.
-- Add Gremlin/SPARQL parameter binding, broader mapped identity/schema types and
-  explicitly tested PostgreSQL execution. ClickHouse needs a dialect and capability
-  contract before it can be advertised as a supported engine.
-- Design federation around engine-specific fragments and typed exchanges; specify
-  consistency, cancellation and partial-failure behavior before cross-engine joins.
+- Add Gremlin/SPARQL parameter binding and broader mapped identity/schema types.
+  Preserve the [Postgres and DuckDB execution checks](sql-engines.md) as coverage
+  grows. ClickHouse needs a dialect and capability contract before support.
+- Measure the existing federation coordinator's buffered transfers on application
+  workloads before extending execution. Cross-engine joins already use SQL islands
+  and typed exchanges; distributed snapshots, distributed transactions, and
+  streaming exchanges remain outside that contract.
 - Separate the optional bundled runtime into its own crate if it needs an
   independent release lifecycle. Today the default dependency graph excludes its
   drivers, while the explicit `duckdb` feature preserves engine and CLI users.
