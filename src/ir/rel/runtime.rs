@@ -522,7 +522,10 @@ pub async fn execute_rows_with_jvm(
     graph: &PropertyGraph,
     jvm: JvmExecution,
 ) -> std::result::Result<(Vec<Row>, super::dag::DagStats), String> {
-    crate::ir::jvm::validate_computer_plan(&plan.root)?;
+    validate_plan_size(&plan.root)?;
+    stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
+        crate::ir::jvm::validate_computer_plan(&plan.root)
+    })?;
     let mut scope = jvm.scope();
     let local=graph.clone();
     let result=execute_rows_inner(plan, &local, jvm, None, None, false).await.map_err(|e|e.to_string())?;
@@ -543,19 +546,31 @@ async fn execute_rows_inner(
     #[cfg(feature = "duckdb")]
     let resources = resources.or(mapped_resources.as_ref());
     graph.begin_statement();
-    let compiler = Compiler {
-        graph,
-        policy: plan.policy.clone(),
-        sql: !has_mutating_branches(&plan.root) && !(graph.mapping.is_some() && graph.has_mutations()),
-        islands: super::island_planner::IslandMemo::new(&plan.root),
-    };
-    let needed = if prune_return { match plan.root.as_ref() {
-        Node::GraphReturn {fields,..} => Some(fields.iter().cloned().collect()), _=>None
-    }} else {None};
-    let logical = optimize::optimize(compiler.lower(&plan.root).map_err(QueryExecutionError::from_error)?, needed.as_ref()).map_err(QueryExecutionError::from_error)?;
-    // Lowering memo entries may include abandoned candidate sources. The
-    // executable DAG owns the sources it uses; release the compiler before I/O.
-    drop(compiler);
+    // Compiler and optimizer walks recurse through the input chain. A valid
+    // statement with many CREATE clauses can exhaust an ordinary worker stack.
+    let logical = stacker::maybe_grow(64 * 1024 * 1024, 64 * 1024 * 1024, || {
+        let compiler = Compiler {
+            graph,
+            policy: plan.policy.clone(),
+            sql: !has_mutating_branches(&plan.root)
+                && !(graph.mapping.is_some() && graph.has_mutations()),
+            islands: super::island_planner::IslandMemo::new(&plan.root),
+        };
+        let needed = if prune_return {
+            match plan.root.as_ref() {
+                Node::GraphReturn { fields, .. } => Some(fields.iter().cloned().collect()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let logical = optimize::optimize(
+            compiler.lower(&plan.root).map_err(QueryExecutionError::from_error)?,
+            needed.as_ref(),
+        ).map_err(QueryExecutionError::from_error)?;
+        // Release abandoned candidate sources before I/O; the DAG owns its sources.
+        Ok::<_, QueryExecutionError>(logical)
+    })?;
     let mut context = ExecutionContext::default();
     context.jvm = jvm;
     context.sql_timeout = timeout;
@@ -571,14 +586,14 @@ async fn execute_rows_inner(
         result_form: crate::ir::policy::ResultForm::RowSet,
         islands: Default::default(),
     };
-    let (returned, mut stats) = super::dag::execute_with_extensions(
+    let (returned, mut stats) = super::stack::on_query_stack(super::dag::execute_with_extensions(
         lowered,
         vec![Arc::new(KernelPlanner {
             state: state.clone(),
         })],
         timeout,
         resources,
-    )
+    ))
     .await
     .map_err(QueryExecutionError::from_error)?;
     let rows = decode_rows(&returned.batch).map_err(QueryExecutionError::from_error)?;
@@ -1478,7 +1493,10 @@ pub(crate) async fn execute_with_session(
     resources: Option<&super::dag::DagSession>,
     jvm_workers: crate::ir::jvm::JvmWorkerPool,
 ) -> std::result::Result<(ReturnedBatches, super::dag::DagStats), QueryExecutionError> {
-    crate::ir::jvm::validate_computer_plan(&plan.root)?;
+    validate_plan_size(&plan.root)?;
+    stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || {
+        crate::ir::jvm::validate_computer_plan(&plan.root)
+    })?;
     let local = graph.clone();
     let started = std::time::Instant::now();
     let jvm = JvmExecution::for_query(jvm_workers);
@@ -1511,6 +1529,26 @@ pub(crate) async fn execute_with_session(
     stats.cost.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     scope.complete();
     Ok((returned, stats))
+}
+
+// Check iteratively before any recursive runtime walk. Stack growth handles
+// normal large statements; this budget bounds recursion for untrusted plans.
+fn validate_plan_size(root: &Node) -> std::result::Result<(), String> {
+    const MAX_DEPTH: usize = 512;
+    const MAX_NODES: usize = 100_000;
+    let mut pending = vec![(root, 1usize)];
+    let mut nodes = 0usize;
+    while let Some((node, depth)) = pending.pop() {
+        nodes += 1;
+        if depth > MAX_DEPTH {
+            return Err(format!("query plan depth exceeds the execution limit of {MAX_DEPTH}"));
+        }
+        if nodes > MAX_NODES {
+            return Err(format!("query plan size exceeds the execution limit of {MAX_NODES} nodes"));
+        }
+        pending.extend(crate::ir::analysis::children(node).into_iter().map(|child| (child, depth + 1)));
+    }
+    Ok(())
 }
 
 fn has_mutating_branches(node: &Node) -> bool {

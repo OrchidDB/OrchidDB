@@ -12,6 +12,7 @@ pub mod layout;
 pub mod collection_source;
 pub mod representation;
 pub mod runtime;
+mod stack;
 mod island_planner;
 mod optimizer;
 mod rules;
