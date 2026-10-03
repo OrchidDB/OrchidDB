@@ -1,31 +1,16 @@
-An embedded graph query engine written in Rust, built with DuckDB, DataFusion,
-and Apache Arrow.
+OrchidDB compiles graph queries to SQL for caller-owned execution engines.
 
-These archives contain the `orchiddb` command-line tool with bundled DuckDB.
-The CLI supports Cypher and Gremlin. SPARQL is available through the Rust
-library, not the CLI. This is an early release; consult the guides and recorded
-conformance results for supported behavior and limitations.
+This release includes the Rust engine and client, CLI, shared native compiler,
+Java and Gremlin modules, and Python, JavaScript, Elixir, and C++ clients.
+See each client repository for supported platforms and installation instructions.
+The CLI includes its DuckDB runtime; compiler-only libraries do not embed a
+query execution engine.
 
-Download the archive matching your platform, verify it against `SHA256SUMS`,
-and extract it. Then run:
-
-```sh
-./orchiddb --help
-./orchiddb --query 'RETURN 1 AS value'
-```
-
-On Windows, use `orchiddb.exe`. macOS builds are not Developer ID signed or
-notarized. The JVM bridge and Java dependencies are not included.
-
-Each archive includes the current license, usage instructions, and `BUILD.json`
-with the source commit, target, Rust version, and executable checksum. Source
-archives are available with this release for building the Rust library.
+Before publishing, replace this template with the version's concrete changes,
+local validation results, platform coverage, and known limitations. Attach
+SHA256SUMS and release evidence identifying exact source revisions and artifacts.
+Do not describe untested platforms or unresolved failures as verified.
 
 - [Documentation](https://docs.orchiddb.com/)
 - [Quickstart](https://docs.orchiddb.com/quickstart.html)
-- [Conformance and scope](https://docs.orchiddb.com/conformance.html)
 - [License](https://github.com/OrchidDB/OrchidDB/blob/main/LICENSE.md)
-
-The release also includes explicitly labeled Python, JavaScript/TypeScript, and Java placeholder ZIPs. These contain documentation and metadata only, not working SDK packages.
-
-Install the CLI with `curl -fsSL https://install.orchiddb.com | bash`, or set `ORCHIDDB_VERSION` to select this exact release. The installer verifies `SHA256SUMS` before installation.

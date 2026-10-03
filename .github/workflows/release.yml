@@ -1,12 +1,17 @@
 name: Prepare Rust release
+run-name: crates ${{ inputs.request_id }} ${{ inputs.ref }}
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Commit, branch, or existing v0.1.0 tag to verify
+        description: Commit, branch, or existing version tag to verify
         type: string
         default: main
         required: true
+      request_id:
+        description: Coordinator request ID
+        type: string
+        default: ''
       publish:
         description: Publish to crates.io (requires an existing matching version tag)
         type: boolean
@@ -17,6 +22,7 @@ concurrency:
   group: rust-release-${{ inputs.ref }}
   cancel-in-progress: false
 env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target/release-packages
   CARGO_BUILD_JOBS: '2'
   CARGO_PROFILE_DEV_DEBUG: '0'
   RUST_MIN_STACK: '16777216'
@@ -36,6 +42,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target/release-packages'
+          shared-key: registry-packages
+          cache-on-failure: true
       - name: Validate source and publish intent
         id: source
         env:
