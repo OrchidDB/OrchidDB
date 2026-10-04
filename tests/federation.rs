@@ -114,7 +114,8 @@ async fn routing_preflight_and_cleanup_after_final_error() {
 #[tokio::test]
 async fn unsupported_exchange_cannot_read_same_named_local_table() {
     let mut r = request();
-    r["tables"][0]["columns"][1]["data_type"] = json!("struct:{\"nested\":\"int64\"}");
+    // Structs are now transferable; duration still has no exchange codec.
+    r["tables"][0]["columns"][1]["data_type"] = json!("duration");
     r["query"] = json!("MATCH (a:Person) RETURN a.age");
     assert!(
         plan(r)

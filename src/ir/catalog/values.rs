@@ -48,6 +48,9 @@ pub(crate) fn array_value(array: &dyn Array, row: usize, field: Option<&Field>) 
     if row >= array.len() || array.is_null(row) {
         return Value::Null;
     }
+    if crate::ir::functions::domain::descriptor(array.data_type()).is_some() {
+        return datafusion::common::ScalarValue::try_from_array(array, row).map(Value::Scalar).unwrap_or(Value::Null);
+    }
     match array.data_type() {
         DataType::Int64 => Value::Int(
             array

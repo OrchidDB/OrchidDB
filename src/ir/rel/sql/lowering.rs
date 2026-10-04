@@ -144,6 +144,16 @@ pub fn builtin_lower_relation(
         return Ok(None);
     };
     if let Some(function) = extension.node.as_any().downcast_ref::<TableFunction>() {
+        if let Some(lowered) = super::json_rows::lower(function, ctx)? {
+            return Ok(Some(lowered));
+        }
+        if function.native_list.is_some() {
+            return function
+                .native_plan()
+                .map(RelationLowering::Rewrite)
+                .map(Some)
+                .map_err(SqlError::from);
+        }
         return lower_table_function(function, ctx).map(Some);
     }
     super::search::lower_relation(plan, ctx)
@@ -200,7 +210,15 @@ fn lower_table_function_inner(
         .map(|part| dialect.quote_ident(part))
         .collect::<Vec<_>>()
         .join(".");
-    let call = format!("{name}({})", arguments.join(", "));
+    let call = format!(
+        "{name}({}){}",
+        arguments.join(", "),
+        if function.ordinality.is_some() {
+            " WITH ORDINALITY"
+        } else {
+            ""
+        }
+    );
     let result_alias = format!(
         "__relation_result({})",
         function
@@ -208,6 +226,12 @@ fn lower_table_function_inner(
             .fields()
             .iter()
             .map(|f| dialect.quote_ident(f.name()))
+            .chain(
+                function
+                    .ordinality
+                    .iter()
+                    .map(|name| dialect.quote_ident(name))
+            )
             .collect::<Vec<_>>()
             .join(", ")
     );
@@ -216,41 +240,54 @@ fn lower_table_function_inner(
         .fields()
         .iter()
         .map(|field| format!("__relation_result.{}", dialect.quote_ident(field.name())))
+        .chain(
+            function
+                .ordinality
+                .iter()
+                .map(|name| format!("__relation_result.{}", dialect.quote_ident(name))),
+        )
         .collect::<Vec<_>>();
     let mut columns = Vec::new();
-    let from = if let Some(source) = &function.source {
-        columns.extend(
-            source
-                .schema()
-                .fields()
-                .iter()
-                .map(|field| format!("__relation_source.{}", dialect.quote_ident(field.name()))),
-        );
-        let source_sql = if bound {
+    let from =
+        if let Some(source) = &function.source {
+            columns.extend(
+                source.schema().fields().iter().map(|field| {
+                    format!("__relation_source.{}", dialect.quote_ident(field.name()))
+                }),
+            );
+            let source_sql = if bound {
+                format!(
+                    "SELECT {}",
+                    source
+                        .schema()
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, field)| format!(
+                            "${} AS {}",
+                            i + 1,
+                            dialect.quote_ident(field.name())
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                super::recursive::unparse_plan(source.as_ref().clone(), dialect)?
+            };
+            // Bound operations substitute all column references below, making the
+            // function arguments literals before the engine prepares this SQL.
             format!(
-                "SELECT {}",
-                source
-                    .schema()
-                    .fields()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, field)| format!(
-                        "${} AS {}",
-                        i + 1,
-                        dialect.quote_ident(field.name())
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "({source_sql}) AS __relation_source {} JOIN LATERAL {call} AS {result_alias}{}",
+                if function.outer { "LEFT" } else { "CROSS" },
+                if function.outer { " ON TRUE" } else { "" }
+            )
+        } else if function.outer {
+            format!(
+                "(SELECT 1) AS __relation_source LEFT JOIN LATERAL {call} AS {result_alias} ON TRUE"
             )
         } else {
-            super::recursive::unparse_plan(source.as_ref().clone(), dialect)?
+            format!("{call} AS {result_alias}")
         };
-        // Bound operations substitute all column references below, making the
-        // function arguments literals before the engine prepares this SQL.
-        format!("({source_sql}) AS __relation_source CROSS JOIN LATERAL {call} AS {result_alias}")
-    } else {
-        format!("{call} AS {result_alias}")
-    };
     columns.extend(output);
     let mut statement = parse_statement(
         &format!("SELECT {} FROM {from}", columns.join(", ")),

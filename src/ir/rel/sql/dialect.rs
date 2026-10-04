@@ -58,6 +58,26 @@ pub trait DialectAdapter: std::any::Any + std::fmt::Debug + Send + Sync {
         }
         Ok(())
     }
+    /// Lower a complete call, retaining aggregate ordering, filters, windows,
+    /// and DISTINCT. Scalar-only implementations can use lower_scalar_function.
+    fn lower_function(&self, _function: &ast::Function) -> SqlResult<Option<ast::Expr>> {
+        Ok(None)
+    }
+    /// Whether code lowering can handle this UDF identity. Argument-specific
+    /// support is still checked before placing an island.
+    fn supports_scalar_function(&self, _name: &str) -> bool {
+        false
+    }
+    /// Lower a bound scalar function as an expression or scalar subquery.
+    /// The identity is the native UDF name; no backend spelling is inferred.
+    /// Returning None leaves ordinary adaptation in place.
+    fn lower_scalar_function(
+        &self,
+        _name: &str,
+        _arguments: &[ast::Expr],
+    ) -> SqlResult<Option<ast::Expr>> {
+        Ok(None)
+    }
     fn rewrite_query(&self, _query: &mut ast::Query) -> SqlResult<()> {
         Ok(())
     }
@@ -126,6 +146,28 @@ impl SqlDialect {
         }
     }
 
+    pub fn supports_scalar_function(self, name: &str) -> bool {
+        match self {
+            Self::Custom(adapter) => adapter.supports_scalar_function(name),
+            Self::DuckDb | Self::Postgres => name.starts_with("__orchiddb_json_"),
+        }
+    }
+    pub fn lower_function(self, function: &ast::Function) -> SqlResult<Option<ast::Expr>> {
+        match self {
+            Self::Custom(adapter) => adapter.lower_function(function),
+            _ => super::json::lower_function(function, self),
+        }
+    }
+    pub fn lower_scalar_function(
+        self,
+        name: &str,
+        arguments: &[ast::Expr],
+    ) -> SqlResult<Option<ast::Expr>> {
+        match self {
+            Self::Custom(adapter) => adapter.lower_scalar_function(name, arguments),
+            Self::DuckDb | Self::Postgres => super::json::lower(name, arguments, self),
+        }
+    }
     pub fn lower_relation(
         self,
         plan: &LogicalPlan,

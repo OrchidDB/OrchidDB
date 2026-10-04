@@ -27,7 +27,7 @@ A compact reference for the terms used throughout OrchidDB's documentation.
 | Ontology mapping | The association of RDF vocabulary with graph labels, properties, and relationships. |
 | RDF mapping | A rule exposing subject, predicate, object, and optional graph terms over source columns. |
 | Logical source | A named relation backed by equivalent physical layouts selected using partition metadata. |
-| Collection source | A named, read-only relation expanding one native list column. |
+| Collection source | A named, read-only relation expanding a typed list expression, including JSON row functions. |
 | Quad source | A relational representation of RDF subject, predicate, object, and graph. |
 
 ## Execution terms

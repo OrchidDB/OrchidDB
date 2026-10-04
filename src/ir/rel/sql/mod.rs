@@ -20,6 +20,9 @@
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 mod logical_functions;
+pub(crate) mod json;
+mod json_transform;
+mod json_rows;
 mod dialect;
 pub use dialect::{DialectAdapter, EngineAdapter};
 pub mod search;
@@ -44,8 +47,15 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
                 };
                 let mut values = Vec::new();
                 for i in 0..items.len() {
-                    let cell = exchange_literal(ScalarValue::try_from_array(items.as_ref(), i)?, items.data_type().clone(), dialect)?;
-                    values.push(if dialect == SqlDialect::Postgres && postgres_lists::nested(&ty) { format!("to_jsonb({cell})") } else { cell });
+                    let value = ScalarValue::try_from_array(items.as_ref(), i)?;
+                    values.push(if dialect == SqlDialect::Postgres && postgres_lists::nested(&ty) {
+                        // A child list is transported as JSONB, with nominal
+                        // JSON cells encoded as text to preserve SQL nulls.
+                        let encoded = crate::federation::scalar_json(&value)?.to_string();
+                        format!("CAST({} AS JSONB)", literals::string_literal(dialect, &encoded)?)
+                    } else {
+                        exchange_literal(value, items.data_type().clone(), dialect)?
+                    });
                 }
                 format!("{}[{}]", if dialect == SqlDialect::Postgres {"ARRAY"} else {""}, values.join(", "))
             }
@@ -208,6 +218,9 @@ impl SqlDialect {
 
     fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
         if let Self::Custom(adapter) = self { return adapter.sql_type(data_type); }
+        if crate::ir::functions::domain::is_json(data_type) {
+            return Ok(if self == Self::Postgres { "JSONB" } else { "JSON" }.into());
+        }
         // List-valued properties are ordinary graph data (a `tags` array on a
         // node), so they have to survive the round trip through the engine.
         if let DataType::List(inner)
@@ -433,6 +446,8 @@ pub enum SqlValue {
     ExactNumber(String),
     Float(f64),
     Text(String),
+    /// A nominal value whose logical identity must survive driver transport.
+    Domain(ScalarValue),
     List(Vec<SqlValue>),
 }
 
@@ -447,6 +462,9 @@ pub(super) fn sql_value_from_array(array: &dyn Array, index: usize) -> SqlResult
 
 #[cfg(feature = "duckdb")]
 fn scalar_to_sql_value(scalar: &ScalarValue) -> SqlResult<SqlValue> {
+    if crate::ir::functions::domain::descriptor(&scalar.data_type()).is_some() {
+        return Ok(if scalar.is_null() { SqlValue::Null } else { SqlValue::Domain(scalar.clone()) });
+    }
     fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> SqlValue) -> SqlValue {
         value.as_ref().map_or(SqlValue::Null, render)
     }

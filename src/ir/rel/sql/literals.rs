@@ -4,6 +4,9 @@ use super::*;
 
 pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
     if let SqlDialect::Custom(adapter) = dialect { return adapter.exchange_literal(value, &value.data_type()); }
+    if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
+        return super::exchange_literal(value.clone(), value.data_type(), dialect);
+    }
     fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> String) -> String {
         match value {
             Some(inner) => render(inner),

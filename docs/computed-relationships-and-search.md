@@ -444,8 +444,8 @@ The JSON execution protocol now emits `Transfer.operation` and accepts
 `op: "bind_operation"`. The former `search` descriptor and `bind_search` command
 remain accepted on input. These names also apply to non-search operations.
 Typed expressions, row-producing operations, and codec hooks are extension
-points for future JSON lowering; this change does not implement full JSON
-relational semantics.
+points also used by the [JSON function library](json.md), its SQL transformations,
+and document collection relationships.
 
 ## Verification and limits
 

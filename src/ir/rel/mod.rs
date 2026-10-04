@@ -322,7 +322,7 @@ async fn execute_lowered_inner(lowered: LoweredPlan) -> RelResult<ReturnedBatche
         .set_usize("datafusion.optimizer.max_passes", 1)
         .set_bool("datafusion.optimizer.enable_dynamic_filter_pushdown", false);
     let ctx = optimizer::session(config);
-    let (plan, _) = constraints::optimize(search::native(lowered.plan)?)?;
+    let (plan, _) = constraints::optimize(dependent::native(search::native(lowered.plan)?)?)?;
     let plan = statistics::optimize(representation::select(plan)?.plan)?.0;
     let df = ctx.execute_logical_plan(plan).await?;
     let batches = df.collect().await?;

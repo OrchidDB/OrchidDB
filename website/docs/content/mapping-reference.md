@@ -35,6 +35,16 @@ EdgeMapping::table(
 )
 ```
 
+## JSON documents and collections
+
+Register document columns with compiler type `json` or the Rust Arrow datatype
+`ir::functions::domain::json_type()`. JSON strings remain distinct from ordinary
+text. Collection descriptors can use `expand` expressions such as
+`json.elements(profile, '$.friends')`, field expressions, optional `outer`
+expansion, and `ordinality`. The resulting relation can supply ordinary nodes or
+relationships. See [JSON documents and relationships](json.md) for a complete
+mapping, typed extraction, and containment relationships.
+
 ## Computed relationships and search
 
 Define a relationship from source and target labels, scalar property expressions,
@@ -281,7 +291,7 @@ A complete runnable example is `examples/composite_keys.rs`:
 
 ## Collection columns as logical tables
 
-A collection source expands one native list column into a named, read-only relation. It is an inline logical plan, so no database view needs to be created. Node, edge, RDF, and query-backed mappings can reference its name.
+A collection source expands a native list column or a typed list-valued expression into a named, read-only relation. It is an inline logical plan, so no database view needs to be created. Node, edge, RDF, and query-backed mappings can reference its name.
 
 ### Mapping example
 
@@ -331,13 +341,13 @@ Run `cargo run --example collection_table_plans` for a complete mapping and the 
 
 ### Semantics and limits
 
-- Null and empty lists produce zero rows. Null list elements produce a row with null element values. Graph identities with null components are excluded by the existing graph mapping rules.
+- By default, null and empty lists produce zero rows. `outer: true` retains the parent with null child columns. Null list elements produce a row with null element values. Graph identities with null components are excluded by the existing graph mapping rules.
 - Parent columns repeat for each element. Duplicates remain relational duplicates; RDF applies its usual triple-set semantics. Result order is unspecified without ORDER BY.
-- Explicit child keys are required for graph identity. Use a stable element key, often combined with the parent key. A parent key alone is not a child identity. Repeated values that duplicate a declared graph key are rejected when whole elements are materialized; they require a distinct child key even though relational projections retain duplicate rows. List positions are not synthesized as identities.
-- One collection is expanded per definition. No zipped arrays, implicit Cartesian expansion, nested collection sources, native maps, JSON/text coercion, or outer expansion. Parent columns and exposed struct fields must be scalar. Registered logical views cannot be collection parents; a caller-owned database view may be registered as a physical schema.
+- Explicit child keys are required for graph identity. Use a stable element key, often combined with the parent key. A parent key alone is not a child identity. Repeated values that duplicate a declared graph key are rejected when whole elements are materialized; they require a distinct child key even though relational projections retain duplicate rows. An explicit `ordinality` column can distinguish occurrences within a parent; positions change when the collection is reordered.
+- One collection is expanded per definition. Use `expand` instead of `column` for a typed expression such as `json.elements(profile, '$.friends')`; `fields` then contains scalar expressions using the `as` row alias. Parent and child fields may retain nested values. Collection sources can reference other derived sources, with cycles rejected. No implicit text-to-JSON coercion or zipped-array expansion occurs.
 - Define physical layout alternatives on the parent tables. Parent-table uniqueness and row counts are not child-table facts. Collection-level supplied constraints are not consumed by the optimizer in this version; parent constraints remain within the input plan.
 - Writes through collection-backed node/edge mappings are rejected. Update the containing physical row through its owner instead.
-- DataFusion and DuckDB execution are tested. Other dialects depend on existing UNNEST support; no additional portability claim is made. Runtime DuckDB metadata lookups use the parent's unfiltered layout choice; query planning can choose using pushed parent filters.
+- Native lists use the engine's UNNEST support; JSON row functions have PostgreSQL and DuckDB transformations. Unsupported SQL operations fail explicitly. Runtime DuckDB metadata lookups use the parent's unfiltered layout choice; query planning can choose using pushed parent filters.
 - Layout byte/file estimates describe the parent scan, not the expanded row count. There is no new estimate for collection length or element selectivity.
 
 ## Physical layout alternatives

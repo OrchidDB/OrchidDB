@@ -87,6 +87,13 @@ fn bind(
 }
 
 pub fn native_scalar(name: &str, args: Vec<Expr>, schema: &DFSchema) -> Result<Expr> {
+    if name == "json.literal" {
+        let [Expr::Literal(datafusion::common::ScalarValue::Utf8(Some(text)), _)] = args.as_slice() else {
+            return Err(DataFusionError::Plan("JSON literal requires constant text".into()));
+        };
+        return Ok(datafusion::logical_expr::lit(super::domain::json_scalar(text)?));
+    }
+    if let Some(function) = super::json::function(name) { return Ok(function.call(args)); }
     if let Some(function) = super::search::function(name) { return Ok(function.call(args)); }
     let catalog = super::selected_operator_table()?;
     let args = catalog.prepare_args(name, FunctionKind::Scalar, args, schema)?;
@@ -106,6 +113,10 @@ pub fn native_aggregate(
     schema: &DFSchema,
     distinct: bool,
 ) -> Result<Expr> {
+    if let Some(function) = super::json::aggregate(name) {
+        let call = function.call(args);
+        return if distinct { call.distinct().build() } else { Ok(call) };
+    }
     let catalog = super::selected_operator_table()?;
     let args = catalog.prepare_args(name, FunctionKind::Aggregate, args, schema)?;
     let function = AggregateUDF::new_from_impl(bind(

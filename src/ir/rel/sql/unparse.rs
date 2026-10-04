@@ -85,6 +85,12 @@ pub(super) fn encode_expression_literals(
 ) -> Result<Transformed<Expr>, DataFusionError> {
     expr.transform_up(|inner| {
         if let Expr::Literal(value, _) = &inner {
+            if crate::ir::functions::domain::descriptor(&value.data_type()).is_some() {
+                let storage = crate::ir::functions::domain::storage(value)?;
+                return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
+                    lit(storage), value.data_type(), dialect.name(),
+                )?));
+            }
             if dialect == SqlDialect::Postgres && value.is_null() && value.data_type() != DataType::Null {
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(ScalarValue::Null), value.data_type(), dialect.name(),

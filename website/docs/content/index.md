@@ -22,6 +22,7 @@ orchiddb --version
 | --- | --- |
 | Run your first graph query | [Quickstart](quickstart.md) |
 | Query tables you already own | [Map existing tables](mapped-graphs.md) |
+| Query documents and turn JSON arrays into edges | [JSON documents](json.md) |
 | Combine vector or full-text search with graph traversal | [Search](search.md) |
 | Create and persist a graph | [Managed graphs](managed-graphs.md) |
 | Query with an RDF vocabulary | [SPARQL](sparql.md) |

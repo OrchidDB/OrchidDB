@@ -27,6 +27,15 @@ pub(super) fn build_column(field: &Field, rows: &[Vec<SqlValue>], index: usize) 
             field.data_type()
         ))
     };
+    if crate::ir::functions::domain::descriptor(field.data_type()).is_some() {
+        let scalars = rows.iter().map(|row| match &row[index] {
+            SqlValue::Null => ScalarValue::try_from(field.data_type()).map_err(SqlError::from),
+            SqlValue::Domain(value) if value.data_type() == *field.data_type() => Ok(value.clone()),
+            SqlValue::Text(text) if crate::ir::functions::domain::is_json(field.data_type()) => crate::ir::functions::domain::json_scalar(text).map_err(SqlError::from),
+            other => Err(mismatch(other)),
+        }).collect::<SqlResult<Vec<_>>>()?;
+        return if scalars.is_empty() { Ok(arrow::array::new_empty_array(field.data_type())) } else { ScalarValue::iter_to_array(scalars).map_err(SqlError::from) };
+    }
     Ok(match field.data_type() {
         DataType::Null => new_null_array(&DataType::Null, rows.len()),
         DataType::Boolean => {

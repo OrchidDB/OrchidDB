@@ -75,7 +75,9 @@ fn convert_cell(row: &postgres::Row, index: usize, ty: &Type) -> SqlResult<SqlVa
         row.try_get(index)
             .map_err(|err| SqlError::Conversion(format!("postgres cell {index}: {err}")))
     }
-    let value = if *ty == Type::BOOL {
+    let value = if *ty == Type::JSON || *ty == Type::JSONB {
+        get::<JsonCell>(row, index)?.map(|value| SqlValue::Domain(value.0))
+    } else if *ty == Type::BOOL {
         get::<bool>(row, index)?.map(SqlValue::Bool)
     } else if *ty == Type::INT2 {
         get::<i16>(row, index)?.map(|v| SqlValue::Int(i64::from(v)))
@@ -96,4 +98,17 @@ fn convert_cell(row: &postgres::Row, index: usize, ty: &Type) -> SqlResult<SqlVa
         )));
     };
     Ok(value.unwrap_or(SqlValue::Null))
+}
+
+#[derive(Debug)]
+struct JsonCell(datafusion::common::ScalarValue);
+impl<'a> postgres::types::FromSql<'a> for JsonCell {
+    fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        let data = if *ty == Type::JSONB {
+            if raw.first() != Some(&1) { return Err("unsupported PostgreSQL JSONB version".into()); }
+            &raw[1..]
+        } else { raw };
+        Ok(Self(crate::ir::functions::domain::json_scalar(std::str::from_utf8(data)?)?))
+    }
+    fn accepts(ty: &Type) -> bool { *ty == Type::JSON || *ty == Type::JSONB }
 }

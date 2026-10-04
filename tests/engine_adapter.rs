@@ -58,6 +58,31 @@ impl DialectAdapter for Warehouse {
         };
         Ok(format!("CAST({literal} AS {})", self.sql_type(ty)?))
     }
+    fn supports_scalar_function(&self, name: &str) -> bool {
+        name == "__orchiddb_json_valid"
+    }
+    fn lower_scalar_function(
+        &self,
+        name: &str,
+        args: &[ast::Expr],
+    ) -> SqlResult<Option<ast::Expr>> {
+        if name != "__orchiddb_json_valid" {
+            return Ok(None);
+        }
+        let mut parser = datafusion::sql::sqlparser::parser::Parser::new(&GenericDialect {})
+            .try_with_sql("warehouse_json_valid(value)")
+            .unwrap();
+        let ast::Expr::Function(mut function) = parser.parse_expr().unwrap() else {
+            unreachable!()
+        };
+        let ast::FunctionArguments::List(arguments) = &mut function.args else {
+            unreachable!()
+        };
+        arguments.args = vec![ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(
+            args[0].clone(),
+        ))];
+        Ok(Some(ast::Expr::Function(function)))
+    }
     fn function_mapping(
         &self,
         name: &str,
@@ -187,7 +212,7 @@ impl DialectAdapter for Warehouse {
     fn rewrite_expression(&self, expression: &mut ast::Expr) -> SqlResult<()> {
         if let ast::Expr::Function(function) = expression {
             match function.name.to_string().as_str() {
-                "row_number" => {}
+                "row_number" | "warehouse_json_valid" => {}
                 "lower" => {
                     function.name = ast::ObjectName::from(vec![ast::Ident::new("warehouse_lower")])
                 }
@@ -210,6 +235,19 @@ async fn registered_engine_compiles_graph_query_and_runs_its_ast_rewrite() {
     let sql = sql["sql"].as_str().unwrap();
     assert!(sql.contains("warehouse_lower"), "{sql}");
     assert!(sql.contains("people") && sql.contains("LIMIT 5"), "{sql}");
+}
+#[tokio::test]
+async fn third_engine_lowers_portable_json_through_general_function_hook() {
+    SqlDialect::register(&WAREHOUSE).unwrap();
+    let output: Value = serde_json::from_str(
+        &compile_json(&request("MATCH (p:Person) RETURN json.valid(p.name) AS valid").to_string())
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let sql = output["sql"].as_str().unwrap();
+    assert!(sql.contains("warehouse_json_valid"), "{sql}");
+    assert!(!sql.contains("__orchiddb_json_"), "{sql}");
 }
 #[tokio::test]
 async fn unknown_functions_do_not_inherit_duckdb_implementations() {

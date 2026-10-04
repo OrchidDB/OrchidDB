@@ -419,6 +419,8 @@ pub(crate) fn route(
 
 pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, String> {
     use arrow::datatypes::DataType::*;
+    if crate::ir::functions::domain::is_json(ty) { return Ok("json".into()); }
+    if let Some((name, storage)) = crate::ir::functions::domain::descriptor(ty) { return Ok(format!("domain:{name}:{}", type_name(storage)?)); }
     Ok(match ty {
         Null => "null".into(),
         Boolean => "boolean".into(),
@@ -441,6 +443,7 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         List(f) | LargeList(f) | FixedSizeList(f, _) => {
             format!("list:{}", type_name(f.data_type())?)
         }
+        Struct(fields) => format!("struct_fields:{}", serde_json::to_string(&fields.iter().map(|f| Ok((f.name().clone(), type_name(f.data_type())?))).collect::<Result<Vec<_>, String>>()?).map_err(|e| e.to_string())?),
         _ => return Err(format!("unsupported exchange type {ty}")),
     })
 }
@@ -644,6 +647,15 @@ pub(crate) fn json_scalar(
     if value.is_null() {
         return ScalarValue::try_from(ty).map_err(|e| e.to_string());
     }
+    if crate::ir::functions::domain::is_json(ty) {
+        let text = value.as_str().ok_or("JSON exchange cells must contain serialized JSON text (SQL null uses a null cell)")?;
+        return crate::ir::functions::domain::json_scalar(text).map_err(|e| e.to_string());
+    }
+    if let DataType::Struct(fields) = ty {
+        let object = value.as_object().ok_or("expected struct exchange object")?;
+        let columns = fields.iter().map(|f| json_scalar(object.get(f.name()).unwrap_or(&serde_json::Value::Null), f.data_type())?.to_array_of_size(1).map_err(|e| e.to_string())).collect::<Result<Vec<_>, String>>()?;
+        return Ok(ScalarValue::Struct(Arc::new(arrow::array::StructArray::try_new(fields.clone(), columns, None).map_err(|e| e.to_string())?)));
+    }
     if let DataType::List(field) | DataType::LargeList(field) = ty {
         if let Some(text) = value.as_str() {
             return json_scalar(
@@ -810,7 +822,11 @@ pub(crate) fn scalar_json(
     if value.is_null() {
         return Ok(serde_json::Value::Null);
     }
+    if crate::ir::functions::domain::is_json(&value.data_type()) {
+        return Ok(crate::ir::functions::domain::json_text(value)?.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+    }
     Ok(match value {
+        ScalarValue::Struct(a) => serde_json::Value::Object(a.fields().iter().zip(a.columns()).map(|(f, a)| Ok((f.name().clone(), scalar_json(&ScalarValue::try_from_array(a, 0)?)?))).collect::<datafusion::common::Result<_>>()?),
         ScalarValue::List(a) => {
             let values = a.value(0);
             serde_json::Value::Array(
@@ -850,6 +866,10 @@ fn exchange_scalar(
     }
     if value.data_type() == *ty {
         return Ok(value);
+    }
+    if crate::ir::functions::domain::descriptor(ty).is_some() {
+        let array = crate::ir::functions::domain::restore(&value.to_array_of_size(1).map_err(|e| e.to_string())?, ty).map_err(|e| e.to_string())?;
+        return ScalarValue::try_from_array(&array, 0).map_err(|e| e.to_string());
     }
     if let arrow::datatypes::DataType::List(field) = ty {
         if let ScalarValue::Utf8(Some(text))
@@ -894,6 +914,49 @@ mod audit_regressions {
     use datafusion::common::ScalarValue;
     use serde_json::json;
     use std::sync::Arc;
+    #[test]
+    fn domain_and_nested_json_exchange_preserve_types_and_nulls() {
+        use crate::ir::functions::domain;
+        let document = domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap();
+        let json_null = domain::json_scalar("null").unwrap();
+        let sql_null = ScalarValue::try_from(&domain::json_type()).unwrap();
+        let list = ScalarValue::List(ScalarValue::new_list(
+            &[document.clone(), json_null, sql_null], &domain::json_type(), true,
+        ));
+        // Preserve declared field order, including nested domains, rather than
+        // reconstructing the schema from JSON object key ordering.
+        let fields = vec![
+            Field::new("z_document", domain::json_type(), true),
+            Field::new("a_items", list.data_type(), true),
+        ].into();
+        let record = ScalarValue::Struct(Arc::new(arrow::array::StructArray::try_new(
+            fields, vec![document.to_array_of_size(1).unwrap(), list.to_array_of_size(1).unwrap()], None,
+        ).unwrap()));
+        let geometry = domain::scalar("geometry", ScalarValue::Binary(Some(vec![0, 255, 128]))).unwrap();
+        for value in [record, geometry] {
+            let ty = value.data_type();
+            assert_eq!(crate::compiler::data_type(&super::type_name(&ty).unwrap()).unwrap(), ty);
+            let encoded = super::scalar_json(&value).unwrap();
+            assert_eq!(json_scalar(&encoded, &ty).unwrap(), value);
+        }
+    }
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_nested_json_exchange_round_trips_document_and_sql_null() {
+        use crate::ir::{functions::domain, rel::sql::{self, region::{PostgresRegionSession, RegionSession}}};
+        let Ok(url) = std::env::var("GRAPH_PG_URL") else { return; };
+        let inner = ScalarValue::List(ScalarValue::new_list(&[
+            domain::json_scalar("null").unwrap(),
+            ScalarValue::try_from(&domain::json_type()).unwrap(),
+            domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap(),
+        ], &domain::json_type(), true));
+        let outer = ScalarValue::List(ScalarValue::new_list(&[inner.clone(), ScalarValue::try_from(&inner.data_type()).unwrap()], &inner.data_type(), true));
+        let literal = sql::exchange_literal(outer.clone(), outer.data_type(), sql::SqlDialect::Postgres).unwrap();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("value", outer.data_type(), true)]));
+        let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+        let output = PostgresRegionSession::new(client).query(&format!("SELECT {literal} AS value"), schema).unwrap();
+        assert_eq!(ScalarValue::try_from_array(output.column(0), 0).unwrap(), outer);
+    }
     #[test]
     fn audit_large_binary_decodes_bytes() {
         for (input, expected) in [

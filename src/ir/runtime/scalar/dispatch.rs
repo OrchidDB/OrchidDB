@@ -34,6 +34,9 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
+    if name.eq_ignore_ascii_case("json.literal") || crate::ir::functions::json::function(name).is_some() {
+        return crate::ir::functions::json::runtime_call(name, &args).map_err(|e| RuntimeError::Runtime(e.to_string()));
+    }
     let resolved = super::preparation::call(name);
     if !resolved.known {
         if let Some(result)=graph.source.as_ref().and_then(|source|source.function(name,&args)) {

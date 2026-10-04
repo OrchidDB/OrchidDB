@@ -249,7 +249,8 @@ impl SqlEligibility {
                         }
                         return Ok(TreeNodeRecursion::Continue);
                     }
-                    let native = super::sparql::is_duck_function(&function.func)
+                    let native = self.dialect.unwrap_or(sql::SqlDialect::DuckDb).supports_scalar_function(function.func.name())
+                        || super::sparql::is_duck_function(&function.func)
                         || function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
                         || function.func.name() == crate::ir::functions::ENGINE_CAST_FUNCTION;
                     if !native && (function.func.signature().volatility == datafusion::logical_expr::Volatility::Volatile
@@ -590,7 +591,7 @@ pub(crate) async fn prepare_with_extensions(
             stats.datafusion_operators += 1;
             Ok(TreeNodeRecursion::Continue)
         });
-        super::search::native(optimized.clone())?
+        super::dependent::native(super::search::native(optimized.clone())?)?
     };
 
     #[cfg(feature = "duckdb")]
@@ -678,6 +679,10 @@ pub(crate) fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::d
     use arrow::array::{Array, make_array, new_null_array};
     use arrow::datatypes::DataType;
     if array.data_type() == target { return Ok(array.clone()); }
+    if crate::ir::functions::domain::descriptor(target).is_some() {
+        return crate::ir::functions::domain::restore(array, target)
+            .map_err(|e| arrow::error::ArrowError::CastError(e.to_string()));
+    }
     if target == &DataType::Null && array.null_count() == array.len() {
         return Ok(new_null_array(target, array.len()));
     }

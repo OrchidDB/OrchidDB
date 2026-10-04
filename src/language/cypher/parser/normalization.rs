@@ -1,5 +1,6 @@
 //! Syntax extension normalization before the generated Cypher parser runs.
 
+mod json;
 mod operators;
 use operators::{
     normalize_bitwise_operators, normalize_not_string_predicates, normalize_postfix_factorial,
@@ -12,7 +13,8 @@ use lists::{normalize_colon_slices, normalize_lambda_list_functions};
 
 pub(super) fn normalize_cypher_extensions(input: &str) -> String {
     let (protected, identifiers) = protect_escaped_identifiers(input);
-    let normalized = normalize_count_subqueries(&protected);
+    let normalized = json::normalize_json(&protected);
+    let normalized = normalize_count_subqueries(&normalized);
     let normalized = normalize_named_function_args(&normalized);
     let normalized = normalize_keyword_function_names(&normalized);
     let normalized = normalize_not_string_predicates(&normalized);

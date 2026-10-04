@@ -90,14 +90,16 @@ its engine. SPARQL's optional `ontology` maps classes, properties and directed
 relationships; see the public request structs for the complete contract.
 
 Supported schema types are boolean, int8/int16/int32/int64,
-uint8/uint16/uint32/uint64, float32/float64, string, binary, date, time and
+uint8/uint16/uint32/uint64, float32/float64, string, binary, json, date, time and
 duration (microseconds), interval (month/day/nanosecond),
 timestamp (microseconds, no timezone), and
 `decimal:precision:scale` with precision up to 38. Native list and struct schema
 declarations use `list:<element-type>` and `struct:<JSON field-to-type object>`,
 for example `list:string` or `list:struct:{"sku":"string","quantity":"int64"}`.
-These type strings recurse; collection mappings expose one list level and scalar
-struct fields. Unsupported source types
+These type strings recurse. The `json` type describes a document column, stored
+as PostgreSQL JSONB or DuckDB JSON; see [JSON documents and relationships](json.md)
+for functions and collection mappings. Collection sources can compose to expand
+nested lists or documents. Unsupported source types
 require a caller-owned cast/view. Unsupported SQL dialects fail explicitly;
 DuckDB and PostgreSQL rendering are currently implemented.
 

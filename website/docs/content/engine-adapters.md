@@ -136,10 +136,11 @@ index-usable SQL AST or a dependent operation. Reject unsupported metrics,
 filters, or retrieval requirements explicitly. PostgreSQL's rule uses distance
 ordering; DuckDB's Lance rule emits bound search calls.
 
-The same interfaces support future JSON work: typed scalar expressions can use
-AST rewrites; row expansion can use relational nodes; engine-specific nested
-value representations use codecs. Full JSON lowering is a separate feature and
-is not implemented by this adapter change.
+[JSON functions and relationships](json.md) use these same interfaces: typed
+scalar expressions use AST rewrites, collection expansion uses relational nodes,
+and nested document values cross engine boundaries through domain codecs.
+A future domain such as geometry can provide its own native functions, SQL
+transformations, and value codecs without adding a separate execution backend.
 
 ## Execute dependent operations
 

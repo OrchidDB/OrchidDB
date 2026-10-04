@@ -248,6 +248,9 @@ fn decode_value(array: &dyn Array, row: usize, field: Option<&Field>) -> Option<
     if row >= array.len() || array.is_null(row) {
         return Some(Value::Null);
     }
+    if crate::ir::functions::domain::descriptor(array.data_type()).is_some() {
+        return datafusion::common::ScalarValue::try_from_array(array, row).ok().map(Value::Scalar);
+    }
     match array.data_type() {
         DataType::Null => Some(Value::Null),
         DataType::Boolean | DataType::Int32 | DataType::Float64 | DataType::Utf8 => {

@@ -196,7 +196,8 @@ fn parse(text: &str) -> RelResult<ast::Expr> {
     let mut parser = Parser::new(&GenericDialect {})
         .try_with_sql(text)
         .map_err(|e| error(e.to_string()))?;
-    let expr = parser.parse_expr().map_err(|e| error(e.to_string()))?;
+    let mut expr = parser.parse_expr().map_err(|e| error(e.to_string()))?;
+    super::normalize_json_literals(&mut expr)?;
     if parser.peek_token().token != Token::EOF {
         return Err(error(
             "relationship expressions cannot contain statements or trailing SQL",

@@ -7,7 +7,9 @@
 
 mod call;
 pub mod logical;
+pub mod domain;
 pub mod search;
+pub mod json;
 mod mappings;
 pub use mappings::FunctionRegistry;
 #[cfg(feature = "duckdb")]
@@ -116,6 +118,7 @@ pub(crate) fn selected_operator_table() -> Result<std::sync::Arc<dyn OperatorTab
 }
 
 pub fn is_native_aggregate(name: &str) -> bool {
+    if json::aggregate(name).is_some() { return true; }
     if let Ok(catalog) = selected_operator_table() {
         return catalog
             .overloads(name)
@@ -130,7 +133,7 @@ pub fn is_native_aggregate(name: &str) -> bool {
 }
 
 pub(crate) fn is_registered_function(name: &str) -> bool {
-    search::function(name).is_some() || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
+    (name == "json.literal" || json::function(name).is_some() || search::function(name).is_some()) || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
 }
 
 pub(crate) fn is_volatile_function(name: &str) -> bool {

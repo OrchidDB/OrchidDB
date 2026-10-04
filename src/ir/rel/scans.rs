@@ -1106,6 +1106,9 @@ pub(super) fn value_to_scalar(
     data_type: &DataType,
     language: Language,
 ) -> RelResult<ScalarValue> {
+    if let Value::Scalar(scalar) = value {
+        if scalar.data_type() == *data_type { return Ok(scalar.clone()); }
+    }
     if crate::ir::temporal::contains_temporal(value) {
         return Err(RelError::Unsupported("Typed temporal properties require a residual kernel".into()));
     }
@@ -1115,6 +1118,13 @@ pub(super) fn value_to_scalar(
             value.type_name()
         ))
     };
+    if crate::ir::functions::domain::descriptor(data_type).is_some() {
+        return match value {
+            Value::Null => Ok(ScalarValue::try_from(data_type)?),
+            Value::Scalar(scalar) if scalar.data_type() == *data_type => Ok(scalar.clone()),
+            _ => Err(mismatch()),
+        };
+    }
     match data_type {
         DataType::Boolean => match value {
             Value::Null => Ok(ScalarValue::Boolean(None)),
@@ -1264,7 +1274,10 @@ pub(super) fn infer_element_property_type(
     for id in ids {
         values.push(element_property_value(graph, is_edge, element, id, name));
     }
+    // Struct-order/type markers are bookkeeping, not heterogeneous user
+    // properties. They must not prevent otherwise typed Gremlin SQL scans.
     if language == Language::Gremlin
+        && !matches!(name, crate::ir::value::STRUCT_ORDER_KEY | crate::ir::value::STRUCT_TYPES_KEY)
         && homogeneous_scalar_type(values.iter()).is_none()
         && values.iter().any(|value| !matches!(value, Value::Null))
     {
@@ -1282,6 +1295,7 @@ fn homogeneous_scalar_type<'a>(values: impl Iterator<Item = &'a Value>) -> Optio
     for value in values {
         let next = match value {
             Value::Null => continue,
+            Value::Scalar(value) => value.data_type(),
             Value::Bool(_) => DataType::Boolean,
             Value::Byte(_) => DataType::Int8,
             Value::Short(_) => DataType::Int16,

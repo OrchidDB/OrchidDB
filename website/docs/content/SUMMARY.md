@@ -11,6 +11,7 @@
 
 - [Map existing tables](mapped-graphs.md)
 - [Mapping reference](mapping-reference.md)
+- [JSON documents and relationships](json.md)
 - [Statistics](statistics.md)
 - [Views and SQL sources](views.md)
 - [Managed graphs](managed-graphs.md)

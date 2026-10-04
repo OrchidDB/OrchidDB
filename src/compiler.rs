@@ -291,6 +291,7 @@ pub struct CompiledSql {
 /// cast in a caller-owned view, never silently interpreted as strings.
 pub fn data_type(value: &str) -> Result<DataType, String> {
     Ok(match value {
+        "json" => crate::ir::functions::domain::json_type(),
         "null" => DataType::Null,
         "boolean" => DataType::Boolean,
         "int8" => DataType::Int8,
@@ -310,8 +311,22 @@ pub fn data_type(value: &str) -> Result<DataType, String> {
         "duration" => DataType::Duration(TimeUnit::Microsecond),
         "interval" => DataType::Interval(IntervalUnit::MonthDayNano),
         "timestamp" => DataType::Timestamp(TimeUnit::Microsecond, None),
+        _ if value.starts_with("domain:") => {
+            let (name, storage) = value[7..].split_once(':').ok_or("domain type requires name and storage type")?;
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') { return Err("invalid domain name".into()); }
+            if name == "json" { return Err("use the json schema type for JSON documents".into()); }
+            crate::ir::functions::domain::data_type(name, data_type(storage)?)
+        }
         _ if value.starts_with("list:") => {
             DataType::List(Arc::new(Field::new("item", data_type(&value[5..])?, true)))
+        }
+        _ if value.starts_with("struct_fields:") => {
+            let fields: Vec<(String, String)> = serde_json::from_str(&value[14..]).map_err(|e| format!("invalid ordered struct type: {e}"))?;
+            let mut names = std::collections::BTreeSet::new();
+            if fields.is_empty() || fields.iter().any(|(name, _)| name.is_empty() || !names.insert(name.clone())) {
+                return Err("struct requires distinct nonempty field names".into());
+            }
+            DataType::Struct(fields.into_iter().map(|(name, ty)| Ok(Arc::new(Field::new(name, data_type(&ty)?, true)))).collect::<Result<Vec<_>, String>>()?.into())
         }
         _ if value.starts_with("struct:") => {
             let fields: BTreeMap<String, String> = serde_json::from_str(&value[7..])

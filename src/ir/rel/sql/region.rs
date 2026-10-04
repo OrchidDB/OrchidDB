@@ -72,7 +72,13 @@ impl RegionSession for PostgresRegionSession {
     fn query(&mut self, sql: &str, schema: SchemaRef) -> SqlResult<RecordBatch> {
         // JSON preserves exact numbers and recursively typed arrays. Decode using
         // the planner's Arrow schema rather than inferring from the first row.
-        let query = format!("SELECT row_to_json(__orchiddb_result)::text FROM ({sql}) AS __orchiddb_result");
+        // Transport JSON as JSON text inside the row envelope so JSON null
+        // remains distinct from an SQL-null cell, recursively within lists.
+        let projection = schema.fields().iter().map(|field| {
+            let ident = format!("\"{}\"", field.name().replace('"', "\"\""));
+            format!("{} AS {ident}", json_transport_expression(&format!("__orchiddb_values.{ident}"), field.data_type(), 0))
+        }).collect::<Vec<_>>().join(", ");
+        let query = format!("SELECT row_to_json(__orchiddb_result)::text FROM (SELECT {projection} FROM ({sql}) AS __orchiddb_values) AS __orchiddb_result");
         let rows = self.client.as_mut().expect("live PostgreSQL session").query(&query, &[]).map_err(|e| SqlError::Execution(format!("postgres region: {e}: {}", e.as_db_error().map(|e| e.message()).unwrap_or(""))))?;
         let mut columns = vec![Vec::new(); schema.fields().len()];
         for row in &rows {
@@ -87,5 +93,33 @@ impl RegionSession for PostgresRegionSession {
             else { ScalarValue::iter_to_array(values).map_err(SqlError::from) }
         }).collect::<SqlResult<Vec<_>>>()?;
         Ok(RecordBatch::try_new_with_options(schema, arrays, &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows.len())))?)
+    }
+}
+
+/// Keep logical domain values lossless in PostgreSQL's row-to-JSON transport.
+#[cfg(feature = "postgres")]
+fn json_transport_expression(expression: &str, ty: &DataType, depth: usize) -> String {
+    if crate::ir::functions::domain::is_json(ty) {
+        return format!("CAST({expression} AS TEXT)");
+    }
+    fn contains_json(ty: &DataType) -> bool {
+        if crate::ir::functions::domain::is_json(ty) { return true; }
+        match ty {
+            DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) => contains_json(f.data_type()),
+            _ => false,
+        }
+    }
+    match ty {
+        // Nested lists use JSONB[] with the child-list exchange encoding,
+        // including serialized JSON-domain cells. They are not PostgreSQL
+        // multidimensional arrays and must not be unnested recursively.
+        DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _)
+            if matches!(f.data_type(), DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _)) => expression.into(),
+        DataType::List(f) | DataType::LargeList(f) | DataType::FixedSizeList(f, _) if contains_json(f.data_type()) => {
+            let alias = format!("__domain_item_{depth}");
+            let child = json_transport_expression(&format!("{alias}.value"), f.data_type(), depth + 1);
+            format!("CASE WHEN {expression} IS NULL THEN NULL ELSE ARRAY(SELECT {child} FROM unnest({expression}) WITH ORDINALITY AS {alias}(value, ordinal) ORDER BY {alias}.ordinal) END")
+        }
+        _ => expression.into(),
     }
 }

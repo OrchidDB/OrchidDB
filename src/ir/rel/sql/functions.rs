@@ -410,6 +410,28 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    if let Some(lowered) = dialect.lower_function(function)? {
+        *expr = lowered;
+        return Ok(());
+    }
+    if let ast::FunctionArguments::List(arguments) = &function.args {
+        let positional = arguments
+            .args
+            .iter()
+            .map(|argument| match argument {
+                ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(value)) => Some(value.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        if let Some(arguments) = positional {
+            if let Some(lowered) =
+                dialect.lower_scalar_function(name.trim_matches('"'), &arguments)?
+            {
+                *expr = lowered;
+                return Ok(());
+            }
+        }
+    }
     if name.trim_matches('"').starts_with("__orchiddb_logical_") {
         let implementation = super::logical_functions::mapping(&name)
             .ok_or_else(|| SqlError::Unsupported(format!("logical function {name} has no {} mapping", dialect.name())))?;
@@ -613,22 +635,27 @@ pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDi
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(" ");
-    let mut source = source.to_owned();
-    for local in 0..8 {
-        let mut suffix = 0;
-        let fresh = loop {
-            let name = format!("__graph_dialect_{local}_{suffix}");
-            if !rendered.contains(&name) {
-                break name;
-            }
-            suffix += 1;
-        };
-        source = source.replace(&format!("__local{local}"), &fresh);
-    }
     let parser_dialect = dialect.parser_dialect();
-    let mut parser = Parser::new(parser_dialect.as_ref())
-        .try_with_sql(&source)
-        .map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
+    let mut tokens = datafusion::sql::sqlparser::tokenizer::Tokenizer::new(parser_dialect.as_ref(), source)
+        .tokenize().map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
+    let mut locals = std::collections::BTreeMap::new();
+    for token in &mut tokens {
+        let datafusion::sql::sqlparser::tokenizer::Token::Word(word) = token else { continue; };
+        if word.quote_style.is_some() { continue; }
+        let Some(index) = word.value.strip_prefix("__local").and_then(|s| s.parse::<usize>().ok()) else { continue; };
+        // Rename only generated identifier tokens, never JSON keys, text
+        // literals, quoted user identifiers, or substrings of another name.
+        let fresh = locals.entry(index).or_insert_with(|| {
+            let mut suffix = 0;
+            loop {
+                let name = format!("__graph_dialect_{index}_{suffix}");
+                if !rendered.contains(&name) && !source.contains(&name) { break name; }
+                suffix += 1;
+            }
+        });
+        word.value = fresh.clone();
+    }
+    let mut parser = Parser::new(parser_dialect.as_ref()).with_tokens(tokens);
     let mut expression = parser
         .parse_expr()
         .map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
@@ -665,6 +692,8 @@ mod tests {
         assert_eq!(template("__arg0", &[column]).unwrap().to_string(), "((\"__arg1\"))");
         assert!(template("__arg1", &[]).is_err());
         assert!(template("__arg0; SELECT 1", &[ast::Expr::Identifier(ast::Ident::new("x"))]).is_err());
+        let sql = template("(SELECT '__local12' AS \"__local12\" FROM (SELECT __arg0 AS value) AS __local12)", &[ast::Expr::Identifier(ast::Ident::new("payload"))]).unwrap().to_string();
+        assert!(sql.contains("'__local12'") && sql.contains("\"__local12\"") && sql.contains("AS __graph_dialect_12_0"), "{sql}");
     }
 
     fn rewrite(sql: &str, dialect: SqlDialect) -> String {

@@ -670,7 +670,7 @@ impl GraphMapping {
         } else if let Some(source) = self.collection_sources.get(name) {
             let parent = self.source_plan(&MappedSource::Table(source.table.clone()))
                 .map_err(|e| DataFusionError::Plan(e.to_string()))?;
-            Arc::new(ViewTable::new(source.plan(parent).map_err(|e| DataFusionError::Plan(e.to_string()))?, None)) as Arc<dyn TableProvider>
+            Arc::new(ViewTable::new(source.plan(parent, self).map_err(|e| DataFusionError::Plan(e.to_string()))?, None)) as Arc<dyn TableProvider>
         } else if p.get_logical_plan().is_some() {
             if let Some(sql) = p.get_table_definition() {
                 Arc::new(ViewTable::new(
@@ -967,15 +967,9 @@ impl GraphMapping {
 
     fn bind_collection(&mut self, source: &super::collection_source::CollectionSource) -> RelResult<()> {
         self.check_source_cycle(&source.name, &BTreeSet::from([source.table.clone()]))?;
-        if self.collection_sources.contains_key(&source.table) {
-            return Err(RelError::Unsupported("nested collection sources are not supported".into()));
-        }
         let provider = self.tables.get(&source.table).ok_or_else(|| RelError::Unsupported(format!("unregistered collection parent `{}`", source.table)))?;
-        if provider.get_logical_plan().is_some() {
-            return Err(RelError::Unsupported("collection parents must be physical tables or logical layout sources".into()));
-        }
         source.validate(&provider.schema())?;
-        let plan = source.plan(self.source_plan(&MappedSource::Table(source.table.clone()))?)?;
+        let plan = source.plan(self.source_plan(&MappedSource::Table(source.table.clone()))?, self)?;
         self.view_dependencies.insert(source.name.clone(), BTreeSet::from([source.table.clone()]));
         self.tables.insert(source.name.clone(), Arc::new(ViewTable::new(plan, None)));
         Ok(())
@@ -1116,8 +1110,30 @@ impl GraphMapping {
         }
     }
 
-    /// Parse a SQL `SELECT` against the registered tables using
-    /// datafusion-sql.
+    /// Bind an immutable scalar expression against an explicit row schema.
+    pub(crate) fn bind_scalar(&self, text: &str, schema: &DFSchema) -> RelResult<Expr> {
+        use datafusion::sql::{sqlparser::{parser::Parser,dialect::GenericDialect,tokenizer::Token},planner::PlannerContext};
+        use datafusion::common::tree_node::{TreeNode,TreeNodeRecursion};
+        let mut parser=Parser::new(&GenericDialect {}).try_with_sql(text).map_err(|e|RelError::Unsupported(format!("mapping expression: {e}")))?;
+        let mut ast=parser.parse_expr().map_err(|e|RelError::Unsupported(format!("mapping expression: {e}")))?;
+        normalize_json_literals(&mut ast)?;
+        if parser.peek_token().token!=Token::EOF {return Err(RelError::Unsupported("mapping expressions cannot contain statements or trailing SQL".into()));}
+        let provider=MappingContextProvider::new(self);
+        let expression=SqlToRel::new(&provider).sql_to_expr(ast,schema,&mut PlannerContext::new())?;
+        expression.apply(|expr| {
+            if matches!(expr,Expr::AggregateFunction(_)|Expr::WindowFunction(_)|Expr::ScalarSubquery(_)|Expr::Exists(_)|Expr::InSubquery(_)) {return Err(DataFusionError::Plan("mapping expressions must be scalar, without subqueries, aggregates or windows".into()));}
+            if let Expr::ScalarFunction(call)=expr {if call.func.signature().volatility!=datafusion::logical_expr::Volatility::Immutable {return Err(DataFusionError::Plan("mapping expressions must be immutable".into()));}}
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        Ok(expression.transform_up(|expr| {
+            if let Expr::Alias(alias) = expr {
+                Ok(datafusion::common::tree_node::Transformed::yes(*alias.expr))
+            } else {
+                Ok(datafusion::common::tree_node::Transformed::no(expr))
+            }
+        })?.data)
+    }
+    /// Parse a SQL `SELECT` against the registered tables using datafusion-sql.
     fn plan_sql(&self, sql: &str) -> RelResult<LogicalPlan> {
         Ok(self.plan_sql_with_dependencies(sql)?.0)
     }
@@ -1542,6 +1558,26 @@ fn union_all(mut branches: Vec<LogicalPlan>) -> RelResult<LogicalPlan> {
     Ok(builder.build()?)
 }
 
+/// Preserve the logical JSON type in SQL-like mapping expressions.
+pub(crate) fn normalize_json_literals(expr: &mut datafusion::sql::sqlparser::ast::Expr) -> RelResult<()> {
+    use datafusion::sql::sqlparser::{ast,parser::Parser,dialect::GenericDialect};
+    let flow=ast::visit_expressions_mut(expr,|expr| {
+        if let ast::Expr::TypedString(literal)=expr {
+            if matches!(literal.data_type,ast::DataType::JSON|ast::DataType::JSONB) {
+                let Some(text)=literal.value.clone().into_string() else {return std::ops::ControlFlow::Break(RelError::Unsupported("JSON literal requires text".into()));};
+                if let Err(error)=crate::ir::functions::domain::json_scalar(&text) {return std::ops::ControlFlow::Break(RelError::Unsupported(error.to_string()));}
+                let text=format!("json.parse('{}')",text.replace('\'',"''"));
+                match Parser::new(&GenericDialect{}).try_with_sql(&text).and_then(|mut parser|parser.parse_expr()) {
+                    Ok(replacement)=>*expr=replacement,
+                    Err(error)=>return std::ops::ControlFlow::Break(RelError::Unsupported(error.to_string())),
+                }
+            }
+        }
+        std::ops::ControlFlow::Continue(())
+    });
+    match flow {std::ops::ControlFlow::Break(error)=>Err(error),_=>Ok(())}
+}
+
 // ---------------------------------------------------------------------------
 // SQL planning support for query-backed sources
 // ---------------------------------------------------------------------------
@@ -1585,13 +1621,14 @@ impl ContextProvider for MappingContextProvider<'_> {
         let lower = name.to_ascii_lowercase();
         self.mapping.logical_functions.get(&lower).cloned()
             .or_else(|| crate::ir::functions::search::function(&lower))
+            .or_else(|| crate::ir::functions::json::function(&lower))
             .or_else(|| function_catalog::scalar().get(&lower).cloned())
             .or_else(|| function_catalog::nested().get(&lower).cloned())
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
         let lower = name.to_ascii_lowercase();
-        function_catalog::aggregate().get(&lower).cloned()
+        crate::ir::functions::json::aggregate(&lower).or_else(|| function_catalog::aggregate().get(&lower).cloned())
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {

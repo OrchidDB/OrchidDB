@@ -3,6 +3,8 @@ use arrow::datatypes::{DataType, TimeUnit};
 use datafusion::common::{DataFusionError, Result};
 
 pub(crate) fn sql_type(data_type: &DataType) -> Result<String> {
+    if super::domain::is_json(data_type) { return Ok("JSON".into()); }
+    if let Some((name, _)) = super::domain::descriptor(data_type) { return Err(DataFusionError::NotImplemented(format!("DuckDB domain type `{name}` requires an engine type mapping"))); }
     Ok(match data_type {
         DataType::Null => "INTEGER".into(),
         DataType::Boolean => "BOOLEAN".into(),
@@ -80,6 +82,7 @@ fn unsupported(data_type: &DataType) -> DataFusionError {
 /// NULL-only constructors. cast_to_type drops that reference during binding.
 #[cfg(feature = "duckdb")]
 pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
+    if super::domain::descriptor(data_type).is_some() { return Ok(format!("CAST(NULL AS {})", sql_type(data_type)?)); }
     let reference = match data_type {
         DataType::List(field)
         | DataType::LargeList(field)
@@ -118,6 +121,8 @@ pub(super) fn typed_null(data_type: &DataType) -> Result<String> {
 
 /// PostgreSQL has no unsigned integer or anonymous struct SQL argument types.
 pub(crate) fn postgres_type(data_type: &DataType) -> Result<String> {
+    if super::domain::is_json(data_type) { return Ok("JSONB".into()); }
+    if let Some((name, _)) = super::domain::descriptor(data_type) { return Err(DataFusionError::NotImplemented(format!("PostgreSQL domain type `{name}` requires an engine type mapping"))); }
     Ok(match data_type {
         DataType::Int8 | DataType::UInt8 => "SMALLINT".into(),
         DataType::UInt16 => "INTEGER".into(),
