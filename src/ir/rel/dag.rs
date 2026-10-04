@@ -45,6 +45,7 @@ pub struct DagStats {
     pub cost: crate::ir::QueryCost,
     pub duckdb_regions: usize,
     pub postgres_regions: usize,
+    pub other_sql_regions: usize,
     pub datafusion_operators: usize,
     pub physical_plan: String,
     /// Optimized logical plan with physical table selections applied.
@@ -164,7 +165,7 @@ impl Ord for DuckDbRegion {
 #[cfg(feature = "duckdb")]
 impl UserDefinedLogicalNodeCore for DuckDbRegion {
     fn name(&self) -> &str {
-        match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbRegion", sql::SqlDialect::Postgres => "PostgresRegion" }
+        match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbRegion", sql::SqlDialect::Postgres => "PostgresRegion", sql::SqlDialect::Custom(_) => "SqlRegion" }
     }
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
@@ -199,15 +200,29 @@ impl UserDefinedLogicalNodeCore for DuckDbRegion {
 #[derive(Default)]
 struct SqlEligibility {
     reasons: std::collections::HashMap<usize, Option<&'static str>>,
-    postgres: bool,
+    dialect: Option<sql::SqlDialect>,
 }
 #[cfg(feature = "duckdb")]
 impl SqlEligibility {
     fn visit(&mut self, plan: &LogicalPlan) -> Option<&'static str> {
         let key = plan as *const LogicalPlan as usize;
         if let Some(reason) = self.reasons.get(&key) { return *reason; }
+        // A complete SQL lowering consumes the node's expressions and inputs.
+        // Requiring their scalar mappings again would reject index-provided
+        // scores or engine operations that have no standalone scalar form.
+        if matches!(plan, LogicalPlan::Extension(_)) && matches!(
+            sql::lowering::lower_relation(plan, &sql::lowering::LoweringContext {
+                dialect: self.dialect.unwrap_or(sql::SqlDialect::DuckDb),
+                mode: sql::lowering::LoweringMode::InIsland,
+            }), Ok(Some(sql::lowering::RelationLowering::Sql(_)))
+        ) {
+            self.reasons.insert(key, None);
+            return None;
+        }
         let mut reason = match plan {
-            LogicalPlan::Extension(_) if super::search::node(plan).is_some_and(|s| !matches!(s.index.as_ref().map(|i| &i.backend), Some(super::search::SearchBackend::Lance { .. }))) => None,
+            LogicalPlan::Extension(_) if matches!(sql::lowering::lower_relation(plan, &sql::lowering::LoweringContext {
+                dialect: self.dialect.unwrap_or(sql::SqlDialect::DuckDb), mode: sql::lowering::LoweringMode::InIsland,
+            }), Ok(Some(sql::lowering::RelationLowering::Sql(_) | sql::lowering::RelationLowering::Rewrite(_)))) => None,
             LogicalPlan::Extension(_) => Some("residual extension"),
             LogicalPlan::EmptyRelation(empty) if empty.produce_one_row => None,
             LogicalPlan::EmptyRelation(_) => Some("empty relation"),
@@ -221,12 +236,14 @@ impl SqlEligibility {
         for expr in plan.expressions() {
             let _ = expr.apply(|expr| {
                 if let Expr::ScalarFunction(function) = expr {
-                    if self.postgres && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
+                    if self.dialect == Some(sql::SqlDialect::Postgres) && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
                         reason.get_or_insert("native RDF scalar kernel");
                         return Ok(TreeNodeRecursion::Stop);
                     }
                     if let Some(logical) = crate::ir::functions::logical::definition(&function.func) {
-                        if !logical.sql.contains_key(if self.postgres { "postgres" } else { "duckdb" }) {
+                        let dialect = self.dialect.unwrap_or(sql::SqlDialect::DuckDb);
+                        let adapter_mapping = match dialect { sql::SqlDialect::Custom(adapter) => adapter.function_mapping(logical.logical_name()).is_some(), _ => false };
+                        if !adapter_mapping && !logical.sql.contains_key(dialect.name()) {
                             reason.get_or_insert("logical function requires native execution");
                             return Ok(TreeNodeRecursion::Stop);
                         }
@@ -318,8 +335,8 @@ fn partition<'a>(
                 if std::env::var_os("ORCHIDDB_EXPLAIN_DAG").is_some() {
                     eprintln!("DuckDB candidate: {}", prepared.query);
                 }
-                let id = stats.duckdb_regions + stats.postgres_regions;
-                match dialect { sql::SqlDialect::DuckDb => stats.duckdb_regions += 1, sql::SqlDialect::Postgres => stats.postgres_regions += 1 };
+                let id = stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions;
+                match dialect { sql::SqlDialect::DuckDb => stats.duckdb_regions += 1, sql::SqlDialect::Postgres => stats.postgres_regions += 1, sql::SqlDialect::Custom(_) => stats.other_sql_regions += 1 };
                 stats.sql_queries.push(prepared.query.clone());
                 return Ok(LogicalPlan::Extension(Extension {
                     node: Arc::new(DuckDbRegion {
@@ -330,21 +347,29 @@ fn partition<'a>(
                 }));
             }
         }
-        if let Some(search) = super::search::node(plan) {
-            if matches!(search.index.as_ref().map(|i| &i.backend), Some(super::search::SearchBackend::Lance { .. })) {
-                if dialect != sql::SqlDialect::DuckDb {
-                    return Err(DataFusionError::Plan("Lance search requires its owning DuckDB session".into()));
+        use sql::lowering::{lower_relation, LoweringContext, LoweringMode, RelationLowering};
+        match lower_relation(plan, &LoweringContext {dialect, mode:LoweringMode::InIsland})
+            .map_err(|e| DataFusionError::Plan(e.to_string()))? {
+            Some(RelationLowering::Dependent {source, template, schema}) => {
+                if schema.as_ref() != plan.schema().as_ref() || template.dialect != dialect.name()
+                    || template.parameters != source.schema().fields().len() {
+                    return Err(DataFusionError::Plan("dependent relational lowering changed its execution contract".into()));
                 }
-                let template = sql::search::lance_template(search).map_err(|e| DataFusionError::Plan(e.to_string()))?;
-                let source = partition(&search.source, stats, eligibility, external, dialect, bind_inputs, source_executor).await?;
-                stats.duckdb_regions += 1;
+                let source = partition(&source, stats, eligibility, external, dialect, bind_inputs, source_executor).await?;
+                match dialect {
+                    sql::SqlDialect::DuckDb => stats.duckdb_regions += 1,
+                    sql::SqlDialect::Postgres => stats.postgres_regions += 1,
+                    sql::SqlDialect::Custom(_) => stats.other_sql_regions += 1,
+                }
                 stats.sql_queries.push(template.sql.clone());
-                return Ok(super::search::BoundSearch { source: Arc::new(source), template, schema: search.schema.clone() }.into_plan());
+                return Ok(super::dependent::DependentOperation {source:Arc::new(source), template, schema}.into_plan());
             }
-            if search.index.is_some() {
-                return Err(DataFusionError::Plan("declared search backend could not form a SQL island".into()));
+            Some(RelationLowering::Rewrite(rewritten)) => {
+                if &rewritten == plan { return Err(DataFusionError::Plan("relational rewrite made no progress".into())); }
+                return partition(&rewritten, stats, &mut SqlEligibility {dialect:Some(dialect), ..Default::default()}, external, dialect, bind_inputs, source_executor).await;
             }
-            return partition(&search.native_plan().map_err(|e| DataFusionError::Plan(e.to_string()))?, stats, &mut SqlEligibility { postgres: eligibility.postgres, ..Default::default() }, external, dialect, bind_inputs, source_executor).await;
+            Some(RelationLowering::Sql(_)) => return Err(DataFusionError::Plan("required relational operation could not form a SQL island".into())),
+            None => {},
         }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
@@ -382,9 +407,12 @@ impl ExtensionPlanner for RegionPlanner {
         _physical_inputs: &[Arc<dyn ExecutionPlan>],
         _state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-        if let Some(search) = node.as_any().downcast_ref::<super::search::BoundSearch>() {
-            return Ok(Some(Arc::new(super::search::exec::BoundSearchExec::new(
-                search, _physical_inputs[0].clone(), self.executor.clone(), self.region_session.clone(), self.cost.clone(),
+        if let Some(operation) = node.as_any().downcast_ref::<super::dependent::DependentOperation>() {
+            let session = self.region_session.clone().unwrap_or_else(|| Arc::new(Mutex::new(
+                Box::new(EmbeddedRegionSession(self.executor.clone())) as Box<dyn sql::region::RegionSession>
+            )));
+            return Ok(Some(Arc::new(super::dependent::exec::DependentOperationExec::new(
+                operation, _physical_inputs[0].clone(), session, self.cost.clone(),
             ))));
         }
         let Some(region) = node.as_any().downcast_ref::<DuckDbRegion>() else {
@@ -425,7 +453,7 @@ impl DisplayAs for DuckDbExec {
 #[cfg(feature = "duckdb")]
 impl ExecutionPlan for DuckDbExec {
     fn name(&self) -> &str {
-        match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbExec", sql::SqlDialect::Postgres => "PostgresExec" }
+        match self.prepared.dialect { sql::SqlDialect::DuckDb => "DuckDbExec", sql::SqlDialect::Postgres => "PostgresExec", sql::SqlDialect::Custom(_) => "SqlExec" }
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -553,7 +581,7 @@ pub(crate) async fn prepare_with_extensions(
             Some(session) => session.lock().map_err(|_| DataFusionError::Execution("SQL region session poisoned".into()))?.dialect(),
             None => sql::SqlDialect::DuckDb,
         };
-        eligibility.postgres = dialect == sql::SqlDialect::Postgres;
+        eligibility.dialect = Some(dialect);
         partition(&optimized, &mut stats, &mut eligibility,&resources.external,dialect,resources.region_session.is_some(),&resources.executor).await?
     };
     #[cfg(not(feature = "duckdb"))]
@@ -629,7 +657,7 @@ pub(crate) async fn execute_with_extensions(
                 "prepare_ms": (prepared_at-started).as_secs_f64()*1000.0,
                 "physical_plan_ms": (planned_at-prepared_at).as_secs_f64()*1000.0,
                 "execute_ms": planned_at.elapsed().as_secs_f64()*1000.0,
-                "regions":stats.duckdb_regions + stats.postgres_regions,"duckdb_regions":stats.duckdb_regions,"postgres_regions":stats.postgres_regions,"residuals":stats.datafusion_operators,
+                "regions":stats.duckdb_regions + stats.postgres_regions + stats.other_sql_regions,"duckdb_regions":stats.duckdb_regions,"postgres_regions":stats.postgres_regions,"residuals":stats.datafusion_operators,
             })
         );
     }
@@ -646,7 +674,6 @@ pub(crate) async fn execute_with_extensions(
 /// DuckDB assigns a physical integer type to untyped NULLs, including inside
 /// lists. Restore the logical Arrow type recursively without losing validity
 /// masks or offsets, and reject a non-null value where Null was expected.
-#[cfg(feature = "duckdb")]
 pub(crate) fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::datatypes::DataType) -> std::result::Result<arrow::array::ArrayRef, arrow::error::ArrowError> {
     use arrow::array::{Array, make_array, new_null_array};
     use arrow::datatypes::DataType;
@@ -685,11 +712,24 @@ impl DagStats {
         }
         self.duckdb_regions += nested.duckdb_regions;
         self.postgres_regions += nested.postgres_regions;
+        self.other_sql_regions += nested.other_sql_regions;
         self.datafusion_operators += nested.datafusion_operators;
         self.sql_queries.extend(nested.sql_queries.iter().cloned());
         if !nested.physical_plan.is_empty() && !self.physical_plan.contains(&nested.physical_plan) {
             self.physical_plan.push_str("\nExecuted subplan:\n");
             self.physical_plan.push_str(&nested.physical_plan);
         }
+    }
+}
+
+#[cfg(feature = "duckdb")]
+#[derive(Debug)]
+struct EmbeddedRegionSession(Arc<Mutex<sql::DuckDbExecutor>>);
+#[cfg(feature = "duckdb")]
+impl sql::region::RegionSession for EmbeddedRegionSession {
+    fn dialect(&self) -> sql::SqlDialect {sql::SqlDialect::DuckDb}
+    fn query(&mut self, query:&str, schema:arrow::datatypes::SchemaRef) -> sql::SqlResult<RecordBatch> {
+        self.0.lock().map_err(|_| sql::SqlError::Execution("embedded SQL session poisoned".into()))?
+            .execute_prepared_arrow(&sql::PreparedSql::query_only(query.into(), schema))
     }
 }

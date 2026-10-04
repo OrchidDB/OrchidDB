@@ -56,6 +56,9 @@ mod gremlin;
 mod gremlin_state;
 mod gremlin_strings;
 pub mod search;
+
+pub mod dependent;
+pub mod source_metadata;
 pub mod mapping;
 pub mod constraints;
 pub mod rdf;

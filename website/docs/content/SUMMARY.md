@@ -35,6 +35,7 @@
 - [Arrow results](results.md)
 - [Execution and plans](execution.md)
 - [SQL generation and execution](sql-compiler.md)
+- [Engine adapters](engine-adapters.md)
 - [Client APIs](client-apis.md)
 - [Rust API](rust-api.md)
 - [CLI reference](cli.md)

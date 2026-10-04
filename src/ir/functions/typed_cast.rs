@@ -40,11 +40,9 @@ pub(crate) fn typed_argument_cast_for_engine(
     data_type: DataType,
     engine: &str,
 ) -> Result<Expr> {
-    let sql_type = if engine == "postgres" {
-        super::types::postgres_type(&data_type)?
-    } else {
-        super::types::sql_type(&data_type)?
-    };
+    let sql_type = crate::ir::rel::sql::SqlDialect::resolve(engine)
+        .and_then(|dialect| dialect.sql_type(&data_type))
+        .map_err(|error| DataFusionError::Plan(error.to_string()))?;
     Ok(ScalarUDF::new_from_impl(DeclaredCast {
         data_type,
         signature: Signature::any(2, Volatility::Volatile),

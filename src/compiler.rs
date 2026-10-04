@@ -63,6 +63,8 @@ pub struct CompileRequest {
     #[serde(default)]
     pub search_indexes: Vec<crate::ir::rel::search::SearchIndex>,
     #[serde(default)]
+    pub source_metadata: Vec<crate::ir::rel::source_metadata::SourceMetadata>,
+    #[serde(default)]
     pub functions: Vec<Function>,
     #[serde(default)]
     pub ontology: Ontology,
@@ -403,11 +405,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
     if request.version != 1 {
         return Err("unsupported compiler protocol version".into());
     }
-    let dialect = match request.dialect.as_str() {
-        "duckdb" => SqlDialect::DuckDb,
-        "postgres" => SqlDialect::Postgres,
-        other => return Err(format!("unsupported SQL dialect `{other}`")),
-    };
+    let dialect = SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
     crate::federation::validate(&request)?;
     let mut mapping = GraphMapping::new();
     let mut schemas = BTreeMap::new();
@@ -646,6 +644,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         }
         mapping.map_edge(e);
     }
+    for source in &request.source_metadata { mapping.register_source_metadata(source.clone()).map_err(|e|e.to_string())?; }
     for index in &request.search_indexes { mapping.register_search_index(index.clone()).map_err(|e|e.to_string())?; }
     for rule in &request.computed_relationships {
         mapping.map_computed_relationship(rule.clone()).map_err(|e| e.to_string())?;
@@ -955,8 +954,8 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
     let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
-    if command.get("op").and_then(serde_json::Value::as_str) == Some("bind_search") {
-        return crate::federation::bind_search_command(command).map(|v|v.to_string());
+    if command.get("op").and_then(serde_json::Value::as_str).is_some_and(|op| matches!(op, "bind_search" | "bind_operation")) {
+        return crate::federation::bind_operation_command(command).map(|v|v.to_string());
     }
     if command.get("op").and_then(serde_json::Value::as_str) == Some("bind") {
         return std::panic::catch_unwind(std::panic::AssertUnwindSafe(||

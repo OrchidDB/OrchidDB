@@ -80,6 +80,11 @@ See the [Search guide](website/docs/content/search.md) and
 [full feature reference](docs/computed-relationships-and-search.md) for declarations,
 backend setup, generated SQL, and extension compatibility requirements.
 
+Register an [engine adapter](website/docs/content/engine-adapters.md) to add a SQL
+dialect, typed value codecs, and Rust transformations over expressions and
+relations. Search and table functions use the same SQL-island and dependent
+execution interfaces.
+
 ## Shared graph execution
 
 Enable `duckdb` to use `GraphEngine` with either managed graph records or

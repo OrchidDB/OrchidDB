@@ -1,77 +1,86 @@
 //! Backend SQL for a first-class ranked search join.
 use super::*;
-use crate::ir::rel::search::{RankedJoin, SCORE_COLUMN, SearchBackend, SearchMetric};
-use datafusion::logical_expr::UserDefinedLogicalNode;
+use crate::ir::rel::search::{RankedJoin, SCORE_COLUMN, SearchMetric};
 use datafusion::sql::{
     sqlparser::{
         ast,
         dialect::{DuckDbDialect, PostgreSqlDialect},
         parser::Parser,
     },
-    unparser::{
-        Unparser,
-        ast::{DerivedRelationBuilder, QueryBuilder, RelationBuilder, SelectBuilder},
-        extension_unparser::{
-            UnparseToStatementResult, UnparseWithinStatementResult, UserDefinedLogicalNodeUnparser,
-        },
-    },
+    unparser::Unparser,
 };
 
-pub(super) struct SearchUnparser(pub SqlDialect);
-impl UserDefinedLogicalNodeUnparser for SearchUnparser {
-    fn unparse(
-        &self,
-        node: &dyn UserDefinedLogicalNode,
-        _unparser: &Unparser,
-        _query: &mut Option<&mut QueryBuilder>,
-        _select: &mut Option<&mut SelectBuilder>,
-        relation: &mut Option<&mut RelationBuilder>,
-    ) -> Result<UnparseWithinStatementResult, DataFusionError> {
-        let Some(search) = node.as_any().downcast_ref::<RankedJoin>() else {
-            return Ok(UnparseWithinStatementResult::Unmodified);
-        };
-        let statement =
-            statement(search, self.0).map_err(|e| DataFusionError::Plan(e.to_string()))?;
-        let ast::Statement::Query(query) = statement else {
-            unreachable!()
-        };
-        let target = relation
-            .as_mut()
-            .ok_or_else(|| DataFusionError::Plan("search relation missing SQL context".into()))?;
-        let mut derived = DerivedRelationBuilder::default();
-        derived
-            .lateral(false)
-            .subquery(query)
-            .alias(Some(ast::TableAlias {
-                name: ast::Ident::with_quote('"', "__ranked_search"),
-                columns: vec![],
-                explicit: true,
-            }));
-        target.derived(derived);
-        Ok(UnparseWithinStatementResult::Modified)
+/// Built-in engine transformations. Physical source facts select a rule;
+/// engine ownership and dependent execution are handled by generic placement.
+pub(crate) fn lower_relation(
+    plan: &LogicalPlan,
+    ctx: &super::lowering::LoweringContext,
+) -> SqlResult<Option<super::lowering::RelationLowering>> {
+    use super::lowering::{LoweringMode, RelationLowering};
+    let LogicalPlan::Extension(extension) = plan else {
+        return Ok(None);
+    };
+    let Some(search) = extension.node.as_any().downcast_ref::<RankedJoin>() else {
+        return Ok(None);
+    };
+    let format = search
+        .source_metadata
+        .as_ref()
+        .and_then(|m| m.format.as_deref());
+    if format == Some("lance") {
+        if ctx.dialect != SqlDialect::DuckDb {
+            return Err(SqlError::Unsupported(
+                "Lance source requires DuckDB ownership".into(),
+            ));
+        }
+        return Ok(Some(RelationLowering::Dependent {
+            source: search.source.clone(),
+            template: lance_template(search)?,
+            schema: search.schema.clone(),
+        }));
     }
-    fn unparse_to_statement(
-        &self,
-        node: &dyn UserDefinedLogicalNode,
-        _unparser: &Unparser,
-    ) -> Result<UnparseToStatementResult, DataFusionError> {
-        let Some(search) = node.as_any().downcast_ref::<RankedJoin>() else {
-            return Ok(UnparseToStatementResult::Unmodified);
-        };
-        Ok(UnparseToStatementResult::Modified(
-            statement(search, self.0).map_err(|e| DataFusionError::Plan(e.to_string()))?,
-        ))
+    if search.index.is_none()
+        && (ctx.dialect != SqlDialect::Postgres || search.metric() == Some(SearchMetric::Bm25))
+    {
+        return Ok(Some(RelationLowering::Rewrite(
+            search
+                .native_plan()
+                .map_err(|e| SqlError::Unsupported(e.to_string()))?,
+        )));
+    }
+    if format.is_some_and(|f| !matches!(f, "pgvector" | "postgres")) {
+        return Err(SqlError::Unsupported(format!(
+            "{} does not lower indexed access for source format {:?}",
+            ctx.dialect.name(),
+            format
+        )));
+    }
+    if ctx.dialect != SqlDialect::Postgres {
+        return Err(SqlError::Unsupported(
+            "indexed vector access requires a registered transformation for the owning engine"
+                .into(),
+        ));
+    }
+    if ctx.mode == LoweringMode::Bound {
+        Ok(Some(RelationLowering::Dependent {
+            source: search.source.clone(),
+            template: postgres_template(search)?,
+            schema: search.schema.clone(),
+        }))
+    } else {
+        statement(search, ctx.dialect)
+            .map(RelationLowering::Sql)
+            .map(Some)
     }
 }
-fn statement(search: &RankedJoin, dialect: SqlDialect) -> SqlResult<ast::Statement> {
+pub(crate) fn statement(search: &RankedJoin, dialect: SqlDialect) -> SqlResult<ast::Statement> {
     let sql = stacker::maybe_grow(4 * 1024 * 1024, 64 * 1024 * 1024, || {
-        render(search, dialect)
+        super::logical_functions::with_plan(&search.clone().into_plan(), dialect, || {
+            render(search, dialect)
+        })
     })?;
-    let dialect_parser: &dyn datafusion::sql::sqlparser::dialect::Dialect = match dialect {
-        SqlDialect::Postgres => &PostgreSqlDialect {},
-        SqlDialect::DuckDb => &DuckDbDialect {},
-    };
-    Parser::parse_sql(dialect_parser, &sql)
+    let dialect_parser = dialect.parser_dialect();
+    Parser::parse_sql(dialect_parser.as_ref(), &sql)
         .map_err(|e| SqlError::Unsupported(e.to_string()))?
         .into_iter()
         .next()
@@ -102,33 +111,6 @@ pub(crate) fn expression(
     Ok(ast.to_string())
 }
 pub(crate) fn render(search: &RankedJoin, dialect: SqlDialect) -> SqlResult<String> {
-    if matches!(
-        search.index.as_ref().map(|i| &i.backend),
-        Some(SearchBackend::Lance { .. })
-    ) {
-        return Err(SqlError::Unsupported(
-            "Lance search requires bound source inputs; execute its dependent SQL island".into(),
-        ));
-    }
-    if search.metric() == Some(SearchMetric::Bm25) || dialect == SqlDialect::DuckDb {
-        // A backend without a declared index executes its native ranked
-        // relational operator. An explicitly selected backend is never changed.
-        if matches!(
-            search.index.as_ref().map(|i| &i.backend),
-            Some(SearchBackend::Pgvector)
-        ) && dialect != SqlDialect::Postgres
-        {
-            return Err(SqlError::Unsupported(
-                "pgvector search requires PostgreSQL ownership".into(),
-            ));
-        }
-        return super::recursive::unparse_plan(
-            search
-                .native_plan()
-                .map_err(|e| SqlError::Unsupported(e.to_string()))?,
-            dialect,
-        );
-    }
     let source = super::recursive::unparse_plan(search.source.as_ref().clone(), dialect)?;
     let target = super::recursive::unparse_plan(search.target.as_ref().clone(), dialect)?;
     let query = expression(search, search.query().clone(), dialect)?;
@@ -213,72 +195,8 @@ pub(crate) fn render(search: &RankedJoin, dialect: SqlDialect) -> SqlResult<Stri
     ))
 }
 
-/// A dependent SQL island. Positional parameters are source-row values, never
-/// user-supplied SQL. Binding substitutes typed SQL AST literals.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SearchTemplate {
-    pub sql: String,
-    pub parameters: usize,
-    pub dialect: String,
-}
-impl SearchTemplate {
-    pub fn bind(&self, values: &[ScalarValue]) -> SqlResult<String> {
-        if values.len() != self.parameters {
-            return Err(SqlError::Conversion(
-                "search parameter count mismatch".into(),
-            ));
-        }
-        let dialect = match self.dialect.as_str() {
-            "duckdb" => SqlDialect::DuckDb,
-            "postgres" => SqlDialect::Postgres,
-            _ => return Err(SqlError::Unsupported("unknown search dialect".into())),
-        };
-        let parser: &dyn datafusion::sql::sqlparser::dialect::Dialect = match dialect {
-            SqlDialect::DuckDb => &DuckDbDialect {},
-            SqlDialect::Postgres => &PostgreSqlDialect {},
-        };
-        let mut statements = Parser::parse_sql(parser, &self.sql)
-            .map_err(|e| SqlError::Unsupported(e.to_string()))?;
-        let literals = values
-            .iter()
-            .map(|v| {
-                let text = super::exchange_literal(v.clone(), v.data_type(), dialect)?;
-                Parser::new(parser)
-                    .try_with_sql(&text)
-                    .map_err(|e| SqlError::Conversion(e.to_string()))?
-                    .parse_expr()
-                    .map_err(|e| SqlError::Conversion(e.to_string()))
-            })
-            .collect::<SqlResult<Vec<_>>>()?;
-        let flow = ast::visit_expressions_mut(&mut statements, |expr| {
-            if let ast::Expr::Value(value) = expr {
-                if let ast::Value::Placeholder(name) = &value.value {
-                    let index = name
-                        .strip_prefix('$')
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .and_then(|n| n.checked_sub(1));
-                    match index.and_then(|i| literals.get(i)) {
-                        Some(literal) => *expr = literal.clone(),
-                        None => {
-                            return std::ops::ControlFlow::Break(SqlError::Conversion(
-                                "invalid search parameter".into(),
-                            ));
-                        }
-                    }
-                }
-            }
-            std::ops::ControlFlow::Continue(())
-        });
-        if let std::ops::ControlFlow::Break(e) = flow {
-            return Err(e);
-        }
-        if statements.len() != 1 {
-            return Err(SqlError::Unsupported("search must be one statement".into()));
-        }
-        Ok(statements[0].to_string())
-    }
-}
+/// Compatibility name for the general dependent SQL template.
+pub type SearchTemplate = super::lowering::SqlTemplate;
 
 pub(crate) fn lance_template(search: &RankedJoin) -> SqlResult<SearchTemplate> {
     stacker::maybe_grow(4 * 1024 * 1024, 64 * 1024 * 1024, || {
@@ -292,14 +210,33 @@ fn lance_template_inner(search: &RankedJoin) -> SqlResult<SearchTemplate> {
         .index
         .as_ref()
         .ok_or_else(|| SqlError::Unsupported("missing Lance index binding".into()))?;
-    let SearchBackend::Lance {
-        uri,
-        nprobes,
-        refine_factor,
-    } = &index.backend
-    else {
-        return Err(SqlError::Unsupported("expected Lance search".into()));
+    let metadata = search
+        .source_metadata
+        .as_ref()
+        .ok_or_else(|| SqlError::Unsupported("missing Lance source metadata".into()))?;
+    let uri = metadata
+        .options
+        .get("uri")
+        .and_then(serde_json::Value::as_str)
+        .filter(|uri| !uri.is_empty())
+        .ok_or_else(|| SqlError::Unsupported("Lance source requires a dataset uri".into()))?;
+    let option = |name: &str| -> SqlResult<Option<u64>> {
+        index
+            .options
+            .get(name)
+            .or_else(|| metadata.options.get(name))
+            .map(|value| {
+                value
+                    .as_u64()
+                    .filter(|n| *n > 0 && *n <= u32::MAX as u64)
+                    .ok_or_else(|| {
+                        SqlError::Unsupported(format!("Lance {name} must be a positive u32"))
+                    })
+            })
+            .transpose()
     };
+    let nprobes = option("nprobes")?;
+    let refine_factor = option("refine_factor")?;
     if search.limit == 0 {
         let columns = search
             .schema
@@ -412,7 +349,7 @@ fn lance_template_inner(search: &RankedJoin) -> SqlResult<SearchTemplate> {
         }
     }
     let mut replace = Replace {
-        table: index.table.clone(),
+        table: metadata.table.clone(),
         relation,
         count: 0,
     };

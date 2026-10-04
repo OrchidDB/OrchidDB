@@ -76,10 +76,10 @@ mutations. Gremlin tuple-ID projection may require the unified
 runtime's native operator rather than standalone SQL compilation.
 
 Optional `computed_relationships` define expression-based edges with predicates,
-score properties, per-source ranking, and candidate stages. `search_indexes` bind
-physical columns to pgvector or duckdb-lance retrieval. Same-engine PostgreSQL
+score properties, per-source ranking, and candidate stages. `source_metadata` describes
+physical formats, options, and indexes for the owning engine to lower. Same-engine PostgreSQL
 search stays in a correlated SQL island; dependent search transfers include a
-template that clients bind with `op: "bind_search"` before the ordinary `bind`
+template that clients bind with `op: "bind_operation"` before the ordinary `bind`
 operation. See the [search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md#federation-and-json-execution)
 for the protocol and generated SQL, or [Search](search.md) for an overview.
 

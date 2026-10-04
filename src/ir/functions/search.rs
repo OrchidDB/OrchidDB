@@ -10,7 +10,8 @@ use arrow::{
 use datafusion::{
     common::{DataFusionError, Result, ScalarValue},
     logical_expr::{
-        ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+        ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature,
+        Volatility,
     },
 };
 use std::{
@@ -177,6 +178,7 @@ impl ScalarUDFImpl for Kernel {
             )
         };
         let valid = match (self.score, args) {
+            (Score::Bm25, [query, doc]) => string(query) && string(doc),
             (Score::Bm25, [query, doc, corpus]) => {
                 string(query)
                     && string(doc)
@@ -196,6 +198,11 @@ impl ScalarUDFImpl for Kernel {
         Ok(DataType::Float64)
     }
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        if self.score == Score::Bm25 && args.args.len() == 2 {
+            return Err(invalid(
+                "index-owned BM25 requires relational lowering by the owning engine; native BM25 needs an explicit corpus",
+            ));
+        }
         let scalar = args
             .args
             .iter()
@@ -324,7 +331,7 @@ pub fn functions() -> &'static BTreeMap<String, Arc<ScalarUDF>> {
                     implementation.value=validated_vector_sql(score,dialect,&implementation.value);
                 }
             }
-            let native=Arc::new(ScalarUDF::new_from_impl(Kernel{score,signature:Signature::any(if score==Score::Bm25{3}else{2},Volatility::Immutable)}));
+            let native=Arc::new(ScalarUDF::new_from_impl(Kernel{score,signature:if score==Score::Bm25 { Signature::one_of(vec![TypeSignature::Any(2), TypeSignature::Any(3)], Volatility::Immutable) } else { Signature::any(2, Volatility::Immutable) }}));
             use crate::ir::rel::search::SearchMetric;
             let metric=match score {Score::Cosine=>Some(SearchMetric::Cosine),Score::Dot=>Some(SearchMetric::Dot),Score::L2=>Some(SearchMetric::L2),Score::Bm25=>Some(SearchMetric::Bm25),Score::MaxSim=>None};
             let mut function=LogicalFunction::new(name,native,sql);
@@ -393,4 +400,34 @@ fn validated_vector_sql(score: Score, dialect: &str, value: &str) -> String {
     format!(
         "CASE WHEN __arg0 IS NULL OR __arg1 IS NULL THEN NULL WHEN len(__arg0) = 0 OR len(__arg1) = 0 OR len(list_filter(__arg0, __local3 -> {invalid})) > 0 OR len(list_filter(__arg1, __local3 -> {invalid})) > 0 THEN error('search vectors must be nonempty and contain finite, non-null components') ELSE {value} END"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn index_owned_bm25_cannot_execute_as_native_scoring() {
+        let function = functions().get("text.bm25").unwrap();
+        let error = function
+            .invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(ScalarValue::Utf8(Some("cat".into()))),
+                    ColumnarValue::Scalar(ScalarValue::Utf8(Some("cat dog".into()))),
+                ],
+                arg_fields: vec![
+                    Arc::new(arrow::datatypes::Field::new("", DataType::Utf8, false));
+                    2
+                ],
+                number_rows: 1,
+                return_field: Arc::new(arrow::datatypes::Field::new("", DataType::Float64, true)),
+                config_options: Default::default(),
+            })
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("index-owned BM25 requires relational lowering")
+        );
+    }
 }

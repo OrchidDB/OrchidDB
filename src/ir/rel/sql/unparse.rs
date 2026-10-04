@@ -12,6 +12,7 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect))
 }
 fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
+    let plan = super::lowering::transform_relations(plan, dialect)?;
     let plan = crate::ir::rel::representation::select(plan)?.plan;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
@@ -31,7 +32,7 @@ fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<Strin
     let plan = strip_identity_projections(plan)?;
     let plan = encode_unprintable_literals(plan, dialect)?;
     let plan = preserve_limit_output(plan)?;
-    let plan = if dialect == SqlDialect::DuckDb && !has_rdf_source(&plan) {
+    let plan = if dialect != SqlDialect::Postgres && !has_rdf_source(&plan) {
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
     } else { plan };
     let repairs = identifier_quote_repairs(&plan, dialect)?;

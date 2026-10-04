@@ -260,7 +260,8 @@ fn inline_properties(
 }
 struct Expressions<'a> {
     mapping: &'a GraphMapping,
-    corpora: BTreeMap<String, String>,
+    // None denotes corpus statistics owned by a declared index.
+    corpora: BTreeMap<String, Option<String>>,
 }
 impl Expressions<'_> {
     fn expression(&self, text: &str, plan: &LogicalPlan) -> RelResult<Expr> {
@@ -310,6 +311,10 @@ impl Expressions<'_> {
                                 return ControlFlow::Break(error(
                                     "BM25 second argument must be target.<text property>",
                                 ));
+                            };
+                            let Some(corpus) = corpus else {
+                                // Two arguments explicitly retain index-owned corpus semantics.
+                                return ControlFlow::Continue(());
                             };
                             args.args
                                 .push(ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(
@@ -408,21 +413,24 @@ impl Expressions<'_> {
             return Ok(None);
         }
         let target_node = self.mapping.node(&rule.target).unwrap();
-        let index = if let MappedSource::Table(table) = &target_node.source {
+        let source_metadata = if let MappedSource::Table(table) = &target_node.source {
+            self.mapping.source_metadata.get(table).cloned()
+        } else {
+            None
+        };
+        let index = source_metadata.as_ref().and_then(|metadata| {
             target_node
                 .properties
                 .iter()
                 .find(|(name, _)| prop("target", name) == document.name)
                 .and_then(|(_, column)| {
-                    self.mapping
-                        .search_indexes
+                    metadata
+                        .indexes
                         .iter()
-                        .find(|i| i.table == *table && i.column == *column && i.metric == metric)
+                        .find(|i| i.column == *column && i.metric == metric)
                 })
                 .cloned()
-        } else {
-            None
-        };
+        });
         if metric == SearchMetric::Bm25 && index.is_none() {
             return Ok(None);
         }
@@ -474,6 +482,7 @@ impl Expressions<'_> {
             limit,
             exact: rule.retrieval == RetrievalMode::Exact,
             index,
+            source_metadata,
             schema,
         };
         let mut properties = properties.clone();
@@ -614,22 +623,19 @@ pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelRe
     for (i, doc) in docs.into_iter().enumerate() {
         let name = format!("__relationship_corpus_{i}");
         let column = prop("target", &doc);
-        let lance = if let MappedSource::Table(table) = &dst.source {
-            dst.properties.get(&doc).is_some_and(|c| {
-                mapping.search_indexes.iter().any(|i| {
-                    i.table == *table
-                        && i.column == *c
-                        && i.metric == crate::ir::rel::search::SearchMetric::Bm25
-                        && matches!(
-                            i.backend,
-                            crate::ir::rel::search::SearchBackend::Lance { .. }
-                        )
+        let indexed = if let MappedSource::Table(table) = &dst.source {
+            dst.properties.get(&doc).is_some_and(|column| {
+                mapping.source_metadata.get(table).is_some_and(|metadata| {
+                    metadata.indexes.iter().any(|i| {
+                        i.column == *column
+                            && i.metric == crate::ir::rel::search::SearchMetric::Bm25
+                    })
                 })
             })
         } else {
             false
         };
-        if lance {
+        if indexed {
             let (properties, order, limit) = match &rule.candidates {
                 Some(c) => (&c.properties, &c.order_by, Some(c.limit_per_source)),
                 None => (&rule.properties, &rule.order_by, rule.limit_per_source),
@@ -651,22 +657,12 @@ pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelRe
                     != 1
             {
                 return Err(error(
-                    "Lance BM25 must be the primary descending top-k score of a relationship or its candidate stage",
+                    "index-owned BM25 must be the primary descending top-k score of a relationship or its candidate stage",
                 ));
             }
-            // The corpus belongs to Lance's inverted index. This typed marker
-            // binds the logical function signature without scanning the corpus.
-            let mut projection = columns(&source);
-            projection.push(
-                datafusion::functions_nested::expr_fn::make_array(vec![lit("")]).alias(&name),
-            );
-            source = LogicalPlanBuilder::from(source)
-                .project(projection)?
-                .build()?;
-            plan = LogicalPlanBuilder::from(source.clone())
-                .cross_join(target.clone())?
-                .build()?;
-            expressions.corpora.insert(column, name);
+            // No corpus scan or placeholder value: the two-argument score
+            // explicitly requires an index-owned corpus and engine lowering.
+            expressions.corpora.insert(column, None);
             continue;
         }
         let aggregate = function_catalog::aggregate()
@@ -688,7 +684,7 @@ pub(super) fn plan(mapping: &GraphMapping, rule: &ComputedRelationship) -> RelRe
         plan = LogicalPlanBuilder::from(source.clone())
             .cross_join(target.clone())?
             .build()?;
-        expressions.corpora.insert(column, name);
+        expressions.corpora.insert(column, Some(name));
     }
     let source_keys = (0..src.id_column.len())
         .map(|i| col_exact(&key("source", i)))

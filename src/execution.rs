@@ -5,7 +5,7 @@
 //! Connection pools, transactions, UDFs, cancellation, and cache policy belong to
 //! the adapter. This is a single-engine boundary, not a federated coordinator.
 use crate::compiler::CompiledSql;
-pub use crate::ir::rel::sql::SqlDialect;
+pub use crate::ir::rel::sql::{DialectAdapter, EngineAdapter, SqlDialect};
 pub use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
 /// An application-owned session. Results can borrow it (for example a cursor),

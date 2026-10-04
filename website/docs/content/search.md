@@ -11,8 +11,8 @@ Find documents similar to a seed, then follow their authors through the graph.
 `SIMILAR_TO` is a computed relationship: its edges come from a search rule.
 `WRITTEN_BY` is an ordinary stored relationship. Both compose in the same query.
 
-You define the relationship once, then bind its search to pgvector, duckdb-lance,
-or native scoring. The examples below assume documents have IDs, titles, body
+You define the relationship once. The engine that owns the target data lowers
+its ranking into pgvector, duckdb-lance, or ordinary relational scoring. The examples below assume documents have IDs, titles, body
 text, and embeddings; map `WRITTEN_BY` separately as an ordinary
 [stored relationship](mapping-reference.md#relationship-mappings).
 
@@ -52,8 +52,9 @@ property. OrchidDB constructs the search and traversal plan from this rule.
 Load the TOML with `GraphMapping::from_toml`. Register matching physical schemas
 for SQL compilation, or table providers for native execution, as described in the
 [mapping reference](mapping-reference.md#register-source-schemas).
-All `[[search_indexes]]` blocks below belong at the top level of the same TOML
-file. Choose one backend binding for each table/column/metric combination.
+The `[[source_metadata]]` blocks below belong at the top level of the same TOML
+file. Declare each table once, with its format, options, and index capabilities.
+These describe the data; table ownership selects the executing engine.
 
 The relationship also works in Gremlin:
 
@@ -83,11 +84,10 @@ CREATE INDEX documents_cosine ON documents
 Bind the column in the mapping:
 
 ```toml
-[[search_indexes]]
+[[source_metadata]]
 table = "documents"
-column = "embedding"
-metric = "cosine"
-backend = { kind = "pgvector" }
+format = "pgvector"
+indexes = [{ column = "embedding", metric = "cosine" }]
 ```
 
 Assign `documents` to a PostgreSQL engine in the
@@ -138,11 +138,11 @@ CREATE INDEX documents_cosine ON '/data/documents.lance' (embedding)
 Use this binding instead of the pgvector binding:
 
 ```toml
-[[search_indexes]]
+[[source_metadata]]
 table = "documents"
-column = "embedding"
-metric = "cosine"
-backend = { kind = "lance", uri = "/data/documents.lance", nprobes = 1, refine_factor = 2 }
+format = "lance"
+options = { uri = "/data/documents.lance" }
+indexes = [{ column = "embedding", metric = "cosine", options = { nprobes = 1, refine_factor = 2 } }]
 ```
 
 The table and URI must identify the same dataset. The binding metric must match
@@ -191,19 +191,22 @@ limit_per_source = 10
 score = "text.bm25(source.body, target.body)"
 ```
 
-For indexed Lance retrieval, create a text index and add its binding alongside
-the vector binding:
+For indexed Lance retrieval, create a text index and replace the earlier
+`documents` source metadata with the combined vector and text declaration:
 
 ```sql
 CREATE INDEX documents_text ON '/data/documents.lance' (body) USING INVERTED;
 ```
 
 ```toml
-[[search_indexes]]
+[[source_metadata]]
 table = "documents"
-column = "body"
-metric = "bm25"
-backend = { kind = "lance", uri = "/data/documents.lance" }
+format = "lance"
+options = { uri = "/data/documents.lance" }
+indexes = [
+  { column = "embedding", metric = "cosine", options = { nprobes = 1, refine_factor = 2 } },
+  { column = "body", metric = "bm25" },
+]
 ```
 
 Query the relationship normally:
@@ -224,7 +227,7 @@ WHERE target.id <> 7;
 ```
 
 Lance supplies its indexed corpus statistics, tokenizer, and scores. Without a
-Lance text binding, native, PostgreSQL, and ordinary DuckDB execution compute
+declared text index, native, PostgreSQL, and ordinary DuckDB execution compute
 portable BM25 over the mapped target corpus before pair filters and ranking.
 That mode is exhaustive scoring. pgvector does not provide a BM25 index, and
 OrchidDB does not substitute PostgreSQL `ts_rank` for BM25.
@@ -322,7 +325,7 @@ index access path; use a candidate stage before reranking them.
 ## Execute across SQL islands
 
 The [JSON compiler interface](sql-compiler.md) accepts `computed_relationships`
-and `search_indexes` alongside its table schemas, nodes, query, and engine
+and `source_metadata` alongside its table schemas, nodes, query, and engine
 ownership. Use `list:float32` for vector schema metadata and
 `list:list:float32` for token matrices.
 
@@ -330,10 +333,24 @@ Same-engine PostgreSQL search can stay with surrounding graph joins in one SQL
 island. Lance search and cross-engine pgvector search use dependent transfers:
 execute the source SQL, bind source values, run search on the target's owner,
 then join the hits. `federation::execute` performs these transfers using
-caller-owned sessions. JSON clients call `bind_search` with source rows, execute
+caller-owned sessions. JSON clients call `bind_operation` with source rows, execute
 its returned statements, and pass hit rows to the ordinary `bind` operation.
 Backend failures propagate; searches are not retried as scans.
 
 The [detailed search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md)
 provides the complete JSON shapes, native BM25 formula, input constraints, and
 additional backend details.
+
+
+## Add another engine
+
+Engine adapters are ordinary Rust implementations. They own scalar mappings,
+SQL AST transformations, relational rewrites, and typed value encoding. Search
+uses the same relational-lowering hook as other row-producing operations; there
+is no separate search-backend registry. A table function can compose inside an
+island or require bound inputs before preparation.
+
+See [Engine adapters](engine-adapters.md) for registration and a working
+non-search table-function example. Existing `search_indexes` configuration and
+`bind_search` commands remain accepted as compatibility inputs; mapping serialization emits
+`source_metadata`, and new plans emit `operation` transfer descriptors.

@@ -3,6 +3,7 @@
 use super::*;
 
 pub(super) fn sql_literal(dialect: SqlDialect, value: &ScalarValue) -> SqlResult<String> {
+    if let SqlDialect::Custom(adapter) = dialect { return adapter.exchange_literal(value, &value.data_type()); }
     fn opt<T>(value: &Option<T>, render: impl Fn(&T) -> String) -> String {
         match value {
             Some(inner) => render(inner),
@@ -53,6 +54,7 @@ pub(super) fn list_literal(dialect: SqlDialect, outer: &dyn Array, items: ArrayR
     let literal = match dialect {
         SqlDialect::DuckDb => format!("[{joined}]"),
         SqlDialect::Postgres => format!("ARRAY[{joined}]"),
+        SqlDialect::Custom(_) => return Err(SqlError::Unsupported("custom list literals require an adapter codec".into())),
     };
     Ok(format!(
         "CAST({literal} AS {})",
@@ -71,6 +73,7 @@ pub(super) fn string_literal(dialect: SqlDialect, input: &str) -> SqlResult<Stri
         return Ok(quote(input));
     }
     match dialect {
+        SqlDialect::Custom(adapter) => adapter.exchange_literal(&ScalarValue::Utf8(Some(input.into())), &DataType::Utf8),
         SqlDialect::DuckDb => Ok(input
             .split('\0')
             .map(quote)

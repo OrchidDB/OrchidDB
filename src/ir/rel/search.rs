@@ -14,25 +14,43 @@ pub enum SearchMetric {
     L2,
     Bm25,
 }
+/// Compatibility input for the original search_indexes configuration. The
+/// catalog immediately converts this into general source metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchIndex {
     pub table: String,
     pub column: String,
     pub metric: SearchMetric,
-    pub backend: SearchBackend,
+    pub backend: LegacySearchOptions,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum SearchBackend {
-    Pgvector,
-    Lance {
-        uri: String,
-        #[serde(default)]
-        nprobes: Option<u32>,
-        #[serde(default)]
-        refine_factor: Option<u32>,
-    },
+pub struct LegacySearchOptions {
+    pub kind: String,
+    #[serde(flatten)]
+    pub options: std::collections::BTreeMap<String, serde_json::Value>,
+}
+impl From<SearchIndex> for super::source_metadata::SourceMetadata {
+    fn from(index: SearchIndex) -> Self {
+        let mut source_options = index.backend.options;
+        let mut index_options = std::collections::BTreeMap::new();
+        // Normalize the original per-index tuning fields at the input boundary.
+        for name in ["nprobes", "refine_factor"] {
+            if let Some(value) = source_options.remove(name) {
+                index_options.insert(name.to_owned(), value);
+            }
+        }
+        Self {
+            table: index.table,
+            format: Some(index.backend.kind),
+            options: source_options,
+            indexes: vec![super::source_metadata::IndexMetadata {
+                column: index.column,
+                metric: index.metric,
+                options: index_options,
+            }],
+        }
+    }
 }
 pub const SCORE_COLUMN: &str = "__relationship_search_score";
 
@@ -48,7 +66,8 @@ pub struct RankedJoin {
     pub nulls_first: bool,
     pub limit: u64,
     pub exact: bool,
-    pub index: Option<SearchIndex>,
+    pub index: Option<super::source_metadata::IndexMetadata>,
+    pub source_metadata: Option<super::source_metadata::SourceMetadata>,
     pub schema: DFSchemaRef,
 }
 impl PartialOrd for RankedJoin {
@@ -82,12 +101,9 @@ impl RankedJoin {
         })
     }
     pub fn native_plan(&self) -> RelResult<LogicalPlan> {
-        if matches!(
-            self.index.as_ref().map(|i| &i.backend),
-            Some(SearchBackend::Lance { .. })
-        ) {
+        if self.index.is_some() {
             return Err(RelError::Unsupported(
-                "Lance search requires execution on its DuckDB session".into(),
+                "declared indexed retrieval requires lowering by the owning engine".into(),
             ));
         }
         let mut builder = LogicalPlanBuilder::from(self.source.as_ref().clone())
@@ -187,61 +203,6 @@ pub(crate) fn native(plan: LogicalPlan) -> RelResult<LogicalPlan> {
         })?
         .data)
 }
-
-#[cfg(feature = "duckdb")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct BoundSearch {
-    pub source: Arc<LogicalPlan>,
-    pub template: sql::search::SearchTemplate,
-    pub schema: DFSchemaRef,
-}
-#[cfg(feature = "duckdb")]
-impl PartialOrd for BoundSearch {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(format!("{self:?}").cmp(&format!("{other:?}")))
-    }
-}
-#[cfg(feature = "duckdb")]
-impl BoundSearch {
-    pub fn into_plan(self) -> LogicalPlan {
-        LogicalPlan::Extension(Extension {
-            node: Arc::new(self),
-        })
-    }
-}
-#[cfg(feature = "duckdb")]
-impl UserDefinedLogicalNodeCore for BoundSearch {
-    fn name(&self) -> &str {
-        "BoundSearch"
-    }
-    fn inputs(&self) -> Vec<&LogicalPlan> {
-        vec![&self.source]
-    }
-    fn schema(&self) -> &DFSchemaRef {
-        &self.schema
-    }
-    fn expressions(&self) -> Vec<Expr> {
-        vec![]
-    }
-    fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BoundSearch: {}", self.template.sql)
-    }
-    fn with_exprs_and_inputs(
-        &self,
-        exprs: Vec<Expr>,
-        inputs: Vec<LogicalPlan>,
-    ) -> datafusion::common::Result<Self> {
-        if !exprs.is_empty() || inputs.len() != 1 {
-            return Err(DataFusionError::Plan("bound search inputs changed".into()));
-        }
-        Ok(Self {
-            source: Arc::new(inputs[0].clone()),
-            ..self.clone()
-        })
-    }
-}
-#[cfg(feature = "duckdb")]
-pub(crate) mod exec;
 
 /// A source filter commutes with per-source top-k; target/score filters do not.
 /// DataFusion's generic extension rule sends a predicate to every input, so

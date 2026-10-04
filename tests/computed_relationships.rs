@@ -665,8 +665,8 @@ async fn compiler_emits_bound_lance_search_and_no_corpus_scan() {
         )
         .await
         .unwrap();
-        let search = plan.transfers.iter().find(|t| t.search.is_some()).unwrap();
-        let template = &search.search.as_ref().unwrap().template;
+        let search = plan.transfers.iter().find(|t| t.operation.is_some()).unwrap();
+        let template = &search.operation.as_ref().unwrap().template;
         assert!(
             template.sql.contains(if text_search {
                 "lance_fts"
@@ -775,7 +775,7 @@ fn lance_extension_executes_compiled_vector_and_bm25_search() {
             } else {
                 serde_json::from_str(&input).unwrap()
             };
-            if transfer["search"].is_object() {
+            if transfer["operation"].is_object() {
                 assert_eq!(
                     rows.len(),
                     1,
@@ -783,8 +783,8 @@ fn lance_extension_executes_compiled_vector_and_bm25_search() {
                     transfer["sql"]
                 );
             }
-            let columns = if transfer["search"].is_object() {
-                &transfer["search"]["input_columns"]
+            let columns = if transfer["operation"].is_object() {
+                &transfer["operation"]["input_columns"]
             } else {
                 &transfer["columns"]
             };
@@ -799,7 +799,7 @@ fn lance_extension_executes_compiled_vector_and_bm25_search() {
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
-            let hits = if transfer["search"].is_object() {
+            let hits = if transfer["operation"].is_object() {
                 let bound=orchiddb::federation::bind_search_command(serde_json::json!({"plan":plan,"relation":transfer["target_relation"],"rows":values})).unwrap();
                 let mut hits = vec![];
                 for statement in bound["sql"].as_array().unwrap() {
@@ -865,7 +865,7 @@ fn lance_extension_executes_compiled_vector_and_bm25_search() {
 async fn declared_lance_search_does_not_retry_as_a_scan() {
     use orchiddb::{
         engine::GraphEngine,
-        ir::rel::search::{SearchBackend, SearchIndex, SearchMetric},
+        ir::rel::search::{LegacySearchOptions, SearchIndex, SearchMetric},
     };
     let db = duckdb::Connection::open_in_memory().unwrap();
     db.execute_batch("CREATE TABLE documents(id BIGINT, embedding DOUBLE[], body VARCHAR, tokens DOUBLE[][]); INSERT INTO documents VALUES (1,[1.0,0.0],'cat',[[1.0,0.0]]),(2,[0.8,0.6],'cat',[[0.8,0.6]]);").unwrap();
@@ -874,10 +874,9 @@ async fn declared_lance_search_does_not_retry_as_a_scan() {
         table: "documents".into(),
         column: "embedding".into(),
         metric: SearchMetric::Cosine,
-        backend: SearchBackend::Lance {
-            uri: "/missing/docs.lance".into(),
-            nprobes: None,
-            refine_factor: None,
+        backend: LegacySearchOptions {
+            kind: "lance".into(),
+            options: [("uri".into(), serde_json::json!("/missing/docs.lance"))].into(),
         },
     })
     .unwrap();
@@ -952,7 +951,7 @@ async fn cross_engine_search_stays_on_the_target_owner() {
         assert_eq!(
             plan.transfers
                 .iter()
-                .find_map(|t| t.search.as_ref())
+                .find_map(|t| t.operation.as_ref())
                 .unwrap()
                 .engine,
             "local"
@@ -968,7 +967,7 @@ async fn cross_engine_search_stays_on_the_target_owner() {
             let search = plan
                 .transfers
                 .iter()
-                .find_map(|t| t.search.as_ref())
+                .find_map(|t| t.operation.as_ref())
                 .unwrap();
             assert_eq!(search.engine, "vectors");
             assert_eq!(search.template.dialect, "postgres");
@@ -1035,7 +1034,7 @@ fn cross_engine_pgvector_search_executes_on_its_index() {
     let search = plan
         .transfers
         .iter()
-        .find_map(|t| t.search.as_ref())
+        .find_map(|t| t.operation.as_ref())
         .unwrap();
     let values = search
         .input_columns
@@ -1126,7 +1125,7 @@ async fn zero_lance_limit_does_not_open_a_dataset() {
     let template = &plan
         .transfers
         .iter()
-        .find_map(|t| t.search.as_ref())
+        .find_map(|t| t.operation.as_ref())
         .unwrap()
         .template;
     assert!(template.sql.contains("WHERE FALSE"));

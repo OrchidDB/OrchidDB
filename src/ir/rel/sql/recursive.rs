@@ -35,7 +35,7 @@ pub(super) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
     let repair_scopes = dialect == SqlDialect::Postgres || super::unparse::has_rdf_source(&plan);
     let (main, plain_ctes, recursive_ctes) = extract_ctes(plan, repair_scopes)?;
     let unparser_dialect = dialect.unparser_dialect();
-    let unparser = Unparser::new(unparser_dialect.as_ref()).with_extension_unparsers(vec![Arc::new(super::search::SearchUnparser(dialect))]);
+    let unparser = Unparser::new(unparser_dialect.as_ref()).with_extension_unparsers(vec![Arc::new(super::lowering::RelationUnparser::new(dialect))]);
     let main_sql = unparse_one(&main, &unparser, dialect, repair_scopes)?;
     if plain_ctes.is_empty() && recursive_ctes.is_empty() {
         return Ok(dialect.fixup_query(main_sql));

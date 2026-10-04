@@ -1,5 +1,5 @@
-//! Dependent search executes SQL through the existing caller-owned connection.
-use super::BoundSearch;
+//! Execute dependent relational operations through an engine-owned SQL session.
+use super::DependentOperation;
 use crate::ir::rel::{dag::coerce_sql_array, sql};
 use arrow::array::RecordBatch;
 use datafusion::{
@@ -21,30 +21,27 @@ use std::{
 };
 
 #[derive(Debug)]
-pub(crate) struct BoundSearchExec {
+pub struct DependentOperationExec {
     source: Arc<dyn ExecutionPlan>,
-    template: sql::search::SearchTemplate,
-    executor: Arc<Mutex<sql::DuckDbExecutor>>,
-    region_session: Option<sql::region::SharedRegionSession>,
+    template: sql::lowering::SqlTemplate,
+    session: sql::region::SharedRegionSession,
     cost: Arc<Mutex<crate::ir::QueryCost>>,
     properties: Arc<PlanProperties>,
 }
-impl BoundSearchExec {
+impl DependentOperationExec {
     pub fn new(
-        search: &BoundSearch,
+        operation: &DependentOperation,
         source: Arc<dyn ExecutionPlan>,
-        executor: Arc<Mutex<sql::DuckDbExecutor>>,
-        region_session: Option<sql::region::SharedRegionSession>,
+        session: sql::region::SharedRegionSession,
         cost: Arc<Mutex<crate::ir::QueryCost>>,
     ) -> Self {
         Self {
             source,
-            template: search.template.clone(),
-            executor,
-            region_session,
+            template: operation.template.clone(),
+            session,
             cost,
             properties: Arc::new(PlanProperties::new(
-                EquivalenceProperties::new(Arc::new(search.schema.as_arrow().clone())),
+                EquivalenceProperties::new(Arc::new(operation.schema.as_arrow().clone())),
                 Partitioning::UnknownPartitioning(1),
                 EmissionType::Final,
                 Boundedness::Bounded,
@@ -52,14 +49,14 @@ impl BoundSearchExec {
         }
     }
 }
-impl DisplayAs for BoundSearchExec {
+impl DisplayAs for DependentOperationExec {
     fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DuckDbLanceSearchExec: {}", self.template.sql)
+        write!(f, "DependentOperationExec: {}", self.template.sql)
     }
 }
-impl ExecutionPlan for BoundSearchExec {
+impl ExecutionPlan for DependentOperationExec {
     fn name(&self) -> &str {
-        "DuckDbLanceSearchExec"
+        "DependentOperationExec"
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -75,13 +72,14 @@ impl ExecutionPlan for BoundSearchExec {
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         if children.len() != 1 {
-            return Err(DataFusionError::Plan("search requires one input".into()));
+            return Err(DataFusionError::Plan(
+                "dependent operation requires one input".into(),
+            ));
         }
         Ok(Arc::new(Self {
             source: children[0].clone(),
             template: self.template.clone(),
-            executor: self.executor.clone(),
-            region_session: self.region_session.clone(),
+            session: self.session.clone(),
             cost: self.cost.clone(),
             properties: self.properties.clone(),
         }))
@@ -93,12 +91,11 @@ impl ExecutionPlan for BoundSearchExec {
     ) -> Result<SendableRecordBatchStream> {
         if partition != 0 {
             return Err(DataFusionError::Execution(
-                "dependent search has one partition".into(),
+                "dependent operation has one partition".into(),
             ));
         }
         let source = self.source.clone();
-        let executor = self.executor.clone();
-        let region_session = self.region_session.clone();
+        let session = self.session.clone();
         let template = self.template.clone();
         let cost = self.cost.clone();
         let schema = self.schema();
@@ -106,6 +103,15 @@ impl ExecutionPlan for BoundSearchExec {
         let work = async move {
             let inputs = datafusion::physical_plan::collect(source, context).await?;
             tokio::task::spawn_blocking(move || {
+                let dialect = session
+                    .lock()
+                    .map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?
+                    .dialect();
+                if dialect.name() != template.dialect {
+                    return Err(DataFusionError::Execution(
+                        "dependent operation session dialect mismatch".into(),
+                    ));
+                }
                 let mut results = vec![];
                 for batch in inputs {
                     for row in 0..batch.num_rows() {
@@ -117,25 +123,26 @@ impl ExecutionPlan for BoundSearchExec {
                         let query = template
                             .bind(&values)
                             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
-                        let returned = if let Some(session) = &region_session {
-                            session
-                                .lock()
-                                .map_err(|_| {
-                                    DataFusionError::Execution("SQL session poisoned".into())
-                                })?
-                                .query(&query, expected.clone())
-                        } else {
-                            executor
-                                .lock()
-                                .map_err(|_| {
-                                    DataFusionError::Execution("DuckDB executor poisoned".into())
-                                })?
-                                .execute_prepared_arrow(&sql::PreparedSql::query_only(
-                                    query,
-                                    expected.clone(),
-                                ))
+                        let returned = session
+                            .lock()
+                            .map_err(|_| DataFusionError::Execution("SQL session poisoned".into()))?
+                            .query(&query, expected.clone())
+                            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                        if returned.num_columns() != expected.fields().len() {
+                            return Err(DataFusionError::Execution(
+                                "dependent operation output column count mismatch".into(),
+                            ));
                         }
-                        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                        if returned
+                            .columns()
+                            .iter()
+                            .zip(expected.fields())
+                            .any(|(array, field)| !field.is_nullable() && array.null_count() != 0)
+                        {
+                            return Err(DataFusionError::Execution(
+                                "NULL in non-nullable dependent operation output".into(),
+                            ));
+                        }
                         let arrays = returned
                             .columns()
                             .iter()

@@ -62,7 +62,9 @@ MaxSim reranking, and PostgreSQL/pgvector and duckdb-lance index bindings.
 | `map_edge(mapping)` | Add a relationship mapping. |
 | `map_computed_relationship(rule)` | Add an expression-defined relationship with optional per-source ranking. |
 | `register_logical_function(function)` | Register a native function and its backend SQL and ordering mappings. |
-| `register_search_index(index)` | Bind a physical column and metric to a search backend. |
+| `try_to_toml()` | Serialize a mapping, returning an error for metadata TOML cannot represent, such as JSON null options. |
+| `register_source_metadata(metadata)` | Declare a source format, options, and index capabilities for engine lowering. |
+| `register_search_index(index)` | Accept legacy index configuration and normalize it into source metadata. |
 | `labels()` / `rel_types()` | Inspect the mapped vocabulary. |
 | `physical_table_names()` | Get physical source names for SQL preparation. |
 

@@ -17,17 +17,20 @@ pub(super) fn with_plan<T>(
             expr.apply(|expr| {
                 if let Expr::ScalarFunction(call) = expr {
                     if let Some(function) = definition(&call.func) {
-                        let implementation = function.sql.get(dialect.name()).ok_or_else(|| {
-                            DataFusionError::Plan(format!(
-                                "{} has no {} SQL implementation; execute in the native island",
-                                function.logical_name(),
-                                dialect.name()
-                            ))
-                        })?;
+                        // Relational lowering can consume a scoring expression
+                        // entirely (for example, an ANN table function). Require
+                        // scalar SQL support only if the expression survives in
+                        // the emitted AST, where adapt_expression reports it.
+                        let Some(implementation) = (match dialect {
+                            SqlDialect::Custom(adapter) => adapter.function_mapping(function.logical_name()),
+                            _ => None,
+                        }).or_else(|| function.sql.get(dialect.name()).cloned()) else {
+                            return Ok(TreeNodeRecursion::Continue);
+                        };
                         if let Some(previous) =
                             mappings.insert(call.func.name().to_owned(), implementation.clone())
                         {
-                            if previous != *implementation {
+                            if previous != implementation {
                                 return Err(DataFusionError::Plan(
                                     "conflicting logical function definitions".into(),
                                 ));

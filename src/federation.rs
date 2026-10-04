@@ -24,15 +24,15 @@ pub struct Transfer {
     pub sql: String,
     pub target_relation: String,
     pub columns: Vec<TransferColumn>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub search: Option<DependentSearch>,
+    #[serde(default, alias = "search", skip_serializing_if = "Option::is_none")]
+    pub operation: Option<DependentOperation>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct DependentSearch {
+pub struct DependentOperation {
     pub engine: String,
     pub input_columns: Vec<TransferColumn>,
-    pub template: crate::ir::rel::sql::search::SearchTemplate,
+    pub template: crate::ir::rel::sql::lowering::SqlTemplate,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TransferColumn {
@@ -49,7 +49,7 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
         return Ok(());
     }
     for (name, engine) in &request.engines {
-        if name.is_empty() || !matches!(engine.dialect.as_str(), "postgres" | "duckdb") {
+        if name.is_empty() || crate::execution::SqlDialect::resolve(&engine.dialect).is_err() {
             return Err(format!(
                 "invalid engine `{name}` or dialect `{}`",
                 engine.dialect
@@ -152,69 +152,63 @@ pub(crate) fn route(
     let mut transfers = vec![];
     let plan = plan
         .transform_down_with_subqueries(|node| {
-            use crate::ir::rel::{
-                search::{self, SearchBackend},
-                sql,
-            };
-            let Some(search) = search::node(&node) else {
+            use crate::ir::rel::sql::{self, lowering::{self, LoweringContext, LoweringMode, RelationLowering}};
+            let fail = datafusion::common::DataFusionError::Plan;
+            let execution_dialect = sql::SqlDialect::resolve(&request.dialect)
+                .map_err(|e| fail(e.to_string()))?;
+            let Some(placement) = lowering::placement_for(&node, execution_dialect)
+                .map_err(|e| fail(e.to_string()))? else {
                 return Ok(Transformed::no(node));
             };
-            let fail = datafusion::common::DataFusionError::Plan;
             let owner_set = |plan: &LogicalPlan| -> datafusion::common::Result<BTreeSet<String>> {
                 let mut found = BTreeSet::new();
                 plan.apply_with_subqueries(|node| {
                     if let LogicalPlan::TableScan(scan) = node {
-                        found.insert(
-                            owners
-                                .get(&scan.table_name.to_string())
-                                .ok_or_else(|| fail("search input needs an engine owner".into()))?
-                                .clone(),
-                        );
+                        found.insert(owners.get(&scan.table_name.to_string())
+                            .ok_or_else(|| fail("relational input needs an engine owner".into()))?.clone());
                     }
                     Ok(TreeNodeRecursion::Continue)
                 })?;
                 Ok(found)
             };
-            let target_owners = owner_set(&search.target)?;
-            if target_owners.len() != 1 {
-                return Err(fail(
-                    "ranked search target must belong to one SQL engine".into(),
-                ));
+            let target_owners = placement.target.as_ref().map(|plan| owner_set(plan)).transpose()?.unwrap_or_default();
+            if target_owners.len() > 1 {
+                return Err(fail("relational operation target must belong to one SQL engine".into()));
             }
-            let engine = target_owners.first().unwrap();
-            let backend = search.index.as_ref().map(|i| &i.backend);
-            let lance = matches!(backend, Some(SearchBackend::Lance { .. }));
-            let pg = request.engines[engine].dialect == "postgres";
-            if lance && pg {
-                return Err(fail("Lance search requires a DuckDB owner".into()));
-            }
-            if matches!(backend, Some(SearchBackend::Pgvector)) && !pg {
-                return Err(fail("pgvector search requires a PostgreSQL owner".into()));
-            }
-            if !lance && (!pg || owner_set(&search.source)? == target_owners) {
-                return Ok(Transformed::no(node));
-            }
-            let template = if lance {
-                sql::search::lance_template(search)
+            let engine = target_owners.first().unwrap_or(target);
+            let dialect = sql::SqlDialect::resolve(&request.engines[engine].dialect)
+                .map_err(|e| fail(e.to_string()))?;
+            let source_owners = placement.source.as_ref().map(|plan| owner_set(plan)).transpose()?.unwrap_or_default();
+            let mode = if source_owners.iter().any(|owner| owner != engine) {
+                LoweringMode::Bound
             } else {
-                sql::search::postgres_template(search)
-            }
-            .map_err(|e| fail(e.to_string()))?;
-            let (source, dependencies) =
-                route(request, search.source.as_ref().clone()).map_err(fail)?;
-            transfers.extend(dependencies);
-            let dialect = if request.dialect == "postgres" {
-                sql::SqlDialect::Postgres
-            } else {
-                sql::SqlDialect::DuckDb
+                LoweringMode::InIsland
             };
-            let source_sql = sql::unparse_plan(source, dialect).map_err(|e| fail(e.to_string()))?;
-            let mut name = format!("__orchiddb_search_{id}_{}", transfers.len());
+            let lowered = lowering::lower_relation(&node, &LoweringContext {dialect, mode})
+                .map_err(|e| fail(e.to_string()))?;
+            let (input, template, schema) = match lowered {
+                Some(RelationLowering::Dependent {source, template, schema}) => (source, template, schema),
+                Some(RelationLowering::Rewrite(rewritten)) => return Ok(Transformed::yes(rewritten)),
+                Some(RelationLowering::Sql(_)) => return Ok(Transformed::no(node)),
+                None => return Err(fail(format!("engine {} cannot lower relational operation", dialect.name()))),
+            };
+            if schema.as_ref() != node.schema().as_ref() {
+                return Err(fail("dependent operation changed its logical output schema".into()));
+            }
+            if template.dialect != dialect.name() {
+                return Err(fail("dependent operation changed its owning engine dialect".into()));
+            }
+            if template.parameters != input.schema().fields().len() {
+                return Err(fail("dependent operation parameter schema mismatch".into()));
+            }
+            let (source, dependencies) = route(request, input.as_ref().clone()).map_err(fail)?;
+            transfers.extend(dependencies);
+            let source_sql = sql::unparse_plan(source, execution_dialect).map_err(|e| fail(e.to_string()))?;
+            let mut name = format!("__orchiddb_operation_{id}_{}", transfers.len());
             while !reserved.insert(name.clone()) {
                 name.push('_');
             }
-            let columns = search
-                .schema
+            let columns = schema
                 .fields()
                 .iter()
                 .map(|f| {
@@ -228,7 +222,7 @@ pub(crate) fn route(
             let scan = LogicalPlanBuilder::scan(
                 name.clone(),
                 provider_as_source(Arc::new(EmptyTable::new(Arc::new(
-                    search.schema.as_arrow().clone(),
+                    schema.as_arrow().clone(),
                 )))),
                 None,
             )?
@@ -251,11 +245,9 @@ pub(crate) fn route(
                 sql: source_sql,
                 target_relation: name,
                 columns,
-                search: Some(DependentSearch {
+                operation: Some(DependentOperation {
                     engine: engine.clone(),
-                    input_columns: search
-                        .source
-                        .schema()
+                    input_columns: input.schema()
                         .fields()
                         .iter()
                         .map(|f| {
@@ -314,11 +306,8 @@ pub(crate) fn route(
             })?;
             if closed && sources.len() == 1 && !sources.contains(target) {
                 let source = sources.first().unwrap();
-                let dialect = if request.engines[source].dialect == "postgres" {
-                    crate::execution::SqlDialect::Postgres
-                } else {
-                    crate::execution::SqlDialect::DuckDb
-                };
+                let dialect = crate::execution::SqlDialect::resolve(&request.engines[source].dialect)
+                    .map_err(|e| datafusion::common::DataFusionError::Plan(e.to_string()))?;
                 let columns = node
                     .schema()
                     .fields()
@@ -403,7 +392,7 @@ pub(crate) fn route(
                             sql,
                             target_relation: name,
                             columns,
-                            search: None,
+                            operation: None,
                         });
                         return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
                     }
@@ -465,11 +454,7 @@ pub fn bind_batches(
     batches: &[RecordBatch],
 ) -> Result<String, String> {
     use datafusion::common::ScalarValue;
-    let dialect = match dialect {
-        "duckdb" => crate::execution::SqlDialect::DuckDb,
-        "postgres" => crate::execution::SqlDialect::Postgres,
-        _ => return Err("unsupported binding dialect".into()),
-    };
+    let dialect = crate::execution::SqlDialect::resolve(dialect).map_err(|e| e.to_string())?;
     let types = transfer
         .columns
         .iter()
@@ -523,14 +508,7 @@ pub fn bind_batches(
         "WITH {} ({columns}) AS ({relation}) SELECT 1",
         dialect.quote_ident(&transfer.target_relation)
     );
-    let parser_dialect: Box<dyn datafusion::sql::sqlparser::dialect::Dialect> = match dialect {
-        crate::execution::SqlDialect::DuckDb => {
-            Box::new(datafusion::sql::sqlparser::dialect::DuckDbDialect {})
-        }
-        crate::execution::SqlDialect::Postgres => {
-            Box::new(datafusion::sql::sqlparser::dialect::PostgreSqlDialect {})
-        }
-    };
+    let parser_dialect = dialect.parser_dialect();
     let mut statements = Parser::new(parser_dialect.as_ref())
         .with_recursion_limit(1024)
         .try_with_sql(sql)
@@ -772,14 +750,14 @@ pub async fn execute(
             return Err(format!("dialect mismatch for engine `{id}`"));
         }
     }
-    for search in plan.transfers.iter().filter_map(|t| t.search.as_ref()) {
+    for search in plan.transfers.iter().filter_map(|t| t.operation.as_ref()) {
         if sessions
             .get(&search.engine)
             .ok_or_else(|| format!("missing search engine `{}`", search.engine))?
             .dialect()
             != search.template.dialect
         {
-            return Err("search engine dialect mismatch".into());
+            return Err("operation engine dialect mismatch".into());
         }
     }
     let mut sql = plan.sql.clone();
@@ -794,7 +772,7 @@ pub async fn execute(
             .unwrap()
             .query(&input_sql)
             .await?;
-        if let Some(search) = &transfer.search {
+        if let Some(search) = &transfer.operation {
             let mut output = vec![];
             for batch in batches {
                 for row in 0..batch.num_rows() {
@@ -963,26 +941,26 @@ mod audit_regressions {
     }
 }
 
-/// Bind source-row values for dependent search. The returned statements execute
+/// Bind source-row values for a dependent relational operation. The returned statements execute
 /// on `engine`; their concatenated results complete the named transfer.
-pub fn bind_search_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
+pub fn bind_operation_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
     let plan = &command["plan"];
     if plan["version"] != 1 {
-        return Err("unsupported search plan version".into());
+        return Err("unsupported operation plan version".into());
     }
     let name = command["relation"]
         .as_str()
-        .ok_or("missing search relation")?;
+        .ok_or("missing operation relation")?;
     let transfer = plan["transfers"]
         .as_array()
         .ok_or("missing transfers")?
         .iter()
         .find(|t| t["target_relation"].as_str() == Some(name))
-        .ok_or("unknown search relation")?;
+        .ok_or("unknown operation relation")?;
     let transfer: Transfer = serde_json::from_value(transfer.clone()).map_err(|e| e.to_string())?;
     let search = transfer
-        .search
-        .ok_or("transfer is not a dependent search")?;
+        .operation
+        .ok_or("transfer is not a dependent operation")?;
     let types = search
         .input_columns
         .iter()
@@ -993,7 +971,7 @@ pub fn bind_search_command(command: serde_json::Value) -> Result<serde_json::Val
     for row in rows {
         let row = row.as_array().ok_or("source row must be an array")?;
         if row.len() != types.len() {
-            return Err("search source row width mismatch".into());
+            return Err("operation source row width mismatch".into());
         }
         let values = row
             .iter()
@@ -1005,4 +983,12 @@ pub fn bind_search_command(command: serde_json::Value) -> Result<serde_json::Val
     Ok(
         serde_json::json!({"version":1,"engine":search.engine,"relation":name,"dialect":search.template.dialect,"sql":statements}),
     )
+}
+
+/// Compatibility name for protocol-v1 clients.
+pub type DependentSearch = DependentOperation;
+
+/// Compatibility entry point; dependent operations are not limited to search.
+pub fn bind_search_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
+    bind_operation_command(command)
 }

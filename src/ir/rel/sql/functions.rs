@@ -7,7 +7,9 @@ use std::ops::ControlFlow;
 use datafusion::common::DFSchema;
 #[cfg(feature = "duckdb")]
 use datafusion::logical_expr::Expr;
-use datafusion::sql::sqlparser::{ast, dialect::DuckDbDialect, parser::Parser};
+use datafusion::sql::sqlparser::{ast, parser::Parser};
+#[cfg(test)]
+use datafusion::sql::sqlparser::dialect::DuckDbDialect;
 #[cfg(feature = "duckdb")]
 use datafusion::sql::unparser::Unparser;
 
@@ -282,6 +284,16 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         }
         let _ = tree.visit(&mut ScalarProjectionBoundary);
     }
+    if let SqlDialect::Custom(adapter) = dialect {
+        struct RewriteQueries(&'static dyn super::DialectAdapter);
+        impl ast::VisitorMut for RewriteQueries {
+            type Break = SqlError;
+            fn post_visit_query(&mut self, query: &mut ast::Query) -> ControlFlow<Self::Break> {
+                match self.0.rewrite_query(query) { Ok(()) => ControlFlow::Continue(()), Err(error) => ControlFlow::Break(error) }
+            }
+        }
+        if let ControlFlow::Break(error) = tree.visit(&mut RewriteQueries(adapter)) { return Err(error); }
+    }
     Ok(())
 }
 
@@ -394,6 +406,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         }
     }
     let ast::Expr::Function(function) = expr else {
+        if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }
         return Ok(());
     };
     let name = function.name.to_string();
@@ -430,7 +443,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
                 "invalid declared UDF argument type".into(),
             ));
         };
-        *expr = template(&format!("CAST(__arg0 AS {sql_type})"), &[value.clone()])?;
+        *expr = portable_template(&format!("CAST(__arg0 AS {sql_type})"), &[value.clone()], dialect)?;
         return Ok(());
     }
     if let Some(native) = name.strip_prefix(crate::ir::functions::ENGINE_FUNCTION_PREFIX) {
@@ -451,12 +464,13 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         function.name = ast::ObjectName::from(
             components
                 .into_iter()
-                .map(|part| ast::Ident::with_quote('"', part))
+                .map(|part| dialect.identifier(part))
                 .collect::<Vec<_>>(),
         );
         return Ok(());
     }
     let ast::FunctionArguments::List(arguments) = &function.args else {
+        if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }
         return Ok(());
     };
     let args: Option<Vec<_>> = arguments
@@ -468,6 +482,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         })
         .collect();
     let Some(args) = args else {
+        if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }
         return Ok(());
     };
     if args.len() == 2 && matches!(name.as_str(), "__orchiddb_is_not_distinct_from" | "__orchiddb_is_distinct_from") {
@@ -478,6 +493,7 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         };
         return Ok(());
     }
+    if let SqlDialect::Custom(adapter) = dialect { return adapter.rewrite_expression(expr); }
     if dialect == SqlDialect::Postgres {
         return super::postgres_functions::adapt(expr, &name, &args);
     }
@@ -609,10 +625,8 @@ pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDi
         };
         source = source.replace(&format!("__local{local}"), &fresh);
     }
-    let duck = DuckDbDialect {};
-    let postgres = datafusion::sql::sqlparser::dialect::PostgreSqlDialect {};
-    let parser_dialect: &dyn datafusion::sql::sqlparser::dialect::Dialect = if dialect == SqlDialect::Postgres { &postgres } else { &duck };
-    let mut parser = Parser::new(parser_dialect)
+    let parser_dialect = dialect.parser_dialect();
+    let mut parser = Parser::new(parser_dialect.as_ref())
         .try_with_sql(&source)
         .map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
     let mut expression = parser

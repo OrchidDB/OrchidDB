@@ -20,16 +20,19 @@
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
 mod logical_functions;
+mod dialect;
+pub use dialect::{DialectAdapter, EngineAdapter};
 pub mod search;
+pub mod lowering;
 mod functions;
 mod postgres_functions;
 mod postgres_lists;
 pub mod region;
 pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDialect) -> SqlResult<String> {
-    let target = match dialect {
-        SqlDialect::DuckDb => crate::ir::functions::duckdb_type(&ty)?,
-        SqlDialect::Postgres => crate::ir::functions::postgres_type(&ty)?,
-    };
+    if let SqlDialect::Custom(adapter) = dialect {
+        return adapter.exchange_literal(&value, &ty);
+    }
+    let target = dialect.sql_type(&ty)?;
     let literal = if value.is_null() { "NULL".into() } else {
         match value {
             value @ (ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) => {
@@ -48,7 +51,7 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
             }
             ScalarValue::Binary(Some(bytes)) => {
                 let hex = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
-                match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')") }
+                match dialect { SqlDialect::Postgres => format!("decode('{hex}', 'hex')"), SqlDialect::DuckDb => format!("from_hex('{hex}')"), SqlDialect::Custom(_) => unreachable!() }
             }
             value => {
                 let encoded = unparse::encode_expression_literals(datafusion::logical_expr::lit(value), dialect)?.data;
@@ -143,28 +146,43 @@ pub type SqlResult<T> = Result<T, SqlError>;
 /// Target SQL dialect. All dialect-specific behavior — identifier quoting,
 /// DDL type names, literal syntax, unparser selection, and post-unparse
 /// fixups — lives here so executors and callers stay dialect-agnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum SqlDialect {
     DuckDb,
     Postgres,
+    Custom(&'static dyn DialectAdapter),
 }
+
+impl PartialEq for SqlDialect {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::DuckDb, Self::DuckDb) | (Self::Postgres, Self::Postgres) => true,
+            (Self::Custom(a), Self::Custom(b)) => std::ptr::addr_eq(*a, *b) && std::any::Any::type_id(*a) == std::any::Any::type_id(*b),
+            _ => false,
+        }
+    }
+}
+impl Eq for SqlDialect {}
 
 impl SqlDialect {
     pub fn name(self) -> &'static str {
         match self {
             Self::DuckDb => "duckdb",
             Self::Postgres => "postgres",
+            Self::Custom(adapter) => adapter.name(),
         }
     }
 
     pub fn quote_ident(self, ident: &str) -> String {
+        if let Self::Custom(adapter) = self { return adapter.quote_ident(ident); }
         format!("\"{}\"", ident.replace('"', "\"\""))
     }
 
-    fn unparser_dialect(self) -> Box<dyn UnparserDialect> {
+    pub fn unparser_dialect(self) -> Box<dyn UnparserDialect> {
         match self {
             Self::DuckDb => Box::new(DuckDBDialect::new()),
             Self::Postgres => Box::new(PostgreSqlDialect {}),
+            Self::Custom(adapter) => adapter.unparser_dialect(),
         }
     }
 
@@ -176,6 +194,7 @@ impl SqlDialect {
             // Executors run inside a rolled-back transaction, so temp tables
             // never leak into a shared server.
             Self::Postgres => "CREATE TEMPORARY TABLE",
+            Self::Custom(adapter) => adapter.create_table_keyword(),
         }
     }
 
@@ -183,10 +202,12 @@ impl SqlDialect {
         match self {
             Self::DuckDb => "DOUBLE",
             Self::Postgres => "DOUBLE PRECISION",
+            Self::Custom(adapter) => adapter.double_type(),
         }
     }
 
     fn ddl_type(self, data_type: &DataType) -> SqlResult<String> {
+        if let Self::Custom(adapter) = self { return adapter.sql_type(data_type); }
         // List-valued properties are ordinary graph data (a `tags` array on a
         // node), so they have to survive the round trip through the engine.
         if let DataType::List(inner)
@@ -205,11 +226,13 @@ impl SqlDialect {
             DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => match self {
                 Self::DuckDb => "VARCHAR",
                 Self::Postgres => "TEXT",
+                Self::Custom(_) => unreachable!(),
             },
             // All-null fixture columns still need a concrete SQL type.
             DataType::Null => match self {
                 Self::DuckDb => "VARCHAR",
                 Self::Postgres => "TEXT",
+                Self::Custom(_) => unreachable!(),
             },
             other => {
                 return Err(SqlError::Unsupported(format!(
@@ -225,9 +248,11 @@ impl SqlDialect {
     /// expressed through the unparser dialect hooks belong here, not at call
     /// sites.
     fn fixup_query(self, sql: String) -> String {
+        if let Self::Custom(adapter) = self { return adapter.fixup_query(sql); }
         // The unparser renders unsigned Arrow casts MySQL-style
         // (`BIGINT UNSIGNED`), which neither DuckDB nor Postgres parse.
         let unsigned_casts: &[(&str, &str)] = match self {
+            Self::Custom(_) => unreachable!(),
             Self::DuckDb => &[
                 ("BIGINT UNSIGNED", "UBIGINT"),
                 ("INTEGER UNSIGNED", "UINTEGER"),

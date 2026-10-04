@@ -318,22 +318,19 @@ Bind physical search capabilities separately from relationship expressions.
 These top-level TOML entries can precede the node/edge sections:
 
 ```toml
-[[search_indexes]]
+[[source_metadata]]
 table = "documents"
-column = "embedding"
-metric = "cosine"
-backend = { kind = "lance", uri = "/data/documents.lance", nprobes = 8, refine_factor = 2 }
-
-[[search_indexes]]
-table = "documents"
-column = "body"
-metric = "bm25"
-backend = { kind = "lance", uri = "/data/documents.lance" }
+format = "lance"
+options = { uri = "/data/documents.lance" }
+indexes = [
+  { column = "embedding", metric = "cosine", options = { nprobes = 8, refine_factor = 2 } },
+  { column = "body", metric = "bm25" },
+]
 ```
 
 The URI/table must refer to the same dataset, and the declared vector metric
 must match its existing index. Supported metrics are `cosine`, `dot`, `l2`, and
-`bm25`. For PostgreSQL, `backend = { kind = "pgvector" }` explicitly requires
+`bm25`. For PostgreSQL, `format = "pgvector"` explicitly requires
 PostgreSQL placement; ordinary ranked vector expressions also map to pgvector
 when their SQL island belongs to PostgreSQL.
 
@@ -370,7 +367,8 @@ OrchidDB performs no automatic extension installation or index DDL.
 
 ## Federation and JSON execution
 
-The compiler request accepts `search_indexes` alongside `computed_relationships`.
+The compiler request accepts `source_metadata` alongside `computed_relationships`.
+Legacy `search_indexes` inputs are normalized into this metadata at registration.
 For dependent search, supply the existing `engines`, table ownership, and
 `execution_engine` fields. This also covers cross-engine pgvector search: source
 rows are bound into top-k PostgreSQL statements on the vector table's owner.
@@ -383,7 +381,7 @@ Same-engine PostgreSQL search stays in one correlated SQL island. A compiled tra
   "sql": "SELECT ...source rows...",
   "target_relation": "__orchiddb_search_...",
   "columns": ["...output column descriptors..."],
-  "search": {
+  "operation": {
     "engine": "lance",
     "input_columns": ["...source column descriptors..."],
     "template": {"sql": "SELECT ... FROM lance_vector_search(..., $3, ...)", "parameters": 4, "dialect": "duckdb"}
@@ -393,12 +391,47 @@ Same-engine PostgreSQL search stays in one correlated SQL island. A compiled tra
 
 `federation::execute` runs dependent transfers automatically using caller-owned
 sessions. Clients using the JSON protocol execute a transfer's source SQL,
-then call `{"op":"bind_search","plan":...,"relation":...,"rows":[...]}`.
-Rows follow `search.input_columns` order. Execute the returned SQL statements on
+then call `{"op":"bind_operation","plan":...,"relation":...,"rows":[...]}`.
+Rows follow `operation.input_columns` order. Execute the returned SQL statements on
 the returned engine, concatenate their hit rows in transfer-column order, and
 complete the ordinary `bind` operation. Bind updates both final SQL and pending
 transfer dependencies. Source data and search hits cross existing SQL-island
 boundaries; target datasets are not copied into a private Lance adapter.
+
+## Engine integration and general relational lowering
+
+Source metadata records physical format, source options, and index capabilities.
+It does not choose an execution backend. The owner engine's registered
+`DialectAdapter` (also exported as `EngineAdapter`) lowers the typed relational
+operation using Rust code. Built-in PostgreSQL and DuckDB rules implement the
+same interface. There is no separate search-backend trait or closed backend enum.
+
+The `lower_relation` hook returns a SQL AST, an equivalent logical-plan rewrite,
+or a dependent operation with source inputs, a typed SQL template, and an output
+schema. `TableFunction` is a general row-producing logical node: argument types
+are checked against its source schema; `Correlated` inputs can remain in a SQL
+island and `PrepareTime` inputs require binding first. Predicates remain above a
+table-function boundary unless its lowering explicitly implements a valid pushdown.
+Schema-changing rewrites and mismatched dependent parameter counts are rejected.
+
+Search retains its own logical ranking semantics: eligibility before retrieval,
+per-source top-k, scoring direction, and exact/approximate requirements. The
+engine rules implement these with index-usable PostgreSQL ordering or Lance
+search calls. Indexed BM25 has an explicit index-owned corpus; it does not
+construct a dummy corpus or silently invoke native scoring.
+
+See the [engine adapter guide](../website/docs/content/engine-adapters.md) and
+`tests/engine_adapter.rs` for registration, AST transformations, function
+mappings, table-function lowering, and typed literal codecs. Custom formats and
+options are retained for the owning adapter to validate. Unsupported engine
+operations fail explicitly.
+
+The JSON execution protocol now emits `Transfer.operation` and accepts
+`op: "bind_operation"`. The former `search` descriptor and `bind_search` command
+remain accepted on input. These names also apply to non-search operations.
+Typed expressions, row-producing operations, and codec hooks are extension
+points for future JSON lowering; this change does not implement full JSON
+relational semantics.
 
 ## Verification and limits
 

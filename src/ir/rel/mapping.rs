@@ -430,7 +430,7 @@ impl EdgeMapping {
 #[derive(Default, Clone)]
 pub struct GraphMapping {
     pub(crate) rdf: super::rdf::RdfDatasetMapping,
-    pub(crate) search_indexes: Vec<super::search::SearchIndex>,
+    pub(crate) source_metadata: BTreeMap<String, super::source_metadata::SourceMetadata>,
     logical_functions: BTreeMap<String, Arc<ScalarUDF>>,
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
@@ -476,17 +476,41 @@ impl GraphMapping {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn register_search_index(&mut self, index: super::search::SearchIndex) -> RelResult<&mut Self> {
-        if index.table.is_empty() || index.column.is_empty() || self.search_indexes.iter().any(|i|i.table==index.table && i.column==index.column && i.metric==index.metric) { return Err(RelError::Unsupported("search index needs unique table, column, and metric".into())); }
-        if matches!(index.backend,super::search::SearchBackend::Pgvector) && index.metric==super::search::SearchMetric::Bm25 {
-            return Err(RelError::Unsupported("pgvector indexes vector metrics, not BM25".into()));
+    /// Register physical source facts. Backend-specific options are validated
+    /// by the owning engine when it lowers the relational operation.
+    pub fn register_source_metadata(&mut self, metadata: super::source_metadata::SourceMetadata) -> RelResult<&mut Self> {
+        if metadata.table.is_empty() || metadata.format.as_ref().is_some_and(String::is_empty) {
+            return Err(RelError::Unsupported("source metadata needs a table and a nonempty format when specified".into()));
         }
-        if let super::search::SearchBackend::Lance{uri,nprobes,refine_factor}=&index.backend {
-            if uri.is_empty() || *nprobes==Some(0) || *refine_factor==Some(0) {return Err(RelError::Unsupported("invalid Lance search index configuration".into()));}
+        let mut indexes = std::collections::HashSet::new();
+        for index in &metadata.indexes {
+            if index.column.is_empty() || !indexes.insert((&index.column, &index.metric)) {
+                return Err(RelError::Unsupported("source indexes need unique column and metric pairs".into()));
+            }
         }
-        self.search_indexes.push(index);Ok(self)
+        if self.source_metadata.contains_key(&metadata.table) {
+            return Err(RelError::Unsupported(format!("duplicate source metadata for {}", metadata.table)));
+        }
+        self.source_metadata.insert(metadata.table.clone(), metadata);
+        Ok(self)
     }
 
+    /// Compatibility input; execution only consumes source metadata.
+    pub fn register_search_index(&mut self, index: super::search::SearchIndex) -> RelResult<&mut Self> {
+        let metadata = super::source_metadata::SourceMetadata::from(index);
+        if let Some(existing) = self.source_metadata.get_mut(&metadata.table) {
+            if existing.format != metadata.format || existing.options != metadata.options {
+                return Err(RelError::Unsupported(format!("conflicting source metadata for {}", metadata.table)));
+            }
+            let index = metadata.indexes.into_iter().next().unwrap();
+            if index.column.is_empty() || existing.indexes.iter().any(|i| i.column == index.column && i.metric == index.metric) {
+                return Err(RelError::Unsupported("source indexes need unique column and metric pairs".into()));
+            }
+            existing.indexes.push(index);
+            return Ok(self);
+        }
+        self.register_source_metadata(metadata)
+    }
 
     /// Validate row ownership before either compiling reads or executing writes.
     pub fn validate_foreign_keys(&self) -> RelResult<()> {
@@ -1627,6 +1651,9 @@ impl GraphMapping {
     pub fn from_toml(input: &str) -> RelResult<Self> {
         let mut document: toml::Value = toml::from_str(input)
             .map_err(|e| RelError::Unsupported(format!("mapping TOML: {e}")))?;
+        let source_metadata = document.as_table_mut().and_then(|t| t.remove("source_metadata"))
+            .map(|v| v.try_into::<Vec<super::source_metadata::SourceMetadata>>()).transpose()
+            .map_err(|e| RelError::Unsupported(e.to_string()))?.unwrap_or_default();
         let indexes = document.as_table_mut().and_then(|t|t.remove("search_indexes"))
             .map(|v|v.try_into::<Vec<super::search::SearchIndex>>()).transpose().map_err(|e|RelError::Unsupported(e.to_string()))?.unwrap_or_default();
         let mut computed = Vec::new();
@@ -1744,6 +1771,7 @@ impl GraphMapping {
                 }
             }
         }
+        for metadata in source_metadata { mapping.register_source_metadata(metadata)?; }
         for index in indexes { mapping.register_search_index(index)?; }
         for rule in computed { mapping.map_computed_relationship(rule)?; }
         mapping.validate_foreign_keys()?;
@@ -1752,7 +1780,18 @@ impl GraphMapping {
 
     /// Render the mapping in the TOML format [`from_toml`](Self::from_toml)
     /// reads. Providers are not serialized.
+    ///
+    /// # Panics
+    /// Panics when metadata cannot be represented in TOML, for example JSON
+    /// null options. Use [`try_to_toml`](Self::try_to_toml) for arbitrary metadata.
     pub fn to_toml(&self) -> String {
+        self.try_to_toml().expect("mapping must be representable in TOML; use try_to_toml for arbitrary metadata")
+    }
+
+    /// Render a mapping without losing source options that TOML cannot express.
+    /// JSON-only values such as null remain valid catalog metadata but produce
+    /// an error here. Providers are not serialized.
+    pub fn try_to_toml(&self) -> RelResult<String> {
         fn quote(value: &str) -> String {
             serde_json::to_string(value).expect("serializable mapping string")
         }
@@ -1763,8 +1802,9 @@ impl GraphMapping {
                 MappedSource::Computed(_) => unreachable!("serialized separately"),
             }
         }
-        let mut out = if self.search_indexes.is_empty() { String::new() } else {
-            toml::to_string(&BTreeMap::from([("search_indexes", &self.search_indexes)])).expect("serializable indexes")
+        let mut out = if self.source_metadata.is_empty() { String::new() } else {
+            toml::to_string(&BTreeMap::from([("source_metadata", self.source_metadata.values().collect::<Vec<_>>())]))
+                .map_err(|e| RelError::Unsupported(format!("source metadata cannot be represented in TOML: {e}")))?
         };
         for (label, node) in &self.nodes {
             out.push_str(&format!("[node.{label}]\n"));
@@ -1781,10 +1821,10 @@ impl GraphMapping {
         }
         for (rel_type, edge) in &self.edges {
             if let MappedSource::Computed(rule) = &edge.source {
-                let mut value = toml::Value::try_from(rule.as_ref()).expect("serializable relationship");
+                let mut value = toml::Value::try_from(rule.as_ref()).map_err(|e| RelError::Unsupported(format!("relationship TOML: {e}")))?;
                 value.as_table_mut().unwrap().remove("name");
                 let document = toml::Value::Table(toml::map::Map::from_iter([("edge".into(), toml::Value::Table(toml::map::Map::from_iter([(rel_type.clone(), value)])))]));
-                out.push_str(&toml::to_string(&document).expect("serializable relationship"));
+                out.push_str(&toml::to_string(&document).map_err(|e| RelError::Unsupported(format!("relationship TOML: {e}")))?);
                 out.push('\n');
                 continue;
             }
@@ -1833,7 +1873,7 @@ impl GraphMapping {
                 quote(&serde_json::to_string(&self.constraints).expect("serializable catalog"))
             ));
         }
-        out
+        Ok(out)
     }
 }
 
