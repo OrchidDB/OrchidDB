@@ -29,6 +29,16 @@ and easy to search. Its tables and downloads also work without JavaScript.
 
 [Inspect the openCypher results](conformance-report.html#language-opencypher).
 
+**ArcadeDB comparison.** We reproduced its published 97.8% result on 26.9.1;
+our harness records 91.9%. The difference comes from error checks, identity-based
+side-effect checks, path representations, fixture formatting and exclusions.
+Its harness accepts any exception for expected errors and any list as a path;
+our error-category mapping and path normalization also need qualification.
+Nineteen failures occur before the tested query because its embedded API rejects
+a fixture's trailing semicolon; all 19 pass with only that terminator removed.
+These are fixture/API compatibility failures, not 19 demonstrated query defects.
+[Read the scenario-level reconciliation](downloads/conformance/arcadedb-reconciliation.json).
+
 ## Gremlin
 
 <span id="language-tinkerpop"></span>

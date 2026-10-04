@@ -72,6 +72,12 @@ def render(out):
     d=json.loads(path.read_text());runs[p,suite]=d;lookup[p,suite]={r['id']:r for r in d['results']};(download/path.name).write_bytes(path.read_bytes())
  reference=ROOT/'upstream-results/reference-tinkerpop.json'
  if reference.exists():(download/reference.name).write_bytes(reference.read_bytes())
+ reconciliation=ROOT/'adapters/arcadedb/reconciliation.json'
+ if reconciliation.exists():
+  audit=json.loads(reconciliation.read_text())
+  # Keep full query/result payloads in the source audit, as with other downloads.
+  for result in audit.get('failures',[]):result.pop('evidence',None)
+  (download/'arcadedb-reconciliation.json').write_text(json.dumps(audit,indent=2)+'\n')
  def get(p,c):
   result=lookup.get((p,c['suite']),{}).get(c['id'],{'status':'not-run','reason':'No committed upstream run for this case'})
   if result.get('case_sha256') and result.get('normalized_case_sha256', result['case_sha256'])!=result_fingerprint(c):return {**result,'status':'stale'}
@@ -79,6 +85,7 @@ def render(out):
  html=['<div class="report-meta"><span>6,533 upstream scenarios · '+str(len(PRODUCTS))+' products</span><nav aria-label="Comparison sections"><a href="#summary">Suite totals</a><a href="#query-cost">Query cost</a><a href="#capabilities">Capabilities</a><a href="#java-provider">Java tests</a><a href="#method">Method</a><a href="/downloads/conformance/upstream-comparison.csv">Download CSV ↓</a></nav></div>']
  from leaderboard import render as render_leaderboard
  html.append(render_leaderboard(cases,get,runs,ROOT,download))
+ html.append('<p class="matrix-note" id="arcadedb-interpretation"><strong>ArcadeDB interpretation.</strong> We reproduced its published 97.8% Cypher result on 26.9.1; this harness records 91.9%. The gap includes error checks, identity-based side effects, path representations, fixture formatting and exclusions. Its harness accepts any exception for expected errors and any list as a path; our error-category mapping and path normalization also need qualification. Nineteen failures are fixture/API compatibility issues: its embedded API rejects a trailing semicolon, and all 19 pass with only that terminator removed. These are not 19 demonstrated query defects. <a href="/downloads/conformance/arcadedb-reconciliation.json">Scenario-level reconciliation</a>.</p>')
  html.append('<nav class="language-tabs" aria-label="Query languages">'+''.join('<a href="#language-'+suite+'" data-language-tab="'+suite+'">'+label+'<span>'+str(len({c['feature'] for c in cases if c['suite']==suite}))+' features</span></a>' for suite,label in [('tinkerpop','Gremlin'),('opencypher','Cypher'),('rdf','SPARQL')])+'</nav>')
  html.append('<div class="comparison-controls" hidden><label class="feature-search">Find a graph feature<input id="comparison-search" type="search" placeholder="Try count, shortest path, aggregation…" autocomplete="off"></label><label>Results<select id="comparison-filter"><option value="all">All outcomes</option><option value="differences">Different outcomes</option><option value="failures">Failures / timeouts</option><option value="adapter">Adapter limitations</option><option value="unexecuted">Skipped / unsupported</option><option value="crab-wins">OrchidDB passes; peer fails</option><option value="peer-wins">Peer passes; OrchidDB fails</option></select></label><button id="comparison-reset" type="button">Reset</button></div>')
  html.append('<p class="matrix-legend"><span><i class="complete"></i>All passed</span><span><i class="mixed"></i>Some passed</span><span><i class="failed"></i>No passes; failures recorded</span><span><i class="unknown"></i>Not evaluated</span></p><p class="matrix-note">Cells show passed / total upstream scenarios. OrchidDB is shown as one product, with one recorded outcome per scenario from a single suite run. Select a cell for individual results and timings. All features are listed below.</p><p id="comparison-count" role="status"></p><div class="feature-browser" id="cases"><div class="feature-stage"><p id="empty-stage" hidden>No features match these filters.</p>')
