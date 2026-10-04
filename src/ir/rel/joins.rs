@@ -266,6 +266,17 @@ impl<'a> LoweringContext<'a> {
         let outputs = right_apply_output_columns(&right.plan, outputs)?;
         let (left_plan, right_plan, join_exprs, right_cleanup) =
             prepare_apply_join_inputs(left.plan.clone(), right.plan.clone(), key_cols, &outputs)?;
+        // Cypher collected scalar subqueries need this SQL scope boundary.
+        // Do not put it in the shared key-projection helper: Gremlin probes
+        // can project fewer columns than their input, triggering DataFusion's
+        // positional alias rewrite on an unrelated inner projection.
+        let right_plan = if self.language == Language::Cypher {
+            LogicalPlanBuilder::from(right_plan)
+                .alias("__w_apply_join_right")?
+                .build()?
+        } else {
+            right_plan
+        };
         cleanup.extend(right_cleanup);
         let mut plan = LogicalPlanBuilder::from(left_plan)
             .join_on(right_plan, JoinType::Left, join_exprs)?
@@ -592,9 +603,6 @@ pub(super) fn prepare_apply_join_inputs(
     }
     let right = LogicalPlanBuilder::from(right)
         .project(right_projections)?
-        // Keep private correlation aliases in scope across the apply join,
-        // including when a scalar guard wraps a collected subquery.
-        .alias("__w_apply_join_right")?
         .build()?;
     let join_exprs = key_pairs
         .into_iter()

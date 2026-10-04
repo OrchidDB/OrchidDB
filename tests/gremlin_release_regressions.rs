@@ -19,6 +19,49 @@ fn cells(result: &QueryResult) -> Vec<String> {
 }
 
 #[tokio::test]
+async fn label_traversal_predicates_preserve_parent_vertices() {
+    use orchiddb::ir::{PropertyGraph, Value};
+    let graph = PropertyGraph::new();
+    for (id, name, label) in [
+        (1, "marko", "person"),
+        (2, "vadas", "person"),
+        (3, "lop", "software"),
+        (4, "josh", "person"),
+        (5, "ripple", "software"),
+        (6, "peter", "person"),
+    ] {
+        let node = graph.insert_node(label, [("name".into(), Value::String(name.into()))].into());
+        graph.set_element_public_id(&node, Value::Int(id)).unwrap();
+    }
+    let mut engine = GraphEngine::in_memory().unwrap();
+    engine.replace_graph(graph).unwrap();
+    // Keep the unprojected upstream shape: projecting/counting first can hide
+    // a malformed alias boundary from the SQL unparser.
+    let result = engine
+        .gremlin("g.V().has(T.label, __.is('software'))")
+        .await
+        .unwrap();
+    assert_eq!(result.returned.batch.num_rows(), 2);
+    for (query, expected) in [
+        (
+            "g.V().has(T.label, __.is('software')).values('name')",
+            vec!["lop", "ripple"],
+        ),
+        (
+            "g.V().has(T.label, __.is('missing')).values('name')",
+            vec![],
+        ),
+        (
+            "g.V().not(__.has(T.label, __.is('software'))).values('name')",
+            vec!["josh", "marko", "peter", "vadas"],
+        ),
+    ] {
+        let result = engine.gremlin(query).await.unwrap();
+        assert_eq!(cells(&result), expected, "{query}");
+    }
+}
+
+#[tokio::test]
 async fn filtered_unwind_values() {
     let mut engine = modern().await;
     for (query, expected) in [
