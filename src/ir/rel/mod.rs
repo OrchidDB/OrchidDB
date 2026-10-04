@@ -22,6 +22,7 @@ use scans::*;
 mod expression;
 use expression::*;
 mod scalar_functions;
+mod function_catalog;
 mod scalar_types;
 use scalar_types::*;
 

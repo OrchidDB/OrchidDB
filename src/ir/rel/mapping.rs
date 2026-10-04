@@ -54,6 +54,7 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 
 use crate::ir::plan::LabelExpr;
 
+use super::function_catalog;
 use super::{
     LoweredNode, LoweringContext, RelError, RelResult, col_exact, dst_id_col,
     dst_label_col, edge_schema, id_col, label_col, node_schema, prop_col, src_id_col,
@@ -1508,9 +1509,6 @@ struct MappingContextProvider<'a> {
     mapping: &'a GraphMapping,
     requested: std::cell::RefCell<BTreeSet<String>>,
     options: ConfigOptions,
-    udfs: Vec<Arc<ScalarUDF>>,
-    udafs: Vec<Arc<AggregateUDF>>,
-    udwfs: Vec<Arc<WindowUDF>>,
 }
 
 impl<'a> MappingContextProvider<'a> {
@@ -1519,9 +1517,6 @@ impl<'a> MappingContextProvider<'a> {
             mapping,
             requested: Default::default(),
             options: ConfigOptions::default(),
-            udfs: datafusion::functions::all_default_functions(),
-            udafs: datafusion::functions_aggregate::all_default_aggregate_functions(),
-            udwfs: datafusion::functions_window::all_default_window_functions(),
         }
     }
 }
@@ -1547,26 +1542,17 @@ impl ContextProvider for MappingContextProvider<'_> {
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
         let lower = name.to_ascii_lowercase();
-        self.udfs
-            .iter()
-            .find(|udf| udf.name() == lower || udf.aliases().iter().any(|alias| alias == &lower))
-            .cloned()
+        function_catalog::scalar().get(&lower).cloned()
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
         let lower = name.to_ascii_lowercase();
-        self.udafs
-            .iter()
-            .find(|udaf| udaf.name() == lower || udaf.aliases().iter().any(|alias| alias == &lower))
-            .cloned()
+        function_catalog::aggregate().get(&lower).cloned()
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
         let lower = name.to_ascii_lowercase();
-        self.udwfs
-            .iter()
-            .find(|udwf| udwf.name() == lower || udwf.aliases().iter().any(|alias| alias == &lower))
-            .cloned()
+        function_catalog::window().get(&lower).cloned()
     }
 
     fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
@@ -1578,21 +1564,15 @@ impl ContextProvider for MappingContextProvider<'_> {
     }
 
     fn udf_names(&self) -> Vec<String> {
-        self.udfs.iter().map(|udf| udf.name().to_string()).collect()
+        function_catalog::scalar().names()
     }
 
     fn udaf_names(&self) -> Vec<String> {
-        self.udafs
-            .iter()
-            .map(|udaf| udaf.name().to_string())
-            .collect()
+        function_catalog::aggregate().names()
     }
 
     fn udwf_names(&self) -> Vec<String> {
-        self.udwfs
-            .iter()
-            .map(|udwf| udwf.name().to_string())
-            .collect()
+        function_catalog::window().names()
     }
 }
 
@@ -1979,6 +1959,36 @@ fn parse_toml_string(input: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn query_function_resolution_preserves_case_aliases_and_namespaces() {
+        let mapping = GraphMapping::new();
+        let provider = MappingContextProvider::new(&mapping);
+        assert_eq!(
+            provider.get_function_meta("ChAr_LeNgTh").unwrap().name(),
+            "character_length"
+        );
+        assert_eq!(provider.get_aggregate_meta("MeAn").unwrap().name(), "avg");
+        assert_eq!(
+            provider.get_window_meta("RoW_NuMbEr").unwrap().name(),
+            "row_number"
+        );
+        assert!(provider.get_function_meta("row_number").is_none());
+        assert!(provider.get_aggregate_meta("character_length").is_none());
+        assert!(provider.get_window_meta("__missing").is_none());
+        // Planning another query reuses the same functions without moving
+        // request-specific table tracking into the shared catalog.
+        let other = MappingContextProvider::new(&mapping);
+        assert!(Arc::ptr_eq(
+            &provider.get_function_meta("length").unwrap(),
+            &other.get_function_meta("character_length").unwrap()
+        ));
+        provider.requested.borrow_mut().insert("customers".into());
+        assert!(other.requested.borrow().is_empty());
+        mapping
+            .plan_sql("SELECT ChAr_LeNgTh('hello'), MeAn(3) OVER (), RoW_NuMbEr() OVER ()")
+            .unwrap();
+    }
 
     #[test]
     fn toml_round_trip() {
