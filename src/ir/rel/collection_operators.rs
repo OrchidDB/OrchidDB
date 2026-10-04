@@ -118,13 +118,13 @@ impl<'a> LoweringContext<'a> {
                 ]),
                 AggKind::AvgOrZero => df_core::coalesce(vec![
                     distinct_if(
-                        df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                        df_avg(self.lower_avg_arg(&input.plan, &agg.arg)?),
                         agg.distinct,
                     )?,
                     lit(0.0_f64),
                 ]),
                 AggKind::Avg | AggKind::AvgOrNull => distinct_if(
-                    df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                    df_avg(self.lower_avg_arg(&input.plan, &agg.arg)?),
                     agg.distinct,
                 )?,
                 AggKind::Min | AggKind::MinOrNull => {
@@ -312,6 +312,12 @@ impl<'a> LoweringContext<'a> {
         let barrier_id = self.scan_counter;
         self.scan_counter += 1;
         let base = keyed_distinct(base, &correlation_keys, barrier_id)?;
+        // Preserve the aggregate and its renamed keys as a SQL relation.
+        // Without this boundary nested collects can join against the raw
+        // UNWIND input, exposing duplicate (and missing renamed) keys.
+        let grouped = LogicalPlanBuilder::from(grouped)
+            .alias(format!("__w_sql_cte_collect_{barrier_id}"))?
+            .build()?;
         let join_conditions = correlation_keys
             .iter()
             .zip(&right_key_aliases)

@@ -461,6 +461,12 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
     }
     match (name.as_str(), args.len()) {
         ("btrim", 1 | 2) => rename(function, "trim"),
+        // DuckDB reverse uses grapheme clusters; DataFusion/Cypher reverse
+        // uses Unicode code points. Splitting on the empty separator keeps
+        // code points separate, including combining marks and ZWJ.
+        ("reverse", 1) => {
+            *expr = template("array_to_string(list_reverse(string_split(__arg0, '')), '')", &args)?;
+        }
         ("array_position", 3) if args[2].to_string() == "1" => {
             *expr = template("array_position(__arg0, __arg1)", &args)?;
         }

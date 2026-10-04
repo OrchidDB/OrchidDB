@@ -592,6 +592,9 @@ pub(super) fn prepare_apply_join_inputs(
     }
     let right = LogicalPlanBuilder::from(right)
         .project(right_projections)?
+        // Keep private correlation aliases in scope across the apply join,
+        // including when a scalar guard wraps a collected subquery.
+        .alias("__w_apply_join_right")?
         .build()?;
     let join_exprs = key_pairs
         .into_iter()

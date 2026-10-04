@@ -47,6 +47,23 @@ use crate::ir::runtime::expr::{compare_values, modulo};
 use crate::ir::runtime::{RuntimeError, IrResult};
 use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
+// Cypher string positions count Unicode code points, not grapheme clusters.
+// Keep literal folding/row evaluation aligned with the relational string UDFs.
+fn codepoint_substring(s: &str, start: i64, end: Option<i64>) -> String {
+    let chars = s.chars().collect::<Vec<_>>();
+    let len = chars.len() as i64;
+    let normalize = |index: i64| {
+        if index < 0 {
+            (len + index).max(0)
+        } else {
+            index.min(len)
+        }
+    };
+    let start = normalize(start);
+    let end = end.map(|end| normalize(end).max(start)).unwrap_or(len);
+    chars[start as usize..end as usize].iter().collect()
+}
+
 pub(super) fn cypher_call(
     name: &str,
     canonical: &str,
@@ -395,11 +412,9 @@ pub(super) fn cypher_call(
         ("replace", [Value::String(s), Value::String(from), Value::String(to)]) => {
             Ok(Some(Value::String(s.replace(from.as_str(), to))))
         }
-        ("reverse", [Value::String(s)]) => Ok(Some(Value::String(
-            unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
-                .rev()
-                .collect(),
-        ))),
+        ("reverse", [Value::String(s)]) => {
+            Ok(Some(Value::String(s.chars().rev().collect())))
+        }
         ("reverse", [Value::List(items)]) => {
             let mut reversed = items.clone();
             reversed.reverse();
@@ -408,18 +423,30 @@ pub(super) fn cypher_call(
         ("substring", [Value::String(s), start]) => Ok(Some(
             start
                 .as_i64()
-                .map(|start| Value::String(substring(s, start, None)))
+                .map(|start| Value::String(codepoint_substring(s, start, None)))
                 .unwrap_or(Value::Null),
         )),
         ("substring", [Value::String(s), start, length]) => {
             Ok(Some(match (start.as_i64(), length.as_i64()) {
                 (Some(start), Some(length)) if length >= 0 => {
-                    Value::String(substring(s, start, start.checked_add(length)))
+                    Value::String(codepoint_substring(s, start, start.checked_add(length)))
                 }
                 _ => Value::Null,
             }))
         }
-        ("left", [Value::String(s), length]) => Ok(Some(left_string_value(s, length))),
+        ("left", [Value::String(s), length]) => Ok(Some(
+            length
+                .as_i64()
+                .map(|length| {
+                    let end = if length < 0 {
+                        (s.chars().count() as i64 + length).max(0)
+                    } else {
+                        length
+                    };
+                    Value::String(codepoint_substring(s, 0, Some(end)))
+                })
+                .unwrap_or(Value::Null),
+        )),
         ("left", [value, length])
             if !matches!(value, Value::Null) && !matches!(length, Value::Null) =>
         {
@@ -432,9 +459,7 @@ pub(super) fn cypher_call(
             length
                 .as_i64()
                 .map(|length| {
-                    let chars =
-                        unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
-                            .collect::<Vec<_>>();
+                    let chars = s.chars().collect::<Vec<_>>();
                     let skip = if length < 0 {
                         (length.unsigned_abs() as usize).min(chars.len())
                     } else {

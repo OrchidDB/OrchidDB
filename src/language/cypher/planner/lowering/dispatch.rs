@@ -75,14 +75,14 @@ fn lower_optional_match(
                 bindings: outer_fields.clone(),
             };
             let history = pattern_history_binding(lowerer, &clause.patterns);
-            for part in &clause.patterns {
+            for (index, part) in clause.patterns.iter().enumerate() {
                 right = pattern::lower_pattern_part(
                     lowerer,
                     right,
                     part,
                     false,
                     history.as_deref(),
-                    false,
+                    index > 0,
                 )?;
             }
             if let Some(predicate) = &clause.predicate {

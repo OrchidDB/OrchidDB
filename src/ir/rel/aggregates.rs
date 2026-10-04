@@ -60,6 +60,21 @@ impl<'a> LoweringContext<'a> {
         self.lower_expr(plan, arg)
     }
 
+    pub(super) fn lower_avg_arg(
+        &self,
+        plan: &LogicalPlan,
+        arg: &Option<IrExpr>,
+    ) -> RelResult<Expr> {
+        let value = self.lower_required_agg_arg(plan, arg)?;
+        // AVG has no Null-typed accumulator. Empty/all-null inputs still
+        // produce SQL NULL; give only untyped NULLs a numeric input type.
+        Ok(if value.get_type(plan.schema())? == DataType::Null {
+            value.cast_to(&DataType::Float64, plan.schema())?
+        } else {
+            value
+        })
+    }
+
     pub(super) fn lower_count_if(
         &self,
         plan: &LogicalPlan,

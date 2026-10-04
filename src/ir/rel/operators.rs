@@ -293,13 +293,13 @@ impl LoweringContext<'_> {
                             ]),
                             AggKind::AvgOrZero => df_core::coalesce(vec![
                                 distinct_if(
-                                    df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                    df_avg(self.lower_avg_arg(&input.plan, &agg.arg)?),
                                     agg.distinct,
                                 )?,
                                 lit(0.0_f64),
                             ]),
                             AggKind::Avg | AggKind::AvgOrNull => distinct_if(
-                                df_avg(self.lower_required_agg_arg(&input.plan, &agg.arg)?),
+                                df_avg(self.lower_avg_arg(&input.plan, &agg.arg)?),
                                 agg.distinct,
                             )?,
                             AggKind::Min | AggKind::MinOrNull => {
