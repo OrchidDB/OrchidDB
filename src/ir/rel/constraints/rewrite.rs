@@ -7,7 +7,7 @@ use datafusion::{
         Result,
         tree_node::{Transformed, TreeNode},
     },
-    logical_expr::{Expr, JoinType, LogicalPlan, LogicalPlanBuilder},
+    logical_expr::{Expr, ExprSchemable, JoinType, LogicalPlan, LogicalPlanBuilder},
     optimizer::{OptimizerConfig, OptimizerRule},
 };
 use serde::Serialize;
@@ -120,15 +120,27 @@ fn join_pairs(j: &datafusion::logical_expr::Join) -> Option<Vec<(usize, usize)>>
     }
     let l = analyze(&j.left);
     let r = analyze(&j.right);
-    let mut pairs =
-        j.on.iter()
-            .map(|(a, b)| {
-                Some((
-                    input_column(a, j.left.schema())?,
-                    input_column(b, j.right.schema())?,
-                ))
-            })
-            .collect::<Option<Vec<_>>>()?;
+    fn pair(
+        a: &Expr,
+        b: &Expr,
+        j: &datafusion::logical_expr::Join,
+    ) -> Option<(usize, usize)> {
+        // Raw key uniqueness need not survive implicit comparison coercion
+        // (e.g. distinct Int64 values can collapse to the same Float64).
+        // Explicit casts must also pass input_column's injectivity check.
+        if a.get_type(j.left.schema()).ok()? != b.get_type(j.right.schema()).ok()? {
+            return None;
+        }
+        Some((
+            input_column(a, j.left.schema())?,
+            input_column(b, j.right.schema())?,
+        ))
+    }
+    let mut pairs = j
+        .on
+        .iter()
+        .map(|(a, b)| pair(a, b, j))
+        .collect::<Option<Vec<_>>>()?;
     fn extract(
         e: &Expr,
         j: &datafusion::logical_expr::Join,
@@ -141,13 +153,9 @@ fn join_pairs(j: &datafusion::logical_expr::Join) -> Option<Vec<(usize, usize)>>
                 return Some(());
             }
             if b.op == datafusion::logical_expr::Operator::Eq {
-                let pair = input_column(&b.left, j.left.schema())
-                    .zip(input_column(&b.right, j.right.schema()))
-                    .or_else(|| {
-                        input_column(&b.right, j.left.schema())
-                            .zip(input_column(&b.left, j.right.schema()))
-                    })?;
-                pairs.push(pair);
+                let columns = pair(&b.left, &b.right, j)
+                    .or_else(|| pair(&b.right, &b.left, j))?;
+                pairs.push(columns);
                 return Some(());
             }
         }

@@ -1,5 +1,5 @@
 use arrow::{
-    array::{Int64Array, RecordBatch, StringArray},
+    array::{Float64Array, Int64Array, RecordBatch, StringArray},
     datatypes::{DataType, Field, Schema},
 };
 use datafusion::{datasource::MemTable, prelude::SessionContext};
@@ -684,6 +684,88 @@ fn changed_view_schema_rejects_stale_constraint_columns() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("missing column v.name"), "{error}");
+}
+
+#[tokio::test]
+async fn implicit_numeric_coercion_does_not_authorize_join_elimination() {
+    let mut m = GraphMapping::new();
+    let left_schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Float64, false)]));
+    let left_batch = RecordBatch::try_new(
+        left_schema.clone(),
+        vec![Arc::new(Float64Array::from(vec![9007199254740992.0]))],
+    )
+    .unwrap();
+    m.register_table(
+        "l",
+        Arc::new(MemTable::try_new(left_schema, vec![vec![left_batch]]).unwrap()),
+    );
+    let right_schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    let right_batch = RecordBatch::try_new(
+        right_schema.clone(),
+        vec![Arc::new(Int64Array::from(vec![
+            9007199254740992,
+            9007199254740993,
+        ]))],
+    )
+    .unwrap();
+    m.register_table(
+        "r",
+        Arc::new(MemTable::try_new(right_schema, vec![vec![right_batch]]).unwrap()),
+    );
+    let mut catalog = ConstraintCatalog::default();
+    catalog.insert(
+        "r",
+        Constraint::enforced(
+            "r_id_unique",
+            Fact::Unique {
+                columns: names(&["id"]),
+                nulls_equal: false,
+            },
+        ),
+    );
+    m.set_constraints(catalog);
+
+    // Distinct Int64 keys collide when the join coerces them to Float64.
+    let original = m
+        .relational_plan("SELECT l.x FROM l LEFT JOIN r ON l.x = r.id")
+        .unwrap();
+    // Exercise both representations of equijoin conditions, plus reversed
+    // operands in the SQL filter representation.
+    use datafusion::{
+        common::tree_node::{Transformed, TreeNode},
+        logical_expr::{Expr, LogicalPlan},
+    };
+    let on_plan = original
+        .clone()
+        .transform_up(|plan| {
+            if let LogicalPlan::Join(mut join) = plan {
+                let Some(Expr::BinaryExpr(eq)) = join.filter.take() else {
+                    panic!("expected an equality join filter");
+                };
+                join.on.push((*eq.left, *eq.right));
+                return Ok(Transformed::yes(LogicalPlan::Join(join)));
+            }
+            Ok(Transformed::no(plan))
+        })
+        .unwrap()
+        .data;
+    let reversed = m
+        .relational_plan("SELECT l.x FROM l LEFT JOIN r ON r.id = l.x")
+        .unwrap();
+    for original in [original, on_plan, reversed] {
+        let (optimized, proofs) = optimize(original.clone()).unwrap();
+        let diagnostic =
+            format!("original: {original:?}\noptimized: {optimized:?}\nproofs: {proofs:?}");
+        let original_rows = rows(original).await;
+        let optimized_rows = rows(optimized).await;
+        assert_eq!(original_rows.len(), 2, "{diagnostic}");
+        assert_eq!(original_rows[0], original_rows[1], "{diagnostic}");
+        assert_eq!(original_rows, optimized_rows, "{diagnostic}");
+        assert!(
+            !proofs.iter().any(|p| p.rule == "eliminate_join"),
+            "{diagnostic}"
+        );
+    }
 }
 
 #[test]
