@@ -80,8 +80,8 @@ score properties, per-source ranking, and candidate stages. `search_indexes` bin
 physical columns to pgvector or duckdb-lance retrieval. Same-engine PostgreSQL
 search stays in a correlated SQL island; dependent search transfers include a
 template that clients bind with `op: "bind_search"` before the ordinary `bind`
-operation. See [Search](search.md#federation-and-json-execution) for the protocol
-and generated SQL.
+operation. See the [search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md#federation-and-json-execution)
+for the protocol and generated SQL, or [Search](search.md) for an overview.
 
 Optional `functions`
 describe language-facing name, SQL target, parameter type list, return type

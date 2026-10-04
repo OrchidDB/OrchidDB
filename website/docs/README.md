@@ -47,8 +47,8 @@ publishing so report assets and downloads are included.
 ## Editing
 
 - Edit chapters in `content/`; each file has its own `# Title`.
-- The Search chapter includes `../../docs/computed-relationships-and-search.md`;
-  edit that shared feature guide to update its reference material.
+- Keep the Search overview concise; detailed search behavior lives in
+  `../../docs/computed-relationships-and-search.md`.
 - Edit chapter order and section names in `content/SUMMARY.md`.
 - Use relative `.md` links between chapters; mdBook converts them to `.html`.
 - Configure mdBook in `book.toml`. Keep its theme unmodified.
