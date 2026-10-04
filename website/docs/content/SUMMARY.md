@@ -21,6 +21,7 @@
 # Search
 
 - [Vector and full-text search](search.md)
+- [Quickwit and Elasticsearch](remote-engines.md)
 
 # Query languages
 

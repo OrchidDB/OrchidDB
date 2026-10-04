@@ -32,6 +32,8 @@ sparql-12 = ["oxrdf/rdf-12"]
 standard-unicode-escaping = []
 duckdb = ["dep:duckdb"]
 postgres = ["dep:postgres"]
+quickwit = ["dep:reqwest"]
+elasticsearch = ["dep:reqwest"]
 
 [dependencies]
 toml = "0.9.12"
@@ -60,6 +62,7 @@ oxiri = "0.2"
 oxsdatatypes = "0.2.2"
 postgres = { version = "0.19", optional = true }
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 sha2 = "0.10"
 sha1 = "0.10"
 base64 = "0.22"

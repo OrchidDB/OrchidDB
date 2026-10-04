@@ -83,6 +83,13 @@ template that clients bind with `op: "bind_operation"` before the ordinary `bind
 operation. See the [search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md#federation-and-json-execution)
 for the protocol and generated SQL, or [Search](search.md) for an overview.
 
+With the optional `quickwit` and `elasticsearch` features, engine descriptors may
+select these non-SQL adapters. Their transfers carry typed structured `request`
+operations. The `execution_engine` remains a SQL engine for graph joins and
+expressions around those operations. See [Quickwit and Elasticsearch](remote-engines.md)
+for configuration and execution; endpoints and credentials remain in caller-owned
+sessions, outside the compiler request.
+
 Optional `functions`
 describe language-facing name, SQL target, parameter type list, return type
 (`returns`), and `aggregate` flag. The caller installs real implementations in

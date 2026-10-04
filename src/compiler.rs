@@ -1,4 +1,5 @@
-//! SQL-only, database-free boundary for embedded language bindings.
+//! Database-free compilation boundary for embedded language bindings.
+//! Produces SQL islands and typed prepared requests for registered engines.
 //!
 //! Schemas and function signatures come from the caller. No connection, catalog
 //! discovery, DDL, data copying, or SQL execution happens in this module.

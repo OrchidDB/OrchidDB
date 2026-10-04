@@ -1,6 +1,6 @@
-//! JSON-directed execution across caller-owned SQL sessions.
+//! JSON-directed execution across caller-owned SQL and request sessions.
 //!
-//! Closed SQL islands run on the engine owning their sources. Their results
+//! Closed engine operations run on the engine owning their sources. Their results
 //! are bound to query-scoped relations on the selected execution engine. No distributed snapshot or distributed transaction is implied.
 use crate::compiler::{CompileRequest, CompiledSql};
 use arrow::record_batch::RecordBatch;
@@ -26,6 +26,8 @@ pub struct Transfer {
     pub columns: Vec<TransferColumn>,
     #[serde(default, alias = "search", skip_serializing_if = "Option::is_none")]
     pub operation: Option<DependentOperation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestOperation>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +37,13 @@ pub struct DependentOperation {
     pub template: crate::ir::rel::sql::lowering::SqlTemplate,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequestOperation {
+    pub engine: String,
+    pub input_columns: Vec<TransferColumn>,
+    pub template: crate::operations::RequestTemplate,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TransferColumn {
     pub name: String,
     pub data_type: String,
@@ -42,14 +51,42 @@ pub struct TransferColumn {
 }
 
 pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
+    let metadata_owners = request
+        .source_metadata
+        .iter()
+        .flat_map(|source| {
+            source.options.get("engine").into_iter().chain(
+                source
+                    .indexes
+                    .iter()
+                    .filter_map(|index| index.options.get("engine")),
+            )
+        })
+        .map(|owner| {
+            owner
+                .as_str()
+                .ok_or("source metadata engine must be a string")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     if request.engines.is_empty() {
-        if request.execution_engine.is_some() || request.tables.iter().any(|t| t.engine.is_some()) {
+        if request.execution_engine.is_some()
+            || request.tables.iter().any(|t| t.engine.is_some())
+            || !metadata_owners.is_empty()
+        {
             return Err("table/execution engine requires an engines registry".into());
         }
         return Ok(());
     }
+    for owner in metadata_owners {
+        if !request.engines.contains_key(owner) {
+            return Err(format!("unknown source metadata engine `{owner}`"));
+        }
+    }
     for (name, engine) in &request.engines {
-        if name.is_empty() || crate::execution::SqlDialect::resolve(&engine.dialect).is_err() {
+        if name.is_empty()
+            || (crate::execution::SqlDialect::resolve(&engine.dialect).is_err()
+                && crate::operations::resolve(&engine.dialect)?.is_none())
+        {
             return Err(format!(
                 "invalid engine `{name}` or dialect `{}`",
                 engine.dialect
@@ -69,6 +106,8 @@ pub(crate) fn validate(request: &CompileRequest) -> Result<(), String> {
     {
         return Err("execution_engine dialect does not match request dialect".into());
     }
+    crate::execution::SqlDialect::resolve(&request.dialect)
+        .map_err(|_| "execution_engine must be a SQL engine".to_owned())?;
     let mut names = BTreeSet::new();
     for table in &request.tables {
         let normalized = parts(&table.name)?
@@ -152,58 +191,142 @@ pub(crate) fn route(
     let mut transfers = vec![];
     let plan = plan
         .transform_down_with_subqueries(|node| {
-            use crate::ir::rel::sql::{self, lowering::{self, LoweringContext, LoweringMode, RelationLowering}};
+            use crate::ir::rel::sql::{
+                self,
+                lowering::{self, LoweringContext, LoweringMode, RelationLowering},
+            };
             let fail = datafusion::common::DataFusionError::Plan;
-            let execution_dialect = sql::SqlDialect::resolve(&request.dialect)
-                .map_err(|e| fail(e.to_string()))?;
+            let execution_dialect =
+                sql::SqlDialect::resolve(&request.dialect).map_err(|e| fail(e.to_string()))?;
+            let explicit_owner = crate::operations::owner(&node).map_err(fail)?;
+            if let Some(engine) = &explicit_owner {
+                let entry = request
+                    .engines
+                    .get(engine)
+                    .ok_or_else(|| fail(format!("unknown operation engine `{engine}`")))?;
+                if let Some(adapter) = crate::operations::resolve(&entry.dialect).map_err(fail)? {
+                    let prepared = adapter.lower(&node).map_err(fail)?.ok_or_else(|| {
+                        fail(format!("engine {engine} cannot lower relational operation"))
+                    })?;
+                    let replacement = route_request(
+                        request,
+                        &node,
+                        engine,
+                        prepared,
+                        &mut transfers,
+                        &mut reserved,
+                        id,
+                    )
+                    .map_err(fail)?;
+                    return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
+                }
+            }
             let Some(placement) = lowering::placement_for(&node, execution_dialect)
-                .map_err(|e| fail(e.to_string()))? else {
+                .map_err(|e| fail(e.to_string()))?
+            else {
                 return Ok(Transformed::no(node));
             };
             let owner_set = |plan: &LogicalPlan| -> datafusion::common::Result<BTreeSet<String>> {
                 let mut found = BTreeSet::new();
                 plan.apply_with_subqueries(|node| {
                     if let LogicalPlan::TableScan(scan) = node {
-                        found.insert(owners.get(&scan.table_name.to_string())
-                            .ok_or_else(|| fail("relational input needs an engine owner".into()))?.clone());
+                        found.insert(
+                            owners
+                                .get(&scan.table_name.to_string())
+                                .ok_or_else(|| {
+                                    fail("relational input needs an engine owner".into())
+                                })?
+                                .clone(),
+                        );
                     }
                     Ok(TreeNodeRecursion::Continue)
                 })?;
                 Ok(found)
             };
-            let target_owners = placement.target.as_ref().map(|plan| owner_set(plan)).transpose()?.unwrap_or_default();
+            let target_owners = placement
+                .target
+                .as_ref()
+                .map(|plan| owner_set(plan))
+                .transpose()?
+                .unwrap_or_default();
             if target_owners.len() > 1 {
-                return Err(fail("relational operation target must belong to one SQL engine".into()));
+                return Err(fail(
+                    "relational operation target must belong to one engine".into(),
+                ));
             }
-            let engine = target_owners.first().unwrap_or(target);
+            let engine = explicit_owner
+                .as_ref()
+                .or_else(|| target_owners.first())
+                .unwrap_or(target);
+            let entry = request
+                .engines
+                .get(engine)
+                .ok_or_else(|| fail(format!("unknown operation engine `{engine}`")))?;
+            if let Some(adapter) = crate::operations::resolve(&entry.dialect).map_err(fail)? {
+                let prepared = adapter.lower(&node).map_err(fail)?.ok_or_else(|| {
+                    fail(format!("engine {engine} cannot lower relational operation"))
+                })?;
+                let replacement = route_request(
+                    request,
+                    &node,
+                    engine,
+                    prepared,
+                    &mut transfers,
+                    &mut reserved,
+                    id,
+                )
+                .map_err(fail)?;
+                return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
+            }
             let dialect = sql::SqlDialect::resolve(&request.engines[engine].dialect)
                 .map_err(|e| fail(e.to_string()))?;
-            let source_owners = placement.source.as_ref().map(|plan| owner_set(plan)).transpose()?.unwrap_or_default();
+            let source_owners = placement
+                .source
+                .as_ref()
+                .map(|plan| owner_set(plan))
+                .transpose()?
+                .unwrap_or_default();
             let mode = if source_owners.iter().any(|owner| owner != engine) {
                 LoweringMode::Bound
             } else {
                 LoweringMode::InIsland
             };
-            let lowered = lowering::lower_relation(&node, &LoweringContext {dialect, mode})
+            let lowered = lowering::lower_relation(&node, &LoweringContext { dialect, mode })
                 .map_err(|e| fail(e.to_string()))?;
             let (input, template, schema) = match lowered {
-                Some(RelationLowering::Dependent {source, template, schema}) => (source, template, schema),
-                Some(RelationLowering::Rewrite(rewritten)) => return Ok(Transformed::yes(rewritten)),
+                Some(RelationLowering::Dependent {
+                    source,
+                    template,
+                    schema,
+                }) => (source, template, schema),
+                Some(RelationLowering::Rewrite(rewritten)) => {
+                    return Ok(Transformed::yes(rewritten));
+                }
                 Some(RelationLowering::Sql(_)) => return Ok(Transformed::no(node)),
-                None => return Err(fail(format!("engine {} cannot lower relational operation", dialect.name()))),
+                None => {
+                    return Err(fail(format!(
+                        "engine {} cannot lower relational operation",
+                        dialect.name()
+                    )));
+                }
             };
             if schema.as_ref() != node.schema().as_ref() {
-                return Err(fail("dependent operation changed its logical output schema".into()));
+                return Err(fail(
+                    "dependent operation changed its logical output schema".into(),
+                ));
             }
             if template.dialect != dialect.name() {
-                return Err(fail("dependent operation changed its owning engine dialect".into()));
+                return Err(fail(
+                    "dependent operation changed its owning engine dialect".into(),
+                ));
             }
             if template.parameters != input.schema().fields().len() {
                 return Err(fail("dependent operation parameter schema mismatch".into()));
             }
             let (source, dependencies) = route(request, input.as_ref().clone()).map_err(fail)?;
             transfers.extend(dependencies);
-            let source_sql = sql::unparse_plan(source, execution_dialect).map_err(|e| fail(e.to_string()))?;
+            let source_sql =
+                sql::unparse_plan(source, execution_dialect).map_err(|e| fail(e.to_string()))?;
             let mut name = format!("__orchiddb_operation_{id}_{}", transfers.len());
             while !reserved.insert(name.clone()) {
                 name.push('_');
@@ -247,7 +370,8 @@ pub(crate) fn route(
                 columns,
                 operation: Some(DependentOperation {
                     engine: engine.clone(),
-                    input_columns: input.schema()
+                    input_columns: input
+                        .schema()
                         .fields()
                         .iter()
                         .map(|f| {
@@ -260,6 +384,7 @@ pub(crate) fn route(
                         .collect::<datafusion::common::Result<Vec<_>>>()?,
                     template,
                 }),
+                request: None,
             });
             Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump))
         })
@@ -306,8 +431,30 @@ pub(crate) fn route(
             })?;
             if closed && sources.len() == 1 && !sources.contains(target) {
                 let source = sources.first().unwrap();
-                let dialect = crate::execution::SqlDialect::resolve(&request.engines[source].dialect)
-                    .map_err(|e| datafusion::common::DataFusionError::Plan(e.to_string()))?;
+                if let Some(adapter) = crate::operations::resolve(&request.engines[source].dialect)
+                    .map_err(datafusion::common::DataFusionError::Plan)?
+                {
+                    if let Some(prepared) = adapter
+                        .lower(&node)
+                        .map_err(datafusion::common::DataFusionError::Plan)?
+                    {
+                        let replacement = route_request(
+                            request,
+                            &node,
+                            source,
+                            prepared,
+                            &mut transfers,
+                            &mut reserved,
+                            id,
+                        )
+                        .map_err(datafusion::common::DataFusionError::Plan)?;
+                        return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
+                    }
+                    return Ok(Transformed::no(node));
+                }
+                let dialect =
+                    crate::execution::SqlDialect::resolve(&request.engines[source].dialect)
+                        .map_err(|e| datafusion::common::DataFusionError::Plan(e.to_string()))?;
                 let columns = node
                     .schema()
                     .fields()
@@ -393,6 +540,7 @@ pub(crate) fn route(
                             target_relation: name,
                             columns,
                             operation: None,
+                            request: None,
                         });
                         return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
                     }
@@ -408,7 +556,7 @@ pub(crate) fn route(
             if let Some(owner) = owners.get(&scan.table_name.to_string()) {
                 if owner != target {
                     return Err(datafusion::common::DataFusionError::Plan(format!(
-                        "cannot transfer source `{}` from engine `{owner}`: no supported SQL island/exchange schema", scan.table_name)));
+                        "cannot transfer source `{}` from engine `{owner}`: no supported engine operation/exchange schema", scan.table_name)));
                 }
             }
         }
@@ -417,10 +565,186 @@ pub(crate) fn route(
     Ok((result.data, transfers))
 }
 
+/// Materialize a typed adapter request at the same boundary used by SQL islands.
+fn route_request(
+    request: &CompileRequest,
+    node: &datafusion::logical_expr::LogicalPlan,
+    engine: &str,
+    prepared: crate::operations::PreparedOperation,
+    transfers: &mut Vec<Transfer>,
+    reserved: &mut BTreeSet<String>,
+    id: u64,
+) -> Result<datafusion::logical_expr::LogicalPlan, String> {
+    use datafusion::common::tree_node::{Transformed, TreeNodeRecursion};
+    use datafusion::{
+        datasource::{empty::EmptyTable, provider_as_source},
+        logical_expr::{Expr, LogicalPlan, LogicalPlanBuilder, Projection},
+    };
+    use std::sync::Arc;
+    if prepared
+        .replacement
+        .as_ref()
+        .map_or(&prepared.schema, |replacement| replacement.schema())
+        != node.schema()
+    {
+        return Err("request operation changed its logical output schema".into());
+    }
+    if let Some(continuation) = &prepared.replacement {
+        let mut markers = 0;
+        continuation
+            .apply_with_subqueries(|plan| {
+                if let LogicalPlan::Extension(extension) = plan {
+                    if let Some(marker) = extension
+                        .node
+                        .as_any()
+                        .downcast_ref::<crate::operations::RequestResult>()
+                    {
+                        if marker.schema != prepared.schema {
+                            return Err(datafusion::common::DataFusionError::Plan(
+                                "request continuation schema mismatch".into(),
+                            ));
+                        }
+                        markers += 1;
+                    }
+                }
+                Ok(TreeNodeRecursion::Continue)
+            })
+            .map_err(|e| e.to_string())?;
+        if markers != 1 {
+            return Err("request continuation must contain exactly one result leaf".into());
+        }
+    }
+    if prepared.template.adapter != request.engines[engine].dialect {
+        return Err("request operation changed its owning adapter".into());
+    }
+    prepared.template.validate()?;
+    let input_columns = prepared
+        .source
+        .as_ref()
+        .map(|source| transfer_columns(source.schema()))
+        .transpose()?
+        .unwrap_or_default();
+    if input_columns.len() != prepared.template.parameters {
+        return Err("request operation parameter schema mismatch".into());
+    }
+    let columns = transfer_columns(&prepared.schema)?;
+    let target = request
+        .execution_engine
+        .as_ref()
+        .ok_or("request operation requires execution_engine")?;
+    let (source_engine, source_dialect, sql) = if let Some(source) = &prepared.source {
+        let (source, dependencies) = route(request, source.as_ref().clone())?;
+        transfers.extend(dependencies);
+        let dialect =
+            crate::execution::SqlDialect::resolve(&request.dialect).map_err(|e| e.to_string())?;
+        (
+            target.clone(),
+            request.dialect.clone(),
+            crate::ir::rel::sql::unparse_plan(source, dialect).map_err(|e| e.to_string())?,
+        )
+    } else {
+        (
+            engine.to_owned(),
+            prepared.template.adapter.clone(),
+            String::new(),
+        )
+    };
+    let mut name = format!("__orchiddb_request_{id}_{}", transfers.len());
+    while !reserved.insert(name.clone()) {
+        name.push('_');
+    }
+    // Exchange columns get positional names so duplicate names from different
+    // input namespaces stay unambiguous. Restore the exact logical schema.
+    let exchange_fields = prepared
+        .schema
+        .fields()
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            arrow::datatypes::Field::new(format!("__c{i}"), f.data_type().clone(), f.is_nullable())
+        })
+        .collect::<Vec<_>>();
+    let scan = LogicalPlanBuilder::scan(
+        name.clone(),
+        provider_as_source(Arc::new(EmptyTable::new(Arc::new(
+            arrow::datatypes::Schema::new(exchange_fields),
+        )))),
+        None,
+    )
+    .and_then(|builder| builder.build())
+    .map_err(|e| e.to_string())?;
+    let expressions = scan
+        .schema()
+        .columns()
+        .into_iter()
+        .zip(prepared.schema.fields())
+        .map(|(column, field)| Expr::Column(column).alias(field.name()))
+        .collect();
+    let replacement = LogicalPlan::Projection(
+        Projection::try_new_with_schema(expressions, Arc::new(scan), prepared.schema.clone())
+            .map_err(|e| e.to_string())?,
+    );
+    // The adapter receives logical names; the transfer uses positional names.
+    // Both descriptions have identical types and positional order.
+    let exchange_columns = columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| TransferColumn {
+            name: format!("__c{i}"),
+            ..c.clone()
+        })
+        .collect();
+    transfers.push(Transfer {
+        source_engine,
+        source_dialect,
+        sql,
+        target_relation: name,
+        columns: exchange_columns,
+        operation: None,
+        request: Some(RequestOperation {
+            engine: engine.into(),
+            input_columns,
+            template: prepared.template,
+        }),
+    });
+    if let Some(continuation) = prepared.replacement {
+        let continuation = continuation.transform_down_with_subqueries(|plan| {
+            if matches!(&plan, LogicalPlan::Extension(extension) if extension.node.as_any().is::<crate::operations::RequestResult>()) {
+                return Ok(Transformed::new(replacement.clone(), true, TreeNodeRecursion::Jump));
+            }
+            Ok(Transformed::no(plan))
+        }).map_err(|e|e.to_string())?.data;
+        let (continuation, dependencies) = route(request, continuation)?;
+        transfers.extend(dependencies);
+        Ok(continuation)
+    } else {
+        Ok(replacement)
+    }
+}
+fn transfer_columns(
+    schema: &datafusion::common::DFSchemaRef,
+) -> Result<Vec<TransferColumn>, String> {
+    schema
+        .fields()
+        .iter()
+        .map(|field| {
+            Ok(TransferColumn {
+                name: field.name().clone(),
+                data_type: type_name(field.data_type())?,
+                nullable: field.is_nullable(),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, String> {
     use arrow::datatypes::DataType::*;
-    if crate::ir::functions::domain::is_json(ty) { return Ok("json".into()); }
-    if let Some((name, storage)) = crate::ir::functions::domain::descriptor(ty) { return Ok(format!("domain:{name}:{}", type_name(storage)?)); }
+    if crate::ir::functions::domain::is_json(ty) {
+        return Ok("json".into());
+    }
+    if let Some((name, storage)) = crate::ir::functions::domain::descriptor(ty) {
+        return Ok(format!("domain:{name}:{}", type_name(storage)?));
+    }
     Ok(match ty {
         Null => "null".into(),
         Boolean => "boolean".into(),
@@ -443,7 +767,16 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         List(f) | LargeList(f) | FixedSizeList(f, _) => {
             format!("list:{}", type_name(f.data_type())?)
         }
-        Struct(fields) => format!("struct_fields:{}", serde_json::to_string(&fields.iter().map(|f| Ok((f.name().clone(), type_name(f.data_type())?))).collect::<Result<Vec<_>, String>>()?).map_err(|e| e.to_string())?),
+        Struct(fields) => format!(
+            "struct_fields:{}",
+            serde_json::to_string(
+                &fields
+                    .iter()
+                    .map(|f| Ok((f.name().clone(), type_name(f.data_type())?)))
+                    .collect::<Result<Vec<_>, String>>()?
+            )
+            .map_err(|e| e.to_string())?
+        ),
         _ => return Err(format!("unsupported exchange type {ty}")),
     })
 }
@@ -623,6 +956,9 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
     plan["sql"] = sql.into();
     plan["transfers"].as_array_mut().unwrap().remove(index);
     for pending in plan["transfers"].as_array_mut().unwrap() {
+        if !pending["request"].is_null() && pending["sql"].as_str() == Some("") {
+            continue;
+        }
         let query = bind_batches(
             pending["sql"].as_str().ok_or("missing dependent SQL")?,
             pending["source_dialect"]
@@ -648,13 +984,28 @@ pub(crate) fn json_scalar(
         return ScalarValue::try_from(ty).map_err(|e| e.to_string());
     }
     if crate::ir::functions::domain::is_json(ty) {
-        let text = value.as_str().ok_or("JSON exchange cells must contain serialized JSON text (SQL null uses a null cell)")?;
+        let text = value.as_str().ok_or(
+            "JSON exchange cells must contain serialized JSON text (SQL null uses a null cell)",
+        )?;
         return crate::ir::functions::domain::json_scalar(text).map_err(|e| e.to_string());
     }
     if let DataType::Struct(fields) = ty {
         let object = value.as_object().ok_or("expected struct exchange object")?;
-        let columns = fields.iter().map(|f| json_scalar(object.get(f.name()).unwrap_or(&serde_json::Value::Null), f.data_type())?.to_array_of_size(1).map_err(|e| e.to_string())).collect::<Result<Vec<_>, String>>()?;
-        return Ok(ScalarValue::Struct(Arc::new(arrow::array::StructArray::try_new(fields.clone(), columns, None).map_err(|e| e.to_string())?)));
+        let columns = fields
+            .iter()
+            .map(|f| {
+                json_scalar(
+                    object.get(f.name()).unwrap_or(&serde_json::Value::Null),
+                    f.data_type(),
+                )?
+                .to_array_of_size(1)
+                .map_err(|e| e.to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        return Ok(ScalarValue::Struct(Arc::new(
+            arrow::array::StructArray::try_new(fields.clone(), columns, None)
+                .map_err(|e| e.to_string())?,
+        )));
     }
     if let DataType::List(field) | DataType::LargeList(field) = ty {
         if let Some(text) = value.as_str() {
@@ -731,12 +1082,33 @@ pub(crate) fn json_scalar(
         .map_err(|e| e.to_string())
 }
 
-/// A caller-owned session. Federation only submits SELECT queries; it never
-/// imports data into database objects or changes the caller's transaction.
+/// A caller-owned session for SQL queries or typed adapter requests. Federation
+/// never imports data into database objects or changes the caller's transaction.
 #[async_trait::async_trait(?Send)]
 pub trait Session {
     fn dialect(&self) -> &str;
-    async fn query(&mut self, sql: &str) -> Result<Vec<RecordBatch>, String>;
+    async fn query(&mut self, _sql: &str) -> Result<Vec<RecordBatch>, String> {
+        Err("session does not support SQL queries".into())
+    }
+    async fn execute_request(
+        &mut self,
+        _request: &serde_json::Value,
+        _columns: &[TransferColumn],
+    ) -> Result<Vec<RecordBatch>, String> {
+        Err("session does not support prepared requests".into())
+    }
+    /// Batch independently bound operations without losing per-input boundaries.
+    async fn execute_requests(
+        &mut self,
+        requests: &[serde_json::Value],
+        columns: &[TransferColumn],
+    ) -> Result<Vec<Vec<RecordBatch>>, String> {
+        let mut results = Vec::with_capacity(requests.len());
+        for request in requests {
+            results.push(self.execute_request(request, columns).await?);
+        }
+        Ok(results)
+    }
 }
 
 pub async fn execute(
@@ -772,18 +1144,88 @@ pub async fn execute(
             return Err("operation engine dialect mismatch".into());
         }
     }
+    for transfer in &plan.transfers {
+        if let Some(operation) = &transfer.request {
+            if transfer.operation.is_some() {
+                return Err("transfer cannot contain both SQL and request operations".into());
+            }
+            if sessions
+                .get(&operation.engine)
+                .ok_or_else(|| format!("missing engine `{}`", operation.engine))?
+                .dialect()
+                != operation.template.adapter
+            {
+                return Err("request operation engine adapter mismatch".into());
+            }
+            operation.template.validate()?;
+            if operation.input_columns.len() != operation.template.parameters {
+                return Err("request operation parameter schema mismatch".into());
+            }
+        }
+    }
     let mut sql = plan.sql.clone();
     let mut completed: Vec<(&Transfer, Vec<RecordBatch>)> = vec![];
     for transfer in &plan.transfers {
         let mut input_sql = transfer.sql.clone();
-        for (dependency, batches) in &completed {
-            input_sql = bind_batches(&input_sql, &transfer.source_dialect, dependency, batches)?;
+        if !input_sql.is_empty() {
+            for (dependency, batches) in &completed {
+                input_sql =
+                    bind_batches(&input_sql, &transfer.source_dialect, dependency, batches)?;
+            }
         }
-        let mut batches = sessions
-            .get_mut(&transfer.source_engine)
-            .unwrap()
-            .query(&input_sql)
-            .await?;
+        let mut batches =
+            if let Some(operation) = transfer.request.as_ref().filter(|_| input_sql.is_empty()) {
+                let request = operation.template.bind(&[])?;
+                sessions
+                    .get_mut(&operation.engine)
+                    .unwrap()
+                    .execute_request(&request, &transfer.columns)
+                    .await?
+            } else {
+                sessions
+                    .get_mut(&transfer.source_engine)
+                    .unwrap()
+                    .query(&input_sql)
+                    .await?
+            };
+        if let Some(operation) = transfer.request.as_ref().filter(|_| !input_sql.is_empty()) {
+            let types = operation
+                .input_columns
+                .iter()
+                .map(|c| crate::compiler::data_type(&c.data_type))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut requests = vec![];
+            for batch in batches {
+                if batch.num_columns() != types.len() {
+                    return Err("request source row width mismatch".into());
+                }
+                for row in 0..batch.num_rows() {
+                    let values = batch
+                        .columns()
+                        .iter()
+                        .zip(&types)
+                        .map(|(array, ty)| {
+                            let value = datafusion::common::ScalarValue::try_from_array(
+                                array.as_ref(),
+                                row,
+                            )
+                            .map_err(|e| e.to_string())?;
+                            exchange_scalar(value, ty)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    requests.push(operation.template.bind(&values)?);
+                }
+            }
+            let results = sessions
+                .get_mut(&operation.engine)
+                .unwrap()
+                .execute_requests(&requests, &transfer.columns)
+                .await?;
+            if results.len() != requests.len() {
+                return Err("request batch result count mismatch".into());
+            }
+            batches = results.into_iter().flatten().collect();
+        }
         if let Some(search) = &transfer.operation {
             let mut output = vec![];
             for batch in batches {
@@ -823,10 +1265,23 @@ pub(crate) fn scalar_json(
         return Ok(serde_json::Value::Null);
     }
     if crate::ir::functions::domain::is_json(&value.data_type()) {
-        return Ok(crate::ir::functions::domain::json_text(value)?.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+        return Ok(crate::ir::functions::domain::json_text(value)?
+            .map(serde_json::Value::String)
+            .unwrap_or(serde_json::Value::Null));
     }
     Ok(match value {
-        ScalarValue::Struct(a) => serde_json::Value::Object(a.fields().iter().zip(a.columns()).map(|(f, a)| Ok((f.name().clone(), scalar_json(&ScalarValue::try_from_array(a, 0)?)?))).collect::<datafusion::common::Result<_>>()?),
+        ScalarValue::Struct(a) => serde_json::Value::Object(
+            a.fields()
+                .iter()
+                .zip(a.columns())
+                .map(|(f, a)| {
+                    Ok((
+                        f.name().clone(),
+                        scalar_json(&ScalarValue::try_from_array(a, 0)?)?,
+                    ))
+                })
+                .collect::<datafusion::common::Result<_>>()?,
+        ),
         ScalarValue::List(a) => {
             let values = a.value(0);
             serde_json::Value::Array(
@@ -868,7 +1323,11 @@ fn exchange_scalar(
         return Ok(value);
     }
     if crate::ir::functions::domain::descriptor(ty).is_some() {
-        let array = crate::ir::functions::domain::restore(&value.to_array_of_size(1).map_err(|e| e.to_string())?, ty).map_err(|e| e.to_string())?;
+        let array = crate::ir::functions::domain::restore(
+            &value.to_array_of_size(1).map_err(|e| e.to_string())?,
+            ty,
+        )
+        .map_err(|e| e.to_string())?;
         return ScalarValue::try_from_array(&array, 0).map_err(|e| e.to_string());
     }
     if let arrow::datatypes::DataType::List(field) = ty {
@@ -921,21 +1380,36 @@ mod audit_regressions {
         let json_null = domain::json_scalar("null").unwrap();
         let sql_null = ScalarValue::try_from(&domain::json_type()).unwrap();
         let list = ScalarValue::List(ScalarValue::new_list(
-            &[document.clone(), json_null, sql_null], &domain::json_type(), true,
+            &[document.clone(), json_null, sql_null],
+            &domain::json_type(),
+            true,
         ));
         // Preserve declared field order, including nested domains, rather than
         // reconstructing the schema from JSON object key ordering.
         let fields = vec![
             Field::new("z_document", domain::json_type(), true),
             Field::new("a_items", list.data_type(), true),
-        ].into();
-        let record = ScalarValue::Struct(Arc::new(arrow::array::StructArray::try_new(
-            fields, vec![document.to_array_of_size(1).unwrap(), list.to_array_of_size(1).unwrap()], None,
-        ).unwrap()));
-        let geometry = domain::scalar("geometry", ScalarValue::Binary(Some(vec![0, 255, 128]))).unwrap();
+        ]
+        .into();
+        let record = ScalarValue::Struct(Arc::new(
+            arrow::array::StructArray::try_new(
+                fields,
+                vec![
+                    document.to_array_of_size(1).unwrap(),
+                    list.to_array_of_size(1).unwrap(),
+                ],
+                None,
+            )
+            .unwrap(),
+        ));
+        let geometry =
+            domain::scalar("geometry", ScalarValue::Binary(Some(vec![0, 255, 128]))).unwrap();
         for value in [record, geometry] {
             let ty = value.data_type();
-            assert_eq!(crate::compiler::data_type(&super::type_name(&ty).unwrap()).unwrap(), ty);
+            assert_eq!(
+                crate::compiler::data_type(&super::type_name(&ty).unwrap()).unwrap(),
+                ty
+            );
             let encoded = super::scalar_json(&value).unwrap();
             assert_eq!(json_scalar(&encoded, &ty).unwrap(), value);
         }
@@ -943,19 +1417,49 @@ mod audit_regressions {
     #[cfg(feature = "postgres")]
     #[test]
     fn postgres_nested_json_exchange_round_trips_document_and_sql_null() {
-        use crate::ir::{functions::domain, rel::sql::{self, region::{PostgresRegionSession, RegionSession}}};
-        let Ok(url) = std::env::var("GRAPH_PG_URL") else { return; };
-        let inner = ScalarValue::List(ScalarValue::new_list(&[
-            domain::json_scalar("null").unwrap(),
-            ScalarValue::try_from(&domain::json_type()).unwrap(),
-            domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap(),
-        ], &domain::json_type(), true));
-        let outer = ScalarValue::List(ScalarValue::new_list(&[inner.clone(), ScalarValue::try_from(&inner.data_type()).unwrap()], &inner.data_type(), true));
-        let literal = sql::exchange_literal(outer.clone(), outer.data_type(), sql::SqlDialect::Postgres).unwrap();
-        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new("value", outer.data_type(), true)]));
+        use crate::ir::{
+            functions::domain,
+            rel::sql::{
+                self,
+                region::{PostgresRegionSession, RegionSession},
+            },
+        };
+        let Ok(url) = std::env::var("GRAPH_PG_URL") else {
+            return;
+        };
+        let inner = ScalarValue::List(ScalarValue::new_list(
+            &[
+                domain::json_scalar("null").unwrap(),
+                ScalarValue::try_from(&domain::json_type()).unwrap(),
+                domain::json_scalar(r#"{"n":9007199254740993}"#).unwrap(),
+            ],
+            &domain::json_type(),
+            true,
+        ));
+        let outer = ScalarValue::List(ScalarValue::new_list(
+            &[
+                inner.clone(),
+                ScalarValue::try_from(&inner.data_type()).unwrap(),
+            ],
+            &inner.data_type(),
+            true,
+        ));
+        let literal =
+            sql::exchange_literal(outer.clone(), outer.data_type(), sql::SqlDialect::Postgres)
+                .unwrap();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![Field::new(
+            "value",
+            outer.data_type(),
+            true,
+        )]));
         let client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
-        let output = PostgresRegionSession::new(client).query(&format!("SELECT {literal} AS value"), schema).unwrap();
-        assert_eq!(ScalarValue::try_from_array(output.column(0), 0).unwrap(), outer);
+        let output = PostgresRegionSession::new(client)
+            .query(&format!("SELECT {literal} AS value"), schema)
+            .unwrap();
+        assert_eq!(
+            ScalarValue::try_from_array(output.column(0), 0).unwrap(),
+            outer
+        );
     }
     #[test]
     fn audit_large_binary_decodes_bytes() {
@@ -1004,8 +1508,9 @@ mod audit_regressions {
     }
 }
 
-/// Bind source-row values for a dependent relational operation. The returned statements execute
-/// on `engine`; their concatenated results complete the named transfer.
+/// Bind source-row values for a dependent relational operation. The returned SQL
+/// statements or request payloads execute on `engine`; their concatenated results
+/// complete the named transfer.
 pub fn bind_operation_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
     let plan = &command["plan"];
     if plan["version"] != 1 {
@@ -1021,6 +1526,33 @@ pub fn bind_operation_command(command: serde_json::Value) -> Result<serde_json::
         .find(|t| t["target_relation"].as_str() == Some(name))
         .ok_or("unknown operation relation")?;
     let transfer: Transfer = serde_json::from_value(transfer.clone()).map_err(|e| e.to_string())?;
+    if let Some(operation) = &transfer.request {
+        if transfer.operation.is_some() {
+            return Err("transfer cannot contain both SQL and request operations".into());
+        }
+        let types = operation
+            .input_columns
+            .iter()
+            .map(|c| crate::compiler::data_type(&c.data_type))
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = command["rows"].as_array().ok_or("missing source rows")?;
+        let mut requests = vec![];
+        for row in rows {
+            let row = row.as_array().ok_or("source row must be an array")?;
+            if row.len() != types.len() {
+                return Err("operation source row width mismatch".into());
+            }
+            let values = row
+                .iter()
+                .zip(&types)
+                .map(|(value, ty)| json_scalar(value, ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            requests.push(operation.template.bind(&values)?);
+        }
+        return Ok(
+            serde_json::json!({"version":1,"engine":operation.engine,"relation":name,"adapter":operation.template.adapter,"requests":requests,"columns":transfer.columns}),
+        );
+    }
     let search = transfer
         .operation
         .ok_or("transfer is not a dependent operation")?;

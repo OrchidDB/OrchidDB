@@ -1,9 +1,10 @@
 # Engine adapters
 
-An engine adapter translates OrchidDB's typed relational plan into the engine's
-SQL. It can rewrite expressions, transform entire relations, and encode values
-crossing an execution boundary. Implementations are Rust code; configuration
-selects a registered implementation and supplies source facts.
+An engine adapter translates OrchidDB's typed relational plan into operations
+its engine can execute. SQL adapters rewrite expressions and relations into SQL;
+request adapters produce typed structured requests. Both use the same federation
+planner and value exchange. Implementations are Rust code; configuration selects
+a registered implementation and supplies source facts.
 
 Search uses this same extension point. There is no separate search-backend
 registry. The [Search guide](search.md) shows pgvector and duckdb-lance source
@@ -34,6 +35,26 @@ the same adapter instance twice is allowed; replacing a registered name is not.
 The [complete tested adapter](https://github.com/OrchidDB/OrchidDB/blob/main/tests/engine_adapter.rs)
 implements a third dialect, scalar mappings, AST rewriting, a table-function
 transformation, and typed input binding without modifying core dispatch.
+
+For an engine with a non-SQL protocol, implement
+`orchiddb::operations::RequestAdapter` and register it with
+`operations::register(Arc::new(adapter))`. `lower` returns a
+`PreparedOperation` with an optional source plan, a `RequestTemplate`, and an
+Arrow output schema. The optional `owner` hook identifies an explicitly selected
+engine instance. Returning `None` allows the planner to consider smaller valid
+islands; a recognized invalid operation returns an error.
+
+Request templates carry adapter-owned JSON and typed parameter bindings at JSON
+pointer locations. User values are inserted as values, never interpolated into
+query text. An operation may provide a relational continuation containing a
+typed `RequestResult` leaf. For example, a remote index returns document keys and
+scores, then a continuation joins those keys to authoritative SQL properties.
+The planner checks schemas and replaces the leaf with the exchanged relation.
+
+The optional [Quickwit and Elasticsearch adapters](remote-engines.md) use this
+interface. The final execution engine is still a SQL engine, which executes the
+remaining joins and expressions. A request engine is never registered as a
+pretend SQL dialect.
 
 ## Transform expressions and relations
 
@@ -149,6 +170,13 @@ engine, input columns, and SQL template. `federation::execute` handles these
 through caller-owned sessions. JSON clients execute source SQL, call
 `op: "bind_operation"` with the source rows, execute returned statements on the
 specified engine, and feed output rows into the ordinary `bind` operation.
+
+Non-SQL transfers expose `request` instead. `bind_operation` returns structured
+`requests` for these operations, while retaining `sql` for existing SQL
+operations. A closed request has no source SQL and executes once. A correlated
+request binds each source row. Sessions implement `execute_request` and may
+override `execute_requests` to batch execution without changing row semantics.
+Returned Arrow batches must match the declared transfer schema.
 
 The former `search` descriptor, `bind_search` command, and `search_indexes`
 configuration are accepted as compatibility inputs. New plans use the general

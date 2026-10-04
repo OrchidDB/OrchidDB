@@ -24,6 +24,7 @@ orchiddb --version
 | Query tables you already own | [Map existing tables](mapped-graphs.md) |
 | Query documents and turn JSON arrays into edges | [JSON documents](json.md) |
 | Combine vector or full-text search with graph traversal | [Search](search.md) |
+| Search remote indexes and join results into the graph | [Quickwit and Elasticsearch](remote-engines.md) |
 | Create and persist a graph | [Managed graphs](managed-graphs.md) |
 | Query with an RDF vocabulary | [SPARQL](sparql.md) |
 | Map application columns or quad tables to RDF | [RDF datasets](rdf.md) |

@@ -31,7 +31,7 @@ pub(crate) fn bind_inputs(prepared: &mut PreparedSql) -> SqlResult<()> {
         })).collect::<SqlResult<Vec<_>>>()?;
         let transfer = crate::federation::Transfer {
             source_engine: String::new(), source_dialect: String::new(),
-            sql: String::new(), target_relation: table.name.clone(), columns, operation: None,
+            sql: String::new(), target_relation: table.name.clone(), columns, operation: None, request: None,
         };
         prepared.query = crate::federation::bind_batches(&prepared.query, prepared.dialect.name(), &transfer, &table.batches)
             .map_err(SqlError::Unsupported)?;

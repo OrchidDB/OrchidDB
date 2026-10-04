@@ -11,8 +11,9 @@ Find documents similar to a seed, then follow their authors through the graph.
 `SIMILAR_TO` is a computed relationship: its edges come from a search rule.
 `WRITTEN_BY` is an ordinary stored relationship. Both compose in the same query.
 
-Define the relationship once and use it with PostgreSQL/pgvector, Lance through
-DuckDB, or native scoring. The examples below assume documents have IDs, titles,
+Define the relationship once and use the matching scoring operation with
+PostgreSQL/pgvector, Lance through DuckDB, Quickwit, Elasticsearch, or native
+scoring. The examples below assume documents have IDs, titles,
 body text, and embeddings; map `WRITTEN_BY` separately as an ordinary
 [stored relationship](mapping-reference.md#relationship-mappings).
 
@@ -223,6 +224,18 @@ declared text index, native, PostgreSQL, and ordinary DuckDB execution compute
 portable BM25 over the mapped target corpus before pair filters and ranking.
 That mode is exhaustive scoring. pgvector does not provide a BM25 index, and
 OrchidDB does not substitute PostgreSQL `ts_rank` for BM25.
+
+## Quickwit and Elasticsearch
+
+Enable the optional `quickwit` or `elasticsearch` Cargo feature to execute BM25
+relationships against a remote index. The `text.bm25` relationship definition
+stays the same. Assign an index table to the remote engine, or declare a remote
+index over a SQL-owned document table. Search results then compose with stored
+edges and properties in your SQL engines.
+
+The [Quickwit and Elasticsearch guide](remote-engines.md) covers engine
+registration, index configuration, authentication, and execution. Both adapters
+return the engine's indexed BM25 scores and preserve filters before top-k.
 
 ## Retrieve candidates, then rerank with MaxSim
 

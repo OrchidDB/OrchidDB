@@ -10,6 +10,9 @@ pub mod spargebra;
 pub mod compiler;
 pub mod execution;
 pub mod federation;
+pub mod operations;
+#[cfg(any(feature = "quickwit", feature = "elasticsearch"))]
+pub mod remote;
 pub mod grammar;
 pub mod ir;
 pub mod language;
