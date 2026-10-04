@@ -11,9 +11,9 @@ Find documents similar to a seed, then follow their authors through the graph.
 `SIMILAR_TO` is a computed relationship: its edges come from a search rule.
 `WRITTEN_BY` is an ordinary stored relationship. Both compose in the same query.
 
-You define the relationship once. The engine that owns the target data lowers
-its ranking into pgvector, duckdb-lance, or ordinary relational scoring. The examples below assume documents have IDs, titles, body
-text, and embeddings; map `WRITTEN_BY` separately as an ordinary
+Define the relationship once and use it with PostgreSQL/pgvector, Lance through
+DuckDB, or native scoring. The examples below assume documents have IDs, titles,
+body text, and embeddings; map `WRITTEN_BY` separately as an ordinary
 [stored relationship](mapping-reference.md#relationship-mappings).
 
 ## Define the relationship
@@ -34,27 +34,23 @@ embedding = "embedding"
 [edge.SIMILAR_TO]
 source = "Document"
 target = "Document"
-predicate = "target.id <> source.id"
-order_by = [{ expression = "score", direction = "desc", nulls = "last" }]
+order_by = [{ expression = "score", direction = "desc" }]
 limit_per_source = 10
-retrieval = "approximate_allowed"
 
 [edge.SIMILAR_TO.properties]
 score = "vector.cosine_similarity(source.embedding, target.embedding)"
 ```
 
-Each document has up to ten outgoing edges, with a `score` property on each edge.
-Expressions use mapped properties and support arithmetic, comparisons, Boolean
-logic, CASE, and registered scalar functions. Add eligibility conditions to
-`predicate`, such as `source.tenant_id = target.tenant_id` after mapping that
-property. OrchidDB constructs the search and traversal plan from this rule.
+Each document has up to ten outgoing edges, ranked by cosine similarity, with a
+`score` property on each edge. Expressions reference the mapped properties using
+`source` and `target`. This rule includes the seed among eligible matches; see
+[Optional filters](#optional-filters) to exclude it or restrict eligible documents.
 
-Load the TOML with `GraphMapping::from_toml`. Register matching physical schemas
-for SQL compilation, or table providers for native execution, as described in the
-[mapping reference](mapping-reference.md#register-source-schemas).
-The `[[source_metadata]]` blocks below belong at the top level of the same TOML
-file. Declare each table once, with its format, options, and index capabilities.
-These describe the data; table ownership selects the executing engine.
+Load this TOML mapping with `GraphMapping::from_toml` and register your tables as
+described in the [mapping reference](mapping-reference.md#register-source-schemas).
+Add one of the backend configurations below to use an existing search index.
+Each `[[source_metadata]]` block belongs at the top level of the same mapping
+file; declare each table once.
 
 The relationship also works in Gremlin:
 
@@ -102,7 +98,6 @@ CROSS JOIN LATERAL (
   SELECT target.id AS target_id,
          1.0 - (target.embedding <=> source.embedding) AS score
   FROM documents AS target
-  WHERE target.id <> source.id
   ORDER BY target.embedding <=> source.embedding ASC NULLS LAST
   LIMIT 10
 ) AS hits
@@ -152,7 +147,7 @@ describes these backend options and index creation.
 
 Assign `documents` to a DuckDB engine. OrchidDB reads the selected seed, binds its
 embedding into `lance_vector_search`, and joins the hits into the graph query.
-For a three-dimensional example seed with ID 7, the search statement has this
+For a three-dimensional example seed, the search statement has this
 shape; actual vector dimensions must match your dataset:
 
 ```sql
@@ -161,14 +156,13 @@ SELECT target.id,
 FROM lance_vector_search(
   '/data/documents.lance', 'embedding', [0.1, 0.9, 0.2]::FLOAT[3],
   k = 10, use_index = true, nprobs = 1, refine_factor = 2, prefilter = true
-) AS target
-WHERE target.id <> 7;
+) AS target;
 ```
 
-The Cypher query and relationship rule stay unchanged. OrchidDB uses the DuckDB
-extension, with no Lance SDK or separate storage adapter. Load an extension
-matching your DuckDB version: live integration was verified with DuckDB 1.5.0;
-the embedded 1.5.2 build requires a matching extension artifact.
+The Cypher query and relationship rule stay unchanged. Install duckdb-lance
+for the DuckDB version running your queries. See the
+[detailed reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md#lance-through-duckdb)
+for version compatibility and verification details.
 
 Candidate filters must be pushable comparisons, null checks, or conjunctions.
 Lance `exact` currently supports L2; exact cosine/dot requests fail planning
@@ -183,7 +177,6 @@ nodes:
 [edge.TEXT_MATCH]
 source = "Document"
 target = "Document"
-predicate = "target.id <> source.id"
 order_by = [{ expression = "score", direction = "desc" }]
 limit_per_source = 10
 
@@ -222,8 +215,7 @@ For a seed whose body is `graph retrieval`, the backend search is shaped like:
 ```sql
 SELECT target.id, target._score AS score
 FROM lance_fts('/data/documents.lance', 'body', 'graph retrieval',
-               k = 10, prefilter = true) AS target
-WHERE target.id <> 7;
+               k = 10, prefilter = true) AS target;
 ```
 
 Lance supplies its indexed corpus statistics, tokenizer, and scores. Without a
@@ -250,7 +242,6 @@ order_by = [{ expression = "score", direction = "desc" }]
 limit_per_source = 10
 
 [edge.RELEVANT_TO.candidates]
-predicate = "source.id <> target.id"
 order_by = [{ expression = "lexical", direction = "desc" }]
 limit_per_source = 200
 
@@ -273,7 +264,7 @@ Eligibility filters belong in the candidate predicate when they must apply
 before retrieval. Final-stage predicates filter only retrieved candidates.
 Removing the candidate stage makes MaxSim exhaustive over the target relation.
 
-## Native scoring and function mappings
+## Available scores
 
 All built-in scores have native implementations and PostgreSQL/DuckDB SQL
 mappings:
@@ -286,71 +277,47 @@ mappings:
 | `text.bm25(query, target.body)` | Descending | Query text and a mapped text property |
 | `vector.maxsim(query_tokens, document_tokens)` | Descending | Two lists of token vectors |
 
-For native execution, register Arrow table providers on `GraphMapping`, lower
-with `RelBackend`, and call `ir::rel::execute_lowered`. Omit backend index bindings
-when you want native pair scoring. Plain DuckDB SQL uses list functions such as
-`list_cosine_similarity` and `list_distance`; an index binding is what selects
-Lance retrieval. Vectors may be float32/float64 lists or fixed-size lists. Outer
-nulls produce null scores; zero-norm cosine inputs also produce null. Indexed
-search requires valid query vectors, which you can enforce with source predicates.
+Without an index configuration, these functions can score data in OrchidDB's
+native engine or through ordinary PostgreSQL/DuckDB SQL. This evaluates the
+eligible pairs and can be expensive for large collections. Configure a matching
+index for indexed retrieval, or use a candidate stage to limit reranking work.
 
-Custom functions carry their native UDF and SQL expressions together. For example,
-register an absolute-value function before planning relationships that use it:
+Vectors may be float32/float64 lists or fixed-size lists. Null inputs produce null
+scores; zero-norm cosine inputs also produce null. Indexed search requires valid
+query vectors with dimensions matching the index.
 
-```rust
-use std::collections::BTreeMap;
-use orchiddb::ir::functions::logical::{LogicalFunction, SqlFunctionMapping};
+## Optional filters
 
-mapping.register_logical_function(LogicalFunction::new(
-    "business.absolute",
-    datafusion::functions::math::abs(),
-    BTreeMap::from([
-        ("postgres".into(), SqlFunctionMapping {
-            value: "abs(__arg0)".into(), ordering: None,
-        }),
-        ("duckdb".into(), SqlFunctionMapping {
-            value: "abs(__arg0)".into(), ordering: None,
-        }),
-    ]),
-))?;
+A relationship needs no `predicate` field unless you want to restrict eligible
+matches. For example, add this line under `[edge.SIMILAR_TO]` to exclude the seed:
+
+```toml
+predicate = "target.id <> source.id"
 ```
 
-An optional `SqlOrderingMapping { expression, reverse }` describes an equivalent
-backend sort key and whether to reverse its direction. A function without a SQL
-mapping creates a native execution boundary. A custom function can declare a
-supported indexed metric with `with_search_metric` when it meets that metric's
-query/document and ordering contract. Arbitrary combined scores do not imply an
-index access path; use a candidate stage before reranking them.
+To restrict matches to the same tenant, map `tenant_id` on the nodes and use:
 
-## Execute across SQL islands
+```toml
+predicate = "source.tenant_id = target.tenant_id AND target.id <> source.id"
+```
 
-The [JSON compiler interface](sql-compiler.md) accepts `computed_relationships`
-and `source_metadata` alongside its table schemas, nodes, query, and engine
-ownership. Use `list:float32` for vector schema metadata and
-`list:list:float32` for token matrices.
+These are relationship rules: they apply before selecting its top ten. A `WHERE`
+clause in a consuming Cypher query filters the resulting edges and does not
+replace discarded matches. With a candidate stage, put eligibility filters under
+`[edge.RELEVANT_TO.candidates]` so they apply before candidate selection. A filter
+on the final stage applies only to those candidates.
 
-Same-engine PostgreSQL search can stay with surrounding graph joins in one SQL
-island. Lance search and cross-engine pgvector search use dependent transfers:
-execute the source SQL, bind source values, run search on the target's owner,
-then join the hits. `federation::execute` performs these transfers using
-caller-owned sessions. JSON clients call `bind_operation` with source rows, execute
-its returned statements, and pass hit rows to the ordinary `bind` operation.
-Backend failures propagate; searches are not retried as scans.
+Expressions support arithmetic, comparisons, Boolean logic, CASE, and registered
+scalar functions. Indexed retrieval supports the filters its backend can execute;
+unsupported filters produce an error.
 
-The [detailed search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md)
-provides the complete JSON shapes, native BM25 formula, input constraints, and
-additional backend details.
+## Using multiple engines
 
+Assign tables to engines in the [compiler request](sql-compiler.md). The graph
+query can combine search results with relationships stored in other engines;
+OrchidDB composes the searches, transfers, and graph joins. Index errors are
+reported to the caller.
 
-## Add another engine
-
-Engine adapters are ordinary Rust implementations. They own scalar mappings,
-SQL AST transformations, relational rewrites, and typed value encoding. Search
-uses the same relational-lowering hook as other row-producing operations; there
-is no separate search-backend registry. A table function can compose inside an
-island or require bound inputs before preparation.
-
-See [Engine adapters](engine-adapters.md) for registration and a working
-non-search table-function example. Existing `search_indexes` configuration and
-`bind_search` commands remain accepted as compatibility inputs; mapping serialization emits
-`source_metadata`, and new plans emit `operation` transfer descriptors.
+See the [detailed search reference](https://github.com/OrchidDB/OrchidDB/blob/main/docs/computed-relationships-and-search.md)
+for the compiler API, native execution, custom scoring functions, and backend
+constraints. To add support for another database, see [Engine adapters](engine-adapters.md).

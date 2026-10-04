@@ -29,7 +29,6 @@ tokens = "token_embeddings"
 [edge.SIMILAR_TO]
 source = "Document"
 target = "Document"
-predicate = "target.tenant_id = source.tenant_id AND target.id <> source.id"
 order_by = [{ expression = "score", direction = "desc", nulls = "last" }]
 limit_per_source = 10
 retrieval = "approximate_allowed"
@@ -37,6 +36,17 @@ retrieval = "approximate_allowed"
 [edge.SIMILAR_TO.properties]
 score = "vector.cosine_similarity(source.embedding, target.embedding)"
 ```
+
+`predicate` is optional. Omit it to allow all endpoint pairs, including a node
+paired with itself. To restrict eligibility before ranking, add a condition under
+`[edge.SIMILAR_TO]`, for example:
+
+```toml
+predicate = "target.tenant_id = source.tenant_id AND target.id <> source.id"
+```
+
+This condition expresses application behavior; OrchidDB constructs the retrieval
+query from the score, ordering, limit, and any eligibility filter.
 
 Expressions reference **mapped graph properties**, not physical table columns.
 They support ordinary scalar expression syntax: arithmetic, comparisons, Boolean
