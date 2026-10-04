@@ -64,10 +64,10 @@ java-test: java-compiler-check
 	@echo 'Java runtime dependency boundary passed (DuckDB JDBC remains test-only).'
 
 rust-test:
-	cargo test --locked --manifest-path "$(ROOT)/orchiddb-rust/Cargo.toml" $(DRIVER_FLAGS)
+	cargo test --locked --manifest-path "$(ROOT)/orchiddb-rust/Cargo.toml" $(DRIVER_FLAGS) --features quickwit,elasticsearch
 
 cli-test:
-	cargo test --locked --manifest-path "$(ROOT)/orchiddb-cli/Cargo.toml" $(DRIVER_FLAGS)
+	cargo test --locked --manifest-path "$(ROOT)/orchiddb-cli/Cargo.toml" $(DRIVER_FLAGS) --features quickwit,elasticsearch
 
 # All foreign clients share this compiler-only ABI; no result data crosses it.
 NATIVE_SUFFIX := $(if $(filter Darwin,$(shell uname -s)),dylib,so)

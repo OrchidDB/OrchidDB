@@ -162,7 +162,7 @@ def validate_pins(workspace, pins, version):
             raise ValueError(f'{kind}: engine revision mismatch')
 
 
-def make_plan(workspace, version):
+def make_plan(workspace, version, java_distribution="github"):
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Expected a stable X.Y.Z release version without the v prefix')
     pins = {}
@@ -176,8 +176,9 @@ def make_plan(workspace, version):
             raise ValueError(f'{directory}: existing version tag identifies different source; never move it')
     validate_pins(workspace, pins, version)
     audit_workflows(workspace)
-    check_maven_quota(workspace)
-    return {'schema': 1, 'version': version, 'workspace': str(workspace), 'pins': pins,
+    if java_distribution == "maven":
+        check_maven_quota(workspace)
+    return {'java_distribution': java_distribution, 'schema': 1, 'version': version, 'workspace': str(workspace), 'pins': pins,
             'validation': {}, 'builds': {}, 'created_at': dt.datetime.now(dt.timezone.utc).isoformat()}
 
 
@@ -196,11 +197,14 @@ def validate_locally(state, path):
     for variable in ['ORCHIDDB_TEST_PG_URL', 'ORCHIDDB_TEST_PG_URI', 'ORCHIDDB_TEST_PG_JDBC']:
         if not os.environ.get(variable):
             raise ValueError('Set ' + variable + ' so PostgreSQL integration coverage is not silently skipped')
+    fixture = os.environ.get('ORCHIDDB_REMOTE_FIXTURE')
+    if not fixture or not Path(fixture).is_file():
+        raise ValueError('Set ORCHIDDB_REMOTE_FIXTURE to the live Quickwit/Elasticsearch client fixture')
     env = dict(os.environ)
     env.setdefault('CARGO_TARGET_DIR', str(workspace / 'target/integration'))
     env.setdefault('CARGO_PROFILE_DEV_DEBUG', '0')
     env.setdefault('RUST_MIN_STACK', '16777216')
-    commands = {'core': ['cargo', 'test', '--locked', '--manifest-path', str(workspace / 'orchiddb/Cargo.toml')],
+    commands = {'core': ['cargo', 'test', '--locked', '--manifest-path', str(workspace / 'orchiddb/Cargo.toml'), '--features', 'quickwit,elasticsearch'],
                 'clients': ['make', '-f', str(workspace / 'orchiddb/scripts/release/integration.mk'), 'test']}
     if state['validation'].get('pins') != state['pins']:
         state['validation'] = {'pins': state['pins'].copy()}
@@ -542,13 +546,17 @@ def main():
     parser.add_argument('--version', required=True)
     parser.add_argument('--workspace', type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument('--state', type=Path)
+    parser.add_argument('--java-distribution', choices=['github', 'maven'], default='github')
     args = parser.parse_args()
     workspace = args.workspace.resolve()
     path = args.state or workspace / '.releases' / args.version / 'state.json'
     try:
         if args.command == 'quota':
-            check_maven_quota(workspace)
-            print('No active Maven Central quota block reported.')
+            if args.java_distribution == 'maven':
+                check_maven_quota(workspace)
+                print('No active Maven Central quota block reported.')
+            else:
+                print('JVM assets will be distributed on GitHub; Sonatype quota is not applicable.')
             return
         if args.command == 'audit':
             audit_workflows(workspace)
@@ -557,7 +565,7 @@ def main():
         if args.command == 'plan':
             if path.exists():
                 raise ValueError('Release state already exists; use status/build/retry to resume')
-            save(path, make_plan(workspace, args.version))
+            save(path, make_plan(workspace, args.version, args.java_distribution))
             print('Saved immutable release plan:', path)
             return
         state = json.loads(path.read_text())

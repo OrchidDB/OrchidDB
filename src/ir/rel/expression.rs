@@ -938,7 +938,11 @@ impl<'a> LoweringContext<'a> {
                 let rhs = self.lower_expr(plan, &args[1])?;
                 let lt = lhs.get_type(plan.schema())?;
                 let rt = rhs.get_type(plan.schema())?;
-                if lt != rt && lt.is_numeric() && rt.is_numeric() {
+                if lt != rt && lt.is_numeric() && rt.is_numeric()
+                    && !exact_float_literal(&lhs, &rt)
+                    && !exact_float_literal(&rhs, &lt)
+                    && !(matches!(lt, DataType::Float32 | DataType::Float64)
+                        && matches!(rt, DataType::Float32 | DataType::Float64)) {
                     // SQL numeric promotion can round an integer before it is
                     // compared with a float (notably beyond 2^53). Native
                     // Cypher comparison preserves the exact operand values.
@@ -1222,6 +1226,45 @@ impl<'a> LoweringContext<'a> {
         let value = self.lower_expr(plan, value_arg)?;
         let data_type = data_type_for_cast_target(target_name)?;
         Ok((value, data_type, lenient))
+    }
+}
+
+// SQL may promote an integer constant to the floating column's type when the
+// constant is exactly representable. Never apply this to an integer column:
+// unknown values above 2^53 could lose information during numeric promotion.
+fn exact_float_literal(expr: &Expr, target: &DataType) -> bool {
+    let Expr::Literal(value, _) = expr else { return false; };
+    let integer = match value {
+        ScalarValue::Int8(Some(n)) => i128::from(*n),
+        ScalarValue::Int16(Some(n)) => i128::from(*n),
+        ScalarValue::Int32(Some(n)) => i128::from(*n),
+        ScalarValue::Int64(Some(n)) => i128::from(*n),
+        ScalarValue::UInt8(Some(n)) => i128::from(*n),
+        ScalarValue::UInt16(Some(n)) => i128::from(*n),
+        ScalarValue::UInt32(Some(n)) => i128::from(*n),
+        ScalarValue::UInt64(Some(n)) => i128::from(*n),
+        _ => return false,
+    };
+    match target {
+        DataType::Float32 => (integer as f32) as i128 == integer,
+        DataType::Float64 => (integer as f64) as i128 == integer,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod numeric_literal_tests {
+    use super::*;
+    #[test]
+    fn float_comparisons_accept_only_exact_integer_constants() {
+        for n in [0_i64, 1, -1, 9007199254740992, i64::MIN] {
+            assert!(exact_float_literal(&lit(n), &DataType::Float64));
+        }
+        for n in [9007199254740993_i64, i64::MAX, -9007199254740993] {
+            assert!(!exact_float_literal(&lit(n), &DataType::Float64));
+        }
+        assert!(!exact_float_literal(&lit(16777217_i64), &DataType::Float32));
+        assert!(!exact_float_literal(&datafusion::logical_expr::col("id"), &DataType::Float64));
     }
 }
 

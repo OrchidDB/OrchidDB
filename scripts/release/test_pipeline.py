@@ -10,6 +10,18 @@ import pipeline as p
 
 
 class PipelineTests(unittest.TestCase):
+    def test_github_jvm_distribution_does_not_contact_sonatype(self):
+        import subprocess
+        def git(*args, **kwargs):
+            return '' if 'status' in args else 'source-commit'
+        with patch.object(p, 'command', side_effect=git), \
+             patch.object(p.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', '')), \
+             patch.object(p, 'validate_pins'), patch.object(p, 'audit_workflows'), \
+             patch.object(p, 'check_maven_quota') as quota:
+            state = p.make_plan(Path(self.temp.name), '0.3.0')
+        self.assertEqual(state['java_distribution'], 'github')
+        quota.assert_not_called()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

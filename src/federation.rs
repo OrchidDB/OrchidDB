@@ -880,9 +880,7 @@ pub fn bind_batches(
 
 /// Shared protocol for bindings which transport Arrow IPC or typed JSON rows.
 pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
-    use base64::Engine;
-    use datafusion::common::ScalarValue;
-    let mut plan = command.get("plan").cloned().ok_or("missing bind plan")?;
+    let plan = command.get("plan").cloned().ok_or("missing bind plan")?;
     if plan["version"] != 1 {
         return Err("unsupported bind plan version".into());
     }
@@ -896,6 +894,33 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
         .ok_or("unknown exchange relation")?;
     let transfer: Transfer =
         serde_json::from_value(transfers[index].clone()).map_err(|e| e.to_string())?;
+    let batches = exchange_batches(&command, &transfer.columns)?;
+    bind_plan_batches(plan, name, &batches)
+}
+
+fn exchange_batches(
+    command: &serde_json::Value,
+    columns: &[TransferColumn],
+) -> Result<Vec<RecordBatch>, String> {
+    let forms = ["ipc", "rows", "batches"]
+        .iter()
+        .filter(|key| command.get(**key).is_some())
+        .count();
+    if forms != 1 {
+        return Err("provide exactly one of rows, IPC, or batches".into());
+    }
+    if let Some(chunks) = command.get("batches") {
+        let mut output = vec![];
+        for chunk in chunks
+            .as_array()
+            .ok_or("exchange batches must be an array")?
+        {
+            output.extend(exchange_batches(chunk, columns)?);
+        }
+        return Ok(output);
+    }
+    use base64::Engine;
+    use datafusion::common::ScalarValue;
     let batches = if let Some(ipc) = command["ipc"].as_str() {
         if command.get("rows").is_some() {
             return Err("provide rows or IPC, not both".into());
@@ -911,8 +936,7 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
         let rows = command["rows"]
             .as_array()
             .ok_or("missing bind rows or IPC")?;
-        let types = transfer
-            .columns
+        let types = columns
             .iter()
             .map(|c| crate::compiler::data_type(&c.data_type))
             .collect::<Result<Vec<_>, _>>()?;
@@ -926,7 +950,7 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
                 values[index].push(json_scalar(&row[index], ty)?);
             }
         }
-        let columns = values
+        let arrays = values
             .into_iter()
             .zip(&types)
             .map(|(v, ty)| {
@@ -938,15 +962,41 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
             })
             .collect::<Result<Vec<_>, String>>()?;
         let schema = std::sync::Arc::new(arrow::datatypes::Schema::new(
-            transfer
-                .columns
+            columns
                 .iter()
                 .zip(types)
                 .map(|(c, ty)| arrow::datatypes::Field::new(&c.name, ty, c.nullable))
                 .collect::<Vec<_>>(),
         ));
-        vec![RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())?]
+        vec![
+            RecordBatch::try_new_with_options(
+                schema,
+                arrays,
+                &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(rows.len())),
+            )
+            .map_err(|e| e.to_string())?,
+        ]
     };
+    Ok(batches)
+}
+
+/// Complete a transfer and update every dependent island using the same batches.
+/// Shared by the JSON/IPC protocol and the zero-copy Arrow C stream entry point.
+pub fn bind_plan_batches(
+    mut plan: serde_json::Value,
+    name: &str,
+    batches: &[RecordBatch],
+) -> Result<serde_json::Value, String> {
+    if plan["version"] != 1 {
+        return Err("unsupported bind plan version".into());
+    }
+    let transfers = plan["transfers"].as_array().ok_or("missing transfers")?;
+    let index = transfers
+        .iter()
+        .position(|t| t["target_relation"].as_str() == Some(name))
+        .ok_or("unknown exchange relation")?;
+    let transfer: Transfer =
+        serde_json::from_value(transfers[index].clone()).map_err(|e| e.to_string())?;
     let sql = bind_batches(
         plan["sql"].as_str().ok_or("missing SQL")?,
         plan["dialect"].as_str().ok_or("missing dialect")?,
@@ -1512,6 +1562,20 @@ mod audit_regressions {
 /// statements or request payloads execute on `engine`; their concatenated results
 /// complete the named transfer.
 pub fn bind_operation_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
+    if let Some(ipc) = command["ipc"].as_str() {
+        use base64::Engine;
+        if command.get("rows").is_some() {
+            return Err("provide rows or IPC, not both".into());
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(ipc)
+            .map_err(|e| e.to_string())?;
+        let batches = arrow::ipc::reader::StreamReader::try_new(std::io::Cursor::new(bytes), None)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        return bind_operation_batches(command, &batches);
+    }
     let plan = &command["plan"];
     if plan["version"] != 1 {
         return Err("unsupported operation plan version".into());
@@ -1578,6 +1642,62 @@ pub fn bind_operation_command(command: serde_json::Value) -> Result<serde_json::
     Ok(
         serde_json::json!({"version":1,"engine":search.engine,"relation":name,"dialect":search.template.dialect,"sql":statements}),
     )
+}
+
+/// Bind operation parameters directly from Arrow, respecting their declared
+/// domain types rather than the physical JSON/string representation of a driver.
+pub fn bind_operation_batches(
+    mut command: serde_json::Value,
+    batches: &[RecordBatch],
+) -> Result<serde_json::Value, String> {
+    let name = command["relation"]
+        .as_str()
+        .ok_or("missing operation relation")?;
+    let transfer = command["plan"]["transfers"]
+        .as_array()
+        .ok_or("missing transfers")?
+        .iter()
+        .find(|t| t["target_relation"].as_str() == Some(name))
+        .ok_or("unknown operation relation")?;
+    let transfer: Transfer = serde_json::from_value(transfer.clone()).map_err(|e| e.to_string())?;
+    let columns = if let Some(op) = &transfer.request {
+        &op.input_columns
+    } else if let Some(op) = &transfer.operation {
+        &op.input_columns
+    } else {
+        return Err("transfer is not a dependent operation".into());
+    };
+    let types = columns
+        .iter()
+        .map(|c| crate::compiler::data_type(&c.data_type))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut rows = vec![];
+    for batch in batches {
+        if batch.num_columns() != types.len() {
+            return Err("operation source row width mismatch".into());
+        }
+        for row in 0..batch.num_rows() {
+            rows.push(
+                batch
+                    .columns()
+                    .iter()
+                    .zip(&types)
+                    .map(|(a, ty)| {
+                        let value = datafusion::common::ScalarValue::try_from_array(a, row)
+                            .map_err(|e| e.to_string())?;
+                        let value = exchange_scalar(value, ty)?;
+                        scalar_json(&value).map_err(|e| e.to_string())
+                    })
+                    .collect::<Result<Vec<_>, String>>()?,
+            );
+        }
+    }
+    command
+        .as_object_mut()
+        .ok_or("invalid operation command")?
+        .remove("ipc");
+    command["rows"] = serde_json::json!(rows);
+    bind_operation_command(command)
 }
 
 /// Compatibility name for protocol-v1 clients.

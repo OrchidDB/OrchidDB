@@ -12,7 +12,7 @@ SQL islands and caller-owned connections. Mixed execution creates no tables.
 
 ## Install the CLI
 
-Version 0.1.0 is released. Install the macOS ARM64 CLI with bundled DuckDB:
+Version 0.3.0 is released. Install the macOS ARM64 CLI with bundled DuckDB:
 
 ```sh
 curl -fsSL https://install.orchiddb.com | bash
@@ -30,7 +30,7 @@ Java, Elixir, and C++ packages.
 
 ```toml
 [dependencies]
-orchiddb = { version = "=0.1.0", default-features = false }
+orchiddb = { version = "=0.3.0", default-features = false }
 ```
 
 The default library build has no DuckDB or PostgreSQL driver dependency. Supply

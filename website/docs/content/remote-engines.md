@@ -151,6 +151,32 @@ Ordinary remote scans use paginated snapshot reads. Configured limits reject
 oversized results rather than silently truncating them. HTTP errors, malformed
 responses, and partial search failures propagate to the caller.
 
+## Language clients
+
+Python, JavaScript, JVM, C++, and Elixir provide `RemoteEngine` adapters for these
+services. Register one alongside your application-owned SQL adapter and use the
+client's federated-query entry point. Keep the remote engine open across queries
+and close it when the application no longer needs it. These clients use the same
+validated HTTP transport as Rust, including pagination, typed results, and error
+handling. Each client README includes connection and query examples.
+
+The Rust client exposes the adapters through its independent `quickwit` and
+`elasticsearch` features. The CLI accepts a separate engine options file:
+
+```json
+{
+  "text": {"endpoint": "http://localhost:7280", "page_size": 1000}
+}
+```
+
+```sh
+orchiddb query request.json --engines engines.json --init setup.sql --no-iceberg
+```
+
+The request's `engines` registry selects Quickwit or Elasticsearch; the options
+file supplies connection details for that engine ID. Credentials belong in this
+application configuration, never in the compiled query.
+
 ## Compose retrieval and reranking
 
 Use the [candidate-stage relationship syntax](search.md#retrieve-candidates-then-rerank-with-maxsim)

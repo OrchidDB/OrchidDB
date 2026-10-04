@@ -86,6 +86,12 @@ pub struct HttpSession {
     settings: BTreeMap<String, Value>,
 }
 impl HttpSession {
+    /// Construct from explicit foreign-client options (timeouts in milliseconds).
+    /// This does not connect to the remote service.
+    pub fn from_json_options(adapter: &str, options: Value) -> Result<Self, String> {
+        protocol::new_session(adapter, options)
+    }
+
     #[cfg(feature = "quickwit")]
     pub fn quickwit(endpoint: &str) -> Result<Self, String> {
         Self::new(Engine::Quickwit, HttpOptions::new(endpoint), None)
@@ -1043,5 +1049,7 @@ session!(ElasticsearchSession, Elasticsearch, "elasticsearch");
 
 mod batch;
 mod metadata;
+mod protocol;
+pub use protocol::command;
 #[cfg(test)]
 mod tests;

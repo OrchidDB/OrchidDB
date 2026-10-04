@@ -39,11 +39,16 @@ A failed local check stops the release before any cloud build. Successful checks
 are reused only for the same source revisions and unchanged test-log hashes.
 State and logs live in `.releases/X.Y.Z/`; retain this directory across sessions.
 
-The quota preflight refreshes warnings from a previous Maven deployment when
-local Central credentials are available. Preserve `maven-deployment.json` in the
-release directory. Without a previous deployment report, check Central account
-usage before starting builds. For the 0.2.0 release, Central reported a block on
-subsequent publication until November 1, 2026; 0.2.0 itself was published.
+JVM releases are distributed as GitHub assets. The coordinator defaults to
+`--java-distribution github`, records this choice, and does not contact Sonatype
+or gate builds on its publishing quota. The legacy Maven quota check is only
+available when explicitly selecting `--java-distribution maven`.
+
+For remote engine validation, start `tests/remote-engines.compose.yml`, run
+`python3 scripts/release/remote_clients.py --output /tmp/remote-clients.json`
+from the engine checkout, and set `ORCHIDDB_REMOTE_FIXTURE` to that file during
+local client tests. The fixture covers both running services with pagination,
+correlated BM25, SQL-authoritative joins, nulls, and JSON results.
 
 ## Build and resume
 
@@ -122,16 +127,15 @@ Publish from these collected artifacts, preserving the handoff and checksums:
   dispatch it from `main`. Already published PyPI files must match exactly.
   Publish Hex from the tagged source and compare its archive with the collected
   package. Preserve registry receipts and compare downloaded package hashes.
-- For Maven, dispatch Java `release.yml` from `main` with `tag=vX.Y.Z`,
+- For the JVM, dispatch Java `release.yml` from `main` with `tag=vX.Y.Z`,
   `platform=all`, `stage=true`, `publish=false`, and `reuse_runs` containing all
-  four recorded Java build run IDs. It reuses every classifier, signs and stages
-  with tests skipped, and records the Central deployment ID. Save that ID and
-  status as `maven-deployment.json`; publish that deployment once validated.
-  Do not rerun the native build matrix to stage Maven.
+  four recorded Java build run IDs. This packages the completed native classifiers
+  with JVM/Gremlin JARs, source/Javadoc JARs, POMs, and runtime dependencies into
+  `orchiddb-java-X.Y.Z.zip`. Download the `java-release-bundle` artifact and attach
+  it to the GitHub draft. It does not sign, stage, or publish to Sonatype.
 - Include a Python source distribution if distributing source: build it locally
   from the immutable tag, record its hash, and add it to the Python draft before
-  upload. Classifier JARs are intermediate inputs; publish Maven's signed module
-  artifacts and the completed deployment evidence with the Java release.
+  upload.
 - Verify public registry file hashes and GitHub asset digests, attach validation
   evidence, then publish the GitHub drafts using `gh release edit vX.Y.Z
   --draft=false --repo OrchidDB/REPOSITORY`. Never replace published bytes.
