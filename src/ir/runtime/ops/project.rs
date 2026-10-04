@@ -19,17 +19,24 @@ pub(crate) fn project_op(
 ) -> IrResult<Vec<Row>> {
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let mut new_row = match mode {
-            ProjectMode::PreserveVisible | ProjectMode::ReplaceCurrent => row.clone(),
+        // Every expression sees the original scope, including when an earlier
+        // projection overwrites one of its inputs. Stage only projected values.
+        let mut projected = BTreeMap::new();
+        for item in items {
+            let value = eval(&item.expr, &row, graph)?;
+            projected.insert(item.alias.clone(), value);
+        }
+        let new_row = match mode {
+            ProjectMode::PreserveVisible | ProjectMode::ReplaceCurrent => {
+                let mut row = row;
+                row.bindings.extend(projected);
+                row
+            }
             ProjectMode::ReplaceScope => Row {
-                bindings: BTreeMap::new(),
+                bindings: projected,
                 bulk: row.bulk,
             },
         };
-        for item in items {
-            let value = eval(&item.expr, &row, graph)?;
-            new_row.bindings.insert(item.alias.clone(), value);
-        }
         out.push(new_row);
     }
     Ok(out)
@@ -66,12 +73,13 @@ pub(crate) fn current_project_op(
             ),
             _ => None,
         };
-        let value = match &map_value {
-            Some(value) => value.clone(),
+        let from_map = map_value.is_some();
+        let value = match map_value {
+            Some(value) => value,
             None => eval(expr, &row, graph)?,
         };
         if matches!(value, Value::Null) {
-            let productive_null = map_value.is_some()
+            let productive_null = from_map
                 || direct_property.is_some_and(|(owner, name)| {
                     !graph
                         .properties(owner, std::slice::from_ref(name))

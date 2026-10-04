@@ -22,27 +22,44 @@ pub(crate) fn collect_op(
     rows: Vec<Row>,
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
+    if order.is_empty() {
+        let mut list = if distinct {
+            Vec::new()
+        } else {
+            Vec::with_capacity(rows.len())
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for row in rows {
+            let value = eval(value, &row, graph)?;
+            if !distinct || seen.insert(encode_value(&value)) {
+                list.push(value);
+            }
+        }
+        return Ok(vec![Row::new().with(alias, Value::List(list))]);
+    }
     let mut decorated: Vec<(Vec<Value>, Value)> = Vec::with_capacity(rows.len());
-    for row in &rows {
-        let v = eval(value, row, graph)?;
+    for row in rows {
+        let v = eval(value, &row, graph)?;
         let key_values = order
             .iter()
-            .map(|k| eval(&k.expr, row, graph))
+            .map(|k| eval(&k.expr, &row, graph))
             .collect::<IrResult<Vec<_>>>()?;
         decorated.push((key_values, v));
     }
-    if !order.is_empty() {
-        decorated.sort_by(|a, b| {
-            for (idx, key) in order.iter().enumerate() {
-                let cmp = compare_for_sort(&a.0[idx], &b.0[idx], key);
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
+    decorated.sort_by(|a, b| {
+        for (idx, key) in order.iter().enumerate() {
+            let cmp = compare_for_sort(&a.0[idx], &b.0[idx], key);
+            if cmp != std::cmp::Ordering::Equal {
+                return cmp;
             }
-            std::cmp::Ordering::Equal
-        });
-    }
-    let mut list: Vec<Value> = Vec::with_capacity(decorated.len());
+        }
+        std::cmp::Ordering::Equal
+    });
+    let mut list: Vec<Value> = if distinct {
+        Vec::new()
+    } else {
+        Vec::with_capacity(decorated.len())
+    };
     if distinct {
         let mut seen = std::collections::BTreeSet::new();
         for (_, v) in decorated {

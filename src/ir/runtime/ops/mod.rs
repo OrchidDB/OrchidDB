@@ -25,3 +25,6 @@ pub(crate) mod java_hashmap;
 
 #[cfg(test)]
 mod traversal_tests;
+
+#[cfg(test)]
+mod ownership_tests;

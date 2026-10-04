@@ -17,64 +17,69 @@ pub(crate) fn unwind_op(
     graph: &PropertyGraph,
 ) -> IrResult<Vec<Row>> {
     let mut out = Vec::new();
-    for row in rows {
+    for mut row in rows {
         let value = eval(expr, &row, graph)?;
-        // Gremlin Set marker maps unfold to their items, not map entries.
-        let value = match crate::ir::value::as_gremlin_set(&value) {
-            Some(items) => Value::List(items.to_vec()),
-            None => value,
-        };
+        // The destination is overwritten in every output. Do not copy its old
+        // payload when duplicating the bindings that actually survive.
+        row.bindings.remove(bind);
         match value {
-            Value::List(items) | Value::BulkSet(items) if items.is_empty() => {
-                if outer_flag {
-                    let mut new_row = row.clone();
-                    new_row.bindings.insert(bind.to_string(), Value::Null);
-                    out.push(new_row);
-                }
-            }
-            Value::List(items) | Value::BulkSet(items) => {
-                for item in items {
-                    let mut new_row = row.clone();
-                    new_row.bindings.insert(bind.to_string(), item);
-                    out.push(new_row);
+            // Native sets unfold to their members, preserving encounter order.
+            Value::List(items) | Value::BulkSet(items) | Value::Set(items) => {
+                if items.is_empty() && outer_flag {
+                    append_rows(row, bind, std::iter::once(Value::Null), &mut out);
+                } else {
+                    append_rows(row, bind, items.into_iter(), &mut out);
                 }
             }
             Value::TypedMap(items) => {
-                for (key, value) in items {
-                    let mut new_row = row.clone();
-                    new_row.bindings.insert(
-                        bind.to_string(),
+                append_rows(
+                    row,
+                    bind,
+                    items.into_iter().map(|(key, value)| {
                         Value::Map(BTreeMap::from([
                             ("key".into(), key),
                             ("value".into(), value),
-                        ])),
-                    );
-                    out.push(new_row);
-                }
+                        ]))
+                    }),
+                    &mut out,
+                );
             }
             Value::Map(items) => {
-                for (k, v) in items {
-                    let mut new_row = row.clone();
-                    let mut entry = BTreeMap::new();
-                    entry.insert("key".into(), Value::String(k));
-                    entry.insert("value".into(), v);
-                    new_row.bindings.insert(bind.to_string(), Value::Map(entry));
-                    out.push(new_row);
-                }
+                append_rows(
+                    row,
+                    bind,
+                    items.into_iter().map(|(key, value)| {
+                        Value::Map(BTreeMap::from([
+                            ("key".into(), Value::String(key)),
+                            ("value".into(), value),
+                        ]))
+                    }),
+                    &mut out,
+                );
             }
-            Value::Null => {
-                if outer_flag {
-                    let mut new_row = row.clone();
-                    new_row.bindings.insert(bind.to_string(), Value::Null);
-                    out.push(new_row);
-                }
-            }
-            other => {
-                let mut new_row = row.clone();
-                new_row.bindings.insert(bind.to_string(), other);
-                out.push(new_row);
-            }
+            Value::Null if !outer_flag => {}
+            other => append_rows(row, bind, std::iter::once(other), &mut out),
         }
     }
     Ok(out)
+}
+
+fn append_rows(
+    mut row: Row,
+    bind: &str,
+    mut values: impl ExactSizeIterator<Item = Value>,
+    out: &mut Vec<Row>,
+) {
+    while let Some(value) = values.next() {
+        // Move the original row into the final result. Single-result inputs
+        // therefore never clone the surviving bindings.
+        if values.len() == 0 {
+            row.bindings.insert(bind.to_string(), value);
+            out.push(row);
+            break;
+        }
+        let mut next = row.clone();
+        next.bindings.insert(bind.to_string(), value);
+        out.push(next);
+    }
 }
