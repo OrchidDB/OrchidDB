@@ -156,6 +156,10 @@ is not advertised as an indexed text implementation.
 
 ## Candidate retrieval followed by ColBERT scoring
 
+This example assumes a mapped `Question` node with an ID and `text`, `tenant_id`,
+and `tokens` properties, alongside the `Document` mapping above. `tokens` contains
+the question's token vectors.
+
 ```toml
 [edge.RELEVANT_TO]
 source = "Question"
@@ -260,17 +264,17 @@ query, and engine ownership. Schema types use the existing notation, such as
 
 ## Lowered SQL and SQL islands
 
-A descending cosine top-k becomes an index-usable pgvector query of this shape
-(aliases are shortened here):
+With the optional tenant/self-exclusion filter above, a descending cosine top-k
+becomes an index-usable pgvector query of this shape (aliases are shortened):
 
 ```sql
-SELECT source.id AS source_id, hits.*
+SELECT source.document_id AS source_id, hits.*
 FROM documents AS source
 CROSS JOIN LATERAL (
-  SELECT target.id AS target_id,
+  SELECT target.document_id AS target_id,
          1.0 - (target.embedding <=> source.embedding) AS score
   FROM documents AS target
-  WHERE target.tenant_id = source.tenant_id AND target.id <> source.id
+  WHERE target.tenant_id = source.tenant_id AND target.document_id <> source.document_id
   ORDER BY target.embedding <=> source.embedding ASC NULLS LAST
   LIMIT 10
 ) AS hits
@@ -351,13 +355,13 @@ hits to the surrounding graph plan. It never emits a lateral Lance call with
 unbound source columns. Representative generated search statements are:
 
 ```sql
-SELECT target.id, list_cosine_similarity([0.1, 0.9], target.embedding) AS score
+SELECT target.document_id, list_cosine_similarity([0.1, 0.9], target.embedding) AS score
 FROM lance_vector_search('/data/documents.lance', 'embedding', [0.1, 0.9],
                          k = 10, use_index = true, nprobs = 8,
                          refine_factor = 2, prefilter = true) AS target
-WHERE target.tenant_id = 42 AND target.id <> 7;
+WHERE target.tenant_id = 42 AND target.document_id <> 7;
 
-SELECT target.id, target._score AS score
+SELECT target.document_id, target._score AS score
 FROM lance_fts('/data/documents.lance', 'body', 'graph retrieval',
                k = 200, prefilter = true) AS target
 WHERE target.tenant_id = 42;

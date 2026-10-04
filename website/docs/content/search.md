@@ -277,10 +277,11 @@ mappings:
 | `text.bm25(query, target.body)` | Descending | Query text and a mapped text property |
 | `vector.maxsim(query_tokens, document_tokens)` | Descending | Two lists of token vectors |
 
-Without an index configuration, these functions can score data in OrchidDB's
-native engine or through ordinary PostgreSQL/DuckDB SQL. This evaluates the
-eligible pairs and can be expensive for large collections. Configure a matching
-index for indexed retrieval, or use a candidate stage to limit reranking work.
+Native scoring and ordinary DuckDB scoring evaluate eligible pairs, which can
+be expensive for large collections. PostgreSQL vector search can use an existing
+matching pgvector index even without an explicit index declaration. Lance search
+requires the source metadata shown above. Portable BM25 and MaxSim score their
+inputs exhaustively; use indexed candidates to limit reranking work.
 
 Vectors may be float32/float64 lists or fixed-size lists. Null inputs produce null
 scores; zero-norm cosine inputs also produce null. Indexed search requires valid
