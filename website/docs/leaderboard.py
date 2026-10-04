@@ -5,9 +5,9 @@ from collections import Counter
 from html import escape
 from pathlib import Path
 
-PRODUCTS = {'orchiddb': 'OrchidDB', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph', 'neo4j': 'Neo4j Community', 'jena': 'Apache Jena TDB2'}
-SUITES = [('tinkerpop', 'Gremlin', ('orchiddb', 'sqlg', 'puppygraph', 'janusgraph')),
-          ('opencypher', 'Cypher', ('orchiddb', 'neo4j', 'puppygraph')),
+PRODUCTS = {'orchiddb': 'OrchidDB', 'sqlg': 'SQLg', 'puppygraph': 'PuppyGraph', 'janusgraph': 'JanusGraph', 'neo4j': 'Neo4j Community', 'jena': 'Apache Jena TDB2', 'arcadedb': 'ArcadeDB'}
+SUITES = [('tinkerpop', 'Gremlin', ('orchiddb', 'sqlg', 'puppygraph', 'janusgraph', 'arcadedb')),
+          ('opencypher', 'Cypher', ('orchiddb', 'neo4j', 'puppygraph', 'arcadedb')),
           ('rdf', 'SPARQL', ('orchiddb', 'jena'))]
 
 

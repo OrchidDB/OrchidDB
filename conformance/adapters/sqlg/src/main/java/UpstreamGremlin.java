@@ -34,6 +34,7 @@ public class UpstreamGremlin {
  static ObjectMapper json=new ObjectMapper();
  static String backend;
  static boolean jvmProfile(){return "orchiddb-jvm".equals(backend)||"orchiddb-computer".equals(backend);}
+ static boolean typedJvmProfile(){return jvmProfile()||"arcadedb".equals(backend);}
  static class Bridge {
   Process process; BufferedReader output; BufferedWriter input; String engineInstance;
   final FixtureSession fixtures=new FixtureSession();
@@ -224,6 +225,7 @@ public class UpstreamGremlin {
   });
   return traversal;
  }
+ static ArcadeProviderLoader arcadeLoader;
  static SqlgGraph cachedSqlg;static String cachedFixture;
  static class Context implements World {
   boolean allowNullPropertyValues,directionAliasesInstalled;
@@ -233,6 +235,7 @@ public class UpstreamGremlin {
   final Map<String,Object> nativeBindings=new LinkedHashMap<>();
   final Map<String,String> parameterDefinitions=new LinkedHashMap<>(),predicateDefinitions=new LinkedHashMap<>();
   GremlinGroovyScriptEngine scriptEngine; OrchidJvmExecutor executor;
+  java.nio.file.Path arcadeDirectory;
   Graph graph; Cluster cluster; GraphTraversalSource source;List<Object> queryTransports=new ArrayList<>();String currentStep="";
   public GraphTraversalSource getGraphTraversalSource(GraphData data) {
    try {
@@ -248,6 +251,24 @@ public class UpstreamGremlin {
      if(graph.features().graph().supportsTransactions())graph.tx().commit();
      source=backend.equals("orchiddb-computer")?graph.traversal().withComputer():graph.traversal();
      return source;
+    }
+    if(backend.equals("arcadedb")){
+     try {
+      arcadeDirectory=java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("conformance.arcadedb.root")),"scenario-");
+      if(arcadeLoader==null)arcadeLoader=new ArcadeProviderLoader();
+      graph=arcadeLoader.open(arcadeDirectory.resolve("graph").toString());
+      // Reject fixture data the provider cannot represent before copying anything.
+      var vertices=fixture.vertices();
+      while(vertices.hasNext()){
+       var vertex=vertices.next();var properties=vertex.properties();var counts=new HashMap<String,Integer>();
+       while(properties.hasNext()){
+        var property=properties.next();
+        if(property.properties().hasNext()&&!graph.features().vertex().supportsMetaProperties() || counts.merge(property.key(),1,Integer::sum)>1&&!graph.features().vertex().supportsMultiProperties())
+         throw new AssumptionViolatedException("unsupported-feature: ArcadeDB fixture has multi/meta-properties unsupported by provider");
+       }
+      }
+      copyJanusFixture(fixture,graph);graph.tx().commit();source=graph.traversal();return source;
+     } finally {fixture.close();}
     }
     if(backend.equals("janusgraph")){
      var config=new BaseConfiguration();config.setProperty("storage.backend","inmemory");
@@ -301,7 +322,7 @@ public class UpstreamGremlin {
    if(id instanceof Number)return id.toString();
    try{return json.writeValueAsString(id.toString());}catch(Exception e){throw new RuntimeException(e);}
   }
-  public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(graph instanceof OrchidGraph nativeGraph)nativeGraph.closeFamily();else if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();}catch(Exception e){throw new RuntimeException(e);}}
+  public void afterEachScenario(){try{if(executor!=null)executor.close();if(scriptEngine!=null)scriptEngine.reset();if(source!=null)source.close();if(graph!=null&&executor==null){if(graph.features().graph().supportsTransactions())graph.tx().rollback();if(graph instanceof OrchidGraph nativeGraph)nativeGraph.closeFamily();else if(!backend.equals("sqlg"))graph.close();}if(cluster!=null)cluster.close();if(arcadeDirectory!=null){try(var paths=java.nio.file.Files.walk(arcadeDirectory)){for(var path:paths.sorted(java.util.Comparator.reverseOrder()).toList())java.nio.file.Files.deleteIfExists(path);}}}catch(Exception e){throw new RuntimeException(e);}}
   public String changePathToDataFile(String path){
    String source=System.getenv("CONFORMANCE_TINKERPOP_SOURCE");
    if(source==null||source.isEmpty())source=new File(System.getenv().getOrDefault("CONFORMANCE_UPSTREAM_CACHE","conformance/upstream/cache"),"tinkerpop").getPath();
@@ -428,7 +449,7 @@ public class UpstreamGremlin {
  }
  static Traversal<?,?> jvmTraversal(StepDefinition steps,String script)throws Exception{
   var path=StepDefinition.class.getDeclaredMethod("tryUpdateDataFilePath",String.class);path.setAccessible(true);
-  String updated=(String)path.invoke(steps,script);boolean remote=hasInlineLambda(updated);
+  String updated=(String)path.invoke(steps,script);boolean remote=!backend.equals("arcadedb")&&hasInlineLambda(updated);
   Object traversal=scriptEngine(steps).eval(updated,bindings(steps,remote));
   if(!(traversal instanceof Traversal<?,?> result))throw new IllegalArgumentException("Script did not return a traversal");
   context(steps).queryTransports.add(Map.of("step",context(steps).currentStep,"phase",costPhase(context(steps).currentStep),"query",updated,"backend",backend,"submission",remote?"JVM remote bytecode":"JVM provider traversal","typed_parameters",true));
@@ -471,7 +492,7 @@ public class UpstreamGremlin {
    try{setField(def,"traversal",nativeTraversal(def,script));}catch(Exception error){setField(def,"error",error);}
    return;
   }
-  if(jvmProfile()){
+  if(typedJvmProfile()){
    try{setField(def,"traversal",jvmTraversal(def,script));}
    catch(Exception error){setField(def,"error",error);}
    return;
@@ -490,17 +511,17 @@ public class UpstreamGremlin {
  static void step(StepDefinition def,JsonNode s)throws Exception{
   String t=s.get("text").asText(),doc=s.has("doc")?s.get("doc").asText():"";Matcher m;
   if((m=Pattern.compile("the (\\w+) graph").matcher(t)).matches())def.givenTheXGraph(m.group(1));
-  else if(t.equals("the graph initializer of")){if(backend.equals("orchiddb"))nativeTraversal(def,doc).iterate();else if(jvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
+  else if(t.equals("the graph initializer of")){if(backend.equals("orchiddb"))nativeTraversal(def,doc).iterate();else if(typedJvmProfile())jvmTraversal(def,doc).iterate();else def.theGraphInitializerOf(doc);}
   else if((m=Pattern.compile("using the parameter (\\w+) defined as (.+)").matcher(t)).matches()){if(backend.equals("orchiddb")){
    String raw=unquote(m.group(2));Object value;
    if(raw.startsWith("c[")&&raw.endsWith("]"))value=Map.of("type","lambda","script",raw.substring(2,raw.length()-1));
    else value=nativeBindingValue(typedParameter(def,raw));
    context(def).nativeBindings.put(m.group(1),value);cacheAssertionParameter(def,m.group(1),raw,null);
-  }else if(jvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);cacheAssertionParameter(def,m.group(1),raw,null);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
+  }else if(typedJvmProfile()){String raw=unquote(m.group(2));context(def).typedParameters.put(m.group(1),typedParameter(def,raw));context(def).parameterDefinitions.put(m.group(1),raw);cacheAssertionParameter(def,m.group(1),raw,null);}else def.usingTheParameterXDefinedAsX(m.group(1),unquote(m.group(2)));}
   else if((m=Pattern.compile("using the parameter (\\w+) of P\\.(\\w+)\\((.+)\\)").matcher(t)).matches()){if(backend.equals("orchiddb")){
    String raw=unquote(m.group(3));context(def).nativeBindings.put(m.group(1),Map.of("type","predicate","operator",m.group(2),"value",nativeBindingValue(typedParameter(def,raw))));
    cacheAssertionParameter(def,m.group(1),raw,m.group(2));
-  }else if(jvmProfile()){
+  }else if(typedJvmProfile()){
    String raw=unquote(m.group(3));context(def).parameterDefinitions.put(m.group(1),raw);context(def).predicateDefinitions.put(m.group(1),m.group(2));
    Bindings values=bindings(def,false);values.put("__value",typedParameter(def,raw));
    context(def).typedParameters.put(m.group(1),scriptEngine(def).eval("P."+m.group(2)+"(__value)",values));
@@ -512,7 +533,7 @@ public class UpstreamGremlin {
    List<List<String>> table=new ArrayList<>();for(var row:s.get("table")){List<String> r=new ArrayList<>();for(var c:row)r.add(c.asText());table.add(r);}var dt=DataTable.create(table);
    switch(t){case "the result should be unordered"->def.theResultShouldBeUnordered(dt);case "the result should be ordered"->def.theResultShouldBeOrdered(dt);case "the result should be of"->def.theResultShouldBeOf(dt);default->throw new IllegalArgumentException("Unmapped step: "+t);}
   }else if((m=Pattern.compile("the result should have a count of (\\d+)").matcher(t)).matches())def.theResultShouldHaveACountOf(Integer.parseInt(m.group(1)));
-  else if((m=Pattern.compile("(?:debug )?the graph should return (\\d+) for count of (.+)").matcher(t)).matches()){String script=unquote(m.group(2));if(jvmProfile())prepareAssertionParameters(def,script);def.theGraphShouldReturnForCountOf(Integer.parseInt(m.group(1)),script);}
+  else if((m=Pattern.compile("(?:debug )?the graph should return (\\d+) for count of (.+)").matcher(t)).matches()){String script=unquote(m.group(2));if(typedJvmProfile())prepareAssertionParameters(def,script);def.theGraphShouldReturnForCountOf(Integer.parseInt(m.group(1)),script);}
   else if(t.equals("the result should be empty"))def.theResultShouldBeEmpty();
   else if(t.equals("the traversal will raise an error"))def.theTraversalWillRaiseAnError();
   else if((m=Pattern.compile("the traversal will raise an error with message (\\w+) text of (.+)").matcher(t)).matches())def.theTraversalWillRaiseAnErrorWithMessage(m.group(1),unquote(m.group(2)));
@@ -520,13 +541,13 @@ public class UpstreamGremlin {
   else throw new IllegalArgumentException("Unmapped upstream step: "+t);
  }
  public static void main(String[]args)throws Exception{
-  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("janusgraph")&&!backend.equals("reference")&&!jvmProfile())bridge=new Bridge();
+  backend=args[0];if(!backend.equals("sqlg")&&!backend.equals("janusgraph")&&!backend.equals("reference")&&!backend.equals("arcadedb")&&!jvmProfile())bridge=new Bridge();
   var input=new BufferedReader(new InputStreamReader(System.in));String line;
   System.out.println("{\"ready\":true}");System.out.flush();
   while((line=input.readLine())!=null){var request=json.readTree(line);var context=new Context();var def=new StepDefinition(context);String status="pass",error="",failedStep="";long start=System.nanoTime();List<Object> timings=new ArrayList<>();
-   JsonNode javaAssertion=(backend.equals("orchiddb")||backend.equals("janusgraph"))?NativeJUnitAssertions.mapping(request.get("id").asText()):null;
+   JsonNode javaAssertion=(backend.equals("orchiddb")||backend.equals("janusgraph")||backend.equals("arcadedb"))?NativeJUnitAssertions.mapping(request.get("id").asText()):null;
    try{if(javaAssertion!=null){failedStep="original upstream Java assertion";context.currentStep=failedStep;NativeJUnitAssertions.run(javaAssertion,context);}else{for(var tag:request.get("tags"))if(tag.asText().equals("@AllowNullPropertyValues"))context.allowNullPropertyValues=true;
-   for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("orchiddb-computer")&&!backend.equals("orchiddb")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("orchiddb")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||backend.equals("reference")&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
+   for(var tag:request.get("tags")){String t=tag.asText();if(t.equals("@GraphComputerOnly")&&!backend.equals("orchiddb-computer")&&!backend.equals("orchiddb")||t.equals("@AllowNullPropertyValues")&&!jvmProfile()&&!backend.equals("orchiddb")||t.equals("@DisallowNullPropertyValues")&&jvmProfile()||(backend.equals("reference")||backend.equals("arcadedb"))&&t.equals("@RemoteOnly"))throw new AssumptionViolatedException("Upstream execution profile excludes "+t);}
    for(var s:request.get("steps")){failedStep=s.get("text").asText();context.currentStep=failedStep;long before=System.nanoTime();step(def,s);timings.add(Map.of("step",failedStep,"elapsed_ms",(System.nanoTime()-before)/1e6));}}}
    catch(AssumptionViolatedException ex){status=ex.getMessage().startsWith("unsupported-feature:")?"unsupported":"skipped";error=ex.getMessage();}
    catch(AssertionError ex){status="fail";error=ex.toString();}
@@ -543,6 +564,6 @@ public class UpstreamGremlin {
    if(backend.equals("orchiddb"))evidence.put("engine_instance",bridge.engineInstance);
    System.out.println(json.writeValueAsString(evidence));System.out.flush();
   }
-  if(bridge!=null)bridge.process.destroy();if(cachedSqlg!=null)cachedSqlg.close();
+  if(bridge!=null)bridge.process.destroy();if(cachedSqlg!=null)cachedSqlg.close();if(arcadeLoader!=null)arcadeLoader.close();
  }
 }

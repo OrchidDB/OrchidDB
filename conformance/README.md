@@ -2,13 +2,13 @@
 
 Published report: https://docs.orchiddb.net/conformance.html
 
-Compare **OrchidDB, Neo4j Community, SQLg, PuppyGraph, JanusGraph and Apache Jena**, using free editions. The primary
+Compare **OrchidDB, Neo4j Community, SQLg, PuppyGraph, JanusGraph, ArcadeDB and Apache Jena**, using free editions. The primary
 corpus is the original upstream test data and assertions:
 
 | Suite | Pinned version | Scenarios | Compared interfaces |
 | --- | --- | ---: | --- |
-| openCypher TCK | 2024.3 | 3,897 | OrchidDB, Neo4j Community, PuppyGraph |
-| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | OrchidDB, SQLg, PuppyGraph, JanusGraph |
+| openCypher TCK | 2024.3 | 3,897 | OrchidDB, Neo4j Community, PuppyGraph, ArcadeDB |
+| Apache TinkerPop gremlin-test Gherkin | 3.7.4 | 1,511 | OrchidDB, SQLg, PuppyGraph, JanusGraph, ArcadeDB |
 | W3C SPARQL | SPARQL 1.0 / 1.1 repository revision | 1,125 | OrchidDB, Apache Jena TDB2 |
 
 The 6,533 scenarios are grouped by language, with outcomes for the compared interfaces.
@@ -282,3 +282,18 @@ matrix with tables split between real PostgreSQL and DuckDB sessions. See
 [SQL engines](../docs/sql-engines.md) for configuration and commands. These runs
 record unsupported SQL-only cases; they do not replace the managed executor's
 full language report.
+
+## ArcadeDB Cypher and Gremlin comparison
+
+An embedded **ArcadeDB 26.9.1** harness is available for both upstream suites.
+It uses fresh temporary fixture databases, records reproducible dependency and
+adapter evidence, and preserves the original assertions. Gremlin runs the pinned
+3.7.4 assertions through gremlin-groovy on ArcadeDB's 3.8.1 provider runtime with isolated parser
+versions. See [setup, local checks, and profile limitations](adapters/arcadedb/README.md).
+
+```sh
+bash conformance/build-arcadedb.sh
+CONFORMANCE_PYTHON=python bash conformance/test-arcadedb.sh
+python conformance/run.py --engine arcadedb --suite opencypher
+python conformance/run.py --engine arcadedb --suite tinkerpop
+```

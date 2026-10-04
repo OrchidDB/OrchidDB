@@ -65,12 +65,12 @@ final class NativeJUnitAssertions {
                 TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER,"LONG");
         }
         @Override public Graph openTestGraph(Configuration config) {
-            if(UpstreamGremlin.backend.equals("janusgraph")){context.getGraphTraversalSource(data);return context.graph;}
+            if((UpstreamGremlin.backend.equals("janusgraph")||UpstreamGremlin.backend.equals("arcadedb"))){context.getGraphTraversalSource(data);return context.graph;}
             return super.openTestGraph(config);
         }
         @Override public GraphTraversalSource traversal(Graph graph){return UpstreamGremlin.backend.equals("orchiddb")?context.remoteSource():graph.traversal();}
         @Override public void loadGraphData(Graph graph,LoadGraphWith data,Class test,String method){
-            if(UpstreamGremlin.backend.equals("janusgraph"))return;
+            if((UpstreamGremlin.backend.equals("janusgraph")||UpstreamGremlin.backend.equals("arcadedb")))return;
             if(data!=null)super.loadGraphData(graph,data,test,method);
             List<Object> nodes=new ArrayList<>(),edges=new ArrayList<>();
             graph.vertices().forEachRemaining(v->nodes.add(UpstreamGremlin.fixtureNode(v,"orchiddb")));

@@ -15,7 +15,7 @@ assert.equal(costs.opencypher.metric_version,1);
 assert.equal(costs.opencypher.cases_with_work_measurements,3202);
 assert.equal(await page.locator('.feature-card').count(),361);
 assert.equal(await page.locator('.feature-card:visible').count(),361);
-const products={tinkerpop:['OrchidDB','SQLg','PuppyGraph','JanusGraph'],opencypher:['OrchidDB','Neo4j Community','PuppyGraph'],rdf:['OrchidDB','Apache Jena TDB2']};
+const products={tinkerpop:['OrchidDB','SQLg','PuppyGraph','JanusGraph','ArcadeDB'],opencypher:['OrchidDB','Neo4j Community','PuppyGraph','ArcadeDB'],rdf:['OrchidDB','Apache Jena TDB2']};
 // All features stay visible; each product has exactly one column.
 for(const [suite,names] of Object.entries(products)){
   const valid=await page.locator('.feature-card[data-suite="'+suite+'"]').evaluateAll((cards,names)=>cards.every(card=>{
@@ -25,7 +25,7 @@ for(const [suite,names] of Object.entries(products)){
   await page.locator('[data-language-tab="'+suite+'"]').click();
   assert.equal(await page.locator('.feature-card:visible').count(),361);
 }
-assert.equal(await page.locator('#capabilities .comparison-table thead th').count(),7);
+assert.equal(await page.locator('#capabilities .comparison-table thead th').count(),8);
 assert.equal(await page.locator('.leaderboard-table').textContent().then(text=>/JVM|GraphComputer/.test(text)),false);
 for(const value of ['crab-wins','peer-wins','adapter','failures']){
  await page.locator('#comparison-filter').selectOption(value);
@@ -54,7 +54,7 @@ assert.equal(await page.locator('.feature-card:visible').count(),361);
 assert.equal(await page.locator('#'+cypherAnchor).isVisible(),true);
 assert.equal(await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('open'),'');
 const evidenceUrl=await page.locator('#'+cypherAnchor+' [data-product="upstream"]').getAttribute('data-evidence');
-const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['orchiddb','neo4j','puppygraph']);
+const bundle=await (await page.request.get(base+evidenceUrl)).json();assert.deepEqual(Object.keys(bundle.results),['orchiddb','neo4j','puppygraph','arcadedb']);
 await page.locator('[data-language-tab="tinkerpop"]').click();
 await page.locator('#comparison-reset').click();
 for(const width of [1440,1000,760,390]){

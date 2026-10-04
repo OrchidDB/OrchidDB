@@ -53,9 +53,11 @@ def main():
     assert catalog['sources'] == sources, 'Catalog source pins changed'
     cases = {case['id']: case for case in catalog['cases']}
     assert len(cases) == len(catalog['cases']), 'Duplicate catalog IDs'
-    for engine in ('orchiddb', 'sqlg', 'puppygraph', 'reference', 'orchiddb-jvm', 'orchiddb-computer', 'janusgraph', 'neo4j', 'jena'):
+    for engine in ('orchiddb', 'sqlg', 'puppygraph', 'reference', 'orchiddb-jvm', 'orchiddb-computer', 'janusgraph', 'neo4j', 'jena', 'arcadedb'):
         for suite in sources:
             if (engine == 'neo4j' and suite != 'opencypher') or (engine == 'jena' and suite != 'rdf'):
+                continue
+            if engine == 'arcadedb' and suite == 'rdf':
                 continue
             if engine in ('reference', 'orchiddb-jvm', 'orchiddb-computer', 'janusgraph') and suite != 'tinkerpop':
                 continue

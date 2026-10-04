@@ -35,6 +35,8 @@ def compact(report):
         for diagnostic in ('reason', 'error'):
             if isinstance(entry.get(diagnostic), str):
                 entry[diagnostic] = entry[diagnostic][:1000]
+        if 'java_assertion' in row:
+            entry['java_assertion'] = row['java_assertion']
         if 'query_cost' in row:
             entry['query_cost'] = {k: v for k, v in row['query_cost'].items() if k != 'queries'}
         result[key].append(entry)

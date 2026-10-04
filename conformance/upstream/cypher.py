@@ -130,6 +130,9 @@ def rows_equal(actual,expected,ordered,unordered_lists=False):
 class Cypher:
  def __init__(self,engine):
   self.engine=engine;self.rust=None;self.driver=None;self.fixture=None;self.seed=None;self.query_costs=[];self.query_phase="fixture"
+  if engine=='arcadedb':
+   from arcadedb import cypher_process
+   self.rust=cypher_process()
   if engine=='neo4j':
    from cypher_driver import install_lossless_temporal_hydration
    install_lossless_temporal_hydration()
@@ -140,6 +143,12 @@ class Cypher:
    self.seed=GraphDatabase.driver('bolt://127.0.0.1:17687',auth=('neo4j','conformance-local-only'))
    self.fixture=PuppyFixture()
  def query(self,q,params=None):
+  if self.engine=='arcadedb':
+   result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
+   if 'error' in result:
+    from arcadedb_errors import classify
+    result['classification']=classify(result.get('diagnostics',[]),result.get('phase'))
+   return result
   if self.engine=='orchiddb':
    started=time.monotonic()
    try:result=self.rust.send({'op':'cypher','query':q,'params':params or {}},timeout=20)
@@ -201,13 +210,13 @@ class Cypher:
   self.query_costs=[];self.query_phase='fixture'
   steps=case['steps'];setup=[];params={};original=next(s['doc'] for s in steps if s['text']=='executing query:')
   procedures=[s for s in steps if s['text'].startswith('there exists a procedure')]
-  if procedures and self.engine!='orchiddb':return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
+  if procedures and self.engine not in ('orchiddb','arcadedb'):return {'status':'skipped','reason':'Upstream GIVEN procedure registration requires a provider-specific procedure adapter'}
   for s in steps:
    if s['text']=='having executed:':setup.append(s['doc'])
    if s['text']=='parameters are:':params={r[0]:value(r[1]) for r in s['table']}
    if re.fullmatch(r'the binary-tree-[12] graph',s['text']):
     name=s['text'].split()[1];setup.append((CACHE/'opencypher/tck/graphs'/name/(name+'.cypher')).read_text())
-  if self.engine=='orchiddb':
+  if self.engine in ('orchiddb','arcadedb'):
    if self.rust is None or self.rust.p.poll() is not None:self.rust=Process([str(orchiddb_binary())],ROOT/'upstream-orchiddb-cypher.log')
    self.rust.send({'op':'reset'})
    for procedure in procedures:
@@ -265,6 +274,7 @@ class Cypher:
      if 'adapter_error' in actual:raise ValueError(actual['adapter_error'])
      if 'error' in actual:return {'status':'fail','query':original,'actual':actual,'expected':s,'query_ms':query_ms}
      table=s.get('table',[]);columns=table[0] if table else [];wanted=[[value(x) for x in r] for r in table[1:]] if table else []
+     if table and columns and actual.get('column_metadata_available') is False:return {'status':'adapter-error','reason':'ArcadeDB embedded API exposes no column metadata for an empty result','query':original,'actual':actual}
      if table and set(columns)!=set(actual['columns']):return {'status':'fail','query':original,'expected':{'columns':columns,'rows':wanted},'actual':actual,'query_ms':query_ms}
      got=[[row[actual['columns'].index(k)] for k in columns] for row in actual['rows']] if table else actual['rows']
      if not rows_equal(got,wanted,text=='the result should be, in order:', 'ignoring element order' in text):return {'status':'fail','query':original,'expected':{'columns':columns,'rows':wanted},'actual':actual,'query_ms':query_ms}

@@ -9,3 +9,7 @@ __pycache__/
 
 # Standalone caller-owned driver example
 /examples/duckdb-client/target/
+
+# Isolated ArcadeDB provider runtime
+/conformance/adapters/arcadedb/target/
+/conformance/adapters/sqlg/target-arcadedb/

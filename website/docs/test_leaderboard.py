@@ -1,5 +1,5 @@
 import unittest
-from leaderboard import passed_runtime
+from leaderboard import passed_runtime, SUITES, PRODUCTS
 
 class PassedRuntimeTests(unittest.TestCase):
     def test_only_successful_cases_contribute(self):
@@ -11,6 +11,13 @@ class PassedRuntimeTests(unittest.TestCase):
         for value in (None, float('nan'),float('inf'),-1,True,'10'):
             with self.subTest(value=value):
                 self.assertIsNone(passed_runtime([{'status':'pass','elapsed_ms':value}])['elapsed_ms'])
+
+    def test_arcadedb_is_compared_only_in_its_supported_languages(self):
+        self.assertEqual(PRODUCTS['arcadedb'], 'ArcadeDB')
+        suites={suite:products for suite,_,products in SUITES}
+        self.assertIn('arcadedb', suites['opencypher'])
+        self.assertIn('arcadedb', suites['tinkerpop'])
+        self.assertNotIn('arcadedb', suites['rdf'])
 
     def test_no_passes_has_zero_total(self):
         self.assertEqual(passed_runtime([{'status':'fail'}])['elapsed_ms'],0)

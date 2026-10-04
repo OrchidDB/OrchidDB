@@ -40,12 +40,12 @@ def file_identity(path):
 def execution_profile(engine):
  dialect=json.loads(os.environ.get('ORCHIDDB_SQL_ENGINE_JSON','{"dialect":"duckdb"}'))['dialect']
  sql_engine={'duckdb':'DuckDB','postgres':'PostgreSQL'}.get(dialect,dialect)
- return {'traversal_language':'gremlin-groovy' if engine in JVM_ENGINES else 'gremlin-language',
+ return {'traversal_language':'gremlin-groovy' if engine in (*JVM_ENGINES,'arcadedb') else 'gremlin-language',
          'assertions':'Apache gremlin-test 3.7.4 StepDefinition (unmodified)',
          'execution':'GraphComputer' if engine=='orchiddb-computer' else 'OLTP',
          'null_properties':'stored null' if engine in JVM_ENGINES else 'per-scenario @AllowNullPropertyValues opt-in' if engine=='orchiddb' else 'provider default',
          'executor':'OrchidDB JVM provider over native store' if engine in JVM_ENGINES else 'SQL IR DAG executed by '+sql_engine+' and DataFusion, including JVM compute operators' if engine=='orchiddb' else engine,
-         'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph')}
+         'remote': 'inline Lambda bytecode submissions only' if engine in JVM_ENGINES else engine not in ('reference','sqlg','janusgraph','arcadedb')}
 def jvm_build(classpath):
  binary=Path(os.environ.get('ORCHIDDB_JVM_STORE',str(REPO/'target/debug/orchiddb-jvm-store')))
  artifacts=[Path(entry) for entry in classpath.split(os.pathsep) if Path(entry).name=='orchiddb-jvm-0.1.0.jar']
@@ -74,15 +74,24 @@ class Process:
  def close(self):
   if self.p.poll() is None:
    os.killpg(self.p.pid,signal.SIGKILL);self.p.wait()
-  self.log.close()
+  self.p.stdin.close();self.p.stdout.close();self.log.close()
 class Gremlin:
  def __init__(self,engine):
   d=ROOT/'adapters/sqlg';classpath=os.environ.get('CONFORMANCE_GREMLIN_CLASSPATH')
+  if engine=='arcadedb':
+   from arcadedb import gremlin_classpath
+   classpath=gremlin_classpath()
   if not classpath:classpath=str(d/'target/classes')+os.pathsep+(d/'classpath.txt').read_text().strip()
   self.classpath=classpath
   from java_assertions import JavaAssertions
   self.java_assertions=JavaAssertions(classpath) if engine=='orchiddb-jvm' else None
-  self.engine=engine;self.command=[os.environ.get('CONFORMANCE_JAVA','java'),'--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED','--add-opens=java.base/java.lang=ALL-UNNAMED','--add-opens=java.base/java.util=ALL-UNNAMED','--add-opens=java.base/java.lang.invoke=ALL-UNNAMED','-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'UpstreamGremlin',engine];self.process=None
+  self.fixture_directory=None
+  self.engine=engine;self.command=[os.environ.get('CONFORMANCE_JAVA','java'),'--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED','--add-opens=java.base/java.lang=ALL-UNNAMED','--add-opens=java.base/java.util=ALL-UNNAMED','--add-opens=java.base/java.lang.invoke=ALL-UNNAMED','-Dorg.slf4j.simpleLogger.defaultLogLevel=error','-cp',classpath,'ArcadeGremlinBootstrap' if engine=='arcadedb' else 'UpstreamGremlin',engine];self.process=None
+  if engine=='arcadedb':
+   import tempfile
+   self.fixture_directory=tempfile.TemporaryDirectory(prefix='orchiddb-arcadedb-gremlin-')
+   self.command.insert(1,'-Dconformance.arcadedb.root='+self.fixture_directory.name)
+   self.command.insert(1,'-Djava.util.logging.config.file='+str(ROOT/'adapters/arcadedb/logging.properties'))
  def run(self,case):
   if self.java_assertions is not None:
    result=self.java_assertions.run(case)
@@ -91,9 +100,12 @@ class Gremlin:
   if self.process is None or self.process.p.poll() is not None:self.process=Process(self.command,ROOT/f'upstream-{self.engine}-gremlin.log',True)
   return self.process.send(case,timeout=45 if 'grateful' not in str(case['steps']) else 90)
  def close(self):
-  if self.process:self.process.close()
+  try:
+   if self.process:self.process.close()
+  finally:
+   if self.fixture_directory:self.fixture_directory.cleanup()
 def main():
- p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);args=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--engine',choices=['orchiddb','orchiddb-jvm','orchiddb-computer','sqlg','puppygraph','janusgraph','neo4j','jena','arcadedb','reference'],required=True);p.add_argument('--suite',choices=['opencypher','tinkerpop','rdf'],required=True);p.add_argument('--limit',type=int);p.add_argument('--filter',default='');p.add_argument('--case',action='append',default=[],help='Exact upstream case ID, repeatable');p.add_argument('--resume',action='store_true');p.add_argument('--output',type=Path);p.add_argument('--cost-baseline',type=Path);p.add_argument('--cost-work-threshold',type=int,default=100000);args=p.parse_args()
  if args.resume and args.engine=='orchiddb' and args.suite=='tinkerpop':p.error('OrchidDB Gremlin conformance requires one uninterrupted instance; resume is not permitted')
  catalog=json.loads((ROOT/'upstream/catalog.json').read_text());cases=[c for c in catalog['cases'] if c['suite']==args.suite and args.filter in c['id'] and (not args.case or c['id'] in args.case)];cases=cases[:args.limit] if args.limit else cases
  if args.case:
@@ -108,7 +120,7 @@ def main():
    except json.JSONDecodeError:break
  else:journal.write_text('')
  done={r['id'] for r in results};started=datetime.datetime.now(datetime.timezone.utc).isoformat()
- applicable=(args.suite=='tinkerpop' and args.engine not in ('neo4j','jena')) or (args.suite=='opencypher' and args.engine in ('orchiddb','puppygraph','neo4j')) or (args.suite=='rdf' and args.engine in ('orchiddb','jena'))
+ applicable=(args.suite=='tinkerpop' and args.engine not in ('neo4j','jena')) or (args.suite=='opencypher' and args.engine in ('orchiddb','puppygraph','neo4j','arcadedb')) or (args.suite=='rdf' and args.engine in ('orchiddb','jena'))
  adapter=None
  if applicable:
   if args.suite=='tinkerpop':adapter=Gremlin(args.engine)
@@ -124,7 +136,10 @@ def main():
   build=jvm_build(adapter.classpath)
  elif args.engine=='orchiddb':
   binary=orchiddb_binary();build={'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'working_tree_modified':bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())}
- else:build={'version':{'orchiddb-jvm':'0.1.0','orchiddb-computer':'0.1.0','janusgraph':'1.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','neo4j':'2026.09.0 Community / Cypher 5','jena':'6.2.0 / TDB2','reference':'3.7.4'}[args.engine]}
+ else:build={'version':{'orchiddb-jvm':'0.1.0','orchiddb-computer':'0.1.0','janusgraph':'1.1.0','sqlg':'3.1.6','puppygraph':'1.11.1','neo4j':'2026.09.0 Community / Cypher 5','jena':'6.2.0 / TDB2','reference':'3.7.4','arcadedb':'26.9.1'}[args.engine]}
+ if args.engine=='arcadedb' and adapter is not None:
+  from arcadedb import build_identity
+  build.update(build_identity(args.suite,adapter))
  if args.engine in ('neo4j','jena'):
   build['adapter_revision']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
   build['adapter_working_tree_modified']=bool(subprocess.check_output(['git','status','--porcelain'],cwd=REPO,text=True).strip())

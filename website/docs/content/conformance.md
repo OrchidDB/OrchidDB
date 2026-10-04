@@ -1,6 +1,6 @@
 # Conformance comparison
 
-Compare Cypher with Neo4j Community and PuppyGraph, Gremlin with SQLg, PuppyGraph and JanusGraph, and SPARQL with Apache Jena.
+Compare Cypher with Neo4j Community, PuppyGraph and ArcadeDB, Gremlin with SQLg, PuppyGraph, JanusGraph and ArcadeDB, and SPARQL with Apache Jena.
 The recorded percentages apply to the exact interfaces, revisions, and fixtures listed in the evidence. They are not a blanket capability guarantee for every API or SQL dialect. SQL emission rejects writes and operations that cannot lower to SQL; remote SERVICE calls are unsupported throughout OrchidDB. See [SQL API boundaries](sql-compiler.md#boundaries).
 
 OrchidDB results include the complete optimized release run: 6,382 passes, no failures, and unchanged exclusions. Peer results retain their recorded source revisions. Current compiler and managed runtime
