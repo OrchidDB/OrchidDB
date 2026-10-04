@@ -8,8 +8,13 @@ use super::expr::eval;
 use super::scalar::shortest_paths;
 use super::{RuntimeError, IrResult, Row};
 
+#[cfg(test)]
+#[path = "procedure_preparation_tests.rs"]
+mod procedure_preparation_tests;
+
 #[derive(Debug)]
 pub(crate) struct ExecutionContext {
+    pub(crate) scalar_preparation: std::sync::Arc<super::scalar::preparation::ScalarPreparation>,
     pub(crate) relational_groups: BTreeMap<String,crate::ir::rel::runtime::control::groups::GroupAccumulator>,
     pub(crate) query_cost: crate::ir::QueryCost,
     pub(crate) nested_dag_stats: crate::ir::rel::dag::DagStats,
@@ -133,6 +138,7 @@ impl ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
+            scalar_preparation: Default::default(),
             relational_groups: BTreeMap::new(),
             query_cost: Default::default(),
             nested_dag_stats: Default::default(),
@@ -161,6 +167,7 @@ pub(crate) fn procedure_call_op(
 ) -> IrResult<Vec<Row>> {
     if let Some(procedure) = graph.procedures.get(name) {
         let mut output=Vec::new();
+        let mut yield_positions = None;
         for row in upstream {
             let values=args.iter().map(|arg|eval(&arg.value,&row,graph)).collect::<IrResult<Vec<_>>>()?;
             if values.len()!=procedure.signature.inputs.len() || values.iter().zip(&procedure.signature.inputs).any(|(value,field)|!field.accepts(value)) {
@@ -172,9 +179,13 @@ pub(crate) fn procedure_call_op(
                 if !values.iter().zip(candidate).all(|(a,b)|
                     (matches!(a,Value::Null) && matches!(b,Value::Null)) || a.three_valued_eq(b)==Some(true)) {continue;}
                 let mut result=row.clone();
-                for field in yields {
-                    let index=procedure.signature.outputs.iter().position(|output|output.name==*field)
-                        .ok_or_else(||RuntimeError::Type(format!("Unknown procedure output {field}")))?;
+                if yield_positions.is_none() {
+                    yield_positions = Some(yields.iter().map(|field|
+                        procedure.signature.outputs.iter().position(|output| output.name == *field)
+                            .ok_or_else(|| RuntimeError::Type(format!("Unknown procedure output {field}")))
+                    ).collect::<IrResult<Vec<_>>>()?);
+                }
+                for (field, index) in yields.iter().zip(yield_positions.as_ref().unwrap()) {
                     result.bindings.insert(field.clone(),candidate[values.len()+index].clone());
                 }
                 output.push(result);

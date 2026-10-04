@@ -4,7 +4,6 @@ use crate::ir::catalog::PropertyGraph;
 use crate::ir::runtime::{RuntimeError, IrResult};
 use crate::ir::runtime::expr::compare_values;
 use crate::ir::value::Value;
-use super::registry;
 use super::casts::{
     cast_to_bigdecimal, cast_to_bigint, cast_to_bool, cast_to_byte,
     cast_to_date, cast_to_float, cast_to_float32, cast_to_gremlin_date, cast_to_gremlin_int,
@@ -35,7 +34,8 @@ use super::strings::{self, display_for_concat, regex_match_literal, substring};
 use super::type_check::typeof_matches;
 
 pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &PropertyGraph) -> IrResult<Value> {
-    if !super::is_known_function(name) {
+    let resolved = super::preparation::call(name);
+    if !resolved.known {
         if let Some(result)=graph.source.as_ref().and_then(|source|source.function(name,&args)) {
             return result.map_err(RuntimeError::Runtime);
         }
@@ -120,13 +120,12 @@ pub(in crate::ir::runtime) fn eval_call(name: &str, args: Vec<Value>, graph: &Pr
     if name == "property_element" {
         return Ok(eval_property_element(&args));
     }
-    if let Some(value) = cypher_call(name, &args, graph)? {
+    if let Some(value) = cypher_call(name, &resolved.canonical, &args, graph)? {
         return Ok(value);
     }
     // Canonicalize the name for the Gremlin-leaning tail dispatch too,
     // so e.g. `lcase`/`ucase` cannot diverge from `lower`/`upper`.
-    let canonical = registry::canonical_name(name);
-    match (canonical.as_ref(), args.as_slice()) {
+    match (resolved.canonical.as_str(), args.as_slice()) {
         ("element_kind", [Value::Node { .. }]) => Ok(Value::String("Vertex".into())),
         ("element_kind", [Value::Edge { .. }]) => Ok(Value::String("Edge".into())),
         ("element_kind", [Value::VertexProperty { .. }]) => Ok(Value::String("VertexProperty".into())),

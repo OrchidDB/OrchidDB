@@ -148,7 +148,12 @@ fn input_rows(batch: RecordBatch, kernel: &RowKernel) -> Result<Vec<Row>> {
         decode_rows(&batch)
     }
 }
-fn run(kernel: &RowKernel, mut inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
+fn run(kernel: &RowKernel, inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
+    let preparation = state.context.scalar_preparation.clone();
+    crate::ir::runtime::scalar::preparation::with_preparation(&preparation, || run_prepared(kernel, inputs, state))
+}
+
+fn run_prepared(kernel: &RowKernel, mut inputs: Vec<Vec<Row>>, state: &mut State) -> Result<Vec<Row>> {
     state.context.charge(1).map_err(failure)?;
     for rows in &mut inputs {
         state.graph.normalize_source_rows(rows).map_err(failure)?;

@@ -215,8 +215,12 @@ pub(crate) fn canonical_name(name: &str) -> Cow<'_, str> {
 /// Keep this list in sync when adding a dispatch arm; aliases resolve first.
 pub(crate) fn is_known_function(name: &str) -> bool {
     let canonical = canonical_name(name);
+    is_known_canonical(canonical.as_ref())
+}
+
+pub(super) fn is_known_canonical(canonical: &str) -> bool {
     static KNOWN: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
-    KNOWN.get_or_init(|| KNOWN_FUNCTIONS.iter().copied().collect()).contains(canonical.as_ref())
+    KNOWN.get_or_init(|| KNOWN_FUNCTIONS.iter().copied().collect()).contains(canonical)
 }
 
 const KNOWN_FUNCTIONS: &[&str] = &[

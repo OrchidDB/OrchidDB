@@ -26,6 +26,7 @@ mod path;
 mod property_object;
 pub(crate) mod reductions;
 mod registry;
+pub(crate) mod preparation;
 mod search;
 pub(crate) use registry::is_known_function;
 mod string_functions;

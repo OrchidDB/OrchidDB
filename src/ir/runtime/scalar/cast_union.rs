@@ -5,7 +5,7 @@ use crate::ir::value::Value;
 use std::collections::BTreeMap;
 use super::{UNION_TAG_KEY, UNION_VALUE_KEY, UNION_VARIANTS_KEY};
 use super::cast_conversion::{
-    array_suffix, cast_value, mode_conversion_error, split_struct_field, type_argument,
+    cast_value, mode_conversion_error, split_struct_field, TypeShape,
 };
 use super::CastMode;
 use super::cast_scalar::{UnionVariant, is_uuid_text};
@@ -14,11 +14,11 @@ use super::maps::make_union_value;
 
 pub(super) fn cast_to_union_unified(
     value: &Value,
-    fields: &str,
+    variants: Option<&[UnionVariant]>,
     target_type: &str,
     mode: CastMode,
 ) -> IrResult<Value> {
-    let Some(variants) = parse_union_variants(fields) else {
+    let Some(variants) = variants else {
         return mode_conversion_error(mode);
     };
     if variants.is_empty() {
@@ -48,17 +48,17 @@ pub(super) fn cast_to_union_unified(
             else {
                 return mode_conversion_error(mode);
             };
-            let casted = cast_union_payload(active_value, target.ty, true, mode)?;
-            return Ok(make_union_value(&target.tag, casted, Some(&variants)));
+            let casted = cast_union_payload(active_value, &target.ty, true, mode)?;
+            return Ok(make_union_value(&target.tag, casted, Some(variants)));
         }
     }
 
-    let Some(index) = select_union_variant(value, &variants, false) else {
+    let Some(index) = select_union_variant(value, variants, false) else {
         return mode_conversion_error(mode);
     };
     let variant = &variants[index];
-    let casted = cast_value(value, variant.ty, CastMode::ExplicitStrict)?;
-    Ok(make_union_value(&variant.tag, casted, Some(&variants)))
+    let casted = cast_value(value, &variant.ty, CastMode::ExplicitStrict)?;
+    Ok(make_union_value(&variant.tag, casted, Some(variants)))
 }
 
 fn cast_union_payload(
@@ -75,14 +75,14 @@ fn cast_union_payload(
 
 fn select_union_variant(
     value: &Value,
-    variants: &[UnionVariant<'_>],
+    variants: &[UnionVariant],
     allow_numeric_narrowing: bool,
 ) -> Option<usize> {
     variants
         .iter()
         .enumerate()
         .filter_map(|(index, variant)| {
-            union_variant_score(value, variant.ty, allow_numeric_narrowing)
+            union_variant_score(value, &variant.ty, allow_numeric_narrowing)
                 .map(|score| (index, score))
         })
         .min_by_key(|(index, score)| (*score, *index))
@@ -98,10 +98,8 @@ fn union_variant_score(
     if matches!(value, Value::Null) {
         return Some(0);
     }
-    if array_suffix(cleaned).is_some()
-        || type_argument(cleaned, "LIST").is_some()
-        || type_argument(cleaned, "ARRAY").is_some()
-    {
+    let target = super::preparation::cast(cleaned);
+    if target.shape() == TypeShape::List {
         return matches!(value, Value::List(_) | Value::String(_))
             .then(|| {
                 cast_value(value, cleaned, CastMode::ExplicitStrict)
@@ -110,7 +108,7 @@ fn union_variant_score(
             })
             .flatten();
     }
-    if type_argument(cleaned, "STRUCT").is_some() {
+    if target.shape() == TypeShape::Struct {
         return matches!(value, Value::Map(_) | Value::String(_))
             .then(|| {
                 cast_value(value, cleaned, CastMode::ExplicitStrict)
@@ -119,7 +117,7 @@ fn union_variant_score(
             })
             .flatten();
     }
-    if type_argument(cleaned, "MAP").is_some() {
+    if target.shape() == TypeShape::Map {
         return matches!(value, Value::Map(_) | Value::String(_))
             .then(|| {
                 cast_value(value, cleaned, CastMode::ExplicitStrict)
@@ -128,13 +126,13 @@ fn union_variant_score(
             })
             .flatten();
     }
-    if type_argument(cleaned, "UNION").is_some() {
+    if target.shape() == TypeShape::Union {
         return cast_value(value, cleaned, CastMode::ExplicitStrict)
             .ok()
             .map(|_| 2);
     }
 
-    let head = type_head(cleaned);
+    let head = target.union_head.as_str();
     if is_string_target(&head) {
         return union_string_fallback_score(value);
     }
@@ -264,7 +262,7 @@ fn datetime_union_score(text: &str, target_head: &str) -> Option<u8> {
     }
 }
 
-fn parse_union_variants(fields: &str) -> Option<Vec<UnionVariant<'_>>> {
+pub(super) fn parse_union_variants(fields: &str) -> Option<Vec<UnionVariant>> {
     split_top_level_commas(fields)
         .into_iter()
         .map(|field| {
@@ -281,19 +279,19 @@ fn parse_union_variants(fields: &str) -> Option<Vec<UnionVariant<'_>>> {
                 if tag.is_empty() || ty.is_empty() {
                     None
                 } else {
-                    Some(UnionVariant { tag, ty })
+                    Some(UnionVariant { tag, ty: ty.to_owned() })
                 }
             } else {
                 Some(UnionVariant {
                     tag: type_head(trimmed).to_ascii_lowercase(),
-                    ty: trimmed,
+                    ty: trimmed.to_owned(),
                 })
             }
         })
         .collect()
 }
 
-pub(super) fn encode_union_variants(variants: &[UnionVariant<'_>]) -> Value {
+pub(super) fn encode_union_variants(variants: &[UnionVariant]) -> Value {
     Value::List(
         variants
             .iter()
@@ -355,7 +353,7 @@ fn union_type_display(variants: &[(String, String)]) -> String {
     format!("UNION({fields})")
 }
 
-fn type_head(type_name: &str) -> String {
+pub(super) fn type_head(type_name: &str) -> String {
     let upper = type_name.trim().to_ascii_uppercase();
     let head = upper
         .split(|ch: char| ch.is_whitespace() || ch == '(' || ch == '[')

@@ -76,9 +76,9 @@ pub(crate) enum CastMode {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct UnionVariant<'a> {
+pub(super) struct UnionVariant {
     pub(super) tag: String,
-    pub(super) ty: &'a str,
+    pub(super) ty: String,
 }
 
 pub(super) fn timestamp_function_value(v: &Value) -> IrResult<Value> {

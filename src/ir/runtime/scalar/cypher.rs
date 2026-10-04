@@ -40,7 +40,7 @@ use super::string_functions::{
 };
 use super::strings::{display_for_concat, substring};
 use super::vectors::{array_cross_product_value, float_vector, numeric_vector};
-use super::{next_deterministic_uuid, next_kuzu_random, registry, temporal};
+use super::{next_deterministic_uuid, next_kuzu_random, temporal};
 use crate::ir::catalog::PropertyGraph;
 use crate::ir::runtime::element_id::element_internal_id;
 use crate::ir::runtime::expr::{compare_values, modulo};
@@ -49,6 +49,7 @@ use crate::ir::value::{STRUCT_ORDER_KEY, STRUCT_TYPES_KEY, Value};
 
 pub(super) fn cypher_call(
     name: &str,
+    canonical: &str,
     args: &[Value],
     graph: &PropertyGraph,
 ) -> IrResult<Option<Value>> {
@@ -64,7 +65,8 @@ pub(super) fn cypher_call(
                     }));
                 }
             }
-            return cypher_call(conversion, args, graph);
+            let resolved = super::preparation::call(conversion);
+            return cypher_call(conversion, &resolved.canonical, args, graph);
         }
     }
     // Resolve aliases (`tofloat` / `to_float` / `float`, etc.) to a
@@ -91,7 +93,6 @@ pub(super) fn cypher_call(
         };
         return value.map(Some).map_err(RuntimeError::Type);
     }
-    let canonical = registry::canonical_name(name);
     if let Some(value) = graph_functions::call(canonical.as_ref(), args, graph)? {
         return Ok(Some(value));
     }

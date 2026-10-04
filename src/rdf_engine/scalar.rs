@@ -6,6 +6,7 @@ use duckdb::vscalar::{ArrowFunctionSignature, VArrowScalar};
 use regex::{Regex, RegexBuilder};
 use sha2::{Digest, Sha384, Sha512};
 use std::sync::Arc;
+use crate::ir::runtime::scalar::preparation::RegexMemo;
 
 pub(super) struct SparqlScalar;
 
@@ -28,6 +29,9 @@ impl VArrowScalar for SparqlScalar {
                     .ok_or("SPARQL scalar expects strings")
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // DuckDB owns the registered function across queries; keep dynamic
+        // patterns batch-local here, rather than in connection-lifetime state.
+        let patterns = RegexMemo::default();
         let values = (0..input.num_rows())
             .map(|row| {
                 if columns.iter().any(|column| column.is_null(row)) {
@@ -39,6 +43,7 @@ impl VArrowScalar for SparqlScalar {
                     columns[2].value(row),
                     columns[3].value(row),
                     columns[4].value(row),
+                    &patterns,
                 )
             })
             .collect::<Vec<_>>();
@@ -46,10 +51,12 @@ impl VArrowScalar for SparqlScalar {
     }
 }
 
-fn pattern(source: &str, flags: &str) -> Option<Regex> {
+fn pattern(source: &str, flags: &str, patterns: &RegexMemo) -> Option<Arc<Regex>> {
     if flags.chars().any(|flag| !"imsxq".contains(flag)) {
         return None;
     }
+    let key = format!("{flags}\0{source}");
+    patterns.get(&key, || {
     let source = if flags.contains('q') {
         regex::escape(source)
     } else if flags.contains('x') {
@@ -85,8 +92,8 @@ fn pattern(source: &str, flags: &str) -> Option<Regex> {
         .case_insensitive(flags.contains('i'))
         .multi_line(flags.contains('m'))
         .dot_matches_new_line(flags.contains('s'))
-        .build()
-        .ok()
+        .build().map(Arc::new)
+    }).ok()
 }
 
 fn replacement(source: &str) -> Option<String> {
@@ -114,7 +121,7 @@ fn replacement(source: &str) -> Option<String> {
     Some(out)
 }
 
-pub(crate) fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str) -> Option<String> {
+pub(crate) fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, flags: &str, patterns: &RegexMemo) -> Option<String> {
     Some(match op {
         "resolve_iri" => {
             if argument.is_empty() {
@@ -157,9 +164,9 @@ pub(crate) fn evaluate(op: &str, text: &str, argument: &str, substitute: &str, f
             }
             out
         }
-        "regex" => pattern(argument, flags)?.is_match(text).to_string(),
+        "regex" => pattern(argument, flags, patterns)?.is_match(text).to_string(),
         "replace" => {
-            let regex = pattern(argument, flags)?;
+            let regex = pattern(argument, flags, patterns)?;
             if regex.is_match("") {
                 return None;
             }
@@ -206,8 +213,25 @@ fn compare_values<T: PartialOrd>(op: &str, left: T, right: T) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_patterns_preserve_flags_and_invalid_patterns() {
+        let patterns = RegexMemo::default();
+        let insensitive = pattern("abc", "i", &patterns).unwrap();
+        assert!(Arc::ptr_eq(&insensitive, &pattern("abc", "i", &patterns).unwrap()));
+        assert!(insensitive.is_match("ABC"));
+        assert!(!pattern("abc", "", &patterns).unwrap().is_match("ABC"));
+        assert!(pattern("[", "", &patterns).is_none());
+        assert!(pattern("[", "", &patterns).is_none());
+        assert_eq!(patterns.len(), 3);
+        assert!(pattern("abc", "invalid", &patterns).is_none());
+        assert_eq!(patterns.len(), 3);
+    }
     #[test]
     fn xpath_flags_replacements_and_errors() {
+        let patterns = RegexMemo::default();
+        let evaluate = |op, text, argument, substitute, flags| super::evaluate(op, text, argument, substitute, flags, &patterns);
+
         assert_eq!(
             evaluate("regex", "a\nb", "^b$", "", "m").as_deref(),
             Some("true")

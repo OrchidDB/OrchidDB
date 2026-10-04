@@ -199,13 +199,27 @@ const DEC: DataType = DataType::Decimal128(38, 18);
 // ---------------------------------------------------------------------------
 
 /// A DuckDB scalar function referenced by name in generated SQL. It carries
-/// only a return type for planning; in-process DataFusion execution reports
-/// that the function is DuckDB-only rather than guessing its semantics.
-#[derive(Debug, PartialEq, Eq, Hash)]
+/// a declared return type for planning and uses a residual kernel for local
+/// execution. Compiled regexes are reused by this function across batches.
+#[derive(Debug)]
 struct DuckDbFunction {
     name: String,
     return_type: DataType,
     signature: Signature,
+    regexes: crate::ir::runtime::scalar::preparation::RegexMemo,
+}
+
+// Compiled patterns are execution metadata, not part of expression identity.
+impl PartialEq for DuckDbFunction {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.return_type == other.return_type && self.signature == other.signature
+    }
+}
+impl Eq for DuckDbFunction {}
+impl std::hash::Hash for DuckDbFunction {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&(&self.name, &self.return_type, &self.signature), state);
+    }
 }
 
 #[cfg(feature = "duckdb")]
@@ -244,7 +258,7 @@ impl ScalarUDFImpl for DuckDbFunction {
             let strings = columns.iter().map(|c| c.as_any().downcast_ref::<StringArray>().unwrap()).collect::<Vec<_>>();
             let values = (0..args.number_rows).map(|row| {
                 if strings.len() != 5 || strings.iter().any(|c| c.is_null(row)) { return None; }
-                crate::rdf_engine::scalar::evaluate(strings[0].value(row), strings[1].value(row), strings[2].value(row), strings[3].value(row), strings[4].value(row))
+                crate::rdf_engine::scalar::evaluate(strings[0].value(row), strings[1].value(row), strings[2].value(row), strings[3].value(row), strings[4].value(row), &self.regexes)
             }).collect::<Vec<_>>();
             return Ok(ColumnarValue::Array(Arc::new(StringArray::from(values))));
         }
@@ -263,7 +277,8 @@ impl ScalarUDFImpl for DuckDbFunction {
                 } else {
                     let pattern = cells[1].to_string();
                     let pattern = if self.name == "regexp_full_match" { format!("\\A(?:{pattern})\\z") } else { pattern };
-                    let regex = regex::Regex::new(&pattern).map_err(|e| DataFusionError::Execution(e.to_string()))?;
+                    let regex = self.regexes.get(&pattern, || regex::Regex::new(&pattern).map(Arc::new))
+                        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
                     if self.name == "regexp_full_match" { ScalarValue::Boolean(Some(regex.is_match(&text))) }
                     else {
                         let group = cells.get(2).and_then(|c| c.to_string().parse::<usize>().ok()).unwrap_or(0);
@@ -338,6 +353,7 @@ fn duck(name: &str, args: Vec<Expr>, return_type: DataType) -> Expr {
     let udf = ScalarUDF::new_from_impl(DuckDbFunction {
         name: name.into(),
         return_type,
+        regexes: Default::default(),
         signature: if args.is_empty() { Signature::exact(vec![], volatility) } else { Signature::variadic_any(volatility) },
     });
     Arc::new(udf).call(args)

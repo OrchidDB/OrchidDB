@@ -14,55 +14,87 @@ use super::casts::{cast_to_bigdecimal, cast_to_bool, cast_to_date, cast_to_strin
 use super::lists::{parse_runtime_list_literal, split_top_level_commas};
 use super::maps::{kuzu_map_entries, kuzu_map_entry, make_kuzu_map_strict, struct_field_order};
 
-pub(super) fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
-    let cleaned = type_name.trim();
-    let upper = cleaned.to_ascii_uppercase();
-    if matches!(v, Value::Null) {
-        return Ok(Value::Null);
-    }
-    if let Some((elem_type, expected_len)) = array_suffix(cleaned) {
-        let items = coerce_to_list(v, mode)?;
-        if expected_len.is_some_and(|len| len != items.len()) {
-            return mode_conversion_error(mode);
+#[derive(Debug)]
+pub(super) struct CastTarget {
+    original: String,
+    head: String,
+    pub(super) union_head: String,
+    kind: CastKind,
+}
+
+#[derive(Debug)]
+enum CastKind {
+    List(String, Option<usize>),
+    Struct(Option<Vec<(String, String)>>),
+    Union(Option<Vec<super::cast_scalar::UnionVariant>>),
+    Map(Option<(String, String)>),
+    Decimal(u64, u64),
+    Scalar,
+}
+
+impl CastTarget {
+    pub(super) fn parse(type_name: &str) -> Self {
+        let cleaned = type_name.trim();
+        let kind = if let Some((element, length)) = array_suffix(cleaned) {
+            CastKind::List(element.to_owned(), length)
+        } else if let Some(element) = type_argument(cleaned, "LIST").or_else(|| type_argument(cleaned, "ARRAY")) {
+            CastKind::List(element.to_owned(), None)
+        } else if let Some(fields) = type_argument(cleaned, "STRUCT") {
+            CastKind::Struct(split_top_level_commas(fields).into_iter().map(|field| {
+                let (name, ty) = split_struct_field(field)?;
+                let key = name.trim().trim_matches('"').trim_matches('\'').to_string();
+                (!key.is_empty()).then(|| (key, ty.trim().to_owned()))
+            }).collect())
+        } else if let Some(fields) = type_argument(cleaned, "UNION") {
+            CastKind::Union(super::cast_union::parse_union_variants(fields))
+        } else if let Some(args) = type_argument(cleaned, "MAP") {
+            CastKind::Map(split_map_types(args).map(|(key, value)| (key.to_owned(), value.to_owned())))
+        } else if let Some((precision, scale)) = decimal_precision_scale(cleaned) {
+            CastKind::Decimal(precision, scale)
+        } else { CastKind::Scalar };
+        Self {
+            original: cleaned.to_owned(),
+            union_head: super::cast_union::type_head(cleaned),
+            head: cleaned.split('(').next().unwrap_or("").trim().to_ascii_uppercase(),
+            kind,
         }
-        return Ok(Value::List(
-            items
-                .iter()
-                .map(|item| cast_value(item, elem_type, CastMode::ExplicitStrict))
-                .collect::<IrResult<Vec<_>>>()?,
-        ));
     }
-    if let Some(elem_type) =
-        type_argument(cleaned, "LIST").or_else(|| type_argument(cleaned, "ARRAY"))
-    {
-        let items = coerce_to_list(v, mode)?;
-        return Ok(Value::List(
-            items
-                .iter()
-                .map(|item| cast_value(item, elem_type, CastMode::ExplicitStrict))
-                .collect::<IrResult<Vec<_>>>()?,
-        ));
+
+    pub(super) fn shape(&self) -> TypeShape {
+        match self.kind {
+            CastKind::List(..) => TypeShape::List,
+            CastKind::Struct(..) => TypeShape::Struct,
+            CastKind::Map(..) => TypeShape::Map,
+            CastKind::Union(..) => TypeShape::Union,
+            _ => TypeShape::Scalar,
+        }
     }
-    if let Some(fields) = type_argument(cleaned, "STRUCT") {
-        return cast_to_struct_unified(v, fields, mode);
+
+    fn apply(&self, v: &Value, mode: CastMode) -> IrResult<Value> {
+        if matches!(v, Value::Null) { return Ok(Value::Null); }
+        match &self.kind {
+            CastKind::List(element, length) => {
+                let items = coerce_to_list(v, mode)?;
+                if length.is_some_and(|len| len != items.len()) { return mode_conversion_error(mode); }
+                let element = super::preparation::cast(element);
+                Ok(Value::List(items.iter().map(|item| element.apply(item, CastMode::ExplicitStrict)).collect::<IrResult<_>>()?))
+            }
+            CastKind::Struct(fields) => cast_to_struct_unified(v, fields.as_deref(), mode),
+            CastKind::Union(variants) => cast_to_union_unified(v, variants.as_deref(), &self.original, mode),
+            CastKind::Map(types) => cast_to_map_unified(v, types.as_ref(), mode),
+            CastKind::Decimal(precision, scale) => cast_to_parametric_decimal(v, *precision, *scale, mode),
+            CastKind::Scalar => cast_scalar_target(v, &self.head, mode),
+        }
     }
-    if let Some(fields) = type_argument(cleaned, "UNION") {
-        return cast_to_union_unified(v, fields, cleaned, mode);
-    }
-    if let Some(args) = type_argument(cleaned, "MAP") {
-        return cast_to_map_unified(v, args, mode);
-    }
-    if let Some((precision, scale)) = decimal_precision_scale(cleaned) {
-        return cast_to_parametric_decimal(v, precision, scale, mode);
-    }
-    // Strip parametric tails like `DECIMAL(5, 2)` so the scalar match
-    // below sees the base type name.
-    let upper: std::borrow::Cow<'_, str> = if upper.contains('(') {
-        std::borrow::Cow::Owned(upper.split('(').next().unwrap_or("").trim().to_string())
-    } else {
-        std::borrow::Cow::Borrowed(&upper)
-    };
-    match upper.as_ref() {
+}
+
+pub(super) fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult<Value> {
+    if matches!(v, Value::Null) { return Ok(Value::Null); }
+    super::preparation::cast(type_name).apply(v, mode)
+}
+
+fn cast_scalar_target(v: &Value, upper: &str, mode: CastMode) -> IrResult<Value> {
+    match upper {
         "STRING" | "VARCHAR" | "CHAR" | "TEXT" => Ok(cast_to_string(v)),
         "BLOB" | "BYTEA" => cast_to_blob(v),
         "INTERVAL" => Ok(match cast_to_string(v) {
@@ -130,7 +162,7 @@ pub(super) fn cast_value(v: &Value, type_name: &str, mode: CastMode) -> IrResult
             value => Ok(value),
         },
         "TIMESTAMP" | "DATETIME" | "TIMESTAMP_NS" | "TIMESTAMP_MS" | "TIMESTAMP_SEC"
-        | "TIMESTAMP_S" | "TIMESTAMP_TZ" => match cast_to_timestamp_type(v, upper.as_ref()) {
+        | "TIMESTAMP_S" | "TIMESTAMP_TZ" => match cast_to_timestamp_type(v, upper) {
             Value::Null => mode_conversion_error(mode),
             value => Ok(value),
         },
@@ -313,7 +345,7 @@ pub(super) fn strict_cast_to_named_type(v: &Value, type_name: &str) -> IrResult<
     cast_value(v, type_name, CastMode::ExplicitStrict)
 }
 
-fn cast_to_struct_unified(value: &Value, fields: &str, mode: CastMode) -> IrResult<Value> {
+fn cast_to_struct_unified(value: &Value, fields: Option<&[(String, String)]>, mode: CastMode) -> IrResult<Value> {
     // Allow string-typed struct literals (`"{a: 1, b: 2}"`) since the
     // Ladybug fixtures store map/struct properties as raw CSV text.
     let parsed_map;
@@ -334,17 +366,7 @@ fn cast_to_struct_unified(value: &Value, fields: &str, mode: CastMode) -> IrResu
         _ => return mode_conversion_error(mode),
     };
     let map = map_ref;
-    let parsed_fields = split_top_level_commas(fields)
-        .into_iter()
-        .map(|field| {
-            let Some((name, ty)) = split_struct_field(field) else {
-                return None;
-            };
-            let key = name.trim().trim_matches('"').trim_matches('\'').to_string();
-            (!key.is_empty()).then_some((key, ty.trim()))
-        })
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(cast_conversion_error)?;
+    let parsed_fields = fields.ok_or_else(cast_conversion_error)?;
 
     if !allow_missing_fields {
         if let Some(source_order) = struct_field_order(map) {
@@ -361,7 +383,7 @@ fn cast_to_struct_unified(value: &Value, fields: &str, mode: CastMode) -> IrResu
     let mut out = BTreeMap::new();
     let mut order = Vec::new();
     let mut types = BTreeMap::new();
-    for (key, ty) in &parsed_fields {
+    for (key, ty) in parsed_fields {
         order.push(Value::String(key.clone()));
         types.insert(key.clone(), Value::String((*ty).to_string()));
         match map.get(key.as_str()) {
@@ -410,7 +432,7 @@ fn struct_field_type(map: &BTreeMap<String, Value>, field: &str) -> Option<Strin
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TypeShape {
+pub(super) enum TypeShape {
     Scalar,
     List,
     Struct,
@@ -419,25 +441,11 @@ enum TypeShape {
 }
 
 fn type_shape(type_name: &str) -> TypeShape {
-    let cleaned = type_name.trim();
-    if array_suffix(cleaned).is_some()
-        || type_argument(cleaned, "LIST").is_some()
-        || type_argument(cleaned, "ARRAY").is_some()
-    {
-        TypeShape::List
-    } else if type_argument(cleaned, "STRUCT").is_some() {
-        TypeShape::Struct
-    } else if type_argument(cleaned, "MAP").is_some() {
-        TypeShape::Map
-    } else if type_argument(cleaned, "UNION").is_some() {
-        TypeShape::Union
-    } else {
-        TypeShape::Scalar
-    }
+    super::preparation::cast(type_name).shape()
 }
 
-fn cast_to_map_unified(value: &Value, args: &str, mode: CastMode) -> IrResult<Value> {
-    let Some((key_type, value_type)) = split_map_types(args) else {
+fn cast_to_map_unified(value: &Value, types: Option<&(String, String)>, mode: CastMode) -> IrResult<Value> {
+    let Some((key_type, value_type)) = types else {
         return mode_conversion_error(mode);
     };
     let entries = match coerce_to_map_entries(value) {
@@ -446,9 +454,11 @@ fn cast_to_map_unified(value: &Value, args: &str, mode: CastMode) -> IrResult<Va
     };
     let mut keys = Vec::with_capacity(entries.len());
     let mut values = Vec::with_capacity(entries.len());
+    let key_type = super::preparation::cast(key_type);
+    let value_type = super::preparation::cast(value_type);
     for (key, value) in entries {
-        keys.push(cast_value(&key, key_type, CastMode::ExplicitStrict)?);
-        values.push(cast_value(&value, value_type, CastMode::ExplicitStrict)?);
+        keys.push(key_type.apply(&key, CastMode::ExplicitStrict)?);
+        values.push(value_type.apply(&value, CastMode::ExplicitStrict)?);
     }
     make_kuzu_map_strict(keys, values)
 }

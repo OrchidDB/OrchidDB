@@ -346,7 +346,7 @@ pub(crate) fn display_node_name(label: &str, id: crate::ir::ElementId) -> String
 /// native search service deliberately uses full-match semantics. Unsupported
 /// backtracking constructs fail explicitly instead of producing a false match.
 pub(crate) fn regex_match_literal(haystack: &str, pattern: &str) -> crate::ir::runtime::IrResult<bool> {
-    let regex = regex::Regex::new(pattern).map_err(|error| {
+    let regex = super::preparation::regex(pattern).map_err(|error| {
         crate::ir::runtime::RuntimeError::Runtime(format!(
             "Invalid native regex (lookaround and backreferences require the JVM execution profile): {error}"
         ))

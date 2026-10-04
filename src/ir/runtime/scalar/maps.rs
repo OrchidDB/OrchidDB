@@ -113,7 +113,7 @@ pub(super) fn union_extract(value: &Value, tag: &str) -> Value {
 pub(super) fn make_union_value(
     tag: &str,
     value: Value,
-    variants: Option<&[UnionVariant<'_>]>,
+    variants: Option<&[UnionVariant]>,
 ) -> Value {
     let mut out = BTreeMap::new();
     out.insert(UNION_TAG_KEY.to_string(), Value::String(tag.to_string()));

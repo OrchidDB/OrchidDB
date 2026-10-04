@@ -44,8 +44,8 @@ pub(super) fn runtime_split_part(text: &str, delimiter: &str, index: i64) -> Val
         .unwrap_or_else(|| Value::String(String::new()))
 }
 
-pub(super) fn compile_regex(pattern: &str) -> IrResult<regex::Regex> {
-    regex::Regex::new(pattern)
+pub(super) fn compile_regex(pattern: &str) -> IrResult<std::sync::Arc<regex::Regex>> {
+    super::preparation::regex(pattern)
         .map_err(|err| RuntimeError::Runtime(format!("Invalid Input Error: {err}")))
 }
 

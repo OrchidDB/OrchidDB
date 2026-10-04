@@ -9,7 +9,15 @@ fn invoke(
         name: name.into(),
         return_type: return_type.clone(),
         signature: Signature::variadic_any(Volatility::Immutable),
+        regexes: Default::default(),
     };
+    invoke_function(&function, args)
+}
+
+fn invoke_function(
+    function: &DuckDbFunction,
+    args: Vec<ColumnarValue>,
+) -> datafusion::common::Result<Vec<ScalarValue>> {
     let args = ScalarFunctionArgs {
         arg_fields: args
             .iter()
@@ -17,13 +25,53 @@ fn invoke(
             .collect(),
         args,
         number_rows: 2,
-        return_field: Arc::new(Field::new("result", return_type, true)),
+        return_field: Arc::new(Field::new("result", function.return_type.clone(), true)),
         config_options: Default::default(),
     };
     let output = function.invoke_with_args(args)?.into_array(2)?;
     (0..2)
         .map(|row| ScalarValue::try_from_array(&output, row))
         .collect()
+}
+
+#[test]
+fn residual_regex_prepares_once_across_batches_and_keeps_errors_lazy() {
+    let function = DuckDbFunction {
+        name: "regexp_full_match".into(),
+        return_type: DataType::Boolean,
+        signature: Signature::variadic_any(Volatility::Immutable),
+        regexes: Default::default(),
+    };
+    let args = |text: Option<&str>, pattern: &str| {
+        vec![
+            ColumnarValue::Scalar(ScalarValue::Utf8(text.map(str::to_owned))),
+            ColumnarValue::Scalar(ScalarValue::Utf8(Some(pattern.into()))),
+        ]
+    };
+    for text in ["abc", "abcd", "abc"] {
+        assert_eq!(
+            invoke_function(&function, args(Some(text), "abc")).unwrap(),
+            vec![ScalarValue::Boolean(Some(text == "abc")); 2]
+        );
+    }
+    assert_eq!(function.regexes.len(), 1);
+    assert_eq!(
+        invoke_function(&function, args(None, "[")).unwrap(),
+        vec![ScalarValue::Boolean(None); 2]
+    );
+    assert_eq!(
+        function.regexes.len(),
+        1,
+        "null input must not compile an invalid pattern"
+    );
+    assert!(invoke_function(&function, args(Some("x"), "[")).is_err());
+    assert!(invoke_function(&function, args(Some("y"), "[")).is_err());
+    assert_eq!(function.regexes.len(), 2);
+    assert_eq!(
+        invoke_function(&function, args(Some("xyz"), "xyz")).unwrap(),
+        vec![ScalarValue::Boolean(Some(true)); 2]
+    );
+    assert_eq!(function.regexes.len(), 3);
 }
 
 #[test]
