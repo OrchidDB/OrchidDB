@@ -20,7 +20,7 @@ pub(crate) trait GraphSource: std::fmt::Debug + Send + Sync {
         id: &ElementId,
         types: &[String],
     ) -> Vec<Neighbor>;
-    fn prefetch(&self, values: &[Value]);
+    fn prefetch(&self, values: &mut dyn Iterator<Item = &Value>);
     #[cfg(feature = "duckdb")]
     fn access_decisions(&self)->Vec<crate::ir::rel::statistics::OptimizerDecision>{Vec::new()}
     #[cfg(feature = "duckdb")]
@@ -88,11 +88,7 @@ impl PropertyGraph {
     }
     pub(crate) fn prefetch_source(&self, rows: &[crate::ir::runtime::Row]) {
         if let Some(source) = &self.source {
-            let values = rows
-                .iter()
-                .flat_map(|r| r.bindings.values().cloned())
-                .collect::<Vec<_>>();
-            source.prefetch(&values);
+            source.prefetch(&mut rows.iter().flat_map(|r| r.bindings.values()));
         }
     }
     pub(crate) fn prefetch_adjacency(

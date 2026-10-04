@@ -465,7 +465,7 @@ impl GraphSource for Source {
             })
             .collect()
     }
-    fn prefetch(&self, values: &[Value]) {
+    fn prefetch(&self, values: &mut dyn Iterator<Item = &Value>) {
         fn collect(v: &Value, groups: &mut BTreeMap<(bool, String), BTreeSet<ElementId>>) {
             match v {
                 Value::Node { label, id } => {
@@ -570,6 +570,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn borrowed_prefetch_finds_nested_elements_and_reuses_cached_records() {
+        let db = duckdb::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE people(id BIGINT, name VARCHAR); INSERT INTO people VALUES (1, 'one'), (2, 'two'); CREATE TABLE links(id BIGINT, src BIGINT, dst BIGINT); INSERT INTO links VALUES (7, 1, 2)").unwrap();
+        let mut mapping = GraphMapping::new();
+        mapping.register_table_schema("people", Arc::new(Schema::new(vec![
+            Field::new("id", arrow::datatypes::DataType::Int64, true),
+            Field::new("name", arrow::datatypes::DataType::Utf8, true),
+        ])));
+        mapping.register_table_schema("links", Arc::new(Schema::new(
+            ["id", "src", "dst"].map(|name| Field::new(name, arrow::datatypes::DataType::Int64, true)).to_vec(),
+        )));
+        mapping.map_node(crate::ir::rel::mapping::NodeMapping::table("Person", "people", "id").property("name", "name"));
+        let mut edge = crate::ir::rel::mapping::EdgeMapping::table("LINK", "links", "src", "dst", "Person", "Person");
+        edge.id_column = Some("id".into());
+        mapping.map_edge(edge);
+        let graph = attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))), Arc::new(mapping)).unwrap();
+        let node = |id| Value::Node { label: "Person".into(), id: ElementId::from(id) };
+        let edge = Value::Edge {
+            rel_type: "LINK".into(), id: 7i64.into(),
+            src_label: "Person".into(), src_id: 1i64.into(),
+            dst_label: "Person".into(), dst_id: 2i64.into(),
+            projected_properties: None,
+        };
+        let rows = vec![crate::ir::runtime::Row::new().with("nested", Value::Map(BTreeMap::from([
+            ("elements".into(), Value::List(vec![node(1i64), Value::Path(vec![node(2i64), edge]), node(1i64)])),
+            ("payload".into(), Value::String("x".repeat(262_144))),
+        ])))];
+        let source = graph.source.as_ref().unwrap();
+        let before = source.stats().1.len();
+        graph.prefetch_source(&rows);
+        source.check().unwrap();
+        let after = source.stats().1.len();
+        assert_eq!(after - before, 2, "one batched fetch per element type");
+        assert_eq!(source.property(false, "Person", &1i64.into(), "name"), Value::String("one".into()));
+        assert_eq!(source.property(false, "Person", &2i64.into(), "name"), Value::String("two".into()));
+        assert_eq!(source.endpoints("LINK", &7i64.into()), Some(("Person".into(), 1i64.into(), "Person".into(), 2i64.into())));
+        graph.prefetch_source(&rows);
+        graph.prefetch_source(&[]);
+        source.check().unwrap();
+        assert_eq!(source.stats().1.len(), after);
+    }
+
+    #[test]
     fn statistics_choose_dense_scan_and_sparse_lookup() {
         for (statistics, count, expected_queries, derived) in [(false,3000,3,false),(true,3000,1,false),(true,2,1,false),(true,3000,1,true)] {
             let db=duckdb::Connection::open_in_memory().unwrap();
@@ -581,11 +624,11 @@ mod tests {
             let graph=attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap();
             let source=graph.source.unwrap();
             let values=(0..count).map(|i|Value::Node{label:"Person".into(),id:ElementId::new(ScalarValue::Int64(Some(i))).unwrap()}).collect::<Vec<_>>();
-            source.prefetch(&values);source.check().unwrap();
+            source.prefetch(&mut values.iter());source.check().unwrap();
             assert_eq!(source.stats().1.len(),expected_queries,"{:?}",source.stats());
             assert_eq!(source.access_decisions().len(),usize::from(statistics&&count>1024));
             for i in [0,count-1] {assert_eq!(source.property(false,"Person",&ElementId::new(ScalarValue::Int64(Some(i))).unwrap(),"name"),Value::String(format!("name-{i}")));}
-            source.prefetch(&values);assert_eq!(source.stats().1.len(),expected_queries);
+            source.prefetch(&mut values.iter());assert_eq!(source.stats().1.len(),expected_queries);
         }
     }
 
@@ -602,10 +645,10 @@ mod tests {
         let graph=attach(Arc::new(Mutex::new(DuckDbExecutor::from_connection(db))),Arc::new(mapping)).unwrap();
         let source=graph.source.unwrap();
         let values=|start| (start..start+3000).map(|i|Value::Node{label:"Person".into(),id:ElementId::new(ScalarValue::Int64(Some(i))).unwrap()}).collect::<Vec<_>>();
-        source.prefetch(&values(0));source.check().unwrap();
+        source.prefetch(&mut values(0).iter());source.check().unwrap();
         assert_eq!(source.stats().1.len(),4);
         assert_eq!(source.access_decisions()[0].after,vec!["batched_lookup_after_scan_cap"]);
-        source.prefetch(&values(5000));source.check().unwrap();
+        source.prefetch(&mut values(5000).iter());source.check().unwrap();
         assert_eq!(source.stats().1.len(),7,"a capped scan must not be retried");
         assert!(source.exists(false,"Person",&ElementId::new(ScalarValue::Int64(Some(7999))).unwrap()));
     }

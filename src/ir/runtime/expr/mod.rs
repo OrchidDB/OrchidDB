@@ -46,7 +46,7 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
             name,
             policy,
         } => {
-            let value = row.bindings.get(binding).cloned().unwrap_or(Value::Null);
+            let value = row.bindings.get(binding).unwrap_or(&Value::Null);
             let resolved = match value {
                 Value::Node { .. } | Value::Edge { .. } | Value::InternalId { .. }
                     if matches!(
@@ -54,11 +54,11 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                         "_id" | "_ID" | "_label" | "_LABEL" | "_src" | "_SRC" | "_dst" | "_DST"
                     ) =>
                 {
-                    super::scalar::graph_element_property(graph, &value, name)
+                    super::scalar::graph_element_property(graph, value, name)
                 }
-                Value::Node { label, id } => graph.node_property(&label, id, name),
-                Value::Edge { rel_type, id, .. } => graph.edge_property(&rel_type, id, name),
-                Value::VertexProperty { .. } | Value::Property { .. } => super::scalar::graph_element_property(graph, &value, name),
+                Value::Node { label, id } => graph.node_property(label, id.clone(), name),
+                Value::Edge { rel_type, id, .. } => graph.edge_property(rel_type, id.clone(), name),
+                Value::VertexProperty { .. } | Value::Property { .. } => super::scalar::graph_element_property(graph, value, name),
                 Value::MapEntry(pair) => match name.as_str() { "key" => pair.0.clone(), "value" => pair.1.clone(), _ => Value::Null },
                 Value::Map(map) => match map.get(name) {
                     Some(v) => v.clone(),
@@ -67,19 +67,18 @@ pub fn eval(expr: &IrExpr, row: &Row, graph: &PropertyGraph) -> IrResult<Value> 
                     // ignoring case, honouring declaration order when
                     // the struct carries one.
                     None => {
-                        let declared: Vec<String> = match map.get(STRUCT_ORDER_KEY) {
+                        let matches_name = |key: &&String| !key.starts_with("__") && key.eq_ignore_ascii_case(name);
+                        let key = match map.get(STRUCT_ORDER_KEY) {
                             Some(Value::List(items)) => items
                                 .iter()
                                 .filter_map(|item| match item {
-                                    Value::String(key) => Some(key.clone()),
+                                    Value::String(key) => Some(key),
                                     _ => None,
                                 })
-                                .collect(),
-                            _ => map.keys().cloned().collect(),
+                                .find(matches_name),
+                            _ => map.keys().find(matches_name),
                         };
-                        declared
-                            .iter()
-                            .find(|key| !key.starts_with("__") && key.eq_ignore_ascii_case(name))
+                        key
                             .and_then(|key| map.get(key))
                             .cloned()
                             .unwrap_or(Value::Null)

@@ -215,7 +215,7 @@ fn observe(
             })
             .collect::<Vec<_>>();
         if let Some(source) = &graph.source {
-            source.prefetch(&nodes);
+            source.prefetch(&mut nodes.iter());
         }
         let keys = graph.node_property_keys_with_id(&label);
         for node in nodes {
