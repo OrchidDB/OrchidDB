@@ -238,6 +238,7 @@ def find_run(kind, workflow, request_id):
 
 
 def dispatch(state, path, kind, platform, workflow, inputs, retry=False):
+    raise SystemExit("Remote builds are disabled. Use make release VERSION=X.Y.Z to build locally.")
     key = kind + '/' + platform
     entry = state['builds'].get(key)
     if entry and entry.get('artifacts'):
