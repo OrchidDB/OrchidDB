@@ -79,7 +79,7 @@ fn mapped_identity_text(
     shared: &Arc<std::sync::Mutex<sql::DuckDbExecutor>>,
     mapping: &GraphMapping,
 ) -> EngineResult<QualifiedIdentities> {
-    use mapped_storage::{keys, query, source};
+    use mapped_storage::{keys, query, resolved_source};
     let mut executor = shared.lock().map_err(|e| e.to_string())?;
     let connection = executor.connection().map_err(|e| e.to_string())?;
     let mut result = BTreeMap::new();
@@ -115,7 +115,7 @@ fn mapped_identity_text(
             // ID() rendering, with DuckDB providing each component's text form.
             let schema = query(
                 connection,
-                &format!("SELECT * FROM {} WHERE false", source(mapped_source)),
+                &format!("SELECT * FROM {} WHERE false", resolved_source(mapping, mapped_source, &[])?),
             )?
             .schema();
             let projections = key
@@ -148,7 +148,7 @@ fn mapped_identity_text(
                     "SELECT {}, {} FROM {}{filter}",
                     key.sql(None),
                     projections.join(","),
-                    source(mapped_source)
+                    resolved_source(mapping, mapped_source, &[])?
                 ),
             )?;
             for (row, id) in keys(&batch, 0)?.into_iter().enumerate() {

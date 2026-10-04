@@ -155,6 +155,24 @@ impl Source {
         let edge_filter = endpoints.and_then(|m| m.foreign_key_columns())
             .map(|(_, _, _, fk)| format!(" AND {}", fk.present_sql()))
             .unwrap_or_default();
+        let (batch, sql) = if matches!(src, MappedSource::Computed(_)) {
+            use datafusion::logical_expr::{Expr, LogicalPlanBuilder};
+            use crate::ir::rel::mapping::id_expr;
+            let source = self.mapping.source_plan(src).map_err(|e|e.to_string())?;
+            let mut selected = vec![id_expr(&source, key, name).map_err(|e|e.to_string())?.alias("__key")];
+            selected.extend(props.iter().map(|(p,c)|Expr::Column(datafusion::common::Column::from_name(c)).alias(p)));
+            if let Some(edge) = endpoints {
+                selected.push(id_expr(&source, &edge.src_column, name).map_err(|e|e.to_string())?.alias("__src"));
+                selected.push(id_expr(&source, &edge.dst_column, name).map_err(|e|e.to_string())?.alias("__dst"));
+            }
+            let mut plan = LogicalPlanBuilder::from(source);
+            if !scan { for filter in lookup_filters(column.unwrap_or(key), ids) { plan = plan.filter(filter).map_err(|e|e.to_string())?; } }
+            plan = plan.project(selected).map_err(|e|e.to_string())?;
+            if scan { plan = plan.limit(0,Some(65537)).map_err(|e|e.to_string())?; }
+            let (batch, queries) = mapped_storage::execute_plan(self.executor.clone(), &self.mapping, plan.build().map_err(|e|e.to_string())?)?;
+            if scan && (batch.num_rows()>65536 || batch.get_array_memory_size()>16*1024*1024) { return Ok(vec![]); }
+            (batch,queries.join(";\n"))
+        } else {
         let sql = if scan {format!("SELECT {} FROM {} WHERE true{edge_filter} LIMIT 65537",projection.join(","),resolved_source(&self.mapping,src,&[])?) } else {format!(
             "SELECT {} FROM {} WHERE {} IN (SELECT key FROM __orchiddb_write_values(?, ?)){edge_filter}",
             projection.join(","),
@@ -173,6 +191,8 @@ impl Source {
                 batches.push(batch);
             }
             arrow::compute::concat_batches(&schema,&batches).map_err(|e| e.to_string())?
+        };
+            (batch, sql)
         };
         let keys = keys(&batch, 0)?;
         if keys.iter().collect::<BTreeSet<_>>().len() != keys.len() {
@@ -348,6 +368,16 @@ impl GraphSource for Source {
                 };
                 (&m.source, &m.id_column)
             };
+            if matches!(src, MappedSource::Computed(_)) {
+                let plan = self.mapping.source_plan(src).map_err(|e|e.to_string())?;
+                let projection = crate::ir::rel::mapping::id_expr(&plan, key, name).map_err(|e|e.to_string())?.alias("__key");
+                let plan = datafusion::logical_expr::LogicalPlanBuilder::from(plan).project(vec![projection]).and_then(|b|b.build()).map_err(|e|e.to_string())?;
+                let (batch, queries) = mapped_storage::execute_plan(self.executor.clone(), &self.mapping, plan)?;
+                let ids = keys(&batch,0)?;
+                { let mut cache=self.cache.lock().unwrap(); cache.rows+=batch.num_rows(); cache.queries.extend(queries); }
+                if edge { self.records(true,name,&ids)?; }
+                return Ok(ids);
+            }
             let mut executor = self.executor.lock().map_err(|e| e.to_string())?;
             let edge_filter = edge.then(|| self.mapping.edge(name)).flatten()
                 .and_then(|m| m.foreign_key_columns())

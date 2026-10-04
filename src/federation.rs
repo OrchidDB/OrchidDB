@@ -24,6 +24,15 @@ pub struct Transfer {
     pub sql: String,
     pub target_relation: String,
     pub columns: Vec<TransferColumn>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<DependentSearch>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DependentSearch {
+    pub engine: String,
+    pub input_columns: Vec<TransferColumn>,
+    pub template: crate::ir::rel::sql::search::SearchTemplate,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TransferColumn {
@@ -141,6 +150,129 @@ pub(crate) fn route(
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let mut transfers = vec![];
+    let plan = plan
+        .transform_down_with_subqueries(|node| {
+            use crate::ir::rel::{
+                search::{self, SearchBackend},
+                sql,
+            };
+            let Some(search) = search::node(&node) else {
+                return Ok(Transformed::no(node));
+            };
+            let fail = datafusion::common::DataFusionError::Plan;
+            let owner_set = |plan: &LogicalPlan| -> datafusion::common::Result<BTreeSet<String>> {
+                let mut found = BTreeSet::new();
+                plan.apply_with_subqueries(|node| {
+                    if let LogicalPlan::TableScan(scan) = node {
+                        found.insert(
+                            owners
+                                .get(&scan.table_name.to_string())
+                                .ok_or_else(|| fail("search input needs an engine owner".into()))?
+                                .clone(),
+                        );
+                    }
+                    Ok(TreeNodeRecursion::Continue)
+                })?;
+                Ok(found)
+            };
+            let target_owners = owner_set(&search.target)?;
+            if target_owners.len() != 1 {
+                return Err(fail(
+                    "ranked search target must belong to one SQL engine".into(),
+                ));
+            }
+            let engine = target_owners.first().unwrap();
+            let backend = search.index.as_ref().map(|i| &i.backend);
+            let lance = matches!(backend, Some(SearchBackend::Lance { .. }));
+            let pg = request.engines[engine].dialect == "postgres";
+            if lance && pg {
+                return Err(fail("Lance search requires a DuckDB owner".into()));
+            }
+            if matches!(backend, Some(SearchBackend::Pgvector)) && !pg {
+                return Err(fail("pgvector search requires a PostgreSQL owner".into()));
+            }
+            if !lance && (!pg || owner_set(&search.source)? == target_owners) {
+                return Ok(Transformed::no(node));
+            }
+            let template = if lance {
+                sql::search::lance_template(search)
+            } else {
+                sql::search::postgres_template(search)
+            }
+            .map_err(|e| fail(e.to_string()))?;
+            let (source, dependencies) =
+                route(request, search.source.as_ref().clone()).map_err(fail)?;
+            transfers.extend(dependencies);
+            let dialect = if request.dialect == "postgres" {
+                sql::SqlDialect::Postgres
+            } else {
+                sql::SqlDialect::DuckDb
+            };
+            let source_sql = sql::unparse_plan(source, dialect).map_err(|e| fail(e.to_string()))?;
+            let mut name = format!("__orchiddb_search_{id}_{}", transfers.len());
+            while !reserved.insert(name.clone()) {
+                name.push('_');
+            }
+            let columns = search
+                .schema
+                .fields()
+                .iter()
+                .map(|f| {
+                    Ok(TransferColumn {
+                        name: f.name().clone(),
+                        data_type: type_name(f.data_type()).map_err(fail)?,
+                        nullable: f.is_nullable(),
+                    })
+                })
+                .collect::<datafusion::common::Result<Vec<_>>>()?;
+            let scan = LogicalPlanBuilder::scan(
+                name.clone(),
+                provider_as_source(Arc::new(EmptyTable::new(Arc::new(
+                    search.schema.as_arrow().clone(),
+                )))),
+                None,
+            )?
+            .build()?;
+            let replacement = LogicalPlanBuilder::from(scan.clone())
+                .project(
+                    scan.schema()
+                        .columns()
+                        .into_iter()
+                        .map(|c| {
+                            let name = c.name.clone();
+                            Expr::Column(c).alias(name)
+                        })
+                        .collect::<Vec<_>>(),
+                )?
+                .build()?;
+            transfers.push(Transfer {
+                source_engine: target.clone(),
+                source_dialect: request.dialect.clone(),
+                sql: source_sql,
+                target_relation: name,
+                columns,
+                search: Some(DependentSearch {
+                    engine: engine.clone(),
+                    input_columns: search
+                        .source
+                        .schema()
+                        .fields()
+                        .iter()
+                        .map(|f| {
+                            Ok(TransferColumn {
+                                name: f.name().clone(),
+                                data_type: type_name(f.data_type()).map_err(fail)?,
+                                nullable: f.is_nullable(),
+                            })
+                        })
+                        .collect::<datafusion::common::Result<Vec<_>>>()?,
+                    template,
+                }),
+            });
+            Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump))
+        })
+        .map_err(|e| e.to_string())?
+        .data;
     let result = plan
         .transform_down_with_subqueries(|node| {
             let mut sources = BTreeSet::new();
@@ -271,6 +403,7 @@ pub(crate) fn route(
                             sql,
                             target_relation: name,
                             columns,
+                            search: None,
                         });
                         return Ok(Transformed::new(replacement, true, TreeNodeRecursion::Jump));
                     }
@@ -316,7 +449,9 @@ pub(crate) fn type_name(ty: &arrow::datatypes::DataType) -> Result<String, Strin
         Time32(_) | Time64(_) => "time".into(),
         Timestamp(_, None) => "timestamp".into(),
         Decimal128(p, s) => format!("decimal:{p}:{s}"),
-        List(f) | LargeList(f) => format!("list:{}", type_name(f.data_type())?),
+        List(f) | LargeList(f) | FixedSizeList(f, _) => {
+            format!("list:{}", type_name(f.data_type())?)
+        }
         _ => return Err(format!("unsupported exchange type {ty}")),
     })
 }
@@ -396,10 +531,12 @@ pub fn bind_batches(
             Box::new(datafusion::sql::sqlparser::dialect::PostgreSqlDialect {})
         }
     };
-    let mut statements =
-        Parser::new(parser_dialect.as_ref()).with_recursion_limit(1024)
-            .try_with_sql(sql).map_err(|e| e.to_string())?
-            .parse_statements().map_err(|e| e.to_string())?;
+    let mut statements = Parser::new(parser_dialect.as_ref())
+        .with_recursion_limit(1024)
+        .try_with_sql(sql)
+        .map_err(|e| e.to_string())?
+        .parse_statements()
+        .map_err(|e| e.to_string())?;
     if statements.len() != 1 {
         return Err("binding requires exactly one query".into());
     }
@@ -504,6 +641,17 @@ pub fn bind_command(command: serde_json::Value) -> Result<serde_json::Value, Str
     )?;
     plan["sql"] = sql.into();
     plan["transfers"].as_array_mut().unwrap().remove(index);
+    for pending in plan["transfers"].as_array_mut().unwrap() {
+        let query = bind_batches(
+            pending["sql"].as_str().ok_or("missing dependent SQL")?,
+            pending["source_dialect"]
+                .as_str()
+                .ok_or("missing dependent dialect")?,
+            &transfer,
+            &batches,
+        )?;
+        pending["sql"] = query.into();
+    }
     Ok(plan)
 }
 
@@ -513,8 +661,8 @@ pub(crate) fn json_scalar(
 ) -> Result<datafusion::common::ScalarValue, String> {
     use arrow::datatypes::DataType;
     use base64::Engine;
-    use std::sync::Arc;
     use datafusion::common::ScalarValue;
+    use std::sync::Arc;
     if value.is_null() {
         return ScalarValue::try_from(ty).map_err(|e| e.to_string());
     }
@@ -539,14 +687,22 @@ pub(crate) fn json_scalar(
         };
         return match ty {
             DataType::LargeList(_) => Ok(ScalarValue::LargeList(Arc::new(
-                arrow::array::LargeListArray::try_new(field.clone(),
-                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]), values, None)
-                    .map_err(|e| e.to_string())?,
+                arrow::array::LargeListArray::try_new(
+                    field.clone(),
+                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]),
+                    values,
+                    None,
+                )
+                .map_err(|e| e.to_string())?,
             ))),
             _ => Ok(ScalarValue::List(Arc::new(
-                arrow::array::ListArray::try_new(field.clone(),
-                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]), values, None)
-                    .map_err(|e| e.to_string())?,
+                arrow::array::ListArray::try_new(
+                    field.clone(),
+                    arrow::buffer::OffsetBuffer::from_lengths([values.len()]),
+                    values,
+                    None,
+                )
+                .map_err(|e| e.to_string())?,
             ))),
         };
     }
@@ -569,7 +725,11 @@ pub(crate) fn json_scalar(
                 .decode(text)
                 .map_err(|e| e.to_string())?
         };
-        return Ok(if *ty == DataType::LargeBinary { ScalarValue::LargeBinary(Some(bytes)) } else { ScalarValue::Binary(Some(bytes)) });
+        return Ok(if *ty == DataType::LargeBinary {
+            ScalarValue::LargeBinary(Some(bytes))
+        } else {
+            ScalarValue::Binary(Some(bytes))
+        });
     }
     let text = match value {
         serde_json::Value::String(s) => s.clone(),
@@ -612,14 +772,54 @@ pub async fn execute(
             return Err(format!("dialect mismatch for engine `{id}`"));
         }
     }
+    for search in plan.transfers.iter().filter_map(|t| t.search.as_ref()) {
+        if sessions
+            .get(&search.engine)
+            .ok_or_else(|| format!("missing search engine `{}`", search.engine))?
+            .dialect()
+            != search.template.dialect
+        {
+            return Err("search engine dialect mismatch".into());
+        }
+    }
     let mut sql = plan.sql.clone();
+    let mut completed: Vec<(&Transfer, Vec<RecordBatch>)> = vec![];
     for transfer in &plan.transfers {
-        let batches = sessions
+        let mut input_sql = transfer.sql.clone();
+        for (dependency, batches) in &completed {
+            input_sql = bind_batches(&input_sql, &transfer.source_dialect, dependency, batches)?;
+        }
+        let mut batches = sessions
             .get_mut(&transfer.source_engine)
             .unwrap()
-            .query(&transfer.sql)
+            .query(&input_sql)
             .await?;
+        if let Some(search) = &transfer.search {
+            let mut output = vec![];
+            for batch in batches {
+                for row in 0..batch.num_rows() {
+                    let values = batch
+                        .columns()
+                        .iter()
+                        .map(|a| {
+                            datafusion::common::ScalarValue::try_from_array(a.as_ref(), row)
+                                .map_err(|e| e.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let query = search.template.bind(&values).map_err(|e| e.to_string())?;
+                    output.extend(
+                        sessions
+                            .get_mut(&search.engine)
+                            .unwrap()
+                            .query(&query)
+                            .await?,
+                    );
+                }
+            }
+            batches = output;
+        }
         sql = bind_batches(&sql, &plan.dialect, transfer, &batches)?;
+        completed.push((transfer, batches));
     }
     sessions.get_mut(target).unwrap().query(&sql).await
 }
@@ -709,7 +909,6 @@ fn exchange_scalar(
     value.cast_to(ty).map_err(|e| e.to_string())
 }
 
-
 #[cfg(test)]
 mod audit_regressions {
     use super::json_scalar;
@@ -762,4 +961,48 @@ mod audit_regressions {
             ScalarValue::try_from(&outer).unwrap()
         );
     }
+}
+
+/// Bind source-row values for dependent search. The returned statements execute
+/// on `engine`; their concatenated results complete the named transfer.
+pub fn bind_search_command(command: serde_json::Value) -> Result<serde_json::Value, String> {
+    let plan = &command["plan"];
+    if plan["version"] != 1 {
+        return Err("unsupported search plan version".into());
+    }
+    let name = command["relation"]
+        .as_str()
+        .ok_or("missing search relation")?;
+    let transfer = plan["transfers"]
+        .as_array()
+        .ok_or("missing transfers")?
+        .iter()
+        .find(|t| t["target_relation"].as_str() == Some(name))
+        .ok_or("unknown search relation")?;
+    let transfer: Transfer = serde_json::from_value(transfer.clone()).map_err(|e| e.to_string())?;
+    let search = transfer
+        .search
+        .ok_or("transfer is not a dependent search")?;
+    let types = search
+        .input_columns
+        .iter()
+        .map(|c| crate::compiler::data_type(&c.data_type))
+        .collect::<Result<Vec<_>, _>>()?;
+    let rows = command["rows"].as_array().ok_or("missing source rows")?;
+    let mut statements = vec![];
+    for row in rows {
+        let row = row.as_array().ok_or("source row must be an array")?;
+        if row.len() != types.len() {
+            return Err("search source row width mismatch".into());
+        }
+        let values = row
+            .iter()
+            .zip(&types)
+            .map(|(v, t)| json_scalar(v, t))
+            .collect::<Result<Vec<_>, _>>()?;
+        statements.push(search.template.bind(&values).map_err(|e| e.to_string())?);
+    }
+    Ok(
+        serde_json::json!({"version":1,"engine":search.engine,"relation":name,"dialect":search.template.dialect,"sql":statements}),
+    )
 }

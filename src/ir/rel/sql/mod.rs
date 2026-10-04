@@ -19,6 +19,8 @@
 //!   `duckdb`, explicitly enabled) runs everything in-memory; [`PostgresExecutor`]
 //!   (feature `postgres`) connects to a live server via `GRAPH_PG_URL`.
 
+mod logical_functions;
+pub mod search;
 mod functions;
 mod postgres_functions;
 mod postgres_lists;
@@ -30,8 +32,13 @@ pub(crate) fn exchange_literal(value: ScalarValue, ty: DataType, dialect: SqlDia
     };
     let literal = if value.is_null() { "NULL".into() } else {
         match value {
-            ScalarValue::List(array) => {
-                let items = array.value(0);
+            value @ (ScalarValue::List(_) | ScalarValue::LargeList(_) | ScalarValue::FixedSizeList(_)) => {
+                let items = match value {
+                    ScalarValue::List(a) => a.value(0),
+                    ScalarValue::LargeList(a) => a.value(0),
+                    ScalarValue::FixedSizeList(a) => a.value(0),
+                    _ => unreachable!(),
+                };
                 let mut values = Vec::new();
                 for i in 0..items.len() {
                     let cell = exchange_literal(ScalarValue::try_from_array(items.as_ref(), i)?, items.data_type().clone(), dialect)?;
@@ -358,6 +365,9 @@ pub struct PreparedSql {
 #[cfg(feature = "duckdb")]
 impl PreparedSql {
     pub(crate) fn output_schema(&self) -> SchemaRef { self.schema.clone() }
+    pub(crate) fn query_only(query: String, schema: SchemaRef) -> Self {
+        Self { dialect: SqlDialect::DuckDb, fields: schema.fields().iter().map(|f|f.name().clone()).collect(), schema, query, tables: vec![], setup: vec![], result_form: ResultForm::RowSet }
+    }
 }
 
 /// A SQL engine that can apply setup statements and run a query, returning

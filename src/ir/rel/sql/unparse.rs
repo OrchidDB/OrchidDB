@@ -9,6 +9,9 @@ pub fn unparse(lowered: &LoweredPlan, dialect: SqlDialect) -> SqlResult<String> 
 }
 
 pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
+    stacker::maybe_grow(8 * 1024 * 1024, 64 * 1024 * 1024, || unparse_plan_inner(plan, dialect))
+}
+fn unparse_plan_inner(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<String> {
     let plan = crate::ir::rel::representation::select(plan)?.plan;
     let plan = if dialect == SqlDialect::Postgres { super::postgres_lists::encode(plan)? } else { plan };
     // Generated-statistics providers accept only inexact pushdown: the parent
@@ -32,7 +35,7 @@ pub(crate) fn unparse_plan(plan: LogicalPlan, dialect: SqlDialect) -> SqlResult<
         strip_column_qualifiers(plan).map_err(|err| SqlError::Unsupported(format!("qualifier strip: {err}")))?
     } else { plan };
     let repairs = identifier_quote_repairs(&plan, dialect)?;
-    let sql = recursive::unparse_plan(plan, dialect)?;
+    let sql = super::logical_functions::with_plan(&plan, dialect, || recursive::unparse_plan(plan.clone(), dialect))?;
     Ok(apply_identifier_repairs(sql, &repairs))
 }
 
@@ -85,6 +88,20 @@ pub(super) fn encode_expression_literals(
                 return Ok(Transformed::yes(crate::ir::functions::typed_argument_cast_for_engine(
                     lit(ScalarValue::Null), value.data_type(), dialect.name(),
                 )?));
+            }
+        }
+        // PostgreSQL composite identities are ROW constructors, with scalar
+        // coercions on each component (anonymous structs have no cast type).
+        if dialect == SqlDialect::Postgres {
+            if let Expr::Cast(cast) = &inner {
+                if let DataType::Struct(fields) = &cast.data_type {
+                    if let Expr::ScalarFunction(call) = cast.expr.as_ref() {
+                        if call.func.name() == "named_struct" && call.args.len() == fields.len() * 2 {
+                            let args = call.args.chunks_exact(2).zip(fields.iter()).flat_map(|(pair, field)| [pair[0].clone(), Expr::Cast(datafusion::logical_expr::Cast::new(Box::new(pair[1].clone()), field.data_type().clone()))]).collect();
+                            return Ok(Transformed::yes(call.func.call(args)));
+                        }
+                    }
+                }
             }
         }
         // DF53 cannot unparse casts to Arrow structs or binary values. Keep

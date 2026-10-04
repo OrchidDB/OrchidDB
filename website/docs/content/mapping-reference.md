@@ -35,6 +35,16 @@ EdgeMapping::table(
 )
 ```
 
+## Computed relationships and search
+
+Define a relationship from source and target labels, scalar property expressions,
+eligibility predicates, and per-source ranking. Cypher and Gremlin traverse these
+read-only relationships with the same syntax as stored edges. The planner maps
+logical scoring functions to native execution or the owning SQL engine.
+
+The [Search guide](search.md) covers vector similarity, BM25, indexed candidates,
+MaxSim reranking, and PostgreSQL/pgvector and duckdb-lance index bindings.
+
 ## Register source schemas
 
 `GraphMapping::register_table_schema` accepts an Arrow `SchemaRef`. Describe physical column names, data types, and nullability. Use `register_table` when you already have a DataFusion table provider.
@@ -50,6 +60,9 @@ EdgeMapping::table(
 | `register_collection_source(source)` | Expand a list column as a named read-only relation. |
 | `map_node(mapping)` | Add a label mapping. |
 | `map_edge(mapping)` | Add a relationship mapping. |
+| `map_computed_relationship(rule)` | Add an expression-defined relationship with optional per-source ranking. |
+| `register_logical_function(function)` | Register a native function and its backend SQL and ordering mappings. |
+| `register_search_index(index)` | Bind a physical column and metric to a search backend. |
 | `labels()` / `rel_types()` | Inspect the mapped vocabulary. |
 | `physical_table_names()` | Get physical source names for SQL preparation. |
 

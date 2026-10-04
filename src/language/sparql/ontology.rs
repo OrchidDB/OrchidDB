@@ -177,10 +177,11 @@ impl OntologyMapping {
             rdf_mapping::{RDF_TYPE, RdfMapping, RdfTermMapping as T},
         };
         let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-        let source = |s: &MappedSource| match s {
+        let source = |s: &MappedSource| -> Result<String, String> { Ok(match s {
             MappedSource::Table(t) => format!("SELECT * FROM {t}"),
             MappedSource::Query(q) => q.clone(),
-        };
+            MappedSource::Computed(_) => return Err("computed edges must be exposed as a relational RDF view".into()),
+        }) };
         let identity = |node: &NodeMapping, alias: Option<&str>| -> Result<T, String> {
             let column = |c: &str| alias.map(|a| format!("{a}{c}")).unwrap_or_else(|| c.into());
             if let Some(property) = self
@@ -202,6 +203,7 @@ impl OntologyMapping {
         for label in mapping.labels() {
             let node = mapping.node(&label).unwrap().clone();
             let table = match &node.source {
+                MappedSource::Computed(_) => return Err("computed sources are relationships, not nodes".into()),
                 MappedSource::Table(t) => t.clone(),
                 MappedSource::Query(q) => {
                     let name = format!("__rdf_node_{}", node_sources.len());
@@ -288,10 +290,10 @@ impl OntologyMapping {
                     let sql = format!(
                         "SELECT {} FROM ({}) e JOIN ({}) s ON {} JOIN ({}) d ON {}",
                         projected.join(","),
-                        source(&edge.source),
-                        source(&src.source),
+                        source(&edge.source)?,
+                        source(&src.source)?,
                         join(src, &edge.src_column, "s"),
-                        source(&dst.source),
+                        source(&dst.source)?,
                         join(dst, &edge.dst_column, "d")
                     );
                     let table = format!("__rdf_relationship_{index}");

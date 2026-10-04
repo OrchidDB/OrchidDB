@@ -218,6 +218,7 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
         reserved: reserved.0,
         visibility: vec![],
     }) { return Err(error); }
+    super::logical_functions::adapt_ordering(tree, dialect)?;
     if let ControlFlow::Break(error) = ast::visit_expressions_mut(tree, |expr| match adapt_expression(expr, dialect) {
         Ok(()) => ControlFlow::Continue(()),
         Err(error) => ControlFlow::Break(error),
@@ -285,6 +286,14 @@ pub(super) fn prepare_scoped_ast<T: ast::VisitMut>(tree: &mut T, dialect: SqlDia
 }
 
 fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> {
+    if dialect == SqlDialect::Postgres {
+        if let ast::Expr::Dictionary(fields) = expr {
+            let args = fields.iter().map(|field| field.value.as_ref().clone()).collect::<Vec<_>>();
+            let placeholders = (0..args.len()).map(|i|format!("__arg{i}")).collect::<Vec<_>>().join(", ");
+            *expr = template(&format!("ROW({placeholders})"), &args)?;
+            return Ok(());
+        }
+    }
     if let ast::Expr::IsNull(operand) | ast::Expr::IsNotNull(operand)
         | ast::Expr::IsTrue(operand) | ast::Expr::IsFalse(operand)
         | ast::Expr::IsNotTrue(operand) | ast::Expr::IsNotFalse(operand) = expr {
@@ -388,6 +397,19 @@ fn adapt_expression(expr: &mut ast::Expr, dialect: SqlDialect) -> SqlResult<()> 
         return Ok(());
     };
     let name = function.name.to_string();
+    if name.trim_matches('"').starts_with("__orchiddb_logical_") {
+        let implementation = super::logical_functions::mapping(&name)
+            .ok_or_else(|| SqlError::Unsupported(format!("logical function {name} has no {} mapping", dialect.name())))?;
+        let ast::FunctionArguments::List(arguments) = &function.args else {
+            return Err(SqlError::Unsupported("invalid logical function arguments".into()));
+        };
+        let args = arguments.args.iter().map(|arg| match arg {
+            ast::FunctionArg::Unnamed(ast::FunctionArgExpr::Expr(expr)) => Ok(expr.clone()),
+            _ => Err(SqlError::Unsupported("logical functions require positional expressions".into())),
+        }).collect::<SqlResult<Vec<_>>>()?;
+        *expr = portable_template(&implementation.value, &args, dialect)?;
+        return Ok(());
+    }
     if name == crate::ir::functions::ENGINE_CAST_FUNCTION {
         let ast::FunctionArguments::List(arguments) = &function.args else {
             return Err(SqlError::Unsupported(
@@ -567,6 +589,9 @@ fn rename(function: &mut ast::Function, name: &str) {
 /// Parse only trusted rule templates, then substitute argument ASTs. Fresh
 /// lambda names prevent capturing outer columns or nested lambdas.
 pub(super) fn template(source: &str, args: &[ast::Expr]) -> SqlResult<ast::Expr> {
+    portable_template(source, args, SqlDialect::DuckDb)
+}
+pub(super) fn portable_template(source: &str, args: &[ast::Expr], dialect: SqlDialect) -> SqlResult<ast::Expr> {
     let rendered = args
         .iter()
         .map(ToString::to_string)
@@ -584,30 +609,49 @@ pub(super) fn template(source: &str, args: &[ast::Expr]) -> SqlResult<ast::Expr>
         };
         source = source.replace(&format!("__local{local}"), &fresh);
     }
-    let mut parser = Parser::new(&DuckDbDialect {})
+    let duck = DuckDbDialect {};
+    let postgres = datafusion::sql::sqlparser::dialect::PostgreSqlDialect {};
+    let parser_dialect: &dyn datafusion::sql::sqlparser::dialect::Dialect = if dialect == SqlDialect::Postgres { &postgres } else { &duck };
+    let mut parser = Parser::new(parser_dialect)
         .try_with_sql(&source)
         .map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
     let mut expression = parser
         .parse_expr()
         .map_err(|err| SqlError::Unsupported(format!("dialect expression template: {err}")))?;
-    let _: ControlFlow<()> = ast::visit_expressions_mut(&mut expression, |expr| {
-        if let ast::Expr::Identifier(ident) = expr
-            && let Some(index) = ident
-                .value
-                .strip_prefix("__arg")
-                .and_then(|s| s.parse::<usize>().ok())
-            && let Some(value) = args.get(index)
-        {
-            *expr = ast::Expr::Nested(Box::new(value.clone()));
+    if parser.peek_token().token != datafusion::sql::sqlparser::tokenizer::Token::EOF {
+        return Err(SqlError::Unsupported(format!("SQL expression template has trailing token {}: {source}", parser.peek_token())));
+    }
+    struct Arguments<'a>(&'a [ast::Expr]);
+    impl ast::VisitorMut for Arguments<'_> {
+        type Break = SqlError;
+        fn post_visit_expr(&mut self, expr: &mut ast::Expr) -> ControlFlow<Self::Break> {
+            if let ast::Expr::Identifier(ident) = expr {
+                if let Some(index) = ident.value.strip_prefix("__arg").and_then(|s|s.parse::<usize>().ok()) {
+                    let Some(value) = self.0.get(index) else {
+                        return ControlFlow::Break(SqlError::Unsupported(format!("unbound function mapping argument {}",ident.value)));
+                    };
+                    // Post-order substitution never revisits caller expressions.
+                    *expr = ast::Expr::Nested(Box::new(value.clone()));
+                }
+            }
+            ControlFlow::Continue(())
         }
-        ControlFlow::Continue(())
-    });
+    }
+    if let ControlFlow::Break(error) = ast::VisitMut::visit(&mut expression, &mut Arguments(args)) { return Err(error); }
     Ok(ast::Expr::Nested(Box::new(expression)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn templates_preserve_argument_identifiers_and_reject_missing_arguments() {
+        let column = ast::Expr::Identifier(ast::Ident::with_quote('"', "__arg1"));
+        assert_eq!(template("__arg0", &[column]).unwrap().to_string(), "((\"__arg1\"))");
+        assert!(template("__arg1", &[]).is_err());
+        assert!(template("__arg0; SELECT 1", &[ast::Expr::Identifier(ast::Ident::new("x"))]).is_err());
+    }
 
     fn rewrite(sql: &str, dialect: SqlDialect) -> String {
         let mut statements = Parser::parse_sql(&DuckDbDialect {}, sql).unwrap();

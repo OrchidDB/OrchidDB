@@ -207,6 +207,7 @@ impl SqlEligibility {
         let key = plan as *const LogicalPlan as usize;
         if let Some(reason) = self.reasons.get(&key) { return *reason; }
         let mut reason = match plan {
+            LogicalPlan::Extension(_) if super::search::node(plan).is_some_and(|s| !matches!(s.index.as_ref().map(|i| &i.backend), Some(super::search::SearchBackend::Lance { .. }))) => None,
             LogicalPlan::Extension(_) => Some("residual extension"),
             LogicalPlan::EmptyRelation(empty) if empty.produce_one_row => None,
             LogicalPlan::EmptyRelation(_) => Some("empty relation"),
@@ -223,6 +224,13 @@ impl SqlEligibility {
                     if self.postgres && matches!(function.func.name(), "__orchiddb_sparql_scalar" | "sha1" | "sha256" | "sha384" | "sha512") {
                         reason.get_or_insert("native RDF scalar kernel");
                         return Ok(TreeNodeRecursion::Stop);
+                    }
+                    if let Some(logical) = crate::ir::functions::logical::definition(&function.func) {
+                        if !logical.sql.contains_key(if self.postgres { "postgres" } else { "duckdb" }) {
+                            reason.get_or_insert("logical function requires native execution");
+                            return Ok(TreeNodeRecursion::Stop);
+                        }
+                        return Ok(TreeNodeRecursion::Continue);
                     }
                     let native = super::sparql::is_duck_function(&function.func)
                         || function.func.name().starts_with(crate::ir::functions::ENGINE_FUNCTION_PREFIX)
@@ -322,6 +330,22 @@ fn partition<'a>(
                 }));
             }
         }
+        if let Some(search) = super::search::node(plan) {
+            if matches!(search.index.as_ref().map(|i| &i.backend), Some(super::search::SearchBackend::Lance { .. })) {
+                if dialect != sql::SqlDialect::DuckDb {
+                    return Err(DataFusionError::Plan("Lance search requires its owning DuckDB session".into()));
+                }
+                let template = sql::search::lance_template(search).map_err(|e| DataFusionError::Plan(e.to_string()))?;
+                let source = partition(&search.source, stats, eligibility, external, dialect, bind_inputs, source_executor).await?;
+                stats.duckdb_regions += 1;
+                stats.sql_queries.push(template.sql.clone());
+                return Ok(super::search::BoundSearch { source: Arc::new(source), template, schema: search.schema.clone() }.into_plan());
+            }
+            if search.index.is_some() {
+                return Err(DataFusionError::Plan("declared search backend could not form a SQL island".into()));
+            }
+            return partition(&search.native_plan().map_err(|e| DataFusionError::Plan(e.to_string()))?, stats, &mut SqlEligibility { postgres: eligibility.postgres, ..Default::default() }, external, dialect, bind_inputs, source_executor).await;
+        }
         let mut inputs = Vec::new();
         for input in plan.inputs() {
             inputs.push(partition(input, stats, eligibility,external,dialect,bind_inputs,source_executor).await?);
@@ -358,6 +382,11 @@ impl ExtensionPlanner for RegionPlanner {
         _physical_inputs: &[Arc<dyn ExecutionPlan>],
         _state: &SessionState,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
+        if let Some(search) = node.as_any().downcast_ref::<super::search::BoundSearch>() {
+            return Ok(Some(Arc::new(super::search::exec::BoundSearchExec::new(
+                search, _physical_inputs[0].clone(), self.executor.clone(), self.region_session.clone(), self.cost.clone(),
+            ))));
+        }
         let Some(region) = node.as_any().downcast_ref::<DuckDbRegion>() else {
             return Ok(None);
         };
@@ -500,11 +529,22 @@ pub(crate) async fn prepare_with_extensions(
         ])
             .optimize(optimized, &datafusion::optimizer::OptimizerContext::new(), |_, _| {})?
     } else { optimized };
+    let mut has_search=false;
+    optimized.apply_with_subqueries(|p| {has_search |= super::search::node(p).is_some(); Ok(TreeNodeRecursion::Continue)})?;
+    let optimized=if has_search && !resources.optimize {
+        datafusion::optimizer::Optimizer::with_rules(vec![
+            Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
+            Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()),
+            Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
+        ]).optimize(optimized,&datafusion::optimizer::OptimizerContext::new(),|_,_|{})?
+    } else {optimized};
+    let optimized=super::search::bind_seeds(optimized)?;
     let (optimized, more) = super::constraints::optimize(optimized)?;
     proofs.extend(more);
     let selected = super::representation::select(optimized)?;
     let (optimized, mut optimizer_decisions) = super::statistics::optimize(selected.plan)?;
     optimizer_decisions.extend(selected.access_decisions);
+    let optimized=super::search::push_source_filters(optimized)?;
     let mut stats = DagStats { optimizer_decisions, plan_estimates: super::statistics::explain(&optimized), constraint_proofs: proofs, layout_selections: selected.layout_selections, representation_selections: selected.representation_selections, logical_plan: optimized.display_indent().to_string(), ..Default::default() };
     #[cfg(feature = "duckdb")]
     let plan = {
@@ -522,7 +562,7 @@ pub(crate) async fn prepare_with_extensions(
             stats.datafusion_operators += 1;
             Ok(TreeNodeRecursion::Continue)
         });
-        optimized.clone()
+        super::search::native(optimized.clone())?
     };
 
     #[cfg(feature = "duckdb")]
@@ -607,7 +647,7 @@ pub(crate) async fn execute_with_extensions(
 /// lists. Restore the logical Arrow type recursively without losing validity
 /// masks or offsets, and reject a non-null value where Null was expected.
 #[cfg(feature = "duckdb")]
-fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::datatypes::DataType) -> std::result::Result<arrow::array::ArrayRef, arrow::error::ArrowError> {
+pub(crate) fn coerce_sql_array(array: &arrow::array::ArrayRef, target: &arrow::datatypes::DataType) -> std::result::Result<arrow::array::ArrayRef, arrow::error::ArrowError> {
     use arrow::array::{Array, make_array, new_null_array};
     use arrow::datatypes::DataType;
     if array.data_type() == target { return Ok(array.clone()); }

@@ -17,6 +17,10 @@
 - [Transactions and storage](transactions.md)
 - [Update mapped tables](updates.md)
 
+# Search
+
+- [Vector and full-text search](search.md)
+
 # Query languages
 
 - [Cypher](cypher.md)

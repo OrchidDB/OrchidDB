@@ -87,6 +87,7 @@ fn bind(
 }
 
 pub fn native_scalar(name: &str, args: Vec<Expr>, schema: &DFSchema) -> Result<Expr> {
+    if let Some(function) = super::search::function(name) { return Ok(function.call(args)); }
     let catalog = super::selected_operator_table()?;
     let args = catalog.prepare_args(name, FunctionKind::Scalar, args, schema)?;
     Ok(ScalarUDF::new_from_impl(bind(

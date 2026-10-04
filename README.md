@@ -67,6 +67,19 @@ values. Transfers are buffered. Connections and transactions remain caller-owned
 no distributed snapshot or transaction is provided. See
 [mixed SQL engines](docs/sql-engines.md). ClickHouse SQL is not implemented.
 
+## Search
+
+Compose vector and BM25 retrieval with ordinary Cypher and Gremlin traversal.
+Computed relationships declare scores, eligibility predicates, per-source top-k,
+and optional candidate stages for ColBERT-style MaxSim reranking. The planner
+maps functions and ordering to native execution or SQL islands, including indexed
+pgvector and duckdb-lance search. Lance uses the DuckDB extension without a Lance
+SDK dependency. Failed backend searches propagate their errors.
+
+See the [Search guide](website/docs/content/search.md) and
+[full feature reference](docs/computed-relationships-and-search.md) for declarations,
+backend setup, generated SQL, and extension compatibility requirements.
+
 ## Shared graph execution
 
 Enable `duckdb` to use `GraphEngine` with either managed graph records or

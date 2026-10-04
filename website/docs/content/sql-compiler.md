@@ -75,6 +75,14 @@ produce graph edges. These declarations describe reads in this API; `compile` do
 mutations. Gremlin tuple-ID projection may require the unified
 runtime's native operator rather than standalone SQL compilation.
 
+Optional `computed_relationships` define expression-based edges with predicates,
+score properties, per-source ranking, and candidate stages. `search_indexes` bind
+physical columns to pgvector or duckdb-lance retrieval. Same-engine PostgreSQL
+search stays in a correlated SQL island; dependent search transfers include a
+template that clients bind with `op: "bind_search"` before the ordinary `bind`
+operation. See [Search](search.md#federation-and-json-execution) for the protocol
+and generated SQL.
+
 Optional `functions`
 describe language-facing name, SQL target, parameter type list, return type
 (`returns`), and `aggregate` flag. The caller installs real implementations in

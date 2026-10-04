@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'website/docs/**'
+      - 'docs/computed-relationships-and-search.md'
       - 'conformance/upstream-results/**'
       - 'conformance/upstream/catalog.json'
       - 'conformance/upstream/sources.json'

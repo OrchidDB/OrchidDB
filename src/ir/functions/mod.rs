@@ -6,6 +6,8 @@
 //! engine function names. Table functions are catalogued but are not expressions.
 
 mod call;
+pub mod logical;
+pub mod search;
 mod mappings;
 pub use mappings::FunctionRegistry;
 #[cfg(feature = "duckdb")]
@@ -128,7 +130,7 @@ pub fn is_native_aggregate(name: &str) -> bool {
 }
 
 pub(crate) fn is_registered_function(name: &str) -> bool {
-    selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
+    search::function(name).is_some() || selected_operator_table().is_ok_and(|catalog| !catalog.overloads(name).is_empty())
 }
 
 pub(crate) fn is_volatile_function(name: &str) -> bool {

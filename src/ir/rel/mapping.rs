@@ -31,8 +31,7 @@
 //!   SQL layer which scan leaves must *not* be materialized because they are
 //!   the user's own tables/views.
 //!
-//! A mapping can be built programmatically or loaded from a small TOML
-//! subset via [`GraphMapping::from_toml`] (see the docs for the format).
+//! A mapping can be built programmatically or loaded from TOML via [`GraphMapping::from_toml`] (see the docs for the format).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -55,6 +54,8 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use crate::ir::plan::LabelExpr;
 
 use super::function_catalog;
+pub mod computed;
+pub use computed::{ComputedRelationship, RelationshipOrder, RelationshipStage, SortDirection, NullOrder, RetrievalMode};
 use super::{
     LoweredNode, LoweringContext, RelError, RelResult, col_exact, dst_id_col,
     dst_label_col, edge_schema, id_col, label_col, node_schema, prop_col, src_id_col,
@@ -70,6 +71,8 @@ pub enum MappedSource {
     /// the mapping's registered tables; inlined as a derived table when the
     /// plan is unparsed for an external engine.
     Query(String),
+    /// Declarative endpoint expressions compiled into a relational plan.
+    Computed(Box<ComputedRelationship>),
 }
 
 /// Ordered physical columns forming an element key or relationship endpoint.
@@ -427,6 +430,8 @@ impl EdgeMapping {
 #[derive(Default, Clone)]
 pub struct GraphMapping {
     pub(crate) rdf: super::rdf::RdfDatasetMapping,
+    pub(crate) search_indexes: Vec<super::search::SearchIndex>,
+    logical_functions: BTreeMap<String, Arc<ScalarUDF>>,
     nodes: BTreeMap<String, NodeMapping>,
     edges: BTreeMap<String, EdgeMapping>,
     tables: BTreeMap<String, Arc<dyn TableProvider>>,
@@ -471,6 +476,17 @@ impl GraphMapping {
     pub fn new() -> Self {
         Self::default()
     }
+    pub fn register_search_index(&mut self, index: super::search::SearchIndex) -> RelResult<&mut Self> {
+        if index.table.is_empty() || index.column.is_empty() || self.search_indexes.iter().any(|i|i.table==index.table && i.column==index.column && i.metric==index.metric) { return Err(RelError::Unsupported("search index needs unique table, column, and metric".into())); }
+        if matches!(index.backend,super::search::SearchBackend::Pgvector) && index.metric==super::search::SearchMetric::Bm25 {
+            return Err(RelError::Unsupported("pgvector indexes vector metrics, not BM25".into()));
+        }
+        if let super::search::SearchBackend::Lance{uri,nprobes,refine_factor}=&index.backend {
+            if uri.is_empty() || *nprobes==Some(0) || *refine_factor==Some(0) {return Err(RelError::Unsupported("invalid Lance search index configuration".into()));}
+        }
+        self.search_indexes.push(index);Ok(self)
+    }
+
 
     /// Validate row ownership before either compiling reads or executing writes.
     pub fn validate_foreign_keys(&self) -> RelResult<()> {
@@ -1047,7 +1063,7 @@ impl GraphMapping {
                     .chain(self.edges.values().map(|m| &m.source))
                     .filter_map(|source| match source {
                         MappedSource::Table(name) => Some(name.clone()),
-                        MappedSource::Query(_) => None,
+                        MappedSource::Query(_) | MappedSource::Computed(_) => None,
                     }),
             )
             .collect()
@@ -1055,7 +1071,7 @@ impl GraphMapping {
 
     /// Build the source plan for a mapped source: a bare scan for
     /// table-backed sources, the parsed query plan for query-backed ones.
-    fn source_plan(&self, source: &MappedSource) -> RelResult<LogicalPlan> {
+    pub(crate) fn source_plan(&self, source: &MappedSource) -> RelResult<LogicalPlan> {
         match source {
             MappedSource::Table(name) => {
                 let _provider = self.tables.get(name).ok_or_else(|| {
@@ -1072,6 +1088,7 @@ impl GraphMapping {
                 .build()?)
             }
             MappedSource::Query(sql) => self.plan_sql(sql),
+            MappedSource::Computed(rule) => computed::plan(self, rule),
         }
     }
 
@@ -1294,7 +1311,7 @@ fn property_exprs(
 
 /// Reference an id column in its source type. Branches of multi-label scans
 /// are reconciled afterwards by [`union_all`].
-fn id_expr(plan: &LogicalPlan, columns: &KeyColumns, what: &str) -> RelResult<Expr> {
+pub(crate) fn id_expr(plan: &LogicalPlan, columns: &KeyColumns, what: &str) -> RelResult<Expr> {
     columns.validate()?;
     let mut args = Vec::new();
     let mut fields = Vec::new();
@@ -1542,7 +1559,10 @@ impl ContextProvider for MappingContextProvider<'_> {
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
         let lower = name.to_ascii_lowercase();
-        function_catalog::scalar().get(&lower).cloned()
+        self.mapping.logical_functions.get(&lower).cloned()
+            .or_else(|| crate::ir::functions::search::function(&lower))
+            .or_else(|| function_catalog::scalar().get(&lower).cloned())
+            .or_else(|| function_catalog::nested().get(&lower).cloned())
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
@@ -1577,11 +1597,11 @@ impl ContextProvider for MappingContextProvider<'_> {
 }
 
 // ---------------------------------------------------------------------------
-// TOML (de)serialization — a hand-rolled subset, no new dependencies
+// TOML (de)serialization
 // ---------------------------------------------------------------------------
 
 impl GraphMapping {
-    /// Parse a mapping from a small TOML subset. Table providers are *not*
+    /// Parse a mapping from TOML. Table providers are *not*
     /// part of the serialized form; register them afterwards.
     ///
     /// ```toml
@@ -1605,7 +1625,20 @@ impl GraphMapping {
     /// total = "total"
     /// ```
     pub fn from_toml(input: &str) -> RelResult<Self> {
-        let sections = parse_toml_sections(input)?;
+        let mut document: toml::Value = toml::from_str(input)
+            .map_err(|e| RelError::Unsupported(format!("mapping TOML: {e}")))?;
+        let indexes = document.as_table_mut().and_then(|t|t.remove("search_indexes"))
+            .map(|v|v.try_into::<Vec<super::search::SearchIndex>>()).transpose().map_err(|e|RelError::Unsupported(e.to_string()))?.unwrap_or_default();
+        let mut computed = Vec::new();
+        if let Some(edges) = document.get_mut("edge").and_then(toml::Value::as_table_mut) {
+            let names = edges.iter().filter(|(_, v)| v.get("source").is_some() || v.get("target").is_some()).map(|(k, _)| k.clone()).collect::<Vec<_>>();
+            for name in names {
+                let mut value = edges.remove(&name).unwrap();
+                value.as_table_mut().ok_or_else(|| RelError::Unsupported("edge must be a table".into()))?.insert("name".into(), toml::Value::String(name));
+                computed.push(value.try_into::<ComputedRelationship>().map_err(|e| RelError::Unsupported(format!("computed relationship: {e}")))?);
+            }
+        }
+        let sections = parse_toml_sections(&toml::to_string(&document).map_err(|e| RelError::Unsupported(e.to_string()))?)?;
         let mut mapping = GraphMapping::new();
         for (path, entries) in &sections {
             match path.as_slice() {
@@ -1711,23 +1744,28 @@ impl GraphMapping {
                 }
             }
         }
+        for index in indexes { mapping.register_search_index(index)?; }
+        for rule in computed { mapping.map_computed_relationship(rule)?; }
         mapping.validate_foreign_keys()?;
         Ok(mapping)
     }
 
-    /// Render the mapping in the same TOML subset [`from_toml`](Self::from_toml)
+    /// Render the mapping in the TOML format [`from_toml`](Self::from_toml)
     /// reads. Providers are not serialized.
     pub fn to_toml(&self) -> String {
         fn quote(value: &str) -> String {
-            format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+            serde_json::to_string(value).expect("serializable mapping string")
         }
         fn source_line(source: &MappedSource) -> String {
             match source {
                 MappedSource::Table(table) => format!("table = {}", quote(table)),
                 MappedSource::Query(sql) => format!("query = {}", quote(sql)),
+                MappedSource::Computed(_) => unreachable!("serialized separately"),
             }
         }
-        let mut out = String::new();
+        let mut out = if self.search_indexes.is_empty() { String::new() } else {
+            toml::to_string(&BTreeMap::from([("search_indexes", &self.search_indexes)])).expect("serializable indexes")
+        };
         for (label, node) in &self.nodes {
             out.push_str(&format!("[node.{label}]\n"));
             out.push_str(&source_line(&node.source));
@@ -1742,6 +1780,14 @@ impl GraphMapping {
             out.push('\n');
         }
         for (rel_type, edge) in &self.edges {
+            if let MappedSource::Computed(rule) = &edge.source {
+                let mut value = toml::Value::try_from(rule.as_ref()).expect("serializable relationship");
+                value.as_table_mut().unwrap().remove("name");
+                let document = toml::Value::Table(toml::map::Map::from_iter([("edge".into(), toml::Value::Table(toml::map::Map::from_iter([(rel_type.clone(), value)])))]));
+                out.push_str(&toml::to_string(&document).expect("serializable relationship"));
+                out.push('\n');
+                continue;
+            }
             out.push_str(&format!("[edge.{rel_type}]\n"));
             out.push_str(&source_line(&edge.source));
             out.push('\n');
@@ -1845,115 +1891,25 @@ type TomlSections = BTreeMap<Vec<String>, BTreeMap<String, TomlValue>>;
 /// Parse the TOML subset: `[dotted.section]` headers and `key = "string"`
 /// entries. `#` comments and blank lines are ignored.
 fn parse_toml_sections(input: &str) -> RelResult<TomlSections> {
-    let mut sections: TomlSections = BTreeMap::new();
-    let mut current: Option<Vec<String>> = None;
-    for (number, raw) in input.lines().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
+    fn visit(value: &toml::Value, path: Vec<String>, result: &mut TomlSections) -> RelResult<()> {
+        let table = value.as_table().ok_or_else(|| RelError::Unsupported("expected mapping table".into()))?;
+        if (path.len()==2 && matches!(path[0].as_str(), "node" | "edge")) || (table.is_empty() && !path.is_empty() && !(path.len()==1 && matches!(path[0].as_str(), "node" | "edge"))) {
+            result.entry(path.clone()).or_default();
         }
-        let err = |message: String| {
-            RelError::Unsupported(format!("mapping toml line {}: {message}", number + 1))
-        };
-        if let Some(rest) = line.strip_prefix('[') {
-            let Some(inner) = rest.strip_suffix(']') else {
-                return Err(err(format!("unterminated section header `{line}`")));
-            };
-            let path = inner
-                .split('.')
-                .map(|part| part.trim().trim_matches('"').to_string())
-                .collect::<Vec<_>>();
-            if path.iter().any(String::is_empty) {
-                return Err(err(format!("empty segment in section `[{inner}]`")));
+        for (key, value) in table {
+            if value.is_table() {
+                let mut child = path.clone(); child.push(key.clone()); visit(value, child, result)?;
+            } else {
+                let value = if let Some(s) = value.as_str() { TomlValue::String(s.into()) }
+                else if let Some(a) = value.as_array() { TomlValue::Columns(a.iter().map(|v| v.as_str().map(str::to_owned).ok_or_else(|| RelError::Unsupported("expected string key columns".into()))).collect::<RelResult<Vec<_>>>()?) }
+                else { return Err(RelError::Unsupported(format!("unsupported mapping value {key}"))); };
+                result.entry(path.clone()).or_default().insert(key.clone(), value);
             }
-            sections.entry(path.clone()).or_default();
-            current = Some(path);
-            continue;
         }
-        let Some((key, value)) = line.split_once('=') else {
-            return Err(err(format!("expected `key = \"value\"`, got `{line}`")));
-        };
-        let Some(section) = &current else {
-            return Err(err("key outside any [section]".to_string()));
-        };
-        let key = key.trim().trim_matches('"').to_string();
-        let raw_value = value.trim();
-        let value = if raw_value.starts_with('[') {
-            let mut quoted = false;
-            let mut escaped = false;
-            let mut end = None;
-            for (i, ch) in raw_value.char_indices() {
-                if escaped {
-                    escaped = false;
-                    continue;
-                }
-                if ch == '\\' && quoted {
-                    escaped = true;
-                    continue;
-                }
-                if ch == '"' {
-                    quoted = !quoted;
-                }
-                if ch == ']' && !quoted {
-                    end = Some(i + 1);
-                    break;
-                }
-            }
-            let end = end.ok_or_else(|| err("unterminated key-column array".into()))?;
-            let rest = raw_value[end..].trim();
-            if !rest.is_empty() && !rest.starts_with('#') {
-                return Err(err("unexpected content after key-column array".into()));
-            }
-            let columns: Vec<String> =
-                serde_json::from_str(&raw_value[..end]).map_err(|e| err(e.to_string()))?;
-            TomlValue::Columns(columns)
-        } else {
-            TomlValue::String(
-                parse_toml_string(raw_value)
-                    .map_err(|message| err(format!("value for `{key}`: {message}")))?,
-            )
-        };
-        sections
-            .get_mut(section)
-            .expect("section exists")
-            .insert(key, value);
+        Ok(())
     }
-    Ok(sections)
-}
-
-/// Parse a double-quoted TOML string with `\"` and `\\` escapes. Trailing
-/// `#` comments after the closing quote are ignored.
-fn parse_toml_string(input: &str) -> Result<String, String> {
-    let mut chars = input.chars();
-    if chars.next() != Some('"') {
-        return Err(format!("expected a double-quoted string, got `{input}`"));
-    }
-    let mut out = String::new();
-    let mut closed = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                closed = true;
-                break;
-            }
-            '\\' => match chars.next() {
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some('n') => out.push('\n'),
-                Some('t') => out.push('\t'),
-                other => return Err(format!("unsupported escape `\\{other:?}`")),
-            },
-            other => out.push(other),
-        }
-    }
-    if !closed {
-        return Err(format!("unterminated string `{input}`"));
-    }
-    let rest = chars.as_str().trim();
-    if !rest.is_empty() && !rest.starts_with('#') {
-        return Err(format!("unexpected trailing content `{rest}`"));
-    }
-    Ok(out)
+    let document: toml::Value = toml::from_str(input).map_err(|e| RelError::Unsupported(e.to_string()))?;
+    let mut result = BTreeMap::new(); visit(&document, vec![], &mut result)?; Ok(result)
 }
 
 #[cfg(test)]

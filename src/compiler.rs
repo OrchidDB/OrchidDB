@@ -59,6 +59,10 @@ pub struct CompileRequest {
     #[serde(default)]
     pub edges: Vec<Edge>,
     #[serde(default)]
+    pub computed_relationships: Vec<crate::ir::rel::mapping::ComputedRelationship>,
+    #[serde(default)]
+    pub search_indexes: Vec<crate::ir::rel::search::SearchIndex>,
+    #[serde(default)]
     pub functions: Vec<Function>,
     #[serde(default)]
     pub ontology: Ontology,
@@ -642,6 +646,10 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         }
         mapping.map_edge(e);
     }
+    for index in &request.search_indexes { mapping.register_search_index(index.clone()).map_err(|e|e.to_string())?; }
+    for rule in &request.computed_relationships {
+        mapping.map_computed_relationship(rule.clone()).map_err(|e| e.to_string())?;
+    }
     mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
     let mut registry = FunctionRegistry::new(Arc::new(DeclaredCatalog(request.dialect.clone())));
     for f in &request.functions {
@@ -815,6 +823,7 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
         // common-subexpression elimination can erase those SQL scopes.
         use datafusion::optimizer::{Optimizer, OptimizerContext};
         let optimizer = Optimizer::with_rules(vec![
+            Arc::new(datafusion::optimizer::simplify_expressions::SimplifyExpressions::new()),
             Arc::new(datafusion::optimizer::push_down_filter::PushDownFilter::new()),
             Arc::new(datafusion::optimizer::optimize_projections::OptimizeProjections::new()),
         ]);
@@ -822,6 +831,8 @@ pub async fn compile(request: CompileRequest) -> Result<CompiledSql, String> {
             .optimize(lowered.plan, &OptimizerContext::new(), |_, _| {})
             .map_err(|e| e.to_string())?;
     }
+    lowered.plan=crate::ir::rel::search::bind_seeds(lowered.plan).map_err(|e|e.to_string())?;
+    lowered.plan=crate::ir::rel::search::push_source_filters(lowered.plan).map_err(|e|e.to_string())?;
     let (plan, transfers) = crate::federation::route(&request, lowered.plan)?;
     lowered.plan = plan;
     let sql = unparse(&lowered, dialect).map_err(|e| e.to_string())?;
@@ -944,6 +955,9 @@ fn unquote_table_reference(value: &str) -> Option<String> {
 
 pub async fn compile_json(input: &str) -> Result<String, String> {
     let command: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    if command.get("op").and_then(serde_json::Value::as_str) == Some("bind_search") {
+        return crate::federation::bind_search_command(command).map(|v|v.to_string());
+    }
     if command.get("op").and_then(serde_json::Value::as_str) == Some("bind") {
         return std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
             crate::federation::bind_command(command)

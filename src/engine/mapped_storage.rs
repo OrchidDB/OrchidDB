@@ -26,19 +26,14 @@ pub(super) fn table(name: &str) -> String {
         .collect::<Vec<_>>()
         .join(".")
 }
-pub(super) fn source(source: &MappedSource) -> String {
-    match source {
-        MappedSource::Table(name) => table(name),
-        MappedSource::Query(sql) => format!("({sql})"),
-    }
-}
 pub(super) fn resolved_source(mapping: &GraphMapping, src: &MappedSource, filters: &[datafusion::logical_expr::Expr]) -> Result<String, String> {
     if let Some(sql) = mapping.derived_source_sql(src, filters).map_err(|e|e.to_string())? {
         return Ok(format!("({sql})"));
     }
     Ok(match src {
         MappedSource::Table(name) => table(&mapping.resolve_table(name, filters)),
-        MappedSource::Query(_) => source(src),
+        MappedSource::Query(sql) => format!("({sql})"),
+        MappedSource::Computed(_) => return Err("computed relationship was not planned".into()),
     })
 }
 
@@ -69,6 +64,19 @@ pub(super) fn metadata(
     connection: &Connection,
     mapping: Arc<GraphMapping>,
 ) -> Result<PropertyGraph, String> {
+    // Computed edges need endpoint schemas to build their native logical plan.
+    // Bind those schemas without executing scores or reading data rows.
+    let mut resolved = (*mapping).clone();
+    if mapping.rel_types().iter().any(|name| matches!(mapping.edge(name).unwrap().source, MappedSource::Computed(_))) {
+        for name in mapping.labels() {
+            if let MappedSource::Table(table_name) = &mapping.node(&name).unwrap().source {
+                if mapping.logical_source(table_name).is_none() && mapping.representation_source(table_name).is_none() && mapping.collection_source(table_name).is_none() {
+                    resolved.register_table_schema(table_name, query(connection, &format!("SELECT * FROM {} WHERE false", table(table_name)))?.schema());
+                }
+            }
+        }
+    }
+    let mapping = Arc::new(resolved);
     mapping.validate_foreign_keys().map_err(|e| e.to_string())?;
     let mut graph = PropertyGraph::new();
     for label in mapping.labels() {
@@ -111,6 +119,17 @@ pub(super) fn metadata(
             format!("{} AS __dst_id", m.dst_column.sql(None)),
         ];
         projection.extend(property_projection(&m.properties));
+        let batch = if matches!(m.source, MappedSource::Computed(_)) {
+            let plan = mapping.source_plan(&m.source).map_err(|e|e.to_string())?;
+            let schema = plan.schema().as_arrow();
+            let mut fields = vec![
+                Field::new("__key", m.id_column.as_ref().unwrap().data_type(schema)?, true),
+                Field::new("__src_id", m.src_column.data_type(schema)?, true),
+                Field::new("__dst_id", m.dst_column.data_type(schema)?, true),
+            ];
+            for (name, column) in &m.properties { fields.push(Field::new(name, schema.field_with_name(column).map_err(|e|e.to_string())?.data_type().clone(), true)); }
+            RecordBatch::new_empty(Arc::new(Schema::new(fields)))
+        } else {
         let batch = query(
             connection,
             &format!(
@@ -119,6 +138,8 @@ pub(super) fn metadata(
                 resolved_source(&mapping, &m.source, &[])?
             ),
         )?;
+            batch
+        };
         graph.key_types.insert(
             (true, rel_type.clone()),
             batch.column(0).data_type().clone(),
@@ -767,4 +788,26 @@ fn constant_default(expression: &str) -> bool {
         return false;
     };
     matches!(select.projection.as_slice(),[SelectItem::UnnamedExpr(expr)] if constant(expr))
+}
+
+/// Bridge synchronous graph-source requests into the existing executable DAG.
+/// Placement happens before execution; backend failures are never retried.
+pub(super) fn execute_plan(
+    executor: Arc<std::sync::Mutex<crate::ir::rel::sql::DuckDbExecutor>>,
+    mapping: &GraphMapping,
+    plan: datafusion::logical_expr::LogicalPlan,
+) -> Result<(RecordBatch, Vec<String>), String> {
+    let external = mapping.physical_table_names();
+    std::thread::scope(|scope| scope.spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e|e.to_string())?;
+        runtime.block_on(async move {
+            let session = crate::ir::rel::dag::DagSession::with_shared(executor, external);
+            let lowered = crate::ir::rel::LoweredPlan {
+                fields: plan.schema().fields().iter().map(|f|f.name().clone()).collect(),
+                plan, result_form: crate::ir::policy::ResultForm::RowSet, islands: Default::default(),
+            };
+            let (result, stats) = crate::ir::rel::dag::execute_with_extensions(lowered, vec![], None, Some(&session)).await.map_err(|e|e.to_string())?;
+            Ok((result.batch, stats.sql_queries))
+        })
+    }).join().map_err(|_|"computed relationship worker panicked".to_string())?)
 }
